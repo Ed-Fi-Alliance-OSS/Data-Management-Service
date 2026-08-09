@@ -2971,6 +2971,165 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_uses_live_query_ordering_for_read_acceleration_candidate_selection_with_max_change_version()
+    {
+        var contentVersionSelectedDocumentUuid = new DocumentUuid(
+            Guid.Parse("abababab-1111-2222-3333-cdcdcdcdcdcd")
+        );
+        var documentIdSelectedDocumentUuid = new DocumentUuid(
+            Guid.Parse("cdcdcdcd-1111-2222-3333-abababababab")
+        );
+        var mappingSet = CreateChangeVersionQuerySupportedMappingSet(_schoolResourceInfo);
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var readPlan = mappingSet.ReadPlansByResource[resource];
+        var resourceKeyId = mappingSet.ResourceKeyIdByResource[resource];
+        var contentVersionSelectedMetadata = CreateDocumentMetadataRow(
+            contentVersionSelectedDocumentUuid,
+            300L,
+            20L,
+            resourceKeyId: resourceKeyId
+        );
+        var documentIdSelectedMetadata = CreateDocumentMetadataRow(
+            documentIdSelectedDocumentUuid,
+            200L,
+            10L,
+            resourceKeyId: resourceKeyId
+        );
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: true,
+            changeVersionRange: new ChangeVersionRange(5L, 30L),
+            paginationParameters: new PaginationParameters(
+                Limit: 1,
+                Offset: 1,
+                TotalCount: true,
+                MaximumPageSize: 500
+            )
+        );
+        var readAccelerationCoordinator = new RecordingReadAccelerationCoordinator();
+        RelationalCommand candidateSelectionCommand = null!;
+
+        UseReadAccelerationCoordinator(readAccelerationCoordinator);
+
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(
+                (
+                    ResourceReadPlan _,
+                    PageKeysetSpec keyset,
+                    HydrationExecutionOptions _,
+                    CancellationToken _
+                ) =>
+                {
+                    DocumentMetadataRow selectedMetadata =
+                        keyset is PageKeysetSpec.SelectedPage selectedPage
+                        && selectedPage.DocumentIds.Contains(documentIdSelectedMetadata.DocumentId)
+                            ? documentIdSelectedMetadata
+                            : contentVersionSelectedMetadata;
+
+                    return CreateHydratedPage(
+                        readPlan,
+                        selectedMetadata,
+                        (selectedMetadata.DocumentId, "Selected")
+                    );
+                }
+            );
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .ReturnsLazily(
+                (RelationalReadPageMaterializationRequest request) =>
+                    request
+                        .HydratedPage.DocumentMetadata.Select(metadata => new MaterializedDocument(
+                            metadata,
+                            JsonNode.Parse($$"""{"id":"{{metadata.DocumentUuid}}"}""")!
+                        ))
+                        .ToArray()
+            );
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<
+                        Func<
+                            IRelationalCommandReader,
+                            CancellationToken,
+                            Task<DocumentCacheReadAccelerationCandidatePage>
+                        >
+                    >._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => candidateSelectionCommand = call.GetArgument<RelationalCommand>(0)!)
+            .ReturnsLazily(
+                (
+                    RelationalCommand command,
+                    Func<
+                        IRelationalCommandReader,
+                        CancellationToken,
+                        Task<DocumentCacheReadAccelerationCandidatePage>
+                    > readAsync,
+                    CancellationToken cancellationToken
+                ) =>
+                {
+                    DocumentMetadataRow selectedMetadata = command.CommandText.Contains(
+                        "ORDER BY r.\"ContentVersion\" ASC",
+                        StringComparison.Ordinal
+                    )
+                        ? contentVersionSelectedMetadata
+                        : documentIdSelectedMetadata;
+
+                    return readAsync(
+                        new InMemoryRelationalCommandReader([
+                            InMemoryRelationalResultSet.Create(
+                                RelationalAccessTestData.CreateRow(("TotalCount", 3L))
+                            ),
+                            InMemoryRelationalResultSet.Create(
+                                RelationalAccessTestData.CreateRow(
+                                    ("DocumentId", selectedMetadata.DocumentId),
+                                    ("DocumentUuid", selectedMetadata.DocumentUuid),
+                                    ("ContentVersion", selectedMetadata.ContentVersion),
+                                    ("ContentLastModifiedAt", selectedMetadata.ContentLastModifiedAt)
+                                )
+                            ),
+                        ]),
+                        cancellationToken
+                    );
+                }
+            );
+
+        var acceleratedResult = await _sut.QueryDocuments(queryRequest);
+
+        candidateSelectionCommand.CommandText.Should().Contain("ORDER BY r.\"ContentVersion\" ASC");
+        ParameterValue(candidateSelectionCommand, "@minChangeVersion").Should().Be(5L);
+        ParameterValue(candidateSelectionCommand, "@maxChangeVersion").Should().Be(30L);
+        ParameterValue(candidateSelectionCommand, "@offset").Should().Be(1L);
+        ParameterValue(candidateSelectionCommand, "@limit").Should().Be(1L);
+
+        var selectedQueryRequest =
+            readAccelerationCoordinator.SelectedQueryRequest
+            ?? throw new AssertionException("Read acceleration should select an authorized query page.");
+        var authorizedCandidatePage =
+            selectedQueryRequest.AuthorizedCandidatePage
+            ?? throw new AssertionException("Read acceleration should expose the selected candidate page.");
+
+        authorizedCandidatePage
+            .Candidates.Select(static candidate => candidate.DocumentId)
+            .Should()
+            .Equal(contentVersionSelectedMetadata.DocumentId);
+
+        acceleratedResult.Should().BeOfType<QueryResult.QuerySuccess>().Which.EdfiDocs.Single()!["id"]!
+            .GetValue<string>()
+            .Should()
+            .Be(contentVersionSelectedDocumentUuid.Value.ToString());
+    }
+
+    [Test]
     public async Task It_reruns_the_no_cache_query_when_selected_page_fallback_metadata_drifts()
     {
         var selectedDocumentUuid = new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-eeeeeeeeeeee"));
@@ -12406,6 +12565,63 @@ public class Given_RelationalDocumentStoreRepositoryTests
         };
     }
 
+    private static MappingSet CreateChangeVersionQuerySupportedMappingSet(ResourceInfo resourceInfo)
+    {
+        var resourceKey = CreateResourceKeyEntry(resourceInfo);
+        var rootTable = CreateRootTableModel(
+            resourceInfo.ResourceName.Value,
+            [
+                new DbColumnModel(
+                    new DbColumnName("ContentVersion"),
+                    ColumnKind.MirroredContentVersion,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+            ]
+        );
+        var resourceModel = CreateRelationalResourceModel(
+            resourceKey,
+            rootTable,
+            ResourceStorageKind.RelationalTables
+        );
+        var readPlan = CreateReadPlan(resourceModel, rootTable);
+
+        return new MappingSet(
+            Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
+            Model: CreateDerivedModelSet(resourceModel, resourceKey),
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>
+            {
+                [resourceKey.Resource] = readPlan,
+            },
+            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>
+            {
+                [resourceKey.Resource] = resourceKey.ResourceKeyId,
+            },
+            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>
+            {
+                [resourceKey.ResourceKeyId] = resourceKey,
+            },
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
+        )
+        {
+            QueryCapabilitiesByResource = new Dictionary<QualifiedResourceName, RelationalQueryCapability>
+            {
+                [resourceKey.Resource] = new RelationalQueryCapability(
+                    new RelationalQuerySupport.Supported(),
+                    new Dictionary<string, SupportedRelationalQueryField>(StringComparer.OrdinalIgnoreCase),
+                    new Dictionary<string, UnsupportedRelationalQueryField>(StringComparer.OrdinalIgnoreCase)
+                ),
+            },
+        };
+    }
+
     private static MappingSet CreateOmittedQueryCapabilityMappingSet(
         ResourceInfo resourceInfo,
         RelationalQueryCapabilityOmission omission
@@ -12531,12 +12747,21 @@ public class Given_RelationalDocumentStoreRepositoryTests
         ReadableProfileProjectionContext? readableProfileProjectionContext = null,
         IReadOnlyList<long>? claimEducationOrganizationIds = null,
         ResourceInfo? resourceInfo = null,
-        IReadOnlyList<string>? namespacePrefixes = null
+        IReadOnlyList<string>? namespacePrefixes = null,
+        ChangeVersionRange? changeVersionRange = null,
+        PaginationParameters? paginationParameters = null
     )
     {
         authorizationStrategyEvaluators ??= [];
         claimEducationOrganizationIds ??= [];
         resourceInfo ??= _schoolResourceInfo;
+        changeVersionRange ??= ChangeVersionRange.None;
+        paginationParameters ??= new PaginationParameters(
+            Limit: 25,
+            Offset: 0,
+            TotalCount: totalCount,
+            MaximumPageSize: 500
+        );
 
         var queryRequest = A.Fake<IQueryRequest>();
         A.CallTo(() => queryRequest.ResourceInfo).Returns(resourceInfo);
@@ -12547,22 +12772,16 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 new RelationalAuthorizationContext(claimEducationOrganizationIds, namespacePrefixes ?? [])
             );
         A.CallTo(() => queryRequest.AuthorizationStrategyEvaluators).Returns(authorizationStrategyEvaluators);
-        A.CallTo(() => queryRequest.Paging)
-            .Returns(
-                new CollectionPaging.Traditional(
-                    new PaginationParameters(
-                        Limit: 25,
-                        Offset: 0,
-                        TotalCount: totalCount,
-                        MaximumPageSize: 500
-                    )
-                )
-            );
+        A.CallTo(() => queryRequest.Paging).Returns(new CollectionPaging.Traditional(paginationParameters));
         A.CallTo(() => queryRequest.TraceId).Returns(new TraceId("query-trace"));
         A.CallTo(() => queryRequest.ReadableProfileProjectionContext)
             .Returns(readableProfileProjectionContext);
+        A.CallTo(() => queryRequest.ChangeVersionRange).Returns(changeVersionRange);
         return queryRequest;
     }
+
+    private static object? ParameterValue(RelationalCommand command, string parameterName) =>
+        command.Parameters.Single(parameter => parameter.Name == parameterName).Value;
 
     private static AuthorizationStrategyEvaluator CreateAuthorizationStrategyEvaluator(
         string authorizationStrategyName

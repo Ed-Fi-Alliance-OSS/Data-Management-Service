@@ -1192,7 +1192,8 @@ public sealed class RelationalDocumentStoreRepository(
                     out plannedQuery,
                     out _,
                     authorization: pageQueryAuthorization,
-                    changeVersionRange: queryRequest.ChangeVersionRange
+                    changeVersionRange: queryRequest.ChangeVersionRange,
+                    orderingMode: _orderingPolicy.ResolveForLiveQuery(queryRequest.ChangeVersionRange)
                 ) || plannedQuery is null
             )
             {
