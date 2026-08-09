@@ -1811,7 +1811,7 @@ public class Given_DescriptorReadHandler
             readableProfileProjector ?? A.Fake<IReadableProfileProjector>(),
             _servedEtagComposer,
             NullLogger<DescriptorReadHandler>.Instance,
-            readAccelerationCoordinator
+            readAccelerationCoordinator: readAccelerationCoordinator
         );
     }
 
