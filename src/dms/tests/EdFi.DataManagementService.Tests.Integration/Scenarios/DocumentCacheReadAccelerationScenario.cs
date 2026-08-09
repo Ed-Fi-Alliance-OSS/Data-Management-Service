@@ -10,6 +10,8 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Etag;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.Model;
@@ -670,12 +672,14 @@ internal static class DocumentCacheReadAccelerationScenario
                    d."ResourceKeyId",
                    d."ContentVersion",
                    d."ContentLastModifiedAt",
+                   es."EffectiveSchemaHash",
                    rk."ProjectName",
                    rk."ResourceName",
                    rk."ResourceVersion"
             FROM "dms"."Document" d
             INNER JOIN "dms"."ResourceKey" rk
                 ON rk."ResourceKeyId" = d."ResourceKeyId"
+            CROSS JOIN "dms"."EffectiveSchema" es
             WHERE d."DocumentUuid" = @documentUuid;
             """;
         command.Parameters.Add(CreateParameter(command, "@documentUuid", documentUuid));
@@ -691,7 +695,8 @@ internal static class DocumentCacheReadAccelerationScenario
             ToUtcDateTimeOffset(reader.GetValue(4)),
             reader.GetString(5),
             reader.GetString(6),
-            reader.GetString(7)
+            reader.GetString(7),
+            reader.GetString(8)
         );
 
         (await reader.ReadAsync()).Should().BeFalse("DocumentUuid is unique");
@@ -767,7 +772,9 @@ internal static class DocumentCacheReadAccelerationScenario
         command.Parameters.Add(CreateParameter(command, "@resourceName", metadata.ResourceName));
         command.Parameters.Add(CreateParameter(command, "@resourceVersion", metadata.ResourceVersion));
         command.Parameters.Add(CreateParameter(command, "@contentVersion", contentVersion));
-        command.Parameters.Add(CreateParameter(command, "@streamEtag", $"test-stream-{contentVersion}"));
+        command.Parameters.Add(
+            CreateParameter(command, "@streamEtag", ComposeStreamEtag(metadata, contentVersion))
+        );
         command.Parameters.Add(CreateParameter(command, "@lastModifiedAt", metadata.ContentLastModifiedAt));
         command.Parameters.Add(CreateParameter(command, "@documentJson", documentJson.ToJsonString()));
         command.Parameters.Add(CreateParameter(command, "@computedAt", DateTimeOffset.UtcNow));
@@ -858,6 +865,18 @@ internal static class DocumentCacheReadAccelerationScenario
     private static bool UsesPostgresql(ApiIntegrationHarness harness) =>
         harness.DbConnection.GetType().Namespace?.Contains("Npgsql", StringComparison.Ordinal) == true;
 
+    private static string ComposeStreamEtag(DocumentMetadata metadata, long contentVersion) =>
+        new ServedEtagComposer().Compose(
+            new ServedEtagContext(
+                metadata.EffectiveSchemaHash,
+                ResponseFormat.Json,
+                ProfileName: null,
+                LinksEnabled: !metadata.ResourceName.EndsWith("Descriptor", StringComparison.Ordinal),
+                contentVersion,
+                ResponseContentCoding.Identity
+            )
+        );
+
     private static DateTimeOffset ToUtcDateTimeOffset(object value) =>
         value switch
         {
@@ -905,6 +924,7 @@ internal static class DocumentCacheReadAccelerationScenario
         short ResourceKeyId,
         long ContentVersion,
         DateTimeOffset ContentLastModifiedAt,
+        string EffectiveSchemaHash,
         string ProjectName,
         string ResourceName,
         string ResourceVersion

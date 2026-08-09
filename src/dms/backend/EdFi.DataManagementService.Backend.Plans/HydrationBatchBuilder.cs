@@ -536,6 +536,12 @@ public static class HydrationBatchBuilder
         string quotedDocIdCol
     )
     {
+        if (writer.Dialect.Rules.Dialect is SqlDialect.Mssql)
+        {
+            AppendMssqlSelectedPageKeysetMaterialization(writer, keyset, quotedDocIdCol);
+            return;
+        }
+
         writer
             .Append("INSERT INTO ")
             .AppendRelation(keyset.Table)
@@ -549,6 +555,40 @@ public static class HydrationBatchBuilder
             writer.Append("    (").AppendParameter(SelectedPageDocumentIdParameterName(index)).Append(")");
             writer.AppendLine(index + 1 < selectedPage.DocumentIds.Count ? "," : ";");
         }
+    }
+
+    private static void AppendMssqlSelectedPageKeysetMaterialization(
+        SqlWriter writer,
+        KeysetTableContract keyset,
+        string quotedDocIdCol
+    )
+    {
+        writer
+            .Append("INSERT INTO ")
+            .AppendRelation(keyset.Table)
+            .Append(" (")
+            .Append(quotedDocIdCol)
+            .Append(", ")
+            .AppendQuoted(HydrationSqlConventions.SelectedPageOrdinalColumnName)
+            .AppendLine(")")
+            .AppendLine("SELECT")
+            .Append("    selected_document_ids.")
+            .Append(quotedDocIdCol)
+            .AppendLine(",")
+            .Append("    selected_document_ids.")
+            .AppendQuoted(HydrationSqlConventions.SelectedPageOrdinalColumnName)
+            .AppendLine()
+            .Append("FROM OPENJSON(")
+            .AppendParameter(HydrationSqlConventions.SelectedPageDocumentIdsJsonParameterName)
+            .AppendLine(")")
+            .AppendLine("WITH (")
+            .Append("    ")
+            .Append(quotedDocIdCol)
+            .AppendLine(" bigint '$.DocumentId',")
+            .Append("    ")
+            .AppendQuoted(HydrationSqlConventions.SelectedPageOrdinalColumnName)
+            .AppendLine(" int '$.Ordinal'")
+            .AppendLine(") selected_document_ids;");
     }
 
     private static bool HasZeroLimit(PageKeysetSpec.Query query)
@@ -599,6 +639,17 @@ public static class HydrationBatchBuilder
 
     private static void AddSelectedPageParameters(DbCommand command, PageKeysetSpec.SelectedPage selectedPage)
     {
+        if (selectedPage.DocumentIds.Count == 0)
+        {
+            return;
+        }
+
+        if (command is SqlCommand)
+        {
+            AddMssqlSelectedPageJsonParameter(command, selectedPage.DocumentIds);
+            return;
+        }
+
         for (var index = 0; index < selectedPage.DocumentIds.Count; index++)
         {
             AddScalarParameter(
@@ -607,6 +658,25 @@ public static class HydrationBatchBuilder
                 selectedPage.DocumentIds[index]
             );
         }
+    }
+
+    private static void AddMssqlSelectedPageJsonParameter(DbCommand command, IReadOnlyList<long> documentIds)
+    {
+        var dbParameter = command.CreateParameter();
+        dbParameter.ParameterName = $"@{HydrationSqlConventions.SelectedPageDocumentIdsJsonParameterName}";
+        dbParameter.Value = HydrationSqlConventions.SerializeSelectedPageDocumentIds(documentIds);
+
+        if (dbParameter is not SqlParameter sqlParameter)
+        {
+            throw new InvalidOperationException(
+                "SQL Server selected-page hydration binding requires a SqlParameter instance."
+            );
+        }
+
+        sqlParameter.SqlDbType = SqlDbType.NVarChar;
+        sqlParameter.Size = -1;
+
+        command.Parameters.Add(sqlParameter);
     }
 
     private static string SelectedPageDocumentIdParameterName(int index) => $"selectedDocumentId_{index}";

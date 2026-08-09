@@ -139,13 +139,15 @@ internal static class DocumentMetadataColumns
     ];
 
     /// <summary>
-    /// Appends the shared document metadata SELECT body using dialect-neutral quoting,
-    /// including a deterministic <c>ORDER BY DocumentId</c>.
+    /// Appends the shared document metadata SELECT body using dialect-neutral quoting. When an
+    /// ordinal column is available on the keyset table, selected pages retain that order; otherwise
+    /// rows are ordered deterministically by <c>DocumentId</c>.
     /// </summary>
     internal static void AppendDocumentMetadataSelectBody(
         SqlWriter writer,
         KeysetTableContract keyset,
-        DbTableName documentTable
+        DbTableName documentTable,
+        string? keysetOrdinalColumnName = null
     )
     {
         var quotedDocumentIdColumn = writer.Dialect.QuoteIdentifier(DocumentId);
@@ -164,9 +166,23 @@ internal static class DocumentMetadataColumns
             .Append(" = k.")
             .Append(quotedKeysetDocumentIdColumn)
             .AppendLine()
-            .Append("ORDER BY d.")
-            .Append(quotedDocumentIdColumn)
-            .AppendLine(";");
+            .Append("ORDER BY ");
+
+        if (keysetOrdinalColumnName is not null)
+        {
+            writer
+                .Append("COALESCE(k.")
+                .Append(writer.Dialect.QuoteIdentifier(keysetOrdinalColumnName))
+                .Append(", d.")
+                .Append(quotedDocumentIdColumn)
+                .Append("), d.");
+        }
+        else
+        {
+            writer.Append("d.");
+        }
+
+        writer.Append(quotedDocumentIdColumn).AppendLine(";");
     }
 
     /// <summary>

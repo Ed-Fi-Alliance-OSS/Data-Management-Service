@@ -4,9 +4,11 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
+using System.Text.Json;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using FluentAssertions;
+using Microsoft.Data.SqlClient;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Backend.Plans.Tests.Unit.HydrationBatchBuilderTestHelper;
 
@@ -96,7 +98,7 @@ public class Given_HydrationBatchBuilder_With_Single_Keyset
                 """
                 IF OBJECT_ID('tempdb..[#page]') IS NOT NULL
                     DROP TABLE [#page];
-                CREATE TABLE [#page] ([DocumentId] bigint PRIMARY KEY);
+                CREATE TABLE [#page] ([DocumentId] bigint PRIMARY KEY, [Ordinal] int NULL);
 
                 INSERT INTO [#page] ([DocumentId]) VALUES (@DocumentId);
 
@@ -104,7 +106,11 @@ public class Given_HydrationBatchBuilder_With_Single_Keyset
                     d.[DocumentId],
                 """
             );
-        _mssqlBatch.Should().Contain("ORDER BY d.[DocumentId];\n\nSELECT root columns FROM root;\n\n");
+        _mssqlBatch
+            .Should()
+            .Contain(
+                "ORDER BY COALESCE(k.[Ordinal], d.[DocumentId]), d.[DocumentId];\n\nSELECT root columns FROM root;\n\n"
+            );
         _mssqlBatch.Should().Contain("SELECT root columns FROM root;\n\nSELECT child columns FROM child;\n");
     }
 
@@ -146,7 +152,7 @@ public class Given_HydrationBatchBuilder_With_Single_Keyset
     public void It_should_emit_deterministic_order_by_on_document_metadata()
     {
         _pgsqlBatch.Should().Contain("ORDER BY d.\"DocumentId\"");
-        _mssqlBatch.Should().Contain("ORDER BY d.[DocumentId]");
+        _mssqlBatch.Should().Contain("ORDER BY COALESCE(k.[Ordinal], d.[DocumentId]), d.[DocumentId]");
     }
 
     [Test]
@@ -176,6 +182,77 @@ public class Given_HydrationBatchBuilder_With_Single_Keyset
         docMetadataIndex.Should().BePositive();
         rootSelectIndex.Should().BeGreaterThan(docMetadataIndex);
         childSelectIndex.Should().BeGreaterThan(rootSelectIndex);
+    }
+}
+
+[TestFixture]
+public class Given_HydrationBatchBuilder_With_Mssql_Selected_Page_Keyset
+{
+    private const int ValidPageSizeAboveScalarParameterLimit =
+        MssqlCommandLimits.MaxUserParametersPerCommand + 1;
+
+    private long[] _documentIds = null!;
+    private string _batch = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _documentIds =
+        [
+            .. Enumerable
+                .Range(0, ValidPageSizeAboveScalarParameterLimit)
+                .Select(static index => 10_000L + index),
+        ];
+        _batch = HydrationBatchBuilder.Build(
+            BuildTestReadPlan(SqlDialect.Mssql),
+            new PageKeysetSpec.SelectedPage(_documentIds),
+            SqlDialect.Mssql
+        );
+    }
+
+    [Test]
+    public void It_should_materialize_the_selected_page_from_one_json_candidate_set_parameter()
+    {
+        _batch
+            .Should()
+            .Contain("CREATE TABLE [#page] ([DocumentId] bigint PRIMARY KEY, [Ordinal] int NULL);");
+        _batch.Should().Contain("INSERT INTO [#page] ([DocumentId], [Ordinal])");
+        _batch.Should().Contain("FROM OPENJSON(@selectedDocumentIdsJson)");
+        _batch.Should().Contain("[DocumentId] bigint '$.DocumentId'");
+        _batch.Should().Contain("[Ordinal] int '$.Ordinal'");
+        _batch.Should().Contain("ORDER BY COALESCE(k.[Ordinal], d.[DocumentId]), d.[DocumentId];");
+        _batch.Should().NotContain("@selectedDocumentId_");
+    }
+
+    [Test]
+    public void It_should_bind_the_selected_page_as_one_nvarchar_max_json_parameter()
+    {
+        using var command = new SqlCommand();
+
+        HydrationBatchBuilder.AddParameters(command, new PageKeysetSpec.SelectedPage(_documentIds));
+
+        command.Parameters.Count.Should().Be(1);
+        command.Parameters.Contains("@selectedDocumentIdsJson").Should().BeTrue();
+        var parameter = command.Parameters["@selectedDocumentIdsJson"];
+        parameter.SqlDbType.Should().Be(SqlDbType.NVarChar);
+        parameter.Size.Should().Be(-1);
+
+        using var jsonDocument = JsonDocument.Parse((string)parameter.Value);
+        jsonDocument.RootElement.GetArrayLength().Should().Be(ValidPageSizeAboveScalarParameterLimit);
+        jsonDocument.RootElement[0].GetProperty("DocumentId").GetInt64().Should().Be(10_000L);
+        jsonDocument.RootElement[0].GetProperty("Ordinal").GetInt32().Should().Be(0);
+        jsonDocument
+            .RootElement[ValidPageSizeAboveScalarParameterLimit - 1]
+            .GetProperty("DocumentId")
+            .GetInt64()
+            .Should()
+            .Be(10_000L + ValidPageSizeAboveScalarParameterLimit - 1);
+        jsonDocument
+            .RootElement[ValidPageSizeAboveScalarParameterLimit - 1]
+            .GetProperty("Ordinal")
+            .GetInt32()
+            .Should()
+            .Be(ValidPageSizeAboveScalarParameterLimit - 1);
     }
 }
 

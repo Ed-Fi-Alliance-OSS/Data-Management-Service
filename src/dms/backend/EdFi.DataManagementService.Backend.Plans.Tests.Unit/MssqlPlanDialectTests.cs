@@ -47,7 +47,7 @@ public class Given_MssqlPlanDialect
                 """
                 IF OBJECT_ID('tempdb..[#page]') IS NOT NULL
                     DROP TABLE [#page];
-                CREATE TABLE [#page] ([DocumentId] bigint PRIMARY KEY);
+                CREATE TABLE [#page] ([DocumentId] bigint PRIMARY KEY, [Ordinal] int NULL);
 
                 """
             );
@@ -73,7 +73,7 @@ public class Given_MssqlPlanDialect
                     d.[ResourceKeyId]
                 FROM [dms].[Document] d
                 INNER JOIN [#page] k ON d.[DocumentId] = k.[DocumentId]
-                ORDER BY d.[DocumentId];
+                ORDER BY COALESCE(k.[Ordinal], d.[DocumentId]), d.[DocumentId];
 
                 """
             );

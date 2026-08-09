@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
@@ -1639,16 +1640,44 @@ public class Given_DescriptorReadHandler
         success.EdfiDocs[0]!["_etag"]!.GetValue<string>().Should().Be(ExpectedComposedDescriptorEtag(42L));
         success.EdfiDocs[1]!["_etag"]!.GetValue<string>().Should().Be(ExpectedComposedDescriptorEtag(43L));
         commandExecutor.Commands.Should().HaveCount(2);
-        commandExecutor.Commands[1].CommandText.Should().Contain("VALUES");
-        commandExecutor.Commands[1].CommandText.Should().Contain("@selectedDocumentId0");
-        commandExecutor.Commands[1].CommandText.Should().Contain("@selectedDocumentId1");
         commandExecutor.Commands[1].CommandText.Should().Contain(expectedOrderByFragment);
         commandExecutor.Commands[1].CommandText.Should().NotContain("COUNT(1)");
-        commandExecutor
-            .Commands[1]
-            .Parameters.Select(parameter => parameter.Value)
-            .Should()
-            .Equal(101L, 205L);
+
+        if (dialect is SqlDialect.Pgsql)
+        {
+            commandExecutor.Commands[1].CommandText.Should().Contain("VALUES");
+            commandExecutor.Commands[1].CommandText.Should().Contain("@selectedDocumentId0");
+            commandExecutor.Commands[1].CommandText.Should().Contain("@selectedDocumentId1");
+            commandExecutor
+                .Commands[1]
+                .Parameters.Select(parameter => parameter.Value)
+                .Should()
+                .Equal(101L, 205L);
+        }
+        else
+        {
+            commandExecutor.Commands[1].CommandText.Should().Contain("OPENJSON(@selectedDocumentIdsJson)");
+            commandExecutor.Commands[1].CommandText.Should().Contain("[DocumentId] bigint '$.DocumentId'");
+            commandExecutor.Commands[1].CommandText.Should().Contain("[Ordinal] int '$.Ordinal'");
+            commandExecutor.Commands[1].CommandText.Should().NotContain("VALUES");
+            commandExecutor.Commands[1].CommandText.Should().NotContain("@selectedDocumentId0");
+
+            RelationalParameter parameter = commandExecutor
+                .Commands[1]
+                .Parameters.Should()
+                .ContainSingle()
+                .Subject;
+            parameter.Name.Should().Be("@selectedDocumentIdsJson");
+            parameter.Value.Should().BeOfType<string>();
+            parameter.ConfigureParameter.Should().NotBeNull();
+
+            using var jsonDocument = JsonDocument.Parse((string)parameter.Value!);
+            jsonDocument.RootElement.GetArrayLength().Should().Be(2);
+            jsonDocument.RootElement[0].GetProperty("DocumentId").GetInt64().Should().Be(101L);
+            jsonDocument.RootElement[0].GetProperty("Ordinal").GetInt32().Should().Be(0);
+            jsonDocument.RootElement[1].GetProperty("DocumentId").GetInt64().Should().Be(205L);
+            jsonDocument.RootElement[1].GetProperty("Ordinal").GetInt32().Should().Be(1);
+        }
     }
 
     [Test]

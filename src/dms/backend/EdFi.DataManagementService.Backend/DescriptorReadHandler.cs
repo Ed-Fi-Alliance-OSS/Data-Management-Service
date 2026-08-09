@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using System.Data.Common;
 using System.Globalization;
 using System.Text.Json.Nodes;
@@ -1226,6 +1227,20 @@ internal sealed class DescriptorReadHandler(
             );
         }
 
+        return dialect switch
+        {
+            SqlDialect.Pgsql => BuildPgsqlSelectedQueryRowsCommand(selectedDocumentIds),
+            SqlDialect.Mssql => BuildMssqlSelectedQueryRowsCommand(selectedDocumentIds),
+            _ => throw new NotSupportedException(
+                $"Relational descriptor selected-page fallback does not support SQL dialect '{dialect}'."
+            ),
+        };
+    }
+
+    private static RelationalCommand BuildPgsqlSelectedQueryRowsCommand(
+        IReadOnlyList<long> selectedDocumentIds
+    )
+    {
         IReadOnlyList<RelationalParameter> parameters =
         [
             .. selectedDocumentIds.Select(
@@ -1241,67 +1256,86 @@ internal sealed class DescriptorReadHandler(
             )
         );
 
-        return dialect switch
-        {
-            SqlDialect.Pgsql => new RelationalCommand(
-                $$"""
-                SELECT
-                    selected_document_ids."DocumentId" AS "DocumentId",
-                    document."DocumentUuid" AS "DocumentUuid",
-                    document."ContentVersion" AS "ContentVersion",
-                    document."ContentLastModifiedAt" AS "ContentLastModifiedAt",
-                    document."ResourceKeyId" AS "ResourceKeyId",
-                    descriptor."Namespace" AS "Namespace",
-                    descriptor."CodeValue" AS "CodeValue",
-                    descriptor."ShortDescription" AS "ShortDescription",
-                    descriptor."Description" AS "Description",
-                    descriptor."EffectiveBeginDate" AS "EffectiveBeginDate",
-                    descriptor."EffectiveEndDate" AS "EffectiveEndDate",
-                    descriptor."Discriminator" AS "Discriminator"
-                FROM (
-                    VALUES
-                    {{selectedDocumentIdsSql}}
-                ) AS selected_document_ids("DocumentId", "Ordinal")
-                INNER JOIN dms."Document" document
-                    ON document."DocumentId" = selected_document_ids."DocumentId"
-                LEFT JOIN dms."Descriptor" descriptor
-                    ON descriptor."DocumentId" = selected_document_ids."DocumentId"
-                ORDER BY selected_document_ids."Ordinal" ASC;
-                """,
-                parameters
-            ),
-            SqlDialect.Mssql => new RelationalCommand(
-                $$"""
-                SELECT
-                    selected_document_ids.[DocumentId] AS [DocumentId],
-                    document.[DocumentUuid] AS [DocumentUuid],
-                    document.[ContentVersion] AS [ContentVersion],
-                    document.[ContentLastModifiedAt] AS [ContentLastModifiedAt],
-                    document.[ResourceKeyId] AS [ResourceKeyId],
-                    descriptor.[Namespace] AS [Namespace],
-                    descriptor.[CodeValue] AS [CodeValue],
-                    descriptor.[ShortDescription] AS [ShortDescription],
-                    descriptor.[Description] AS [Description],
-                    descriptor.[EffectiveBeginDate] AS [EffectiveBeginDate],
-                    descriptor.[EffectiveEndDate] AS [EffectiveEndDate],
-                    descriptor.[Discriminator] AS [Discriminator]
-                FROM (
-                    VALUES
-                    {{selectedDocumentIdsSql}}
-                ) AS selected_document_ids([DocumentId], [Ordinal])
-                INNER JOIN [dms].[Document] document
-                    ON document.[DocumentId] = selected_document_ids.[DocumentId]
-                LEFT JOIN [dms].[Descriptor] descriptor
-                    ON descriptor.[DocumentId] = selected_document_ids.[DocumentId]
-                ORDER BY selected_document_ids.[Ordinal] ASC;
-                """,
-                parameters
-            ),
-            _ => throw new NotSupportedException(
-                $"Relational descriptor selected-page fallback does not support SQL dialect '{dialect}'."
-            ),
-        };
+        return new RelationalCommand(
+            $$"""
+            SELECT
+                selected_document_ids."DocumentId" AS "DocumentId",
+                document."DocumentUuid" AS "DocumentUuid",
+                document."ContentVersion" AS "ContentVersion",
+                document."ContentLastModifiedAt" AS "ContentLastModifiedAt",
+                document."ResourceKeyId" AS "ResourceKeyId",
+                descriptor."Namespace" AS "Namespace",
+                descriptor."CodeValue" AS "CodeValue",
+                descriptor."ShortDescription" AS "ShortDescription",
+                descriptor."Description" AS "Description",
+                descriptor."EffectiveBeginDate" AS "EffectiveBeginDate",
+                descriptor."EffectiveEndDate" AS "EffectiveEndDate",
+                descriptor."Discriminator" AS "Discriminator"
+            FROM (
+                VALUES
+                {{selectedDocumentIdsSql}}
+            ) AS selected_document_ids("DocumentId", "Ordinal")
+            INNER JOIN dms."Document" document
+                ON document."DocumentId" = selected_document_ids."DocumentId"
+            LEFT JOIN dms."Descriptor" descriptor
+                ON descriptor."DocumentId" = selected_document_ids."DocumentId"
+            ORDER BY selected_document_ids."Ordinal" ASC;
+            """,
+            parameters
+        );
     }
+
+    private static RelationalCommand BuildMssqlSelectedQueryRowsCommand(
+        IReadOnlyList<long> selectedDocumentIds
+    )
+    {
+        return new RelationalCommand(
+            $$"""
+            SELECT
+                selected_document_ids.[DocumentId] AS [DocumentId],
+                document.[DocumentUuid] AS [DocumentUuid],
+                document.[ContentVersion] AS [ContentVersion],
+                document.[ContentLastModifiedAt] AS [ContentLastModifiedAt],
+                document.[ResourceKeyId] AS [ResourceKeyId],
+                descriptor.[Namespace] AS [Namespace],
+                descriptor.[CodeValue] AS [CodeValue],
+                descriptor.[ShortDescription] AS [ShortDescription],
+                descriptor.[Description] AS [Description],
+                descriptor.[EffectiveBeginDate] AS [EffectiveBeginDate],
+                descriptor.[EffectiveEndDate] AS [EffectiveEndDate],
+                descriptor.[Discriminator] AS [Discriminator]
+            FROM OPENJSON(@selectedDocumentIdsJson)
+            WITH (
+                [DocumentId] bigint '$.DocumentId',
+                [Ordinal] int '$.Ordinal'
+            ) AS selected_document_ids
+            INNER JOIN [dms].[Document] document
+                ON document.[DocumentId] = selected_document_ids.[DocumentId]
+            LEFT JOIN [dms].[Descriptor] descriptor
+                ON descriptor.[DocumentId] = selected_document_ids.[DocumentId]
+            ORDER BY selected_document_ids.[Ordinal] ASC;
+            """,
+            [CreateSelectedDocumentIdsJsonParameter(selectedDocumentIds)]
+        );
+    }
+
+    private static RelationalParameter CreateSelectedDocumentIdsJsonParameter(
+        IReadOnlyList<long> selectedDocumentIds
+    )
+    {
+        return new RelationalParameter(
+            SelectedDocumentIdsJsonParameterName,
+            HydrationSqlConventions.SerializeSelectedPageDocumentIds(selectedDocumentIds),
+            static parameter =>
+            {
+                parameter.DbType = DbType.String;
+                parameter.Size = -1;
+            }
+        );
+    }
+
+    private static string SelectedDocumentIdsJsonParameterName =>
+        $"@{HydrationSqlConventions.SelectedPageDocumentIdsJsonParameterName}";
 
     private static string EnsureTrailingSemicolon(string sql)
     {

@@ -78,7 +78,8 @@ public sealed record HydratedDocumentReferenceLookup(IReadOnlyList<DocumentRefer
 /// Optional total row count when requested by the caller (e.g., <c>totalCount=true</c>).
 /// </param>
 /// <param name="DocumentMetadata">
-/// Document metadata rows from <c>dms.Document</c> for the page, ordered by <c>DocumentId</c>.
+/// Document metadata rows from <c>dms.Document</c> for the page, ordered by selected-page
+/// ordinal when supplied by the keyset, otherwise by <c>DocumentId</c>.
 /// </param>
 /// <param name="TableRowsInDependencyOrder">
 /// Per-table hydrated rows in deterministic dependency order (root table first, then children).
