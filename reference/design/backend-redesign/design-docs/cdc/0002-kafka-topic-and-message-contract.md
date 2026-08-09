@@ -25,7 +25,8 @@ The v1 public contract is:
 
 - one topic for all resource types in one instance,
 - Kafka key = lowercase `D`-format `DocumentUuid`,
-- non-null value = lower-camel metadata envelope plus expanded `DocumentJson`,
+- non-null value = serialized UTF-8 JSON bytes for a lower-camel metadata envelope plus
+  expanded `DocumentJson`,
 - delete = Kafka record-level null tombstone for the same key.
 
 ## Topic
@@ -261,11 +262,22 @@ the retained key nor value is deployment readiness state.
 
 ## Upsert Value
 
-The connector uses
-`org.apache.kafka.connect.json.JsonConverter` with
-`value.converter.schemas.enable=false`. Creates, updates, and snapshots produce a UTF-8
-JSON object without a Kafka Connect `schema` / `payload` wrapper. Field order is not
-contractual; Avro, Protobuf, and Schema Registry subjects are outside v1.
+The public value contract is the serialized UTF-8 JSON bytes produced by the pinned
+`org.apache.kafka.connect.json.JsonConverter`, not the transform's private in-memory Java
+object shape. For the relational document-state topic, the connector uses:
+
+```properties
+value.converter=org.apache.kafka.connect.json.JsonConverter
+value.converter.schemas.enable=false
+value.converter.decimal.format=NUMERIC
+```
+
+Creates, updates, and snapshots produce a UTF-8 JSON object without a Kafka Connect
+`schema` / `payload` wrapper. `DocumentState` public upsert records emit a non-null Kafka
+Connect `STRUCT` value schema and a matching `Struct` value; with
+`value.converter.schemas.enable=false`, that schema is used only by the converter and is
+not embedded in the published value bytes. Field order is not contractual; Avro,
+Protobuf, custom public converters, and Schema Registry subjects are outside v1.
 
 ```json
 {
@@ -296,18 +308,61 @@ contractual; Avro, Protobuf, and Schema Registry subjects are outside v1.
 | `document` | Expanded structured full API resource body, never an escaped JSON string |
 
 Database Pascal-case columns are renamed to lower camel case. `contractVersion` and
-`contentVersion` are JSON numbers. Within `document`, v1 schemaless
-`JsonConverter` output emits only `DocumentJson` number tokens that are integral and fit
-the signed 64-bit range. A non-integral number or out-of-range integer in
-`DocumentJson` fails transformation before any public record is emitted; v1 does not
-round decimals to `double`, preserve exact decimals, or convert numeric values to
-strings.
+`contentVersion` are JSON numbers. Within `document`, valid `DocumentJson` decimal values
+are emitted as unquoted JSON numbers without `double` rounding and without converting
+numeric values to strings, including nested object and array positions. Integral
+`DocumentJson` numbers that fit the signed 64-bit range may use Connect `INT64`; decimal
+values and integer values outside signed 64-bit range use Kafka Connect's
+`org.apache.kafka.connect.data.Decimal` logical type with `java.math.BigDecimal` values and
+a schema scale that exactly represents the value. The required
+`value.converter.decimal.format=NUMERIC` setting makes those logical decimal values publish
+as JSON number tokens instead of the converter default Base64 byte representation.
+
+This schema-backed public-upsert shape is a converter-compatibility mechanism, not a public
+Schema Registry contract. It supersedes the earlier completed schemaless public
+`Map<String, Object>` transform output as an implementation detail. Kafka Connect 4.3's
+`JsonConverter` cannot infer a schemaless schema for `BigDecimal` values, so a schemaless
+public map cannot preserve arbitrary valid JSON decimals while still publishing numbers. A
+conforming implementation therefore must not use `Double`/`Float`, must not stringify
+public numeric values, and must not fall back to a custom public converter for v1 decimal
+support.
+
+### Decimal Converter Evidence
+
+This decimal design follows the same precise-decimal path used by Kafka Connect and
+Debezium rather than introducing a DMS-specific public converter:
+
+- Kafka Connect 4.3
+  [`JsonConverter.fromConnectData`](https://raw.githubusercontent.com/apache/kafka/4.3.0/connect/json/src/main/java/org/apache/kafka/connect/json/JsonConverter.java)
+  serializes the supplied Connect schema/value pair and, when `schemas.enable=false`, writes
+  the converted payload without a `schema` / `payload` envelope.
+- Kafka Connect 4.3
+  [`JsonConverterConfig`](https://raw.githubusercontent.com/apache/kafka/4.3.0/connect/json/src/main/java/org/apache/kafka/connect/json/JsonConverterConfig.java)
+  defines `decimal.format`, defaults it to `BASE64`, and accepts `NUMERIC` as the public JSON
+  number representation for Connect decimal logical values.
+- Kafka Connect 4.3
+  [`ConnectSchema`](https://raw.githubusercontent.com/apache/kafka/4.3.0/connect/api/src/main/java/org/apache/kafka/connect/data/ConnectSchema.java)
+  maps `BigDecimal` only as the Java representation for the `Decimal` logical type and does
+  not include `BigDecimal` in the schemaless Java-class-to-schema inference map.
+- Kafka Connect 4.3
+  [`Decimal`](https://raw.githubusercontent.com/apache/kafka/4.3.0/connect/api/src/main/java/org/apache/kafka/connect/data/Decimal.java)
+  defines decimals as `BigDecimal` values with the scale fixed on the Connect schema; the
+  value scale must match the schema scale.
+- Debezium 3.6 maps precise PostgreSQL
+  [`DECIMAL` / `NUMERIC`](https://debezium.io/documentation/reference/3.6/connectors/postgresql.html#postgresql-decimal-types)
+  and SQL Server
+  [`DECIMAL` / `NUMERIC`](https://debezium.io/documentation/reference/3.6/connectors/sqlserver.html#sqlserver-decimal-values)
+  values to Kafka Connect `org.apache.kafka.connect.data.Decimal`, while its documented
+  `double` and `string` modes trade away either exact numeric precision or JSON number shape.
 
 Public upserts and public tombstones emit with an empty Kafka Connect header set and a
-null Connect record timestamp. Raw Debezium headers and source-record timestamps are
-connector metadata, not consumer-visible contract fields. Consumers use `contentVersion`
-for non-null state ordering and `lastModifiedAt` for the DMS document timestamp; Kafka
-record timestamps remain outside the public document-state contract.
+null Connect record timestamp. Public tombstones remain Kafka record-level null values for
+the same string key, not delete envelopes. Progress records remain on their raw
+schema/value preservation path described by the [internal progress key](#internal-progress-key)
+contract. Raw Debezium headers and source-record timestamps are connector metadata, not
+consumer-visible contract fields. Consumers use `contentVersion` for non-null state
+ordering and `lastModifiedAt` for the DMS document timestamp; Kafka record timestamps
+remain outside the public document-state contract.
 
 The physical temporal representation is not part of the public contract. One Ed-Fi-owned
 `DocumentState` SMT consumes each raw Debezium record and produces the complete public
