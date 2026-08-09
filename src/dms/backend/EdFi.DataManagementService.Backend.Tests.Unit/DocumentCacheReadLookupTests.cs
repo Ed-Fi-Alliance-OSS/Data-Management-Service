@@ -7,6 +7,7 @@ using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Postgresql;
@@ -56,8 +57,6 @@ public class Given_DocumentCacheReadLookup
             .Subject;
         hit.Candidate.Should().Be(candidate);
         hit.DocumentJson.Should().Be("""{"id":"cached"}""");
-        hit.StreamEtag.Should().Be("stream-91");
-        hit.CacheLastModifiedAt.Should().Be(candidate.ContentLastModifiedAt);
     }
 
     [Test]
@@ -172,8 +171,32 @@ public class Given_DocumentCacheReadLookup
                 .Subject;
             fallback.Outcome.Should().Be(scenario.ExpectedOutcome);
             fallback.Candidate.Should().Be(candidate);
-            fallback.Message.Should().NotBeNullOrWhiteSpace();
         }
+    }
+
+    [Test]
+    public void It_classifies_a_mismatched_fixed_stream_etag_as_an_invariant_fallback()
+    {
+        DocumentCacheReadAccelerationCandidate candidate = Candidate();
+
+        DocumentCacheReadBatchLookupResult result = Classify(
+            candidate,
+            Observation(candidate) with
+            {
+                StreamEtag = "corrupted-stream-etag",
+            }
+        );
+
+        result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.DeterministicInvariantFailure);
+        var fallback = result
+            .Documents.Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeOfType<DocumentCacheReadDocumentLookupResult.Fallback>()
+            .Subject;
+        fallback.InvariantDiagnosticMessage.Should().Contain("FixedStreamEtagMismatch");
+        fallback.InvariantDiagnosticMessage.Should().NotContain(candidate.DocumentUuid.Value.ToString());
+        fallback.InvariantDiagnosticMessage.Should().NotContain("corrupted-stream-etag");
     }
 
     [Test]
@@ -1204,11 +1227,18 @@ public class Given_DocumentCacheReadLookup
             CacheResourceName: resourceKey.Resource.ResourceName,
             CacheResourceVersion: resourceKey.ResourceVersion,
             CacheContentVersion: candidate.ContentVersion,
-            StreamEtag: $"stream-{candidate.ContentVersion}",
+            StreamEtag: ComposeFixedStreamEtag(candidate),
             CacheLastModifiedAt: candidate.ContentLastModifiedAt,
             DocumentJson: """{"id":"cached"}"""
         );
     }
+
+    private static string ComposeFixedStreamEtag(DocumentCacheReadAccelerationCandidate candidate) =>
+        DocumentCacheMaterializerStreamEtagComposer.ComposeForResource(
+            new ServedEtagComposer(),
+            MappingSet,
+            candidate.ContentVersion
+        );
 
     private static DocumentCacheTargetExecutionContext ExecutionContext(
         RelationalProviderToken? providerToken = null,

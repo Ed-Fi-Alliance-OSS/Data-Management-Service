@@ -6,7 +6,9 @@
 using System.Data;
 using System.Globalization;
 using System.Text.Json;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -80,27 +82,15 @@ internal abstract record DocumentCacheReadDocumentLookupResult
 
     public sealed record FreshHit : DocumentCacheReadDocumentLookupResult
     {
-        public FreshHit(
-            DocumentCacheReadAccelerationCandidate candidate,
-            string documentJson,
-            string streamEtag,
-            DateTimeOffset cacheLastModifiedAt
-        )
+        public FreshHit(DocumentCacheReadAccelerationCandidate candidate, string documentJson)
             : base(DocumentCacheReadLookupOutcome.FreshHit, candidate)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(documentJson);
-            ArgumentException.ThrowIfNullOrWhiteSpace(streamEtag);
 
             DocumentJson = documentJson;
-            StreamEtag = streamEtag;
-            CacheLastModifiedAt = cacheLastModifiedAt;
         }
 
         public string DocumentJson { get; }
-
-        public string StreamEtag { get; }
-
-        public DateTimeOffset CacheLastModifiedAt { get; }
     }
 
     public sealed record Fallback : DocumentCacheReadDocumentLookupResult
@@ -108,7 +98,7 @@ internal abstract record DocumentCacheReadDocumentLookupResult
         public Fallback(
             DocumentCacheReadLookupOutcome outcome,
             DocumentCacheReadAccelerationCandidate candidate,
-            string message,
+            string? invariantDiagnosticMessage = null,
             bool isAdapterAcquisitionFailure = false
         )
             : base(outcome, candidate, isAdapterAcquisitionFailure)
@@ -121,10 +111,13 @@ internal abstract record DocumentCacheReadDocumentLookupResult
                 );
             }
 
-            Message = DocumentCacheReadLookupDiagnosticText.Sanitize(message);
+            InvariantDiagnosticMessage =
+                outcome == DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
+                    ? DocumentCacheReadLookupDiagnosticText.Sanitize(invariantDiagnosticMessage)
+                    : null;
         }
 
-        public string Message { get; }
+        public string? InvariantDiagnosticMessage { get; }
     }
 }
 
@@ -133,7 +126,7 @@ internal sealed record DocumentCacheReadBatchLookupResult
     public DocumentCacheReadBatchLookupResult(
         DocumentCacheReadLookupOutcome outcome,
         IReadOnlyList<DocumentCacheReadDocumentLookupResult> Documents,
-        string message,
+        string? invariantDiagnosticMessage = null,
         bool isAdapterAcquisitionFailure = false
     )
     {
@@ -143,7 +136,10 @@ internal sealed record DocumentCacheReadBatchLookupResult
             "Unsupported DocumentCache read lookup outcome."
         );
         this.Documents = Documents ?? throw new ArgumentNullException(nameof(Documents));
-        Message = DocumentCacheReadLookupDiagnosticText.Sanitize(message);
+        InvariantDiagnosticMessage =
+            outcome == DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
+                ? DocumentCacheReadLookupDiagnosticText.Sanitize(invariantDiagnosticMessage)
+                : null;
         IsAdapterAcquisitionFailure = isAdapterAcquisitionFailure;
 
         if (outcome == DocumentCacheReadLookupOutcome.FreshHit && !AllDocumentsFresh(this.Documents))
@@ -164,14 +160,14 @@ internal sealed record DocumentCacheReadBatchLookupResult
 
     public IReadOnlyList<DocumentCacheReadDocumentLookupResult> Documents { get; }
 
-    public string Message { get; }
+    public string? InvariantDiagnosticMessage { get; }
 
     public bool IsAdapterAcquisitionFailure { get; }
 
     public bool IsFreshHit => Outcome == DocumentCacheReadLookupOutcome.FreshHit;
 
     public static DocumentCacheReadBatchLookupResult EmptyFresh() =>
-        new(DocumentCacheReadLookupOutcome.FreshHit, [], "Empty cache lookup page.");
+        new(DocumentCacheReadLookupOutcome.FreshHit, []);
 
     public static DocumentCacheReadBatchLookupResult FromDocuments(
         IReadOnlyList<DocumentCacheReadDocumentLookupResult> documents
@@ -189,16 +185,21 @@ internal sealed record DocumentCacheReadBatchLookupResult
                 document.Outcome == DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
             ) ?? documents.FirstOrDefault(static document => !document.IsFreshHit);
 
-        string fallbackMessage = firstFallback is DocumentCacheReadDocumentLookupResult.Fallback fallback
-            ? fallback.Message
-            : "One or more cache rows were not fresh.";
+        string? invariantDiagnosticMessage = null;
+        if (
+            firstFallback is DocumentCacheReadDocumentLookupResult.Fallback fallback
+            && fallback.Outcome == DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
+        )
+        {
+            invariantDiagnosticMessage = fallback.InvariantDiagnosticMessage;
+        }
 
         return firstFallback is null
-            ? new(DocumentCacheReadLookupOutcome.FreshHit, documents, "All cache rows are fresh.")
+            ? new(DocumentCacheReadLookupOutcome.FreshHit, documents)
             : new(
                 firstFallback.Outcome,
                 documents,
-                fallbackMessage,
+                invariantDiagnosticMessage,
                 firstFallback.IsAdapterAcquisitionFailure
             );
     }
@@ -539,14 +540,20 @@ internal abstract class DocumentCacheReadLookupAdapterBase
             return null;
         }
 
-        return DocumentCacheReadInvariantDiagnostic.CacheLookupInvariant(fallback.Message);
+        return DocumentCacheReadInvariantDiagnostic.CacheLookupInvariant(
+            fallback.InvariantDiagnosticMessage
+                ?? DocumentCacheReadLookupDiagnosticText.GenericInvariantDiagnosticMessage
+        );
     }
 
     private static DocumentCacheReadInvariantDiagnostic? CreateInvariantDiagnostic(
         DocumentCacheReadBatchLookupResult lookupResult
     ) =>
         lookupResult.Outcome == DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
-            ? DocumentCacheReadInvariantDiagnostic.CacheLookupInvariant(lookupResult.Message)
+            ? DocumentCacheReadInvariantDiagnostic.CacheLookupInvariant(
+                lookupResult.InvariantDiagnosticMessage
+                    ?? DocumentCacheReadLookupDiagnosticText.GenericInvariantDiagnosticMessage
+            )
             : null;
 }
 
@@ -595,10 +602,14 @@ public sealed class DocumentCacheReadAcquisitionUnavailableException : Exception
 internal static class DocumentCacheReadLookupDiagnosticText
 {
     private const int MaximumLength = 512;
+    public const string GenericInvariantDiagnosticMessage =
+        "DocumentCache read lookup observed a deterministic cache invariant failure.";
 
     public static string Sanitize(string? message)
     {
-        string sanitized = LogSanitizer.SanitizeForLog(message);
+        string sanitized = LogSanitizer.SanitizeForLog(
+            string.IsNullOrWhiteSpace(message) ? GenericInvariantDiagnosticMessage : message
+        );
         return sanitized.Length <= MaximumLength ? sanitized : sanitized[..MaximumLength];
     }
 }
@@ -630,6 +641,8 @@ internal sealed record DocumentCacheReadLookupObservation(
 
 internal static class DocumentCacheReadLookupClassifier
 {
+    private static readonly ServedEtagComposer ServedEtagComposer = new();
+
     public static DocumentCacheReadBatchLookupResult Classify(
         DocumentCacheReadBatchLookupRequest request,
         IReadOnlyList<DocumentCacheReadLookupObservation> observations
@@ -782,6 +795,14 @@ internal static class DocumentCacheReadLookupClassifier
             );
         }
 
+        if (!mappingSet.TryGetConcreteResourceModel(resourceKey.Resource, out ConcreteResourceModel? model))
+        {
+            return Fallback(
+                DocumentCacheReadLookupOutcome.DeterministicInvariantFailure,
+                "DocumentCache read lookup candidate resource model is missing from the mapping set."
+            );
+        }
+
         if (observation.CacheDocumentId is null)
         {
             return Fallback(DocumentCacheReadLookupOutcome.MissingCacheRow, "DocumentCache row is missing.");
@@ -838,12 +859,42 @@ internal static class DocumentCacheReadLookupClassifier
             );
         }
 
-        return new DocumentCacheReadDocumentLookupResult.FreshHit(
-            candidate,
-            observation.DocumentJson,
-            observation.StreamEtag,
-            observation.CacheLastModifiedAt.Value
+        string expectedStreamEtag = ComposeExpectedFixedStreamEtag(
+            mappingSet,
+            model,
+            candidate.ContentVersion
         );
+
+        if (!string.Equals(observation.StreamEtag, expectedStreamEtag, StringComparison.Ordinal))
+        {
+            return Fallback(
+                DocumentCacheReadLookupOutcome.DeterministicInvariantFailure,
+                DocumentCacheReadInvariantDiagnostic
+                    .CacheHitResponseShaping(DocumentCacheReadResponseShapingFailureReason.StreamEtagMismatch)
+                    .Message
+            );
+        }
+
+        return new DocumentCacheReadDocumentLookupResult.FreshHit(candidate, observation.DocumentJson);
+    }
+
+    private static string ComposeExpectedFixedStreamEtag(
+        MappingSet mappingSet,
+        ConcreteResourceModel model,
+        long contentVersion
+    )
+    {
+        return model.StorageKind == ResourceStorageKind.SharedDescriptorTable
+            ? DocumentCacheMaterializerStreamEtagComposer.ComposeForDescriptor(
+                ServedEtagComposer,
+                mappingSet,
+                contentVersion
+            )
+            : DocumentCacheMaterializerStreamEtagComposer.ComposeForResource(
+                ServedEtagComposer,
+                mappingSet,
+                contentVersion
+            );
     }
 }
 

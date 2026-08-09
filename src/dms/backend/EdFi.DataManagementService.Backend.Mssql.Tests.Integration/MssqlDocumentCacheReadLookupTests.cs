@@ -6,7 +6,9 @@
 using System.Data;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.Configuration;
@@ -106,8 +108,6 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
         var hit = result.Should().BeOfType<DocumentCacheReadDocumentLookupResult.FreshHit>().Subject;
         hit.Outcome.Should().Be(DocumentCacheReadLookupOutcome.FreshHit);
         hit.Candidate.DocumentId.Should().Be(source.DocumentId);
-        hit.StreamEtag.Should().Be("etag-10");
-        hit.CacheLastModifiedAt.Should().Be(LastModifiedAt);
         JsonNode.Parse(hit.DocumentJson)!["value"]!.GetValue<string>().Should().Be("cache-10");
     }
 
@@ -131,7 +131,6 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
         var hit = result.Should().BeOfType<DocumentCacheReadDocumentLookupResult.FreshHit>().Subject;
         hit.Outcome.Should().Be(DocumentCacheReadLookupOutcome.FreshHit);
         hit.Candidate.DocumentId.Should().Be(descriptor.DocumentId);
-        hit.StreamEtag.Should().Be("etag-30");
         JsonNode.Parse(hit.DocumentJson)!["value"]!.GetValue<string>().Should().Be("cache-30");
     }
 
@@ -239,8 +238,7 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
             DocumentCacheReadDocumentLookupResult result = await LookupAsync(candidate);
 
             var fallback = result.Should().BeOfType<DocumentCacheReadDocumentLookupResult.Fallback>().Subject;
-            fallback.Outcome.Should().Be(scenario.ExpectedOutcome, fallback.Message);
-            fallback.Message.Should().NotBeNullOrWhiteSpace();
+            fallback.Outcome.Should().Be(scenario.ExpectedOutcome, scenario.Name);
         }
     }
 
@@ -719,7 +717,14 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
                 Value = resourceKey.ResourceVersion,
             },
             new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion },
-            new SqlParameter("@streamEtag", SqlDbType.VarChar, 64) { Value = $"etag-{contentVersion}" },
+            new SqlParameter("@streamEtag", SqlDbType.VarChar, 64)
+            {
+                Value = ComposeFixedStreamEtag(
+                    mappingSet ?? _fixture.MappingSet,
+                    resourceKey,
+                    contentVersion
+                ),
+            },
             new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = LastModifiedAt.UtcDateTime },
             new SqlParameter("@documentJson", SqlDbType.NVarChar, -1)
             {
@@ -732,6 +737,27 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
         );
     }
 
+    private static string ComposeFixedStreamEtag(
+        MappingSet mappingSet,
+        ResourceKeyEntry resourceKey,
+        long contentVersion
+    )
+    {
+        ConcreteResourceModel model = mappingSet.GetConcreteResourceModelOrThrow(resourceKey.Resource);
+
+        return model.StorageKind == ResourceStorageKind.SharedDescriptorTable
+            ? DocumentCacheMaterializerStreamEtagComposer.ComposeForDescriptor(
+                new ServedEtagComposer(),
+                mappingSet,
+                contentVersion
+            )
+            : DocumentCacheMaterializerStreamEtagComposer.ComposeForResource(
+                new ServedEtagComposer(),
+                mappingSet,
+                contentVersion
+            );
+    }
+
     private async Task InsertCacheRowsAsync(IReadOnlyList<SourceDocument> sources)
     {
         short resourceKeyId = sources.Select(static source => source.ResourceKeyId).Distinct().Single();
@@ -741,7 +767,7 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
                 source.DocumentId,
                 source.DocumentUuid,
                 source.ContentVersion,
-                $"etag-{source.ContentVersion}",
+                ComposeFixedStreamEtag(_fixture.MappingSet, resourceKey, source.ContentVersion),
                 new JsonObject { ["value"] = $"cache-{source.ContentVersion}" }.ToJsonString()
             ))
             .ToArray();

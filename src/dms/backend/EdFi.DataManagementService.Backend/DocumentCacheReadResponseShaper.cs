@@ -60,7 +60,6 @@ internal sealed class DocumentCacheReadResponseShaper(
                 request.ReadableProfileProjectionContext,
                 request.ResponseContentCoding,
                 hit.Candidate,
-                hit.StreamEtag,
                 hit.DocumentJson
             );
 
@@ -130,7 +129,6 @@ internal sealed class DocumentCacheReadResponseShaper(
                         request.ReadableProfileProjectionContext,
                         request.ResponseContentCoding,
                         hit.Candidate,
-                        hit.StreamEtag,
                         hit.DocumentJson
                     )
                 );
@@ -181,12 +179,9 @@ internal sealed class DocumentCacheReadResponseShaper(
         ReadableProfileProjectionContext? readableProfileProjectionContext,
         ResponseContentCoding responseContentCoding,
         DocumentCacheReadAccelerationCandidate candidate,
-        string streamEtag,
         string documentJson
     )
     {
-        ValidateFixedStreamEtag(mappingSet, resourceKind, candidate.ContentVersion, streamEtag);
-
         JsonObject documentObject = ParseCachedDocumentObject(documentJson);
         ValidateCachedDocument(candidate, documentObject);
 
@@ -216,38 +211,6 @@ internal sealed class DocumentCacheReadResponseShaper(
         }
 
         return shapedDocument;
-    }
-
-    private void ValidateFixedStreamEtag(
-        MappingSet mappingSet,
-        DocumentCacheReadAccelerationResourceKind resourceKind,
-        long contentVersion,
-        string streamEtag
-    )
-    {
-        string expectedStreamEtag = resourceKind switch
-        {
-            DocumentCacheReadAccelerationResourceKind.Resource =>
-                DocumentCacheMaterializerStreamEtagComposer.ComposeForResource(
-                    _servedEtagComposer,
-                    mappingSet,
-                    contentVersion
-                ),
-            DocumentCacheReadAccelerationResourceKind.Descriptor =>
-                DocumentCacheMaterializerStreamEtagComposer.ComposeForDescriptor(
-                    _servedEtagComposer,
-                    mappingSet,
-                    contentVersion
-                ),
-            _ => throw new ArgumentOutOfRangeException(nameof(resourceKind), resourceKind, null),
-        };
-
-        if (!string.Equals(streamEtag, expectedStreamEtag, StringComparison.Ordinal))
-        {
-            throw new DocumentCacheReadResponseShapingException(
-                DocumentCacheReadResponseShapingFailureReason.StreamEtagMismatch
-            );
-        }
     }
 
     private string ComposeServedEtag(

@@ -195,8 +195,6 @@ internal sealed record DocumentCacheReadLookupResult<TResult>
 
     public bool IsAdapterAcquisitionFailure { get; }
 
-    public bool HasCachedResult => CachedResult is not null;
-
     public static DocumentCacheReadLookupResult<TResult> Hit(TResult result)
     {
         ArgumentNullException.ThrowIfNull(result);

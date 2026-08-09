@@ -57,7 +57,6 @@ public class Given_DocumentCacheReadResponseShaper
         success.EdfiDoc["name"]!.GetValue<string>().Should().Be("Lincoln High");
         success.EdfiDoc["id"]!.GetValue<string>().Should().Be(DocumentUuid.Value.ToString());
         success.EdfiDoc["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-04-03T14:10:11Z");
-        hit.StreamEtag.Should().Be("91-01234567.j._.l.i");
         success.EdfiDoc["_etag"]!.GetValue<string>().Should().Be("91-01234567.j._.l.g");
         success.EdfiDoc["schoolReference"]!["link"].Should().NotBeNull();
         readMaterializer.StripAttempts.Should().Be(1);
@@ -81,20 +80,6 @@ public class Given_DocumentCacheReadResponseShaper
         result.RawLookupOutcome.Should().Be(DocumentCacheReadLookupOutcome.DeterministicInvariantFailure);
         result.InvariantDiagnostic.Should().NotBeNull();
         result.InvariantDiagnostic!.Message.Should().Contain("response shaping");
-    }
-
-    [Test]
-    public void It_falls_back_when_get_by_id_stream_etag_does_not_match_the_fixed_stream_representation()
-    {
-        var sut = CreateShaper();
-        var candidate = Candidate();
-
-        DocumentCacheReadLookupResult<GetResult> result = sut.ShapeGetById(
-            CreateGetByIdRequest(candidate),
-            FreshHit(candidate, CachedDocumentJson(candidate), streamEtag: "corrupted-stream-etag")
-        );
-
-        AssertStreamEtagMismatchFallback(result);
     }
 
     [Test]
@@ -197,11 +182,7 @@ public class Given_DocumentCacheReadResponseShaper
                 ResponseContentCoding.Identity,
                 resourceKind: DocumentCacheReadAccelerationResourceKind.Descriptor
             ),
-            FreshHit(
-                candidate,
-                documentJson,
-                resourceKind: DocumentCacheReadAccelerationResourceKind.Descriptor
-            )
+            FreshHit(candidate, documentJson)
         );
 
         var success = result.CachedResult.Should().BeOfType<GetResult.GetSuccess>().Subject;
@@ -303,31 +284,6 @@ public class Given_DocumentCacheReadResponseShaper
         result.RawLookupOutcome.Should().Be(DocumentCacheReadLookupOutcome.StaleCacheRow);
     }
 
-    [Test]
-    public void It_falls_back_without_mixing_when_a_query_page_has_a_mismatched_stream_etag()
-    {
-        var sut = CreateShaper();
-        var first = Candidate(documentId: 345, documentUuid: DocumentUuid);
-        var second = Candidate(documentId: 346, documentUuid: SecondDocumentUuid, contentVersion: 92);
-        var hitPage = DocumentCacheReadBatchLookupResult.FromDocuments([
-            FreshHit(first, CachedDocumentJson(first, "Lincoln High")),
-            FreshHit(second, CachedDocumentJson(second, "Washington High"), streamEtag: "wrong-stream-etag"),
-        ]);
-
-        DocumentCacheReadLookupResult<QueryResult> result = sut.ShapeQuery(
-            CreateQueryRequest(
-                new DocumentCacheReadAccelerationCandidatePage(
-                    [first, second],
-                    TotalCount: 2,
-                    HighestSelectedDocumentId: 346
-                )
-            ),
-            hitPage
-        );
-
-        AssertStreamEtagMismatchFallback(result);
-    }
-
     private static IEnumerable<TestCaseData> InvalidCachedDocumentJsonScenarios()
     {
         var candidate = Candidate();
@@ -412,56 +368,8 @@ public class Given_DocumentCacheReadResponseShaper
 
     private static DocumentCacheReadDocumentLookupResult.FreshHit FreshHit(
         DocumentCacheReadAccelerationCandidate candidate,
-        string documentJson,
-        string? streamEtag = null,
-        DocumentCacheReadAccelerationResourceKind resourceKind =
-            DocumentCacheReadAccelerationResourceKind.Resource
-    ) =>
-        new(
-            candidate,
-            documentJson,
-            streamEtag ?? ComposeFixedStreamEtag(candidate, resourceKind),
-            candidate.ContentLastModifiedAt
-        );
-
-    private static string ComposeFixedStreamEtag(
-        DocumentCacheReadAccelerationCandidate candidate,
-        DocumentCacheReadAccelerationResourceKind resourceKind
-    ) =>
-        resourceKind switch
-        {
-            DocumentCacheReadAccelerationResourceKind.Resource =>
-                DocumentCacheMaterializerStreamEtagComposer.ComposeForResource(
-                    new ServedEtagComposer(),
-                    MappingSet,
-                    candidate.ContentVersion
-                ),
-            DocumentCacheReadAccelerationResourceKind.Descriptor =>
-                DocumentCacheMaterializerStreamEtagComposer.ComposeForDescriptor(
-                    new ServedEtagComposer(),
-                    MappingSet,
-                    candidate.ContentVersion
-                ),
-            _ => throw new ArgumentOutOfRangeException(nameof(resourceKind), resourceKind, null),
-        };
-
-    private static void AssertStreamEtagMismatchFallback<TResult>(
-        DocumentCacheReadLookupResult<TResult> result
-    )
-        where TResult : class
-    {
-        result.CachedResult.Should().BeNull();
-        result
-            .FallbackReason.Should()
-            .Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure);
-        result.RawLookupOutcome.Should().Be(DocumentCacheReadLookupOutcome.DeterministicInvariantFailure);
-        result.InvariantDiagnostic.Should().NotBeNull();
-        result.InvariantDiagnostic!.Message.Should().Contain("FixedStreamEtagMismatch");
-        result.InvariantDiagnostic!.Message.Should().NotContain(DocumentUuid.Value.ToString());
-        result.InvariantDiagnostic!.Message.Should().NotContain(SecondDocumentUuid.Value.ToString());
-        result.InvariantDiagnostic!.Message.Should().NotContain("corrupted-stream-etag");
-        result.InvariantDiagnostic!.Message.Should().NotContain("wrong-stream-etag");
-    }
+        string documentJson
+    ) => new(candidate, documentJson);
 
     private static string CachedDocumentJson(
         DocumentCacheReadAccelerationCandidate candidate,

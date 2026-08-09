@@ -4,7 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.Configuration;
@@ -103,8 +105,6 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
         var hit = result.Should().BeOfType<DocumentCacheReadDocumentLookupResult.FreshHit>().Subject;
         hit.Outcome.Should().Be(DocumentCacheReadLookupOutcome.FreshHit);
         hit.Candidate.DocumentId.Should().Be(source.DocumentId);
-        hit.StreamEtag.Should().Be("etag-10");
-        hit.CacheLastModifiedAt.Should().Be(LastModifiedAt);
         JsonNode.Parse(hit.DocumentJson)!["value"]!.GetValue<string>().Should().Be("cache-10");
     }
 
@@ -128,7 +128,6 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
         var hit = result.Should().BeOfType<DocumentCacheReadDocumentLookupResult.FreshHit>().Subject;
         hit.Outcome.Should().Be(DocumentCacheReadLookupOutcome.FreshHit);
         hit.Candidate.DocumentId.Should().Be(descriptor.DocumentId);
-        hit.StreamEtag.Should().Be("etag-30");
         JsonNode.Parse(hit.DocumentJson)!["value"]!.GetValue<string>().Should().Be("cache-30");
     }
 
@@ -200,8 +199,7 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
             DocumentCacheReadDocumentLookupResult result = await LookupAsync(candidate);
 
             var fallback = result.Should().BeOfType<DocumentCacheReadDocumentLookupResult.Fallback>().Subject;
-            fallback.Outcome.Should().Be(scenario.ExpectedOutcome, fallback.Message);
-            fallback.Message.Should().NotBeNullOrWhiteSpace();
+            fallback.Outcome.Should().Be(scenario.ExpectedOutcome, scenario.Name);
         }
     }
 
@@ -593,7 +591,14 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
                 Value = resourceKey.ResourceVersion,
             },
             new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion },
-            new NpgsqlParameter("streamEtag", NpgsqlDbType.Varchar) { Value = $"etag-{contentVersion}" },
+            new NpgsqlParameter("streamEtag", NpgsqlDbType.Varchar)
+            {
+                Value = ComposeFixedStreamEtag(
+                    mappingSet ?? _fixture.MappingSet,
+                    resourceKey,
+                    contentVersion
+                ),
+            },
             new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz) { Value = LastModifiedAt },
             new NpgsqlParameter("documentJson", NpgsqlDbType.Jsonb)
             {
@@ -604,6 +609,27 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
                 Value = LastModifiedAt.AddMinutes(1),
             }
         );
+    }
+
+    private static string ComposeFixedStreamEtag(
+        MappingSet mappingSet,
+        ResourceKeyEntry resourceKey,
+        long contentVersion
+    )
+    {
+        ConcreteResourceModel model = mappingSet.GetConcreteResourceModelOrThrow(resourceKey.Resource);
+
+        return model.StorageKind == ResourceStorageKind.SharedDescriptorTable
+            ? DocumentCacheMaterializerStreamEtagComposer.ComposeForDescriptor(
+                new ServedEtagComposer(),
+                mappingSet,
+                contentVersion
+            )
+            : DocumentCacheMaterializerStreamEtagComposer.ComposeForResource(
+                new ServedEtagComposer(),
+                mappingSet,
+                contentVersion
+            );
     }
 
     private async Task UpdateSourceContentVersionAsync(long documentId, long contentVersion)

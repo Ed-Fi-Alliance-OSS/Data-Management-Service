@@ -728,7 +728,10 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             QueryResult = DocumentCacheReadLookupResult<QueryResult>.FallbackFromLookupOutcome(
                 batchResult.Outcome,
                 [first],
-                DocumentCacheReadInvariantDiagnostic.CacheLookupInvariant(batchResult.Message)
+                DocumentCacheReadInvariantDiagnostic.CacheLookupInvariant(
+                    batchResult.InvariantDiagnosticMessage
+                        ?? DocumentCacheReadLookupDiagnosticText.GenericInvariantDiagnosticMessage
+                )
             ),
         };
         var materializer = new RecordingMaterializer();
