@@ -59,7 +59,7 @@ internal static class DocumentCacheReadAccelerationScenario
         DocumentMetadata getMetadata = await ReadDocumentMetadataAsync(harness, getStudent.DocumentUuid);
         JsonObject getCacheDocument = CacheDocumentFrom(getStudent.Body, getMetadata);
         getCacheDocument["firstName"] = "Cached Get";
-        await InsertCacheRowAsync(harness, getMetadata, getCacheDocument);
+        await UpsertCacheRowAsync(harness, getMetadata, getCacheDocument);
 
         JsonObject cachedGet = await GetJsonObjectAsync(harness, getStudent.LocationPath);
         cachedGet["studentUniqueId"]!.GetValue<string>().Should().Be("cache-get-001");
@@ -82,7 +82,7 @@ internal static class DocumentCacheReadAccelerationScenario
         );
         JsonObject firstQueryCacheDocument = CacheDocumentFrom(firstQueryStudent.Body, firstQueryMetadata);
         firstQueryCacheDocument["firstName"] = "Cached Query One";
-        await InsertCacheRowAsync(harness, firstQueryMetadata, firstQueryCacheDocument);
+        await UpsertCacheRowAsync(harness, firstQueryMetadata, firstQueryCacheDocument);
 
         DocumentMetadata secondQueryMetadata = await ReadDocumentMetadataAsync(
             harness,
@@ -90,7 +90,7 @@ internal static class DocumentCacheReadAccelerationScenario
         );
         JsonObject secondQueryCacheDocument = CacheDocumentFrom(secondQueryStudent.Body, secondQueryMetadata);
         secondQueryCacheDocument["firstName"] = "Cached Query Two";
-        await InsertCacheRowAsync(harness, secondQueryMetadata, secondQueryCacheDocument);
+        await UpsertCacheRowAsync(harness, secondQueryMetadata, secondQueryCacheDocument);
 
         using HttpResponseMessage queryResponse = await harness.HttpClient.GetAsync(
             $"{StudentsEndpoint}?offset=1&limit=2&totalCount=true"
@@ -148,7 +148,7 @@ internal static class DocumentCacheReadAccelerationScenario
         DocumentMetadata metadata = await ReadDocumentMetadataAsync(harness, student.DocumentUuid);
         JsonObject cacheDocument = CacheDocumentFrom(student.Body, metadata);
         cacheDocument["firstName"] = "Cached Stale";
-        await InsertCacheRowAsync(harness, metadata, cacheDocument, metadata.ContentVersion + 1);
+        await UpsertCacheRowAsync(harness, metadata, cacheDocument, metadata.ContentVersion + 1);
 
         JsonObject fallback = await GetJsonObjectAsync(harness, student.LocationPath);
 
@@ -302,11 +302,11 @@ internal static class DocumentCacheReadAccelerationScenario
 
         JsonObject cachedDocument = CacheDocumentFrom(cachedDescriptor.Body, cachedMetadata);
         cachedDocument["shortDescription"] = "Cached descriptor query";
-        await InsertCacheRowAsync(harness, cachedMetadata, cachedDocument);
+        await UpsertCacheRowAsync(harness, cachedMetadata, cachedDocument);
 
         JsonObject staleDocument = CacheDocumentFrom(staleDescriptor.Body, staleMetadata);
         staleDocument["shortDescription"] = "Cached stale descriptor query";
-        await InsertCacheRowAsync(harness, staleMetadata, staleDocument, staleMetadata.ContentVersion + 1);
+        await UpsertCacheRowAsync(harness, staleMetadata, staleDocument, staleMetadata.ContentVersion + 1);
         (await CountCacheRowsAsync(harness, missingMetadata.DocumentId))
             .Should()
             .Be(0, "the descriptor page must include one true missing cache row");
@@ -367,7 +367,7 @@ internal static class DocumentCacheReadAccelerationScenario
             ["clearableText"] = "cached-clearable",
             ["preservedText"] = "cached-preserved",
         };
-        await InsertCacheRowAsync(harness, profileMetadata, profileCacheDocument);
+        await UpsertCacheRowAsync(harness, profileMetadata, profileCacheDocument);
 
         using HttpResponseMessage profiledResponse = await SendProfiledGetAsync(
             harness,
@@ -394,7 +394,7 @@ internal static class DocumentCacheReadAccelerationScenario
         await DeleteCacheRowsAsync(harness, descriptorMetadata.DocumentId);
         JsonObject descriptorCacheDocument = CacheDocumentFrom(descriptor.Body, descriptorMetadata);
         descriptorCacheDocument["shortDescription"] = "Cached school type";
-        await InsertCacheRowAsync(harness, descriptorMetadata, descriptorCacheDocument);
+        await UpsertCacheRowAsync(harness, descriptorMetadata, descriptorCacheDocument);
 
         using HttpResponseMessage descriptorGetResponse = await harness.HttpClient.GetAsync(
             descriptor.LocationPath
@@ -445,7 +445,7 @@ internal static class DocumentCacheReadAccelerationScenario
                 ["href"] = "/data/ed-fi/students/not-public-from-cache",
             },
         };
-        await InsertCacheRowAsync(harness, metadata, cacheDocument);
+        await UpsertCacheRowAsync(harness, metadata, cacheDocument);
 
         JsonObject returned = await GetJsonObjectAsync(harness, mergeItem.LocationPath);
 
@@ -474,7 +474,7 @@ internal static class DocumentCacheReadAccelerationScenario
             ["firstName"] = "Cached Denied",
             ["_lastModifiedDate"] = FormatLastModifiedDate(metadata.ContentLastModifiedAt),
         };
-        await InsertCacheRowAsync(harness, metadata, cacheDocument);
+        await UpsertCacheRowAsync(harness, metadata, cacheDocument);
 
         using HttpResponseMessage deniedResponse = await harness.HttpClient.GetAsync(locationPath);
         string deniedBody = await deniedResponse.Content.ReadAsStringAsync();
@@ -705,7 +705,7 @@ internal static class DocumentCacheReadAccelerationScenario
         return metadata;
     }
 
-    private static async Task InsertCacheRowAsync(
+    private static async Task UpsertCacheRowAsync(
         ApiIntegrationHarness harness,
         DocumentMetadata metadata,
         JsonObject documentJson,
@@ -738,33 +738,70 @@ internal static class DocumentCacheReadAccelerationScenario
                     @lastModifiedAt,
                     CAST(@documentJson AS jsonb),
                     @computedAt
-                );
+                )
+                ON CONFLICT ("DocumentId") DO UPDATE
+                SET "DocumentUuid" = EXCLUDED."DocumentUuid",
+                    "ProjectName" = EXCLUDED."ProjectName",
+                    "ResourceName" = EXCLUDED."ResourceName",
+                    "ResourceVersion" = EXCLUDED."ResourceVersion",
+                    "ContentVersion" = EXCLUDED."ContentVersion",
+                    "StreamEtag" = EXCLUDED."StreamEtag",
+                    "LastModifiedAt" = EXCLUDED."LastModifiedAt",
+                    "DocumentJson" = EXCLUDED."DocumentJson",
+                    "ComputedAt" = EXCLUDED."ComputedAt";
                 """
             : """
-                INSERT INTO "dms"."DocumentCache" (
-                    "DocumentId",
-                    "DocumentUuid",
-                    "ProjectName",
-                    "ResourceName",
-                    "ResourceVersion",
-                    "ContentVersion",
-                    "StreamEtag",
-                    "LastModifiedAt",
-                    "DocumentJson",
-                    "ComputedAt"
-                )
-                VALUES (
-                    @documentId,
-                    @documentUuid,
-                    @projectName,
-                    @resourceName,
-                    @resourceVersion,
-                    @contentVersion,
-                    @streamEtag,
-                    @lastModifiedAt,
-                    @documentJson,
-                    @computedAt
-                );
+                MERGE [dms].[DocumentCache] WITH (HOLDLOCK) AS target
+                USING (
+                    SELECT
+                        @documentId AS [DocumentId],
+                        @documentUuid AS [DocumentUuid],
+                        @projectName AS [ProjectName],
+                        @resourceName AS [ResourceName],
+                        @resourceVersion AS [ResourceVersion],
+                        @contentVersion AS [ContentVersion],
+                        @streamEtag AS [StreamEtag],
+                        @lastModifiedAt AS [LastModifiedAt],
+                        @documentJson AS [DocumentJson],
+                        @computedAt AS [ComputedAt]
+                ) AS source
+                ON target.[DocumentId] = source.[DocumentId]
+                WHEN MATCHED THEN
+                    UPDATE SET
+                        [DocumentUuid] = source.[DocumentUuid],
+                        [ProjectName] = source.[ProjectName],
+                        [ResourceName] = source.[ResourceName],
+                        [ResourceVersion] = source.[ResourceVersion],
+                        [ContentVersion] = source.[ContentVersion],
+                        [StreamEtag] = source.[StreamEtag],
+                        [LastModifiedAt] = source.[LastModifiedAt],
+                        [DocumentJson] = source.[DocumentJson],
+                        [ComputedAt] = source.[ComputedAt]
+                WHEN NOT MATCHED THEN
+                    INSERT (
+                        [DocumentId],
+                        [DocumentUuid],
+                        [ProjectName],
+                        [ResourceName],
+                        [ResourceVersion],
+                        [ContentVersion],
+                        [StreamEtag],
+                        [LastModifiedAt],
+                        [DocumentJson],
+                        [ComputedAt]
+                    )
+                    VALUES (
+                        source.[DocumentId],
+                        source.[DocumentUuid],
+                        source.[ProjectName],
+                        source.[ResourceName],
+                        source.[ResourceVersion],
+                        source.[ContentVersion],
+                        source.[StreamEtag],
+                        source.[LastModifiedAt],
+                        source.[DocumentJson],
+                        source.[ComputedAt]
+                    );
                 """;
 
         long contentVersion = contentVersionOverride ?? metadata.ContentVersion;
