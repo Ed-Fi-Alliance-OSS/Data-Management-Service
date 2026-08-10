@@ -43,9 +43,12 @@ the published `DocumentState` transform.
   `value.converter=org.edfi.kafka.connect.converters.DocumentStateJsonConverter`,
   `value.converter.schemas.enable=false`, and
   `value.converter.decimal.format=NUMERIC`.
-- Emit and validate Debezium heartbeat topic settings so native heartbeat records use
-  `topic.heartbeat.prefix=__debezium-heartbeat`; reject a non-empty
-  `topic.heartbeat.name` or any conflicting heartbeat prefix.
+- Emit and validate the fixed Debezium topic naming settings required by `DocumentState`
+  native-heartbeat classification for PostgreSQL and SQL Server:
+  `topic.delimiter=.`,
+  `topic.naming.strategy=io.debezium.schema.SchemaTopicNamingStrategy`,
+  `topic.heartbeat.prefix=__debezium-heartbeat`, and an unset or empty
+  `topic.heartbeat.name`.
 - Add pinned-image loading, rendering, restart, and provider smoke fixtures.
 
 ## Acceptance Evidence
@@ -55,8 +58,9 @@ the published `DocumentState` transform.
 - Rendering and live-validation tests require the exact `DocumentStateJsonConverter`
   value-converter path and the `schemas.enable=false` and `decimal.format=NUMERIC`
   delegate settings, and reject missing, duplicate, or conflicting converter properties.
-- Rendering and live-validation tests reject non-empty `topic.heartbeat.name` values and
-  any heartbeat prefix other than `__debezium-heartbeat`.
+- Rendering and live-validation tests reject missing or conflicting `topic.delimiter`,
+  `topic.naming.strategy`, or `topic.heartbeat.prefix` values and reject any non-empty
+  `topic.heartbeat.name`.
 - Live connector validation confirms the work table is absent from effective capture.
 - Pinned-image tests cover transform loading, producer/partition behavior, heartbeat and
   offset visibility, and provider restart integration.

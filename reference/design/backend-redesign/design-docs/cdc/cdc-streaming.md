@@ -983,9 +983,12 @@ Every connector also emits and live-validates the provider source-position heart
 settings defined above. `heartbeat.action.query` is generated from the emitted
 `dms.CdcHeartbeat` identifiers and is not free-form operator input. Heartbeat timing is an
 operational readiness setting rather than an immutable stream-contract or binding field.
-Template generation sets `topic.heartbeat.prefix=__debezium-heartbeat` and leaves
-`topic.heartbeat.name` unset or empty. Rendering and live validation reject a non-empty
-`topic.heartbeat.name` or any conflicting heartbeat topic prefix, because the
+For PostgreSQL and SQL Server, template generation sets
+`topic.delimiter=.`,
+`topic.naming.strategy=io.debezium.schema.SchemaTopicNamingStrategy`,
+`topic.heartbeat.prefix=__debezium-heartbeat`, and leaves `topic.heartbeat.name` unset or
+empty. Rendering and live validation reject a missing or conflicting topic delimiter,
+naming strategy, heartbeat topic prefix, or non-empty heartbeat topic name, because the
 `DocumentState` SMT recognizes native Debezium heartbeat topics only as
 `__debezium-heartbeat.<topic-prefix>` when that suffix exactly matches the Debezium
 source-partition `server` value before relational source-metadata validation.
