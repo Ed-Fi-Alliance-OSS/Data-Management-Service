@@ -496,12 +496,14 @@ public class Given_The_Composite_Relational_Write_First_Phase
     private static CompositeRelationalWriteFirstPhase CreateSut(
         TestReferenceResolverAdapterFactory? adapterFactory = null,
         IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null,
-        RelationalCommandBudget? commandBudget = null
+        RelationalCommandBudget? commandBudget = null,
+        IRelationalCommandExecutor? customViewValidationCommandExecutor = null
     ) =>
         new(
             adapterFactory ?? new TestReferenceResolverAdapterFactory(),
             relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor,
-            commandBudget: commandBudget
+            commandBudget: commandBudget,
+            customViewValidationCommandExecutor: customViewValidationCommandExecutor
         );
 
     private static RelationalWriteLockedTarget CreateLockProof(
@@ -670,8 +672,45 @@ public class Given_The_Composite_Relational_Write_First_Phase
     }
 
     [Test]
-    public async Task It_emits_the_custom_view_runs_around_the_namespace_check_in_configured_order()
+    public async Task It_validates_a_co_batched_custom_view_before_running_the_opening_command()
     {
+        // The view's statement rides the opening command, so a table masquerading as auth.{StrategyName} would
+        // answer it silently. Its contract is settled before that command is sent, which is also what keeps the
+        // 500 ahead of anything the command decides.
+        var input = CreateInput(RelationalWriteOperationKind.Put, includeReadPlan: false) with
+        {
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+        };
+        var session = new ScriptedWriteSession(
+            CreateReader(
+                CreateCaptureTable(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value)),
+                CreateAuthorizationTable()
+            )
+        );
+        var validationExecutor = new StubValidationCommandExecutor(
+            new FakeDbException("invalid custom authorization view DocumentId contract")
+        );
+
+        var act = async () =>
+            await CreateSut(customViewValidationCommandExecutor: validationExecutor)
+                .ResolveAsync(input, session);
+
+        await act.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+        validationExecutor
+            .ExecutedCommands.Should()
+            .ContainSingle()
+            .Subject.CommandText.Should()
+            .Contain("SchoolWithATag");
+        session.Commands.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_declines_the_single_composite_plan_for_a_custom_view_run_after_the_namespace_check()
+    {
+        // Nothing else here forces ordered segments: the run configured after NamespaceBased does, because its
+        // view may be validated only once that check has passed, which one command cannot express. Co-batched
+        // behind the namespace statement, a table masquerading as the view would answer the membership SQL and
+        // the request would proceed on it.
         var input = CreateInput(RelationalWriteOperationKind.Put, includeReadPlan: false) with
         {
             StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(),
@@ -681,54 +720,19 @@ public class Given_The_Composite_Relational_Write_First_Phase
             ),
         };
         var session = new ScriptedWriteSession(
-            CreateReader(
-                CreateCaptureTable(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value)),
-                CreateAuthorizationTable(),
-                CreateAuthorizationTable(),
-                CreateAuthorizationTable()
-            )
+            CreateCaptureReader(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value)),
+            CreateReader(CreateAuthorizationTable()),
+            CreateReader(CreateAuthorizationTable()),
+            CreateReader(CreateAuthorizationTable())
         );
 
         await CreateSut().ResolveAsync(input, session);
 
-        var commandText = session.Commands[0].CommandText;
-        var earlyPosition = commandText.IndexOf("SchoolWithAnEarlyTag", StringComparison.Ordinal);
-        var namespacePosition = commandText.IndexOf("namespacePrefixes", StringComparison.Ordinal);
-        var latePosition = commandText.IndexOf("SchoolWithALateTag", StringComparison.Ordinal);
-
-        earlyPosition.Should().BePositive();
-        earlyPosition.Should().BeLessThan(namespacePosition);
-        namespacePosition.Should().BeLessThan(latePosition);
-        // Each run keeps its request-wide indexes, so the two runs' payloads stay distinguishable.
-        commandText.Should().Contain("cv1|0|n").And.Contain("cv1|1|n");
-    }
-
-    [Test]
-    public async Task It_resolves_a_straddling_split_payload_against_the_full_planned_check_list()
-    {
-        // The later view lands in the second run and carries a non-zero index. Mapping must use the request's
-        // whole planned list, or the denial would name the earlier view.
-        var input = CreateInput(RelationalWriteOperationKind.Put, includeReadPlan: false) with
-        {
-            StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(),
-            CustomViewAuthorization = CreateStoredCustomViewAuthorization(
-                ("SchoolWithAnEarlyTag", 0),
-                ("SchoolWithALateTag", 2)
-            ),
-        };
-        // One composite command carries capture and checks, so the abort is that command's failure.
-        var session = new ScriptedWriteSession(new FakeDbException("custom view denial"));
-
-        var resolution = await CreateSut(providerFailureExtractor: CustomViewFailureExtractor(1))
-            .ResolveAsync(input, session);
-
-        resolution
-            .ImmediateResult.Should()
-            .BeOfType<RelationalWriteExecutorResult.Update>()
-            .Which.Result.Should()
-            .BeOfType<UpdateResult.UpdateFailureCustomViewNotAuthorized>()
-            .Subject.CustomViewFailure.StrategyName.Should()
-            .Be("SchoolWithALateTag");
+        session.Commands.Should().HaveCount(4);
+        session.Commands[0].CommandText.Should().NotContain("SchoolWith");
+        session.Commands[1].CommandText.Should().Contain("SchoolWithAnEarlyTag");
+        session.Commands[2].CommandText.Should().Contain("namespacePrefixes");
+        session.Commands[3].CommandText.Should().Contain("SchoolWithALateTag");
     }
 
     [Test]
@@ -1047,6 +1051,31 @@ public class Given_The_Composite_Relational_Write_First_Phase
 
                 return Task.FromResult<IReadOnlyList<ReferenceLookupResult>>([]);
             }
+        }
+    }
+
+    /// <summary>
+    /// Stands in for the fresh-connection executor the custom-view validation probe uses, recording what it was
+    /// asked to run and optionally failing the way an object that is not a conforming view would.
+    /// </summary>
+    private sealed class StubValidationCommandExecutor(DbException? failure = null)
+        : IRelationalCommandExecutor
+    {
+        public SqlDialect Dialect => SqlDialect.Pgsql;
+
+        public List<RelationalCommand> ExecutedCommands { get; } = [];
+
+        public Task<TResult> ExecuteReaderAsync<TResult>(
+            RelationalCommand command,
+            Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,
+            CancellationToken cancellationToken = default
+        )
+        {
+            ExecutedCommands.Add(command);
+
+            return failure is null
+                ? Task.FromResult(default(TResult)!)
+                : Task.FromException<TResult>(failure);
         }
     }
 

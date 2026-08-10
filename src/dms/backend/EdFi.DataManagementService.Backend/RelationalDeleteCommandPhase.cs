@@ -66,7 +66,8 @@ internal sealed class CompositeRelationalDeleteCommand(
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
         null,
     ILogger? logger = null,
-    RelationalCommandBudget? commandBudget = null
+    RelationalCommandBudget? commandBudget = null,
+    IRelationalCommandExecutor? customViewValidationCommandExecutor = null
 )
 {
     private const string ResourceRootDeleteLabel = "resource-root-delete";
@@ -103,6 +104,14 @@ internal sealed class CompositeRelationalDeleteCommand(
 
     private readonly RelationalCommandBudget? _commandBudget = commandBudget;
 
+    /// <summary>
+    /// The fresh-connection executor the custom-view catalog validation runs on, or <see langword="null"/> to
+    /// skip validation. Never the write session's: the probe reads the catalog, and issuing it on the session
+    /// would run inside the transaction holding the target lock and consume that command's results.
+    /// </summary>
+    private readonly IRelationalCommandExecutor? _customViewValidationCommandExecutor =
+        customViewValidationCommandExecutor;
+
     /// <param name="NamespacePlan">
     /// The namespace checks the opening command carried, or <see langword="null"/> when it carried none —
     /// so a provider failure is mapped only against checks that command actually sent.
@@ -131,10 +140,16 @@ internal sealed class CompositeRelationalDeleteCommand(
         public StoredCustomViewStatementPlan? CustomViewPlan { get; init; }
 
         /// <summary>
-        /// The custom-view checks still owed as their own ordered segment, empty when none are. Only the run
-        /// configured after <c>NamespaceBased</c> can land here, and only when the namespace check itself was
-        /// pushed onto a segment: the run has to follow that check, so it cannot ride the opening command
-        /// which precedes it.
+        /// Exactly the custom-view checks the opening command carries statements for, so their views are
+        /// validated before it runs and no other view's contract can preempt what it decides.
+        /// </summary>
+        public IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> CustomViewCommandChecks { get; init; } =
+        [];
+
+        /// <summary>
+        /// The custom-view checks owed as their own ordered segment, empty when none are. Only the run
+        /// configured after <c>NamespaceBased</c> lands here: it has to follow that check, and its views may
+        /// only be validated once the check has passed, which the opening command cannot express.
         /// </summary>
         public IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> CustomViewSegmentChecks { get; init; } =
         [];
@@ -153,6 +168,12 @@ internal sealed class CompositeRelationalDeleteCommand(
             request.StoredRelationshipAuthorization
         );
         var plan = BuildPlan(request, relationshipPlan);
+
+        // Ahead of the command, because the views it carries run ahead of the namespace check inside it: a
+        // table masquerading as auth.{StrategyName} answers the membership SQL without raising anything, so
+        // nothing later in the command would reveal it.
+        await ValidateCommandCustomViewsAsync(request, plan.CustomViewCommandChecks, cancellationToken)
+            .ConfigureAwait(false);
 
         IReadOnlyList<RelationalCompositeStatementOutcome> outcomes;
         var execution = new RelationalCompositeCommandExecution();
@@ -279,8 +300,16 @@ internal sealed class CompositeRelationalDeleteCommand(
     /// silently never sent.
     /// </para>
     /// <para>
+    /// A custom-view run configured after <c>NamespaceBased</c> is a fourth: it owes an ordered segment so its
+    /// views are validated only after that check passes, and the deletes wait for it exactly as they do for any
+    /// other segmented check.
+    /// </para>
+    /// <para>
     /// A namespace check that does not fit also forces the relationship check onto a segment: emitting the
     /// relationship into this command would place it ahead of the namespace check whose denial outranks it.
+    /// An owed custom-view segment forces it the same way and for the same reason — relationship
+    /// authorization runs after every configured AND filter, so a relationship denial riding this command
+    /// would answer before the segment those views are still owed, and the segment would never run.
     /// </para>
     /// </remarks>
     private DeleteCommandPlan BuildPlan(
@@ -296,10 +325,10 @@ internal sealed class CompositeRelationalDeleteCommand(
 
         AppendCaptureTarget(builder, request);
 
-        // Custom views and NamespaceBased are AND filters executing in CMS-configured order, and the
-        // command aborts at its first failure, so the namespace statement is emitted between the views
-        // configured before it and those configured after. Both runs' indexes come from one planned list, so
-        // a cv1 payload still identifies exactly one check.
+        // Custom views and NamespaceBased are AND filters executing in CMS-configured order, and the command
+        // aborts at its first failure, so only the views configured before the namespace statement can ride it.
+        // Both runs' indexes come from one planned list, so a cv1 payload still identifies exactly one check
+        // whichever command raised it.
         var (customViewsBeforeNamespace, customViewsAfterNamespace) = PartitionCustomViewRuns(request);
 
         RelationalCompositeStoredAuthorization.AppendCustomViewRun(
@@ -317,34 +346,20 @@ internal sealed class CompositeRelationalDeleteCommand(
             out var namespacePlan
         );
 
-        // The after-run may only ride this command when the namespace check it must follow rides it too.
-        // Otherwise the namespace check runs as a later segment, and appending the run here would place it
-        // ahead of the check it is configured after — so it becomes a segment of its own instead of being
-        // dropped, which would delete a row without enforcing a configured view.
-        if (namespaceEmitted)
-        {
-            RelationalCompositeStoredAuthorization.AppendCustomViewRun(
-                builder,
-                carrier,
-                request.MappingSet,
-                customViewsAfterNamespace
-            );
-        }
-
-        var customViewSegmentChecks = namespaceEmitted
-            ? (IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec>)[]
-            : customViewsAfterNamespace;
+        // The after-run always takes an ordered segment of its own rather than riding this command behind the
+        // namespace statement. Its views have to be validated, and only once the namespace check has passed:
+        // co-batched, the run would either be validated too early — reporting a view's 500 over a namespace
+        // denial configured ahead of it — or validated after the deletes this command carries had already run.
+        var customViewSegmentChecks = customViewsAfterNamespace;
         var customViewPlan =
             request.CustomViewAuthorization is { } customViewAuthorization
-            && (
-                customViewsBeforeNamespace.Count > 0
-                || (namespaceEmitted && customViewsAfterNamespace.Count > 0)
-            )
+            && customViewsBeforeNamespace.Count > 0
                 ? new StoredCustomViewStatementPlan(customViewAuthorization.Checks)
                 : null;
         var relationshipPlan = classifiedRelationship;
         var relationshipEmitted =
             namespaceEmitted
+            && customViewSegmentChecks.Count == 0
             && RelationalCompositeStoredAuthorization.TryAppendRelationship(
                 builder,
                 carrier,
@@ -386,9 +401,28 @@ internal sealed class CompositeRelationalDeleteCommand(
         )
         {
             CustomViewPlan = customViewPlan,
+            CustomViewCommandChecks = customViewsBeforeNamespace,
             CustomViewSegmentChecks = customViewSegmentChecks,
         };
     }
+
+    /// <summary>
+    /// Validates the views behind the custom-view statements the opening command carries. Empty checks or a null
+    /// validation executor are a no-op, so the call site can route through this unconditionally.
+    /// </summary>
+    private Task ValidateCommandCustomViewsAsync(
+        RelationalDeleteCommandRequest request,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checks,
+        CancellationToken cancellationToken
+    ) =>
+        _customViewValidationCommandExecutor is null
+            ? Task.CompletedTask
+            : CustomViewAuthorizationValidator.ValidateSingleRecordAsync(
+                _customViewValidationCommandExecutor,
+                request.MappingSet.Key.Dialect,
+                checks,
+                cancellationToken
+            );
 
     /// <summary>
     /// Splits the planned custom-view checks around the configured position of <c>NamespaceBased</c>. With no
@@ -456,10 +490,10 @@ internal sealed class CompositeRelationalDeleteCommand(
     }
 
     /// <summary>
-    /// Runs the custom-view checks configured after <c>NamespaceBased</c> as their own ordered segment, for
-    /// the case where the namespace check they follow could not fit the opening command. Authorization
-    /// therefore still executes in configured order and strictly precedes the relationship check and any
-    /// deletion, at the cost of one more command on that path.
+    /// Runs the custom-view checks configured after <c>NamespaceBased</c> as their own ordered segment, which
+    /// is what lets their views be validated only once that check has passed. Authorization therefore still
+    /// executes in configured order and strictly precedes the relationship check and any deletion, at the cost
+    /// of one more command on that path.
     /// </summary>
     private async Task<DeleteResult?> ExecuteSegmentedCustomViewAsync(
         RelationalDeleteCommandRequest request,
@@ -476,7 +510,8 @@ internal sealed class CompositeRelationalDeleteCommand(
 
         var executionResult = await new CustomViewAuthorizationExecutor(
             writeSession.CreateCommandExecutor(),
-            _providerFailureExtractor
+            _providerFailureExtractor,
+            _customViewValidationCommandExecutor
         )
             .ExecuteAsync(
                 new CustomViewAuthorizationExecutionRequest(

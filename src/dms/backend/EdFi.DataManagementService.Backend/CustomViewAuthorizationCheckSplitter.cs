@@ -14,7 +14,7 @@ namespace EdFi.DataManagementService.Backend;
 /// Each slice keeps the indexes the planner assigned across the whole request, so an index still identifies
 /// one check no matter which slice raised it. That matters because slices co-batched into one command share a
 /// single provider exception: zero-basing each slice would make two different checks both report index 0. The
-/// compiler accepts a slice whose indexes run contiguously from any starting value, and the failure mapper is
+/// compiler accepts a slice whose indexes merely increase from any starting value, and the failure mapper is
 /// always given the request's full planned list.
 /// </remarks>
 internal static class CustomViewAuthorizationCheckSplitter

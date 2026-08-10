@@ -315,12 +315,16 @@ public class Given_The_Composite_Relational_Delete_Command
     }
 
     [Test]
-    public async Task It_emits_a_custom_view_configured_after_NamespaceBased_behind_it()
+    public async Task It_runs_a_custom_view_configured_after_NamespaceBased_as_its_own_ordered_segment()
     {
         // The namespace planner stamps its check with configured index 0, so a view at index 1 runs after it.
+        // It takes a segment of its own rather than riding the opening command behind the namespace statement:
+        // its view may be validated only once that check has passed, and the deletes wait for both.
         var session = CreateSession(
             SqlDialect.Pgsql,
-            DeleteReader(rootDeleteOrdinal: 3, deleted: true, namespaceCheckCount: 2)
+            CaptureOnlyReader(captured: true, namespaceCheckCount: 1),
+            NamespaceCheckReader(checkCount: 1),
+            SegmentDeleteReader(deleted: true)
         );
         var request = CreateRequest(SqlDialect.Pgsql) with
         {
@@ -328,14 +332,18 @@ public class Given_The_Composite_Relational_Delete_Command
             StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(SqlDialect.Pgsql),
         };
 
-        await CreateSut().ExecuteAsync(request, session);
+        var result = await CreateSut().ExecuteAsync(request, session);
 
-        var commandText = session.Commands[0].CommandText;
-        commandText
-            .IndexOf("namespacePrefixes", StringComparison.Ordinal)
-            .Should()
-            .BeLessThan(commandText.IndexOf("SchoolWithATag", StringComparison.Ordinal))
-            .And.BePositive();
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        session.Commands.Should().HaveCount(3);
+        session
+            .Commands[0]
+            .CommandText.Should()
+            .Contain("namespacePrefixes")
+            .And.NotContain("SchoolWithATag")
+            .And.NotContain("DELETE FROM");
+        session.Commands[1].CommandText.Should().Contain("SchoolWithATag");
+        session.Commands[2].CommandText.Should().Contain("DELETE FROM");
     }
 
     [Test]
@@ -367,9 +375,13 @@ public class Given_The_Composite_Relational_Delete_Command
     [Test]
     public async Task It_straddles_the_namespace_check_with_both_custom_view_runs_in_configured_order()
     {
+        // The view configured before NamespaceBased rides the opening command ahead of it; the one configured
+        // after follows as a segment, and the deletes wait for that segment.
         var session = CreateSession(
             SqlDialect.Pgsql,
-            DeleteReader(rootDeleteOrdinal: 4, deleted: true, namespaceCheckCount: 3)
+            CaptureOnlyReader(captured: true, namespaceCheckCount: 2),
+            NamespaceCheckReader(checkCount: 1),
+            SegmentDeleteReader(deleted: true)
         );
         var request = CreateRequest(SqlDialect.Pgsql) with
         {
@@ -382,16 +394,18 @@ public class Given_The_Composite_Relational_Delete_Command
 
         await CreateSut().ExecuteAsync(request, session);
 
-        var commandText = session.Commands[0].CommandText;
-        var earlyPosition = commandText.IndexOf("SchoolWithAnEarlyTag", StringComparison.Ordinal);
-        var namespacePosition = commandText.IndexOf("namespacePrefixes", StringComparison.Ordinal);
-        var latePosition = commandText.IndexOf("SchoolWithALateTag", StringComparison.Ordinal);
+        var openingCommandText = session.Commands[0].CommandText;
+        var earlyPosition = openingCommandText.IndexOf("SchoolWithAnEarlyTag", StringComparison.Ordinal);
+        var namespacePosition = openingCommandText.IndexOf("namespacePrefixes", StringComparison.Ordinal);
 
         earlyPosition.Should().BePositive();
         earlyPosition.Should().BeLessThan(namespacePosition);
-        namespacePosition.Should().BeLessThan(latePosition);
+        openingCommandText.Should().NotContain("SchoolWithALateTag").And.NotContain("DELETE FROM");
+        session.Commands[1].CommandText.Should().Contain("SchoolWithALateTag");
+        session.Commands[2].CommandText.Should().Contain("DELETE FROM");
         // Each run keeps its request-wide indexes, so the two runs' payloads stay distinguishable.
-        commandText.Should().Contain("cv1|0|n").And.Contain("cv1|1|n");
+        openingCommandText.Should().Contain("cv1|0|n");
+        session.Commands[1].CommandText.Should().Contain("cv1|1|n");
     }
 
     [Test]
@@ -460,6 +474,159 @@ public class Given_The_Composite_Relational_Delete_Command
             .Commands.Should()
             .AllSatisfy(command => command.CommandText.Should().NotContain("DELETE FROM"));
     }
+
+    [Test]
+    public async Task It_authorizes_the_relationship_after_an_owed_custom_view_segment_rather_than_in_the_opening_command()
+    {
+        // The regression this pins: relationship authorization runs after every configured AND filter, so
+        // while a custom-view segment is owed the relationship check cannot ride the opening command. Emitted
+        // there, its denial would answer before the segment ever ran, and a view the CMS configured would
+        // never be enforced on this delete.
+        var session = CreateSession(
+            SqlDialect.Pgsql,
+            CaptureOnlyReader(captured: true, namespaceCheckCount: 1),
+            NamespaceCheckReader(checkCount: 1),
+            new FakeDbException("AUTH1", "AUTH1")
+        );
+        var request = CreateRequest(SqlDialect.Pgsql) with
+        {
+            StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(SqlDialect.Pgsql),
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithALateTag", 1)),
+            StoredRelationshipAuthorization = CreateStoredRelationshipAuthorization(SqlDialect.Pgsql),
+        };
+        var payload = RelationshipAuthorizationAuth1FailurePayloadCodec.Encode(
+            new RelationshipAuthorizationAuth1FailurePayload(
+                CompositeRelationalDeleteCommand.RelationshipAuthorizationAuth1Index,
+                [
+                    new RelationshipAuthorizationAuth1SubjectFailure(
+                        0,
+                        0,
+                        RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    ),
+                ]
+            )
+        );
+
+        var result = await CreateSut(new StubProviderFailureExtractor("AUTH1", payload))
+            .ExecuteAsync(request, session);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureRelationshipNotAuthorized>();
+        session.Commands.Should().HaveCount(3);
+        session
+            .Commands[0]
+            .CommandText.Should()
+            .Contain("namespacePrefixes")
+            .And.NotContain("SchoolWithALateTag")
+            .And.NotContain("AuthorizationResult");
+        session.Commands[1].CommandText.Should().Contain("SchoolWithALateTag");
+        session.Commands[2].CommandText.Should().Contain("AuthorizationResult");
+        session
+            .Commands.Should()
+            .AllSatisfy(command => command.CommandText.Should().NotContain("DELETE FROM"));
+    }
+
+    [Test]
+    public async Task It_reports_an_owed_custom_view_segment_denial_over_a_relationship_that_would_also_deny()
+    {
+        // Configured order decides: the view precedes the relationship group, so its denial is the answer and
+        // the relationship check is never issued at all.
+        var session = CreateSession(
+            SqlDialect.Pgsql,
+            CaptureOnlyReader(captured: true, namespaceCheckCount: 1),
+            new FakeDbException("AUTH1", "AUTH1")
+        );
+        var request = CreateRequest(SqlDialect.Pgsql) with
+        {
+            StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(SqlDialect.Pgsql),
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithALateTag", 1)),
+            StoredRelationshipAuthorization = CreateStoredRelationshipAuthorization(SqlDialect.Pgsql),
+        };
+
+        var result = await CreateSut(new StubProviderFailureExtractor("AUTH1", EncodeCustomViewPayload(0)))
+            .ExecuteAsync(request, session);
+
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureCustomViewNotAuthorized>()
+            .Subject.CustomViewFailure.StrategyName.Should()
+            .Be("SchoolWithALateTag");
+        session.Commands.Should().HaveCount(2);
+        // The relationship statement never joined the opening command, so nothing carried it ahead of the
+        // segment, and the segment's denial ended the request before it could be issued on its own.
+        session
+            .Commands.Should()
+            .AllSatisfy(command =>
+                command.CommandText.Should().NotContain("AuthorizationResult").And.NotContain("DELETE FROM")
+            );
+        session.Commands[1].CommandText.Should().Contain("SchoolWithALateTag");
+    }
+
+    [Test]
+    public async Task It_reports_an_invalid_view_configured_before_NamespaceBased_over_the_namespace_denial()
+    {
+        // The view rides the opening command ahead of the namespace statement, so its contract is settled
+        // before that command runs at all: a table masquerading as auth.{StrategyName} answers the membership
+        // SQL without raising anything, and the configured order puts its 500 ahead of the namespace denial.
+        var session = CreateSession(SqlDialect.Pgsql, new FakeDbException("AUTH1", "AUTH1"));
+        var request = CreateRequest(SqlDialect.Pgsql) with
+        {
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithAnEarlyTag", 0)),
+            StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(SqlDialect.Pgsql),
+        };
+        var validationExecutor = new StubValidationCommandExecutor(
+            new FakeDbException("invalid custom authorization view DocumentId contract", "P0001")
+        );
+
+        var act = async () =>
+            await CreateSut(
+                    new StubProviderFailureExtractor("AUTH1", NamespaceDenialPayload()),
+                    customViewValidationCommandExecutor: validationExecutor
+                )
+                .ExecuteAsync(request, session);
+
+        await act.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+        validationExecutor
+            .ExecutedCommands.Should()
+            .ContainSingle()
+            .Subject.CommandText.Should()
+            .Contain("SchoolWithAnEarlyTag");
+        // The opening command never ran, so nothing was deleted and the namespace denial was never reached.
+        session.Commands.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_reports_the_namespace_denial_over_an_invalid_view_configured_after_NamespaceBased()
+    {
+        // The mirror case: the view is configured after NamespaceBased, so it runs as a later segment and the
+        // namespace denial the opening command raises is the one the caller sees. Validating every planned view
+        // up front, or validating the segment's view before the namespace check, would report a 500 instead.
+        var session = CreateSession(SqlDialect.Pgsql, new FakeDbException("AUTH1", "AUTH1"));
+        var request = CreateRequest(SqlDialect.Pgsql) with
+        {
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithALateTag", 1)),
+            StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(SqlDialect.Pgsql),
+        };
+        var validationExecutor = new StubValidationCommandExecutor(
+            new FakeDbException("invalid custom authorization view DocumentId contract", "P0001")
+        );
+
+        var result = await CreateSut(
+                new StubProviderFailureExtractor("AUTH1", NamespaceDenialPayload()),
+                customViewValidationCommandExecutor: validationExecutor
+            )
+            .ExecuteAsync(request, session);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureNamespaceNotAuthorized>();
+        validationExecutor.ExecutedCommands.Should().BeEmpty();
+    }
+
+    private static string NamespaceDenialPayload() =>
+        NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(
+            new NamespaceAuthorizationAuth1FailurePayload(
+                0,
+                NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch
+            )
+        );
 
     [Test]
     public async Task It_attributes_a_non_auth1_failure_in_a_custom_view_statement_to_the_configured_view()
@@ -888,7 +1055,8 @@ public class Given_The_Composite_Relational_Delete_Command
         IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null,
         IRelationalWriteExceptionClassifier? classifier = null,
         IRelationalDeleteConstraintResolver? constraintResolver = null,
-        RelationalCommandBudget? commandBudget = null
+        RelationalCommandBudget? commandBudget = null,
+        IRelationalCommandExecutor? customViewValidationCommandExecutor = null
     ) =>
         new(
             new RelationalCurrentEtagPreconditionChecker(
@@ -898,7 +1066,8 @@ public class Given_The_Composite_Relational_Delete_Command
             classifier ?? new ConfigurableRelationalWriteExceptionClassifier(),
             constraintResolver ?? A.Fake<IRelationalDeleteConstraintResolver>(),
             relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor,
-            commandBudget: commandBudget
+            commandBudget: commandBudget,
+            customViewValidationCommandExecutor: customViewValidationCommandExecutor
         );
 
     /// <summary>The served etag a client would hold for a document at <paramref name="contentVersion"/>.</summary>
@@ -1234,6 +1403,31 @@ public class Given_The_Composite_Relational_Delete_Command
     {
         public RelationshipAuthorizationProviderFailure Extract(DbException exception) =>
             new(providerErrorCode, providerMessage);
+    }
+
+    /// <summary>
+    /// Stands in for the fresh-connection executor the custom-view validation probe uses, recording what it was
+    /// asked to run and optionally failing the way an object that is not a conforming view would.
+    /// </summary>
+    private sealed class StubValidationCommandExecutor(DbException? failure = null)
+        : IRelationalCommandExecutor
+    {
+        public SqlDialect Dialect => SqlDialect.Pgsql;
+
+        public List<RelationalCommand> ExecutedCommands { get; } = [];
+
+        public Task<TResult> ExecuteReaderAsync<TResult>(
+            RelationalCommand command,
+            Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,
+            CancellationToken cancellationToken = default
+        )
+        {
+            ExecutedCommands.Add(command);
+
+            return failure is null
+                ? Task.FromResult(default(TResult)!)
+                : Task.FromException<TResult>(failure);
+        }
     }
 
     private sealed class FakeDbException(string message, string sqlState) : DbException(message)

@@ -568,14 +568,15 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
     }
 
     [Test]
-    public async Task It_does_not_probe_the_views_for_a_recognized_custom_view_denial()
+    public async Task It_still_reports_a_recognized_custom_view_denial_when_the_emitted_view_conforms()
     {
-        // A cv1 payload already names the failing check, so probing would be a wasted round trip.
+        // The probe that precedes the denial only reclassifies a broken object. A conforming view leaves the
+        // cv1 payload's own answer intact.
         var request = CreateRequest(CreateProposedOnlyPlan(("SchoolWithATag", 0)));
         var session = new ScriptedWriteSession(CreateAuth1Failure());
         var validationExecutor = new StubValidationCommandExecutor();
 
-        await CreateSut(CustomViewFailureExtractor(0), validationExecutor)
+        var resolution = await CreateSut(CustomViewFailureExtractor(0), validationExecutor)
             .ResolveAsync(
                 request,
                 CreateMergeResult(request),
@@ -583,7 +584,67 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
                 session
             );
 
-        validationExecutor.ExecutedCommands.Should().BeEmpty();
+        FailureOf(resolution).StrategyName.Should().Be("SchoolWithATag");
+        validationExecutor
+            .ExecutedCommands.Should()
+            .ContainSingle()
+            .Subject.CommandText.Should()
+            .Contain("SchoolWithATag");
+    }
+
+    [Test]
+    public async Task It_reports_an_invalid_view_rather_than_the_denial_its_own_no_match_payload_carries()
+    {
+        // A non-view table at auth.{StrategyName} with a compatible DocumentId answers the membership SQL, so
+        // a row it does not contain raises the ordinary cv1 no-match — the same payload a conforming view
+        // raises. Without probing before the mapping, that object's misconfiguration is served as a 403
+        // instead of the documented urn:ed-fi:api:system 500.
+        var request = CreateRequest(CreateProposedOnlyPlan(("SchoolWithATag", 0)));
+        var session = new ScriptedWriteSession(CreateAuth1Failure());
+        var validationExecutor = new StubValidationCommandExecutor(
+            new FakeDbException("invalid custom authorization view DocumentId contract", "P0001")
+        );
+
+        var act = async () =>
+            await CreateSut(CustomViewFailureExtractor(0), validationExecutor)
+                .ResolveAsync(
+                    request,
+                    CreateMergeResult(request),
+                    RelationalWriteSecondCommandMode.AuthorizationOnly,
+                    session
+                );
+
+        await act.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+    }
+
+    [Test]
+    public async Task It_probes_no_view_the_denying_check_preempted()
+    {
+        // The early view denies, so the command aborted before the namespace check and before the view
+        // configured after it. Probing that later view would report its contract failure ahead of a namespace
+        // answer that precedes it — the ordering the two separate runs exist to preserve.
+        var request = CreateRequest(
+            CreateProposedOnlyPlan(("SchoolWithAnEarlyTag", 0), ("SchoolWithALateTag", 2)),
+            withNamespace: true
+        );
+        var session = new ScriptedWriteSession(CreateAuth1Failure());
+        var validationExecutor = new StubValidationCommandExecutor();
+
+        var resolution = await CreateSut(CustomViewFailureExtractor(0), validationExecutor)
+            .ResolveAsync(
+                request,
+                CreateMergeResult(request),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
+
+        FailureOf(resolution).StrategyName.Should().Be("SchoolWithAnEarlyTag");
+        validationExecutor
+            .ExecutedCommands.Should()
+            .ContainSingle()
+            .Subject.CommandText.Should()
+            .Contain("SchoolWithAnEarlyTag")
+            .And.NotContain("SchoolWithALateTag");
     }
 
     [Test]
@@ -670,6 +731,66 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
             .And.NotContainEquivalentOf("insert into edfi.\"School\"");
     }
 
+    [Test]
+    public async Task It_reports_an_invalid_view_behind_a_run_that_answered_without_failing()
+    {
+        // The run authorized, which is exactly what a table masquerading as auth.{StrategyName} does: it satisfies
+        // the membership SQL and raises nothing, so no failure path ever probes it. Validating the emitted run
+        // once the command has answered is what turns that into the documented 500 — and the write it shared the
+        // transaction with is not committed.
+        var request = CreateRequest(CreateProposedOnlyPlan(("SchoolWithATag", 0)));
+        var session = new ScriptedWriteSession(CreateReader(CreateAuthorizedTable()));
+        var validationExecutor = new StubValidationCommandExecutor(
+            new FakeDbException("invalid custom authorization view DocumentId contract", "P0001")
+        );
+
+        var act = async () =>
+            await CreateSut(customViewValidationCommandExecutor: validationExecutor)
+                .ResolveAsync(
+                    request,
+                    CreateMergeResult(request),
+                    RelationalWriteSecondCommandMode.AuthorizationOnly,
+                    session
+                );
+
+        await act.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+        validationExecutor
+            .ExecutedCommands.Should()
+            .ContainSingle()
+            .Subject.CommandText.Should()
+            .Contain("SchoolWithATag");
+    }
+
+    [Test]
+    public async Task It_runs_both_sql_backed_checks_around_a_self_basis_check_configured_between_them()
+    {
+        // The self-basis check is settled in C# against its stored pair, so it emits no statement and the run
+        // carries request-wide indexes 1 and 3. Both SQL-backed checks still have to run, in configured order:
+        // requiring the run's indexes to be consecutive failed a valid configuration before authorization.
+        var request = CreateRequest(CreateSelfBasisBetweenProposedPlan());
+        var session = new ScriptedWriteSession(
+            CreateReader(CreateAuthorizedTable(), CreateAuthorizedTable())
+        );
+
+        var resolution = await CreateSut()
+            .ResolveAsync(
+                request,
+                CreateMergeResult(request),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
+
+        resolution.ImmediateResult.Should().BeNull();
+        var commandText = session.Commands.Should().ContainSingle().Subject.CommandText;
+        commandText
+            .IndexOf("cv1|1|", StringComparison.Ordinal)
+            .Should()
+            .BePositive()
+            .And.BeLessThan(commandText.IndexOf("cv1|3|", StringComparison.Ordinal));
+        // The self-basis check owns index 2 and answers outside SQL, so no statement reports it.
+        commandText.Should().NotContain("cv1|2|").And.NotContain("SchoolWithASelfTag");
+    }
+
     private static CustomViewAuthorizationFailure FailureOf(
         RelationalWriteSecondCommandResolution resolution
     ) =>
@@ -700,14 +821,21 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
             $"You may need a {strategyName} hint."
         );
 
-    private static CustomViewAuthorizationCheckTarget ProposedTarget(DbColumnName basisColumn) =>
+    /// <summary>
+    /// The planner seeds one parameter name per check index, so a run carrying two proposed checks needs two
+    /// distinct seeds — a single command cannot bind one name to two values.
+    /// </summary>
+    private static CustomViewAuthorizationCheckTarget ProposedTarget(
+        DbColumnName basisColumn,
+        string parameterSeed = "cvBasis"
+    ) =>
         new CustomViewAuthorizationCheckTarget.Proposed(
             RootTable,
             new CustomViewAuthorizationProposedValueBinding(
                 RootTable,
                 basisColumn,
                 basisColumn.Value,
-                "cvBasis"
+                parameterSeed
             )
         );
 
@@ -773,6 +901,42 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
                             ? new CustomViewAuthorizationCheckTarget.ProposedSelfBasisUnavailable(RootTable)
                             : ProposedTarget(BasisColumn)
                     )
+            ),
+        ]);
+
+    /// <summary>
+    /// A PUT plan whose self-basis proposed check is configured between two SQL-backed ones, with the stored
+    /// pair that settles it. The emitted run therefore skips the index the self-basis check holds.
+    /// </summary>
+    private static RelationalCustomViewAuthorization CreateSelfBasisBetweenProposedPlan() =>
+        new([
+            Check(
+                0,
+                CustomViewAuthorizationCheckValueSource.Stored,
+                "SchoolWithASelfTag",
+                1,
+                new CustomViewAuthorizationCheckTarget.Stored(RootTable, new DbColumnName("DocumentId"))
+            ),
+            Check(
+                1,
+                CustomViewAuthorizationCheckValueSource.Proposed,
+                "SchoolWithAnEarlyTag",
+                0,
+                ProposedTarget(BasisColumn, "cvBasisEarly")
+            ),
+            Check(
+                2,
+                CustomViewAuthorizationCheckValueSource.Proposed,
+                "SchoolWithASelfTag",
+                1,
+                new CustomViewAuthorizationCheckTarget.ProposedSelfBasisUnavailable(RootTable)
+            ),
+            Check(
+                3,
+                CustomViewAuthorizationCheckValueSource.Proposed,
+                "SchoolWithALateTag",
+                2,
+                ProposedTarget(BasisColumn, "cvBasisLate")
             ),
         ]);
 

@@ -80,16 +80,30 @@ public interface ICustomViewAuthorizationExecutor
 /// <c>urn:ed-fi:api:system</c> 500 rather than as an unhandled provider error. Authorization payloads are
 /// dispatched first, so a denial is never relabelled this way.
 /// </para>
+/// <para>
+/// A failure is not the only way <c>auth.{StrategyName}</c> can break its contract, which is why the run is
+/// preceded by a catalog validation whenever the caller supplies an executor for it. The membership SQL reads
+/// <c>cv.DocumentId</c> from that object directly, so a plain table — or a view whose <c>DocumentId</c> is
+/// merely comparable to <c>bigint</c> — answers it without raising anything, and the request would authorize or
+/// deny against an object auth.md does not accept.
+/// </para>
 /// </remarks>
+/// <param name="validationCommandExecutor">
+/// The executor the pre-run catalog validation uses, or <see langword="null"/> to skip it. It must open its own
+/// connection: a write session's executor runs inside the transaction holding the target lock and would consume
+/// that command stream's results.
+/// </param>
 internal sealed class CustomViewAuthorizationExecutor(
     IRelationalCommandExecutor commandExecutor,
-    IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null
+    IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null,
+    IRelationalCommandExecutor? validationCommandExecutor = null
 ) : ICustomViewAuthorizationExecutor
 {
     private readonly IRelationalCommandExecutor _commandExecutor =
         commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
     private readonly IRelationshipAuthorizationProviderFailureExtractor _providerFailureExtractor =
         providerFailureExtractor ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance;
+    private readonly IRelationalCommandExecutor? _validationCommandExecutor = validationCommandExecutor;
 
     public async Task<CustomViewAuthorizationExecutionResult> ExecuteAsync(
         CustomViewAuthorizationExecutionRequest request,
@@ -122,6 +136,24 @@ internal sealed class CustomViewAuthorizationExecutor(
             throw new InvalidOperationException(
                 "Custom view authorization executor cannot execute proposed-value checks without extracted runtime values."
             );
+        }
+
+        // Exactly the checks this run emits, never the whole planned list: validating a view configured after
+        // this run would let its 500 preempt a denial the earlier run is about to report.
+        if (_validationCommandExecutor is not null)
+        {
+            await CustomViewAuthorizationValidator
+                .ValidateSingleRecordAsync(
+                    _validationCommandExecutor,
+                    dialect,
+                    [
+                        .. request.Checks.Where(check =>
+                            sqlPlan.EmittedCheckIndexesInOrder.Contains(check.Index)
+                        ),
+                    ],
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
 
         try

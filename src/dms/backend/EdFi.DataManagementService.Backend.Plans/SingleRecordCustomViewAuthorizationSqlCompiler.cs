@@ -115,14 +115,14 @@ public sealed class SingleRecordCustomViewAuthorizationSqlCompiler(SqlDialect di
     }
 
     /// <summary>
-    /// Enforces the invariants the payload contract and the emitted SQL depend on: indexes run contiguously
-    /// from the first check's index, a resolved path exists, every check addresses the same root table, and
-    /// every proposed binding names a usable parameter.
+    /// Enforces the invariants the payload contract and the emitted SQL depend on: indexes are nonnegative and
+    /// strictly increasing, a resolved path exists, every check addresses the same root table, and every
+    /// proposed binding names a usable parameter.
     /// </summary>
     /// <remarks>
-    /// Indexes are contiguous rather than zero-based because one request can emit several batches — custom
-    /// views configured before and after a <c>NamespaceBased</c> check, or a stored batch and a proposed one.
-    /// When those batches share a command they also share one provider exception, so a zero-based index in
+    /// Indexes are request-wide rather than zero-based per batch because one request can emit several batches —
+    /// custom views configured before and after a <c>NamespaceBased</c> check, or a stored batch and a proposed
+    /// one. When those batches share a command they also share one provider exception, so a zero-based index in
     /// each would name two different checks. Keeping the index unique across the request lets the failure
     /// mapper resolve it against the request's whole planned list.
     /// </remarks>
@@ -139,20 +139,26 @@ public sealed class SingleRecordCustomViewAuthorizationSqlCompiler(SqlDialect di
             );
         }
 
+        var previousIndex = firstCheckIndex - 1;
+
         for (var position = 0; position < spec.Checks.Count; position++)
         {
             var check = spec.Checks[position];
 
-            // The cv1 payload reports only an index, and the failure mapper resolves it positionally against
-            // the request's planned list. A gap or reorder here would report a denial as some other check's
-            // category.
-            if (check.Index != firstCheckIndex + position)
+            // The cv1 payload reports only an index, and the failure mapper resolves it against the request's
+            // full planned list rather than against this emitted slice. A gap is therefore not ambiguous: it is
+            // what a check the caller settled in C# — a self-basis proposed check, which emits no statement —
+            // leaves behind, and it addresses nothing. A duplicate or a decrease is the real hazard: two
+            // statements would answer for one planned check, or a payload would report an earlier one.
+            if (check.Index <= previousIndex)
             {
                 throw new ArgumentException(
-                    $"Custom view authorization check at position {position} carries index {check.Index}; indexes must run contiguously from {firstCheckIndex}.",
+                    $"Custom view authorization check at position {position} carries index {check.Index}; indexes must increase across the emitted checks, but the preceding check carries index {previousIndex}.",
                     nameof(spec)
                 );
             }
+
+            previousIndex = check.Index;
 
             if (check.PathToBasisResource.Count == 0)
             {

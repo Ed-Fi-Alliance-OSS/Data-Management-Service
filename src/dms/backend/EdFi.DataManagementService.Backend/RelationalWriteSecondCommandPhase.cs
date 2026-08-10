@@ -729,7 +729,28 @@ internal sealed class CompositeRelationalWriteSecondCommand(
     private sealed record EmittedCustomViewRuns(
         IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> PlannedChecks,
         IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> EmittedChecks
-    );
+    )
+    {
+        /// <summary>
+        /// The emitted checks up to and including the one a <c>cv1</c> payload named. The command aborts at
+        /// its first <c>AUTH1</c>, so nothing emitted after that check ran: probing a later view would report
+        /// its contract failure ahead of the namespace or custom-view answer configured before it. An index
+        /// this command did not emit leaves the run unchanged, which only a payload naming an unemitted check
+        /// could produce.
+        /// </summary>
+        public EmittedCustomViewRuns ThroughDeniedCheck(int deniedCheckIndex)
+        {
+            for (var position = 0; position < EmittedChecks.Count; position++)
+            {
+                if (EmittedChecks[position].Index == deniedCheckIndex)
+                {
+                    return this with { EmittedChecks = [.. EmittedChecks.Take(position + 1)] };
+                }
+            }
+
+            return this;
+        }
+    }
 
     private sealed record CommandRun(
         IReadOnlyList<RelationalCompositeStatementOutcome> Outcomes,
@@ -752,12 +773,21 @@ internal sealed class CompositeRelationalWriteSecondCommand(
     {
         try
         {
-            return new CommandRun(
-                await new RelationalCompositeCommandExecution()
-                    .ExecuteAsync(writeSession, builder.Seal(), cancellationToken)
-                    .ConfigureAwait(false),
-                null
-            );
+            var outcomes = await new RelationalCompositeCommandExecution()
+                .ExecuteAsync(writeSession, builder.Seal(), cancellationToken)
+                .ConfigureAwait(false);
+
+            // A clean run means every emitted check answered, so validating their views here cannot preempt a
+            // denial: a table masquerading as auth.{StrategyName} satisfies the membership SQL silently, and the
+            // command's own failure paths never see it. Only the runs this command emitted are probed, and the
+            // write is still uncommitted, so the documented 500 leaves nothing behind.
+            if (customViewRuns is not null)
+            {
+                await ValidateEmittedCustomViewsAsync(request, customViewRuns, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            return new CommandRun(outcomes, null);
         }
         catch (DbException exception)
         {
@@ -1700,15 +1730,30 @@ internal sealed class CompositeRelationalWriteSecondCommand(
             return;
         }
 
-        await CustomViewAuthorizationValidator
-            .ValidateSingleRecordAsync(
+        await ValidateEmittedCustomViewsAsync(request, customViewRuns, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Probes the views the command's custom-view statements referenced, throwing
+    /// <see cref="CustomViewAuthorizationValidationException"/> when one is missing or does not meet the
+    /// <c>DocumentId</c> contract. Exactly the emitted runs are probed, never the whole planned list: a view
+    /// behind a check this command never carried has not been reached, and blaming it would replace an answer
+    /// configured ahead of it.
+    /// </summary>
+    private Task ValidateEmittedCustomViewsAsync(
+        RelationalWriteExecutorRequest request,
+        EmittedCustomViewRuns customViewRuns,
+        CancellationToken cancellationToken
+    ) =>
+        _customViewValidationCommandExecutor is null
+            ? Task.CompletedTask
+            : CustomViewAuthorizationValidator.ValidateSingleRecordAsync(
                 _customViewValidationCommandExecutor,
                 request.MappingSet.Key.Dialect,
                 customViewRuns.EmittedChecks,
                 cancellationToken
-            )
-            .ConfigureAwait(false);
-    }
+            );
 
     private static RelationalWriteExecutorResult InvalidCustomViewPlan(
         RelationalWriteExecutorRequest request,
@@ -2095,6 +2140,19 @@ internal sealed class CompositeRelationalWriteSecondCommand(
                 )
             )
             {
+                // A cv1 no-match is only a denial once the object behind it is a conforming view. A table
+                // masquerading as auth.{StrategyName} answers the membership SQL, and its rows simply not
+                // matching arrives here as that same ordinary payload — indistinguishable from a real denial
+                // without probing. Validating first is what keeps the documented urn:ed-fi:api:system 500
+                // from being served as a 403, and it mirrors the post-success validation a clean command
+                // already performs for the case where such an object authorizes instead.
+                await ValidateEmittedCustomViewsAsync(
+                        request,
+                        customViewRuns.ThroughDeniedCheck(customViewFailure!.EmittedAuth1Index),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
                 return RelationalWriteExecutorResults.BuildCustomViewAuthorizationFailureResult(
                     request.OperationKind,
                     customViewFailure!

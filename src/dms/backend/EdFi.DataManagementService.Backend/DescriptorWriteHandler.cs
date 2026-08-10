@@ -1673,7 +1673,8 @@ internal sealed class DescriptorWriteHandler(
     /// <remarks>
     /// The executor is bound to the write session, not to a fresh connection: the target row is locked inside
     /// this transaction, so a check issued on any other connection would either block or read a row the
-    /// transaction has not committed.
+    /// transaction has not committed. Its validation probe is the opposite — it reads the catalog rather than the
+    /// locked row, so it takes the fresh executor the terminals already validate on.
     /// </remarks>
     private Task<CustomViewAuthorizationExecutionResult> ExecuteDescriptorCustomViewAuthorizationAsync(
         MappingSet mappingSet,
@@ -1685,7 +1686,8 @@ internal sealed class DescriptorWriteHandler(
     ) =>
         new CustomViewAuthorizationExecutor(
             sessionCommandExecutor,
-            _relationshipAuthorizationProviderFailureExtractor
+            _relationshipAuthorizationProviderFailureExtractor,
+            _customViewValidationCommandExecutor
         ).ExecuteAsync(
             new CustomViewAuthorizationExecutionRequest(mappingSet, documentId, runChecks, plannedChecks),
             cancellationToken

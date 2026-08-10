@@ -578,22 +578,52 @@ public class Given_SingleRecordCustomViewAuthorizationSqlCompiler
     }
 
     [Test]
-    public void It_should_reject_a_gap_in_the_check_indexes()
+    public void It_should_accept_a_gap_left_by_a_check_settled_outside_sql()
     {
-        // The cv1 payload reports only an index and the failure mapper resolves it positionally against the
-        // request's planned list, so a gap would report a denial as some other check's category.
+        // A request-wide index the caller settles in C# — a self-basis proposed check emits no statement — is
+        // simply absent from the run. The cv1 payload resolves against the request's full planned list, so the
+        // gap addresses nothing and both emitted checks keep the index the planner assigned them.
+        var plan = Compile(
+            SqlDialect.Pgsql,
+            [
+                Check(
+                    3,
+                    CustomViewAuthorizationCheckValueSource.Proposed,
+                    DirectPath(),
+                    ProposedTarget("CourseTranscript", "Student_DocumentId", 3)
+                ),
+                Check(
+                    5,
+                    CustomViewAuthorizationCheckValueSource.Proposed,
+                    DirectPath(),
+                    ProposedTarget("CourseTranscript", "Student_DocumentId", 5)
+                ),
+            ]
+        );
+
+        plan.EmittedCheckIndexesInOrder.Should().Equal(3, 5);
+        plan.AuthorizationSql.Should().Contain("cv1|3|").And.Contain("cv1|5|");
+        plan.AuthorizationSql.Should().NotContain("cv1|4|");
+    }
+
+    [TestCase(3, 3, TestName = "It_should_reject_a_duplicate_check_index")]
+    [TestCase(5, 3, TestName = "It_should_reject_a_decreasing_check_index")]
+    public void It_should_reject_check_indexes_that_do_not_increase(int firstIndex, int secondIndex)
+    {
+        // Unlike a gap, these are ambiguous: one payload index would address two emitted statements, or would
+        // report a check the run had already passed.
         var act = () =>
             Compile(
                 SqlDialect.Pgsql,
                 [
                     Check(
-                        0,
+                        firstIndex,
                         CustomViewAuthorizationCheckValueSource.Stored,
                         DirectPath(),
                         StoredTarget("CourseTranscript")
                     ),
                     Check(
-                        2,
+                        secondIndex,
                         CustomViewAuthorizationCheckValueSource.Stored,
                         DirectPath(),
                         StoredTarget("CourseTranscript")
@@ -601,7 +631,7 @@ public class Given_SingleRecordCustomViewAuthorizationSqlCompiler
                 ]
             );
 
-        act.Should().Throw<ArgumentException>().WithMessage("*must run contiguously from 0*");
+        act.Should().Throw<ArgumentException>().WithMessage("*indexes must increase*");
     }
 
     [Test]

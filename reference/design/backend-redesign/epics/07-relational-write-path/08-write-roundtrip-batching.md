@@ -220,12 +220,14 @@ DELETE Adoption"); the "Was" column is the pre-adoption estimate they replace.
 | Authorization that does not fit the command's parameter budget | 2 or 3 | n/a | the check that does not fit takes an ordered segment and the deletes wait for it |
 | Blocked by an inbound foreign key | 1 | 3 | the violation surfaces on the same command and is mapped by constraint name |
 
-Custom view-based authorization is not in the measured set above. Its stored `cv1` statement is emitted
-like the other stored families, so a regular-resource DELETE is expected to keep the counts in this table;
-a descriptor DELETE is structurally different, running its membership query on the write session inside the
-locked-target boundary rather than as an `AUTH1` statement. The regular-resource shape is covered functionally on
-both PostgreSQL and SQL Server, the descriptor locked-boundary shape on PostgreSQL, but neither has a
-recorded command count yet.
+Custom view-based authorization is not in the measured set above. Its stored `cv1` statement is emitted like the
+other stored families, so a regular-resource DELETE is expected to keep the counts in this table plus one command
+for the view-contract probe each membership run is preceded by — and one more when a custom view is configured
+after `NamespaceBased`, because that run takes an ordered segment so its view is validated only once the namespace
+check has passed. A descriptor DELETE is structurally different, running its membership query on the write session
+inside the locked-target boundary rather than as an `AUTH1` statement. The regular-resource shape is covered
+functionally on both PostgreSQL and SQL Server, the descriptor locked-boundary shape on PostgreSQL, but neither
+has a recorded command count yet.
 
 ### GET-by-id
 
@@ -234,7 +236,7 @@ recorded command count yet.
 | No authorization | 2 — already at the draft target |
 | Namespace authorization only | 4 (adds the authorization command and `ShouldRetryPostHydrationReadBoundaryAsync`) |
 | Namespace and relationship authorization | 5 |
-| Custom-view authorization | unrecorded. A regular resource adds no command, because the `cv1` statement joins the authorization command. A descriptor GET-by-id has no authorization command to join — it evaluates namespace in memory — so its membership query is an added command |
+| Custom-view authorization | unrecorded. A regular resource adds one command for the view-contract probe that precedes the membership run; the `cv1` statement itself joins the authorization command. A descriptor GET-by-id has no authorization command to join — it evaluates namespace in memory — so its membership query is an added command alongside that probe |
 
 ### Descriptor Writes
 

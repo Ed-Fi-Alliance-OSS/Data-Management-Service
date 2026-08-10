@@ -502,7 +502,10 @@ public sealed class RelationalDocumentStoreRepository(
                     _deleteConstraintResolver,
                     _relationalParameterConfigurator,
                     _relationshipAuthorizationProviderFailureExtractor,
-                    _logger
+                    _logger,
+                    // Opens a connection per command, so the custom-view validation probe never joins the write
+                    // session's transaction.
+                    customViewValidationCommandExecutor: _commandExecutor
                 )
                     .ExecuteAsync(
                         new RelationalDeleteCommandRequest(

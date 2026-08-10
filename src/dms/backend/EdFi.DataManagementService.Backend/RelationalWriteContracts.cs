@@ -952,8 +952,9 @@ public sealed record RelationalWriteNamespaceAuthorization(
 /// be mapped against. Execution slices it — by value source, and within the stored source by configured
 /// position relative to <c>NamespaceBased</c> — but no slice is ever the authority for resolving a payload.
 /// Indexes are request-wide for that reason: batches sharing a command also share one provider exception, so a
-/// per-slice index would leave two checks both reporting index 0. Each emitted slice need only be contiguous
-/// from its own starting index, which is all the compiler enforces.
+/// per-slice index would leave two checks both reporting index 0. Each emitted slice need only carry
+/// nonnegative, strictly increasing indexes, which is all the compiler enforces — a slice may skip an index a
+/// check settled in C# holds.
 /// </para>
 /// <para>
 /// Stored and proposed checks must be compiled and executed as separate batches. A compiled batch's row guard

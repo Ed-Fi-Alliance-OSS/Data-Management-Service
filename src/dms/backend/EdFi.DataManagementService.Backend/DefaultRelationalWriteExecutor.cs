@@ -64,7 +64,9 @@ internal sealed class DefaultRelationalWriteExecutor(
                 ?? throw new ArgumentNullException(nameof(referenceResolverAdapterFactory)),
             relationalParameterConfigurator,
             relationshipAuthorizationProviderFailureExtractor,
-            logger
+            logger,
+            commandBudget: null,
+            customViewValidationCommandExecutor
         );
 
     private readonly RelationalWriteExecutionStateResolver _executionStateResolver = new(

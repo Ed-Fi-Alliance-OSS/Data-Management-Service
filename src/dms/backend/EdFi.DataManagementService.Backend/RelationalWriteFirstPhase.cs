@@ -167,7 +167,8 @@ internal sealed class CompositeRelationalWriteFirstPhase(
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
         null,
     ILogger? logger = null,
-    RelationalCommandBudget? commandBudget = null
+    RelationalCommandBudget? commandBudget = null,
+    IRelationalCommandExecutor? customViewValidationCommandExecutor = null
 ) : IRelationalWriteFirstPhase
 {
     private const string ReferenceResolutionLabel = "reference-resolution";
@@ -188,6 +189,14 @@ internal sealed class CompositeRelationalWriteFirstPhase(
 
     private readonly RelationalCommandBudget? _commandBudget = commandBudget;
 
+    /// <summary>
+    /// The fresh-connection executor the custom-view catalog validation runs on, or <see langword="null"/> to
+    /// skip validation. Never the write session's: the probe reads the catalog, and issuing it on the session
+    /// would run inside the transaction holding the target lock and consume that command's results.
+    /// </summary>
+    private readonly IRelationalCommandExecutor? _customViewValidationCommandExecutor =
+        customViewValidationCommandExecutor;
+
     private sealed record CompositeFirstPhasePlan(
         RelationalCompositeCommand Command,
         StoredNamespaceStatementPlan? NamespacePlan,
@@ -201,6 +210,13 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         /// provider failure is mapped only against checks that command actually sent.
         /// </summary>
         public StoredCustomViewStatementPlan? CustomViewPlan { get; init; }
+
+        /// <summary>
+        /// Exactly the custom-view checks the command carries statements for, so their views are validated
+        /// before it runs and no other view's contract can preempt what it decides.
+        /// </summary>
+        public IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> CustomViewCommandChecks { get; init; } =
+        [];
     }
 
     public async Task<RelationalWriteFirstPhaseResolution> ResolveAsync(
@@ -258,11 +274,16 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         AppendCaptureTarget(builder, input);
 
         // Custom views and NamespaceBased are AND filters executing in CMS-configured order, and the command
-        // aborts at its first failure, so the namespace statement is emitted between the views configured
-        // before it and those configured after. Both runs' indexes come from one planned list, so a cv1
-        // payload still identifies exactly one check. This path is all-or-nothing — a namespace check that
-        // does not fit sends the whole request to ordered segments — so no run can be stranded here.
+        // aborts at its first failure, so only the views configured before the namespace statement can ride it.
+        // A run configured after that check owes its own ordered segment, because its views may be validated
+        // only once the check has passed — so the whole request takes the ordered-segments path, where every run
+        // is already executed and validated in configured order.
         var (customViewsBeforeNamespace, customViewsAfterNamespace) = PartitionCustomViewRuns(input);
+
+        if (customViewsAfterNamespace.Count > 0)
+        {
+            return null;
+        }
 
         RelationalCompositeStoredAuthorization.AppendCustomViewRun(
             builder,
@@ -284,18 +305,11 @@ internal sealed class CompositeRelationalWriteFirstPhase(
             return null;
         }
 
-        RelationalCompositeStoredAuthorization.AppendCustomViewRun(
-            builder,
-            carrier,
-            input.MappingSet,
-            customViewsAfterNamespace
-        );
-
-        // Mapping uses the request's full planned list, never the emitted slices, so a payload from either
-        // run resolves to the check the planner assigned that index to.
+        // Mapping uses the request's full planned list, never the emitted slice, so a payload resolves to the
+        // check the planner assigned that index to.
         var customViewPlan =
             input.CustomViewAuthorization is { } customViewAuthorization
-            && (customViewsBeforeNamespace.Count > 0 || customViewsAfterNamespace.Count > 0)
+            && customViewsBeforeNamespace.Count > 0
                 ? new StoredCustomViewStatementPlan(customViewAuthorization.Checks)
                 : null;
 
@@ -330,6 +344,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         )
         {
             CustomViewPlan = customViewPlan,
+            CustomViewCommandChecks = customViewsBeforeNamespace,
         };
     }
 
@@ -344,6 +359,21 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         var relationshipPlan = plan.RelationshipPlan;
         var referencePlan = plan.ReferencePlan;
         var hydrationPlan = plan.HydrationPlan;
+
+        // Ahead of the command, because the views it carries run ahead of the namespace check inside it: a table
+        // masquerading as auth.{StrategyName} answers the membership SQL without raising anything, so nothing
+        // later in the command would reveal it.
+        if (_customViewValidationCommandExecutor is not null)
+        {
+            await CustomViewAuthorizationValidator
+                .ValidateSingleRecordAsync(
+                    _customViewValidationCommandExecutor,
+                    input.MappingSet.Key.Dialect,
+                    plan.CustomViewCommandChecks,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
 
         IReadOnlyList<RelationalCompositeStatementOutcome> outcomes;
         var execution = new RelationalCompositeCommandExecution();
@@ -634,7 +664,8 @@ internal sealed class CompositeRelationalWriteFirstPhase(
 
         var executionResult = await new CustomViewAuthorizationExecutor(
             writeSession.CreateCommandExecutor(),
-            _providerFailureExtractor
+            _providerFailureExtractor,
+            _customViewValidationCommandExecutor
         )
             .ExecuteAsync(
                 new CustomViewAuthorizationExecutionRequest(

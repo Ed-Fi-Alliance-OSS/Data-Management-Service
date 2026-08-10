@@ -239,7 +239,15 @@ public static class ReferenceResolverServiceCollectionExtensions
             ServiceDescriptor.Scoped<INamespaceAuthorizationExecutor, NamespaceAuthorizationExecutor>()
         );
         services.TryAdd(
-            ServiceDescriptor.Scoped<ICustomViewAuthorizationExecutor, CustomViewAuthorizationExecutor>()
+            ServiceDescriptor.Scoped<ICustomViewAuthorizationExecutor>(
+                static serviceProvider => new CustomViewAuthorizationExecutor(
+                    serviceProvider.GetRequiredService<IRelationalCommandExecutor>(),
+                    serviceProvider.GetService<IRelationshipAuthorizationProviderFailureExtractor>(),
+                    // The same executor validates the run's views: it opens a connection per command, so it is
+                    // never the write session's, which is what the validation probe must avoid.
+                    serviceProvider.GetRequiredService<IRelationalCommandExecutor>()
+                )
+            )
         );
         services.TryAdd(
             ServiceDescriptor.Scoped<

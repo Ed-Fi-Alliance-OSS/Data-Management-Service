@@ -529,6 +529,47 @@ public class Given_A_Mssql_Relational_Query_Authorization_With_A_Custom_View_Str
     }
 
     [Test]
+    public async Task It_throws_on_delete_when_the_custom_authorization_object_is_a_table_with_a_bigint_document_id()
+    {
+        // DELETE reaches the view through the co-batched stored run rather than a standalone query, and a table
+        // whose DocumentId is type-compatible answers that run's membership SQL without raising anything. Without
+        // validating the object the row would be deleted, or the caller denied, against something auth.md does
+        // not accept.
+        await _context.Database.ExecuteNonQueryAsync(
+            $"""
+            CREATE TABLE [auth].[{TableInsteadOfCustomViewStrategyName}] (
+                [DocumentId] bigint NOT NULL
+            );
+            """
+        );
+
+        try
+        {
+            var exception = await AssertCustomViewValidationFailure(async () =>
+                await _context.DeleteByIdAsync(
+                    "ed-fi",
+                    "School",
+                    _schoolSeeds[0].DocumentUuid,
+                    [ClaimEducationOrganizationId],
+                    [TableInsteadOfCustomViewStrategyName]
+                )
+            );
+
+            exception.Message.Should().Contain("Invalid custom authorization view DocumentId contract.");
+            (await _context.CountDocumentRowsAsync(_schoolSeeds[0].DocumentUuid)).Should().Be(1);
+        }
+        finally
+        {
+            await _context.Database.ExecuteNonQueryAsync(
+                $"""
+                IF OBJECT_ID(N'[auth].[{TableInsteadOfCustomViewStrategyName}]', N'U') IS NOT NULL
+                    DROP TABLE [auth].[{TableInsteadOfCustomViewStrategyName}];
+                """
+            );
+        }
+    }
+
+    [Test]
     public async Task It_reports_a_referencing_document_failure_after_the_custom_view_authorizes_the_delete()
     {
         // School 100 IS in the view, so authorization passes and the delete proceeds — and then fails because

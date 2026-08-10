@@ -11,9 +11,10 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// Input for compiling the co-batched single-record custom view-based authorization SQL.
 /// </summary>
 /// <param name="Checks">
-/// The checks this batch emits, in emission order. Their <c>Index</c> values must run contiguously, but need
-/// not start at zero: one request can emit several batches, and an index has to identify a check uniquely
-/// across all of them because batches sharing a command also share one provider exception.
+/// The checks this batch emits, in emission order. Their <c>Index</c> values must be nonnegative and strictly
+/// increasing, but need not start at zero or be consecutive: one request can emit several batches, and an index
+/// has to identify a check uniquely across all of them because batches sharing a command also share one
+/// provider exception. A gap is what a check the caller settles in C# leaves behind.
 /// </param>
 /// <param name="DocumentIdParameterName">
 /// Bare parameter name carrying the stored row's <c>DocumentId</c>. Bound only when a stored check is present.
