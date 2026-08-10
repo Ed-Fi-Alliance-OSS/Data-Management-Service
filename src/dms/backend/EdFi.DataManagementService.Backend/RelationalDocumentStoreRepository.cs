@@ -2872,19 +2872,11 @@ public sealed class RelationalDocumentStoreRepository(
                 continue;
             }
 
-            // StoredDocument-mode reads do not emit `link`, so the auxiliary document-reference
-            // lookup is wasted work — opt out via IncludeDocumentReferenceLookup: false. Descriptor
-            // URIs are still needed for both read modes.
-            var hydrationExecutionOptions = new HydrationExecutionOptions(
-                IncludeDocumentReferenceLookup: relationalGetRequest.ReadMode
-                    == RelationalGetRequestReadMode.ExternalResponse,
-                UseSingleDocumentFastPath: true
-            );
             var hydratedPage = await _documentHydrator
                 .HydrateAsync(
                     readPlan,
                     new PageKeysetSpec.Single(existingDocument.DocumentId),
-                    hydrationExecutionOptions,
+                    CreateGetHydrationExecutionOptions(relationalGetRequest),
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -2947,56 +2939,86 @@ public sealed class RelationalDocumentStoreRepository(
                 continue;
             }
 
-            var appliesReadableProfileProjection = ShouldApplyReadableProfileProjection(relationalGetRequest);
-            var readProfileName = appliesReadableProfileProjection
-                ? relationalGetRequest.ReadableProfileProjectionContext!.ProfileName
-                : null;
-
-            var edfiDoc = _readMaterializer.Materialize(
-                new RelationalReadMaterializationRequest(
-                    readPlan,
-                    documentMetadata,
-                    hydratedPage.TableRowsInDependencyOrder,
-                    hydratedPage.DescriptorRowsInPlanOrder,
-                    relationalGetRequest.ReadMode.ToMaterializationMode()
-                )
-                {
-                    MappingSet = mappingSet,
-                    DocumentReferenceLookup = hydratedPage.DocumentReferenceLookup,
-                    EtagVariant = new EtagVariantInputs(
-                        readProfileName,
-                        ResponseFormat.Json,
-                        relationalGetRequest.ResponseContentCoding
-                    ),
-                }
-            );
-
-            if (appliesReadableProfileProjection)
-            {
-                var projectionContext = relationalGetRequest.ReadableProfileProjectionContext!;
-                edfiDoc = _readableProfileProjector.Project(
-                    edfiDoc,
-                    projectionContext.ContentTypeDefinition,
-                    projectionContext.IdentityPropertyNames
-                );
-            }
-
-            // Final response-shaping pass — strips `link` subtrees when ResourceLinksOptions.Enabled
-            // is false. Runs after readable-profile projection so the flag governs the served body,
-            // not the cached intermediate. No-op when Enabled is true. See
-            // design-docs/link-injection.md §Feature Flag and §Cache and Etag.
-            _readMaterializer.StripReferenceLinks(edfiDoc, readPlan);
-
-            return new GetResult.GetSuccess(
-                new DocumentUuid(documentMetadata.DocumentUuid),
-                edfiDoc,
-                documentMetadata.ContentLastModifiedAt.UtcDateTime,
-                null
+            return BuildGetSuccess(
+                relationalGetRequest,
+                mappingSet,
+                readPlan,
+                hydratedPage,
+                documentMetadata
             );
         }
 
         return new GetResult.UnknownFailure(
             "Relational GET could not read a stable authorized representation for the requested document."
+        );
+    }
+
+    private static HydrationExecutionOptions CreateGetHydrationExecutionOptions(
+        IGetRequest relationalGetRequest
+    )
+    {
+        // StoredDocument-mode reads do not emit `link`, so the auxiliary document-reference lookup is
+        // wasted work. Descriptor URIs are still needed for both read modes.
+        return new HydrationExecutionOptions(
+            IncludeDocumentReferenceLookup: relationalGetRequest.ReadMode
+                == RelationalGetRequestReadMode.ExternalResponse,
+            UseSingleDocumentFastPath: true
+        );
+    }
+
+    private GetResult.GetSuccess BuildGetSuccess(
+        IGetRequest relationalGetRequest,
+        MappingSet mappingSet,
+        ResourceReadPlan readPlan,
+        HydratedPage hydratedPage,
+        DocumentMetadataRow documentMetadata
+    )
+    {
+        var appliesReadableProfileProjection = ShouldApplyReadableProfileProjection(relationalGetRequest);
+        var readProfileName = appliesReadableProfileProjection
+            ? relationalGetRequest.ReadableProfileProjectionContext!.ProfileName
+            : null;
+
+        var edfiDoc = _readMaterializer.Materialize(
+            new RelationalReadMaterializationRequest(
+                readPlan,
+                documentMetadata,
+                hydratedPage.TableRowsInDependencyOrder,
+                hydratedPage.DescriptorRowsInPlanOrder,
+                relationalGetRequest.ReadMode.ToMaterializationMode()
+            )
+            {
+                MappingSet = mappingSet,
+                DocumentReferenceLookup = hydratedPage.DocumentReferenceLookup,
+                EtagVariant = new EtagVariantInputs(
+                    readProfileName,
+                    ResponseFormat.Json,
+                    relationalGetRequest.ResponseContentCoding
+                ),
+            }
+        );
+
+        if (appliesReadableProfileProjection)
+        {
+            var projectionContext = relationalGetRequest.ReadableProfileProjectionContext!;
+            edfiDoc = _readableProfileProjector.Project(
+                edfiDoc,
+                projectionContext.ContentTypeDefinition,
+                projectionContext.IdentityPropertyNames
+            );
+        }
+
+        // Final response-shaping pass — strips `link` subtrees when ResourceLinksOptions.Enabled
+        // is false. Runs after readable-profile projection so the flag governs the served body,
+        // not the cached intermediate. No-op when Enabled is true. See
+        // design-docs/link-injection.md §Feature Flag and §Cache and Etag.
+        _readMaterializer.StripReferenceLinks(edfiDoc, readPlan);
+
+        return new GetResult.GetSuccess(
+            new DocumentUuid(documentMetadata.DocumentUuid),
+            edfiDoc,
+            documentMetadata.ContentLastModifiedAt.UtcDateTime,
+            null
         );
     }
 
@@ -3008,9 +3030,11 @@ public sealed class RelationalDocumentStoreRepository(
     {
         var mappingSet = relationalGetRequest.MappingSet;
 
+        ResourceReadPlan readPlan;
+
         try
         {
-            _ = mappingSet.GetReadPlanOrThrow(resource);
+            readPlan = mappingSet.GetReadPlanOrThrow(resource);
         }
         catch (NotSupportedException ex)
         {
@@ -3129,7 +3153,13 @@ public sealed class RelationalDocumentStoreRepository(
             return new DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate(
                 candidate,
                 fallbackCancellationToken =>
-                    GetDocumentByIdRelationalAsync(relationalGetRequest, fallbackCancellationToken)
+                    HydrateSelectedGetByIdCandidateAsync(
+                        relationalGetRequest,
+                        mappingSet,
+                        readPlan,
+                        candidate,
+                        fallbackCancellationToken
+                    )
             );
         }
 
@@ -3138,6 +3168,53 @@ public sealed class RelationalDocumentStoreRepository(
                 "Relational GET could not select a stable authorized candidate for the requested document."
             )
         );
+    }
+
+    private async Task<GetResult> HydrateSelectedGetByIdCandidateAsync(
+        IGetRequest relationalGetRequest,
+        MappingSet mappingSet,
+        ResourceReadPlan readPlan,
+        DocumentCacheReadAccelerationCandidate candidate,
+        CancellationToken cancellationToken
+    )
+    {
+        var hydratedPage = await _documentHydrator
+            .HydrateAsync(
+                readPlan,
+                new PageKeysetSpec.Single(candidate.DocumentId),
+                CreateGetHydrationExecutionOptions(relationalGetRequest),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (!SelectedGetByIdCandidateStillMatches(candidate, hydratedPage.DocumentMetadata))
+        {
+            return await GetDocumentByIdRelationalAsync(relationalGetRequest, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        DocumentMetadataRow documentMetadata = hydratedPage.DocumentMetadata[0];
+
+        return BuildGetSuccess(relationalGetRequest, mappingSet, readPlan, hydratedPage, documentMetadata);
+    }
+
+    private static bool SelectedGetByIdCandidateStillMatches(
+        DocumentCacheReadAccelerationCandidate candidate,
+        IReadOnlyList<DocumentMetadataRow> hydratedMetadata
+    )
+    {
+        if (hydratedMetadata.Count != 1)
+        {
+            return false;
+        }
+
+        DocumentMetadataRow metadata = hydratedMetadata[0];
+
+        return metadata.DocumentId == candidate.DocumentId
+            && metadata.DocumentUuid == candidate.DocumentUuid.Value
+            && metadata.ResourceKeyId == candidate.ResourceKeyId
+            && metadata.ContentVersion == candidate.ContentVersion
+            && metadata.ContentLastModifiedAt == candidate.ContentLastModifiedAt;
     }
 
     private async Task<bool> ShouldRetryPostHydrationReadBoundaryAsync(

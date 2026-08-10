@@ -381,11 +381,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var expectedResourceKeyId = mappingSet.ResourceKeyIdByResource[resource];
         var readAccelerationCoordinator = new RecordingReadAccelerationCoordinator();
         var getRequest = CreateGetRequest(documentUuid, mappingSet, _schoolResourceInfo);
-        var hydratedPage = CreateHydratedPage(
-            readPlan,
-            CreateDocumentMetadataRow(documentUuid, 345L, 91L),
-            (345L, "Lincoln High")
-        );
         var materializedDocument = JsonNode.Parse("""{"id":"hydrated","name":"Lincoln High"}""")!;
         HydrationExecutionOptions? capturedExecutionOptions = null;
 
@@ -416,7 +411,19 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             )
             .Invokes(call => capturedExecutionOptions = call.GetArgument<HydrationExecutionOptions>(2))
-            .Returns(hydratedPage);
+            .Returns(
+                CreateHydratedPage(
+                    readPlan,
+                    CreateDocumentMetadataRow(
+                        documentUuid,
+                        345L,
+                        91L,
+                        contentLastModifiedAt,
+                        expectedResourceKeyId
+                    ),
+                    (345L, "Lincoln High")
+                )
+            );
         A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
             .Returns(materializedDocument);
 
@@ -443,6 +450,207 @@ public class Given_RelationalDocumentStoreRepositoryTests
         capturedExecutionOptions!
             .UseSingleDocumentFastPath.Should()
             .BeTrue("the cache-miss fallback still hydrates only the selected candidate body");
+    }
+
+    [Test]
+    public async Task It_hydrates_the_authorized_get_candidate_on_cache_fallback_without_rerunning_lookup_or_authorization()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-dddddddddddd"));
+        var contentLastModifiedAt = new DateTimeOffset(2026, 6, 1, 11, 15, 30, TimeSpan.Zero);
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var readPlan = mappingSet.ReadPlansByResource[resource];
+        var resourceKeyId = mappingSet.ResourceKeyIdByResource[resource];
+        var readAccelerationCoordinator = new RecordingReadAccelerationCoordinator();
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _schoolResourceInfo,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+            ],
+            claimEducationOrganizationIds: [255901L]
+        );
+        var hydratedPage = CreateHydratedPage(
+            readPlan,
+            CreateDocumentMetadataRow(documentUuid, 345L, 91L, contentLastModifiedAt, resourceKeyId),
+            (345L, "Lincoln High")
+        );
+        RelationalReadMaterializationRequest materializationRequest = null!;
+
+        UseReadAccelerationCoordinator(readAccelerationCoordinator);
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    resource,
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    contentLastModifiedAt
+                )
+            );
+        A.CallTo(() =>
+                _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
+                    A<SingleRecordRelationshipAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(
+                Task.FromResult<SingleRecordRelationshipAuthorizationExecutionResult>(
+                    new SingleRecordRelationshipAuthorizationExecutionResult.Authorized(91L)
+                )
+            );
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    new PageKeysetSpec.Single(345L),
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .Invokes(call =>
+                materializationRequest = call.GetArgument<RelationalReadMaterializationRequest>(0)!
+            )
+            .Returns(JsonNode.Parse("""{"id":"authorized-cache-fallback"}""")!);
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result.Should().BeOfType<GetResult.GetSuccess>();
+        materializationRequest.DocumentMetadata.Should().BeSameAs(hydratedPage.DocumentMetadata[0]);
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    resource,
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() =>
+                _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
+                    A<SingleRecordRelationshipAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    new PageKeysetSpec.Single(345L),
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_reruns_the_no_cache_get_when_selected_candidate_fallback_metadata_drifts()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-eeeeeeeeeeee"));
+        var selectedContentLastModifiedAt = new DateTimeOffset(2026, 6, 1, 11, 30, 0, TimeSpan.Zero);
+        var rerunContentLastModifiedAt = new DateTimeOffset(2026, 6, 1, 11, 45, 0, TimeSpan.Zero);
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var readPlan = mappingSet.ReadPlansByResource[resource];
+        var resourceKeyId = mappingSet.ResourceKeyIdByResource[resource];
+        var readAccelerationCoordinator = new RecordingReadAccelerationCoordinator();
+        var getRequest = CreateGetRequest(documentUuid, mappingSet, _schoolResourceInfo);
+        var selectedFallbackHydratedPage = CreateHydratedPage(
+            readPlan,
+            CreateDocumentMetadataRow(documentUuid, 345L, 92L, selectedContentLastModifiedAt, resourceKeyId),
+            (345L, "Drifted selected row")
+        );
+        var rerunHydratedPage = CreateHydratedPage(
+            readPlan,
+            CreateDocumentMetadataRow(documentUuid, 678L, 93L, rerunContentLastModifiedAt, resourceKeyId),
+            (678L, "No-cache rerun row")
+        );
+        List<PageKeysetSpec> hydratedKeysets = [];
+        RelationalReadMaterializationRequest materializationRequest = null!;
+
+        UseReadAccelerationCoordinator(readAccelerationCoordinator);
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    resource,
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsNextFromSequence(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    selectedContentLastModifiedAt
+                ),
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    678L,
+                    documentUuid,
+                    93L,
+                    rerunContentLastModifiedAt
+                )
+            );
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => hydratedKeysets.Add(call.GetArgument<PageKeysetSpec>(1)!))
+            .ReturnsLazily(
+                (
+                    ResourceReadPlan _,
+                    PageKeysetSpec keyset,
+                    HydrationExecutionOptions _,
+                    CancellationToken _
+                ) =>
+                    keyset is PageKeysetSpec.Single { DocumentId: 345L }
+                        ? selectedFallbackHydratedPage
+                        : rerunHydratedPage
+            );
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .Invokes(call =>
+                materializationRequest = call.GetArgument<RelationalReadMaterializationRequest>(0)!
+            )
+            .Returns(JsonNode.Parse("""{"id":"no-cache-rerun"}""")!);
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        var success = result.Should().BeOfType<GetResult.GetSuccess>().Subject;
+        success.EdfiDoc["id"]!.GetValue<string>().Should().Be("no-cache-rerun");
+        hydratedKeysets.Should().HaveCount(2);
+        hydratedKeysets[0].Should().Be(new PageKeysetSpec.Single(345L));
+        hydratedKeysets[1].Should().Be(new PageKeysetSpec.Single(678L));
+        materializationRequest.DocumentMetadata.Should().BeSameAs(rerunHydratedPage.DocumentMetadata[0]);
+        materializationRequest
+            .TableRowsInDependencyOrder.Should()
+            .BeSameAs(rerunHydratedPage.TableRowsInDependencyOrder);
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    resource,
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedTwiceExactly();
     }
 
     [Test]
