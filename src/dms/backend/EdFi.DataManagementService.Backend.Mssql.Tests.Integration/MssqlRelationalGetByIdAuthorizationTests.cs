@@ -976,6 +976,63 @@ public class Given_A_Mssql_PeopleRelationship_Crud_Authorization_Matrix
     }
 
     [Test]
+    public async Task It_authorizes_student_self_path_when_the_auth_view_yields_duplicate_pairs()
+    {
+        // DMS-1329: without SELECT DISTINCT the student auth view yields one row per closure path.
+        // Enroll the authorized student at a second school reachable from the same claim so the
+        // (claim EdOrg, student) pair genuinely occurs twice, then prove the single-record EXISTS
+        // check still authorizes and the unauthorized student is still denied.
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateSchoolAsync(
+                new QuerySchoolSeed(
+                    new DocumentUuid(Guid.Parse("99999999-1000-0000-0000-000000001001")),
+                    200,
+                    "East School"
+                )
+            )
+        );
+        await _context.SeedStudentSchoolAssociationAsync(
+            new StudentSchoolAssociationSeed(
+                new DocumentUuid(Guid.Parse("99999999-1000-0000-0000-000000001002")),
+                _authorizedStudentSeed.StudentUniqueId,
+                200,
+                _schoolYearSeed.SchoolYear,
+                EntryGradeLevelDescriptor,
+                new DateOnly(2026, 8, 15)
+            )
+        );
+        await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 200);
+
+        // Non-vacuity precondition: the duplicate pair actually exists in the view.
+        await _context.AssertStudentAuthViewPairCountAsync(
+            _authorizedStudentSeed.StudentUniqueId,
+            ClaimEducationOrganizationId,
+            expectedPairCount: 2
+        );
+
+        var authorizedResult = await GetEdFiAsync(
+            "Student",
+            _authorizedStudentSeed.DocumentUuid,
+            RelationshipAuthorizationCrudTestSupport.StudentsOnlyStrategyNames
+        );
+        var unauthorizedResult = await GetEdFiAsync(
+            "Student",
+            _unauthorizedStudentSeed.DocumentUuid,
+            RelationshipAuthorizationCrudTestSupport.StudentsOnlyStrategyNames
+        );
+
+        AssertSuccess(authorizedResult, _authorizedStudentSeed.DocumentUuid);
+        AssertPeopleRelationshipDenied(
+            unauthorizedResult,
+            RelationshipAuthorizationFailureValueSource.Stored,
+            RelationshipAuthorizationSubjectFailureKind.NoRelationship,
+            RelationshipAuthorizationCrudTestSupport.RelationshipsWithStudentsOnly,
+            "Student",
+            "auth.EducationOrganizationIdToStudentDocumentId"
+        );
+    }
+
+    [Test]
     public async Task It_enforces_mixed_edorg_and_people_subjects_and_allows_a_second_people_strategy_to_authorize()
     {
         var edOrgPassesPeopleFails = new AuthorizationStudentSchoolSeed(
