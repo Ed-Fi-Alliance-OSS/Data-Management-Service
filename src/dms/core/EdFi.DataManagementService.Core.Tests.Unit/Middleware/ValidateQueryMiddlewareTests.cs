@@ -49,10 +49,10 @@ public class ValidateQueryMiddlewareTests
     }
 
     /// <summary>
-    /// The parameter-validation shell a pagination fault is answered with. Every dereference is hard
-    /// on purpose: a null body or a missing key must fail the test rather than short-circuit the
-    /// assertion that follows it. The reported messages are asserted separately by each fixture,
-    /// which supplies its own faulty parameters.
+    /// The parameter-validation shell a pagination or change-version fault is answered with. Every
+    /// dereference is hard on purpose: a null body or a missing key must fail the test rather than
+    /// short-circuit the assertion that follows it. The reported messages are asserted separately by
+    /// each fixture, which supplies its own faulty parameters.
     ///
     /// Every key of the shell is covered, including the two the shell carries empty, so a change
     /// that stopped emitting one of them cannot pass here and be caught only by the cursor fixtures.
@@ -850,8 +850,8 @@ public class ValidateQueryMiddlewareTests
         [Test]
         public void It_should_report_the_existing_invalid_query_field_error()
         {
-            _requestInfo
-                .FrontendResponse.Body?["errors"]?[0]?.GetValue<string>()
+            _requestInfo.FrontendResponse.Body!["errors"]![0]!
+                .GetValue<string>()
                 .Should()
                 .Be("The query field 'invalidSchoolId' is not valid for this resource.");
         }
@@ -981,6 +981,12 @@ public class ValidateQueryMiddlewareTests
         public void It_should_send_bad_request()
         {
             _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_should_use_the_parameter_validation_failed_problem_details()
+        {
+            AssertParameterValidationShell(_requestInfo);
         }
 
         [Test]
@@ -1208,8 +1214,8 @@ public class ValidateQueryMiddlewareTests
         [Test]
         public void It_should_report_the_invalid_query_field()
         {
-            _requestInfo
-                .FrontendResponse.Body?["errors"]?[0]?.GetValue<string>()
+            _requestInfo.FrontendResponse.Body!["errors"]![0]!
+                .GetValue<string>()
                 .Should()
                 .Be("The query field 'Limit' is not valid for this resource.");
         }

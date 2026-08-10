@@ -216,8 +216,8 @@ The numbered rules are the within-phase tie-breakers. A phase-0 failure suppress
 a mixed-mode conflict suppresses relationship and syntax/range rules; a required-relationship
 failure suppresses syntax/range rules.
 
-New cursor and partition failures use HTTP 400 with this JSON shape and the current DMS
-`application/json` response media type:
+Cursor, partition, and traditional-paging failures use HTTP 400 with this JSON shape and the
+current DMS `application/json` response media type:
 
 ```json
 {
