@@ -1762,8 +1762,8 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         );
         var lookupAdapter = new RecordingLookupAdapter
         {
-            QueryResult = DocumentCacheReadLookupResult<QueryResult>.Fallback(
-                DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss,
+            QueryResult = DocumentCacheReadLookupResult<QueryResult>.FallbackFromLookupOutcome(
+                DocumentCacheReadLookupOutcome.MissingCacheRow,
                 [first, second]
             ),
         };
@@ -1941,86 +1941,10 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         writer.Requests.Select(request => request.DocumentId).Should().Equal(345, 346);
     }
 
-    [Test]
-    public async Task It_direct_fills_get_by_id_when_raw_rebuilding_is_observed_with_a_tracking_target_snapshot()
-    {
-        var fallbackResult = new GetResult.GetSuccess(
-            DocumentUuid,
-            new JsonObject { ["id"] = DocumentUuid.Value.ToString() },
-            new DateTime(2026, 8, 1, 12, 0, 0, DateTimeKind.Utc),
-            LastModifiedTraceId: null
-        );
-        var lookupAdapter = new RecordingLookupAdapter
-        {
-            GetByIdResult = DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
-                DocumentCacheReadLookupOutcome.LifecycleRebuilding
-            ),
-        };
-        var materializer = new RecordingMaterializer();
-        var writer = new RecordingCacheWriter();
-        var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
-            lookupAdapter,
-            CreateRegistry(ExecutionContext(lifecycleState: DocumentCacheLifecycleState.Tracking)),
-            materializer,
-            writer
-        );
-
-        GetResult result = await sut.GetByIdAsync(
-            CreateGetByIdRequest(_ => Task.FromResult<GetResult>(fallbackResult))
-        );
-
-        result.Should().BeSameAs(fallbackResult);
-        materializer.Requests.Select(request => request.DocumentId).Should().Equal(345);
-        writer.Requests.Select(request => request.DocumentId).Should().Equal(345);
-    }
-
-    [Test]
-    public async Task It_direct_fills_surviving_query_candidates_when_raw_rebuilding_is_observed_with_a_tracking_target_snapshot()
-    {
-        DocumentCacheReadAccelerationCandidate first = Candidate(documentId: 345, contentVersion: 91);
-        DocumentCacheReadAccelerationCandidate second = Candidate(
-            documentId: 346,
-            contentVersion: 92,
-            documentUuid: SecondDocumentUuid
-        );
-        var fallbackResult = new QueryResult.QuerySuccess(
-            [new JsonObject { ["id"] = SecondDocumentUuid.Value.ToString() }],
-            2,
-            HighestSelectedDocumentId: 346
-        );
-        var lookupAdapter = new RecordingLookupAdapter
-        {
-            QueryResult = DocumentCacheReadLookupResult<QueryResult>.FallbackFromLookupOutcome(
-                DocumentCacheReadLookupOutcome.LifecycleRebuilding
-            ),
-        };
-        var materializer = new RecordingMaterializer();
-        var writer = new RecordingCacheWriter();
-        var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
-            lookupAdapter,
-            CreateRegistry(ExecutionContext(lifecycleState: DocumentCacheLifecycleState.Tracking)),
-            materializer,
-            writer
-        );
-
-        QueryResult result = await sut.QueryAsync(
-            CreateQueryRequest(
-                _ => Task.FromResult<QueryResult>(fallbackResult),
-                CandidatePage([first, second], totalCount: 2, highestSelectedDocumentId: 346)
-            )
-        );
-
-        result.Should().BeSameAs(fallbackResult);
-        materializer.Requests.Select(request => request.DocumentId).Should().Equal(346);
-        writer.Requests.Select(request => request.DocumentId).Should().Equal(346);
-    }
-
     [TestCase(DocumentCacheLifecycleState.Disabled, false)]
     [TestCase(DocumentCacheLifecycleState.Resetting, false)]
     [TestCase(DocumentCacheLifecycleState.Tracking, true)]
-    public async Task It_skips_raw_rebuilding_direct_fill_when_the_target_snapshot_is_not_write_eligible(
+    public async Task It_direct_fills_get_by_id_when_raw_rebuilding_is_observed_with_a_stale_target_snapshot(
         DocumentCacheLifecycleState lifecycleState,
         bool cacheAheadRecoveryRequired
     )
@@ -2057,8 +1981,60 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         );
 
         result.Should().BeSameAs(fallbackResult);
-        materializer.Requests.Should().BeEmpty();
-        writer.Requests.Should().BeEmpty();
+        materializer.Requests.Select(request => request.DocumentId).Should().Equal(345);
+        writer.Requests.Select(request => request.DocumentId).Should().Equal(345);
+    }
+
+    [TestCase(DocumentCacheLifecycleState.Disabled, false)]
+    [TestCase(DocumentCacheLifecycleState.Resetting, false)]
+    [TestCase(DocumentCacheLifecycleState.Tracking, true)]
+    public async Task It_direct_fills_surviving_query_candidates_when_raw_rebuilding_is_observed_with_a_stale_target_snapshot(
+        DocumentCacheLifecycleState lifecycleState,
+        bool cacheAheadRecoveryRequired
+    )
+    {
+        DocumentCacheReadAccelerationCandidate first = Candidate(documentId: 345, contentVersion: 91);
+        DocumentCacheReadAccelerationCandidate second = Candidate(
+            documentId: 346,
+            contentVersion: 92,
+            documentUuid: SecondDocumentUuid
+        );
+        var fallbackResult = new QueryResult.QuerySuccess(
+            [new JsonObject { ["id"] = SecondDocumentUuid.Value.ToString() }],
+            2,
+            HighestSelectedDocumentId: 346
+        );
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            QueryResult = DocumentCacheReadLookupResult<QueryResult>.FallbackFromLookupOutcome(
+                DocumentCacheReadLookupOutcome.LifecycleRebuilding
+            ),
+        };
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter();
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(
+                ExecutionContext(
+                    lifecycleState: lifecycleState,
+                    cacheAheadRecoveryRequired: cacheAheadRecoveryRequired
+                )
+            ),
+            materializer,
+            writer
+        );
+
+        QueryResult result = await sut.QueryAsync(
+            CreateQueryRequest(
+                _ => Task.FromResult<QueryResult>(fallbackResult),
+                CandidatePage([first, second], totalCount: 2, highestSelectedDocumentId: 346)
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        materializer.Requests.Select(request => request.DocumentId).Should().Equal(346);
+        writer.Requests.Select(request => request.DocumentId).Should().Equal(346);
     }
 
     [TestCaseSource(nameof(NonRebuildingRawLookupOutcomesThatSkipDirectFill))]
@@ -2271,7 +2247,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     [TestCase(DocumentCacheLifecycleState.Disabled, false)]
     [TestCase(DocumentCacheLifecycleState.Resetting, false)]
     [TestCase(DocumentCacheLifecycleState.Tracking, true)]
-    public async Task It_skips_direct_fill_when_target_lifecycle_is_not_write_eligible(
+    public async Task It_direct_fills_get_by_id_when_live_tracking_lookup_is_observed_with_a_stale_target_snapshot(
         DocumentCacheLifecycleState lifecycleState,
         bool cacheAheadRecoveryRequired
     )
@@ -2284,8 +2260,9 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         );
         var lookupAdapter = new RecordingLookupAdapter
         {
-            GetByIdResult = DocumentCacheReadLookupResult<GetResult>.Fallback(
-                DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss
+            GetByIdResult = DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
+                DocumentCacheReadLookupOutcome.MissingCacheRow,
+                [Candidate()]
             ),
         };
         var materializer = new RecordingMaterializer();
@@ -2308,8 +2285,52 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         );
 
         result.Should().BeSameAs(fallbackResult);
-        materializer.Requests.Should().BeEmpty();
-        writer.Requests.Should().BeEmpty();
+        materializer.Requests.Select(request => request.DocumentId).Should().Equal(345);
+        writer.Requests.Select(request => request.DocumentId).Should().Equal(345);
+    }
+
+    [TestCase(DocumentCacheLifecycleState.Disabled, false)]
+    [TestCase(DocumentCacheLifecycleState.Resetting, false)]
+    [TestCase(DocumentCacheLifecycleState.Tracking, true)]
+    public async Task It_direct_fills_query_when_live_tracking_lookup_is_observed_with_a_stale_target_snapshot(
+        DocumentCacheLifecycleState lifecycleState,
+        bool cacheAheadRecoveryRequired
+    )
+    {
+        var fallbackResult = new QueryResult.QuerySuccess(
+            [new JsonObject { ["id"] = DocumentUuid.Value.ToString() }],
+            1,
+            HighestSelectedDocumentId: 345
+        );
+        var lookupAdapter = new RecordingLookupAdapter
+        {
+            QueryResult = DocumentCacheReadLookupResult<QueryResult>.FallbackFromLookupOutcome(
+                DocumentCacheReadLookupOutcome.MissingCacheRow,
+                [Candidate()]
+            ),
+        };
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter();
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(
+                ExecutionContext(
+                    lifecycleState: lifecycleState,
+                    cacheAheadRecoveryRequired: cacheAheadRecoveryRequired
+                )
+            ),
+            materializer,
+            writer
+        );
+
+        QueryResult result = await sut.QueryAsync(
+            CreateQueryRequest(_ => Task.FromResult<QueryResult>(fallbackResult))
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        materializer.Requests.Select(request => request.DocumentId).Should().Equal(345);
+        writer.Requests.Select(request => request.DocumentId).Should().Equal(345);
     }
 
     [Test]
@@ -2640,8 +2661,8 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             readAccelerationEnabled: true,
             new RecordingLookupAdapter
             {
-                QueryResult = DocumentCacheReadLookupResult<QueryResult>.Fallback(
-                    DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss,
+                QueryResult = DocumentCacheReadLookupResult<QueryResult>.FallbackFromLookupOutcome(
+                    DocumentCacheReadLookupOutcome.MissingCacheRow,
                     [Candidate()]
                 ),
             },

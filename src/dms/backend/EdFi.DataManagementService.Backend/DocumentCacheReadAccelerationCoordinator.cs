@@ -521,7 +521,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         await TryDirectFillAsync(
                 request,
                 targetContext,
-                SelectGetByIdDirectFillCandidates(candidateSelection, targetContext, lookupResult),
+                SelectGetByIdDirectFillCandidates(candidateSelection, lookupResult),
                 fallbackResult,
                 cancellationToken
             )
@@ -674,12 +674,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         await TryDirectFillAsync(
                 request,
                 targetContext,
-                SelectQueryDirectFillCandidates(
-                    candidateSelection,
-                    targetContext,
-                    lookupResult,
-                    fallbackResult
-                ),
+                SelectQueryDirectFillCandidates(candidateSelection, lookupResult, fallbackResult),
                 fallbackResult,
                 cancellationToken
             )
@@ -1235,7 +1230,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             return;
         }
 
-        if (!IsDirectFillTargetEligible(targetContext))
+        if (!HasDirectFillStaticTargetRequirements(targetContext))
         {
             RecordDirectFill(
                 targetContext,
@@ -1439,7 +1434,6 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
 
     private static DirectFillCandidateSelection SelectGetByIdDirectFillCandidates(
         DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate candidateSelection,
-        DocumentCacheTargetExecutionContext targetContext,
         DocumentCacheReadLookupResult<GetResult> lookupResult
     )
     {
@@ -1448,24 +1442,18 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             return DirectFillCandidateSelection.Skip(DocumentCacheReadTelemetryLabel.SkippedCacheUnavailable);
         }
 
-        if (!IsDirectFillTargetEligible(targetContext))
-        {
-            return DirectFillCandidateSelection.Skip(DocumentCacheReadTelemetryLabel.SkippedNoCandidates);
-        }
-
-        if (lookupResult.RawLookupOutcome == DocumentCacheReadLookupOutcome.LifecycleRebuilding)
+        if (IsLiveRebuildingLookupOutcome(lookupResult.RawLookupOutcome))
         {
             return DirectFillCandidateSelection.For([candidateSelection.AuthorizedCandidate]);
         }
 
-        return IsDocumentLevelDirectFillReason(lookupResult.FallbackReason)
+        return IsGetByIdLiveTrackingDirectFillOutcome(lookupResult.RawLookupOutcome)
             ? DirectFillCandidateSelection.For(lookupResult.DirectFillCandidates)
             : DirectFillCandidateSelection.Skip(DocumentCacheReadTelemetryLabel.SkippedNoCandidates);
     }
 
     private static DirectFillCandidateSelection SelectQueryDirectFillCandidates(
         DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage candidateSelection,
-        DocumentCacheTargetExecutionContext targetContext,
         DocumentCacheReadLookupResult<QueryResult> lookupResult,
         QueryResult fallbackResult
     )
@@ -1475,41 +1463,46 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             return DirectFillCandidateSelection.Skip(DocumentCacheReadTelemetryLabel.SkippedCacheUnavailable);
         }
 
-        if (!IsDirectFillTargetEligible(targetContext) || fallbackResult is not QueryResult.QuerySuccess)
+        if (fallbackResult is not QueryResult.QuerySuccess)
         {
             return DirectFillCandidateSelection.Skip(DocumentCacheReadTelemetryLabel.SkippedNoCandidates);
         }
 
-        if (lookupResult.RawLookupOutcome == DocumentCacheReadLookupOutcome.LifecycleRebuilding)
+        if (IsLiveRebuildingLookupOutcome(lookupResult.RawLookupOutcome))
         {
             return DirectFillCandidateSelection.For(candidateSelection.AuthorizedCandidatePage.Candidates);
         }
 
-        if (
-            lookupResult.FallbackReason
-            == DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure
-        )
-        {
-            return DirectFillCandidateSelection.Skip(DocumentCacheReadTelemetryLabel.SkippedNoCandidates);
-        }
-
-        return DirectFillCandidateSelection.For(lookupResult.DirectFillCandidates);
+        return IsQueryLiveTrackingDirectFillOutcome(lookupResult.RawLookupOutcome)
+            ? DirectFillCandidateSelection.For(lookupResult.DirectFillCandidates)
+            : DirectFillCandidateSelection.Skip(DocumentCacheReadTelemetryLabel.SkippedNoCandidates);
     }
 
-    private static bool IsDirectFillTargetEligible(DocumentCacheTargetExecutionContext targetContext) =>
-        targetContext.Lifecycle
-            is { CacheAheadRecoveryRequired: false }
-                and { State: DocumentCacheLifecycleState.Tracking or DocumentCacheLifecycleState.Rebuilding }
-        && targetContext.Inventory.Status == DocumentCacheInventoryStatus.Satisfied
+    private static bool HasDirectFillStaticTargetRequirements(
+        DocumentCacheTargetExecutionContext targetContext
+    ) =>
+        targetContext.Inventory.Status == DocumentCacheInventoryStatus.Satisfied
         && targetContext.SqlServerPrerequisites?.HasFailure != true;
 
-    private static bool IsDocumentLevelDirectFillReason(
-        DocumentCacheReadAccelerationFallbackReason fallbackReason
+    private static bool IsLiveRebuildingLookupOutcome(DocumentCacheReadLookupOutcome? rawLookupOutcome) =>
+        rawLookupOutcome == DocumentCacheReadLookupOutcome.LifecycleRebuilding;
+
+    private static bool IsGetByIdLiveTrackingDirectFillOutcome(
+        DocumentCacheReadLookupOutcome? rawLookupOutcome
     ) =>
-        fallbackReason
-            is DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss
-                or DocumentCacheReadAccelerationFallbackReason.CacheLookupStale
-                or DocumentCacheReadAccelerationFallbackReason.CacheLookupSourceDrift;
+        rawLookupOutcome
+            is DocumentCacheReadLookupOutcome.MissingCacheRow
+                or DocumentCacheReadLookupOutcome.StaleCacheRow
+                or DocumentCacheReadLookupOutcome.SourceDrift;
+
+    private static bool IsQueryLiveTrackingDirectFillOutcome(
+        DocumentCacheReadLookupOutcome? rawLookupOutcome
+    ) =>
+        rawLookupOutcome
+            is DocumentCacheReadLookupOutcome.MissingCacheRow
+                or DocumentCacheReadLookupOutcome.MissingSourceRow
+                or DocumentCacheReadLookupOutcome.StaleCacheRow
+                or DocumentCacheReadLookupOutcome.SourceDrift;
 
     private static ISet<Guid> GetServedDocumentUuids(JsonArray edfiDocs)
     {
