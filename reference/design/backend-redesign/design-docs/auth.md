@@ -1595,7 +1595,9 @@ These indicate a misconfiguration in the security metadata and should not occur 
 | Resource has no security metadata | `No security metadata has been configured for this resource.` |
 | No authorization strategies defined for the matching claim | `No authorization strategies were defined for the requested action '{action}' against resource URIs ['{uri1}', '{uri2}'] matched by the caller's claim '{claimName}'.` |
 | Authorization strategy implementation not found | `Could not find authorization strategy implementations for the following strategy names: '{strategyName1}', '{strategyName2}'.` |
-| Custom view basis entity property not found on the target entity | `Unable to find a property on the authorization subject entity type '{targetEntityName}' corresponding to the '{propertyName}' property on the custom authorization view's basis entity type '{basisEntityName}' in order to perform authorization. Should a different authorization strategy be used?` |
+| No DocumentId join path from the subject resource to the custom view basis resource | `Relational {operation} authorization metadata is invalid for resource '{project}.{resource}'. Strategy '{strategyName}' uses custom auth view 'auth.{strategyName}'. No DocumentId join path could be resolved from subject resource '{project}.{subjectResource}' to custom view basis resource '{project}.{basisResource}'. Should a different authorization strategy be used?` |
+
+> ODS words this failure as a missing basis-entity *property* on the subject entity, because it joins custom views on natural keys. DMS joins on DocumentId, so there is no single missing property to name — the failure is that no reference path reaches the basis resource. The DMS wording states that, and keeps ODS's closing question. The diagnostic kind is `RelationshipAuthorization.NoCustomViewJoinPath`.
 
 ### Extensions
 

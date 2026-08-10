@@ -1130,7 +1130,8 @@ public class Given_DescriptorReadHandler
 
         var failure = result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>().Subject;
         failure.Errors.Should().ContainSingle();
-        failure.Errors[0].Should().Contain("no DocumentId join path could be resolved");
+        failure.Errors[0].Should().Contain("No DocumentId join path could be resolved");
+        failure.Errors[0].Should().EndWith("Should a different authorization strategy be used?");
         failure.Errors[0].Should().Contain("auth.MeetingWithCustomViewProviderTest");
         failure.Errors[0].Should().Contain("MeetingWithCustomViewProviderTest");
         failure.Errors[0].Should().NotContain("is not a recognized built-in strategy");

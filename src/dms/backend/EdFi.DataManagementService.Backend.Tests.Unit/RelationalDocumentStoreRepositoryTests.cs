@@ -6798,6 +6798,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         failure.Errors[0].Should().Contain("StudentWithNoJoinPath");
         failure.Errors[0].Should().Contain("auth.StudentWithNoJoinPath");
         failure.Errors[0].Should().Contain("No DocumentId join path");
+        failure.Errors[0].Should().EndWith("Should a different authorization strategy be used?");
         failure.Diagnostics.Should().ContainSingle();
         failure
             .Diagnostics![0]
@@ -6835,6 +6836,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var failure = result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>().Subject;
         failure.Errors.Should().ContainSingle();
         failure.Errors[0].Should().Contain("No DocumentId join path");
+        failure.Errors[0].Should().EndWith("Should a different authorization strategy be used?");
         failure.Errors[0].Should().Contain("StudentWithNoJoinPath");
         capturedValidationSql
             .Should()
@@ -6868,6 +6870,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
         var failure = result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>().Subject;
         failure.Errors[0].Should().Contain("No DocumentId join path");
+        failure.Errors[0].Should().EndWith("Should a different authorization strategy be used?");
         capturedValidationSql.Should().BeEmpty();
     }
 
