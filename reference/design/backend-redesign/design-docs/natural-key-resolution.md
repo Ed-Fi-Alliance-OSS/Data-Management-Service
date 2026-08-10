@@ -1,0 +1,847 @@
+# Natural-Key Reference Resolution: Removing `dms.ReferentialIdentity`
+
+> **Status: PROPOSED — for team review. Nothing described here has landed on `main`; the design is
+> written in future tense throughout.** Once approved, implementation tickets will be created under
+> [`../epics/`](../epics/). Once implemented, this document will supersede the
+> [overview.md "Why keep ReferentialId"](overview.md#why-keep-referentialid) rationale and the
+> recommendation of [the-problem-with-removing-referentialids.md](the-problem-with-removing-referentialids.md)
+> (see ["Response to the earlier analysis"](#response-to-the-earlier-analysis) for why the balance has
+> changed), and the passages of [data-model.md](data-model.md), [ddl-generation.md](ddl-generation.md),
+> [transactions-and-concurrency.md](transactions-and-concurrency.md), and
+> [referential-identity-test-plan.md](referential-identity-test-plan.md) that describe
+> `dms.ReferentialIdentity` as current.
+>
+> **`dms.Document` will not be affected by this proposal in any way.** It will remain inserted,
+> row-locked, the authoritative source of `DocumentId`/`DocumentUuid`/version metadata, the
+> GET/PUT/DELETE lookup target, and the base of the DocumentCache enqueue triggers. Only
+> `dms.ReferentialIdentity` and its dependents will be removed.
+
+## Summary
+
+`dms.ReferentialIdentity` maps a deterministic UUIDv5 hash of each document's identity
+(`ReferentialId`) to its `DocumentId`. It exists so that reference resolution, POST upsert detection,
+and descriptor filter resolution can each be answered by one uniform, narrow index lookup.
+
+This design will remove the table and answer each of those questions with a batched natural-key
+lookup against indexes that — with one exception — **already exist in the schema for independent
+reasons**:
+
+| Lookup | Will be replaced by |
+|---|---|
+| Concrete document references | Scalar probe of the target's `UX_<Target>_RefKey` |
+| Abstract (polymorphic) references | Probe of `UX_<Abstract>Identity_RefKey` |
+| Descriptor references and filters | Probe of `UX_Descriptor_UriLowered_Discriminator` (new computed column + index — the one addition) |
+| POST upsert detection | The document's own `UX_<R>_NK` |
+
+With the reads gone, the maintenance surface will go with them: every generated
+`TR_<R>_ReferentialIdentity` trigger, the `dms.uuidv5()` function on both engines, the PostgreSQL
+`pgcrypto` extension (uuidv5 is its only consumer in the DMS database), and the SQL Server
+`dms.UniqueIdentifierTable` table-valued parameter type.
+
+The migration will be **code-only and re-provision-only**; no in-place upgrade scripts will be
+provided. The `RelationalMappingVersion` bump (`v2 → v3`) that makes the schema fingerprint check
+reject a pre-removal database with the designed 503 is **deferred to the pre-release checklist**
+rather than landing with this change set. Until the bump lands, a stale pre-removal database is not
+mechanically rejected — environments must re-provision after picking up these changes.
+
+The design was validated end to end by a complete working prototype: differential tests proved
+old-vs-new resolution equivalence over seeded databases on both engines, benchmarks compared the two
+resolvers under bulk, deep-identity, and small-batch workloads (results below), and the full
+PostgreSQL + SQL Server integration suites and E2E ran green on the prototype.
+
+## Why remove it
+
+Four reasons, in decreasing order of weight:
+
+**1. The schema already paid for the replacement.** When the baseline rationale
+([overview.md "Why keep ReferentialId"](overview.md#why-keep-referentialid)) and the follow-up
+analysis ([the-problem-with-removing-referentialids.md](the-problem-with-removing-referentialids.md))
+were written, removing the hash meant *building* natural-key resolution machinery: denormalized
+identity columns, composite indexes, abstract identity tables. Since then, all of that machinery was
+built anyway, for reasons unrelated to reference resolution:
+
+- **`UX_<R>_RefKey`** — the fully-flattened scalar identity plus `DocumentId` — exists on every
+  referenced resource as the composite-FK target that keeps reference binding columns consistent
+  under cascades ([key-unification.md](key-unification.md)). Because identity flattening is recursive,
+  a reference-bearing identity (e.g., a Section, whose identity contains a CourseOffering reference,
+  whose identity contains Course and Session references) collapses to **one flat list of scalars** —
+  resolvable in a single index seek, no multi-pass dependency layering.
+- **`UX_<R>_NK`** — the natural-key unique constraint with reference-sourced parts as
+  `..._DocumentId` columns — exists as the identity-uniqueness enforcement and the source of
+  create-race unique violations (the 409/retry path).
+- **`<Abstract>Identity` tables** with their own `RefKey` indexes exist to enforce cross-subclass
+  identity uniqueness and to serve as polymorphic FK targets. Abstract reference resolution is one
+  probe of one table — not a union over subtype tables.
+
+The one thing missing was a case-insensitive descriptor probe target, which this design will add as
+a single computed column + unique index on the existing `dms.Descriptor` table.
+
+**2. The hash is derived state, and derived state has carrying costs.** Every document insert and
+identity update fires a generated trigger that recomputes UUIDv5 hashes and writes one or two
+`dms.ReferentialIdentity` rows (subclasses also write a superclass-alias row). That is write
+amplification on the hottest path in the system. Because the table *can* drift from the row state it
+is derived from, the resolver carries corruption-verification CTEs (a canary comparing request
+identity against re-projected root state) — complexity that exists only to detect the failure mode
+the derived state itself introduces. Natural-key lookups will read the rows directly; the disease
+class and its canary will both disappear.
+
+**3. The hash disagrees with the database about equality.** `ReferentialId` is computed over the
+identity's exact bytes — ordinal, case-sensitive. SQL Server storage is case-insensitive
+(collation-governed unique constraints). The result is an internal inconsistency on SQL Server
+today: a case-variant re-POST of an existing document hashes to a *different* `ReferentialId`, misses
+the lookup, attempts an insert, and fails on the CI unique index — surfacing as a 409 for a request
+ODS would have accepted. This is the same "application equality disagrees with collation equality"
+disease class that an Ed-Fi ODS advisory (April 2022) documented for NHibernate-era casing bugs. The
+natural-key design will move matching *into* the database, so matching and storage will share one
+equality definition per engine — making the deliberate casing contract below possible.
+
+**4. It was validated before being proposed.** Unlike the original analysis, which correctly flagged
+performance risk as unknown, this design comes with measurements: the natural-key resolver is
+*faster* than the hash resolver in most measured cases on both engines (see
+["Performance validation"](#performance-validation)).
+
+## Response to the earlier analysis
+
+[the-problem-with-removing-referentialids.md](the-problem-with-removing-referentialids.md) recommended
+against removal. Its concerns were correct for the model era in which it was written; each is
+addressed structurally today:
+
+| Concern (2025 analysis) | Status today |
+|---|---|
+| "Reference-bearing identities force multi-pass resolution or denormalization" | Denormalization happened — for FK-cascade reasons, not resolution ([key-unification.md](key-unification.md)). `RefKey` flattening collapses transitive identity chains to one seek per reference. There is no multi-pass, no dependency layering, no cycle handling. |
+| "Polymorphic targets get significantly harder; abstract identity tables reintroduce central indexes with drift risk" | Abstract identity tables already exist and are already trigger-maintained — for cross-subclass uniqueness enforcement. Resolution will reuse them; this design will add zero objects and zero write amplification for polymorphism. |
+| "Batching needs TVPs/temp tables; parameter limits make giant OR-predicates non-viable" | Batching will be one prepared statement per target group, all groups in **one command, one round trip**: PostgreSQL will use typed `unnest` parallel arrays (SQL text independent of batch size); SQL Server will shred one JSON parameter per group via `OPENJSON … WITH` under `OPTION (FORCE ORDER)`. No TVPs, no temp tables. A guard will enforce SQL Server's parameter budget (`MssqlCommandLimits.MaxUserParametersPerCommand`). |
+| "≥1 lookup per referenced resource type; round trips grow" | One multi-statement command will be one round trip regardless of group count; inside the composite write pipeline, a union-projection form will embed the entire lookup as a *single statement* so existing round-trip counts will not regress (enforced by command-stream pinning tests). |
+| "Many query shapes → plan variability, cross-engine divergence" | The shapes will be generated from compiled metadata (uniform per group); the prototype differential-tested them old-vs-new over seeded databases on both engines and validated performance (see below). The SQL Server input-shape risk was real — two candidate shapes failed measurably in the prototype — and the surviving shape will be pinned by tests. |
+| "Error reporting needs per-key-row location mapping" | Every batched key row will carry an explicit ordinal; results will map back by `Entries[ordinal-1]`, never by row position. Unmatched ordinals will flow into the existing reference-validation failure response unchanged. |
+| "The system will tend to reinvent an equivalent central index" | Correct — and the equivalent already exists as the `RefKey`/`NK`/abstract-identity indexes the schema maintains for FK and uniqueness reasons. Removal will delete the *redundant* copy, not the mechanism. |
+
+## What `dms.ReferentialIdentity` does today
+
+The table: `dms.ReferentialIdentity (ReferentialId uuid PRIMARY KEY, DocumentId, ResourceKeyId)` with
+a unique index on `(DocumentId, ResourceKeyId)` and FKs to `dms.Document` (ON DELETE CASCADE) and
+`dms.ResourceKey`. On SQL Server the PK is nonclustered with a clustered unique index on
+`(DocumentId, ResourceKeyId)`.
+
+Writers:
+
+- Generated `TR_<R>_ReferentialIdentity` triggers on every resource root table (subclasses write a
+  second superclass-alias row so abstract references resolve).
+- Hand-written SQL in the descriptor write handler (insert CTE/batch plus `ON CONFLICT`/`MERGE`
+  upsert).
+
+Runtime readers (each will become an implementation ticket):
+
+| Consumer | Today | After this change |
+|---|---|---|
+| Reference resolution | `ReferenceResolver` → per-engine lookup builders joining `dms.ReferentialIdentity` | `NaturalKeyReferenceResolver` probing `RefKey`/abstract-identity/descriptor indexes |
+| Corruption-canary verification | CTEs comparing request identity vs re-projected root state | Deleted — nothing derived left to verify |
+| POST upsert detection | The composite write path's capture predicate (a `ReferentialId` subselect) plus a standalone fallback lookup | Natural-key capture predicate + `UX_<R>_NK` fallback probe |
+| Descriptor upsert detection | `ReferentialId` probe in the descriptor write handler | `UriLowered` probe |
+| Descriptor-valued query filters | Query preprocessor lowercases + hashes the URI | Same preprocessor; the resolver will probe `UriLowered` instead |
+| 409 duplicate-identity messages | Rebuilds NK column lists from `ReferentialIdentityMaintenance` trigger metadata | Re-sourced from compiled natural-key probe metadata (severed *before* the triggers drop) |
+
+Verified non-consumers (these will be untouched by this design): row locking (`dms.Document` by `DocumentId`),
+DELETE (captures by `DocumentUuid`; the only interaction was the ON DELETE CASCADE), GET-by-id,
+`?id=` queries, link injection, ownership authorization, stamping and tracked-change triggers, change
+queries, and the entire DocumentCache path.
+
+## The replacement design
+
+### The natural-key reference resolver
+
+A new `NaturalKeyReferenceResolver` will implement the existing `IReferenceResolver` contract, so
+consumers (the write path's reference resolution and the query preprocessor's descriptor filters)
+will be unaffected. Its input will be each reference's fully-flattened `DocumentIdentity`, which is
+always present at the Core/backend boundary. The in-memory UUIDv5 value will survive *only* as a
+request-scoped deduplication/memo key — it will never be persisted and never compared against
+database state (`ReferentialIdCalculator`/`ReferentialIdFactory` and the `ReferentialId` members on
+`DocumentReference`/`DescriptorReference`/`DocumentInfo` will all stay). The collation question does
+not apply to this survivor: it only ever compares request values against other values from the same
+request, where its ordinal equality can only *under*-dedupe — on SQL Server, two case-variant
+spellings of one reference will produce two memo entries and one redundant probe row, both of which
+the database resolves to the same `DocumentId` — and never mis-merge, since ordinal equality implies
+true equality.
+
+**Future simplification (out of scope for this design):** once nothing persists or hash-compares
+the value, the UUIDv5 machinery can be deleted outright in a follow-up — replace the
+hash-as-identity memo key with the flattened identity itself under a structural
+`IEqualityComparer` (`HashCode.Combine` for bucketing, full memberwise `Equals` for the verdict).
+Two guardrails for that ticket: a bare 32-bit hash must never be promoted into the identity role
+UUIDv5 plays today (at bulk scale, roughly 0.2% of 4096-reference requests would suffer a collision
+and silently merge two different references; a structural `Equals` makes collisions harmless), and
+the comparer must reproduce today's key semantics exactly — ordinal over identity values, the
+lower-cased URI as the descriptor key member — with all three call sites (Core's uniqueness
+middlewares, `DescriptorExtractor`, the resolver memo) moving together, since they share the key
+type through Core's contracts. Nothing in this design depends on UUIDv5 semantics, so the cleanup
+composes independently, before or after the drop.
+
+Per request, the resolver will:
+
+1. Dedupe extracted references (memo keyed by the in-memory `ReferentialId`).
+2. Convert identity strings to typed values once, using the same scalar-literal parser the write
+   flattener uses. This sameness is itself a correctness property: the values probed are the values
+   that would be written, so resolution and storage cannot disagree about a conversion.
+3. Group references by target resource; emit **one command** with one statement and one result set
+   per group. One round trip will resolve everything.
+
+Per-group statement shapes (column names illustrative — real names come from the compiled model):
+
+**Concrete targets** — equality probe of the target's `RefKey` index, one seek per reference,
+`DocumentId` read from the same index. PostgreSQL will bind typed parallel arrays; the SQL text will
+be independent of how many references are in the batch:
+
+```sql
+SELECT keys.ordinal, target."DocumentId"
+FROM unnest(@ordinals, @schoolIds, @schoolYears, @sessionNames)
+     WITH ORDINALITY AS keys(ordinal, "SchoolId", "SchoolYear", "SessionName")
+JOIN edfi."Session" target
+  ON target."SchoolReference_SchoolId" = keys."SchoolId"
+ AND target."SchoolYearTypeReference_SchoolYear" = keys."SchoolYear"
+ AND target."SessionName" = keys."SessionName"
+```
+
+SQL Server will shred one JSON parameter per group; the OPENJSON input will always be the leftmost
+input in the join tree, and every statement will end with `OPTION (FORCE ORDER)` (the rationale is
+measured — see
+["Performance validation"](#performance-validation)):
+
+```sql
+SELECT keys.ordinal, target.[DocumentId]
+FROM OPENJSON(@sessionKeys) WITH (
+    ordinal     int           '$.o',
+    SchoolId    int           '$.k1',
+    SchoolYear  smallint      '$.k2',
+    SessionName nvarchar(60)  '$.k3'
+) AS keys
+INNER JOIN edfi.[Session] AS target
+    ON  target.[SchoolReference_SchoolId] = keys.SchoolId
+    AND target.[SchoolYearTypeReference_SchoolYear] = keys.SchoolYear
+    AND target.[SessionName] = keys.SessionName
+OPTION (FORCE ORDER);
+```
+
+**Descriptor-valued identity parts** (a descriptor URI inside a target's identity) will resolve with
+an inline `dms.Descriptor` join on `UriLowered` plus a compile-time discriminator literal.
+
+**Descriptor targets** — a probe of `UX_Descriptor_UriLowered_Discriminator` projecting
+`(Ordinal, DocumentId, Discriminator, ResourceKeyId)`; `ResourceKeyId` will read `dms.Descriptor`'s
+own NOT NULL column (DMS-1251). C# will classify `Missing` vs `DescriptorTypeMismatch` exactly as
+today.
+
+**Abstract targets** — a probe of `UX_<Abstract>Identity_RefKey` projecting `Discriminator`. One
+table, one seek, no per-subtype SQL.
+
+Results will map by explicit ordinal (`Entries[ordinal-1]`, never row position); unmatched ordinals
+will flow into the unchanged reference-validation failure response, so error shapes and JSON-location
+attribution will be identical to today. On SQL Server a group-count guard will enforce the shared
+parameter budget (`MssqlCommandLimits.MaxUserParametersPerCommand`, 2098) before building the command.
+
+The probe metadata (`NaturalKeyProbeTargets`, `OwnNaturalKeyProbesByResource`,
+`DescriptorProbeTarget` on the compiled `MappingSet`) will be compiled from the relational model
+itself — never from trigger metadata and never by parsing constraint names (dialect identifier
+shortening hash-truncates names). It will be storage-resolved, so key-unified identity parts will
+bind their canonical stored columns. It will not be serialized into manifests, so it will cause zero
+golden-manifest churn.
+
+### POST upsert detection
+
+The composite write path (DMS-1332) captures and locks the POST/PUT target as statement 1 of the
+first-phase composite command. Today that capture matches via a `ReferentialId` subselect. It will
+be replaced by a natural-key predicate over the aliased `dms.Document` row `d`:
+
+```sql
+d."DocumentId" = (
+    SELECT root."DocumentId"
+    FROM edfi."Section" root
+    WHERE root."SectionIdentifier" = @p1
+      AND root."CourseOffering_DocumentId" = (
+          SELECT t."DocumentId"
+          FROM edfi."CourseOffering" t
+          WHERE t."CourseReference_CourseCode" = @p2
+            AND t."CourseReference_EducationOrganizationId" = @p3
+            AND t."SchoolReference_SchoolId" = @p4
+            AND t."SessionReference_SchoolYear" = @p5
+            AND t."SessionReference_SessionName" = @p6)
+)
+AND d."ResourceKeyId" = @rk
+```
+
+Key properties:
+
+- The capture statement runs **before** the reference-lookup statement in the same command, so
+  reference-sourced natural-key parts cannot bind resolved `DocumentId`s. They will resolve inline:
+  each reference-sourced part will be a subselect seeking the target root's `RefKey` (0-or-1 rows by
+  RefKey uniqueness); descriptor-valued parts will use a `dms.Descriptor` `UriLowered` subselect. All
+  parts will bind from the payload's flattened `DocumentIdentity` — scalars directly.
+- **Miss semantics will be correct by construction:** a missing referenced document will make its
+  subselect yield NULL, the predicate false, and nothing captured; the write will proceed down the
+  create path, and the later reference-lookup statement will report the missing reference through
+  the existing 409 flow. Denial precedence (stored authorization beats reference failure) will be
+  unchanged because it is statement order.
+- **Cost** will be one extra seek per reference-sourced natural-key part at capture time — bounded by
+  natural-key *width*, not identity depth (RefKey flattening collapses transitive chains). If this
+  shape underperforms in practice, the contingency ladder below applies; the accepted last resort —
+  beyond the ladder — is reverting the composite write-path batching (DMS-1332) itself, which
+  restores an ordering where resolved reference ids are available to a flat capture probe.
+- All parameters will be renameable scalars, as the composite statement rewriter requires.
+
+The ordered-segments fallback path (where references *have* already been resolved) will use a flat
+probe of the document's own `UX_<R>_NK`, binding resolved `..._DocumentId` values and payload
+scalars, with metadata projected through the `dms.Document` join:
+
+```sql
+SELECT root."DocumentId", d."DocumentUuid", d."ContentVersion"
+FROM edfi."Section" root
+INNER JOIN dms."Document" d ON d."DocumentId" = root."DocumentId"
+WHERE root."CourseOffering_DocumentId" = @p0
+  AND root."SectionIdentifier" = @p1
+```
+
+A missing resolved reference will short-circuit to the create path without probing; more than one
+row will be an invariant violation and throw.
+
+**Create races will be unchanged:** two concurrent POSTs of the same new identity will still race to
+the `UX_<R>_NK` unique constraint, and the loser will be classified into the existing 409/retry flow.
+The 409 `duplicateIdentityValues` message machinery will re-source its column lists from the compiled
+probe metadata instead of trigger metadata — a strict prerequisite, to be landed before the triggers
+drop.
+
+**Contingency ladder** (pre-agreed; climb only on measurement):
+
+1. *Baseline:* the inline-subselect capture predicate above — zero schema change, uniform for all
+   resources.
+2. *If its benchmark case lags:* capture via the resource's **own `UX_<R>_RefKey`** using flattened
+   payload scalars — a flat single seek, no subselects, still zero schema change. Cost: a second
+   capture shape, because never-referenced resources have no RefKey and keep shape 1.
+3. *Only if both measurably fail:* re-shape `UX_<R>_NK` onto flattened scalars. Uniqueness-preserving
+   but rejected as a default — it makes the per-resource index pair wide+wide, doubles cascade churn
+   (today's NK is cascade-stable via `..._DocumentId` columns), and re-litigates the key-unification
+   design. If ever pursued, it is a separately-specced initiative.
+
+**Rejected outright:** dropping `UX_<R>_NK` in favor of RefKey. RefKey's trailing `DocumentId` key
+column makes its uniqueness vacuous (it exists to satisfy composite-FK exact-match rules), so NK is
+the *sole* natural-key uniqueness enforcement and the source of create-race 409s. Removing it would
+admit silent duplicate identities.
+
+### Embedding in the composite write path
+
+The composite write pipeline co-batches an embeddable reference lookup when the resolver can express
+it as a single statement with a single result set (`TryBuildSessionLookupCommand`). Per-target-group
+statements are multi-statement, so the natural-key builders will also expose a **union-projection
+form**: `UNION ALL` across target groups projecting the superset columns
+`(GroupOrdinal, Ordinal, DocumentId, Discriminator, ResourceKeyId)` with NULLs where a group does not
+produce a column. On SQL Server every branch will keep its OPENJSON input leftmost under one
+statement-level `OPTION (FORCE ORDER)`.
+
+Returning null from this seam (falling back to ordered segments) would be *correct but would regress
+round-trip counts* for reference-bearing writes on that engine — acceptable only as a recorded,
+deliberate decision. The command-stream pinning tests (which assert round-trip counts per operation)
+will be the CI-enforced proof that this holds: **POST create must stay at 2 commands** (it did in
+the prototype).
+
+### Descriptors
+
+One schema addition will make descriptors resolvable case-insensitively on both engines:
+
+| Object | Definition |
+|---|---|
+| `dms.Descriptor.UriLowered` | Engine-computed, persisted: PostgreSQL `varchar(612) GENERATED ALWAYS AS (lower("Uri")) STORED` (612 = headroom for ICU full case mapping, which can lengthen strings; stored `Uri` stays 306); SQL Server `AS (LOWER([Uri])) PERSISTED` |
+| `UX_Descriptor_UriLowered_Discriminator` | Unique index — the probe target *and* the descriptor uniqueness constraint |
+
+Case-insensitive uniqueness matches the effective semantics of the UUIDv5 path being replaced (the
+hash is computed over the *lower-cased* URI), so no behavior will change there. The old
+case-sensitive `UX_Descriptor_Uri_Discriminator` is strictly implied by the new index and will be
+dropped at the end of the migration.
+
+An invariant worth stating explicitly: **the persisted generated column will be the single case
+authority.** Every SQL probe against `UriLowered` will lower its input at its own boundary
+(`ToLowerInvariant()` in C#, matching the column's `LOWER()`); no probe will ever rely on a caller
+having pre-lowered a value.
+
+The descriptor write handler will simplify from three tables to two: the `ReferentialId`
+CTE/`INSERT`/`ON CONFLICT`/`MERGE` statements will be deleted, and upsert detection will become a
+URI probe:
+
+```sql
+SELECT descriptor."DocumentId", d."DocumentUuid", d."ContentVersion"
+FROM dms."Descriptor" descriptor
+INNER JOIN dms."Document" d ON d."DocumentId" = descriptor."DocumentId"
+WHERE descriptor."UriLowered" = @uriLowered
+  AND descriptor."Discriminator" = @discriminator
+  AND descriptor."ResourceKeyId" = @resourceKeyId
+```
+
+The `dms.Document` insert, `SCOPE_IDENTITY()` retrieval, row lock, uuid lookups, and delete builder
+will all keep their current shape.
+
+### Query-time descriptor filters
+
+The query preprocessor will need no structural change: it already consumes `IReferenceResolver`, and
+its existing `ToLowerInvariant()` call will then align with the `UriLowered` column instead of
+feeding a hash. GET-by-id, `?id=`, link injection, ownership authorization, change queries, and
+descriptor paging will be untouched.
+
+## Casing and identity semantics
+
+Moving identity matching into the database forces the casing question into the open, because the two
+engines disagree: SQL Server compares strings case-insensitively (collation-governed), PostgreSQL
+case-sensitively. The hash era *hid* this behind an ordinal hash that disagreed with SQL Server's own
+storage semantics (the internal inconsistency described above). This design states the contract
+explicitly. The target model is **ODS behavior minus its bugs**, verified against ODS v7.3.2 code and
+a sweep of the official documentation.
+
+What the official guidance says: no document imposes a MUST on casing anywhere. The API Guidelines
+"Data Strictness" section carries a non-mandatory SHOULD that values be treated case-insensitively
+("not mandatory because it may be impractical in some data stores" — and indeed PostgreSQL is
+case-sensitive in every implementation ever shipped). The official error docs prescribe *rejecting*
+natural-key strings with leading/trailing spaces rather than normalizing them. The Discovery API 2.0
+draft anticipates case sensitivity as a declared per-implementation setting. And the ODS test suite
+contains `DescriptorCaseInsensitiveValidation.feature`, which asserts a descriptor echoes its
+first-created canonical form — the only official test artifact on casing.
+
+### The contract
+
+One principle covers every surface: **the store's own equality decides identity; when it says "same
+document," stored casing wins, and a casing-only write is a true no-op — never an error, never a
+cascade, never a version bump.**
+
+The rows below state the target behavior once this design ships:
+
+| Surface | SQL Server | PostgreSQL |
+|---|---|---|
+| Regular natural-key matching (reference resolution and upsert detection) | Case-insensitive (collation-governed — the probe runs in the DB). Matches ODS. | Case-sensitive. Matches ODS. |
+| Case-variant natural-key POST of an existing document | **200** — silent update; stored casing preserved; if the payload is otherwise identical, a true no-op (no `ContentVersion` bump, no change event). Matches ODS. | Creates a second document (a case variant is a different value). Matches ODS. |
+| Case-variant (casing-only) key change via PUT | Not a key change: stored key casing is **immutable** on SQL Server, exactly as it is structurally in ODS. Real key changes on cascade-enabled resources behave as today. | A real key change (allowed on cascade-enabled resources, as today). |
+| Descriptor matching + uniqueness | Case-insensitive via `UriLowered`. | Same — uniform across engines, a first (ODS *intended* CI descriptors but its PostgreSQL implementation stored CS and could accumulate case-variant duplicates). |
+| Descriptor POST-as-update casing | Stored-wins: the update preserves stored `Namespace`/`CodeValue`/`Uri` casing; a casing-only re-POST is a true no-op. A case-only descriptor PUT is a 200 update/no-op, not an error. Matches `DescriptorCaseInsensitiveValidation.feature`. | Same. |
+| Core-side equality constraints and duplicate-item validation | Ordinal (stricter than the collation; fails closed with 400). The gap this leaves for collections is closed below. | Ordinal (exact). |
+
+### How the write path will preserve stored casing (SQL Server)
+
+How ODS preserves stored key casing: NHibernate's per-property dirty checking
+uses a case-insensitive comparer on SQL Server, so a CI-equal key property is simply never assigned,
+and the UPDATE omits it. DMS's write path is a full-row replacement with no ORM dirty checking, so
+preservation must be explicit. Three pieces will be added, all in the shared write executor:
+
+1. **Dialect-matched identity comparer.** The identity-stability guard (which today compares the
+   merged root row's identity values against the current row ordinally, and rejects changes to an
+   immutable identity) will compare string values per column with `OrdinalIgnoreCase` on SQL Server
+   and `Ordinal` on PostgreSQL. All-columns-CI-equal will mean "identity unchanged — proceed as an
+   update."
+2. **Stored-identity rebind.** Before authorization-on-proposed-values and no-op detection, every
+   CI-equal-but-byte-different identity value in the merged root row will be replaced with the
+   persisted row's value. This is the load-bearing piece, for three verified reasons: GET
+   reconstitutes the response from the relational tables (there is no stored JSON body), so whatever
+   is written is what is served; the root identity columns are the `ON UPDATE CASCADE` FK targets of
+   every referrer's RefKey constraint, so writing a recased value would rewrite scalar copies in
+   every referrer; and the stamping trigger's identity diff is deliberately **binary** (string
+   columns compared as `varbinary(max)`; see ["Trigger value-diffs stay byte-level on SQL
+   Server"](#trigger-value-diffs-stay-byte-level-on-sql-server)), so an unrebated recase would bump
+   `IdentityVersion` and record a key change in the tracked-change tables. After the rebind, none of
+   that machinery will see a change — no suppression logic will be needed anywhere downstream.
+3. **No-op detection will come free.** After the rebind, a casing-only re-POST with an otherwise
+   identical payload will be row-for-row equal to current state and will land on the existing
+   guarded no-op path: 200, no `ContentVersion` bump, no change event.
+
+PUT will apply the same comparer and rebind **per column** (mirroring ODS's per-property behavior,
+including mixed updates: a genuinely changed column will take the normal key-change/cascade path
+while a merely recased column will keep its stored casing).
+
+Descriptors will get the equivalent treatment in the descriptor write handler: POST-as-update will
+bind the persisted identity fields (the target is matched *by* identity through the CI index, so
+request and stored identity can differ only in casing), the no-op comparer will treat identity
+fields case-insensitively and descriptive fields ordinally, and the PUT identity guard will compare
+the URI case-insensitively with the same rebind. Descriptors have no cascade or key-change
+machinery, so this path carries no side-effect risk.
+
+**Fail-closed residue (documented):** `OrdinalIgnoreCase` approximates but does not equal collation
+equality (linguistic equalities such as `ß`/`ss` or culture-specific case foldings that a collation
+may fold but invariant case mapping does not). Where the two diverge, the guard will fail closed — a
+400 on POST, or treated-as-a-real-key-change on PUT — never silent corruption. On POST the comparer
+will additionally be backstopped by the database itself: the update target can only exist because
+the CI probe matched under the real collation.
+
+For reference: ODS behaves the same way in this residue, because it uses the same approximation
+(`DatabaseEngineSpecificStringEqualityComparerProvider` is `OrdinalIgnoreCase` on SQL Server). Its
+CI probe finds the row, its key-equality check says "different," and it either throws
+`KeyChangeNotSupportedException` (400) or performs a real key change with cascades. Fail-closed is
+inherited behavior, not a new deviation.
+
+### Trigger value-diffs stay byte-level on SQL Server
+
+The generated triggers gate their work on null-safe old-vs-new value comparisons, and on SQL Server
+string columns are compared as `CAST(… AS varbinary(max))` — byte-level, deliberately stronger than
+the collation. This will not relax when `dms.ReferentialIdentity` drops. The only trigger family
+whose binary diff existed *for* the hash is `TR_<R>_ReferentialIdentity` (the hash is computed over
+exact bytes, so its maintenance triggers had to see byte changes), and that family will be deleted
+wholesale, diff included. Every surviving consumer of the binary diff serves a contract this design
+keeps: **DMS serves stored bytes** (GET reconstitutes from the tables), so ETags and change versions
+must move exactly when stored bytes move. A plain collation-governed `<>` is blind to case-only and
+trailing-space-only changes on SQL Server; PostgreSQL needs no cast because `IS DISTINCT FROM`
+under its case-sensitive deterministic collation is already byte-accurate — the cast is what gives
+both engines the same trigger semantics.
+
+| Trigger family (all will be kept) | What the binary diff gates | Why it must stay byte-level |
+|---|---|---|
+| Document stamping — content stamp (resource roots, child scopes, and `dms.Descriptor`) | `ContentVersion` / `ContentLastModifiedAt` bumps | Non-identity fields stay request-wins under this contract: a case-only or trailing-space-only edit changes the served bytes, so the ETag must change and change queries must resurface the document. A collation diff would leave the ETag stale while the body changed. |
+| Document stamping — identity stamp + key-change workset | `IdentityVersion` bump + the key-change tracked-change row | The fail-closed comparer residue: a byte-different-but-collation-equal key change (e.g. `Straße` → `Strasse`) is deliberately allowed through as a real key change, and its cascade rewrites referrer bytes; only a byte-level diff records any of it. |
+| Abstract identity maintenance | Whether concrete identity changes propagate into the `<Abstract>Identity` tables | These tables will become the *only* resolution path for abstract references, and PostgreSQL matches them case-sensitively — byte drift between a concrete root and its abstract copy would become user-visible. |
+| Identity propagation (pruned-cascade replacement triggers) | Whether identity changes propagate where SQL Server's cascade restrictions forced FK pruning | PostgreSQL propagates byte changes through native cascades; a collation diff here would make SQL Server skip what PostgreSQL propagates — cross-engine drift in referrer copies. |
+
+(Non-string columns are never cast — the byte comparison exists only where collation equality and
+byte equality can disagree.)
+
+Two further reasons the diffs cannot be delegated to the write path's comparer-and-rebind
+discipline: the rebind lives in one application code path, while triggers fire for *every* writer
+(ETL, operational data fixes, future code paths) — the trigger is the engine-level backstop that
+keeps "stored bytes changed ⇒ versions moved" true unconditionally. And once this design ships,
+casing-only identity writes stop reaching the database on SQL Server (the rebind removes them at
+the source), so the binary identity diff costs nothing at runtime — it simply stops firing.
+
+Nor is byte-level trigger diffing a deviation from ODS; it is the relocation of ODS's own byte-level
+change detection. ODS's change-version triggers are diff-free (any UPDATE bumps) because
+NHibernate's per-property dirty checking filters value-identical writes upstream — comparing non-key
+properties ordinally (byte-level) and key properties with the engine-specific CI comparer. DMS's
+full-row replacement issues writes that carry unchanged values, so the "did anything actually
+change?" question moves into the trigger, and the binary cast is the SQL Server translation of the
+ordinal non-key comparison. In the comparer residue ODS's own bookkeeping goes blind (its key-change
+and cascade-touch triggers compare under the collation, so a `Straße` → `Strasse` key change records
+no key change and touches no referrer stamps even though every copy's bytes changed); the byte-level
+diffs make DMS strictly more accurate there while keeping the same API-surface behavior.
+
+### DMS Behavior changes
+
+Relative to current DMS behavior (the hash era), on SQL Server:
+
+- Case-variant natural-key POST of an existing document will shift **409 → 200** (silent update; ODS
+  parity).
+- Casing-only PUT on a cascade-enabled resource: today a real key change (cascade through every
+  referrer plus change-version ripples); it will become a no-op for the casing (stored key casing
+  immutable, as in ODS).
+- Descriptor POST-as-update: today it rewrites stored descriptor casing to the request's; it will
+  preserve stored casing (first-created canonical form, per the official feature test). A case-only
+  descriptor PUT is a 400 today; it will become a 200 update/no-op. These two descriptor deltas will
+  apply on both engines.
+
+PostgreSQL regular-resource behavior will remain unchanged on every pin.
+
+### Collection duplicate detection
+
+Collation-governed matching will open one gap that Core's request validation cannot close. Core
+dedupes array items ordinally (reference items by their in-memory hash; scalar identity members via
+an ordinal dictionary), so two collection items differing only in string casing pass validation —
+and on SQL Server they will then resolve to the *same* target `DocumentId` (CI collation) and
+collide in the collection's sibling unique constraint, which the constraint resolver does not
+classify: an unmapped 5xx for what is really a client input error.
+
+The fix will run after reference resolution and before DML, comparing each collection item's
+flattened identity tuple per scope, in two tiers governed by one principle: *never invent an
+equality definition where the database has issued a verdict; approximate its verdict only where it
+hasn't spoken, and say so.*
+
+1. **Reference and descriptor members (exact tier):** will be compared by resolved
+   `DocumentId`/`DescriptorId` — the engine's own equality verdict, already in hand, zero
+   approximation error. Deliberately not a string comparison: a C# string comparer would only
+   approximate the collation and would reintroduce the same defect in rarer forms.
+2. **Local string-scalar identity members (approximation tier):** no database verdict exists before
+   the write, so they will compare with a dialect-matched comparer — `OrdinalIgnoreCase` on SQL
+   Server, `Ordinal` on PostgreSQL (where it is exact). This will live backend-side so Core stays
+   engine-agnostic (the same placement ODS uses for its engine-specific string comparer). Documented
+   residual: the SQL Server comparer will not reproduce collation padding rules or linguistic
+   equalities; those exotic cases will fall through to the sibling unique constraint as an integrity
+   backstop (and natural-key strings with leading/trailing spaces are already rejected with 400).
+
+Duplicates will produce the same path-attributed 400 duplicate-item error Core produces today. The
+sibling unique constraint's runtime meaning will stay "race/integrity backstop," never routine input
+validation.
+
+**Generic conflict fallback (ODS parity):** unique-constraint violations that the write path's
+constraint resolver does not specifically recognize will map to a **409 Conflict** — the same
+catch-all translation ODS applies to unique/PK violations — instead of surfacing as an unmapped 5xx.
+The well-shaped, path-attributed 400s still come from the two detection tiers above; the fallback
+only dresses the backstop's rare firings (linguistic equalities such as `ß`/`ss` in local string
+scalars, which the collation folds but `OrdinalIgnoreCase` does not, plus any future unique
+constraint without a specific mapping). Specific classifications keep their existing semantics —
+in particular, the natural-key create-race classification and its retry behavior are untouched; the
+fallback replaces only the unmapped-failure terminal.
+
+A latent variant of this defect exists today in `main`: case-variant duplicate
+*descriptor* array items already hash to the same lower-cased UUIDv5 and collide in the sibling
+unique on both engines.
+
+## Consistency and integrity
+
+An audit of every invariant `dms.ReferentialIdentity` participates in, and its coverage after
+removal:
+
+| Invariant | Enforced after removal by |
+|---|---|
+| Concrete identity uniqueness | `UX_<R>_NK` (always was the primary enforcement) |
+| Cross-subclass abstract identity uniqueness | `UX_<Abstract>Identity_NK` on the abstract identity tables (this is the alias row's real job, and the tables already enforce it) |
+| Descriptor identity uniqueness | `UX_Descriptor_UriLowered_Discriminator` (CI, both engines) |
+| Create-race detection (409/retry) | `UX_<R>_NK` unique violations, classified exactly as today |
+| Reference targets exist and stay consistent | Composite FKs onto `RefKey` targets, unchanged |
+
+Deliberately lost will be: the corruption canary (its entire disease class — derived state drifting
+from row state — will be abolished with the derived state), and a redundant second uniqueness net
+(the RI PK). Mitigations for the redundancy loss: the probe compiler will carry an empty-identity
+guard (a resource whose compiled identity has zero parts will fail compilation loudly), a
+compile-time parity guard will prove the compiled probes reproduce the legacy trigger derivation
+resource-by-resource for as long as both exist, and golden DDL fixtures will continue to pin the
+schema.
+
+Cascades will need no new application-side revalidation: unified identity values are stored once
+(aliases are generated columns; FKs bind canonical columns), collection sibling uniques bind
+`..._DocumentId` columns (cascade-stable), and parent NK uniqueness gates any key change before it
+can cascade.
+
+## Schema and contract changes
+
+### To be dropped
+
+- `dms.ReferentialIdentity`, `FK_ReferentialIdentity_Document`, `FK_ReferentialIdentity_ResourceKey`.
+- All `TR_<R>_ReferentialIdentity` triggers; the `ReferentialIdentityMaintenance` trigger kind and
+  `SuperclassAliasInfo` contract types; `IdentityElementMapping` will shrink from arity 4 to 2
+  (`ScalarType`/`IsDescriptorReference` exist only for hash emission); the manifest emitter's RI
+  trigger-kind serialization.
+- `dms.uuidv5()` on both engines — `ISqlDialect.CreateUuidv5Function` will be removed (breaking for
+  Managed-API implementers).
+- The PostgreSQL `pgcrypto` extension (uuidv5's `digest()` call is its only DMS-database consumer).
+- `dms.UniqueIdentifierTable` TVP type (sole consumer: the SQL Server bulk RI lookup strategy).
+  `dms.BigIntTable` will stay — it serves authorization.
+- `UX_Descriptor_Uri_Discriminator` (strictly implied by the new CI unique index).
+- The old resolver arm: `ReferenceResolver`, the per-engine RI lookup builders/adapters/strategies,
+  the result reader, and the corruption-canary machinery.
+
+### To be added
+
+- `dms.Descriptor.UriLowered` + `UX_Descriptor_UriLowered_Discriminator` (definitions above).
+- Compiled natural-key probe metadata on the mapping set (not serialized; zero manifest churn).
+- `NaturalKeyReferenceResolver` + per-engine natural-key lookup command builders.
+
+### To be changed
+
+- `RelationalMappingVersion` `"v2"` → `"v3"` — **deferred to the pre-release checklist**, not part
+  of this change set. Re-provision remains required when picking up these changes; the fingerprint
+  503 enforcement begins once the bump lands.
+- **Published-contract trims:**
+  - `DocumentReferenceFailure.ReferentialId` and `DescriptorReferenceFailure.ReferentialId` will be
+    removed.
+  - `DescriptorWriteRequest.ReferentialId` and the POST write-target request's `ReferentialId` will
+    be removed.
+  - `ReferenceLookupResult` will lose `VerificationIdentityKey` (canary-only) and rename
+    `ReferentialIdentityResourceKeyId` to `RequestedTargetResourceKeyId` (a live member — the
+    requested-target key id for abstract targets).
+  - `Add{Postgresql,Mssql}ReferenceResolver()` DI extensions will compose the natural-key resolver —
+    a behavioral change for hosts that resolve references through the old registration.
+- Ops: the seed-clone script's TRUNCATE list will lose `dms."ReferentialIdentity"`; template
+  management will drop its pgcrypto preamble.
+
+### To remain unchanged
+
+`dms.Document` in every respect (columns including `CreatedByOwnershipTokenId`, identity
+`DocumentId`, the DocumentCache enqueue triggers, all FKs into it); `dms.Descriptor` otherwise
+(including `ResourceKeyId NOT NULL`); `UX_<R>_RefKey` / `UX_<R>_NK` / abstract identity tables and
+their triggers; the DocumentCache table family; tracked-change tables and triggers; `auth.*`;
+`dms.ResourceKey` / `dms.EffectiveSchema` / `dms.SchemaComponent`; the read/reconstitution pipeline.
+
+## Migration and rollout: proposed tickets
+
+One implementation branch, trunk-green per ticket. The list below is the proposed ticket breakdown —
+one story per entry, sized like the existing stories under [`../epics/`](../epics/), except the drop
+ticket, which deliberately bundles three deletion stages as ordered commits — to be created there
+once this document is approved. Ordering is dependency order; the cutover tickets depend on the
+foundation tickets (T1–T3).
+
+**Foundations — `dms.ReferentialIdentity` stays trigger-maintained throughout; its write-path
+upsert probes stay live until their cutover tickets:**
+
+- **T1 — Compile natural-key probe metadata; re-source the 409 duplicate-identity messages.**
+  Compile per-resource probe metadata (reference targets, own-key probes, the descriptor probe)
+  from the relational model — never from trigger metadata or constraint names — with an
+  empty-identity compile guard and an every-resource parity guard against the live trigger
+  derivation. Re-source the 409 `duplicateIdentityValues` machinery from the compiled probes,
+  severing its trigger-metadata dependency before the triggers drop. AC: parity guard green for
+  every resource; 409 responses unchanged.
+- **T2 — Add `dms.Descriptor.UriLowered` + `UX_Descriptor_UriLowered_Discriminator`.** Emit the
+  computed column and unique index at their final shape on both engines; the old case-sensitive
+  index stays through the transition. AC: golden DDL diff shows exactly the new column and index,
+  nothing else.
+- **T3 — The natural-key resolver replaces the hash resolver arm.** The dialect command builders
+  (PostgreSQL `unnest` and SQL Server OPENJSON + `FORCE ORDER` group statements, the
+  union-projection single-statement form, the parameter-budget guard) plus
+  `NaturalKeyReferenceResolver` implementing `IReferenceResolver` (memo, shared typed-value
+  conversion, ordinal result mapping) and the composite embeddability seams. This ticket
+  **replaces** the hash resolution arm rather than coexisting with it:
+  `Add{Postgresql,Mssql}ReferenceResolver()` composes the new resolver directly, the old resolver
+  (per-engine lookup builders/strategies, result reader, corruption canary) and its test suites are
+  deleted, its composite-seam consumers re-point to the new factory, and the *resolver-contract*
+  trims land here in final shape (`ReferenceLookupResult` loses `VerificationIdentityKey` and
+  renames `ReferentialIdentityResourceKeyId`; the failure-record `ReferentialId` members go). The
+  *write-request* `ReferentialId` members stay — they feed the RI upsert probes until T4/T7 — and
+  the RI triggers keep writing until T9. AC: SQL-shape pins (batch-size-independent text on PG,
+  leftmost OPENJSON input and one statement-level `FORCE ORDER` on MSSQL, budget-guard throw);
+  resolver unit suites green; the existing reference-resolution-dependent integration estate green
+  on both engines, now exercising the new resolver. Correctness on this branch is carried by
+  the behavior pins, the integration estate, and E2E (see ["Test strategy"](#test-strategy)). If
+  production-shaped workloads later disagree on performance, the capture-predicate contingency
+  ladder applies, with reverting the composite write-path batching (DMS-1332) accepted as the last
+  resort.
+- **T4 — Upsert-detection cutover in the composite write path.** Replace the capture predicate's
+  hash subselect with the natural-key predicate (inline RefKey/`UriLowered` subselects) and the
+  standalone fallback with the `UX_<R>_NK` probe. AC: command-stream pins — round-trip counts
+  unchanged (POST create stays at 2 commands), RI command classification zero; write suites green.
+- **T5 — Collection duplicate detection + generic conflict fallback.** The two-tier post-resolution
+  duplicate detection (resolved ids exact for reference/descriptor members; dialect-matched
+  comparer for local string scalars) and the ODS-parity 409 fallback for unclassified unique
+  violations; includes the case-variant duplicate-descriptor E2E scenario. AC: the per-engine
+  duplicate-detection pin matrix + the E2E scenario green.
+- **T6 — ODS-parity casing: CI identity guard + stored-identity rebind (SQL Server).** The
+  dialect-matched identity comparer, the merged-row stored-identity rebind ahead of authorization
+  and no-op detection, and the per-column PUT semantics. AC: the case-variant POST/PUT pin matrix
+  (200, stored casing served, guarded no-op, no referrer rewrite / key-change row /
+  `IdentityVersion` bump on SQL Server; PostgreSQL unchanged on every pin).
+- **T7 — Descriptor write handler cutover.** URI-probe upsert detection and stored-wins casing
+  (persisted-identity binding, the split no-op comparer, the case-insensitive PUT identity guard).
+  AC: descriptor write/stamping suites green; stored-wins pins per engine.
+- **T8 — Query-preprocessor cutover for descriptor filters.** The production DI flip plus
+  descriptor-filter integration coverage. AC: URI filter matches, case-variant URI matches,
+  nonexistent/wrong-type URIs return empty pages with unchanged reasons.
+- **T9 — Remove `dms.ReferentialIdentity` and everything that maintained it.** One ticket, three
+  internally ordered stages, each landing as its own trunk-green commit:
+  1. Delete the RI write-path remnants: the RI upsert-probe SQL and service members (unread since
+     T4/T7), the remaining `ReferentialId` members on the write-request contracts
+     (`DescriptorWriteRequest`, the POST write-target request), and sweep every test fixture that
+     seeds RI rows directly — the sweep is a structural proof: a test failing for a missing RI row
+     has found a surviving reader (stop and investigate, never reseed).
+  2. Drop the `TR_<R>_ReferentialIdentity` triggers, scope-guarded — the DocumentCache enqueue,
+     stamping, and abstract-identity trigger families are untouched — with the shared cross-engine
+     parity-contract tests updated once for both engines.
+  3. Drop the table, `uuidv5`, pgcrypto, and the TVP, and collapse descriptor uniqueness onto the
+     new case-insensitive index.
+
+  AC per stage; the final golden diff shows exactly the predicted removals and **no version-string
+  or hash churn** (the `RelationalMappingVersion` bump is deliberately absent — see below).
+
+**Pre-release checklist item (deliberately not a ticket in this set):** bump
+`RelationalMappingVersion` `v2 → v3` and re-bless the schema-hash pin, so the fingerprint check
+rejects pre-removal databases with the designed 503. Release-blocking; see
+["To be changed"](#to-be-changed).
+
+Rollback before the drop ticket will be a commit revert: `dms.ReferentialIdentity` stays
+trigger-maintained until T9, so reverting the resolver swap (or any cutover ticket) resumes against
+current data. After the drop ticket, rollback will be re-provisioning with the previous build —
+consistent with the re-provision-only migration stance.
+
+## Performance validation
+
+Measured on a full prototype of this design (PostgreSQL 18 and SQL Server 2022, local native
+instances), as median ratios of natural-key resolution vs the hash baseline across three workload
+cases — bulk (4096 references), deep identities (512), small batch (64):
+
+| Engine / input shape | bulk-4096 | deep-512 | small-64 |
+|---|---|---|---|
+| PostgreSQL, typed `unnest` arrays | **0.61×** | **0.86×** | 1.11× |
+| SQL Server, OPENJSON + `FORCE ORDER` | **0.62×** | **0.53×** | 1.26× |
+
+Values below 1.0× are faster than the hash resolver. The two small-batch regressions are modest and
+bounded; the bulk and deep-identity cases — where resolution cost actually matters — are markedly
+faster (deep identities benefit most: RefKey flattening replaces the hash path's per-level work with
+one wide seek). Additional performance runs on the prototype beyond this matrix confirmed the
+results. If production-shaped workloads later disagree, the capture-predicate
+contingency ladder applies, with reverting the composite write-path batching (DMS-1332) accepted as
+the last resort.
+
+Two SQL Server input shapes were evaluated and **rejected on measurement**, which is why the
+surviving shape is pinned by tests rather than left to convention:
+
+- **Typed `VALUES` row constructors:** 1.7–3.8× the baseline (~17 µs per parameter, superlinear in
+  batch size) — parameter binding dominates.
+- **OPENJSON without `OPTION (FORCE ORDER)`:** up to **8.9×** the baseline — OPENJSON's fixed 50-row
+  cardinality estimate can put the payload on the inner side of a nested loop. `FORCE ORDER` with the
+  OPENJSON input leftmost in every join tree makes the plan shape deterministic; both properties are
+  asserted by SQL-shape unit tests.
+
+Round-trip counts are a separate, CI-enforced property: the command-stream pinning tests assert that
+per-operation command counts do not regress (POST create must stay at 2 commands); those pins will
+be the proof that the union-projection embedded lookup holds on both engines, as it did in the
+prototype.
+
+The first SQL Server 2025 exposure of the OPENJSON + FORCE ORDER shape will happen in CI's Docker
+E2E lane; a performance re-measure on 2025 will be a post-merge observation item, not a rollout gate.
+
+## Test strategy
+
+- **Golden DDL fixtures** are the schema review surface; they will be regenerated per
+  schema-affecting step and proven to be a fixed point after every regeneration.
+- **Probe-compilation unit tests**, including an every-resource parity guard that will prove the
+  compiled probes reproduce the legacy trigger derivation for as long as both exist.
+- **Dialect SQL unit tests**: statement shape independent of batch size (PostgreSQL), OPENJSON +
+  FORCE ORDER + leftmost-input pins and the parameter-budget guard (SQL Server), and the
+  union-projection single-statement form.
+- **No old-vs-new gates.** The prototype's differential equivalence proof and benchmark matrix stand
+  as the transition evidence; neither suite is ported to the implementation branch. Correctness is
+  carried by the behavior pins below, the existing integration estate (running against the new
+  resolver from T3 onward), and E2E; performance remedies are pre-agreed (the contingency ladder,
+  then the accepted DMS-1332-revert last resort).
+- **Command-stream pins**: round-trip counts must not regress; RI command classification will go to
+  zero at cutover.
+- **Behavior pins**:
+  - Case-variant natural-key POST/PUT suites asserting the ODS-parity contract on SQL Server (200,
+    stored casing served back, true no-op on identical payload, no referrer rewrite / key-change
+    row / `IdentityVersion` bump; casing-only PUT is not a key change; a mixed PUT cascades only the
+    genuinely changed column) and the PostgreSQL second-document behavior.
+  - Descriptor stored-wins pins per engine (POST preserves stored casing and no-ops on casing-only
+    re-POST; case-only descriptor PUT returns 200 with stored identity intact).
+  - Collection duplicate-detection pins (SQL Server: case-variant duplicate reference items → 400
+    duplicate-item, never an unmapped failure; case-variant duplicate string-scalar identity items →
+    400; PostgreSQL: the same payloads → 409 unresolved reference and success-with-both-items
+    respectively, since case variants are distinct values there; case-variant duplicate
+    **descriptor** items → 400 duplicate-item on **both** engines — descriptor matching is
+    case-insensitive everywhere, so both items resolve to the same `DescriptorId`; this pin doubles
+    as the regression test for the pre-existing latent defect noted under
+    ["Collection duplicate detection"](#collection-duplicate-detection); linguistic-equality
+    (`ß`/`ss`-class) duplicate string-scalar items → **409 Conflict** on SQL Server via the generic
+    fallback, never an unmapped 5xx, and success-with-both-items on PostgreSQL — engine-divergent
+    expectations, so this pair stays at the integration level rather than E2E).
+  - Tombstone and change-query suites must stay green untouched.
+- **E2E** will gate the merge in CI on both engines. HTTP-visible contract points are pinned at the
+  E2E level where possible; in particular, the case-variant duplicate descriptor-item scenario will
+  be a dedicated E2E test (`EdFi.DataManagementService.Tests.E2E`): POST a resource whose collection
+  carries two descriptor URIs differing only in casing → 400 duplicate-item, never a 5xx, on both
+  engines.
+
+## Risks and accepted trade-offs
+
+1. **SQL Server OPENJSON plan quality** — no statistics on the shredded input. Mitigated by
+   `FORCE ORDER` plus the leftmost-input rule (measured, pinned), with a re-observation on SQL
+   Server 2025 after merge.
+2. **Capture-predicate cost** — one extra seek per reference-sourced natural-key part at capture
+   time, bounded by key width; remedies are pre-agreed as the contingency ladder (own-RefKey capture
+   probe first; NK re-shaping only as a separate initiative; dropping NK never), with reverting the
+   composite write-path batching (DMS-1332) accepted as the last resort. No live benchmark gate —
+   prototype evidence stands (see "Performance validation").
+3. **Write-path churn on recent code** — the composite write pipeline (DMS-1332) is recent, and the
+   cutover will land on top of it. Mitigated by the seam-level replacement design (a predicate and a
+   lookup swap, no structural change) and by keeping the DMS-1332 pinning suites green throughout.
+4. **Collation-governed matching deltas on SQL Server** — accepted and asserted deliberately (see
+   the casing contract); the deltas will move DMS *toward* ODS behavior.
+5. **Descriptor case-variant duplicates** will be rejected by a table-level CI unique index (they
+   are same-document by hash semantics today) — accepted; identical effective semantics, newly
+   enforced by the engine.
+6. **Lost corruption canary** — accepted by construction: the derived state it guarded will no
+   longer exist.
+7. **Casing comparer approximation** — `OrdinalIgnoreCase` vs collation divergences will fail closed
+   (documented above); never silent.
+
+## Out of scope
+
+- Any change to `dms.Document` (columns, locking, DELETE shape, readers, or its DocumentCache
+  triggers).
+- In-place upgrade scripts (the migration is re-provision-only; the fingerprint enforcement arrives
+  with the deferred pre-release version bump).
+- DocumentCache/CDC work (live, RI-free, orthogonal).
+- ApiSchema contract, Core validation pipeline, or resource JSON shapes.
+- Rewriting the design-doc corpus beyond the targeted supersession banners and the batching-doc
+  correction named under Migration.
