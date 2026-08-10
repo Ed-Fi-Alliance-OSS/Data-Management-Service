@@ -23,22 +23,14 @@ public enum DocumentCacheReadAccelerationResourceKind
     Descriptor,
 }
 
-public enum DocumentCacheReadAccelerationLookupReadiness
-{
-    RelationalFallbackOnly,
-    AuthorizedCandidate,
-}
-
-public enum DocumentCacheReadAccelerationFallbackReason
+internal enum DocumentCacheReadAccelerationFallbackReason
 {
     ReadAccelerationDisabled,
-    NotExternalRead,
     InvalidTargetKey,
     SelectedDataStoreUnavailable,
     TargetRegistryUnavailable,
     UnresolvedTarget,
     TargetReadAccelerationDisabled,
-    CandidateSelectionUnavailable,
     CacheLookupMiss,
     CacheLookupStale,
     CacheLookupSourceDrift,
@@ -47,11 +39,6 @@ public enum DocumentCacheReadAccelerationFallbackReason
     CacheLookupInvariantFailure,
     CacheHitResponseShapingUnavailable,
 }
-
-public sealed record DocumentCacheReadAccelerationFallbackContext(
-    DocumentCacheReadAccelerationFallbackReason Reason,
-    DocumentCacheTargetExecutionContext? TargetContext
-);
 
 public sealed record DocumentCacheReadAccelerationCandidate(
     long DocumentId,
@@ -78,11 +65,7 @@ public abstract record DocumentCacheReadAccelerationGetByIdSelectionResult
 
     public sealed record Candidate(
         DocumentCacheReadAccelerationCandidate AuthorizedCandidate,
-        Func<
-            DocumentCacheReadAccelerationFallbackContext,
-            CancellationToken,
-            Task<GetResult>
-        > RelationalFallback
+        Func<CancellationToken, Task<GetResult>> RelationalFallback
     ) : DocumentCacheReadAccelerationGetByIdSelectionResult;
 }
 
@@ -94,11 +77,7 @@ public abstract record DocumentCacheReadAccelerationQuerySelectionResult
 
     public sealed record CandidatePage(
         DocumentCacheReadAccelerationCandidatePage AuthorizedCandidatePage,
-        Func<
-            DocumentCacheReadAccelerationFallbackContext,
-            CancellationToken,
-            Task<QueryResult>
-        > RelationalFallback
+        Func<CancellationToken, Task<QueryResult>> RelationalFallback
     ) : DocumentCacheReadAccelerationQuerySelectionResult;
 }
 
@@ -107,15 +86,12 @@ public sealed record DocumentCacheReadAccelerationGetByIdRequest(
     MappingSet MappingSet,
     QualifiedResourceName Resource,
     DocumentUuid DocumentUuid,
-    RelationalGetRequestReadMode ReadMode,
     DocumentCacheReadAccelerationResourceKind ResourceKind,
-    DocumentCacheReadAccelerationLookupReadiness LookupReadiness,
-    Func<DocumentCacheReadAccelerationFallbackContext, CancellationToken, Task<GetResult>> RelationalFallback,
-    DocumentCacheReadAccelerationCandidate? AuthorizedCandidate = null,
+    Func<CancellationToken, Task<GetResult>> RelationalFallback,
     Func<
         CancellationToken,
         Task<DocumentCacheReadAccelerationGetByIdSelectionResult>
-    >? SelectAuthorizedCandidate = null
+    > SelectAuthorizedCandidate
 )
 {
     public ReadableProfileProjectionContext? ReadableProfileProjectionContext { get; init; }
@@ -128,17 +104,11 @@ public sealed record DocumentCacheReadAccelerationQueryRequest(
     MappingSet MappingSet,
     QualifiedResourceName Resource,
     DocumentCacheReadAccelerationResourceKind ResourceKind,
-    DocumentCacheReadAccelerationLookupReadiness LookupReadiness,
-    Func<
-        DocumentCacheReadAccelerationFallbackContext,
-        CancellationToken,
-        Task<QueryResult>
-    > RelationalFallback,
-    DocumentCacheReadAccelerationCandidatePage? AuthorizedCandidatePage = null,
+    Func<CancellationToken, Task<QueryResult>> RelationalFallback,
     Func<
         CancellationToken,
         Task<DocumentCacheReadAccelerationQuerySelectionResult>
-    >? SelectAuthorizedCandidatePage = null
+    > SelectAuthorizedCandidatePage
 )
 {
     public ReadableProfileProjectionContext? ReadableProfileProjectionContext { get; init; }
@@ -305,12 +275,14 @@ internal interface IDocumentCacheReadLookupAdapter
 {
     Task<DocumentCacheReadLookupResult<GetResult>> TryGetByIdAsync(
         DocumentCacheReadAccelerationGetByIdRequest request,
+        DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate candidateSelection,
         DocumentCacheTargetExecutionContext targetContext,
         CancellationToken cancellationToken = default
     );
 
     Task<DocumentCacheReadLookupResult<QueryResult>> TryQueryAsync(
         DocumentCacheReadAccelerationQueryRequest request,
+        DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage candidateSelection,
         DocumentCacheTargetExecutionContext targetContext,
         CancellationToken cancellationToken = default
     );
@@ -324,12 +296,14 @@ internal sealed class NoOpDocumentCacheReadLookupAdapter : IDocumentCacheReadLoo
 
     public Task<DocumentCacheReadLookupResult<GetResult>> TryGetByIdAsync(
         DocumentCacheReadAccelerationGetByIdRequest request,
+        DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate candidateSelection,
         DocumentCacheTargetExecutionContext targetContext,
         CancellationToken cancellationToken = default
     ) => Task.FromResult(DocumentCacheReadLookupResult<GetResult>.Fallback());
 
     public Task<DocumentCacheReadLookupResult<QueryResult>> TryQueryAsync(
         DocumentCacheReadAccelerationQueryRequest request,
+        DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage candidateSelection,
         DocumentCacheTargetExecutionContext targetContext,
         CancellationToken cancellationToken = default
     ) => Task.FromResult(DocumentCacheReadLookupResult<QueryResult>.Fallback());
@@ -353,11 +327,6 @@ internal sealed class PassthroughDocumentCacheReadAccelerationCoordinator
 {
     public static PassthroughDocumentCacheReadAccelerationCoordinator Instance { get; } = new();
 
-    private static readonly DocumentCacheReadAccelerationFallbackContext FallbackContext = new(
-        DocumentCacheReadAccelerationFallbackReason.TargetRegistryUnavailable,
-        TargetContext: null
-    );
-
     private PassthroughDocumentCacheReadAccelerationCoordinator() { }
 
     public Task<GetResult> GetByIdAsync(
@@ -367,7 +336,7 @@ internal sealed class PassthroughDocumentCacheReadAccelerationCoordinator
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        return request.RelationalFallback(FallbackContext, cancellationToken);
+        return request.RelationalFallback(cancellationToken);
     }
 
     public Task<QueryResult> QueryAsync(
@@ -377,7 +346,7 @@ internal sealed class PassthroughDocumentCacheReadAccelerationCoordinator
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        return request.RelationalFallback(FallbackContext, cancellationToken);
+        return request.RelationalFallback(cancellationToken);
     }
 }
 
@@ -429,26 +398,8 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
     )
     {
         ArgumentNullException.ThrowIfNull(request);
-
-        if (request.ReadMode != RelationalGetRequestReadMode.ExternalResponse)
-        {
-            RecordFallback(
-                DocumentCacheReadAccelerationOperation.GetById,
-                request.ResourceKind,
-                targetContext: null,
-                DocumentCacheReadAccelerationFallbackReason.NotExternalRead
-            );
-
-            return await request
-                .RelationalFallback(
-                    new DocumentCacheReadAccelerationFallbackContext(
-                        DocumentCacheReadAccelerationFallbackReason.NotExternalRead,
-                        TargetContext: null
-                    ),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
+        ArgumentNullException.ThrowIfNull(request.RelationalFallback);
+        ArgumentNullException.ThrowIfNull(request.SelectAuthorizedCandidate);
 
         if (!_options.Value.ReadAcceleration.Enabled)
         {
@@ -465,15 +416,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                 DocumentCacheReadTelemetryLabel.SkippedReadAccelerationDisabled
             );
 
-            return await request
-                .RelationalFallback(
-                    new DocumentCacheReadAccelerationFallbackContext(
-                        DocumentCacheReadAccelerationFallbackReason.ReadAccelerationDisabled,
-                        TargetContext: null
-                    ),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            return await request.RelationalFallback(cancellationToken).ConfigureAwait(false);
         }
 
         if (
@@ -497,83 +440,23 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                 configuredTargetDirectFillSkipOutcome
             );
 
-            return await request
-                .RelationalFallback(
-                    new DocumentCacheReadAccelerationFallbackContext(
-                        configuredTargetFallbackReason,
-                        TargetContext: null
-                    ),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            return await request.RelationalFallback(cancellationToken).ConfigureAwait(false);
         }
 
-        if (request.LookupReadiness != DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate)
+        DocumentCacheReadAccelerationGetByIdSelectionResult selectionResult = await request
+            .SelectAuthorizedCandidate(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (selectionResult is DocumentCacheReadAccelerationGetByIdSelectionResult.Complete complete)
         {
-            if (request.SelectAuthorizedCandidate is null)
-            {
-                RecordFallback(
-                    DocumentCacheReadAccelerationOperation.GetById,
-                    request.ResourceKind,
-                    targetContext: null,
-                    DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable
-                );
-
-                return await request
-                    .RelationalFallback(
-                        new DocumentCacheReadAccelerationFallbackContext(
-                            DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable,
-                            TargetContext: null
-                        ),
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-            }
-
-            var selectionResult = await request
-                .SelectAuthorizedCandidate(cancellationToken)
-                .ConfigureAwait(false);
-
-            switch (selectionResult)
-            {
-                case DocumentCacheReadAccelerationGetByIdSelectionResult.Complete complete:
-                    return complete.Result;
-
-                case DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate candidate:
-                    request = request with
-                    {
-                        LookupReadiness = DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
-                        AuthorizedCandidate = candidate.AuthorizedCandidate,
-                        RelationalFallback = candidate.RelationalFallback,
-                    };
-                    break;
-
-                default:
-                    throw new InvalidOperationException(
-                        $"Unsupported GET-by-id candidate selection result '{selectionResult.GetType().Name}'."
-                    );
-            }
+            return complete.Result;
         }
 
-        if (request.AuthorizedCandidate is null)
-        {
-            RecordFallback(
-                DocumentCacheReadAccelerationOperation.GetById,
-                request.ResourceKind,
-                targetContext: null,
-                DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable
+        var candidateSelection =
+            selectionResult as DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate
+            ?? throw new InvalidOperationException(
+                $"Unsupported GET-by-id candidate selection result '{selectionResult.GetType().Name}'."
             );
-
-            return await request
-                .RelationalFallback(
-                    new DocumentCacheReadAccelerationFallbackContext(
-                        DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable,
-                        TargetContext: null
-                    ),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
 
         if (
             !TryResolveTarget(
@@ -598,16 +481,12 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                 directFillSkipOutcome
             );
 
-            return await request
-                .RelationalFallback(
-                    new DocumentCacheReadAccelerationFallbackContext(fallbackReason, TargetContext: null),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            return await candidateSelection.RelationalFallback(cancellationToken).ConfigureAwait(false);
         }
 
         DocumentCacheReadLookupResult<GetResult> lookupResult = await LookupGetByIdAsync(
                 request,
+                candidateSelection,
                 targetContext,
                 cancellationToken
             )
@@ -635,17 +514,14 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             lookupResult.InvariantDiagnostic
         );
 
-        GetResult fallbackResult = await request
-            .RelationalFallback(
-                new DocumentCacheReadAccelerationFallbackContext(lookupResult.FallbackReason, targetContext),
-                cancellationToken
-            )
+        GetResult fallbackResult = await candidateSelection
+            .RelationalFallback(cancellationToken)
             .ConfigureAwait(false);
 
         await TryDirectFillAsync(
                 request,
                 targetContext,
-                SelectGetByIdDirectFillCandidates(request, targetContext, lookupResult),
+                SelectGetByIdDirectFillCandidates(candidateSelection, targetContext, lookupResult),
                 fallbackResult,
                 cancellationToken
             )
@@ -660,6 +536,8 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
     )
     {
         ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(request.RelationalFallback);
+        ArgumentNullException.ThrowIfNull(request.SelectAuthorizedCandidatePage);
 
         if (!_options.Value.ReadAcceleration.Enabled)
         {
@@ -676,15 +554,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                 DocumentCacheReadTelemetryLabel.SkippedReadAccelerationDisabled
             );
 
-            return await request
-                .RelationalFallback(
-                    new DocumentCacheReadAccelerationFallbackContext(
-                        DocumentCacheReadAccelerationFallbackReason.ReadAccelerationDisabled,
-                        TargetContext: null
-                    ),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            return await request.RelationalFallback(cancellationToken).ConfigureAwait(false);
         }
 
         if (
@@ -708,96 +578,36 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                 configuredTargetDirectFillSkipOutcome
             );
 
-            return await request
-                .RelationalFallback(
-                    new DocumentCacheReadAccelerationFallbackContext(
-                        configuredTargetFallbackReason,
-                        TargetContext: null
-                    ),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            return await request.RelationalFallback(cancellationToken).ConfigureAwait(false);
         }
 
-        if (request.LookupReadiness != DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate)
+        DocumentCacheReadAccelerationQuerySelectionResult selectionResult = await request
+            .SelectAuthorizedCandidatePage(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (selectionResult is DocumentCacheReadAccelerationQuerySelectionResult.Complete complete)
         {
-            if (request.SelectAuthorizedCandidatePage is null)
-            {
-                RecordFallback(
-                    DocumentCacheReadAccelerationOperation.Query,
-                    request.ResourceKind,
-                    targetContext: null,
-                    DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable
-                );
-
-                return await request
-                    .RelationalFallback(
-                        new DocumentCacheReadAccelerationFallbackContext(
-                            DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable,
-                            TargetContext: null
-                        ),
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-            }
-
-            var selectionResult = await request
-                .SelectAuthorizedCandidatePage(cancellationToken)
-                .ConfigureAwait(false);
-
-            switch (selectionResult)
-            {
-                case DocumentCacheReadAccelerationQuerySelectionResult.Complete complete:
-                    return complete.Result;
-
-                case DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage candidatePage:
-                    request = request with
-                    {
-                        LookupReadiness = DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
-                        AuthorizedCandidatePage = candidatePage.AuthorizedCandidatePage,
-                        RelationalFallback = candidatePage.RelationalFallback,
-                    };
-                    break;
-
-                default:
-                    throw new InvalidOperationException(
-                        $"Unsupported query candidate selection result '{selectionResult.GetType().Name}'."
-                    );
-            }
+            return complete.Result;
         }
 
-        if (request.AuthorizedCandidatePage is null)
-        {
-            RecordFallback(
-                DocumentCacheReadAccelerationOperation.Query,
-                request.ResourceKind,
-                targetContext: null,
-                DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable
+        var candidateSelection =
+            selectionResult as DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage
+            ?? throw new InvalidOperationException(
+                $"Unsupported query candidate selection result '{selectionResult.GetType().Name}'."
             );
 
-            return await request
-                .RelationalFallback(
-                    new DocumentCacheReadAccelerationFallbackContext(
-                        DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable,
-                        TargetContext: null
-                    ),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
-
-        if (request.AuthorizedCandidatePage.IsEmpty)
+        if (candidateSelection.AuthorizedCandidatePage.IsEmpty)
         {
             return new QueryResult.QuerySuccess(
                 [],
-                request.AuthorizedCandidatePage.TotalCount is null
+                candidateSelection.AuthorizedCandidatePage.TotalCount is null
                     ? null
                     : RelationalReadGuardrails.ConvertTotalCountOrThrow(
                         request.Resource,
-                        request.AuthorizedCandidatePage.TotalCount,
+                        candidateSelection.AuthorizedCandidatePage.TotalCount,
                         "cache query empty-page response"
                     ),
-                request.AuthorizedCandidatePage.HighestSelectedDocumentId
+                candidateSelection.AuthorizedCandidatePage.HighestSelectedDocumentId
             );
         }
 
@@ -824,16 +634,12 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                 directFillSkipOutcome
             );
 
-            return await request
-                .RelationalFallback(
-                    new DocumentCacheReadAccelerationFallbackContext(fallbackReason, TargetContext: null),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            return await candidateSelection.RelationalFallback(cancellationToken).ConfigureAwait(false);
         }
 
         DocumentCacheReadLookupResult<QueryResult> lookupResult = await LookupQueryAsync(
                 request,
+                candidateSelection,
                 targetContext,
                 cancellationToken
             )
@@ -861,17 +667,19 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             lookupResult.InvariantDiagnostic
         );
 
-        QueryResult fallbackResult = await request
-            .RelationalFallback(
-                new DocumentCacheReadAccelerationFallbackContext(lookupResult.FallbackReason, targetContext),
-                cancellationToken
-            )
+        QueryResult fallbackResult = await candidateSelection
+            .RelationalFallback(cancellationToken)
             .ConfigureAwait(false);
 
         await TryDirectFillAsync(
                 request,
                 targetContext,
-                SelectQueryDirectFillCandidates(request, targetContext, lookupResult, fallbackResult),
+                SelectQueryDirectFillCandidates(
+                    candidateSelection,
+                    targetContext,
+                    lookupResult,
+                    fallbackResult
+                ),
                 fallbackResult,
                 cancellationToken
             )
@@ -882,6 +690,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
 
     private async Task<DocumentCacheReadLookupResult<GetResult>> LookupGetByIdAsync(
         DocumentCacheReadAccelerationGetByIdRequest request,
+        DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate candidateSelection,
         DocumentCacheTargetExecutionContext targetContext,
         CancellationToken cancellationToken
     )
@@ -892,7 +701,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         try
         {
             DocumentCacheReadLookupResult<GetResult> result = await _lookupAdapter
-                .TryGetByIdAsync(request, targetContext, cancellationToken)
+                .TryGetByIdAsync(request, candidateSelection, targetContext, cancellationToken)
                 .ConfigureAwait(false);
 
             _readTelemetry.RecordCacheLookupDuration(
@@ -926,6 +735,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
 
     private async Task<DocumentCacheReadLookupResult<QueryResult>> LookupQueryAsync(
         DocumentCacheReadAccelerationQueryRequest request,
+        DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage candidateSelection,
         DocumentCacheTargetExecutionContext targetContext,
         CancellationToken cancellationToken
     )
@@ -936,7 +746,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         try
         {
             DocumentCacheReadLookupResult<QueryResult> result = await _lookupAdapter
-                .TryQueryAsync(request, targetContext, cancellationToken)
+                .TryQueryAsync(request, candidateSelection, targetContext, cancellationToken)
                 .ConfigureAwait(false);
 
             _readTelemetry.RecordCacheLookupDuration(
@@ -1628,7 +1438,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
     }
 
     private static DirectFillCandidateSelection SelectGetByIdDirectFillCandidates(
-        DocumentCacheReadAccelerationGetByIdRequest request,
+        DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate candidateSelection,
         DocumentCacheTargetExecutionContext targetContext,
         DocumentCacheReadLookupResult<GetResult> lookupResult
     )
@@ -1638,14 +1448,14 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             return DirectFillCandidateSelection.Skip(DocumentCacheReadTelemetryLabel.SkippedCacheUnavailable);
         }
 
-        if (!IsDirectFillTargetEligible(targetContext) || request.AuthorizedCandidate is null)
+        if (!IsDirectFillTargetEligible(targetContext))
         {
             return DirectFillCandidateSelection.Skip(DocumentCacheReadTelemetryLabel.SkippedNoCandidates);
         }
 
         if (lookupResult.RawLookupOutcome == DocumentCacheReadLookupOutcome.LifecycleRebuilding)
         {
-            return DirectFillCandidateSelection.For([request.AuthorizedCandidate]);
+            return DirectFillCandidateSelection.For([candidateSelection.AuthorizedCandidate]);
         }
 
         return IsDocumentLevelDirectFillReason(lookupResult.FallbackReason)
@@ -1654,7 +1464,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
     }
 
     private static DirectFillCandidateSelection SelectQueryDirectFillCandidates(
-        DocumentCacheReadAccelerationQueryRequest request,
+        DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage candidateSelection,
         DocumentCacheTargetExecutionContext targetContext,
         DocumentCacheReadLookupResult<QueryResult> lookupResult,
         QueryResult fallbackResult
@@ -1665,18 +1475,14 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             return DirectFillCandidateSelection.Skip(DocumentCacheReadTelemetryLabel.SkippedCacheUnavailable);
         }
 
-        if (
-            !IsDirectFillTargetEligible(targetContext)
-            || request.AuthorizedCandidatePage is null
-            || fallbackResult is not QueryResult.QuerySuccess
-        )
+        if (!IsDirectFillTargetEligible(targetContext) || fallbackResult is not QueryResult.QuerySuccess)
         {
             return DirectFillCandidateSelection.Skip(DocumentCacheReadTelemetryLabel.SkippedNoCandidates);
         }
 
         if (lookupResult.RawLookupOutcome == DocumentCacheReadLookupOutcome.LifecycleRebuilding)
         {
-            return DirectFillCandidateSelection.For(request.AuthorizedCandidatePage.Candidates);
+            return DirectFillCandidateSelection.For(candidateSelection.AuthorizedCandidatePage.Candidates);
         }
 
         if (

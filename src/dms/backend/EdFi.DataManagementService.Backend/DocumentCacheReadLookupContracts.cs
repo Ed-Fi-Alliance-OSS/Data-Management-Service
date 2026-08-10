@@ -256,6 +256,7 @@ internal interface IDocumentCacheReadResponseShaper
 
     DocumentCacheReadLookupResult<QueryResult> ShapeQuery(
         DocumentCacheReadAccelerationQueryRequest request,
+        DocumentCacheReadAccelerationCandidatePage authorizedCandidatePage,
         DocumentCacheReadBatchLookupResult hitPage
     );
 }
@@ -276,6 +277,7 @@ internal sealed class NoOpDocumentCacheReadResponseShaper : IDocumentCacheReadRe
 
     public DocumentCacheReadLookupResult<QueryResult> ShapeQuery(
         DocumentCacheReadAccelerationQueryRequest request,
+        DocumentCacheReadAccelerationCandidatePage authorizedCandidatePage,
         DocumentCacheReadBatchLookupResult hitPage
     ) =>
         DocumentCacheReadLookupResult<QueryResult>.Fallback(
@@ -300,21 +302,20 @@ internal abstract class DocumentCacheReadLookupAdapterBase
 
     public async Task<DocumentCacheReadLookupResult<GetResult>> TryGetByIdAsync(
         DocumentCacheReadAccelerationGetByIdRequest request,
+        DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate candidateSelection,
         DocumentCacheTargetExecutionContext targetContext,
         CancellationToken cancellationToken = default
     )
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (request.AuthorizedCandidate is null)
-        {
-            return DocumentCacheReadLookupResult<GetResult>.Fallback(
-                DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable
-            );
-        }
+        ArgumentNullException.ThrowIfNull(candidateSelection);
 
         DocumentCacheReadDocumentLookupResult lookupResult = await LookupDocumentAsync(
-                new DocumentCacheReadDocumentLookupRequest(request.MappingSet, request.AuthorizedCandidate),
+                new DocumentCacheReadDocumentLookupRequest(
+                    request.MappingSet,
+                    candidateSelection.AuthorizedCandidate
+                ),
                 targetContext,
                 cancellationToken
             )
@@ -332,23 +333,19 @@ internal abstract class DocumentCacheReadLookupAdapterBase
 
     public async Task<DocumentCacheReadLookupResult<QueryResult>> TryQueryAsync(
         DocumentCacheReadAccelerationQueryRequest request,
+        DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage candidateSelection,
         DocumentCacheTargetExecutionContext targetContext,
         CancellationToken cancellationToken = default
     )
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (request.AuthorizedCandidatePage is null)
-        {
-            return DocumentCacheReadLookupResult<QueryResult>.Fallback(
-                DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable
-            );
-        }
+        ArgumentNullException.ThrowIfNull(candidateSelection);
 
         DocumentCacheReadBatchLookupResult lookupResult = await LookupBatchAsync(
                 new DocumentCacheReadBatchLookupRequest(
                     request.MappingSet,
-                    request.AuthorizedCandidatePage.Candidates
+                    candidateSelection.AuthorizedCandidatePage.Candidates
                 ),
                 targetContext,
                 cancellationToken
@@ -356,7 +353,7 @@ internal abstract class DocumentCacheReadLookupAdapterBase
             .ConfigureAwait(false);
 
         return lookupResult.IsFreshHit
-            ? _responseShaper.ShapeQuery(request, lookupResult)
+            ? _responseShaper.ShapeQuery(request, candidateSelection.AuthorizedCandidatePage, lookupResult)
             : DocumentCacheReadLookupResult<QueryResult>.FallbackFromLookupOutcome(
                 lookupResult.Outcome,
                 SelectQueryDirectFillCandidates(lookupResult),

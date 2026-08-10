@@ -234,12 +234,10 @@ public sealed class RelationalDocumentStoreRepository(
                 getRequest.MappingSet,
                 resource,
                 getRequest.DocumentUuid,
-                getRequest.ReadMode,
                 DocumentCacheReadAccelerationResourceKind.Resource,
-                DocumentCacheReadAccelerationLookupReadiness.RelationalFallbackOnly,
-                (_, fallbackCancellationToken) =>
+                fallbackCancellationToken =>
                     GetDocumentByIdRelationalAsync(getRequest, fallbackCancellationToken),
-                SelectAuthorizedCandidate: selectionCancellationToken =>
+                selectionCancellationToken =>
                     SelectGetByIdReadAccelerationCandidateAsync(
                         getRequest,
                         resource,
@@ -825,14 +823,13 @@ public sealed class RelationalDocumentStoreRepository(
                     queryRequest.MappingSet,
                     resource,
                     DocumentCacheReadAccelerationResourceKind.Resource,
-                    DocumentCacheReadAccelerationLookupReadiness.RelationalFallbackOnly,
-                    (_, fallbackCancellationToken) =>
+                    fallbackCancellationToken =>
                         QueryDocumentsRelationalAsync(
                             queryRequest,
                             traditionalPaging,
                             fallbackCancellationToken
                         ),
-                    SelectAuthorizedCandidatePage: selectionCancellationToken =>
+                    selectionCancellationToken =>
                         SelectQueryReadAccelerationCandidatePageAsync(
                             queryRequest,
                             traditionalPaging,
@@ -1178,7 +1175,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         return new DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage(
             candidatePage,
-            (_, fallbackCancellationToken) =>
+            fallbackCancellationToken =>
                 HydrateSelectedQueryCandidatePageAsync(
                     queryRequest,
                     traditionalPaging,
@@ -3248,7 +3245,7 @@ public sealed class RelationalDocumentStoreRepository(
 
             return new DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate(
                 candidate,
-                (_, fallbackCancellationToken) =>
+                fallbackCancellationToken =>
                     GetDocumentByIdRelationalAsync(relationalGetRequest, fallbackCancellationToken)
             );
         }

@@ -440,6 +440,7 @@ public class Given_DocumentCacheReadLookup
 
         DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
             QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
+            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
             ExecutionContext()
         );
 
@@ -476,6 +477,7 @@ public class Given_DocumentCacheReadLookup
 
         DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
             QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
+            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
             ExecutionContext()
         );
 
@@ -514,6 +516,7 @@ public class Given_DocumentCacheReadLookup
 
         DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
             QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
+            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
             ExecutionContext()
         );
 
@@ -538,6 +541,7 @@ public class Given_DocumentCacheReadLookup
 
         DocumentCacheReadLookupResult<GetResult> result = await adapter.TryGetByIdAsync(
             GetByIdRequest(candidate),
+            GetByIdSelection(candidate),
             ExecutionContext()
         );
 
@@ -579,6 +583,7 @@ public class Given_DocumentCacheReadLookup
 
         DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
             QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
+            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
             ExecutionContext()
         );
 
@@ -617,6 +622,7 @@ public class Given_DocumentCacheReadLookup
 
         DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
             QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
+            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
             ExecutionContext()
         );
 
@@ -668,6 +674,7 @@ public class Given_DocumentCacheReadLookup
 
         DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
             QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
+            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
             ExecutionContext()
         );
 
@@ -702,6 +709,7 @@ public class Given_DocumentCacheReadLookup
 
         DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
             QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
+            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
             ExecutionContext()
         );
 
@@ -730,6 +738,7 @@ public class Given_DocumentCacheReadLookup
 
         DocumentCacheReadLookupResult<GetResult> result = await adapter.TryGetByIdAsync(
             GetByIdRequest(candidate),
+            GetByIdSelection(candidate),
             ExecutionContext()
         );
 
@@ -749,6 +758,7 @@ public class Given_DocumentCacheReadLookup
 
         DocumentCacheReadLookupResult<GetResult> result = await adapter.TryGetByIdAsync(
             GetByIdRequest(candidate),
+            GetByIdSelection(candidate),
             ExecutionContext()
         );
 
@@ -1163,31 +1173,59 @@ public class Given_DocumentCacheReadLookup
 
     private static DocumentCacheReadAccelerationQueryRequest QueryRequest(
         DocumentCacheReadAccelerationCandidatePage candidatePage
-    ) =>
-        new(
+    )
+    {
+        Func<CancellationToken, Task<QueryResult>> fallback = _ =>
+            Task.FromResult<QueryResult>(new QueryResult.QueryFailureKnownError("fallback"));
+
+        return new DocumentCacheReadAccelerationQueryRequest(
             "TenantA",
             MappingSet,
             Resource,
             DocumentCacheReadAccelerationResourceKind.Resource,
-            DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
-            (_, _) => Task.FromResult<QueryResult>(new QueryResult.QueryFailureKnownError("fallback")),
-            candidatePage
+            fallback,
+            _ =>
+                Task.FromResult<DocumentCacheReadAccelerationQuerySelectionResult>(
+                    new DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage(
+                        candidatePage,
+                        fallback
+                    )
+                )
+        );
+    }
+
+    private static DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage QuerySelection(
+        DocumentCacheReadAccelerationCandidatePage candidatePage
+    ) =>
+        new(
+            candidatePage,
+            _ => Task.FromResult<QueryResult>(new QueryResult.QueryFailureKnownError("fallback"))
         );
 
     private static DocumentCacheReadAccelerationGetByIdRequest GetByIdRequest(
         DocumentCacheReadAccelerationCandidate candidate
-    ) =>
-        new(
+    )
+    {
+        Func<CancellationToken, Task<GetResult>> fallback = _ =>
+            Task.FromResult<GetResult>(new GetResult.GetFailureNotExists());
+
+        return new DocumentCacheReadAccelerationGetByIdRequest(
             "TenantA",
             MappingSet,
             Resource,
             candidate.DocumentUuid,
-            RelationalGetRequestReadMode.ExternalResponse,
             DocumentCacheReadAccelerationResourceKind.Resource,
-            DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
-            (_, _) => Task.FromResult<GetResult>(new GetResult.GetFailureNotExists()),
-            candidate
+            fallback,
+            _ =>
+                Task.FromResult<DocumentCacheReadAccelerationGetByIdSelectionResult>(
+                    new DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate(candidate, fallback)
+                )
         );
+    }
+
+    private static DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate GetByIdSelection(
+        DocumentCacheReadAccelerationCandidate candidate
+    ) => new(candidate, _ => Task.FromResult<GetResult>(new GetResult.GetFailureNotExists()));
 
     private static DocumentCacheReadBatchLookupResult Classify(
         DocumentCacheReadAccelerationCandidate candidate,
@@ -1419,6 +1457,7 @@ public class Given_DocumentCacheReadLookup
 
         public DocumentCacheReadLookupResult<QueryResult> ShapeQuery(
             DocumentCacheReadAccelerationQueryRequest request,
+            DocumentCacheReadAccelerationCandidatePage authorizedCandidatePage,
             DocumentCacheReadBatchLookupResult hitPage
         )
         {

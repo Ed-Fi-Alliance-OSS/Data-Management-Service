@@ -223,15 +223,20 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
     private sealed class RecordingReadAccelerationCoordinator : IDocumentCacheReadAccelerationCoordinator
     {
-        private static readonly DocumentCacheReadAccelerationFallbackContext FallbackContext = new(
-            DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss,
-            TargetContext: null
-        );
-
         public int GetByIdAttempts { get; private set; }
         public int QueryAttempts { get; private set; }
         public DocumentCacheReadAccelerationGetByIdRequest? SelectedGetByIdRequest { get; private set; }
         public DocumentCacheReadAccelerationQueryRequest? SelectedQueryRequest { get; private set; }
+        public DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate? SelectedGetByIdCandidate
+        {
+            get;
+            private set;
+        }
+        public DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage? SelectedQueryCandidatePage
+        {
+            get;
+            private set;
+        }
 
         public async Task<GetResult> GetByIdAsync(
             DocumentCacheReadAccelerationGetByIdRequest request,
@@ -242,21 +247,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
             GetByIdAttempts++;
 
-            if (request.LookupReadiness == DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate)
-            {
-                SelectedGetByIdRequest = request;
-                return await request
-                    .RelationalFallback(FallbackContext, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            if (request.SelectAuthorizedCandidate is null)
-            {
-                return await request
-                    .RelationalFallback(FallbackContext, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
             var selection = await request.SelectAuthorizedCandidate(cancellationToken).ConfigureAwait(false);
 
             switch (selection)
@@ -265,15 +255,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     return complete.Result;
 
                 case DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate candidate:
-                    SelectedGetByIdRequest = request with
-                    {
-                        LookupReadiness = DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
-                        AuthorizedCandidate = candidate.AuthorizedCandidate,
-                        RelationalFallback = candidate.RelationalFallback,
-                    };
-                    return await candidate
-                        .RelationalFallback(FallbackContext, cancellationToken)
-                        .ConfigureAwait(false);
+                    SelectedGetByIdRequest = request;
+                    SelectedGetByIdCandidate = candidate;
+                    return await candidate.RelationalFallback(cancellationToken).ConfigureAwait(false);
 
                 default:
                     throw new InvalidOperationException(
@@ -291,21 +275,6 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
             QueryAttempts++;
 
-            if (request.LookupReadiness == DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate)
-            {
-                SelectedQueryRequest = request;
-                return await request
-                    .RelationalFallback(FallbackContext, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            if (request.SelectAuthorizedCandidatePage is null)
-            {
-                return await request
-                    .RelationalFallback(FallbackContext, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
             var selection = await request
                 .SelectAuthorizedCandidatePage(cancellationToken)
                 .ConfigureAwait(false);
@@ -316,15 +285,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     return complete.Result;
 
                 case DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage candidatePage:
-                    SelectedQueryRequest = request with
-                    {
-                        LookupReadiness = DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
-                        AuthorizedCandidatePage = candidatePage.AuthorizedCandidatePage,
-                        RelationalFallback = candidatePage.RelationalFallback,
-                    };
-                    return await candidatePage
-                        .RelationalFallback(FallbackContext, cancellationToken)
-                        .ConfigureAwait(false);
+                    SelectedQueryRequest = request;
+                    SelectedQueryCandidatePage = candidatePage;
+                    return await candidatePage.RelationalFallback(cancellationToken).ConfigureAwait(false);
 
                 default:
                     throw new InvalidOperationException(
@@ -466,10 +429,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .SelectedGetByIdRequest!.ResourceKind.Should()
             .Be(DocumentCacheReadAccelerationResourceKind.Resource);
         readAccelerationCoordinator
-            .SelectedGetByIdRequest.LookupReadiness.Should()
-            .Be(DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate);
-        readAccelerationCoordinator
-            .SelectedGetByIdRequest.AuthorizedCandidate.Should()
+            .SelectedGetByIdCandidate!.AuthorizedCandidate.Should()
             .Be(
                 new DocumentCacheReadAccelerationCandidate(
                     345L,
@@ -2942,10 +2902,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .SelectedQueryRequest!.ResourceKind.Should()
             .Be(DocumentCacheReadAccelerationResourceKind.Resource);
         readAccelerationCoordinator
-            .SelectedQueryRequest.LookupReadiness.Should()
-            .Be(DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate);
-        readAccelerationCoordinator
-            .SelectedQueryRequest.AuthorizedCandidatePage.Should()
+            .SelectedQueryCandidatePage!.AuthorizedCandidatePage.Should()
             .BeEquivalentTo(
                 new DocumentCacheReadAccelerationCandidatePage(
                     [
@@ -3248,12 +3205,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
         ParameterValue(candidateSelectionCommand, "@offset").Should().Be(1L);
         ParameterValue(candidateSelectionCommand, "@limit").Should().Be(1L);
 
-        var selectedQueryRequest =
-            readAccelerationCoordinator.SelectedQueryRequest
+        var selectedCandidatePage =
+            readAccelerationCoordinator.SelectedQueryCandidatePage
             ?? throw new AssertionException("Read acceleration should select an authorized query page.");
-        var authorizedCandidatePage =
-            selectedQueryRequest.AuthorizedCandidatePage
-            ?? throw new AssertionException("Read acceleration should expose the selected candidate page.");
+        DocumentCacheReadAccelerationCandidatePage authorizedCandidatePage =
+            selectedCandidatePage.AuthorizedCandidatePage;
 
         authorizedCandidatePage
             .Candidates.Select(static candidate => candidate.DocumentId)

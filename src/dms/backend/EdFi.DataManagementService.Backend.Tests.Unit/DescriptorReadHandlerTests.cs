@@ -94,7 +94,7 @@ public class Given_DescriptorReadHandler
                 var cancellationToken = call.GetArgument<CancellationToken>(1);
                 capturedRequest = request;
                 var selectionResult = await request
-                    .SelectAuthorizedCandidate!(cancellationToken)
+                    .SelectAuthorizedCandidate(cancellationToken)
                     .ConfigureAwait(false);
                 capturedSelection = selectionResult
                     .Should()
@@ -110,10 +110,6 @@ public class Given_DescriptorReadHandler
 
         result.Should().BeOfType<GetResult.GetSuccess>();
         capturedRequest.ResourceKind.Should().Be(DocumentCacheReadAccelerationResourceKind.Descriptor);
-        capturedRequest
-            .LookupReadiness.Should()
-            .Be(DocumentCacheReadAccelerationLookupReadiness.RelationalFallbackOnly);
-        capturedRequest.AuthorizedCandidate.Should().BeNull();
         capturedRequest.SelectAuthorizedCandidate.Should().NotBeNull();
         capturedSelection
             .AuthorizedCandidate.Should()
@@ -164,11 +160,6 @@ public class Given_DescriptorReadHandler
                 ),
             ]),
         ]);
-        var fallbackContext = new DocumentCacheReadAccelerationFallbackContext(
-            DocumentCacheReadAccelerationFallbackReason.CacheLookupStale,
-            TargetContext: null
-        );
-
         A.CallTo(() =>
                 readAccelerationCoordinator.GetByIdAsync(
                     A<DocumentCacheReadAccelerationGetByIdRequest>._,
@@ -180,16 +171,14 @@ public class Given_DescriptorReadHandler
                 var request = call.GetArgument<DocumentCacheReadAccelerationGetByIdRequest>(0)!;
                 var cancellationToken = call.GetArgument<CancellationToken>(1);
                 var selectionResult = await request
-                    .SelectAuthorizedCandidate!(cancellationToken)
+                    .SelectAuthorizedCandidate(cancellationToken)
                     .ConfigureAwait(false);
                 var candidateSelection = selectionResult
                     .Should()
                     .BeOfType<DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate>()
                     .Subject;
 
-                return await candidateSelection
-                    .RelationalFallback(fallbackContext, cancellationToken)
-                    .ConfigureAwait(false);
+                return await candidateSelection.RelationalFallback(cancellationToken).ConfigureAwait(false);
             });
 
         var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
@@ -1492,7 +1481,7 @@ public class Given_DescriptorReadHandler
                 var cancellationToken = call.GetArgument<CancellationToken>(1);
                 capturedRequest = request;
                 var selectionResult = await request
-                    .SelectAuthorizedCandidatePage!(cancellationToken)
+                    .SelectAuthorizedCandidatePage(cancellationToken)
                     .ConfigureAwait(false);
                 capturedSelection = selectionResult
                     .Should()
@@ -1508,10 +1497,6 @@ public class Given_DescriptorReadHandler
 
         result.Should().BeOfType<QueryResult.QuerySuccess>();
         capturedRequest.ResourceKind.Should().Be(DocumentCacheReadAccelerationResourceKind.Descriptor);
-        capturedRequest
-            .LookupReadiness.Should()
-            .Be(DocumentCacheReadAccelerationLookupReadiness.RelationalFallbackOnly);
-        capturedRequest.AuthorizedCandidatePage.Should().BeNull();
         capturedRequest.SelectAuthorizedCandidatePage.Should().NotBeNull();
         capturedSelection
             .AuthorizedCandidatePage.Should()
@@ -1600,11 +1585,6 @@ public class Given_DescriptorReadHandler
                 ),
             ]),
         ]);
-        var fallbackContext = new DocumentCacheReadAccelerationFallbackContext(
-            DocumentCacheReadAccelerationFallbackReason.CacheLookupStale,
-            TargetContext: null
-        );
-
         A.CallTo(() =>
                 readAccelerationCoordinator.QueryAsync(
                     A<DocumentCacheReadAccelerationQueryRequest>._,
@@ -1616,16 +1596,14 @@ public class Given_DescriptorReadHandler
                 var request = call.GetArgument<DocumentCacheReadAccelerationQueryRequest>(0)!;
                 var cancellationToken = call.GetArgument<CancellationToken>(1);
                 var selectionResult = await request
-                    .SelectAuthorizedCandidatePage!(cancellationToken)
+                    .SelectAuthorizedCandidatePage(cancellationToken)
                     .ConfigureAwait(false);
                 var candidateSelection = selectionResult
                     .Should()
                     .BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage>()
                     .Subject;
 
-                return await candidateSelection
-                    .RelationalFallback(fallbackContext, cancellationToken)
-                    .ConfigureAwait(false);
+                return await candidateSelection.RelationalFallback(cancellationToken).ConfigureAwait(false);
             });
 
         var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
@@ -1728,11 +1706,6 @@ public class Given_DescriptorReadHandler
                 ),
             ]),
         ]);
-        var fallbackContext = new DocumentCacheReadAccelerationFallbackContext(
-            DocumentCacheReadAccelerationFallbackReason.CacheLookupStale,
-            TargetContext: null
-        );
-
         A.CallTo(() =>
                 readAccelerationCoordinator.QueryAsync(
                     A<DocumentCacheReadAccelerationQueryRequest>._,
@@ -1744,16 +1717,14 @@ public class Given_DescriptorReadHandler
                 var request = call.GetArgument<DocumentCacheReadAccelerationQueryRequest>(0)!;
                 var cancellationToken = call.GetArgument<CancellationToken>(1);
                 var selectionResult = await request
-                    .SelectAuthorizedCandidatePage!(cancellationToken)
+                    .SelectAuthorizedCandidatePage(cancellationToken)
                     .ConfigureAwait(false);
                 var candidateSelection = selectionResult
                     .Should()
                     .BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage>()
                     .Subject;
 
-                return await candidateSelection
-                    .RelationalFallback(fallbackContext, cancellationToken)
-                    .ConfigureAwait(false);
+                return await candidateSelection.RelationalFallback(cancellationToken).ConfigureAwait(false);
             });
 
         var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);

@@ -200,15 +200,15 @@ public class Given_DocumentCacheReadResponseShaper
             FreshHit(first, CachedDocumentJson(first, "Lincoln High")),
             FreshHit(second, CachedDocumentJson(second, "Washington High")),
         ]);
+        var candidatePage = new DocumentCacheReadAccelerationCandidatePage(
+            [first, second],
+            TotalCount: 7,
+            HighestSelectedDocumentId: null
+        );
 
         DocumentCacheReadLookupResult<QueryResult> result = sut.ShapeQuery(
-            CreateQueryRequest(
-                new DocumentCacheReadAccelerationCandidatePage(
-                    [first, second],
-                    TotalCount: 7,
-                    HighestSelectedDocumentId: null
-                )
-            ),
+            CreateQueryRequest(candidatePage),
+            candidatePage,
             hitPage
         );
 
@@ -230,15 +230,15 @@ public class Given_DocumentCacheReadResponseShaper
         var hitPage = DocumentCacheReadBatchLookupResult.FromDocuments([
             FreshHit(mismatchedHit, CachedDocumentJson(mismatchedHit)),
         ]);
+        var candidatePage = new DocumentCacheReadAccelerationCandidatePage(
+            [authorized],
+            TotalCount: 1,
+            HighestSelectedDocumentId: 345
+        );
 
         DocumentCacheReadLookupResult<QueryResult> result = sut.ShapeQuery(
-            CreateQueryRequest(
-                new DocumentCacheReadAccelerationCandidatePage(
-                    [authorized],
-                    TotalCount: 1,
-                    HighestSelectedDocumentId: 345
-                )
-            ),
+            CreateQueryRequest(candidatePage),
+            candidatePage,
             hitPage
         );
 
@@ -267,15 +267,15 @@ public class Given_DocumentCacheReadResponseShaper
                 "DocumentCache row is stale."
             ),
         ]);
+        var candidatePage = new DocumentCacheReadAccelerationCandidatePage(
+            [first, second],
+            TotalCount: 2,
+            HighestSelectedDocumentId: 346
+        );
 
         DocumentCacheReadLookupResult<QueryResult> result = sut.ShapeQuery(
-            CreateQueryRequest(
-                new DocumentCacheReadAccelerationCandidatePage(
-                    [first, second],
-                    TotalCount: 2,
-                    HighestSelectedDocumentId: 346
-                )
-            ),
+            CreateQueryRequest(candidatePage),
+            candidatePage,
             hitPage
         );
 
@@ -322,35 +322,51 @@ public class Given_DocumentCacheReadResponseShaper
         ReadableProfileProjectionContext? readableProfileProjectionContext = null,
         DocumentCacheReadAccelerationResourceKind resourceKind =
             DocumentCacheReadAccelerationResourceKind.Resource
-    ) =>
-        new(
+    )
+    {
+        Func<CancellationToken, Task<GetResult>> fallback = _ =>
+            Task.FromResult<GetResult>(new GetResult.GetFailureNotExists());
+
+        return new DocumentCacheReadAccelerationGetByIdRequest(
             "TenantA",
             MappingSet,
             Resource,
             candidate.DocumentUuid,
-            RelationalGetRequestReadMode.ExternalResponse,
             resourceKind,
-            DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
-            (_, _) => Task.FromResult<GetResult>(new GetResult.GetFailureNotExists()),
-            candidate
+            fallback,
+            _ =>
+                Task.FromResult<DocumentCacheReadAccelerationGetByIdSelectionResult>(
+                    new DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate(candidate, fallback)
+                )
         )
         {
             ReadableProfileProjectionContext = readableProfileProjectionContext,
             ResponseContentCoding = responseContentCoding,
         };
+    }
 
     private static DocumentCacheReadAccelerationQueryRequest CreateQueryRequest(
         DocumentCacheReadAccelerationCandidatePage candidatePage
-    ) =>
-        new(
+    )
+    {
+        Func<CancellationToken, Task<QueryResult>> fallback = _ =>
+            Task.FromResult<QueryResult>(new QueryResult.QueryFailureKnownError("fallback"));
+
+        return new DocumentCacheReadAccelerationQueryRequest(
             "TenantA",
             MappingSet,
             Resource,
             DocumentCacheReadAccelerationResourceKind.Resource,
-            DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate,
-            (_, _) => Task.FromResult<QueryResult>(new QueryResult.QueryFailureKnownError("fallback")),
-            candidatePage
+            fallback,
+            _ =>
+                Task.FromResult<DocumentCacheReadAccelerationQuerySelectionResult>(
+                    new DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage(
+                        candidatePage,
+                        fallback
+                    )
+                )
         );
+    }
 
     private static DocumentCacheReadAccelerationCandidate Candidate(
         long documentId = 345,

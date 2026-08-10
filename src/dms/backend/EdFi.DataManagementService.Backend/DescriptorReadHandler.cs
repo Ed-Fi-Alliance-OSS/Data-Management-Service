@@ -134,12 +134,10 @@ internal sealed class DescriptorReadHandler(
                     request.MappingSet,
                     request.Resource,
                     request.DocumentUuid,
-                    request.ReadMode,
                     DocumentCacheReadAccelerationResourceKind.Descriptor,
-                    DocumentCacheReadAccelerationLookupReadiness.RelationalFallbackOnly,
-                    (_, fallbackCancellationToken) =>
+                    fallbackCancellationToken =>
                         HandleGetByIdNoCacheResultAsync(request, fallbackCancellationToken),
-                    SelectAuthorizedCandidate: selectionCancellationToken =>
+                    selectionCancellationToken =>
                         SelectGetByIdReadAccelerationCandidateAsync(request, selectionCancellationToken)
                 )
                 {
@@ -195,8 +193,7 @@ internal sealed class DescriptorReadHandler(
 
         return new DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate(
             CreateDescriptorReadAccelerationCandidate(authorizedRow.Row),
-            (_, fallbackCancellationToken) =>
-                HandleGetByIdNoCacheResultAsync(request, fallbackCancellationToken)
+            fallbackCancellationToken => HandleGetByIdNoCacheResultAsync(request, fallbackCancellationToken)
         );
     }
 
@@ -492,10 +489,9 @@ internal sealed class DescriptorReadHandler(
                     request.MappingSet,
                     request.Resource,
                     DocumentCacheReadAccelerationResourceKind.Descriptor,
-                    DocumentCacheReadAccelerationLookupReadiness.RelationalFallbackOnly,
-                    (_, fallbackCancellationToken) =>
+                    fallbackCancellationToken =>
                         HandleQueryNoCacheResultAsync(request, fallbackCancellationToken),
-                    SelectAuthorizedCandidatePage: selectionCancellationToken =>
+                    selectionCancellationToken =>
                         SelectQueryReadAccelerationCandidatePageAsync(request, selectionCancellationToken)
                 )
                 {
@@ -569,7 +565,7 @@ internal sealed class DescriptorReadHandler(
 
         return new DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage(
             candidatePage,
-            (_, fallbackCancellationToken) =>
+            fallbackCancellationToken =>
                 HydrateSelectedDescriptorQueryCandidatePageAsync(
                     request,
                     rowsPage.Page,

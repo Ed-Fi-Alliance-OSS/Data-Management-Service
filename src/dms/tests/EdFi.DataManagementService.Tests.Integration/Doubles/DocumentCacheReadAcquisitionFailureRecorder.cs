@@ -134,6 +134,7 @@ internal sealed class AcquisitionFailureDocumentCacheReadLookupAdapter(
 
     public Task<DocumentCacheReadLookupResult<GetResult>> TryGetByIdAsync(
         DocumentCacheReadAccelerationGetByIdRequest request,
+        DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate candidateSelection,
         DocumentCacheTargetExecutionContext targetContext,
         CancellationToken cancellationToken = default
     )
@@ -154,6 +155,7 @@ internal sealed class AcquisitionFailureDocumentCacheReadLookupAdapter(
 
     public Task<DocumentCacheReadLookupResult<QueryResult>> TryQueryAsync(
         DocumentCacheReadAccelerationQueryRequest request,
+        DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage candidateSelection,
         DocumentCacheTargetExecutionContext targetContext,
         CancellationToken cancellationToken = default
     )

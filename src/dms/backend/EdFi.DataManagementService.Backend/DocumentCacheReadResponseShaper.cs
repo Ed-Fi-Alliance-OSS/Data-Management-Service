@@ -76,25 +76,19 @@ internal sealed class DocumentCacheReadResponseShaper(
 
     public DocumentCacheReadLookupResult<QueryResult> ShapeQuery(
         DocumentCacheReadAccelerationQueryRequest request,
+        DocumentCacheReadAccelerationCandidatePage authorizedCandidatePage,
         DocumentCacheReadBatchLookupResult hitPage
     )
     {
         ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(authorizedCandidatePage);
         ArgumentNullException.ThrowIfNull(hitPage);
-
-        if (request.AuthorizedCandidatePage is null)
-        {
-            return DocumentCacheReadLookupResult<QueryResult>.Fallback(
-                DocumentCacheReadAccelerationFallbackReason.CandidateSelectionUnavailable
-            );
-        }
 
         return TryShape(() =>
         {
             JsonArray edfiDocs = [];
-            IReadOnlyList<DocumentCacheReadAccelerationCandidate> authorizedCandidates = request
-                .AuthorizedCandidatePage
-                .Candidates;
+            IReadOnlyList<DocumentCacheReadAccelerationCandidate> authorizedCandidates =
+                authorizedCandidatePage.Candidates;
 
             if (hitPage.Documents.Count != authorizedCandidates.Count)
             {
@@ -137,14 +131,14 @@ internal sealed class DocumentCacheReadResponseShaper(
             return DocumentCacheReadLookupResult<QueryResult>.Hit(
                 new QueryResult.QuerySuccess(
                     edfiDocs,
-                    request.AuthorizedCandidatePage.TotalCount is null
+                    authorizedCandidatePage.TotalCount is null
                         ? null
                         : RelationalReadGuardrails.ConvertTotalCountOrThrow(
                             request.Resource,
-                            request.AuthorizedCandidatePage.TotalCount,
+                            authorizedCandidatePage.TotalCount,
                             "cache query response shaping"
                         ),
-                    request.AuthorizedCandidatePage.HighestSelectedDocumentId
+                    authorizedCandidatePage.HighestSelectedDocumentId
                 )
             );
         });
