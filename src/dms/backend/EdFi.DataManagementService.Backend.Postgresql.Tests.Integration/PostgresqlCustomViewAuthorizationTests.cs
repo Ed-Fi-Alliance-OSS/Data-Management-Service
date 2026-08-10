@@ -61,6 +61,21 @@ public class Given_A_Postgresql_Relational_Query_Authorization_With_A_Custom_Vie
     /// </summary>
     private const string DollarQuotedCustomViewStrategyName = "SchoolWithDollar$$QuoteCustomViewProviderTest";
 
+    /// <summary>
+    /// Descriptor DELETE authorizes inside the locked-target boundary rather than through an AUTH1
+    /// statement, so it needs its own descriptor-basis views: one excluding the delete target and one
+    /// including it.
+    /// </summary>
+    private const string DescriptorDeleteCustomViewStrategyName =
+        "GradeLevelDescriptorWithLockedDeleteCustomViewProviderTest";
+    private const string DescriptorDeleteAuthorizingCustomViewStrategyName =
+        "GradeLevelDescriptorWithLockedDeleteAuthorizingCustomViewProviderTest";
+    private static readonly DocumentUuid _gradeLevelDescriptorDocumentUuid = new(
+        Guid.Parse("60666666-6666-6666-6666-666666666666")
+    );
+    private const string GradeLevelDescriptorCodeValue = "Tenth grade";
+    private const string StaleETag = "\"stale-etag\"";
+
     private static readonly QuerySchoolSeed[] _schoolSeeds =
     [
         new(new DocumentUuid(Guid.Parse("77777777-0000-0000-0000-000000000001")), 100, "Authorized School"),
@@ -145,6 +160,16 @@ public class Given_A_Postgresql_Relational_Query_Authorization_With_A_Custom_Vie
             NamespaceIntersectionCustomViewStrategyName,
             [1, 3]
         );
+        // The excluding view authorizes a different descriptor's code value, so the GradeLevelDescriptor
+        // delete target is genuinely absent from it rather than the view being empty.
+        await _context.CreateDescriptorCustomAuthViewAsync(
+            DescriptorDeleteCustomViewStrategyName,
+            ["School"]
+        );
+        await _context.CreateDescriptorCustomAuthViewAsync(
+            DescriptorDeleteAuthorizingCustomViewStrategyName,
+            [GradeLevelDescriptorCodeValue]
+        );
         await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 100);
         await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 200);
     }
@@ -155,6 +180,8 @@ public class Given_A_Postgresql_Relational_Query_Authorization_With_A_Custom_Vie
         if (_context is not null)
         {
             await _context.DropCustomAuthViewAsync(CustomViewStrategyName);
+            await _context.DropCustomAuthViewAsync(DescriptorDeleteCustomViewStrategyName);
+            await _context.DropCustomAuthViewAsync(DescriptorDeleteAuthorizingCustomViewStrategyName);
             await _context.DropCustomAuthViewAsync(DollarQuotedCustomViewStrategyName);
             await _context.DropCustomAuthViewAsync(InvalidCustomViewStrategyName);
             await _context.DropCustomAuthViewAsync(IncompatibleDocumentIdCustomViewStrategyName);
@@ -473,6 +500,142 @@ public class Given_A_Postgresql_Relational_Query_Authorization_With_A_Custom_Vie
 
         var exception = await AssertCustomViewValidationFailure(act);
         exception.Message.Should().Contain("Invalid custom authorization view DocumentId contract.");
+    }
+
+    [Test]
+    public async Task It_denies_delete_for_a_school_the_custom_view_excludes_and_leaves_the_row()
+    {
+        var result = await _context.DeleteByIdAsync(
+            "ed-fi",
+            "School",
+            _schoolSeeds[1].DocumentUuid,
+            [ClaimEducationOrganizationId],
+            [CustomViewStrategyName]
+        );
+
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureCustomViewNotAuthorized>()
+            .Which.CustomViewFailure.StrategyName.Should()
+            .Be(CustomViewStrategyName);
+        // The check runs inside the locked-target boundary before the delete, so a denial must leave the row.
+        (await _context.CountDocumentRowsAsync(_schoolSeeds[1].DocumentUuid))
+            .Should()
+            .Be(1);
+    }
+
+    [Test]
+    public async Task It_denies_delete_with_if_match_for_a_school_the_custom_view_excludes()
+    {
+        // The If-Match delete authorizes through a different seam than the plain delete — the locked
+        // precondition path — so the denial has to hold there too, and ahead of the precondition outcome.
+        var result = await _context.DeleteByIdAsync(
+            "ed-fi",
+            "School",
+            _schoolSeeds[1].DocumentUuid,
+            [ClaimEducationOrganizationId],
+            [CustomViewStrategyName],
+            ifMatch: "*"
+        );
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureCustomViewNotAuthorized>();
+        (await _context.CountDocumentRowsAsync(_schoolSeeds[1].DocumentUuid)).Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_wraps_a_provider_error_when_the_configured_custom_view_does_not_exist_on_delete()
+    {
+        // GET-many already proves the view contract at the provider level; this proves the single-record
+        // DELETE path reaches it rather than reporting a generic delete failure.
+        await AssertCustomViewValidationFailure(async () =>
+            await _context.DeleteByIdAsync(
+                "ed-fi",
+                "School",
+                _schoolSeeds[0].DocumentUuid,
+                [ClaimEducationOrganizationId],
+                [MissingCustomViewStrategyName]
+            )
+        );
+
+        (await _context.CountDocumentRowsAsync(_schoolSeeds[0].DocumentUuid)).Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_reports_a_referencing_document_failure_after_the_custom_view_authorizes_the_delete()
+    {
+        // School 100 IS in the view, so authorization passes and the delete proceeds — and then fails because
+        // a ClassPeriod references it. A denial would stop before the delete and prove nothing, so this is the
+        // case that shows custom-view validation and error attribution do not swallow an ordinary failure.
+        var result = await _context.DeleteByIdAsync(
+            "ed-fi",
+            "School",
+            _schoolSeeds[0].DocumentUuid,
+            [ClaimEducationOrganizationId],
+            [CustomViewStrategyName]
+        );
+
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureReference>()
+            .Which.ReferencingDocumentResourceNames.Should()
+            .NotBeEmpty();
+        (await _context.CountDocumentRowsAsync(_schoolSeeds[0].DocumentUuid)).Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_denies_a_descriptor_delete_when_the_custom_view_excludes_the_target()
+    {
+        var result = await _context.DeleteByIdAsync(
+            "ed-fi",
+            "GradeLevelDescriptor",
+            _gradeLevelDescriptorDocumentUuid,
+            [ClaimEducationOrganizationId],
+            [DescriptorDeleteCustomViewStrategyName]
+        );
+
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureCustomViewNotAuthorized>()
+            .Which.CustomViewFailure.StrategyName.Should()
+            .Be(DescriptorDeleteCustomViewStrategyName);
+        (await _context.CountDocumentRowsAsync(_gradeLevelDescriptorDocumentUuid)).Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_denies_a_descriptor_delete_with_a_stale_if_match_when_the_custom_view_excludes_the_target()
+    {
+        // A stale If-Match would also fail the delete, so reporting the custom-view denial proves the check
+        // runs inside the locked-target boundary ahead of the precondition outcome rather than after it.
+        var result = await _context.DeleteByIdAsync(
+            "ed-fi",
+            "GradeLevelDescriptor",
+            _gradeLevelDescriptorDocumentUuid,
+            [ClaimEducationOrganizationId],
+            [DescriptorDeleteCustomViewStrategyName],
+            ifMatch: StaleETag
+        );
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureCustomViewNotAuthorized>();
+        (await _context.CountDocumentRowsAsync(_gradeLevelDescriptorDocumentUuid)).Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_reports_the_stale_if_match_when_the_custom_view_authorizes_the_descriptor_delete()
+    {
+        // Same request as above against a view that includes the target: the precondition failure surfaces,
+        // which is what makes the denial above attributable to the view rather than to descriptor deletes
+        // being refused outright. Deleting nothing also keeps the seeded descriptor available to other tests.
+        var result = await _context.DeleteByIdAsync(
+            "ed-fi",
+            "GradeLevelDescriptor",
+            _gradeLevelDescriptorDocumentUuid,
+            [ClaimEducationOrganizationId],
+            [DescriptorDeleteAuthorizingCustomViewStrategyName],
+            ifMatch: StaleETag
+        );
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureETagMisMatch>();
+        (await _context.CountDocumentRowsAsync(_gradeLevelDescriptorDocumentUuid)).Should().Be(1);
     }
 
     private static async Task<PostgresException> AssertCustomViewValidationFailure(Func<Task> action)

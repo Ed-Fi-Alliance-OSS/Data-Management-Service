@@ -107,6 +107,13 @@ public class Given_A_MssqlRelationalPutAuthorizationTests_With_A_Synthetic_EdOrg
     private const long ClaimEducationOrganizationId =
         RelationshipAuthorizationCrudTestSupport.ClaimEducationOrganizationId;
 
+    /// <summary>
+    /// A custom view over School authorizing School 100 only. An update is checked twice against it, once
+    /// for the stored School and once for the proposed School, so the two are covered separately below.
+    /// </summary>
+    private const string CustomViewStrategyName = "SchoolWithPutProviderTest";
+    private static readonly IReadOnlyList<string> _customViewStrategy = [CustomViewStrategyName];
+
     private static readonly QuerySchoolSeed[] _schoolSeeds =
     [
         new(new DocumentUuid(Guid.Parse("eeeeeeee-1111-0000-0000-000000000001")), 100, "North School"),
@@ -170,6 +177,8 @@ public class Given_A_MssqlRelationalPutAuthorizationTests_With_A_Synthetic_EdOrg
         await _context.DeleteAuthEdgeAsync(ClaimEducationOrganizationId, 300);
         await _context.DeleteAuthEdgeAsync(ClaimEducationOrganizationId, ClaimEducationOrganizationId);
         _context.ResetRecorder();
+
+        await _context.CreateSchoolCustomAuthViewAsync(CustomViewStrategyName, [100]);
     }
 
     [OneTimeTearDown]
@@ -177,8 +186,99 @@ public class Given_A_MssqlRelationalPutAuthorizationTests_With_A_Synthetic_EdOrg
     {
         if (_context is not null)
         {
+            await _context.DropCustomAuthViewAsync(CustomViewStrategyName);
             await _context.DisposeAsync();
         }
+    }
+
+    [Test]
+    public async Task Given_A_Custom_View_Strategy_It_Authorizes_An_Update_Whose_Stored_And_Proposed_Schools_The_View_Includes()
+    {
+        var existingSeed = CreateRootChildSeed(
+            "cccccccc-1111-0000-0000-000000000601",
+            601,
+            "custom-view-authorized-existing",
+            100,
+            []
+        );
+        var proposedSeed = existingSeed with { Name = "custom-view-authorized-change" };
+
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationRootChildAsync(existingSeed)
+        );
+
+        var result = await _context.UpdateAuthorizationRootChildByIdAsync(
+            proposedSeed,
+            existingSeed.DocumentUuid,
+            [ClaimEducationOrganizationId],
+            _customViewStrategy
+        );
+
+        result.Should().BeOfType<UpdateResult.UpdateSuccess>();
+    }
+
+    [Test]
+    public async Task Given_A_Custom_View_Strategy_It_Denies_An_Update_Whose_Proposed_School_The_View_Excludes()
+    {
+        // The stored School is inside the view, so only the proposed School can produce this denial. Seeding
+        // the target row with an authorized School is what keeps the stored check from masking it.
+        var existingSeed = CreateRootChildSeed(
+            "cccccccc-1111-0000-0000-000000000602",
+            602,
+            "custom-view-proposed-denied-existing",
+            100,
+            []
+        );
+        var proposedSeed = existingSeed with { Name = "custom-view-proposed-denied-change", SchoolId = 200 };
+
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationRootChildAsync(existingSeed)
+        );
+
+        var result = await _context.UpdateAuthorizationRootChildByIdAsync(
+            proposedSeed,
+            existingSeed.DocumentUuid,
+            [ClaimEducationOrganizationId],
+            _customViewStrategy
+        );
+
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureCustomViewNotAuthorized>()
+            .Which.CustomViewFailure.StrategyName.Should()
+            .Be(CustomViewStrategyName);
+    }
+
+    [Test]
+    public async Task Given_A_Custom_View_Strategy_It_Denies_An_Update_Whose_Stored_School_The_View_Excludes()
+    {
+        // The mirror image: the proposed School is inside the view and the stored School is not, so this
+        // denial can only come from the stored check.
+        var existingSeed = CreateRootChildSeed(
+            "cccccccc-1111-0000-0000-000000000603",
+            603,
+            "custom-view-stored-denied-existing",
+            200,
+            []
+        );
+        var proposedSeed = existingSeed with { Name = "custom-view-stored-denied-change", SchoolId = 100 };
+
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationRootChildAsync(existingSeed)
+        );
+
+        var result = await _context.UpdateAuthorizationRootChildByIdAsync(
+            proposedSeed,
+            existingSeed.DocumentUuid,
+            [ClaimEducationOrganizationId],
+            _customViewStrategy
+        );
+
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureCustomViewNotAuthorized>()
+            .Which.CustomViewFailure.StrategyName.Should()
+            .Be(CustomViewStrategyName);
     }
 
     [Test]

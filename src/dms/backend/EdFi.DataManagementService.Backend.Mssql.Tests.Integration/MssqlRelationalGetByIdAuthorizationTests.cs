@@ -54,6 +54,13 @@ public class Given_A_Mssql_Relational_Get_By_Id_Authorization_With_A_Synthetic_E
         AuthorizationStrategyNameConstants.OwnershipBased,
     ];
 
+    /// <summary>
+    /// A custom view over School authorizing School 100 only. School 200 is reachable through the claim's
+    /// edorg edges, so a denial on 200 can only come from the view's membership query.
+    /// </summary>
+    private const string CustomViewStrategyName = "SchoolWithGetByIdProviderTest";
+    private static readonly IReadOnlyList<string> _customViewStrategy = [CustomViewStrategyName];
+
     private static readonly QuerySchoolSeed[] _schoolSeeds =
     [
         new(new DocumentUuid(Guid.Parse("22222222-0000-0000-0000-000000000001")), 100, "North School"),
@@ -289,6 +296,7 @@ public class Given_A_Mssql_Relational_Get_By_Id_Authorization_With_A_Synthetic_E
 
         await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 100);
         await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 200);
+        await _context.CreateSchoolCustomAuthViewAsync(CustomViewStrategyName, [100]);
         await _context.InsertAuthEdgeAsync(300, ClaimEducationOrganizationId);
         await _context.DeleteAuthEdgeAsync(ClaimEducationOrganizationId, ClaimEducationOrganizationId);
     }
@@ -298,6 +306,7 @@ public class Given_A_Mssql_Relational_Get_By_Id_Authorization_With_A_Synthetic_E
     {
         if (_context is not null)
         {
+            await _context.DropCustomAuthViewAsync(CustomViewStrategyName);
             await _context.DisposeAsync();
         }
     }
@@ -306,6 +315,38 @@ public class Given_A_Mssql_Relational_Get_By_Id_Authorization_With_A_Synthetic_E
     public void SetUp()
     {
         _context.ResetRecorder();
+    }
+
+    [Test]
+    public async Task Given_A_Custom_View_Strategy_It_Authorizes_A_School_The_View_Includes()
+    {
+        var result = await _context.GetByIdAsync(
+            "ed-fi",
+            "School",
+            _schoolSeeds[0].DocumentUuid,
+            [ClaimEducationOrganizationId],
+            _customViewStrategy
+        );
+
+        result.Should().BeOfType<GetResult.GetSuccess>();
+    }
+
+    [Test]
+    public async Task Given_A_Custom_View_Strategy_It_Denies_A_School_The_View_Excludes()
+    {
+        var result = await _context.GetByIdAsync(
+            "ed-fi",
+            "School",
+            _schoolSeeds[1].DocumentUuid,
+            [ClaimEducationOrganizationId],
+            _customViewStrategy
+        );
+
+        var failure = result
+            .Should()
+            .BeOfType<GetResult.GetFailureCustomViewNotAuthorized>()
+            .Subject.CustomViewFailure;
+        failure.StrategyName.Should().Be(CustomViewStrategyName);
     }
 
     [Test]
