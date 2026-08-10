@@ -160,9 +160,9 @@ internal class ValidateQueryMiddleware(
         );
 
         // All three parameter faults below - cursor, traditional pagination, and change-version -
-        // answer with the same shell, so they share one construction. Three copies would have to be
-        // kept in step for status code, headers, and the media type, none of which this method
-        // states explicitly: the media type comes from the FrontendResponse default.
+        // answer with the same shell, so they share one construction rather than three copies that
+        // have to be kept in step. The media type is not stated here at all; it comes from the
+        // FrontendResponse default.
         FrontendResponse ParameterValidationFailed(string[] errors) =>
             new(
                 StatusCode: 400,

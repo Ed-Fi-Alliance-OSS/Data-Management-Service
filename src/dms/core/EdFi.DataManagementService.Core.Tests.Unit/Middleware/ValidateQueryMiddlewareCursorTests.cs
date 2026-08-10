@@ -103,10 +103,9 @@ public class ValidateQueryMiddlewareCursorTests
     /// messages are ordered: a cursor fault reports exactly one, a traditional fault reports every
     /// faulty parameter.
     ///
-    /// The media type is asserted alongside the body because the middleware never states it: it
-    /// comes from the FrontendResponse default, and the frontend appends the charset the acceptance
-    /// criteria name. Every other ProblemDetails body in Core is served as problem+json by its
-    /// handler, so nothing but this assertion stops that convention reaching these responses.
+    /// The media type is asserted alongside the body because nothing at the call site states it: it
+    /// comes from the FrontendResponse default, and the frontend appends the charset that makes it
+    /// the documented `application/json; charset=utf-8` response type.
     /// </summary>
     private static void AssertParameterValidationShell(
         RequestInfo requestInfo,
