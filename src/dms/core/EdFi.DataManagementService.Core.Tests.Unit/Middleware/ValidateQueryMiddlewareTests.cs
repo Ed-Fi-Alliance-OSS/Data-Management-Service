@@ -57,9 +57,16 @@ public class ValidateQueryMiddlewareTests
     /// Every key of the shell is covered, including the two the shell carries empty, so a change
     /// that stopped emitting one of them cannot pass here and be caught only by the cursor fixtures.
     /// Every caller builds its request with an empty TraceId, which is what correlationId echoes.
+    ///
+    /// The media type is asserted alongside the body because the middleware never states it: it
+    /// comes from the FrontendResponse default, and the frontend appends the charset the acceptance
+    /// criteria name. Every other ProblemDetails body in Core is served as problem+json by its
+    /// handler, so nothing but this assertion stops that convention reaching these responses.
     /// </summary>
     private static void AssertParameterValidationShell(RequestInfo requestInfo)
     {
+        requestInfo.FrontendResponse.ContentType.Should().Be("application/json");
+
         JsonNode body = requestInfo.FrontendResponse.Body!;
 
         body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:parameter-validation-failed");

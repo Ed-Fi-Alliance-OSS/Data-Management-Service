@@ -102,6 +102,11 @@ public class ValidateQueryMiddlewareCursorTests
     /// the cursor and traditional fixtures, which answer a parameter fault identically. The expected
     /// messages are ordered: a cursor fault reports exactly one, a traditional fault reports every
     /// faulty parameter.
+    ///
+    /// The media type is asserted alongside the body because the middleware never states it: it
+    /// comes from the FrontendResponse default, and the frontend appends the charset the acceptance
+    /// criteria name. Every other ProblemDetails body in Core is served as problem+json by its
+    /// handler, so nothing but this assertion stops that convention reaching these responses.
     /// </summary>
     private static void AssertParameterValidationShell(
         RequestInfo requestInfo,
@@ -109,6 +114,7 @@ public class ValidateQueryMiddlewareCursorTests
     )
     {
         requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        requestInfo.FrontendResponse.ContentType.Should().Be("application/json");
 
         JsonNode body = requestInfo.FrontendResponse.Body!;
 
