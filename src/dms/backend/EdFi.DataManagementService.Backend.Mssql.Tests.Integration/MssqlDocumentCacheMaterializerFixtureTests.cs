@@ -5,7 +5,6 @@
 
 using System.Data;
 using System.Data.Common;
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -84,6 +83,22 @@ public class Given_Mssql_DocumentCacheMaterializer_Fixtures
         var fixture = LoadFixture("extension-student-school-association");
         await SeedFixtureAsync(fixture);
         var mappingSet = DocumentCacheMaterializerFixtureMappingSet.CreateExtensionFixture(SqlDialect.Mssql);
+
+        var result = await CreateMaterializer().MaterializeAsync(CreateRequest(mappingSet, fixture));
+
+        var success = result.Should().BeOfType<DocumentCacheMaterializationResult.Success>().Subject;
+        AssertCandidateMatchesFixture(success.Candidate, fixture);
+        AssertRecordedCommandsStayOnCanonicalSource();
+    }
+
+    [Test]
+    public async Task It_materializes_the_collection_property_absence_fixture_from_real_Mssql_hydration()
+    {
+        var fixture = LoadFixture("school-address-property-absence");
+        await SeedFixtureAsync(fixture);
+        var mappingSet = DocumentCacheMaterializerFixtureMappingSet.CreateSchoolAddressFixture(
+            SqlDialect.Mssql
+        );
 
         var result = await CreateMaterializer().MaterializeAsync(CreateRequest(mappingSet, fixture));
 

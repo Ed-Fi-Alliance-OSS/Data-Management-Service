@@ -1,0 +1,86 @@
+{
+  "documents": [
+    {
+      "documentId": 973101,
+      "documentUuid": "aaaaaaaa-bbbb-cccc-dddd-000000003101",
+      "resourceKeyId": 244,
+      "contentVersion": 555,
+      "contentLastModifiedAt": "2026-08-02T03:04:05.987654Z"
+    },
+    {
+      "documentId": 973201,
+      "documentUuid": "aaaaaaaa-bbbb-cccc-dddd-000000003201",
+      "resourceKeyId": 57,
+      "contentVersion": 210,
+      "contentLastModifiedAt": "2026-08-01T03:04:05Z"
+    }
+  ],
+  "descriptors": [
+    {
+      "documentId": 973201,
+      "resourceKeyId": 57,
+      "namespace": "uri://ed-fi.org/AddressTypeDescriptor",
+      "codeValue": "Physical",
+      "shortDescription": "Physical",
+      "values": {
+        "Discriminator": "AddressTypeDescriptor"
+      }
+    }
+  ],
+  "concreteRootRows": [
+    {
+      "schema": "edfi",
+      "table": "School",
+      "documentId": 973101,
+      "values": {
+        "SchoolId": 255904,
+        "NameOfInstitution": "Property Absence School"
+      }
+    }
+  ],
+  "childRows": [
+    {
+      "schema": "edfi",
+      "table": "SchoolAddress",
+      "documentId": 973101,
+      "values": {
+        "CollectionItemId": 973401,
+        "School_DocumentId": 973101,
+        "Ordinal": 0,
+        "City": "Austin",
+        "AddressTypeDescriptor_DescriptorId": 973201
+      }
+    },
+    {
+      "schema": "edfi",
+      "table": "SchoolAddress",
+      "documentId": 973101,
+      "values": {
+        "CollectionItemId": 973402,
+        "School_DocumentId": 973101,
+        "Ordinal": 1,
+        "City": "Dallas",
+        "AddressTypeDescriptor_DescriptorId": null
+      }
+    }
+  ],
+  "extensionRows": [],
+  "referentialIdentityRows": [
+    {
+      "referentialId": "aaaaaaaa-bbbb-cccc-dddd-000000013101",
+      "documentId": 973101,
+      "resourceKeyId": 244,
+      "values": {
+        "schoolId": 255904
+      }
+    },
+    {
+      "referentialId": "aaaaaaaa-bbbb-cccc-dddd-000000013201",
+      "documentId": 973201,
+      "resourceKeyId": 57,
+      "values": {
+        "uri": "uri://ed-fi.org/AddressTypeDescriptor#Physical"
+      }
+    }
+  ]
+}

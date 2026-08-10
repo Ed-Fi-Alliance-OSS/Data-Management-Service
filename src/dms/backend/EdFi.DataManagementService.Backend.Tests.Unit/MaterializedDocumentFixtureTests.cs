@@ -118,17 +118,23 @@ public class Given_MaterializedDocumentFixtureCatalog
     }
 
     [Test]
-    public void It_models_the_public_cdc_document_as_cache_json_plus_stream_etag()
+    public void It_models_public_cdc_documents_as_cache_json_plus_stream_etag()
     {
-        var expectedPublicDocument = JsonNode
-            .Parse(_fixture.ExpectedCacheRow!.DocumentJson.ToJsonString())!
-            .AsObject();
-        expectedPublicDocument["_etag"] = _fixture.ExpectedStreamEtag;
-
-        JsonNode
-            .DeepEquals(_fixture.ExpectedPublicCdcDocument!.Document, expectedPublicDocument)
+        _allFixtures
+            .Where(fixture => fixture.ExpectedPublicCdcDocument is not null)
             .Should()
-            .BeTrue();
+            .AllSatisfy(fixture =>
+            {
+                var expectedPublicDocument = JsonNode
+                    .Parse(fixture.ExpectedCacheRow!.DocumentJson.ToJsonString())!
+                    .AsObject();
+                expectedPublicDocument["_etag"] = fixture.ExpectedStreamEtag;
+
+                JsonNode
+                    .DeepEquals(fixture.ExpectedPublicCdcDocument!.Document, expectedPublicDocument)
+                    .Should()
+                    .BeTrue();
+            });
     }
 
     [Test]
@@ -182,6 +188,12 @@ public class Given_MaterializedDocumentFixtureCatalog
             .Contain("extension-student-school-association");
 
         _allFixtures
+            .Where(fixture => HasTags(fixture, "success", "property-absence", "nested-collection"))
+            .Select(fixture => fixture.CaseName)
+            .Should()
+            .Contain("school-address-property-absence");
+
+        _allFixtures
             .Where(fixture => HasTags(fixture, "projection-failure", "invariant-failure"))
             .Select(fixture => fixture.CaseName)
             .Should()
@@ -233,6 +245,30 @@ public class Given_MaterializedDocumentFixtureCatalog
         failureFixture.ExpectedProjectionFailure.ResourceName.Should().Be("School");
     }
 
+    [Test]
+    public void It_models_collection_property_absence_without_json_null()
+    {
+        var fixture = MaterializedDocumentFixtureCatalog.LoadCase(
+            TestContext.CurrentContext.TestDirectory,
+            "school-address-property-absence"
+        );
+
+        fixture.SourceSetup.ChildRows.Where(HasNullAddressTypeDescriptorId).Should().ContainSingle();
+
+        var expectedAddresses = fixture.ExpectedCacheRow!.DocumentJson["addresses"]!.AsArray();
+        expectedAddresses.Should().HaveCount(2);
+
+        var firstExpectedAddress = expectedAddresses[0]!.AsObject();
+        firstExpectedAddress["addressTypeDescriptor"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
+
+        var secondExpectedAddress = expectedAddresses[1]!.AsObject();
+        secondExpectedAddress.Should().NotContainKey("addressTypeDescriptor");
+        secondExpectedAddress["city"]!.GetValue<string>().Should().Be("Dallas");
+
+        var expectedPublicAddresses = fixture.ExpectedPublicCdcDocument!.Document["addresses"]!.AsArray();
+        expectedPublicAddresses[1]!.AsObject().Should().NotContainKey("addressTypeDescriptor");
+    }
+
     private static IEnumerable<string> ReferencedManifestPaths(MaterializedDocumentFixtureManifest manifest)
     {
         if (manifest.SourceSetupPath is not null)
@@ -263,6 +299,9 @@ public class Given_MaterializedDocumentFixtureCatalog
 
     private static bool HasTags(MaterializedDocumentFixture fixture, params string[] tags) =>
         Array.TrueForAll(tags, tag => fixture.Manifest.CoverageTags?.Contains(tag) == true);
+
+    private static bool HasNullAddressTypeDescriptorId(MaterializedDocumentSourceTableRow row) =>
+        row.Values.TryGetPropertyValue("AddressTypeDescriptor_DescriptorId", out var value) && value is null;
 
     private static string FormatLastModifiedDate(DateTimeOffset lastModifiedAt) =>
         lastModifiedAt.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss'Z'", CultureInfo.InvariantCulture);

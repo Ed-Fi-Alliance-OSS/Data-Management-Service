@@ -1,0 +1,16 @@
+{
+  "fixtureVersion": "materialized-document-fixture-v1",
+  "caseName": "school-address-property-absence",
+  "coverageTags": [
+    "success",
+    "ordinary-resource",
+    "nested-collection",
+    "property-absence",
+    "public-cdc"
+  ],
+  "sourceSetupPath": "source-setup.json",
+  "expectedCacheRowPath": "expected-cache-row.json",
+  "expectedStreamEtagPath": "expected-stream-etag.json",
+  "expectedPublicCdcDocumentPath": "expected-public-cdc-document.json",
+  "expectedProjectionFailurePath": null
+}

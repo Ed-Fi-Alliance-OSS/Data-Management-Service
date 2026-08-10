@@ -29,13 +29,13 @@ processing, operational-health polling, and caught-up polling do not scan the co
 One Debezium connector uses two complementary public document sources plus one internal
 source-position heartbeat source:
 
-| Source event | Public document-state result |
+| Source event | Connector result |
 | --- | --- |
 | `dms.DocumentCache` create, update, or snapshot/read | Document upsert |
 | `dms.Document` delete | Kafka tombstone |
 | `dms.DocumentCache` delete or truncate | Ignore |
 | Any other `dms.Document` operation or snapshot/read | Ignore |
-| Any `dms.CdcHeartbeat` operation or Debezium heartbeat | Ignore; advance only the internal source offset |
+| Any `dms.CdcHeartbeat` operation or Debezium heartbeat | Internal progress record; no public document-state record |
 | Any `dms.DocumentProjectionWork` operation | Not captured; no public or progress record |
 
 `DocumentProjectionWork` exclusion is a connector/provider-capture invariant, not an SMT

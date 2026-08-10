@@ -1,0 +1,25 @@
+{
+  "documentId": 973101,
+  "documentUuid": "aaaaaaaa-bbbb-cccc-dddd-000000003101",
+  "projectName": "Ed-Fi",
+  "resourceName": "School",
+  "resourceVersion": "5.2.0",
+  "contentVersion": 555,
+  "lastModifiedAt": "2026-08-02T03:04:05.987654Z",
+  "streamEtag": "555-89abcdef.j._.l.i",
+  "documentJson": {
+    "id": "aaaaaaaa-bbbb-cccc-dddd-000000003101",
+    "_lastModifiedDate": "2026-08-02T03:04:05Z",
+    "schoolId": 255904,
+    "nameOfInstitution": "Property Absence School",
+    "addresses": [
+      {
+        "city": "Austin",
+        "addressTypeDescriptor": "uri://ed-fi.org/AddressTypeDescriptor#Physical"
+      },
+      {
+        "city": "Dallas"
+      }
+    ]
+  }
+}

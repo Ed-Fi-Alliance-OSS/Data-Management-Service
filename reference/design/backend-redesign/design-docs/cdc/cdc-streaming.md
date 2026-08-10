@@ -149,7 +149,7 @@ claim exact readiness in v1.
 ### Pinned Connector Runtime
 
 The v1 Ed-Fi Kafka Connect image must be rebuilt from the immutable Debezium 3.6 base
-`quay.io/debezium/connect:3.6.0.Final@sha256:6f3fe6407bae8f2a7714b9fc174d545d52d81044b4f4add1565854f020943d47`.
+`quay.io/debezium/connect:3.6.0.Final@sha256:698f0559e667a242f962221079e75917b2b7a3ad4de62661e977628da0e33b45`.
 The tag documents the qualified version and the digest prevents a registry update from
 silently changing it. The resulting `edfialliance/ed-fi-kafka-connect` image adds the
 Ed-Fi transforms and is itself selected by immutable digest in deployment; an unqualified
@@ -452,11 +452,11 @@ ms. Deployments may lower it or raise it within their readiness timeout, but tem
 live-configuration validation reject zero, a negative value, a missing/conflicting action
 query, or, for SQL Server, `poll.interval.ms > heartbeat.interval.ms`.
 
-`dms.CdcHeartbeat` is an internal progress source. Its snapshot, create, update, and delete
-records and Debezium heartbeat records are routed by the `DocumentState` transform to the
-binding-scoped CDC progress topic before public-record validation; they are never routed to
-the instance document topic. Before routing, the transform replaces every source key,
-whether structured, scalar, or null, with the fixed non-null
+`dms.CdcHeartbeat` is an internal progress source. Its snapshot, create, update, delete,
+and truncate records and Debezium heartbeat records are routed by the `DocumentState`
+transform to the binding-scoped CDC progress topic before public-record validation; they
+are never routed to the instance document topic. Before routing, the transform replaces
+every source key, whether structured, scalar, or null, with the fixed non-null
 [internal progress key](0002-kafka-topic-and-message-contract.md#internal-progress-key)
 required by the shared `StringConverter` and compacted progress topic. The progress topic
 is a transport acknowledgement boundary, not a status store: deployment automation does
@@ -983,6 +983,15 @@ Every connector also emits and live-validates the provider source-position heart
 settings defined above. `heartbeat.action.query` is generated from the emitted
 `dms.CdcHeartbeat` identifiers and is not free-form operator input. Heartbeat timing is an
 operational readiness setting rather than an immutable stream-contract or binding field.
+For PostgreSQL and SQL Server, template generation sets
+`topic.delimiter=.`,
+`topic.naming.strategy=io.debezium.schema.SchemaTopicNamingStrategy`,
+`topic.heartbeat.prefix=__debezium-heartbeat`, and leaves `topic.heartbeat.name` unset or
+empty. Rendering and live validation reject a missing or conflicting topic delimiter,
+naming strategy, heartbeat topic prefix, or non-empty heartbeat topic name, because the
+`DocumentState` SMT recognizes native Debezium heartbeat topics only as
+`__debezium-heartbeat.<topic-prefix>` when that suffix exactly matches the Debezium
+source-partition `server` value before relational source-metadata validation.
 
 Every connector explicitly sets `statistics.metrics.enabled=true`. Debezium 3.6 then
 exposes minimum, maximum, average, P50, P95, and P99 statistics for
@@ -1084,9 +1093,19 @@ Connector templates invoke the required Ed-Fi `DocumentState` SMT defined by the
 [topic/message ADR](0002-kafka-topic-and-message-contract.md#connector-transformation).
 That ADR owns source and operation classification, transform configuration, public
 key/value/tombstone shaping, progress routing, malformed-record behavior, and compatibility.
-Templates and live registration use those fixed values with the pinned connector runtime;
-verification asserts final published bytes, routing, and failure behavior rather than
-treating generated connector JSON alone as evidence.
+Templates and live registration use those fixed values with the pinned connector runtime.
+They also set and validate the exact public value converter path required by the ADR:
+
+```properties
+value.converter=org.edfi.kafka.connect.converters.DocumentStateJsonConverter
+value.converter.schemas.enable=false
+value.converter.decimal.format=NUMERIC
+```
+
+Rendering rejects missing, duplicate, or conflicting converter properties before connector
+startup, and live validation rejects drift from those exact values. Verification asserts
+final published bytes, routing, and failure behavior rather than treating generated
+connector JSON alone as evidence.
 
 ## Contract Change and Repair Operations
 

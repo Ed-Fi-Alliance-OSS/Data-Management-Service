@@ -25,7 +25,8 @@ The v1 public contract is:
 
 - one topic for all resource types in one instance,
 - Kafka key = lowercase `D`-format `DocumentUuid`,
-- non-null value = lower-camel metadata envelope plus expanded `DocumentJson`,
+- non-null value = serialized UTF-8 JSON bytes for a lower-camel metadata envelope plus
+  expanded `DocumentJson`,
 - delete = Kafka record-level null tombstone for the same key.
 
 ## Topic
@@ -219,6 +220,16 @@ For `dms.DocumentCache`, `DocumentUuid` is a non-indexed custom message-key colu
 than the relational primary key. Database validation triggers enforce that it equals the
 canonical UUID for the row's compact `DocumentId` primary/foreign key.
 
+For public document keys, the transform accepts only a schema-backed Kafka Connect
+`Struct` key with a required `DocumentUuid` field. PostgreSQL accepts only the pinned
+Debezium `STRING` field with semantic name `io.debezium.data.Uuid` and Java `String`
+UUID text. SQL Server accepts only the pinned `uniqueidentifier` key shape captured by
+provider fixtures: a required Kafka Connect `STRING` field with Java `String` UUID text
+and no alternate logical type. Both providers parse to UUID and emit lowercase
+`D`-format text. Otherwise parseable UUID text arriving through a raw string key,
+schemaless map, Java UUID object, bytes, missing field, invalid UUID text, or non-pinned
+schema shape is non-conforming.
+
 ### Internal Progress Key
 
 Every record routed to the binding-scoped CDC progress topic has the non-null Kafka
@@ -234,6 +245,19 @@ without JSON quoting or a Kafka Connect schema wrapper. Before routing any retai
 replaces the source key and key schema with this internal progress key. It never passes
 through a provider-specific structured key or a null heartbeat key.
 
+Native Debezium heartbeat recognition happens before relational source-metadata
+validation and is exact: the raw source record topic must equal
+`__debezium-heartbeat.` plus `record.sourcePartition().get("server")`, and the source
+partition `server` value must be a non-empty string. A heartbeat-looking source topic
+with a missing, empty, or non-string source-partition `server` value fails transformation
+as a malformed native heartbeat. A relational table topic whose configured Debezium
+`topic.prefix` starts with `__debezium-heartbeat` still classifies through relational
+source metadata rather than by topic prefix alone.
+
+Progress output preserves the input value schema, value, headers, source partition,
+source offset, and Connect record timestamp, including a null native-heartbeat value or
+value schema. It replaces only the output topic, key schema, and key.
+
 The progress topic is binding-scoped and has one partition, so its key does not repeat
 instance, generation, provider, or source-partition identity. The fixed non-null key makes
 every retained progress record valid for the compacted topic and places them in one
@@ -242,11 +266,29 @@ the retained key nor value is deployment readiness state.
 
 ## Upsert Value
 
-The connector uses
-`org.apache.kafka.connect.json.JsonConverter` with
-`value.converter.schemas.enable=false`. Creates, updates, and snapshots produce a UTF-8
-JSON object without a Kafka Connect `schema` / `payload` wrapper. Field order is not
-contractual; Avro, Protobuf, and Schema Registry subjects are outside v1.
+The public value contract is the serialized UTF-8 JSON bytes produced by `DocumentState`
+and passed through unchanged by the pinned Ed-Fi value converter. The transform's private
+Kafka Connect schema/value handshake is not embedded in those bytes. For the relational
+document-state connector, the value converter is:
+
+```properties
+value.converter=org.edfi.kafka.connect.converters.DocumentStateJsonConverter
+value.converter.schemas.enable=false
+value.converter.decimal.format=NUMERIC
+```
+
+Creates, updates, and snapshots produce a UTF-8 JSON object without a Kafka Connect
+`schema` / `payload` wrapper. For a public upsert, `DocumentState` emits a required Kafka
+Connect `BYTES` schema with semantic name
+`org.edfi.kafka.connect.data.DocumentStateJson`, version `1`, and a matching `byte[]`
+containing the complete final public JSON object. `DocumentStateJsonConverter` recognizes
+only that exact schema handshake and returns a copy of those bytes without JSON quoting,
+Base64 encoding, a schema wrapper, or another serialization pass. A public tombstone
+remains a null schema and null value. For every other record, including internal progress,
+the converter delegates to the pinned Kafka Connect 4.3
+`org.apache.kafka.connect.json.JsonConverter` with the configuration above. Field order is
+not contractual; Avro, Protobuf, other public converters, and Schema Registry subjects are
+outside v1.
 
 ```json
 {
@@ -277,7 +319,44 @@ contractual; Avro, Protobuf, and Schema Registry subjects are outside v1.
 | `document` | Expanded structured full API resource body, never an escaped JSON string |
 
 Database Pascal-case columns are renamed to lower camel case. `contractVersion` and
-`contentVersion` are JSON numbers.
+`contentVersion` are JSON numbers. Within `document`, valid `DocumentJson` decimal values
+are emitted as unquoted JSON numbers without `double` rounding and without converting
+numeric values to strings, including nested object and array positions. `DocumentState`
+parses integral tokens into exact Jackson integer nodes and non-integral tokens into exact
+`BigDecimal`-backed nodes, builds the final envelope as one JSON tree, and serializes that
+tree directly to the logical-byte value. Numeric token spelling and scale are not
+contractual: values such as `1`, `1.0`, and `1e0` may serialize differently while retaining
+the same exact JSON numeric value. A conforming implementation never passes a public
+number through `Double` or `Float`.
+
+### Public JSON Representation Evidence
+
+The named logical-byte handshake is required for the full DMS document shape:
+
+- DMS reconstitution omits absent optional properties, including when sibling collection
+  objects contain different present field sets. The cached document and public Kafka
+  document preserve that absence; the transform does not add those properties as JSON
+  `null`.
+- Kafka Connect arrays provide one element schema, and Kafka Connect 4.3
+  [`JsonConverter`](https://raw.githubusercontent.com/apache/kafka/4.3.0/connect/json/src/main/java/org/apache/kafka/connect/json/JsonConverter.java)
+  serializes every field declared by a `Struct` schema. A unioned collection-item schema
+  therefore cannot preserve per-item property absence.
+- The transform's exact Jackson tree retains each source object's present-property set,
+  array order, string and Boolean values, null array elements, and exact integer and decimal
+  numeric values while the envelope and `_etag` are added.
+- `DocumentStateJsonConverter` is a narrow serialization adapter. It performs no source
+  classification, document parsing, envelope shaping, timestamp normalization, metadata
+  validation, or topic routing. Those responsibilities remain atomic in `DocumentState`.
+  Delegation for progress records preserves their existing schema/value conversion path.
+
+Public upserts and public tombstones emit with an empty Kafka Connect header set and a
+null Connect record timestamp. Public tombstones remain Kafka record-level null values for
+the same string key, not delete envelopes. Progress records remain on their raw
+schema/value preservation path described by the [internal progress key](#internal-progress-key)
+contract. Raw Debezium headers and source-record timestamps are connector metadata, not
+consumer-visible contract fields. Consumers use `contentVersion` for non-null state
+ordering and `lastModifiedAt` for the DMS document timestamp; Kafka record timestamps
+remain outside the public document-state contract.
 
 The physical temporal representation is not part of the public contract. One Ed-Fi-owned
 `DocumentState` SMT consumes each raw Debezium record and produces the complete public
@@ -300,6 +379,19 @@ For SQL Server `nvarchar(max)` source data, including `DocumentJson`, the connec
 Debezium 3.6's unavailable-value marker. A required retained value carrying that marker is
 a transformation failure; it is never interpreted as JSON `null` or emitted in the public
 record.
+
+The transform validates every required retained `dms.DocumentCache` field against the
+pinned provider fixture schema as well as its semantic content. `DocumentJson` is a
+schema-backed Kafka Connect `STRING`: PostgreSQL `jsonb` uses Debezium's
+`io.debezium.data.Json` logical string shape, and SQL Server `nvarchar(max)` uses the
+pinned string shape plus the unavailable-marker check above. `ContentVersion` is the
+pinned `INT64`/Java `Long` shape. `ProjectName`, `ResourceName`, `ResourceVersion`, and
+`StreamEtag` are pinned schema-backed string fields. `LastModifiedAt` is PostgreSQL's
+pinned `io.debezium.time.ZonedTimestamp` string shape for `TIMESTAMPTZ` or SQL Server's
+pinned `io.debezium.time.IsoTimestamp` string shape for `datetime2(7)`, and the value
+must represent UTC before fractional seconds are truncated for public output. Schemaless
+values, alternate logical names, numeric/string coercions, bytes, maps, Java objects, and
+otherwise parseable values arriving through non-pinned schemas fail transformation.
 
 The stream `variantKey` uses the API five-component shape
 `{schemaEpoch}.j._.{linkFlag}.i`: JSON, no readable profile, the published document's link
@@ -325,8 +417,9 @@ Envelope `documentUuid` and `lastModifiedAt` exactly match embedded `id` and
 `_lastModifiedDate`. The source cache row carries the DMS-computed `StreamEtag`, which is
 published only as `document._etag`; the envelope does not duplicate it. If Debezium
 exposes `DocumentJson` as a string, the `DocumentState` SMT parses it directly, injects
-the ETag, and emits the structured `document` value. Invalid JSON or inconsistent
-embedded metadata fails transformation rather than publishing a partial record.
+the ETag, builds the complete final JSON tree, and emits its UTF-8 serialization as the
+named logical-byte value. Invalid JSON or inconsistent embedded metadata fails
+transformation rather than publishing a partial record.
 
 A non-null value is an upsert. Duplicates, replays, snapshots, and explicit corrective
 republishes are allowed. A consumer applies the first non-null record retained for one key.
@@ -461,18 +554,22 @@ configurable mapping language.
 1. Capture both document tables with `DocumentUuid` in each Debezium key and capture the
    internal heartbeat singleton for source-position progress.
 2. Inspect the original Debezium source table and operation before discarding the
-   envelope. Retain Debezium heartbeat records as internal progress. For relational
-   records, reject every unexpected source table, including
+   envelope. Retain Debezium heartbeat records as internal progress only when the raw
+   source topic exactly matches `__debezium-heartbeat.` plus the non-empty Debezium
+   source-partition `server` value. For relational records, reject every unexpected
+   source table, including
    `dms.DocumentProjectionWork`, which provider capture and connector include lists must
    already exclude. Among the three recognized relational sources, retain
-   `dms.CdcHeartbeat` operations as internal progress records; accept cache create,
+   every `dms.CdcHeartbeat` operation as an internal progress record; accept cache create,
    update, and snapshot/read records as public upserts; accept canonical document deletes
    as authoritative public deletes; and intentionally drop every other recognized source
    operation.
 3. Extract and validate `DocumentUuid` from the Debezium key, convert it to lowercase
    `D`-format text, and use it for both upserts and authoritative tombstones.
-4. For a retained cache upsert, unwrap the row and parse `DocumentJson` directly into a
-   structured JSON object. No independent generic expand-JSON SMT participates in the
+4. For a retained cache upsert, unwrap the row and parse `DocumentJson` directly into an
+   exact JSON object tree. Preserve every object's present-property set independently,
+   including sibling objects in a collection, together with array order and exact integer
+   and decimal numeric values. No independent generic expand-JSON SMT participates in the
    relational connector.
 5. Normalize `LastModifiedAt` to the existing DMS whole-second UTC
    `yyyy-MM-ddTHH:mm:ssZ` representation. For SQL Server, interpret
@@ -482,7 +579,9 @@ configurable mapping language.
 6. Build the complete lower-camel public envelope, copy the opaque DMS-computed
    `StreamEtag` to `document._etag`, remove all internal and operational fields, add
    `contractVersion`, and verify that the public key and normalized timestamp exactly
-   match `document.id` and `document._lastModifiedDate`.
+   match `document.id` and `document._lastModifiedDate`. Serialize that final tree once to
+   UTF-8 and emit it with the required `org.edfi.kafka.connect.data.DocumentStateJson`
+   `BYTES` schema at version `1`.
 7. For a retained canonical delete, replace the value with a record-level null tombstone.
    Suppress Debezium's additional automatic tombstone, for example with
    `tombstones.on.delete=false`, so one canonical delete produces exactly one public
@@ -495,11 +594,14 @@ configurable mapping language.
    record used by readiness.
 
 The transform consumes schema-backed raw Debezium records and emits only one of three
-classes of result: a final public upsert or tombstone, an internal progress record, or no
-record. Expected excluded operations from a recognized source are dropped. An unexpected
-source table, malformed retained record, invalid `DocumentJson`, inconsistent embedded
-metadata, or unsupported temporal logical type fails transformation rather than
-publishing a partial or ambiguous record. Because the connector pins
+classes of result: a final public upsert logical-byte value or null tombstone, an internal
+progress record, or no record. After transformation, `DocumentStateJsonConverter` passes
+only the exact public-upsert schema/value handshake through as a defensive byte copy and
+delegates every other non-null record to the pinned `JsonConverter`. Expected excluded
+operations from a recognized source are dropped. An unexpected source table, malformed
+retained record, invalid `DocumentJson`, inconsistent embedded metadata, or unsupported
+temporal logical type fails transformation rather than publishing a partial or ambiguous
+record. Because the connector pins
 `errors.tolerance=none`, that failure stops the connector task instead of skipping the
 record. A failed task makes combined readiness false; offset or lag observations cannot
 reclassify it as caught up. Recovery requires correcting the cause and restarting or
@@ -507,6 +609,15 @@ replacing the connector so the retained record is processed under the contract. 
 `null` for an explicitly excluded operation on a recognized source remains normal
 transform behavior and does not use the error-tolerance path; readiness never depends on
 such a record advancing the committed source offset.
+
+Invalid transform configuration fails with Kafka Connect `ConfigException`.
+Deterministic retained-record failures use a small custom exception subtype assignable to
+Kafka Connect `DataException`. That exception exposes a stable reason-code value and a
+bounded metadata map through structured accessors; the log message includes the same
+sanitized reason and metadata. Diagnostics include only bounded fields such as provider,
+source topic, source category, source schema, source table, and operation. They do not
+include `DocumentJson`, full public values, credentials, tenant names, or unbounded
+document metadata.
 
 Kafka Connect does not calculate `schemaEpoch`, interpret
 `DataManagement:ResourceLinks:Enabled`, or reproduce DMS ETag encoding. `StreamEtag` is
@@ -516,8 +627,8 @@ independent generic JSON expander. Keeping source classification, key/value shap
 tombstone synthesis, consistency checks, and routing in one transform avoids
 ordering-sensitive intermediate records. Tests assert published record bytes and
 semantics, not only generated connector JSON. Version-specific properties and the
-transform class are verified against the pinned Ed-Fi image and exact Debezium 3.6 base
-selected by the deployment design.
+transform and converter classes are verified against the pinned Ed-Fi image and exact
+Debezium 3.6 base selected by the deployment design.
 
 Debezium 3.6's `isostring` mode removes the 2.7-era signed-`NanoTimestamp` parsing
 workaround and preserves all seven SQL Server fractional digits in an unambiguous UTC
@@ -539,6 +650,15 @@ value bytes = Kafka null
 Kafka null is not a JSON document containing `null`. V1 publishes no `deleted=true`
 envelope and promises no deleted document body. Resource-specific consumers retain
 enough prior local state to route a tombstone.
+
+The Debezium key is the sole authority for the emitted public tombstone key. The transform
+does not derive the key from the delete value and does not require `before.DocumentUuid`
+when `before` is absent, null, unavailable, or missing that field in an otherwise valid
+pinned delete record. If a pinned provider delete value includes an available
+`before.DocumentUuid`, the transform validates it through the same provider UUID adapter
+and fails the retained record when it does not equal the normalized key. For SQL Server
+pinned delete records, the configured unavailable-value marker on `before.DocumentUuid`
+is treated as absent; outside that pinned delete shape it is malformed input.
 
 The authoritative `dms.Document` delete produces the tombstone. Cache deletion,
 cascade, truncation, rebuild, and cleanup produce no public record. A canonical delete
@@ -613,6 +733,10 @@ The public topic never exposes:
   classification, filtering, JSON parsing, key and envelope shaping, timestamp
   normalization, nested ETag injection, tombstone synthesis, and topic routing; a
   stock-only or generic-expand-plus-stock transform chain is not the v1 design.
+- Publication also requires `DocumentStateJsonConverter`. Its named logical-byte
+  pass-through preserves per-object property absence and exact numeric values in public
+  upserts, while its `JsonConverter` delegation preserves the existing internal progress
+  representation.
 - `StreamEtag` is not a reusable ETag for a differently profiled, link-shaped, formatted,
   or content-coded HTTP response; an HTTP server composes its own validator for the
   representation it serves.
