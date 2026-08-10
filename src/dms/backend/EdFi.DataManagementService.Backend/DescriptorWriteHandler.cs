@@ -108,6 +108,12 @@ internal sealed class DescriptorWriteHandler(
                         cancellationToken
                     )
                     .ConfigureAwait(false);
+                await ValidateSingleRecordDescriptorWriteCustomViewsAsync(
+                        request.MappingSet,
+                        configError.SingleRecordCustomViewChecksToValidate,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
                 return new UpsertResult.UpsertFailureSecurityConfiguration(
                     configError.Errors,
                     configError.Diagnostics
@@ -407,6 +413,12 @@ internal sealed class DescriptorWriteHandler(
                         cancellationToken
                     )
                     .ConfigureAwait(false);
+                await ValidateSingleRecordDescriptorWriteCustomViewsAsync(
+                        request.MappingSet,
+                        configError.SingleRecordCustomViewChecksToValidate,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
                 return new UpdateResult.UpdateFailureSecurityConfiguration(
                     configError.Errors,
                     configError.Diagnostics
@@ -654,6 +666,12 @@ internal sealed class DescriptorWriteHandler(
             await ValidateDescriptorWriteCustomViewsAsync(
                     request.MappingSet,
                     stop.CustomViewChecksToValidate,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+            await ValidateSingleRecordDescriptorWriteCustomViewsAsync(
+                    request.MappingSet,
+                    stop.SingleRecordCustomViewChecksToValidate,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -1406,11 +1424,13 @@ internal sealed class DescriptorWriteHandler(
         DescriptorDeleteRequest request,
         IReadOnlyList<SupportedCustomViewAuthorizationStrategy> customViewStrategies,
         out RelationalCustomViewAuthorization? customViewAuthorization,
-        out DeleteResult? securityConfigurationFailure
+        out DeleteResult? securityConfigurationFailure,
+        out IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checksToValidateBeforeFailure
     )
     {
         customViewAuthorization = null;
         securityConfigurationFailure = null;
+        checksToValidateBeforeFailure = [];
 
         if (customViewStrategies.Count == 0)
         {
@@ -1433,6 +1453,9 @@ internal sealed class DescriptorWriteHandler(
                 request.Resource,
                 configurationFailure.Failures
             );
+            // Views configured ahead of the earliest planning failure planned successfully and execute
+            // first, so they are still validated before this failure is reported.
+            checksToValidateBeforeFailure = SingleRecordChecksBeforeFailure(configurationFailure);
             return false;
         }
 
@@ -1544,6 +1567,61 @@ internal sealed class DescriptorWriteHandler(
     /// Validates the views a terminal carries. A null or empty list is a no-op, so every terminal can route
     /// through this unconditionally.
     /// </summary>
+    /// <summary>
+    /// The planned single-record checks configured strictly before the earliest planning failure. Those views
+    /// planned successfully and execute first, so they are validated even though a later one cannot plan.
+    /// </summary>
+    private static IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> SingleRecordChecksBeforeFailure(
+        SingleRecordCustomViewAuthorizationPlanOutcome.SecurityConfiguration configurationFailure
+    )
+    {
+        var earliestFailureIndex = RelationalAuthorizationPlanner.EarliestSecurityConfigurationFailureIndex(
+            configurationFailure.Failures
+        );
+
+        return
+        [
+            .. configurationFailure.PlannedChecks.Where(check =>
+                check.ConfiguredStrategy.RawConfiguredIndex < earliestFailureIndex
+            ),
+        ];
+    }
+
+    /// <summary>
+    /// Carries single-record checks on a write planning failure so the async caller validates them before
+    /// reporting it. Only the security-configuration outcome can carry them, which is the only outcome the
+    /// single-record planner produces on failure.
+    /// </summary>
+    private static DescriptorWriteAuthorizationPreflightOutcome WithSingleRecordChecksToValidate(
+        DescriptorWriteAuthorizationPreflightOutcome outcome,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checks
+    ) =>
+        outcome is DescriptorWriteAuthorizationPreflightOutcome.SecurityConfigurationError configurationError
+            ? configurationError with
+            {
+                SingleRecordCustomViewChecksToValidate = checks,
+            }
+            : outcome;
+
+    /// <summary>
+    /// Validates single-record checks that execute ahead of a descriptor write planning failure. These are
+    /// single-record specs, so they take the single-record validator rather than the page-query one. A null
+    /// validation executor keeps the existing no-op behavior.
+    /// </summary>
+    private Task ValidateSingleRecordDescriptorWriteCustomViewsAsync(
+        MappingSet mappingSet,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checks,
+        CancellationToken cancellationToken
+    ) =>
+        _customViewValidationCommandExecutor is null
+            ? Task.CompletedTask
+            : CustomViewAuthorizationValidator.ValidateSingleRecordAsync(
+                _customViewValidationCommandExecutor,
+                mappingSet.Key.Dialect,
+                checks,
+                cancellationToken
+            );
+
     private Task ValidateDescriptorWriteCustomViewsAsync(
         MappingSet mappingSet,
         IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck>? customViewChecks,
@@ -1711,11 +1789,16 @@ internal sealed class DescriptorWriteHandler(
                 request,
                 plan.CustomViewStrategies,
                 out var customViewAuthorization,
-                out var customViewPlanFailure
+                out var customViewPlanFailure,
+                out var customViewChecksBeforePlanFailure
             )
         )
         {
-            return new DescriptorDeleteAuthorizationPreflightResult.Stop(customViewPlanFailure!);
+            return new DescriptorDeleteAuthorizationPreflightResult.Stop(
+                customViewPlanFailure!,
+                [],
+                customViewChecksBeforePlanFailure
+            );
         }
 
         if (plan.NamespaceChecks.Count == 0)
@@ -1799,13 +1882,24 @@ internal sealed class DescriptorWriteHandler(
         /// The views configured ahead of this terminal. They execute before it, so a missing or non-conforming
         /// view keeps its own 500 rather than being hidden by the terminal's response.
         /// </param>
+        /// <param name="SingleRecordCustomViewChecksToValidate">
+        /// Checks planned by the single-record planner, which the terminals reached through the page planner
+        /// never carry. They take the single-record validator rather than the page-query one.
+        /// </param>
         public sealed record Stop(
             DeleteResult Result,
-            IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck> CustomViewChecksToValidate
+            IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck> CustomViewChecksToValidate,
+            IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> SingleRecordCustomViewChecksToValidate
         ) : DescriptorDeleteAuthorizationPreflightResult
         {
             public Stop(DeleteResult result)
-                : this(result, []) { }
+                : this(result, [], []) { }
+
+            public Stop(
+                DeleteResult result,
+                IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck> customViewChecksToValidate
+            )
+                : this(result, customViewChecksToValidate, []) { }
         }
 
         public sealed record Proceed(
@@ -2248,11 +2342,13 @@ internal sealed class DescriptorWriteHandler(
         DescriptorWriteRequest request,
         IReadOnlyList<SupportedCustomViewAuthorizationStrategy> customViewStrategies,
         out RelationalCustomViewAuthorization? customViewAuthorization,
-        out DescriptorWriteAuthorizationPreflightOutcome? securityConfigurationFailure
+        out DescriptorWriteAuthorizationPreflightOutcome? securityConfigurationFailure,
+        out IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checksToValidateBeforeFailure
     )
     {
         customViewAuthorization = null;
         securityConfigurationFailure = null;
+        checksToValidateBeforeFailure = [];
 
         if (customViewStrategies.Count == 0)
         {
@@ -2326,11 +2422,15 @@ internal sealed class DescriptorWriteHandler(
                 request,
                 plan.CustomViewStrategies,
                 out var customViewAuthorization,
-                out var customViewPlanFailure
+                out var customViewPlanFailure,
+                out var customViewChecksBeforePlanFailure
             )
         )
         {
-            return customViewPlanFailure!;
+            return WithSingleRecordChecksToValidate(
+                customViewPlanFailure!,
+                customViewChecksBeforePlanFailure
+            );
         }
 
         if (plan.NamespaceChecks.Count == 0)
@@ -2401,17 +2501,26 @@ internal sealed class DescriptorWriteHandler(
         }
 
         /// <inheritdoc cref="NotImplemented.CustomViewChecksToValidate"/>
+        /// <inheritdoc cref="DescriptorDeleteAuthorizationPreflightResult.Stop.SingleRecordCustomViewChecksToValidate"/>
         public sealed record SecurityConfigurationError(
             string[] Errors,
             SecurityConfigurationFailureDiagnostic[]? Diagnostics,
-            IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck> CustomViewChecksToValidate
+            IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck> CustomViewChecksToValidate,
+            IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> SingleRecordCustomViewChecksToValidate
         ) : DescriptorWriteAuthorizationPreflightOutcome
         {
             public SecurityConfigurationError(
                 string[] errors,
                 SecurityConfigurationFailureDiagnostic[]? diagnostics = null
             )
-                : this(errors, diagnostics, []) { }
+                : this(errors, diagnostics, [], []) { }
+
+            public SecurityConfigurationError(
+                string[] errors,
+                SecurityConfigurationFailureDiagnostic[]? diagnostics,
+                IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck> customViewChecksToValidate
+            )
+                : this(errors, diagnostics, customViewChecksToValidate, []) { }
         }
 
         /// <inheritdoc cref="NotImplemented.CustomViewChecksToValidate"/>

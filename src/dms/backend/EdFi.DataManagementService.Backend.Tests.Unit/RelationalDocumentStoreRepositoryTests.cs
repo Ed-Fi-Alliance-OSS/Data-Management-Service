@@ -8660,6 +8660,269 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_validates_a_post_custom_view_before_a_relationship_security_configuration_terminal()
+    {
+        // The unknown relationship strategy makes this a 500, but the custom view AND-composes ahead of the
+        // relationship bucket, so it executes — and is validated — before that terminal is reported.
+        var capturedValidationSql = GivenCustomViewValidationIsRecorded();
+        var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet)
+            .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Post relationship 500"));
+        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+                ),
+            ]);
+        A.CallTo(() => upsertRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([255901]));
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        result.Should().BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>();
+        capturedValidationSql
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("SchoolWithCustomAuthorization");
+    }
+
+    [Test]
+    public async Task It_validates_a_post_custom_view_when_an_unknown_strategy_stops_before_planning()
+    {
+        // An unknown strategy makes the strategy-level outcome SecurityConfigurationError, the sibling entry
+        // arm to StillUnsupported. It enters the bucket with nothing planned either, so it owes the same.
+        var capturedValidationSql = GivenCustomViewValidationIsRecorded();
+        var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet)
+            .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Post unknown strategy"));
+        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+                CreateAuthorizationStrategyEvaluator("CustomAuthorizationStrategy"),
+            ]);
+        A.CallTo(() => upsertRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([255901]));
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        result.Should().BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>();
+        capturedValidationSql
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("SchoolWithCustomAuthorization");
+    }
+
+    [Test]
+    public async Task It_validates_a_post_custom_view_when_an_unsupported_strategy_stops_before_planning()
+    {
+        // OwnershipBased makes the strategy-level outcome StillUnsupported, which enters the relationship
+        // bucket before any custom view has been planned. The view still AND-composes ahead of that 501, so
+        // the bucket has to plan and validate it rather than reporting the terminal over an unchecked view.
+        var capturedValidationSql = GivenCustomViewValidationIsRecorded();
+        var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet)
+            .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Post unsupported strategy"));
+        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ]);
+        A.CallTo(() => upsertRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([255901]));
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        result.Should().BeOfType<UpsertResult.UpsertFailureNotImplemented>();
+        capturedValidationSql
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("SchoolWithCustomAuthorization");
+    }
+
+    [Test]
+    public async Task It_validates_a_put_custom_view_when_an_unsupported_strategy_stops_before_planning()
+    {
+        var capturedValidationSql = GivenCustomViewValidationIsRecorded();
+        var updateRequest = A.Fake<IUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet)
+            .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody("Put unsupported strategy"));
+        A.CallTo(() => updateRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ]);
+        A.CallTo(() => updateRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([255901]));
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        result.Should().BeOfType<UpdateResult.UpdateFailureNotImplemented>();
+        capturedValidationSql
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("SchoolWithCustomAuthorization");
+    }
+
+    [Test]
+    public async Task It_validates_a_post_custom_view_configured_before_a_no_usable_root_column_terminal()
+    {
+        // The namespace no-usable-root-column 500 resolves in preflight, but a custom view configured ahead of
+        // it executes first, so it is probed before that terminal is reported.
+        var capturedValidationSql = GivenCustomViewValidationIsRecorded();
+        var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet)
+            .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Post no usable root"));
+        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+            ]);
+        A.CallTo(() => upsertRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([], ["uri://ed-fi.org/"]));
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>()
+            .Which.Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("no Namespace securable element resolves to a root table column");
+        capturedValidationSql
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("SchoolWithCustomAuthorization");
+    }
+
+    [Test]
+    public async Task It_validates_a_put_custom_view_configured_before_a_no_usable_root_column_terminal()
+    {
+        var capturedValidationSql = GivenCustomViewValidationIsRecorded();
+        var updateRequest = A.Fake<IUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet)
+            .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody("Put no usable root"));
+        A.CallTo(() => updateRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+            ]);
+        A.CallTo(() => updateRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([], ["uri://ed-fi.org/"]));
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureSecurityConfiguration>()
+            .Which.Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("no Namespace securable element resolves to a root table column");
+        capturedValidationSql
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("SchoolWithCustomAuthorization");
+    }
+
+    [Test]
+    public async Task It_validates_an_earlier_post_custom_view_before_a_later_no_join_path_failure()
+    {
+        // SchoolWithCustomAuthorization plans; StudentWithNoJoinPath does not. The earlier view executes
+        // first, so it is probed even though the later one cannot plan, and only it is probed.
+        var capturedValidationSql = GivenCustomViewValidationIsRecorded();
+        var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet)
+            .Returns(CreateWriteAwareMappingSetWithCustomViewBasisButNoJoinPath(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Post no join path"));
+        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+                CreateAuthorizationStrategyEvaluator("StudentWithNoJoinPath"),
+            ]);
+        A.CallTo(() => upsertRequest.AuthorizationContext).Returns(new RelationalAuthorizationContext([]));
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        var failure = result.Should().BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>().Subject;
+        failure.Errors.Should().ContainSingle();
+        failure.Errors[0].Should().Contain("No DocumentId join path");
+        failure.Errors[0].Should().Contain("StudentWithNoJoinPath");
+        capturedValidationSql
+            .Should()
+            .ContainSingle(sql => sql.Contains("SchoolWithCustomAuthorization", StringComparison.Ordinal));
+        capturedValidationSql
+            .Should()
+            .NotContain(sql => sql.Contains("StudentWithNoJoinPath", StringComparison.Ordinal));
+    }
+
+    [Test]
+    public async Task It_validates_an_earlier_put_custom_view_before_a_later_no_join_path_failure()
+    {
+        var capturedValidationSql = GivenCustomViewValidationIsRecorded();
+        var updateRequest = A.Fake<IUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet)
+            .Returns(CreateWriteAwareMappingSetWithCustomViewBasisButNoJoinPath(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody("Put no join path"));
+        A.CallTo(() => updateRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+                CreateAuthorizationStrategyEvaluator("StudentWithNoJoinPath"),
+            ]);
+        A.CallTo(() => updateRequest.AuthorizationContext).Returns(new RelationalAuthorizationContext([]));
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        var failure = result.Should().BeOfType<UpdateResult.UpdateFailureSecurityConfiguration>().Subject;
+        failure.Errors.Should().ContainSingle();
+        failure.Errors[0].Should().Contain("No DocumentId join path");
+        failure.Errors[0].Should().Contain("StudentWithNoJoinPath");
+        capturedValidationSql
+            .Should()
+            .ContainSingle(sql => sql.Contains("SchoolWithCustomAuthorization", StringComparison.Ordinal));
+        capturedValidationSql
+            .Should()
+            .NotContain(sql => sql.Contains("StudentWithNoJoinPath", StringComparison.Ordinal));
+    }
+
+    [Test]
     public async Task It_returns_post_security_configuration_failure_before_known_but_not_enabled_result()
     {
         var upsertRequest = A.Fake<IUpsertRequest>();
@@ -13510,13 +13773,35 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
     private static MappingSet CreateQuerySupportedMappingSetWithCustomViewBasisButNoJoinPath(
         ResourceInfo resourceInfo
-    )
+    ) =>
+        WithUnreachableStudentBasis(
+            resourceInfo,
+            CreateQuerySupportedMappingSetWithRootEdOrgSubject(resourceInfo)
+        );
+
+    /// <summary>
+    /// The write-path counterpart: the same unreachable Student basis over a mapping set that also carries a
+    /// write plan, so a POST/PUT reaches custom-view planning instead of failing to resolve one.
+    /// </summary>
+    private static MappingSet CreateWriteAwareMappingSetWithCustomViewBasisButNoJoinPath(
+        ResourceInfo resourceInfo
+    ) =>
+        WithUnreachableStudentBasis(
+            resourceInfo,
+            CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(resourceInfo)
+        );
+
+    /// <summary>
+    /// Adds a minimal Student concrete resource so a <c>StudentWith…</c> basis resolves but has no DocumentId
+    /// join path from the subject, which is what makes the planner report a no-join-path failure rather than
+    /// an unknown strategy.
+    /// </summary>
+    private static MappingSet WithUnreachableStudentBasis(ResourceInfo resourceInfo, MappingSet mappingSet)
     {
         var resource = new QualifiedResourceName(
             resourceInfo.ProjectName.Value,
             resourceInfo.ResourceName.Value
         );
-        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(resourceInfo);
         var concreteResources = mappingSet.Model.ConcreteResourcesInNameOrder.ToList();
 
         if (

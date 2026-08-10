@@ -405,10 +405,17 @@ internal sealed class DescriptorReadHandler(
                         request,
                         proceed.CustomViewStrategies,
                         out var customViewChecks,
-                        out var customViewPlanFailure
+                        out var customViewPlanFailure,
+                        out var customViewChecksBeforePlanFailure
                     )
                 )
                 {
+                    await ValidateSingleRecordGetByIdCustomViewsAsync(
+                            request,
+                            customViewChecksBeforePlanFailure,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
                     return new DescriptorGetByIdAuthorizationResult(customViewPlanFailure!, null, null, []);
                 }
 
@@ -990,11 +997,13 @@ internal sealed class DescriptorReadHandler(
         DescriptorGetByIdRequest request,
         IReadOnlyList<SupportedCustomViewAuthorizationStrategy> customViewStrategies,
         out IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> customViewChecks,
-        out GetResult? securityConfigurationFailure
+        out GetResult? securityConfigurationFailure,
+        out IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checksToValidateBeforeFailure
     )
     {
         customViewChecks = [];
         securityConfigurationFailure = null;
+        checksToValidateBeforeFailure = [];
 
         if (customViewStrategies.Count == 0)
         {
@@ -1022,6 +1031,9 @@ internal sealed class DescriptorReadHandler(
                 failure.Errors,
                 failure.Diagnostics
             );
+            // Views configured ahead of the earliest planning failure planned successfully and execute
+            // first, so they are still validated before this failure is reported.
+            checksToValidateBeforeFailure = SingleRecordChecksBeforeFailure(configurationFailure);
             return false;
         }
 
@@ -1029,6 +1041,42 @@ internal sealed class DescriptorReadHandler(
 
         return true;
     }
+
+    /// <summary>
+    /// The planned single-record checks configured strictly before the earliest planning failure. Those views
+    /// planned successfully and execute first, so they are validated even though a later one cannot plan.
+    /// </summary>
+    private static IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> SingleRecordChecksBeforeFailure(
+        SingleRecordCustomViewAuthorizationPlanOutcome.SecurityConfiguration configurationFailure
+    )
+    {
+        var earliestFailureIndex = RelationalAuthorizationPlanner.EarliestSecurityConfigurationFailureIndex(
+            configurationFailure.Failures
+        );
+
+        return
+        [
+            .. configurationFailure.PlannedChecks.Where(check =>
+                check.ConfiguredStrategy.RawConfiguredIndex < earliestFailureIndex
+            ),
+        ];
+    }
+
+    /// <summary>
+    /// Validates single-record checks that execute ahead of a GET-by-id planning failure. These are
+    /// single-record specs, so they take the single-record validator rather than the page-query one.
+    /// </summary>
+    private Task ValidateSingleRecordGetByIdCustomViewsAsync(
+        DescriptorGetByIdRequest request,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checks,
+        CancellationToken cancellationToken
+    ) =>
+        CustomViewAuthorizationValidator.ValidateSingleRecordAsync(
+            _commandExecutor,
+            request.MappingSet.Key.Dialect,
+            checks,
+            cancellationToken
+        );
 
     /// <summary>
     /// Validates the views that execute ahead of a GET-by-id terminal. A null or empty list is a no-op, so
