@@ -851,6 +851,100 @@ public class Given_DescriptorReadHandler
     }
 
     [Test]
+    public async Task It_validates_a_descriptor_get_by_id_custom_view_configured_before_an_unsupported_relationship_terminal()
+    {
+        // The GET-many sibling of this case validates the view ahead of its 501. GET-by-id owes the same:
+        // the unsupported relationship strategy is what makes the request not implemented, but a view
+        // configured ahead of that terminal still executes, so a missing one keeps its own 500.
+        var commandExecutor = A.Fake<IRelationalCommandExecutor>();
+        var databaseException = new StubDbException("custom view does not exist");
+        A.CallTo(() =>
+                commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Throws(databaseException);
+        var sut = CreateHandler(commandExecutor);
+
+        var action = () =>
+            sut.HandleGetByIdAsync(
+                new DescriptorGetByIdRequest(
+                    CreateQueryMappingSet(SqlDialect.Pgsql, CreateSupportedDescriptorQueryCapability()),
+                    _descriptorResource,
+                    new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-141414141414")),
+                    RelationalGetRequestReadMode.ExternalResponse,
+                    [
+                        CreateAuthorizationStrategyEvaluator(
+                            AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                        ),
+                        CreateAuthorizationStrategyEvaluator("StudentWithCustomViewProviderTest"),
+                    ],
+                    readableProfileProjectionContext: null,
+                    new TraceId("descriptor-get-custom-view-unsupported-relationship"),
+                    new RelationalAuthorizationContext([], ["uri://ed-fi.org/"])
+                )
+            );
+
+        var assertion = await action.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+
+        assertion.Which.InnerException.Should().BeSameAs(databaseException);
+    }
+
+    [Test]
+    public async Task It_excludes_the_resolved_custom_view_from_the_descriptor_get_by_id_not_implemented_message()
+    {
+        // Same shape with a view that validates cleanly, so the 501 is returned. A resolved custom view is
+        // supported on GET-by-id too, so it must not appear among the unsupported effective strategies and
+        // the message must not claim only NamespaceBased/NoFurtherAuthorizationRequired are supported.
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
+        ]);
+        var sut = CreateHandler(commandExecutor);
+
+        var result = await sut.HandleGetByIdAsync(
+            new DescriptorGetByIdRequest(
+                CreateQueryMappingSet(SqlDialect.Pgsql, CreateSupportedDescriptorQueryCapability()),
+                _descriptorResource,
+                new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-151515151515")),
+                RelationalGetRequestReadMode.ExternalResponse,
+                [
+                    CreateAuthorizationStrategyEvaluator(
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                    ),
+                    CreateAuthorizationStrategyEvaluator("StudentWithCustomViewProviderTest"),
+                ],
+                readableProfileProjectionContext: null,
+                new TraceId("descriptor-get-custom-view-excluded-from-message"),
+                new RelationalAuthorizationContext([], ["uri://ed-fi.org/"])
+            )
+        );
+
+        var failureMessage = result
+            .Should()
+            .BeOfType<GetResult.GetFailureNotImplemented>()
+            .Subject.FailureMessage;
+        failureMessage.Should().NotContain("StudentWithCustomViewProviderTest");
+        failureMessage
+            .Should()
+            .Contain(
+                $"Effective strategies: ['{AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly}']."
+            );
+        failureMessage
+            .Should()
+            .Contain("and/or a resolved custom view-based strategy are currently supported.");
+        // The view was resolved and validated, which is what makes excluding it correct.
+        commandExecutor
+            .Commands.Select(command => command.CommandText)
+            .Should()
+            .ContainSingle(sql =>
+                sql.Contains("StudentWithCustomViewProviderTest", StringComparison.Ordinal)
+                && sql.Contains("LIMIT 0", StringComparison.Ordinal)
+            );
+    }
+
+    [Test]
     public async Task It_validates_a_descriptor_get_by_id_custom_view_configured_before_a_no_usable_root_column_terminal()
     {
         // The no-usable-root-column 500 resolves before any row is fetched, but a custom view configured ahead
@@ -1032,6 +1126,48 @@ public class Given_DescriptorReadHandler
         result
             .Should()
             .BeOfType<QueryResult.QueryFailureNotImplemented>()
+            .Which.FailureMessage.Should()
+            .Contain(AuthorizationStrategyNameConstants.OwnershipBased)
+            .And.NotContain("StudentWithCustomViewProviderTest");
+        commandExecutor
+            .Commands.Select(command => command.CommandText)
+            .Should()
+            .ContainSingle(sql =>
+                sql.Contains("StudentWithCustomViewProviderTest", StringComparison.Ordinal)
+                && sql.Contains("LIMIT 0", StringComparison.Ordinal)
+            );
+    }
+
+    [Test]
+    public async Task It_excludes_the_resolved_custom_view_from_the_descriptor_get_by_id_OwnershipBased_message()
+    {
+        // The GET-by-id mirror of the sibling above. OwnershipBased is what fails the request closed, so it
+        // belongs in the message; the resolved custom view is supported on this path too and must not be
+        // named alongside it.
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
+        ]);
+        var sut = CreateHandler(commandExecutor);
+
+        var result = await sut.HandleGetByIdAsync(
+            new DescriptorGetByIdRequest(
+                CreateQueryMappingSet(SqlDialect.Pgsql, CreateSupportedDescriptorQueryCapability()),
+                _descriptorResource,
+                new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-161616161616")),
+                RelationalGetRequestReadMode.ExternalResponse,
+                [
+                    CreateAuthorizationStrategyEvaluator("StudentWithCustomViewProviderTest"),
+                    CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                ],
+                readableProfileProjectionContext: null,
+                new TraceId("descriptor-get-custom-view-ownership"),
+                new RelationalAuthorizationContext([], ["uri://ed-fi.org/"])
+            )
+        );
+
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureNotImplemented>()
             .Which.FailureMessage.Should()
             .Contain(AuthorizationStrategyNameConstants.OwnershipBased)
             .And.NotContain("StudentWithCustomViewProviderTest");

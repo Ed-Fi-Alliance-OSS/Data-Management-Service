@@ -1825,11 +1825,14 @@ internal sealed class DescriptorReadHandler(
                 BuildDescriptorNoUsableRootPreflight(mappingSet, resource, noUsableRoot),
             RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes =>
                 BuildDescriptorNoPrefixesPreflight(mappingSet, resource, noPrefixes),
+            // Both read paths route through the same builder, so this terminal carries the custom views
+            // configured ahead of it and its message excludes them from the unsupported list. Gating this on
+            // GET-many left GET-by-id with a bare 501 that skipped validating those views and named the
+            // resolved custom-view strategy as though it were an unsupported blocker.
             RelationalAuthorizationPlanOutcome.Plan plan
-                when operation is NamespaceAuthorizationOperation.ReadMany
-                    && RelationalReadGuardrails.HasDescriptorUnsupportedNonNamespaceStrategies(
-                        plan.NonNamespaceConfiguredStrategies
-                    ) => BuildDescriptorReadPlanPreflight(
+                when RelationalReadGuardrails.HasDescriptorUnsupportedNonNamespaceStrategies(
+                    plan.NonNamespaceConfiguredStrategies
+                ) => BuildDescriptorReadPlanPreflight(
                 mappingSet,
                 resource,
                 authorizationContext,
@@ -1840,17 +1843,6 @@ internal sealed class DescriptorReadHandler(
                     operationLabel,
                     actionLabel,
                     plan.CustomViewStrategies
-                )
-            ),
-            RelationalAuthorizationPlanOutcome.Plan plan
-                when RelationalReadGuardrails.HasDescriptorUnsupportedNonNamespaceStrategies(
-                    plan.NonNamespaceConfiguredStrategies
-                ) => new DescriptorReadAuthorizationPreflightOutcome.NotImplemented(
-                RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
-                    resource,
-                    authorizationStrategyEvaluators,
-                    operationLabel,
-                    actionLabel
                 )
             ),
             RelationalAuthorizationPlanOutcome.Plan plan => BuildDescriptorReadPlanPreflight(
@@ -1869,9 +1861,7 @@ internal sealed class DescriptorReadHandler(
                         authorizationStrategyEvaluators,
                         operationLabel,
                         actionLabel,
-                        operation is NamespaceAuthorizationOperation.ReadMany
-                            ? stillUnsupported.RelationshipClassification.SupportedCustomViewStrategies
-                            : null
+                        stillUnsupported.RelationshipClassification.SupportedCustomViewStrategies
                     )
                 ),
             RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError =>
@@ -1993,8 +1983,8 @@ internal sealed class DescriptorReadHandler(
     /// The known-but-not-enabled 501 terminal. OwnershipBased — the only known-but-not-enabled strategy —
     /// executes last per auth.md "Execution order", regardless of its configured position, so for GET-many
     /// every resolved custom view is validated before the 501 is reported, mirroring the relational query
-    /// path. That lets a missing or non-conforming view surface its own configuration failure.
-    /// Custom views are implemented for GET-many only, so other operations keep the bare 501.
+    /// path. That lets a missing or non-conforming view surface its own configuration failure. GET-by-id
+    /// carries its resolved views the same way, so neither read path reports a bare 501 over them.
     /// </summary>
     private static DescriptorReadAuthorizationPreflightOutcome BuildDescriptorReadNotImplemented(
         MappingSet mappingSet,
@@ -2292,8 +2282,8 @@ internal sealed class DescriptorReadHandler(
     /// <summary>
     /// Descriptor read authorization preflight results. Each terminal carries the custom-view checks that
     /// must be validated before it is reported — custom views are AND filters executing in CMS-configured
-    /// order, so those configured ahead of the terminal still run. The list is empty when nothing needs
-    /// validating, which is always the case outside GET-many since custom views are GET-many only.
+    /// order, so those configured ahead of the terminal still run. The list is empty when no custom view is
+    /// configured ahead of the terminal, which is the only case that needs no validation.
     /// </summary>
     private abstract record DescriptorReadAuthorizationPreflightOutcome
     {
