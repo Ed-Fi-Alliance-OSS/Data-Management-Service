@@ -46,7 +46,7 @@ public class Given_PgsqlPlanDialect
             .Be(
                 """
                 DROP TABLE IF EXISTS "page";
-                CREATE TEMP TABLE "page" ("DocumentId" bigint PRIMARY KEY) ON COMMIT DROP;
+                CREATE TEMP TABLE "page" ("DocumentId" bigint PRIMARY KEY, "Ordinal" int NULL) ON COMMIT DROP;
 
                 """
             );
@@ -72,7 +72,7 @@ public class Given_PgsqlPlanDialect
                     d."ResourceKeyId"
                 FROM "dms"."Document" d
                 INNER JOIN "page" k ON d."DocumentId" = k."DocumentId"
-                ORDER BY d."DocumentId";
+                ORDER BY COALESCE(k."Ordinal", d."DocumentId"), d."DocumentId";
 
                 """
             );

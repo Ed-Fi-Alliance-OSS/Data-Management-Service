@@ -287,6 +287,125 @@ public class Given_A_Page_With_Multiple_Documents
 
 [TestFixture]
 [NonParallelizable]
+public class Given_A_Postgresql_Selected_Page_Keyset_With_Nonascending_DocumentIds
+{
+    private NpgsqlDataSource _dataSource = null!;
+    private HydratedPage _result = null!;
+
+    private const string TestSchema = "hydselected";
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        _dataSource = NpgsqlDataSource.Create(Configuration.DatabaseConnectionString);
+
+        await using var connection = await _dataSource.OpenConnectionAsync();
+
+        await ExecuteSql(
+            connection,
+            """
+            DROP SCHEMA IF EXISTS hydselected CASCADE;
+            CREATE SCHEMA hydselected;
+            CREATE SCHEMA IF NOT EXISTS dms;
+
+            CREATE TABLE IF NOT EXISTS dms."Document" (
+                "DocumentId" bigint PRIMARY KEY,
+                "DocumentUuid" uuid NOT NULL,
+                "ResourceKeyId" smallint NOT NULL DEFAULT 0,
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "IdentityVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
+                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
+                "CreatedAt" timestamptz NOT NULL DEFAULT now()
+            );
+
+            CREATE TABLE hydselected."School" (
+                "DocumentId" bigint PRIMARY KEY,
+                "SchoolId" integer NOT NULL
+            );
+
+            CREATE TABLE hydselected."SchoolAddress" (
+                "CollectionItemId" bigint PRIMARY KEY,
+                "School_DocumentId" bigint NOT NULL REFERENCES hydselected."School"("DocumentId"),
+                "Ordinal" integer NOT NULL,
+                "City" varchar(100) NOT NULL
+            );
+
+            CREATE TABLE hydselected."SchoolAddressPeriod" (
+                "CollectionItemId" bigint PRIMARY KEY,
+                "School_DocumentId" bigint NOT NULL,
+                "ParentCollectionItemId" bigint NOT NULL REFERENCES hydselected."SchoolAddress"("CollectionItemId"),
+                "Ordinal" integer NOT NULL,
+                "BeginDate" varchar(10) NOT NULL
+            );
+            """
+        );
+
+        await ExecuteSql(
+            connection,
+            """
+            DELETE FROM dms."Document" WHERE "DocumentId" IN (701, 702, 703);
+
+            INSERT INTO dms."Document" ("DocumentId", "DocumentUuid", "ContentVersion", "IdentityVersion")
+            VALUES
+                (701, '00000000-0000-0000-0000-000000000701', 71, 71),
+                (702, '00000000-0000-0000-0000-000000000702', 72, 72),
+                (703, '00000000-0000-0000-0000-000000000703', 73, 73);
+
+            INSERT INTO hydselected."School" ("DocumentId", "SchoolId")
+            VALUES
+                (701, 701001),
+                (702, 702001),
+                (703, 703001);
+            """
+        );
+
+        var plan = HydrationTestHelper.BuildSchoolReadPlan(TestSchema, SqlDialect.Pgsql);
+        var keyset = new PageKeysetSpec.SelectedPage([702L, 701L, 703L]);
+
+        await using var hydrationConnection = await _dataSource.OpenConnectionAsync();
+        _result = await HydrationExecutor.ExecuteAsync(
+            hydrationConnection,
+            plan,
+            keyset,
+            SqlDialect.Pgsql,
+            CancellationToken.None
+        );
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_dataSource is not null)
+        {
+            await using var connection = await _dataSource.OpenConnectionAsync();
+            await ExecuteSql(
+                connection,
+                """
+                DROP SCHEMA IF EXISTS hydselected CASCADE;
+                DELETE FROM dms."Document" WHERE "DocumentId" IN (701, 702, 703);
+                """
+            );
+            await _dataSource.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_returns_document_metadata_in_selected_page_order()
+    {
+        _result.DocumentMetadata.Select(row => row.DocumentId).Should().Equal(702L, 701L, 703L);
+        _result.DocumentMetadata.Select(row => row.ContentVersion).Should().Equal(72L, 71L, 73L);
+    }
+
+    private static async Task ExecuteSql(NpgsqlConnection connection, string sql)
+    {
+        await using var cmd = new NpgsqlCommand(sql, connection);
+        await cmd.ExecuteNonQueryAsync();
+    }
+}
+
+[TestFixture]
+[NonParallelizable]
 public class Given_A_Single_DocumentId_Keyset
 {
     private NpgsqlDataSource _dataSource = null!;

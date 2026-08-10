@@ -72,7 +72,8 @@ internal interface IPlanSqlDialect
     /// <summary>
     /// Appends a <c>SELECT</c> statement that joins <c>dms.Document</c> metadata to the
     /// materialized keyset table, returning document metadata columns for the page,
-    /// ordered deterministically by <c>DocumentId</c>.
+    /// ordered by selected-page ordinal when available, otherwise deterministically by
+    /// <c>DocumentId</c>.
     /// </summary>
     /// <param name="writer">The SQL writer to append to.</param>
     /// <param name="keyset">The keyset table contract specifying table and column names.</param>

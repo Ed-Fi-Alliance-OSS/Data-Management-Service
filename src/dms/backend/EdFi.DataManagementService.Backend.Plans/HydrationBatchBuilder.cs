@@ -546,12 +546,19 @@ public static class HydrationBatchBuilder
             .AppendRelation(keyset.Table)
             .Append(" (")
             .Append(quotedDocIdCol)
+            .Append(", ")
+            .AppendQuoted(HydrationSqlConventions.SelectedPageOrdinalColumnName)
             .AppendLine(")")
             .AppendLine("VALUES");
 
         for (var index = 0; index < selectedPage.DocumentIds.Count; index++)
         {
-            writer.Append("    (").AppendParameter(SelectedPageDocumentIdParameterName(index)).Append(")");
+            writer
+                .Append("    (")
+                .AppendParameter(SelectedPageDocumentIdParameterName(index))
+                .Append(", ")
+                .AppendParameter(SelectedPageOrdinalParameterName(index))
+                .Append(")");
             writer.AppendLine(index + 1 < selectedPage.DocumentIds.Count ? "," : ";");
         }
     }
@@ -654,6 +661,7 @@ public static class HydrationBatchBuilder
                 SelectedPageDocumentIdParameterName(index),
                 selectedPage.DocumentIds[index]
             );
+            AddScalarParameter(command, SelectedPageOrdinalParameterName(index), index);
         }
     }
 
@@ -677,6 +685,8 @@ public static class HydrationBatchBuilder
     }
 
     private static string SelectedPageDocumentIdParameterName(int index) => $"selectedDocumentId_{index}";
+
+    private static string SelectedPageOrdinalParameterName(int index) => $"selectedOrdinal_{index}";
 
     private static void AddScalarParameter(DbCommand command, string bareName, object? value)
     {

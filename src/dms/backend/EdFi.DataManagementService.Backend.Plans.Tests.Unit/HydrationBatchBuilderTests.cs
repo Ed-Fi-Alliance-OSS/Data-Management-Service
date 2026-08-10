@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
+using Npgsql;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Backend.Plans.Tests.Unit.HydrationBatchBuilderTestHelper;
 
@@ -81,7 +82,7 @@ public class Given_HydrationBatchBuilder_With_Single_Keyset
             .StartWith(
                 """
                 DROP TABLE IF EXISTS "page";
-                CREATE TEMP TABLE "page" ("DocumentId" bigint PRIMARY KEY) ON COMMIT DROP;
+                CREATE TEMP TABLE "page" ("DocumentId" bigint PRIMARY KEY, "Ordinal" int NULL) ON COMMIT DROP;
 
                 INSERT INTO "page" ("DocumentId") VALUES (@DocumentId);
 
@@ -89,7 +90,11 @@ public class Given_HydrationBatchBuilder_With_Single_Keyset
                     d."DocumentId",
                 """
             );
-        _pgsqlBatch.Should().Contain("ORDER BY d.\"DocumentId\";\n\nSELECT root columns FROM root;\n\n");
+        _pgsqlBatch
+            .Should()
+            .Contain(
+                "ORDER BY COALESCE(k.\"Ordinal\", d.\"DocumentId\"), d.\"DocumentId\";\n\nSELECT root columns FROM root;\n\n"
+            );
         _pgsqlBatch.Should().Contain("SELECT root columns FROM root;\n\nSELECT child columns FROM child;\n");
 
         _mssqlBatch
@@ -151,7 +156,7 @@ public class Given_HydrationBatchBuilder_With_Single_Keyset
     [Test]
     public void It_should_emit_deterministic_order_by_on_document_metadata()
     {
-        _pgsqlBatch.Should().Contain("ORDER BY d.\"DocumentId\"");
+        _pgsqlBatch.Should().Contain("ORDER BY COALESCE(k.\"Ordinal\", d.\"DocumentId\"), d.\"DocumentId\"");
         _mssqlBatch.Should().Contain("ORDER BY COALESCE(k.[Ordinal], d.[DocumentId]), d.[DocumentId]");
     }
 
@@ -182,6 +187,54 @@ public class Given_HydrationBatchBuilder_With_Single_Keyset
         docMetadataIndex.Should().BePositive();
         rootSelectIndex.Should().BeGreaterThan(docMetadataIndex);
         childSelectIndex.Should().BeGreaterThan(rootSelectIndex);
+    }
+}
+
+[TestFixture]
+public class Given_HydrationBatchBuilder_With_Pgsql_Selected_Page_Keyset
+{
+    private readonly long[] _documentIds = [300L, 100L, 200L];
+    private string _batch = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _batch = HydrationBatchBuilder.Build(
+            BuildTestReadPlan(SqlDialect.Pgsql),
+            new PageKeysetSpec.SelectedPage(_documentIds),
+            SqlDialect.Pgsql
+        );
+    }
+
+    [Test]
+    public void It_should_materialize_the_selected_page_with_zero_based_ordinals()
+    {
+        _batch
+            .Should()
+            .Contain(
+                "CREATE TEMP TABLE \"page\" (\"DocumentId\" bigint PRIMARY KEY, \"Ordinal\" int NULL) ON COMMIT DROP;"
+            );
+        _batch.Should().Contain("INSERT INTO \"page\" (\"DocumentId\", \"Ordinal\")");
+        _batch.Should().Contain("(@selectedDocumentId_0, @selectedOrdinal_0)");
+        _batch.Should().Contain("(@selectedDocumentId_1, @selectedOrdinal_1)");
+        _batch.Should().Contain("(@selectedDocumentId_2, @selectedOrdinal_2)");
+        _batch.Should().Contain("ORDER BY COALESCE(k.\"Ordinal\", d.\"DocumentId\"), d.\"DocumentId\";");
+    }
+
+    [Test]
+    public void It_should_bind_selected_page_document_ids_and_ordinals()
+    {
+        using var command = new NpgsqlCommand();
+
+        HydrationBatchBuilder.AddParameters(command, new PageKeysetSpec.SelectedPage(_documentIds));
+
+        command.Parameters.Count.Should().Be(6);
+        command.Parameters["@selectedDocumentId_0"].Value.Should().Be(300L);
+        command.Parameters["@selectedOrdinal_0"].Value.Should().Be(0);
+        command.Parameters["@selectedDocumentId_1"].Value.Should().Be(100L);
+        command.Parameters["@selectedOrdinal_1"].Value.Should().Be(1);
+        command.Parameters["@selectedDocumentId_2"].Value.Should().Be(200L);
+        command.Parameters["@selectedOrdinal_2"].Value.Should().Be(2);
     }
 }
 
@@ -878,7 +931,7 @@ public class Given_HydrationBatchBuilder_With_Query_Keyset
             .StartWith(
                 """
                 DROP TABLE IF EXISTS "page";
-                CREATE TEMP TABLE "page" ("DocumentId" bigint PRIMARY KEY) ON COMMIT DROP;
+                CREATE TEMP TABLE "page" ("DocumentId" bigint PRIMARY KEY, "Ordinal" int NULL) ON COMMIT DROP;
 
                 WITH page_ids AS (
                 SELECT r."DocumentId" FROM "edfi"."School" r ORDER BY r."DocumentId" LIMIT @limit OFFSET @offset

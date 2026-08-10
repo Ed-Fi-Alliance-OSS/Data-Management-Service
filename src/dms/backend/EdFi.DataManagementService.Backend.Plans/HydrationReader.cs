@@ -56,7 +56,10 @@ public static class HydrationReader
     /// </remarks>
     /// <param name="reader">The data reader positioned at the document metadata result set.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>List of document metadata rows ordered by DocumentId.</returns>
+    /// <returns>
+    /// List of document metadata rows ordered by selected-page ordinal when supplied, otherwise by
+    /// DocumentId.
+    /// </returns>
     public static async Task<List<DocumentMetadataRow>> ReadDocumentMetadataAsync(
         DbDataReader reader,
         CancellationToken ct

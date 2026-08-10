@@ -82,7 +82,9 @@ internal sealed class PgsqlPlanDialect : IPlanSqlDialect
             .AppendRelation(keyset.Table)
             .Append(" (")
             .AppendQuoted(keyset.DocumentIdColumnName.Value)
-            .AppendLine(" bigint PRIMARY KEY) ON COMMIT DROP;");
+            .Append(" bigint PRIMARY KEY, ")
+            .AppendQuoted(HydrationSqlConventions.SelectedPageOrdinalColumnName)
+            .AppendLine(" int NULL) ON COMMIT DROP;");
     }
 
     /// <inheritdoc />
@@ -91,7 +93,12 @@ internal sealed class PgsqlPlanDialect : IPlanSqlDialect
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(keyset);
 
-        DocumentMetadataColumns.AppendDocumentMetadataSelectBody(writer, keyset, DocumentTable);
+        DocumentMetadataColumns.AppendDocumentMetadataSelectBody(
+            writer,
+            keyset,
+            DocumentTable,
+            HydrationSqlConventions.SelectedPageOrdinalColumnName
+        );
     }
 
     /// <inheritdoc />
