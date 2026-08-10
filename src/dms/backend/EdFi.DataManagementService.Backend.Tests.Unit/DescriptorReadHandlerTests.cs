@@ -133,8 +133,11 @@ public class Given_DescriptorReadHandler
             .MustHaveHappenedOnceExactly();
     }
 
-    [Test]
-    public async Task It_reexecutes_descriptor_get_relational_fallback_after_cache_lookup_miss()
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_reexecutes_descriptor_get_relational_fallback_after_cache_lookup_miss(
+        SqlDialect dialect
+    )
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-121212121212"));
         var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
@@ -183,7 +186,7 @@ public class Given_DescriptorReadHandler
 
         var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
 
-        var result = await sut.HandleGetByIdAsync(CreateRequest(SqlDialect.Pgsql, documentUuid));
+        var result = await sut.HandleGetByIdAsync(CreateRequest(dialect, documentUuid));
 
         var success = result.Should().BeOfType<GetResult.GetSuccess>().Subject;
         success.EdfiDoc["shortDescription"]!.GetValue<string>().Should().Be("After fallback");
@@ -191,6 +194,11 @@ public class Given_DescriptorReadHandler
         commandExecutor.Commands.Should().HaveCount(2);
         AssertDescriptorCandidateCommandOmitsBodyColumns(commandExecutor.Commands[0]);
         AssertDescriptorMaterializationCommandSelectsBodyColumns(commandExecutor.Commands[1]);
+        AssertDescriptorReadCommandsShareScaffolding(
+            commandExecutor.Commands[0],
+            commandExecutor.Commands[1],
+            "document"
+        );
     }
 
     [Test]
@@ -1295,6 +1303,83 @@ public class Given_DescriptorReadHandler
         commandExecutor.Commands[0].CommandText.Should().Contain(expectedOrderByFragment);
     }
 
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_uses_the_same_descriptor_query_scaffolding_for_candidate_and_full_row_projections(
+        SqlDialect dialect
+    )
+    {
+        var documentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-292929292929");
+        var fullRowCommandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 1))),
+                InMemoryRelationalResultSet.Create(CreateDescriptorRow(documentUuid)),
+            ]),
+        ]);
+        var candidateCommandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 1))),
+                InMemoryRelationalResultSet.Create(CreateDescriptorRow(documentUuid)),
+            ]),
+        ]);
+        var request = CreateQueryRequest(
+            dialect,
+            queryElements:
+            [
+                CreateQueryElement(
+                    "namespace",
+                    "$.namespace",
+                    "uri://ed-fi.org/SchoolTypeDescriptor",
+                    "string"
+                ),
+            ],
+            totalCount: true
+        );
+        var fullRowHandler = CreateHandler(fullRowCommandExecutor);
+
+        QueryResult fullRowResult = await fullRowHandler.HandleQueryAsync(request);
+
+        var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(async call =>
+            {
+                var readAccelerationRequest = call.GetArgument<DocumentCacheReadAccelerationQueryRequest>(0)!;
+                var cancellationToken = call.GetArgument<CancellationToken>(1);
+                var selectionResult = await readAccelerationRequest
+                    .SelectAuthorizedCandidatePage(cancellationToken)
+                    .ConfigureAwait(false);
+                selectionResult
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage>();
+
+                return new QueryResult.QuerySuccess([], TotalCount: null);
+            });
+        var candidateHandler = CreateHandler(
+            candidateCommandExecutor,
+            readAccelerationCoordinator: readAccelerationCoordinator
+        );
+
+        QueryResult candidateResult = await candidateHandler.HandleQueryAsync(request);
+
+        fullRowResult.Should().BeOfType<QueryResult.QuerySuccess>();
+        candidateResult.Should().BeOfType<QueryResult.QuerySuccess>();
+        RelationalCommand fullRowCommand = fullRowCommandExecutor.Commands.Should().ContainSingle().Subject;
+        RelationalCommand candidateCommand = candidateCommandExecutor
+            .Commands.Should()
+            .ContainSingle()
+            .Subject;
+        candidateCommand.CommandText.Should().Contain("COUNT(1)");
+        fullRowCommand.CommandText.Should().Contain("COUNT(1)");
+        AssertDescriptorCandidateCommandOmitsBodyColumns(candidateCommand);
+        AssertDescriptorMaterializationCommandSelectsBodyColumns(fullRowCommand);
+        AssertDescriptorReadCommandsShareScaffolding(candidateCommand, fullRowCommand, "page_document_ids");
+    }
+
     [Test]
     public async Task It_does_not_fail_when_total_count_is_requested_and_a_corrupt_descriptor_document_is_outside_the_selected_page()
     {
@@ -2091,6 +2176,19 @@ public class Given_DescriptorReadHandler
 
     private static void AssertDescriptorCandidateCommandOmitsBodyColumns(RelationalCommand command)
     {
+        AssertDescriptorProjectionSelectsColumns(
+            command,
+            [
+                "DocumentId",
+                "DocumentUuid",
+                "ContentVersion",
+                "ContentLastModifiedAt",
+                "ResourceKeyId",
+                "Namespace",
+                "CodeValue",
+                "Discriminator",
+            ]
+        );
         command.CommandText.Should().NotContain("\"ShortDescription\"");
         command.CommandText.Should().NotContain("[ShortDescription]");
         command.CommandText.Should().NotContain("descriptor.\"Description\"");
@@ -2103,9 +2201,89 @@ public class Given_DescriptorReadHandler
 
     private static void AssertDescriptorMaterializationCommandSelectsBodyColumns(RelationalCommand command)
     {
-        command.CommandText.Should().Contain("ShortDescription");
-        command.CommandText.Should().Contain("EffectiveBeginDate");
-        command.CommandText.Should().Contain("EffectiveEndDate");
+        AssertDescriptorProjectionSelectsColumns(
+            command,
+            [
+                "DocumentId",
+                "DocumentUuid",
+                "ContentVersion",
+                "ContentLastModifiedAt",
+                "ResourceKeyId",
+                "Namespace",
+                "CodeValue",
+                "ShortDescription",
+                "Description",
+                "EffectiveBeginDate",
+                "EffectiveEndDate",
+                "Discriminator",
+            ]
+        );
+    }
+
+    private static void AssertDescriptorProjectionSelectsColumns(
+        RelationalCommand command,
+        IReadOnlyList<string> columnNames
+    )
+    {
+        foreach (string columnName in columnNames)
+        {
+            bool selectsColumn =
+                command.CommandText.Contains($"AS \"{columnName}\"", StringComparison.Ordinal)
+                || command.CommandText.Contains($"AS [{columnName}]", StringComparison.Ordinal);
+
+            selectsColumn.Should().BeTrue($"the descriptor projection should select {columnName}");
+        }
+    }
+
+    private static void AssertDescriptorReadCommandsShareScaffolding(
+        RelationalCommand candidateCommand,
+        RelationalCommand fullRowCommand,
+        string documentIdSourceAlias
+    )
+    {
+        RemoveDescriptorProjection(candidateCommand.CommandText, documentIdSourceAlias)
+            .Should()
+            .Be(RemoveDescriptorProjection(fullRowCommand.CommandText, documentIdSourceAlias));
+        candidateCommand
+            .Parameters.Select(parameter =>
+                (parameter.Name, parameter.Value, HasConfiguration: parameter.ConfigureParameter is not null)
+            )
+            .Should()
+            .Equal(
+                fullRowCommand.Parameters.Select(parameter =>
+                    (
+                        parameter.Name,
+                        parameter.Value,
+                        HasConfiguration: parameter.ConfigureParameter is not null
+                    )
+                )
+            );
+    }
+
+    private static string RemoveDescriptorProjection(string commandText, string documentIdSourceAlias)
+    {
+        string documentIdProjection = commandText.Contains(
+            $"{documentIdSourceAlias}.\"DocumentId\" AS \"DocumentId\"",
+            StringComparison.Ordinal
+        )
+            ? $"{documentIdSourceAlias}.\"DocumentId\" AS \"DocumentId\""
+            : $"{documentIdSourceAlias}.[DocumentId] AS [DocumentId]";
+        int documentIdProjectionIndex = commandText.IndexOf(documentIdProjection, StringComparison.Ordinal);
+        documentIdProjectionIndex.Should().BeGreaterThanOrEqualTo(0);
+        int selectIndex = commandText.LastIndexOf(
+            "SELECT",
+            documentIdProjectionIndex,
+            StringComparison.Ordinal
+        );
+        selectIndex.Should().BeGreaterThanOrEqualTo(0);
+        int fromIndex = commandText.IndexOf(
+            $"{Environment.NewLine}FROM ",
+            documentIdProjectionIndex,
+            StringComparison.Ordinal
+        );
+        fromIndex.Should().BeGreaterThan(documentIdProjectionIndex);
+
+        return commandText[..(selectIndex + "SELECT".Length)] + commandText[fromIndex..];
     }
 
     private static QueryElement CreateQueryElement(

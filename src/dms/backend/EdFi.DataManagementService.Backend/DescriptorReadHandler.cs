@@ -39,6 +39,12 @@ internal sealed class DescriptorReadHandler(
     private const string ResourceKeyIdParameterName = "@resourceKeyId";
     private const string SelectedDocumentIdParameterPrefix = "@selectedDocumentId";
 
+    private enum DescriptorRowProjection
+    {
+        CandidateMetadata,
+        FullRow,
+    }
+
     // The descriptor page query binds a single ResourceKeyId discriminator parameter on top of the paging
     // parameters; see DescriptorQueryPageKeysetPlanner. Counted into the non-authorization parameter budget.
     private const int DescriptorQueryResourceKeyParameterCount = 1;
@@ -55,23 +61,14 @@ internal sealed class DescriptorReadHandler(
     private readonly IDocumentCacheReadAccelerationCoordinator _readAccelerationCoordinator =
         readAccelerationCoordinator ?? PassthroughDocumentCacheReadAccelerationCoordinator.Instance;
 
-    private abstract record DescriptorGetByIdNoCacheReadResult
+    private abstract record DescriptorGetByIdReadResult<TRow>
+        where TRow : class, IDescriptorReadCandidateMetadata
     {
-        private DescriptorGetByIdNoCacheReadResult() { }
+        private DescriptorGetByIdReadResult() { }
 
-        public sealed record Complete(GetResult Result) : DescriptorGetByIdNoCacheReadResult;
+        public sealed record Complete(GetResult Result) : DescriptorGetByIdReadResult<TRow>;
 
-        public sealed record AuthorizedRow(DescriptorReadRow Row) : DescriptorGetByIdNoCacheReadResult;
-    }
-
-    private abstract record DescriptorGetByIdCandidateSelectionReadResult
-    {
-        private DescriptorGetByIdCandidateSelectionReadResult() { }
-
-        public sealed record Complete(GetResult Result) : DescriptorGetByIdCandidateSelectionReadResult;
-
-        public sealed record AuthorizedRow(DescriptorReadCandidateRow Row)
-            : DescriptorGetByIdCandidateSelectionReadResult;
+        public sealed record AuthorizedRow(TRow Row) : DescriptorGetByIdReadResult<TRow>;
     }
 
     private abstract record DescriptorQueryNoCacheReadResult
@@ -154,19 +151,19 @@ internal sealed class DescriptorReadHandler(
         CancellationToken cancellationToken
     )
     {
-        DescriptorGetByIdNoCacheReadResult noCacheReadResult = await ReadGetByIdNoCacheAsync(
+        DescriptorGetByIdReadResult<DescriptorReadRow> noCacheReadResult = await ReadGetByIdAsync(
                 request,
+                DescriptorRowProjection.FullRow,
+                DescriptorReadRowReader.ReadSingleOrDefaultAsync,
                 cancellationToken
             )
             .ConfigureAwait(false);
 
         return noCacheReadResult switch
         {
-            DescriptorGetByIdNoCacheReadResult.Complete complete => complete.Result,
-            DescriptorGetByIdNoCacheReadResult.AuthorizedRow authorizedRow => MaterializeDescriptorGetSuccess(
-                request,
-                authorizedRow.Row
-            ),
+            DescriptorGetByIdReadResult<DescriptorReadRow>.Complete complete => complete.Result,
+            DescriptorGetByIdReadResult<DescriptorReadRow>.AuthorizedRow authorizedRow =>
+                MaterializeDescriptorGetSuccess(request, authorizedRow.Row),
             _ => throw new InvalidOperationException(
                 $"Unsupported descriptor GET no-cache read result '{noCacheReadResult.GetType().Name}'."
             ),
@@ -178,18 +175,21 @@ internal sealed class DescriptorReadHandler(
         CancellationToken cancellationToken
     )
     {
-        DescriptorGetByIdCandidateSelectionReadResult candidateReadResult = await ReadGetByIdCandidateAsync(
+        DescriptorGetByIdReadResult<DescriptorReadCandidateRow> candidateReadResult = await ReadGetByIdAsync(
                 request,
+                DescriptorRowProjection.CandidateMetadata,
+                DescriptorReadRowReader.ReadSingleCandidateOrDefaultAsync,
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        if (candidateReadResult is DescriptorGetByIdCandidateSelectionReadResult.Complete complete)
+        if (candidateReadResult is DescriptorGetByIdReadResult<DescriptorReadCandidateRow>.Complete complete)
         {
             return new DocumentCacheReadAccelerationGetByIdSelectionResult.Complete(complete.Result);
         }
 
-        var authorizedRow = (DescriptorGetByIdCandidateSelectionReadResult.AuthorizedRow)candidateReadResult;
+        var authorizedRow =
+            (DescriptorGetByIdReadResult<DescriptorReadCandidateRow>.AuthorizedRow)candidateReadResult;
 
         return new DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate(
             CreateDescriptorReadAccelerationCandidate(authorizedRow.Row),
@@ -197,113 +197,23 @@ internal sealed class DescriptorReadHandler(
         );
     }
 
-    private async Task<DescriptorGetByIdCandidateSelectionReadResult> ReadGetByIdCandidateAsync(
+    private async Task<DescriptorGetByIdReadResult<TRow>> ReadGetByIdAsync<TRow>(
         DescriptorGetByIdRequest request,
+        DescriptorRowProjection projection,
+        Func<IRelationalCommandReader, CancellationToken, Task<TRow?>> readSingleOrDefaultAsync,
         CancellationToken cancellationToken
     )
+        where TRow : class, IDescriptorReadCandidateMetadata
     {
         ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(readSingleOrDefaultAsync);
         cancellationToken.ThrowIfCancellationRequested();
 
         var authorizationResult = ResolveGetByIdAuthorizationPreflight(request);
 
         if (authorizationResult.CompleteResult is not null)
         {
-            return new DescriptorGetByIdCandidateSelectionReadResult.Complete(
-                authorizationResult.CompleteResult
-            );
-        }
-
-        RelationalCommand command;
-
-        try
-        {
-            command = BuildGetByIdCandidateCommand(
-                request.MappingSet.Key.Dialect,
-                request.DocumentUuid,
-                RelationalWriteSupport.GetResourceKeyIdOrThrow(request.MappingSet, request.Resource)
-            );
-        }
-        catch (NotSupportedException ex)
-        {
-            return new DescriptorGetByIdCandidateSelectionReadResult.Complete(
-                new GetResult.UnknownFailure(ex.Message)
-            );
-        }
-        catch (InvalidOperationException ex)
-        {
-            return new DescriptorGetByIdCandidateSelectionReadResult.Complete(
-                new GetResult.UnknownFailure(ex.Message)
-            );
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return new DescriptorGetByIdCandidateSelectionReadResult.Complete(
-                new GetResult.UnknownFailure(ex.Message)
-            );
-        }
-
-        DescriptorReadCandidateRow? descriptorRow;
-
-        try
-        {
-            descriptorRow = await _commandExecutor
-                .ExecuteReaderAsync(
-                    command,
-                    DescriptorReadRowReader.ReadSingleCandidateOrDefaultAsync,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
-        catch (DescriptorReadInvariantException ex)
-        {
-            return new DescriptorGetByIdCandidateSelectionReadResult.Complete(
-                new GetResult.UnknownFailure(ex.Message)
-            );
-        }
-        catch (InvalidOperationException ex)
-        {
-            return new DescriptorGetByIdCandidateSelectionReadResult.Complete(
-                new GetResult.UnknownFailure(ex.Message)
-            );
-        }
-
-        if (descriptorRow is null)
-        {
-            return new DescriptorGetByIdCandidateSelectionReadResult.Complete(
-                new GetResult.GetFailureNotExists()
-            );
-        }
-
-        if (
-            ValidateGetByIdDescriptorCandidate(
-                descriptorRow,
-                authorizationResult.NamespacePrefixParameterization
-            ) is
-            { } terminal
-        )
-        {
-            return new DescriptorGetByIdCandidateSelectionReadResult.Complete(terminal);
-        }
-
-        LogDiscriminatorMismatchIfPresent(request, descriptorRow);
-
-        return new DescriptorGetByIdCandidateSelectionReadResult.AuthorizedRow(descriptorRow);
-    }
-
-    private async Task<DescriptorGetByIdNoCacheReadResult> ReadGetByIdNoCacheAsync(
-        DescriptorGetByIdRequest request,
-        CancellationToken cancellationToken
-    )
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var authorizationResult = ResolveGetByIdAuthorizationPreflight(request);
-
-        if (authorizationResult.CompleteResult is not null)
-        {
-            return new DescriptorGetByIdNoCacheReadResult.Complete(authorizationResult.CompleteResult);
+            return new DescriptorGetByIdReadResult<TRow>.Complete(authorizationResult.CompleteResult);
         }
 
         RelationalCommand command;
@@ -313,53 +223,45 @@ internal sealed class DescriptorReadHandler(
             command = BuildGetByIdCommand(
                 request.MappingSet.Key.Dialect,
                 request.DocumentUuid,
-                RelationalWriteSupport.GetResourceKeyIdOrThrow(request.MappingSet, request.Resource)
+                RelationalWriteSupport.GetResourceKeyIdOrThrow(request.MappingSet, request.Resource),
+                projection
             );
         }
         catch (NotSupportedException ex)
         {
-            return new DescriptorGetByIdNoCacheReadResult.Complete(new GetResult.UnknownFailure(ex.Message));
+            return new DescriptorGetByIdReadResult<TRow>.Complete(new GetResult.UnknownFailure(ex.Message));
         }
         catch (InvalidOperationException ex)
         {
-            return new DescriptorGetByIdNoCacheReadResult.Complete(new GetResult.UnknownFailure(ex.Message));
+            return new DescriptorGetByIdReadResult<TRow>.Complete(new GetResult.UnknownFailure(ex.Message));
         }
         catch (KeyNotFoundException ex)
         {
-            return new DescriptorGetByIdNoCacheReadResult.Complete(new GetResult.UnknownFailure(ex.Message));
+            return new DescriptorGetByIdReadResult<TRow>.Complete(new GetResult.UnknownFailure(ex.Message));
         }
 
-        DescriptorReadRow? descriptorRow;
+        TRow? descriptorRow;
 
         try
         {
             descriptorRow = await _commandExecutor
-                .ExecuteReaderAsync(
-                    command,
-                    DescriptorReadRowReader.ReadSingleOrDefaultAsync,
-                    cancellationToken
-                )
+                .ExecuteReaderAsync(command, readSingleOrDefaultAsync, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (DescriptorReadInvariantException ex)
         {
-            return new DescriptorGetByIdNoCacheReadResult.Complete(new GetResult.UnknownFailure(ex.Message));
+            return new DescriptorGetByIdReadResult<TRow>.Complete(new GetResult.UnknownFailure(ex.Message));
         }
         catch (InvalidOperationException ex)
         {
-            return new DescriptorGetByIdNoCacheReadResult.Complete(new GetResult.UnknownFailure(ex.Message));
+            return new DescriptorGetByIdReadResult<TRow>.Complete(new GetResult.UnknownFailure(ex.Message));
         }
 
         if (descriptorRow is null)
         {
-            return new DescriptorGetByIdNoCacheReadResult.Complete(new GetResult.GetFailureNotExists());
+            return new DescriptorGetByIdReadResult<TRow>.Complete(new GetResult.GetFailureNotExists());
         }
 
-        // The descriptor row reader emits the same Namespace column the orchestrator resolved as
-        // the stored authorization source, so the namespace check runs against that materialized
-        // value without a second SQL roundtrip. The stored-namespace mismatch and uninitialized
-        // failure kinds are constructed directly here because no AUTH1 codec mediates the
-        // single-record path.
         if (
             ValidateGetByIdDescriptorCandidate(
                 descriptorRow,
@@ -368,12 +270,12 @@ internal sealed class DescriptorReadHandler(
             { } terminal
         )
         {
-            return new DescriptorGetByIdNoCacheReadResult.Complete(terminal);
+            return new DescriptorGetByIdReadResult<TRow>.Complete(terminal);
         }
 
         LogDiscriminatorMismatchIfPresent(request, descriptorRow);
 
-        return new DescriptorGetByIdNoCacheReadResult.AuthorizedRow(descriptorRow);
+        return new DescriptorGetByIdReadResult<TRow>.AuthorizedRow(descriptorRow);
     }
 
     private sealed record DescriptorGetByIdAuthorizationResult(
@@ -1138,7 +1040,11 @@ internal sealed class DescriptorReadHandler(
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(plannedQuery);
 
-        var command = BuildQueryCommand(request.MappingSet.Key.Dialect, plannedQuery);
+        var command = BuildQueryCommand(
+            request.MappingSet.Key.Dialect,
+            plannedQuery,
+            DescriptorRowProjection.FullRow
+        );
 
         return _commandExecutor.ExecuteReaderAsync(
             command,
@@ -1156,7 +1062,11 @@ internal sealed class DescriptorReadHandler(
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(plannedQuery);
 
-        var command = BuildQueryCandidateCommand(request.MappingSet.Key.Dialect, plannedQuery);
+        var command = BuildQueryCommand(
+            request.MappingSet.Key.Dialect,
+            plannedQuery,
+            DescriptorRowProjection.CandidateMetadata
+        );
 
         return _commandExecutor.ExecuteReaderAsync(
             command,
@@ -1338,29 +1248,18 @@ internal sealed class DescriptorReadHandler(
             request.ResponseContentCoding
         );
 
-    private static RelationalCommand BuildQueryCommand(SqlDialect dialect, PageKeysetSpec.Query plannedQuery)
-    {
-        ArgumentNullException.ThrowIfNull(plannedQuery);
-
-        var pageRowsSql = BuildPageRowsSql(dialect, plannedQuery.Plan.PageDocumentIdSql);
-        var commandText = plannedQuery.Plan.TotalCountSql is null
-            ? pageRowsSql
-            : $"{PlanSqlStatementText.AsTerminatedStatement(plannedQuery.Plan.TotalCountSql)}{Environment.NewLine}{Environment.NewLine}{pageRowsSql}";
-
-        return new RelationalCommand(commandText, BuildQueryParameters(plannedQuery));
-    }
-
-    private static RelationalCommand BuildQueryCandidateCommand(
+    private static RelationalCommand BuildQueryCommand(
         SqlDialect dialect,
-        PageKeysetSpec.Query plannedQuery
+        PageKeysetSpec.Query plannedQuery,
+        DescriptorRowProjection projection
     )
     {
         ArgumentNullException.ThrowIfNull(plannedQuery);
 
-        var pageRowsSql = BuildPageCandidateRowsSql(dialect, plannedQuery.Plan.PageDocumentIdSql);
+        var pageRowsSql = BuildPageRowsSql(dialect, plannedQuery.Plan.PageDocumentIdSql, projection);
         var commandText = plannedQuery.Plan.TotalCountSql is null
             ? pageRowsSql
-            : $"{EnsureTrailingSemicolon(plannedQuery.Plan.TotalCountSql)}{Environment.NewLine}{Environment.NewLine}{pageRowsSql}";
+            : $"{PlanSqlStatementText.AsTerminatedStatement(plannedQuery.Plan.TotalCountSql)}{Environment.NewLine}{Environment.NewLine}{pageRowsSql}";
 
         return new RelationalCommand(commandText, BuildQueryParameters(plannedQuery));
     }
@@ -1513,9 +1412,14 @@ internal sealed class DescriptorReadHandler(
         return Convert.ToInt64(totalCountValue, CultureInfo.InvariantCulture);
     }
 
-    private static string BuildPageRowsSql(SqlDialect dialect, string pageDocumentIdSql)
+    private static string BuildPageRowsSql(
+        SqlDialect dialect,
+        string pageDocumentIdSql,
+        DescriptorRowProjection projection
+    )
     {
         var pageDocumentIdSqlBody = PlanSqlStatementText.AsEmbeddableBody(pageDocumentIdSql);
+        var projectionSql = BuildDescriptorProjectionSql(dialect, "page_document_ids", projection);
 
         // The shared page compiler intentionally returns only a DocumentId keyset. Descriptor queries
         // root on dms.Descriptor, so this performs a page-sized PK lookup instead of widening that contract.
@@ -1523,18 +1427,7 @@ internal sealed class DescriptorReadHandler(
         {
             SqlDialect.Pgsql => $$"""
                 SELECT
-                    page_document_ids."DocumentId" AS "DocumentId",
-                    document."DocumentUuid" AS "DocumentUuid",
-                    document."ContentVersion" AS "ContentVersion",
-                    document."ContentLastModifiedAt" AS "ContentLastModifiedAt",
-                    document."ResourceKeyId" AS "ResourceKeyId",
-                    descriptor."Namespace" AS "Namespace",
-                    descriptor."CodeValue" AS "CodeValue",
-                    descriptor."ShortDescription" AS "ShortDescription",
-                    descriptor."Description" AS "Description",
-                    descriptor."EffectiveBeginDate" AS "EffectiveBeginDate",
-                    descriptor."EffectiveEndDate" AS "EffectiveEndDate",
-                    descriptor."Discriminator" AS "Discriminator"
+                {{projectionSql}}
                 FROM (
                 {{pageDocumentIdSqlBody}}
                 ) page_document_ids
@@ -1546,18 +1439,7 @@ internal sealed class DescriptorReadHandler(
                 """,
             SqlDialect.Mssql => $$"""
                 SELECT
-                    page_document_ids.[DocumentId] AS [DocumentId],
-                    document.[DocumentUuid] AS [DocumentUuid],
-                    document.[ContentVersion] AS [ContentVersion],
-                    document.[ContentLastModifiedAt] AS [ContentLastModifiedAt],
-                    document.[ResourceKeyId] AS [ResourceKeyId],
-                    descriptor.[Namespace] AS [Namespace],
-                    descriptor.[CodeValue] AS [CodeValue],
-                    descriptor.[ShortDescription] AS [ShortDescription],
-                    descriptor.[Description] AS [Description],
-                    descriptor.[EffectiveBeginDate] AS [EffectiveBeginDate],
-                    descriptor.[EffectiveEndDate] AS [EffectiveEndDate],
-                    descriptor.[Discriminator] AS [Discriminator]
+                {{projectionSql}}
                 FROM (
                 {{pageDocumentIdSqlBody}}
                 ) page_document_ids
@@ -1568,60 +1450,68 @@ internal sealed class DescriptorReadHandler(
                 ORDER BY page_document_ids.[DocumentId] ASC;
                 """,
             _ => throw new NotSupportedException(
-                $"Relational descriptor GET-many row retrieval does not support SQL dialect '{dialect}'."
+                $"Relational descriptor GET-many retrieval does not support SQL dialect '{dialect}'."
             ),
         };
     }
 
-    private static string BuildPageCandidateRowsSql(SqlDialect dialect, string pageDocumentIdSql)
+    private static string BuildDescriptorProjectionSql(
+        SqlDialect dialect,
+        string documentIdSourceAlias,
+        DescriptorRowProjection projection
+    )
     {
-        var pageDocumentIdSqlBody = StripTrailingSemicolon(pageDocumentIdSql);
+        ArgumentException.ThrowIfNullOrWhiteSpace(documentIdSourceAlias);
 
-        return dialect switch
+        List<(string SourceAlias, string ColumnName)> columns =
+        [
+            (documentIdSourceAlias, "DocumentId"),
+            ("document", "DocumentUuid"),
+            ("document", "ContentVersion"),
+            ("document", "ContentLastModifiedAt"),
+            ("document", "ResourceKeyId"),
+            ("descriptor", "Namespace"),
+            ("descriptor", "CodeValue"),
+        ];
+
+        columns.AddRange(
+            projection switch
+            {
+                DescriptorRowProjection.CandidateMetadata => [],
+                DescriptorRowProjection.FullRow =>
+                [
+                    ("descriptor", "ShortDescription"),
+                    ("descriptor", "Description"),
+                    ("descriptor", "EffectiveBeginDate"),
+                    ("descriptor", "EffectiveEndDate"),
+                ],
+                _ => throw new ArgumentOutOfRangeException(
+                    nameof(projection),
+                    projection,
+                    "Unsupported descriptor row projection."
+                ),
+            }
+        );
+
+        columns.Add(("descriptor", "Discriminator"));
+
+        return string.Join(
+            $",{Environment.NewLine}",
+            columns.Select(column =>
+                $"    {column.SourceAlias}.{QuoteIdentifier(dialect, column.ColumnName)} AS {QuoteIdentifier(dialect, column.ColumnName)}"
+            )
+        );
+    }
+
+    private static string QuoteIdentifier(SqlDialect dialect, string identifier) =>
+        dialect switch
         {
-            SqlDialect.Pgsql => $$"""
-                SELECT
-                    page_document_ids."DocumentId" AS "DocumentId",
-                    document."DocumentUuid" AS "DocumentUuid",
-                    document."ContentVersion" AS "ContentVersion",
-                    document."ContentLastModifiedAt" AS "ContentLastModifiedAt",
-                    document."ResourceKeyId" AS "ResourceKeyId",
-                    descriptor."Namespace" AS "Namespace",
-                    descriptor."CodeValue" AS "CodeValue",
-                    descriptor."Discriminator" AS "Discriminator"
-                FROM (
-                {{pageDocumentIdSqlBody}}
-                ) page_document_ids
-                INNER JOIN dms."Document" document
-                    ON document."DocumentId" = page_document_ids."DocumentId"
-                LEFT JOIN dms."Descriptor" descriptor
-                    ON descriptor."DocumentId" = page_document_ids."DocumentId"
-                ORDER BY page_document_ids."DocumentId" ASC;
-                """,
-            SqlDialect.Mssql => $$"""
-                SELECT
-                    page_document_ids.[DocumentId] AS [DocumentId],
-                    document.[DocumentUuid] AS [DocumentUuid],
-                    document.[ContentVersion] AS [ContentVersion],
-                    document.[ContentLastModifiedAt] AS [ContentLastModifiedAt],
-                    document.[ResourceKeyId] AS [ResourceKeyId],
-                    descriptor.[Namespace] AS [Namespace],
-                    descriptor.[CodeValue] AS [CodeValue],
-                    descriptor.[Discriminator] AS [Discriminator]
-                FROM (
-                {{pageDocumentIdSqlBody}}
-                ) page_document_ids
-                INNER JOIN [dms].[Document] document
-                    ON document.[DocumentId] = page_document_ids.[DocumentId]
-                LEFT JOIN [dms].[Descriptor] descriptor
-                    ON descriptor.[DocumentId] = page_document_ids.[DocumentId]
-                ORDER BY page_document_ids.[DocumentId] ASC;
-                """,
+            SqlDialect.Pgsql => $"\"{identifier}\"",
+            SqlDialect.Mssql => $"[{identifier}]",
             _ => throw new NotSupportedException(
-                $"Relational descriptor GET-many candidate retrieval does not support SQL dialect '{dialect}'."
+                $"Relational descriptor projection does not support SQL dialect '{dialect}'."
             ),
         };
-    }
 
     private static RelationalCommand BuildSelectedQueryRowsCommand(
         SqlDialect dialect,
@@ -2339,7 +2229,8 @@ internal sealed class DescriptorReadHandler(
     private static RelationalCommand BuildGetByIdCommand(
         SqlDialect dialect,
         DocumentUuid documentUuid,
-        short resourceKeyId
+        short resourceKeyId,
+        DescriptorRowProjection projection
     )
     {
         IReadOnlyList<RelationalParameter> parameters =
@@ -2347,24 +2238,14 @@ internal sealed class DescriptorReadHandler(
             new(DocumentUuidParameterName, documentUuid.Value),
             new(ResourceKeyIdParameterName, resourceKeyId),
         ];
+        var projectionSql = BuildDescriptorProjectionSql(dialect, "document", projection);
 
         return dialect switch
         {
-            SqlDialect.Pgsql => new RelationalCommand(
-                """
+            SqlDialect.Pgsql => new(
+                $$"""
                 SELECT
-                    document."DocumentId" AS "DocumentId",
-                    document."DocumentUuid" AS "DocumentUuid",
-                    document."ContentVersion" AS "ContentVersion",
-                    document."ContentLastModifiedAt" AS "ContentLastModifiedAt",
-                    document."ResourceKeyId" AS "ResourceKeyId",
-                    descriptor."Namespace" AS "Namespace",
-                    descriptor."CodeValue" AS "CodeValue",
-                    descriptor."ShortDescription" AS "ShortDescription",
-                    descriptor."Description" AS "Description",
-                    descriptor."EffectiveBeginDate" AS "EffectiveBeginDate",
-                    descriptor."EffectiveEndDate" AS "EffectiveEndDate",
-                    descriptor."Discriminator" AS "Discriminator"
+                {{projectionSql}}
                 FROM dms."Document" document
                 LEFT JOIN dms."Descriptor" descriptor
                     ON descriptor."DocumentId" = document."DocumentId"
@@ -2373,21 +2254,10 @@ internal sealed class DescriptorReadHandler(
                 """,
                 parameters
             ),
-            SqlDialect.Mssql => new RelationalCommand(
-                """
+            SqlDialect.Mssql => new(
+                $$"""
                 SELECT
-                    document.[DocumentId] AS [DocumentId],
-                    document.[DocumentUuid] AS [DocumentUuid],
-                    document.[ContentVersion] AS [ContentVersion],
-                    document.[ContentLastModifiedAt] AS [ContentLastModifiedAt],
-                    document.[ResourceKeyId] AS [ResourceKeyId],
-                    descriptor.[Namespace] AS [Namespace],
-                    descriptor.[CodeValue] AS [CodeValue],
-                    descriptor.[ShortDescription] AS [ShortDescription],
-                    descriptor.[Description] AS [Description],
-                    descriptor.[EffectiveBeginDate] AS [EffectiveBeginDate],
-                    descriptor.[EffectiveEndDate] AS [EffectiveEndDate],
-                    descriptor.[Discriminator] AS [Discriminator]
+                {{projectionSql}}
                 FROM [dms].[Document] document
                 LEFT JOIN [dms].[Descriptor] descriptor
                     ON descriptor.[DocumentId] = document.[DocumentId]
@@ -2398,64 +2268,6 @@ internal sealed class DescriptorReadHandler(
             ),
             _ => throw new NotSupportedException(
                 $"Relational descriptor GET by id does not support SQL dialect '{dialect}'."
-            ),
-        };
-    }
-
-    private static RelationalCommand BuildGetByIdCandidateCommand(
-        SqlDialect dialect,
-        DocumentUuid documentUuid,
-        short resourceKeyId
-    )
-    {
-        IReadOnlyList<RelationalParameter> parameters =
-        [
-            new(DocumentUuidParameterName, documentUuid.Value),
-            new(ResourceKeyIdParameterName, resourceKeyId),
-        ];
-
-        return dialect switch
-        {
-            SqlDialect.Pgsql => new RelationalCommand(
-                """
-                SELECT
-                    document."DocumentId" AS "DocumentId",
-                    document."DocumentUuid" AS "DocumentUuid",
-                    document."ContentVersion" AS "ContentVersion",
-                    document."ContentLastModifiedAt" AS "ContentLastModifiedAt",
-                    document."ResourceKeyId" AS "ResourceKeyId",
-                    descriptor."Namespace" AS "Namespace",
-                    descriptor."CodeValue" AS "CodeValue",
-                    descriptor."Discriminator" AS "Discriminator"
-                FROM dms."Document" document
-                LEFT JOIN dms."Descriptor" descriptor
-                    ON descriptor."DocumentId" = document."DocumentId"
-                WHERE document."DocumentUuid" = @documentUuid
-                    AND document."ResourceKeyId" = @resourceKeyId;
-                """,
-                parameters
-            ),
-            SqlDialect.Mssql => new RelationalCommand(
-                """
-                SELECT
-                    document.[DocumentId] AS [DocumentId],
-                    document.[DocumentUuid] AS [DocumentUuid],
-                    document.[ContentVersion] AS [ContentVersion],
-                    document.[ContentLastModifiedAt] AS [ContentLastModifiedAt],
-                    document.[ResourceKeyId] AS [ResourceKeyId],
-                    descriptor.[Namespace] AS [Namespace],
-                    descriptor.[CodeValue] AS [CodeValue],
-                    descriptor.[Discriminator] AS [Discriminator]
-                FROM [dms].[Document] document
-                LEFT JOIN [dms].[Descriptor] descriptor
-                    ON descriptor.[DocumentId] = document.[DocumentId]
-                WHERE document.[DocumentUuid] = @documentUuid
-                    AND document.[ResourceKeyId] = @resourceKeyId;
-                """,
-                parameters
-            ),
-            _ => throw new NotSupportedException(
-                $"Relational descriptor GET by id candidate retrieval does not support SQL dialect '{dialect}'."
             ),
         };
     }
