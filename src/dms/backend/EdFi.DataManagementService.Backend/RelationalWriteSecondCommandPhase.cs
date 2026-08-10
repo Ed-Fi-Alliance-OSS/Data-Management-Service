@@ -162,15 +162,25 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         ArgumentNullException.ThrowIfNull(mergeResult);
         ArgumentNullException.ThrowIfNull(writeSession);
 
-        if (TryPlanNamespace(request, mergeResult, out var namespacePlan) is { } namespacePlanFailure)
-        {
-            // The plan could not be reconciled with the finalized root row, which is decided before any
-            // statement is built, so nothing is sent.
-            return new RelationalWriteSecondCommandResolution(mergeResult, null, namespacePlanFailure);
-        }
+        // A namespace planning failure is not returned yet. The plan could not be reconciled with the
+        // finalized root row, so nothing is sent for it, but custom views configured before NamespaceBased
+        // execute ahead of that position and still get to deny — or to surface a missing view — first.
+        var namespacePlanFailure = TryPlanNamespace(request, mergeResult, out var namespacePlan);
+
+        // Partitioning needs the namespace position even when planning failed and left no plan to read it
+        // from; without it every view would count as preceding and the ones configured after NamespaceBased
+        // would run before a failure that precedes them.
+        var namespaceConfiguredIndex =
+            namespacePlan?.Checks[0].RawConfiguredIndex ?? ProposedNamespaceConfiguredIndex(request);
 
         if (
-            TryPlanCustomView(request, mergeResult, namespacePlan, out var customViewPlan) is
+            TryPlanCustomView(
+                request,
+                mergeResult,
+                namespaceConfiguredIndex,
+                namespacePlanFailure is not null,
+                out var customViewPlan
+            ) is
             { } customViewPlanFailure
         )
         {
@@ -184,7 +194,13 @@ internal sealed class CompositeRelationalWriteSecondCommand(
             namespacePlan = null;
         }
 
-        if (customViewPlan?.SelfBasisDenial is not null)
+        // With the namespace plan intact this is unchanged. When namespace planning failed, the denial
+        // outranks that failure only if it is configured at or before NamespaceBased, which is exactly what
+        // suppression records; a denial configured after it cannot preempt a failure that precedes it.
+        if (
+            customViewPlan?.SelfBasisDenial is not null
+            && (namespacePlanFailure is null || customViewPlan.SuppressNamespace)
+        )
         {
             // The denial is decided in C#, so no statement can carry it and nothing may be co-batched behind
             // it. Only the filters configured before it can outrank it, and those are the only ones planned.
@@ -199,6 +215,27 @@ internal sealed class CompositeRelationalWriteSecondCommand(
                         cancellationToken
                     )
                     .ConfigureAwait(false)
+            );
+        }
+
+        if (namespacePlanFailure is not null)
+        {
+            // Only the views configured before NamespaceBased may outrank it. The ones after it never run:
+            // the check they follow could not be built, so their turn never comes.
+            var precedingCustomViewDenial = await RunCustomViewOnlyAsync(
+                    request,
+                    customViewPlan,
+                    customViewPlan?.BeforeNamespace,
+                    ProposedCustomViewAuthorizationLabel,
+                    writeSession,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            return new RelationalWriteSecondCommandResolution(
+                mergeResult,
+                null,
+                precedingCustomViewDenial ?? namespacePlanFailure
             );
         }
 
@@ -1460,10 +1497,21 @@ internal sealed class CompositeRelationalWriteSecondCommand(
     /// into the runs the configured order requires. Returns the security-configuration failure when the plan
     /// cannot be reconciled with that row.
     /// </summary>
+    /// <param name="namespaceConfiguredIndex">
+    /// The configured position of the proposed namespace check, or null when none is configured. Taken from
+    /// the request rather than the plan when namespace planning failed, so partitioning still knows where
+    /// NamespaceBased sits.
+    /// </param>
+    /// <param name="namespacePlanFailed">
+    /// When the namespace plan could not be reconciled with the finalized root row, only the checks
+    /// configured before it may still run, so only those are extracted. Extracting the later ones would let
+    /// an invalid basis among them report a failure ahead of the namespace failure that precedes them.
+    /// </param>
     private static RelationalWriteExecutorResult? TryPlanCustomView(
         RelationalWriteExecutorRequest request,
         RelationalWriteMergeResult mergeResult,
-        NamespaceStatementPlan? namespacePlan,
+        int? namespaceConfiguredIndex,
+        bool namespacePlanFailed,
         out CustomViewStatementPlan? statementPlan
     )
     {
@@ -1475,8 +1523,25 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         }
 
         var plannedChecks = customViewAuthorization.Checks;
+        var proposedChecks = customViewAuthorization.ProposedChecks;
+
+        if (namespacePlanFailed && namespaceConfiguredIndex is { } pendingFailureIndex)
+        {
+            // Same splitter the runs use, so "before the namespace position" means one thing here too.
+            proposedChecks = CustomViewAuthorizationCheckSplitter
+                .PartitionByConfiguredIndex(proposedChecks, static check => check, pendingFailureIndex)
+                .Before;
+
+            if (proposedChecks.Count == 0)
+            {
+                // Nothing configured before the failure, so no custom-view statement is built and the
+                // namespace failure stands on its own.
+                return null;
+            }
+        }
+
         var extraction = ProposedCustomViewValueExtractor.Extract(
-            customViewAuthorization.ProposedChecks,
+            proposedChecks,
             RelationalWriteFinalizedRootRow.Build(request, mergeResult)
         );
 
@@ -1504,17 +1569,16 @@ internal sealed class CompositeRelationalWriteSecondCommand(
             // change the answer and none of it is emitted.
             sqlValues = [.. sqlValues.Where(value => IsConfiguredBefore(value.Check, selfBasisDenial))];
             suppressNamespace =
-                namespacePlan is not null
-                && namespacePlan.Checks[0].RawConfiguredIndex
-                    >= selfBasisDenial.ConfiguredStrategy.RawConfiguredIndex;
+                namespaceConfiguredIndex is { } suppressionIndex
+                && suppressionIndex >= selfBasisDenial.ConfiguredStrategy.RawConfiguredIndex;
         }
 
         var (beforeNamespace, afterNamespace) =
-            namespacePlan is not null && !suppressNamespace
+            namespaceConfiguredIndex is { } partitionIndex && !suppressNamespace
                 ? CustomViewAuthorizationCheckSplitter.PartitionByConfiguredIndex(
                     sqlValues,
                     static value => value.Check,
-                    namespacePlan.Checks[0].RawConfiguredIndex
+                    partitionIndex
                 )
                 : (sqlValues, (IReadOnlyList<ProposedCustomViewRuntimeValue>)[]);
 
@@ -1788,6 +1852,15 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         NamespacePrefixParameterization PrefixParameterization,
         string? ProposedNamespace
     );
+
+    /// <summary>
+    /// The configured position of the proposed namespace check, read from the request so it survives a
+    /// namespace planning failure.
+    /// </summary>
+    private static int? ProposedNamespaceConfiguredIndex(RelationalWriteExecutorRequest request) =>
+        request.ProposedNamespaceAuthorization is { Checks.Count: > 0 } namespaceAuthorization
+            ? namespaceAuthorization.Checks[0].RawConfiguredIndex
+            : null;
 
     /// <summary>
     /// Extracts the proposed namespace value from the finalized merged root row — never the raw request

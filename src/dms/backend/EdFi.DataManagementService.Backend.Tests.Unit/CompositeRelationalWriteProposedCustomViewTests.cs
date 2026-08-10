@@ -129,6 +129,73 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
     }
 
     [Test]
+    public async Task It_runs_a_custom_view_configured_before_namespace_before_reporting_a_namespace_planning_failure()
+    {
+        // The namespace check names a column the write plan does not bind, so its plan cannot be reconciled
+        // with the finalized root row. The view configured before NamespaceBased still executes first, so its
+        // denial is the answer rather than the later namespace security-configuration failure, and the
+        // namespace check itself is never emitted.
+        var request = CreateRequest(
+            CreateProposedOnlyPlan(("SchoolWithAnEarlyTag", 0)),
+            withNamespace: true,
+            namespaceColumn: new DbColumnName("NotANamespaceColumn")
+        );
+        var session = new ScriptedWriteSession(CreateAuth1Failure());
+
+        var resolution = await CreateSut(CustomViewFailureExtractor(0))
+            .ResolveAsync(
+                request,
+                CreateMergeResult(request),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
+
+        FailureOf(resolution).StrategyName.Should().Be("SchoolWithAnEarlyTag");
+        var commandText = session.Commands.Should().ContainSingle().Subject.CommandText;
+        commandText.Should().Contain("SchoolWithAnEarlyTag");
+        commandText.Should().NotContain("namespacePrefixes");
+    }
+
+    [Test]
+    public async Task It_does_not_plan_a_custom_view_configured_after_namespace_when_namespace_planning_failed()
+    {
+        // The mirror of the case above. The only custom view is configured after NamespaceBased, and its
+        // proposed basis column is unbound, so extracting it would report an invalid plan ahead of the
+        // namespace failure that precedes it. It must not be planned at all: the namespace failure stands and
+        // no custom-view statement is built.
+        var request = CreateRequest(
+            CreateProposedOnlyPlanOn(new DbColumnName("NotAColumn"), ("SchoolWithALateTag", 2)),
+            withNamespace: true,
+            namespaceColumn: new DbColumnName("NotANamespaceColumn")
+        );
+        var session = new ScriptedWriteSession();
+
+        var resolution = await CreateSut()
+            .ResolveAsync(
+                request,
+                CreateMergeResult(request),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
+
+        var errors = resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureSecurityConfiguration>()
+            .Subject.Errors;
+        // The two families word their failures distinctly, which is what tells the namespace failure apart
+        // from the custom-view invalid-plan failure that must not preempt it.
+        errors.Should().ContainSingle().Which.Should().StartWith("Proposed namespace authorization");
+        errors
+            .Should()
+            .NotContain(error =>
+                error.Contains("Proposed custom view authorization", StringComparison.Ordinal)
+            );
+        session.Commands.Should().BeEmpty();
+    }
+
+    [Test]
     public async Task It_resolves_a_straddling_run_payload_against_the_full_planned_check_list()
     {
         // The later view lands in the second run and carries index 1. Mapping has to use the request's whole
@@ -766,7 +833,8 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
         RelationalCustomViewAuthorization customViewAuthorization,
         bool withNamespace = false,
         bool resolveToCreate = false,
-        DbColumnName? basisColumn = null
+        DbColumnName? basisColumn = null,
+        DbColumnName? namespaceColumn = null
     )
     {
         var rootPlan = Given_Default_Relational_Write_Executor.CreateRootPlan();
@@ -811,7 +879,7 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
                             1,
                             NamespaceAuthorizationCheckValueSource.Proposed,
                             rootPlan.TableModel.Table,
-                            new DbColumnName("Name")
+                            namespaceColumn ?? new DbColumnName("Name")
                         ),
                     ],
                     NamespacePrefixParameterizationFactory.Create(
