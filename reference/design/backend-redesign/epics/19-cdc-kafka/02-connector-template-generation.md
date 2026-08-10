@@ -38,6 +38,11 @@ the published `DocumentState` transform.
   reject any connector configuration that includes `DocumentProjectionWork`.
 - Integrate binding-derived identity, provider setup, Kafka policy, transform, heartbeat,
   metrics, and source-offset settings owned by the design.
+- Generate and validate the exact value-converter settings required for public document
+  state publication:
+  `value.converter=org.edfi.kafka.connect.converters.DocumentStateJsonConverter`,
+  `value.converter.schemas.enable=false`, and
+  `value.converter.decimal.format=NUMERIC`.
 - Emit and validate Debezium heartbeat topic settings so native heartbeat records use
   `topic.heartbeat.prefix=__debezium-heartbeat`; reject a non-empty
   `topic.heartbeat.name` or any conflicting heartbeat prefix.
@@ -47,6 +52,9 @@ the published `DocumentState` transform.
 
 - Rendering tests cover every generated and rejected configuration category in the design
   references.
+- Rendering and live-validation tests require the exact `DocumentStateJsonConverter`
+  value-converter path and the `schemas.enable=false` and `decimal.format=NUMERIC`
+  delegate settings, and reject missing, duplicate, or conflicting converter properties.
 - Rendering and live-validation tests reject non-empty `topic.heartbeat.name` values and
   any heartbeat prefix other than `__debezium-heartbeat`.
 - Live connector validation confirms the work table is absent from effective capture.
