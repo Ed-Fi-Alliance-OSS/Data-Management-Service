@@ -113,8 +113,8 @@ public class Given_DocumentCacheReadTelemetry
         attempt.Tags["provider"].Should().Be("postgresql");
         attempt.Tags["target_key"].Should().Be("Tenant-A:7");
         attempt.Tags["effective_target_kind"].Should().Be(DocumentCacheReadTelemetryLabel.Primary);
-        attempt.Tags["operation"].Should().Be(nameof(DocumentCacheReadAccelerationOperation.GetById));
-        attempt.Tags["resource_kind"].Should().Be(nameof(DocumentCacheReadAccelerationResourceKind.Resource));
+        attempt.Tags["operation"].Should().Be("getById");
+        attempt.Tags["resource_kind"].Should().Be("resource");
         attempt.Tags["outcome"].Should().Be(DocumentCacheReadTelemetryLabel.Attempted);
 
         collector.MeasurementsFor(DocumentCacheReadTelemetry.HitCounterName).Should().ContainSingle();
@@ -158,6 +158,61 @@ public class Given_DocumentCacheReadTelemetry
             .Be(12);
 
         AssertAllowedTelemetryTags(attempt);
+    }
+
+    [Test]
+    public void It_uses_documented_operation_and_resource_kind_labels()
+    {
+        DocumentCacheTargetExecutionContext targetContext = ExecutionContext();
+        (
+            DocumentCacheReadAccelerationOperation Operation,
+            DocumentCacheReadAccelerationResourceKind ResourceKind,
+            string ExpectedOperation,
+            string ExpectedResourceKind
+        )[] cases =
+        [
+            (
+                DocumentCacheReadAccelerationOperation.GetById,
+                DocumentCacheReadAccelerationResourceKind.Resource,
+                "getById",
+                "resource"
+            ),
+            (
+                DocumentCacheReadAccelerationOperation.Query,
+                DocumentCacheReadAccelerationResourceKind.Descriptor,
+                "query",
+                "descriptor"
+            ),
+        ];
+
+        foreach (
+            (
+                DocumentCacheReadAccelerationOperation operation,
+                DocumentCacheReadAccelerationResourceKind resourceKind,
+                string expectedOperation,
+                string expectedResourceKind
+            ) in cases
+        )
+        {
+            DocumentCacheReadTelemetryContext targetLabelContext =
+                DocumentCacheReadTelemetryContext.ForTarget(
+                    targetContext,
+                    operation,
+                    resourceKind,
+                    DocumentCacheReadTelemetryLabel.Attempted
+                );
+            DocumentCacheReadTelemetryContext noTargetLabelContext =
+                DocumentCacheReadTelemetryContext.ForNoTarget(
+                    operation,
+                    resourceKind,
+                    DocumentCacheReadTelemetryLabel.Skipped
+                );
+
+            targetLabelContext.Operation.Should().Be(expectedOperation);
+            targetLabelContext.ResourceKind.Should().Be(expectedResourceKind);
+            noTargetLabelContext.Operation.Should().Be(expectedOperation);
+            noTargetLabelContext.ResourceKind.Should().Be(expectedResourceKind);
+        }
     }
 
     [Test]

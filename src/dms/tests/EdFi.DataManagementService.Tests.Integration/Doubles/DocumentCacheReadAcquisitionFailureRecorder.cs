@@ -51,8 +51,8 @@ public sealed class DocumentCacheReadAcquisitionFailureRecorder
         {
             _lookupAttempts.Add(
                 new DocumentCacheReadLookupAttempt(
-                    operation.ToString(),
-                    resourceKind.ToString(),
+                    DocumentCacheReadTelemetryContext.OperationLabel(operation),
+                    DocumentCacheReadTelemetryContext.ResourceKindLabel(resourceKind),
                     targetContext.TargetKey.ToString()
                 )
             );

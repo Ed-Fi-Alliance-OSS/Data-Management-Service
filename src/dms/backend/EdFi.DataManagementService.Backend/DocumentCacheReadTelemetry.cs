@@ -23,6 +23,10 @@ internal static class DocumentCacheReadTelemetryLabel
 {
     public const string Unknown = "unknown";
     public const string Primary = "Primary";
+    public const string GetByIdOperation = "getById";
+    public const string QueryOperation = "query";
+    public const string ResourceKind = "resource";
+    public const string DescriptorKind = "descriptor";
     public const string Attempted = "Attempted";
     public const string Hit = "Hit";
     public const string PageHit = "PageHit";
@@ -94,8 +98,8 @@ internal sealed record DocumentCacheReadTelemetryContext
             targetContext.ProviderToken.Value,
             targetContext.TargetKey.ToString(),
             DocumentCacheReadTelemetryLabel.Primary,
-            operation.ToString(),
-            resourceKind.ToString(),
+            OperationLabel(operation),
+            ResourceKindLabel(resourceKind),
             outcome
         );
     }
@@ -112,8 +116,8 @@ internal sealed record DocumentCacheReadTelemetryContext
             DocumentCacheReadTelemetryLabel.Unknown,
             DocumentCacheReadTelemetryLabel.Unknown,
             DocumentCacheReadTelemetryLabel.Unknown,
-            operation.ToString(),
-            resourceKind.ToString(),
+            OperationLabel(operation),
+            ResourceKindLabel(resourceKind),
             outcome
         );
     }
@@ -146,6 +150,33 @@ internal sealed record DocumentCacheReadTelemetryContext
 
         return sanitized.Length <= MaxLabelLength ? sanitized : sanitized[..MaxLabelLength];
     }
+
+    internal static string OperationLabel(DocumentCacheReadAccelerationOperation operation) =>
+        operation switch
+        {
+            DocumentCacheReadAccelerationOperation.GetById =>
+                DocumentCacheReadTelemetryLabel.GetByIdOperation,
+            DocumentCacheReadAccelerationOperation.Query => DocumentCacheReadTelemetryLabel.QueryOperation,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(operation),
+                operation,
+                "Unsupported read operation."
+            ),
+        };
+
+    internal static string ResourceKindLabel(DocumentCacheReadAccelerationResourceKind resourceKind) =>
+        resourceKind switch
+        {
+            DocumentCacheReadAccelerationResourceKind.Resource =>
+                DocumentCacheReadTelemetryLabel.ResourceKind,
+            DocumentCacheReadAccelerationResourceKind.Descriptor =>
+                DocumentCacheReadTelemetryLabel.DescriptorKind,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(resourceKind),
+                resourceKind,
+                "Unsupported read resource kind."
+            ),
+        };
 }
 
 internal interface IDocumentCacheReadTelemetry

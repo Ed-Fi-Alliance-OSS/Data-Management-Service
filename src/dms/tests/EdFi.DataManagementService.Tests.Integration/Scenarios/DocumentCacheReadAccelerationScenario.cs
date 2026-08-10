@@ -234,8 +234,8 @@ internal static class DocumentCacheReadAccelerationScenario
             .Should()
             .Be(0, "cache-unavailable query fallback must not direct-fill selected page documents");
 
-        recorder.CountLookupAttempts("GetById").Should().Be(1);
-        recorder.CountLookupAttempts("Query").Should().Be(1);
+        recorder.CountLookupAttempts("getById").Should().Be(1);
+        recorder.CountLookupAttempts("query").Should().Be(1);
         recorder
             .CountTelemetryRecords("RecordAdapterAcquisitionFailure", "CacheUnavailable")
             .Should()
