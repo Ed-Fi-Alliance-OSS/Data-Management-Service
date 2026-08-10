@@ -316,7 +316,11 @@ public static class AuthObjectDefinitions
         var edOrgEdOrgId = AuthNames.EdOrgEdOrgId;
         const string edOrgAlias = "edOrg";
 
-        // 1. EducationOrganizationIdToContactDocumentId — DISTINCT, single arm
+        // Arms use plain SELECT (no DISTINCT): every consumer probes these views with IN/EXISTS
+        // membership predicates, where duplicate (edOrg, person) pairs cannot affect results, and
+        // dedup prevents PostgreSQL from flattening the view into the probing query (DMS-1329).
+
+        // 1. EducationOrganizationIdToContactDocumentId — single arm
         var contactView = new AuthPeopleAuthViewDefinition(
             Kind: AuthPeopleViewKind.Contact,
             ViewDefinition: new AuthViewDefinition(
@@ -325,7 +329,7 @@ public static class AuthObjectDefinitions
                 Arms:
                 [
                     new AuthViewArm(
-                        SelectDistinct: true,
+                        SelectDistinct: false,
                         SourceAlias: edOrgAlias,
                         SourceTable: authEdOrgTable,
                         OutputColumns:
@@ -355,8 +359,8 @@ public static class AuthObjectDefinitions
         );
 
         // 2. EducationOrganizationIdToStaffDocumentId — UNION of two arms (assignment + employment).
-        // UNION (not UNION ALL) is deliberate: the deduplicating set-operator is what makes per-arm
-        // DISTINCT unnecessary.
+        // The deduplicating UNION (not UNION ALL) between arms is retained deliberately; DMS-1329
+        // removed only per-arm SELECT DISTINCT.
         var staffView = new AuthPeopleAuthViewDefinition(
             Kind: AuthPeopleViewKind.Staff,
             ViewDefinition: new AuthViewDefinition(
@@ -407,7 +411,7 @@ public static class AuthObjectDefinitions
             FailureHint: "You may need to create corresponding 'StaffEducationOrganizationEmploymentAssociation' or 'StaffEducationOrganizationAssignmentAssociation' items."
         );
 
-        // 3. EducationOrganizationIdToStudentDocumentId — DISTINCT, single arm
+        // 3. EducationOrganizationIdToStudentDocumentId — single arm
         var studentView = new AuthPeopleAuthViewDefinition(
             Kind: AuthPeopleViewKind.Student,
             ViewDefinition: new AuthViewDefinition(
@@ -416,7 +420,7 @@ public static class AuthObjectDefinitions
                 Arms:
                 [
                     new AuthViewArm(
-                        SelectDistinct: true,
+                        SelectDistinct: false,
                         SourceAlias: edOrgAlias,
                         SourceTable: authEdOrgTable,
                         OutputColumns:
@@ -440,7 +444,7 @@ public static class AuthObjectDefinitions
             FailureHint: "You may need to create a corresponding 'StudentSchoolAssociation' item."
         );
 
-        // 4. EducationOrganizationIdToStudentDocumentIdThroughResponsibility — DISTINCT, single arm
+        // 4. EducationOrganizationIdToStudentDocumentIdThroughResponsibility — single arm
         var studentThroughResponsibilityView = new AuthPeopleAuthViewDefinition(
             Kind: AuthPeopleViewKind.StudentThroughResponsibility,
             ViewDefinition: new AuthViewDefinition(
@@ -452,7 +456,7 @@ public static class AuthObjectDefinitions
                 Arms:
                 [
                     new AuthViewArm(
-                        SelectDistinct: true,
+                        SelectDistinct: false,
                         SourceAlias: edOrgAlias,
                         SourceTable: authEdOrgTable,
                         OutputColumns:
