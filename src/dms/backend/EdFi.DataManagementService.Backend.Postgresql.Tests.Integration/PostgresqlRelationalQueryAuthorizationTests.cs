@@ -977,6 +977,40 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
     }
 
     /// <summary>
+    /// Asserts the <c>auth.EducationOrganizationIdToStudentDocumentId</c> view yields exactly
+    /// <paramref name="expectedPairCount"/> rows for the (claim EducationOrganizationId, student) pair.
+    /// Duplicate-pair scenarios (DMS-1329) assert a count of 2 before exercising consumers so their
+    /// single-result assertions cannot pass vacuously against a fixture that accidentally produced
+    /// only one authorization pair.
+    /// </summary>
+    public async Task AssertStudentAuthViewPairCountAsync(
+        string studentUniqueId,
+        long claimEducationOrganizationId,
+        long expectedPairCount
+    )
+    {
+        var pairCount = await Database.ExecuteScalarAsync<long>(
+            """
+            SELECT COUNT(*)::bigint
+            FROM "auth"."EducationOrganizationIdToStudentDocumentId" v
+            INNER JOIN "edfi"."Student" s ON s."DocumentId" = v."Student_DocumentId"
+            WHERE v."SourceEducationOrganizationId" = @claimEducationOrganizationId
+              AND s."StudentUniqueId" = @studentUniqueId;
+            """,
+            new NpgsqlParameter("claimEducationOrganizationId", claimEducationOrganizationId),
+            new NpgsqlParameter("studentUniqueId", studentUniqueId)
+        );
+
+        pairCount
+            .Should()
+            .Be(
+                expectedPairCount,
+                $"the student auth view should yield exactly {expectedPairCount} row(s) for student "
+                    + $"'{studentUniqueId}' under claim {claimEducationOrganizationId}"
+            );
+    }
+
+    /// <summary>
     /// Creates (or replaces) the "auth"."{strategyName}" custom authorization view, authorizing only the
     /// School documents whose SchoolId is in <paramref name="authorizedSchoolIds"/>. The view always
     /// selects the basis resource's own DocumentId, per the custom-view authorization contract — the same
@@ -2875,5 +2909,247 @@ public class Given_A_Postgresql_Relational_Query_Authorization_With_A_Synthetic_
         failure.Errors.Should().ContainSingle();
         failure.Errors[0].Should().Contain("$.classPeriods[*].classPeriodReference.schoolId");
         failure.Errors[0].Should().Contain("SchoolId");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Duplicate people-auth-pair scenarios (DMS-1329)
+//
+// The people auth views no longer SELECT DISTINCT, so a student enrolled
+// at two schools reachable from the same claim EdOrg yields the
+// (claim, student) pair twice. Each test first proves that duplicate
+// cardinality at the view level (non-vacuity), then proves the
+// IN/EXISTS consumers still return each authorized document exactly
+// once with unchanged authorization outcomes.
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+[NonParallelizable]
+[Category("Authorization")]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+public class Given_A_Postgresql_Relational_Query_Authorization_With_A_Duplicate_People_Auth_Pair
+{
+    private const long ClaimEducationOrganizationId =
+        RelationshipAuthorizationCrudTestSupport.ClaimEducationOrganizationId;
+    private const string TermDescriptor = "uri://ed-fi.org/TermDescriptor#Fall Semester";
+    private const string EntryGradeLevelDescriptor = "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade";
+
+    private static readonly QuerySchoolSeed[] _schoolSeeds =
+    [
+        new(new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000001")), 100, "North School"),
+        new(new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000002")), 200, "East School"),
+        new(new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000003")), 300, "West School"),
+    ];
+
+    private static readonly SchoolYearTypeSeed _schoolYearSeed = new(
+        new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000011")),
+        2026,
+        true,
+        "2026"
+    );
+
+    private static readonly StudentSeed _dualEnrolledStudentSeed = new(
+        new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000021")),
+        "20001",
+        "Dana",
+        "Dual"
+    );
+
+    private static readonly StudentSeed _unauthorizedStudentSeed = new(
+        new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000022")),
+        "20002",
+        "Uri",
+        "Unreachable"
+    );
+
+    // The dual-enrolled student's two associations are both reachable from the claim EdOrg, so the
+    // student auth view yields the (claim, student) pair once per closure path.
+    private static readonly StudentSchoolAssociationSeed[] _studentSchoolAssociationSeeds =
+    [
+        new(
+            new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000031")),
+            "20001",
+            100,
+            2026,
+            EntryGradeLevelDescriptor,
+            new DateOnly(2026, 8, 15)
+        ),
+        new(
+            new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000032")),
+            "20001",
+            200,
+            2026,
+            EntryGradeLevelDescriptor,
+            new DateOnly(2026, 8, 15)
+        ),
+        new(
+            new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000033")),
+            "20002",
+            300,
+            2026,
+            EntryGradeLevelDescriptor,
+            new DateOnly(2026, 8, 15)
+        ),
+    ];
+
+    private static readonly StudentAcademicRecordSeed _dualEnrolledStudentAcademicRecordSeed = new(
+        new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000041")),
+        100,
+        2026,
+        "20001",
+        TermDescriptor
+    );
+
+    private static readonly StudentAcademicRecordSeed _unauthorizedStudentAcademicRecordSeed = new(
+        new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000042")),
+        300,
+        2026,
+        "20002",
+        TermDescriptor
+    );
+
+    private static readonly AuthorizationStudentAcademicRecordSeed _dualEnrolledAuthorizationSeed = new(
+        new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000051")),
+        9101,
+        "duplicate-pair-authorized",
+        100,
+        2026,
+        "20001",
+        TermDescriptor
+    );
+
+    private static readonly AuthorizationStudentAcademicRecordSeed _unauthorizedAuthorizationSeed = new(
+        new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000052")),
+        9102,
+        "duplicate-pair-unauthorized",
+        300,
+        2026,
+        "20002",
+        TermDescriptor
+    );
+
+    private PostgresqlRelationalQueryAuthorizationTestContext _context = null!;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        _context = new PostgresqlRelationalQueryAuthorizationTestContext();
+        // replaceReadTargetLookup: false — this fixture exercises GET-by-id as well as GET-many, so
+        // the real read-target lookup must stay wired in.
+        await _context.InitializeAsync(
+            RelationshipAuthorizationCrudTestSupport.FixtureRelativePath,
+            strict: false,
+            replaceReadTargetLookup: false
+        );
+        await _context.SeedSchoolDescriptorDataAsync();
+        await _context.SeedTermDescriptorAsync(
+            Guid.Parse("12121212-0000-0000-0000-000000000061"),
+            TermDescriptor
+        );
+
+        foreach (var schoolSeed in _schoolSeeds)
+        {
+            RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+                await _context.CreateSchoolAsync(schoolSeed)
+            );
+        }
+
+        await _context.SeedSchoolYearTypeAsync(_schoolYearSeed);
+        await _context.SeedStudentAsync(_dualEnrolledStudentSeed);
+        await _context.SeedStudentAsync(_unauthorizedStudentSeed);
+
+        foreach (var associationSeed in _studentSchoolAssociationSeeds)
+        {
+            await _context.SeedStudentSchoolAssociationAsync(associationSeed);
+        }
+
+        await _context.SeedStudentAcademicRecordAsync(_dualEnrolledStudentAcademicRecordSeed);
+        await _context.SeedStudentAcademicRecordAsync(_unauthorizedStudentAcademicRecordSeed);
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationStudentAcademicRecordAsync(_dualEnrolledAuthorizationSeed)
+        );
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationStudentAcademicRecordAsync(_unauthorizedAuthorizationSeed)
+        );
+
+        await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 100);
+        await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 200);
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_context is not null)
+        {
+            await _context.DisposeAsync();
+        }
+    }
+
+    [SetUp]
+    public void SetUp()
+    {
+        _context.ResetRecorder();
+    }
+
+    [Test]
+    public async Task It_returns_each_authorized_document_exactly_once_under_duplicate_auth_pairs()
+    {
+        // Non-vacuity precondition: the (claim, student) pair genuinely occurs twice in the view,
+        // and the control student never appears under the claim.
+        await _context.AssertStudentAuthViewPairCountAsync(
+            _dualEnrolledStudentSeed.StudentUniqueId,
+            ClaimEducationOrganizationId,
+            expectedPairCount: 2
+        );
+        await _context.AssertStudentAuthViewPairCountAsync(
+            _unauthorizedStudentSeed.StudentUniqueId,
+            ClaimEducationOrganizationId,
+            expectedPairCount: 0
+        );
+
+        var result = await _context.QueryAsync(
+            "authz",
+            RelationshipAuthorizationCrudTestSupport.StudentAcademicRecordResourceName,
+            [ClaimEducationOrganizationId],
+            RelationshipAuthorizationCrudTestSupport.StudentsOnlyStrategyNames
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+
+        success.TotalCount.Should().Be(1);
+        success
+            .EdfiDocs.Select(static document => document!["id"]!.GetValue<string>())
+            .Should()
+            .Equal(_dualEnrolledAuthorizationSeed.DocumentUuid.Value.ToString());
+    }
+
+    [Test]
+    public async Task It_authorizes_single_record_reads_under_duplicate_auth_pairs()
+    {
+        await _context.AssertStudentAuthViewPairCountAsync(
+            _dualEnrolledStudentSeed.StudentUniqueId,
+            ClaimEducationOrganizationId,
+            expectedPairCount: 2
+        );
+
+        var authorizedResult = await _context.GetByIdAsync(
+            "authz",
+            RelationshipAuthorizationCrudTestSupport.StudentAcademicRecordResourceName,
+            _dualEnrolledAuthorizationSeed.DocumentUuid,
+            [ClaimEducationOrganizationId],
+            RelationshipAuthorizationCrudTestSupport.StudentsOnlyStrategyNames
+        );
+        var unauthorizedResult = await _context.GetByIdAsync(
+            "authz",
+            RelationshipAuthorizationCrudTestSupport.StudentAcademicRecordResourceName,
+            _unauthorizedAuthorizationSeed.DocumentUuid,
+            [ClaimEducationOrganizationId],
+            RelationshipAuthorizationCrudTestSupport.StudentsOnlyStrategyNames
+        );
+
+        var success = authorizedResult.Should().BeOfType<GetResult.GetSuccess>().Subject;
+        success.DocumentUuid.Should().Be(_dualEnrolledAuthorizationSeed.DocumentUuid);
+        unauthorizedResult.Should().BeOfType<GetResult.GetFailureRelationshipNotAuthorized>();
     }
 }
