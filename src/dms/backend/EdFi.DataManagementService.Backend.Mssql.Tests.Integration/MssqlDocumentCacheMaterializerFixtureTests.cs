@@ -93,6 +93,26 @@ public class Given_Mssql_DocumentCacheMaterializer_Fixtures
     }
 
     [Test]
+    public async Task It_materializes_the_collection_property_absence_fixture_from_real_Mssql_hydration()
+    {
+        var fixture = LoadFixture("school-address-property-absence");
+        await SeedFixtureAsync(fixture);
+        var mappingSet = DocumentCacheMaterializerFixtureMappingSet.CreateSchoolAddressFixture(
+            SqlDialect.Mssql
+        );
+
+        var result = await CreateMaterializer().MaterializeAsync(CreateRequest(mappingSet, fixture));
+
+        var success = result.Should().BeOfType<DocumentCacheMaterializationResult.Success>().Subject;
+        AssertCandidateMatchesFixture(success.Candidate, fixture);
+        MaterializedDocumentFixtureAssertions.AssertSchoolAddressDescriptorAbsence(
+            success.Candidate.DocumentJson,
+            fixture
+        );
+        AssertRecordedCommandsStayOnCanonicalSource();
+    }
+
+    [Test]
     public async Task It_materializes_an_ordinary_fixture_through_the_DI_registered_Mssql_target_adapter()
     {
         var fixture = LoadFixture("extension-student-school-association");

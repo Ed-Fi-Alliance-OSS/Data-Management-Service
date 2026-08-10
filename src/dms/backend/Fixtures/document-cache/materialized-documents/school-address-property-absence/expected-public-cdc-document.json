@@ -1,0 +1,18 @@
+{
+  "document": {
+    "id": "aaaaaaaa-bbbb-cccc-dddd-000000003101",
+    "_lastModifiedDate": "2026-08-02T03:04:05Z",
+    "schoolId": 255904,
+    "nameOfInstitution": "Property Absence School",
+    "addresses": [
+      {
+        "city": "Austin",
+        "addressTypeDescriptor": "uri://ed-fi.org/AddressTypeDescriptor#Physical"
+      },
+      {
+        "city": "Dallas"
+      }
+    ],
+    "_etag": "555-89abcdef.j._.l.i"
+  }
+}

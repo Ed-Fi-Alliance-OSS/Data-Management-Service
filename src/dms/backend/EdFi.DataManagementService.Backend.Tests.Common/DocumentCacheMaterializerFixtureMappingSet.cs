@@ -21,6 +21,10 @@ internal static class DocumentCacheMaterializerFixtureMappingSet
         "Ed-Fi",
         "SchoolTypeDescriptor"
     );
+    private static readonly QualifiedResourceName AddressTypeDescriptorResource = new(
+        "Ed-Fi",
+        "AddressTypeDescriptor"
+    );
     private static readonly QualifiedResourceName EntryGradeLevelDescriptorResource = new(
         "Ed-Fi",
         "GradeLevelDescriptor"
@@ -48,6 +52,36 @@ internal static class DocumentCacheMaterializerFixtureMappingSet
             effectiveSchemaHash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
             concreteModels: [descriptorModel],
             readPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>()
+        );
+    }
+
+    public static MappingSet CreateSchoolAddressFixture(SqlDialect dialect)
+    {
+        var schoolReadPlan = new ReadPlanCompiler(dialect).Compile(CreateSchoolAddressRelationalModel());
+        var schoolKey = new ResourceKeyEntry(244, SchoolResource, "5.2.0", false);
+        var addressTypeDescriptorKey = new ResourceKeyEntry(
+            57,
+            AddressTypeDescriptorResource,
+            "5.2.0",
+            false
+        );
+
+        return CreateMappingSet(
+            dialect,
+            effectiveSchemaHash: "89abcdef0123456789abcdef0123456789abcdef0123456789abcdef01234567",
+            concreteModels:
+            [
+                CreateConcreteModel(schoolKey, ResourceStorageKind.RelationalTables, schoolReadPlan.Model),
+                CreateConcreteModel(
+                    addressTypeDescriptorKey,
+                    ResourceStorageKind.SharedDescriptorTable,
+                    CreateDescriptorRelationalModel(AddressTypeDescriptorResource)
+                ),
+            ],
+            readPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>
+            {
+                [SchoolResource] = schoolReadPlan,
+            }
         );
     }
 
@@ -232,7 +266,50 @@ internal static class DocumentCacheMaterializerFixtureMappingSet
 
     private static RelationalResourceModel CreateSchoolModel()
     {
-        var root = new DbTableModel(
+        var root = CreateSchoolRootTable();
+
+        return new RelationalResourceModel(
+            SchoolResource,
+            new DbSchemaName("edfi"),
+            ResourceStorageKind.RelationalTables,
+            root,
+            [root],
+            [],
+            []
+        );
+    }
+
+    private static RelationalResourceModel CreateSchoolAddressRelationalModel()
+    {
+        var root = CreateSchoolRootTable();
+        var address = CreateSchoolAddressTable();
+
+        return new RelationalResourceModel(
+            SchoolResource,
+            new DbSchemaName("edfi"),
+            ResourceStorageKind.RelationalTables,
+            root,
+            [root, address],
+            [],
+            [
+                new(
+                    IsIdentityComponent: false,
+                    DescriptorValuePath: JsonPath(
+                        "$.addresses[*].addressTypeDescriptor",
+                        new JsonPathSegment.Property("addresses"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("addressTypeDescriptor")
+                    ),
+                    Table: address.Table,
+                    FkColumn: new DbColumnName("AddressTypeDescriptor_DescriptorId"),
+                    DescriptorResource: AddressTypeDescriptorResource
+                ),
+            ]
+        );
+    }
+
+    private static DbTableModel CreateSchoolRootTable() =>
+        new(
             new DbTableName(new DbSchemaName("edfi"), "School"),
             JsonPath("$"),
             new TableKey(
@@ -250,16 +327,43 @@ internal static class DocumentCacheMaterializerFixtureMappingSet
             IdentityMetadata = RootIdentityMetadata(),
         };
 
-        return new RelationalResourceModel(
-            SchoolResource,
-            new DbSchemaName("edfi"),
-            ResourceStorageKind.RelationalTables,
-            root,
-            [root],
-            [],
+    private static DbTableModel CreateSchoolAddressTable() =>
+        new(
+            new DbTableName(new DbSchemaName("edfi"), "SchoolAddress"),
+            JsonPath(
+                "$.addresses[*]",
+                new JsonPathSegment.Property("addresses"),
+                new JsonPathSegment.AnyArrayElement()
+            ),
+            new TableKey(
+                "PK_SchoolAddress",
+                [
+                    new DbKeyColumn(new DbColumnName("School_DocumentId"), ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(new DbColumnName("Ordinal"), ColumnKind.Ordinal),
+                ]
+            ),
+            [
+                CollectionItemIdColumn(),
+                ParentDocumentIdColumn("School_DocumentId"),
+                OrdinalColumn(),
+                ScalarColumn("City", ScalarKind.String, "$.addresses[*].city"),
+                DescriptorColumn(
+                    "AddressTypeDescriptor_DescriptorId",
+                    "$.addresses[*].addressTypeDescriptor",
+                    AddressTypeDescriptorResource
+                ),
+            ],
             []
-        );
-    }
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Collection,
+                [new DbColumnName("CollectionItemId")],
+                [new DbColumnName("School_DocumentId")],
+                [new DbColumnName("School_DocumentId")],
+                []
+            ),
+        };
 
     private static RelationalResourceModel CreateStudentModel()
     {
