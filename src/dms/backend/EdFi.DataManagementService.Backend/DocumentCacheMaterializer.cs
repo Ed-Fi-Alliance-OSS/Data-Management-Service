@@ -329,7 +329,8 @@ internal sealed class DocumentCacheMaterializer(
             source.ContentVersion,
             source.ContentVersion,
             source.ContentLastModifiedAt,
-            source.ContentLastModifiedAt
+            source.ContentLastModifiedAt,
+            source.ResourceKeyId
         );
 
     private static DocumentCacheMaterializationResult.Success CreateSuccess(

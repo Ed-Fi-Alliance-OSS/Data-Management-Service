@@ -5203,7 +5203,8 @@ file static class PageBasedDocumentReconstituterTestData
             ContentVersion: 1L,
             IdentityVersion: 1L,
             ContentLastModifiedAt: new DateTimeOffset(2026, 4, 19, 12, 0, 0, TimeSpan.Zero),
-            IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 19, 12, 0, 0, TimeSpan.Zero)
+            IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 19, 12, 0, 0, TimeSpan.Zero),
+            ResourceKeyId: 1
         );
 
     private static DbColumnModel CreateColumn(

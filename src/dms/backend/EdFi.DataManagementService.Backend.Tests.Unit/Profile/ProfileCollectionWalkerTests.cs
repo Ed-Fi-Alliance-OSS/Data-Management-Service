@@ -1288,7 +1288,8 @@ internal static class AlignedExtensionScopeTopologyBuilders
                 ContentVersion: 1L,
                 IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero)
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
+                ResourceKeyId: 1
             ),
             [
                 new HydratedTableRows(
@@ -1694,7 +1695,8 @@ public class Given_an_inlined_parent_collection_under_a_root_extension_scope
                 ContentVersion: 1L,
                 IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 30, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 30, 12, 0, 0, TimeSpan.Zero)
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 30, 12, 0, 0, TimeSpan.Zero),
+                ResourceKeyId: 1
             ),
             [
                 new HydratedTableRows(
@@ -2888,7 +2890,8 @@ internal static class NestedTopologyBuilders
                 ContentVersion: 1L,
                 IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero)
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
+                ResourceKeyId: 1
             ),
             [
                 new HydratedTableRows(
@@ -3805,7 +3808,8 @@ internal static class DescriptorBackedNestedTopologyBuilders
                 ContentVersion: 1L,
                 IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero)
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
+                ResourceKeyId: 1
             ),
             [
                 new HydratedTableRows(
@@ -5073,7 +5077,8 @@ internal static class NumericDocumentReferenceBackedNestedTopologyBuilders
                 ContentVersion: 1L,
                 IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero)
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
+                ResourceKeyId: 1
             ),
             [
                 new HydratedTableRows(
@@ -5703,7 +5708,8 @@ internal static class DocumentReferenceBackedNestedTopologyBuilders
                 ContentVersion: 1L,
                 IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero)
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
+                ResourceKeyId: 1
             ),
             [
                 new HydratedTableRows(
@@ -6681,7 +6687,8 @@ internal static class CompositeDescriptorScalarDocumentReferenceBackedNestedTopo
                 ContentVersion: 1L,
                 IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero)
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
+                ResourceKeyId: 1
             ),
             [
                 new HydratedTableRows(
@@ -7227,7 +7234,8 @@ internal static class AlignedExtensionScopeWithChildrenTopologyBuilders
                 ContentVersion: 1L,
                 IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero)
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
+                ResourceKeyId: 1
             ),
             [
                 new HydratedTableRows(

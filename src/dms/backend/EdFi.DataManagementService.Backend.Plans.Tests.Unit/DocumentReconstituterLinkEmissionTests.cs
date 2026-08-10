@@ -230,7 +230,8 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
                 ContentVersion: 1L,
                 IdentityVersion: 1L,
                 ContentLastModifiedAt: DateTimeOffset.UnixEpoch,
-                IdentityLastModifiedAt: DateTimeOffset.UnixEpoch
+                IdentityLastModifiedAt: DateTimeOffset.UnixEpoch,
+                ResourceKeyId: 1
             ),
             new DocumentMetadataRow(
                 DocumentId: 2L,
@@ -238,7 +239,8 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
                 ContentVersion: 1L,
                 IdentityVersion: 1L,
                 ContentLastModifiedAt: DateTimeOffset.UnixEpoch,
-                IdentityLastModifiedAt: DateTimeOffset.UnixEpoch
+                IdentityLastModifiedAt: DateTimeOffset.UnixEpoch,
+                ResourceKeyId: 1
             ),
         };
 
@@ -417,7 +419,8 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
             ContentVersion: 1L,
             IdentityVersion: 1L,
             ContentLastModifiedAt: DateTimeOffset.UnixEpoch,
-            IdentityLastModifiedAt: DateTimeOffset.UnixEpoch
+            IdentityLastModifiedAt: DateTimeOffset.UnixEpoch,
+            ResourceKeyId: 1
         );
 
         var lookup = new HydratedDocumentReferenceLookup([

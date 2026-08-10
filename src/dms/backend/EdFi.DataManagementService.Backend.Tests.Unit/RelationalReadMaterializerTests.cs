@@ -602,7 +602,8 @@ public class Given_RelationalReadMaterializer
             ContentVersion: contentVersion,
             IdentityVersion: 92L,
             ContentLastModifiedAt: contentLastModifiedAt,
-            IdentityLastModifiedAt: contentLastModifiedAt
+            IdentityLastModifiedAt: contentLastModifiedAt,
+            ResourceKeyId: 1
         );
     }
 
@@ -890,7 +891,8 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
             ContentVersion: 1L,
             IdentityVersion: 1L,
             ContentLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero),
-            IdentityLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero)
+            IdentityLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero),
+            ResourceKeyId: 1
         );
         var hydratedPage = new HydratedPage(
             TotalCount: null,
@@ -951,7 +953,8 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
             ContentVersion: 1L,
             IdentityVersion: 1L,
             ContentLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero),
-            IdentityLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero)
+            IdentityLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero),
+            ResourceKeyId: 1
         );
         var hydratedPage = new HydratedPage(
             TotalCount: null,
@@ -1029,7 +1032,8 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
             ContentVersion: 1L,
             IdentityVersion: 1L,
             ContentLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero),
-            IdentityLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero)
+            IdentityLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero),
+            ResourceKeyId: 1
         );
         var lookup = new HydratedDocumentReferenceLookup([
             new DocumentReferenceLookupRow(SchoolDocumentId, SchoolDocumentUuid, SchoolResourceKeyId),
@@ -1080,7 +1084,8 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
             ContentVersion: 1L,
             IdentityVersion: 1L,
             ContentLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero),
-            IdentityLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero)
+            IdentityLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero),
+            ResourceKeyId: 1
         );
 
         var result = sut.Materialize(
@@ -1135,7 +1140,8 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
             ContentVersion: 1L,
             IdentityVersion: 1L,
             ContentLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero),
-            IdentityLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero)
+            IdentityLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero),
+            ResourceKeyId: 1
         );
         var hydratedPage = new HydratedPage(
             TotalCount: null,
@@ -1178,7 +1184,8 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
             ContentVersion: 1L,
             IdentityVersion: 1L,
             ContentLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero),
-            IdentityLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero)
+            IdentityLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero),
+            ResourceKeyId: 1
         );
         var hydratedPage = new HydratedPage(
             TotalCount: null,
@@ -1219,7 +1226,8 @@ public class Given_RelationalReadMaterializer_With_Link_Injection_And_External_R
             ContentVersion: 7L,
             IdentityVersion: 1L,
             ContentLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero),
-            IdentityLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero)
+            IdentityLastModifiedAt: new DateTimeOffset(2026, 5, 12, 14, 0, 0, TimeSpan.Zero),
+            ResourceKeyId: 1
         );
         var hydratedPage = new HydratedPage(
             TotalCount: null,

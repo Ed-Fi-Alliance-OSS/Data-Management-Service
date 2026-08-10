@@ -45,7 +45,6 @@ public static class HydrationReader
     private static readonly int ExpectedDocumentMetadataColumnCount = DocumentMetadataColumns
         .ColumnsInOrdinalOrder
         .Length;
-    private const int LegacyDocumentMetadataColumnCount = 6;
 
     /// <summary>
     /// Reads <c>dms.Document</c> metadata rows from the current result set.
@@ -65,10 +64,7 @@ public static class HydrationReader
     {
         ArgumentNullException.ThrowIfNull(reader);
 
-        if (
-            reader.FieldCount != ExpectedDocumentMetadataColumnCount
-            && reader.FieldCount != LegacyDocumentMetadataColumnCount
-        )
+        if (reader.FieldCount != ExpectedDocumentMetadataColumnCount)
         {
             throw new InvalidOperationException(
                 $"Document metadata result set has {reader.FieldCount} columns but expected {ExpectedDocumentMetadataColumnCount}."
@@ -87,9 +83,7 @@ public static class HydrationReader
                     IdentityVersion: reader.GetInt64(3),
                     ContentLastModifiedAt: ReadDateTimeOffset(reader, 4),
                     IdentityLastModifiedAt: ReadDateTimeOffset(reader, 5),
-                    ResourceKeyId: reader.FieldCount == ExpectedDocumentMetadataColumnCount
-                        ? reader.GetInt16(6)
-                        : (short)0
+                    ResourceKeyId: reader.GetInt16(6)
                 )
             );
         }

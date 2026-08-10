@@ -24,7 +24,7 @@ public sealed record DocumentMetadataRow(
     long IdentityVersion,
     DateTimeOffset ContentLastModifiedAt,
     DateTimeOffset IdentityLastModifiedAt,
-    short ResourceKeyId = 0
+    short ResourceKeyId
 );
 
 /// <summary>

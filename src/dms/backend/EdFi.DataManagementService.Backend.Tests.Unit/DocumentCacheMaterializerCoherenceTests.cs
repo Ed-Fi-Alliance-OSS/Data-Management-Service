@@ -262,7 +262,8 @@ public class Given_DocumentCacheMaterializer_Coherence
                     source.ContentVersion,
                     source.ContentVersion,
                     source.ContentLastModifiedAt,
-                    source.ContentLastModifiedAt
+                    source.ContentLastModifiedAt,
+                    source.ResourceKeyId
                 ),
             ],
             TableRowsInDependencyOrder:

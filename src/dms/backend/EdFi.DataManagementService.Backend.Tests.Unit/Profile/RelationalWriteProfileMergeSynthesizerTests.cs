@@ -2518,7 +2518,8 @@ internal static class RootExtensionChildCollectionTopologyBuilders
                 ContentVersion: 1L,
                 IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero)
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero),
+                ResourceKeyId: 1
             ),
             [
                 new HydratedTableRows(rootTableModel, [rootRowValues]),
@@ -3022,7 +3023,8 @@ internal static class CollectionSynthesizerBuilders
                 ContentVersion: 1L,
                 IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero)
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero),
+                ResourceKeyId: 1
             ),
             [
                 new HydratedTableRows(
@@ -3746,7 +3748,8 @@ internal static class DocumentReferenceCanonicalizeBuilders
                 ContentVersion: 1L,
                 IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero)
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
+                ResourceKeyId: 1
             ),
             [
                 new HydratedTableRows(
@@ -4393,7 +4396,8 @@ internal static class DescriptorCanonicalizeBuilders
                 ContentVersion: 1L,
                 IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero)
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
+                ResourceKeyId: 1
             ),
             [
                 new HydratedTableRows(
@@ -5202,7 +5206,8 @@ public class Given_top_level_collection_with_mixed_scalar_and_descriptor_identit
                 ContentVersion: 1L,
                 IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero)
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
+                ResourceKeyId: 1
             ),
             [
                 new HydratedTableRows(
@@ -5656,7 +5661,8 @@ public class Given_top_level_collection_with_mixed_identity_and_cache_miss_resol
                 ContentVersion: 1L,
                 IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero)
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
+                ResourceKeyId: 1
             ),
             [
                 new HydratedTableRows(
@@ -5820,7 +5826,8 @@ public class Given_top_level_collection_with_mixed_identity_and_duplicate_scalar
                 ContentVersion: 1L,
                 IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero)
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
+                ResourceKeyId: 1
             ),
             [
                 new HydratedTableRows(
@@ -5971,7 +5978,8 @@ public class Given_top_level_collection_with_mixed_identity_duplicate_scalar_thr
                 ContentVersion: 1L,
                 IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero)
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
+                ResourceKeyId: 1
             ),
             [
                 new HydratedTableRows(
@@ -6545,7 +6553,8 @@ public class Given_reference_backed_top_level_collection_with_descriptor_in_natu
                 ContentVersion: 1L,
                 IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero)
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
+                ResourceKeyId: 1
             ),
             [
                 new HydratedTableRows(
@@ -6681,7 +6690,8 @@ public class Given_reference_backed_top_level_collection_with_descriptor_in_natu
                 ContentVersion: 1L,
                 IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero)
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
+                ResourceKeyId: 1
             ),
             [
                 new HydratedTableRows(
@@ -8370,7 +8380,8 @@ internal static class ThreeLevelTopologyBuilders
                 ContentVersion: 1L,
                 IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero)
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
+                ResourceKeyId: 1
             ),
             [
                 new HydratedTableRows(
