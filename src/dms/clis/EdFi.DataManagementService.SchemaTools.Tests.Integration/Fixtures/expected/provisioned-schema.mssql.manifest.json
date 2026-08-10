@@ -125414,7 +125414,7 @@
     {
       "schema_name": "auth",
       "view_name": "EducationOrganizationIdToContactDocumentId",
-      "definition": "CREATE   VIEW [auth].[EducationOrganizationIdToContactDocumentId] AS\nSELECT DISTINCT\n    edOrg.[SourceEducationOrganizationId],\n    sca.[Contact_DocumentId]\nFROM [auth].[EducationOrganizationIdToEducationOrganizationId] edOrg\nINNER JOIN [edfi].[StudentSchoolAssociation] ssa ON edOrg.[TargetEducationOrganizationId] = ssa.[SchoolId_Unified]\nINNER JOIN [edfi].[StudentContactAssociation] sca ON ssa.[Student_DocumentId] = sca.[Student_DocumentId]\n;"
+      "definition": "CREATE   VIEW [auth].[EducationOrganizationIdToContactDocumentId] AS\nSELECT\n    edOrg.[SourceEducationOrganizationId],\n    sca.[Contact_DocumentId]\nFROM [auth].[EducationOrganizationIdToEducationOrganizationId] edOrg\nINNER JOIN [edfi].[StudentSchoolAssociation] ssa ON edOrg.[TargetEducationOrganizationId] = ssa.[SchoolId_Unified]\nINNER JOIN [edfi].[StudentContactAssociation] sca ON ssa.[Student_DocumentId] = sca.[Student_DocumentId]\n;"
     },
     {
       "schema_name": "auth",
@@ -125434,7 +125434,7 @@
     {
       "schema_name": "auth",
       "view_name": "EducationOrganizationIdToStudentDocumentId",
-      "definition": "CREATE   VIEW [auth].[EducationOrganizationIdToStudentDocumentId] AS\nSELECT DISTINCT\n    edOrg.[SourceEducationOrganizationId],\n    ssa.[Student_DocumentId]\nFROM [auth].[EducationOrganizationIdToEducationOrganizationId] edOrg\nINNER JOIN [edfi].[StudentSchoolAssociation] ssa ON edOrg.[TargetEducationOrganizationId] = ssa.[SchoolId_Unified]\n;"
+      "definition": "CREATE   VIEW [auth].[EducationOrganizationIdToStudentDocumentId] AS\nSELECT\n    edOrg.[SourceEducationOrganizationId],\n    ssa.[Student_DocumentId]\nFROM [auth].[EducationOrganizationIdToEducationOrganizationId] edOrg\nINNER JOIN [edfi].[StudentSchoolAssociation] ssa ON edOrg.[TargetEducationOrganizationId] = ssa.[SchoolId_Unified]\n;"
     },
     {
       "schema_name": "auth",
@@ -125449,7 +125449,7 @@
     {
       "schema_name": "auth",
       "view_name": "EducationOrganizationIdToStudentDocumentIdThroughResponsibility",
-      "definition": "CREATE   VIEW [auth].[EducationOrganizationIdToStudentDocumentIdThroughResponsibility] AS\nSELECT DISTINCT\n    edOrg.[SourceEducationOrganizationId],\n    seora.[Student_DocumentId]\nFROM [auth].[EducationOrganizationIdToEducationOrganizationId] edOrg\nINNER JOIN [edfi].[StudentEducationOrganizationResponsibilityAssociation] seora ON edOrg.[TargetEducationOrganizationId] = seora.[EducationOrganization_EducationOrganizationId]\n;"
+      "definition": "CREATE   VIEW [auth].[EducationOrganizationIdToStudentDocumentIdThroughResponsibility] AS\nSELECT\n    edOrg.[SourceEducationOrganizationId],\n    seora.[Student_DocumentId]\nFROM [auth].[EducationOrganizationIdToEducationOrganizationId] edOrg\nINNER JOIN [edfi].[StudentEducationOrganizationResponsibilityAssociation] seora ON edOrg.[TargetEducationOrganizationId] = seora.[EducationOrganization_EducationOrganizationId]\n;"
     },
     {
       "schema_name": "edfi",
