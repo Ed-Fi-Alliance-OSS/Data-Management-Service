@@ -259,6 +259,73 @@ public class ResolveMappingSetMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Request_Cancels_During_Mapping_Set_Resolution : ResolveMappingSetMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private Func<Task> _act = null!;
+        private bool _nextCalled;
+        private CancellationTokenSource _cancellationSource = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var compiler = CreateFakeCompiler();
+            var (middleware, mappingSetProvider) = CreateMiddleware(compiler: compiler);
+            _requestInfo = CreateRequestInfo(fingerprint: CreateFingerprint());
+            _cancellationSource = new CancellationTokenSource();
+            _cancellationSource.Cancel();
+            _requestInfo.RequestCancellationToken = _cancellationSource.Token;
+
+            A.CallTo(() =>
+                    mappingSetProvider.GetOrCreateAsync(
+                        A<MappingSetKey>.Ignored,
+                        A<CancellationToken>.Ignored
+                    )
+                )
+                .Returns(Task.FromCanceled<MappingSet>(_cancellationSource.Token));
+
+            _act = () =>
+                middleware.Execute(
+                    _requestInfo,
+                    () =>
+                    {
+                        _nextCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _cancellationSource.Dispose();
+        }
+
+        [Test]
+        public async Task It_propagates_OperationCanceledException()
+        {
+            await _act.Should().ThrowAsync<OperationCanceledException>();
+        }
+
+        [Test]
+        public async Task It_does_not_call_next()
+        {
+            await _act.Should().ThrowAsync<OperationCanceledException>();
+
+            _nextCalled.Should().BeFalse();
+        }
+
+        [Test]
+        public async Task It_does_not_translate_cancellation_to_a_503()
+        {
+            await _act.Should().ThrowAsync<OperationCanceledException>();
+
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Fingerprint_Present_Verifies_Exact_Key_Construction : ResolveMappingSetMiddlewareTests
     {
         private MappingSetKey _capturedKey;

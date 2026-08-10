@@ -99,6 +99,10 @@ internal class ResolveMappingSetMiddleware(
                 requestInfo.RequestCancellationToken
             );
         }
+        catch (OperationCanceledException) when (requestInfo.RequestCancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (MappingSetUnavailableException ex)
         {
             logger.LogError(

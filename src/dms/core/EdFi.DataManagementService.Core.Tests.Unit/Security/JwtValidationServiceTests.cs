@@ -185,6 +185,73 @@ public class JwtValidationServiceTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Caller_Request_Cancels_During_Metadata_Resolution : JwtValidationServiceTests
+    {
+        private Func<Task> _act = null!;
+        private CancellationTokenSource _cancellationSource = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var (service, configurationManager, _, _, _, _) = CreateService();
+            _cancellationSource = new CancellationTokenSource();
+            _cancellationSource.Cancel();
+
+            A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+                .Returns(Task.FromCanceled<OpenIdConnectConfiguration>(_cancellationSource.Token));
+
+            _act = () =>
+                service.ValidateAndExtractClientAuthorizationsAsync(
+                    "not-read-after-cancellation",
+                    _cancellationSource.Token
+                );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _cancellationSource.Dispose();
+        }
+
+        [Test]
+        public async Task It_propagates_OperationCanceledException()
+        {
+            await _act.Should().ThrowAsync<OperationCanceledException>();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Metadata_Resolution_Throws_Cancellation_Without_Caller_Request_Cancellation
+        : JwtValidationServiceTests
+    {
+        private ClaimsPrincipal? _principal = null;
+        private ClientAuthorizations? _clientAuthorizations = null;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (service, configurationManager, _, _, _, _) = CreateService();
+
+            A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+                .Throws(new OperationCanceledException("metadata refresh aborted internally"));
+
+            (_principal, _clientAuthorizations) = await service.ValidateAndExtractClientAuthorizationsAsync(
+                "invalid-because-metadata-is-unavailable",
+                CancellationToken.None
+            );
+        }
+
+        [Test]
+        public void It_uses_the_existing_invalid_token_result()
+        {
+            _principal.Should().BeNull();
+            _clientAuthorizations.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_An_Expired_Token : JwtValidationServiceTests
     {
         private ClaimsPrincipal? _principal = null;
