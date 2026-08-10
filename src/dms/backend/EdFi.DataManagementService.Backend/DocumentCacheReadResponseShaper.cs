@@ -131,13 +131,13 @@ internal sealed class DocumentCacheReadResponseShaper(
             return DocumentCacheReadLookupResult<QueryResult>.Hit(
                 new QueryResult.QuerySuccess(
                     edfiDocs,
-                    authorizedCandidatePage.TotalCount is null
-                        ? null
-                        : RelationalReadGuardrails.ConvertTotalCountOrThrow(
+                    authorizedCandidatePage.IncludesTotalCount
+                        ? RelationalReadGuardrails.ConvertTotalCountOrThrow(
                             request.Resource,
                             authorizedCandidatePage.TotalCount,
                             "cache query response shaping"
-                        ),
+                        )
+                        : null,
                     authorizedCandidatePage.HighestSelectedDocumentId
                 )
             );

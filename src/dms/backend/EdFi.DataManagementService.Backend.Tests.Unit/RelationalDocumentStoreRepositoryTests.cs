@@ -3328,7 +3328,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
                         ),
                     ],
                     TotalCount: null,
-                    HighestSelectedDocumentId: null
+                    HighestSelectedDocumentId: null,
+                    IncludesTotalCount: false
                 )
             );
     }
@@ -3621,8 +3622,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Candidates.Select(static candidate => candidate.DocumentId)
             .Should()
             .Equal(contentVersionSelectedMetadata.DocumentId);
+        authorizedCandidatePage.IncludesTotalCount.Should().BeTrue();
+        authorizedCandidatePage.TotalCount.Should().Be(3);
 
-        acceleratedResult.Should().BeOfType<QueryResult.QuerySuccess>().Which.EdfiDocs.Single()!["id"]!
+        var success = acceleratedResult.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.TotalCount.Should().Be(3);
+        success.EdfiDocs.Single()!["id"]!
             .GetValue<string>()
             .Should()
             .Be(contentVersionSelectedDocumentUuid.Value.ToString());

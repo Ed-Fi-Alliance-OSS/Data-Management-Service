@@ -1604,7 +1604,8 @@ public class Given_DescriptorReadHandler
                         ),
                     ],
                     TotalCount: 7,
-                    HighestSelectedDocumentId: null
+                    HighestSelectedDocumentId: null,
+                    IncludesTotalCount: true
                 )
             );
         commandExecutor.Commands.Should().ContainSingle();
@@ -1687,6 +1688,8 @@ public class Given_DescriptorReadHandler
                     .Should()
                     .BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage>()
                     .Subject;
+                candidateSelection.AuthorizedCandidatePage.IncludesTotalCount.Should().BeTrue();
+                candidateSelection.AuthorizedCandidatePage.TotalCount.Should().Be(7);
 
                 return await candidateSelection.RelationalFallback(cancellationToken).ConfigureAwait(false);
             });

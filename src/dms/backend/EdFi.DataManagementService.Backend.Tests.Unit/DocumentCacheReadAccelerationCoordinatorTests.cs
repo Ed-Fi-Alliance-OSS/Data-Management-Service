@@ -870,7 +870,8 @@ public class Given_DocumentCacheReadAccelerationCoordinator
                 new DocumentCacheReadAccelerationCandidatePage(
                     [],
                     TotalCount: 0,
-                    HighestSelectedDocumentId: null
+                    HighestSelectedDocumentId: null,
+                    IncludesTotalCount: true
                 )
             )
         );
@@ -881,6 +882,37 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         success.HighestSelectedDocumentId.Should().BeNull();
         lookupAdapter.QueryAttempts.Should().Be(0);
         fallbackAttempts.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_omits_total_count_for_an_empty_authorized_query_page_when_not_requested()
+    {
+        var lookupAdapter = new RecordingLookupAdapter();
+        var sut = CreateCoordinator(
+            readAccelerationEnabled: true,
+            lookupAdapter,
+            CreateRegistry(ExecutionContext())
+        );
+
+        QueryResult result = await sut.QueryAsync(
+            CreateQueryRequest(
+                _ =>
+                    Task.FromResult<QueryResult>(
+                        new QueryResult.QueryFailureKnownError("fallback should not run")
+                    ),
+                new DocumentCacheReadAccelerationCandidatePage(
+                    [],
+                    TotalCount: 7,
+                    HighestSelectedDocumentId: null,
+                    IncludesTotalCount: false
+                )
+            )
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.EdfiDocs.Should().BeEmpty();
+        success.TotalCount.Should().BeNull();
+        lookupAdapter.QueryAttempts.Should().Be(0);
     }
 
     private static IEnumerable<TestCaseData> CompleteGetSelectionResults()
@@ -1045,7 +1077,8 @@ public class Given_DocumentCacheReadAccelerationCoordinator
                             new DocumentCacheReadAccelerationCandidatePage(
                                 [],
                                 TotalCount: 0,
-                                HighestSelectedDocumentId: null
+                                HighestSelectedDocumentId: null,
+                                IncludesTotalCount: true
                             ),
                             _ =>
                             {
@@ -2961,8 +2994,15 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     private static DocumentCacheReadAccelerationCandidatePage CandidatePage(
         IReadOnlyList<DocumentCacheReadAccelerationCandidate>? candidates = null,
         long? totalCount = 1,
-        long? highestSelectedDocumentId = null
-    ) => new(candidates ?? [Candidate()], totalCount, highestSelectedDocumentId);
+        long? highestSelectedDocumentId = null,
+        bool? includesTotalCount = null
+    ) =>
+        new(
+            candidates ?? [Candidate()],
+            totalCount,
+            highestSelectedDocumentId,
+            includesTotalCount ?? (totalCount is not null)
+        );
 
     private static IEnumerable<DocumentCacheReadLookupOutcome> FencedLookupOutcomesExceptRebuilding()
     {

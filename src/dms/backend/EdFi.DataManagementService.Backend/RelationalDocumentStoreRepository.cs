@@ -1146,6 +1146,7 @@ public sealed class RelationalDocumentStoreRepository(
                     preparation.Resource,
                     preparation.ReadPlan,
                     preparation.PlannedQuery,
+                    queryRequest.Paging.IncludesTotalCount,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -1269,6 +1270,7 @@ public sealed class RelationalDocumentStoreRepository(
         QualifiedResourceName resource,
         ResourceReadPlan readPlan,
         PageKeysetSpec.Query plannedQuery,
+        bool includesTotalCount,
         CancellationToken cancellationToken
     )
     {
@@ -1282,6 +1284,7 @@ public sealed class RelationalDocumentStoreRepository(
                     ReadDocumentCandidatePageAsync(
                         reader,
                         plannedQuery.Plan.TotalCountSql is not null,
+                        includesTotalCount,
                         resourceKeyId,
                         ct
                     ),
@@ -1330,6 +1333,7 @@ public sealed class RelationalDocumentStoreRepository(
     private static async Task<DocumentCacheReadAccelerationCandidatePage> ReadDocumentCandidatePageAsync(
         IRelationalCommandReader reader,
         bool hasTotalCount,
+        bool includesTotalCount,
         short resourceKeyId,
         CancellationToken cancellationToken
     )
@@ -1371,7 +1375,8 @@ public sealed class RelationalDocumentStoreRepository(
         return new DocumentCacheReadAccelerationCandidatePage(
             candidates,
             totalCount,
-            HighestSelectedDocumentId: null
+            HighestSelectedDocumentId: null,
+            IncludesTotalCount: includesTotalCount
         );
     }
 

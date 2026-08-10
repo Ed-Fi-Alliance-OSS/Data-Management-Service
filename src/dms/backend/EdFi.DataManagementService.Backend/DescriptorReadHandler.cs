@@ -463,7 +463,10 @@ internal sealed class DescriptorReadHandler(
             return new DocumentCacheReadAccelerationQuerySelectionResult.Complete(relationalSuccess);
         }
 
-        var candidatePage = CreateDescriptorReadAccelerationCandidatePage(rowsPage.Page);
+        var candidatePage = CreateDescriptorReadAccelerationCandidatePage(
+            rowsPage.Page,
+            request.PaginationParameters.TotalCount
+        );
 
         return new DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage(
             candidatePage,
@@ -1169,12 +1172,14 @@ internal sealed class DescriptorReadHandler(
         );
 
     private static DocumentCacheReadAccelerationCandidatePage CreateDescriptorReadAccelerationCandidatePage(
-        DescriptorQueryCandidatePage queryRowsPage
+        DescriptorQueryCandidatePage queryRowsPage,
+        bool includesTotalCount
     ) =>
         new(
             [.. queryRowsPage.Rows.Select(CreateDescriptorReadAccelerationCandidate)],
             queryRowsPage.TotalCount,
-            HighestSelectedDocumentId: null
+            HighestSelectedDocumentId: null,
+            IncludesTotalCount: includesTotalCount
         );
 
     // Descriptors carry no reference links and are always served as JSON, so the served etag's

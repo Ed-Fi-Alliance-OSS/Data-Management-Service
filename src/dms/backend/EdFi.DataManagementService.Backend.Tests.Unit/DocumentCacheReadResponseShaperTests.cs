@@ -203,7 +203,8 @@ public class Given_DocumentCacheReadResponseShaper
         var candidatePage = new DocumentCacheReadAccelerationCandidatePage(
             [first, second],
             TotalCount: 7,
-            HighestSelectedDocumentId: null
+            HighestSelectedDocumentId: null,
+            IncludesTotalCount: true
         );
 
         DocumentCacheReadLookupResult<QueryResult> result = sut.ShapeQuery(
@@ -222,6 +223,32 @@ public class Given_DocumentCacheReadResponseShaper
     }
 
     [Test]
+    public void It_omits_query_total_count_when_the_candidate_page_did_not_request_total_count()
+    {
+        var sut = CreateShaper();
+        var candidate = Candidate(documentId: 345, documentUuid: DocumentUuid);
+        var hitPage = DocumentCacheReadBatchLookupResult.FromDocuments([
+            FreshHit(candidate, CachedDocumentJson(candidate, "Lincoln High")),
+        ]);
+        var candidatePage = new DocumentCacheReadAccelerationCandidatePage(
+            [candidate],
+            TotalCount: 7,
+            HighestSelectedDocumentId: null,
+            IncludesTotalCount: false
+        );
+
+        DocumentCacheReadLookupResult<QueryResult> result = sut.ShapeQuery(
+            CreateQueryRequest(candidatePage),
+            candidatePage,
+            hitPage
+        );
+
+        var success = result.CachedResult.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.TotalCount.Should().BeNull();
+        success.EdfiDocs.Should().ContainSingle();
+    }
+
+    [Test]
     public void It_falls_back_when_a_fresh_query_page_does_not_match_the_authorized_candidate_page()
     {
         var sut = CreateShaper();
@@ -233,7 +260,8 @@ public class Given_DocumentCacheReadResponseShaper
         var candidatePage = new DocumentCacheReadAccelerationCandidatePage(
             [authorized],
             TotalCount: 1,
-            HighestSelectedDocumentId: 345
+            HighestSelectedDocumentId: 345,
+            IncludesTotalCount: true
         );
 
         DocumentCacheReadLookupResult<QueryResult> result = sut.ShapeQuery(
@@ -270,7 +298,8 @@ public class Given_DocumentCacheReadResponseShaper
         var candidatePage = new DocumentCacheReadAccelerationCandidatePage(
             [first, second],
             TotalCount: 2,
-            HighestSelectedDocumentId: 346
+            HighestSelectedDocumentId: 346,
+            IncludesTotalCount: true
         );
 
         DocumentCacheReadLookupResult<QueryResult> result = sut.ShapeQuery(

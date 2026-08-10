@@ -477,8 +477,8 @@ public class Given_DocumentCacheReadLookup
         );
 
         DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
-            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
-            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
+            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
+            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
             ExecutionContext()
         );
 
@@ -514,8 +514,8 @@ public class Given_DocumentCacheReadLookup
         );
 
         DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
-            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
-            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
+            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
+            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
             ExecutionContext()
         );
 
@@ -553,8 +553,8 @@ public class Given_DocumentCacheReadLookup
         );
 
         DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
-            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
-            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
+            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
+            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
             ExecutionContext()
         );
 
@@ -622,8 +622,8 @@ public class Given_DocumentCacheReadLookup
         );
 
         DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
-            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
-            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
+            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
+            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
             ExecutionContext()
         );
 
@@ -662,8 +662,8 @@ public class Given_DocumentCacheReadLookup
         );
 
         DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
-            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
-            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
+            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
+            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
             ExecutionContext()
         );
 
@@ -715,8 +715,8 @@ public class Given_DocumentCacheReadLookup
         );
 
         DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
-            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
-            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
+            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
+            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
             ExecutionContext()
         );
 
@@ -751,8 +751,8 @@ public class Given_DocumentCacheReadLookup
         );
 
         DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
-            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
-            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346)),
+            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
+            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
             ExecutionContext()
         );
 

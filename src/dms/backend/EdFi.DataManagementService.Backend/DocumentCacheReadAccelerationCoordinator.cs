@@ -48,7 +48,8 @@ public sealed record DocumentCacheReadAccelerationCandidate(
 public sealed record DocumentCacheReadAccelerationCandidatePage(
     IReadOnlyList<DocumentCacheReadAccelerationCandidate> Candidates,
     long? TotalCount,
-    long? HighestSelectedDocumentId
+    long? HighestSelectedDocumentId,
+    bool IncludesTotalCount
 )
 {
     public bool IsEmpty => Candidates.Count == 0;
@@ -581,13 +582,13 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         {
             return new QueryResult.QuerySuccess(
                 [],
-                candidateSelection.AuthorizedCandidatePage.TotalCount is null
-                    ? null
-                    : RelationalReadGuardrails.ConvertTotalCountOrThrow(
+                candidateSelection.AuthorizedCandidatePage.IncludesTotalCount
+                    ? RelationalReadGuardrails.ConvertTotalCountOrThrow(
                         request.Resource,
                         candidateSelection.AuthorizedCandidatePage.TotalCount,
                         "cache query empty-page response"
-                    ),
+                    )
+                    : null,
                 candidateSelection.AuthorizedCandidatePage.HighestSelectedDocumentId
             );
         }
