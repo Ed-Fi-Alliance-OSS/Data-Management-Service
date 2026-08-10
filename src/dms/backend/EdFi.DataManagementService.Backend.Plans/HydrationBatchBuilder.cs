@@ -6,7 +6,6 @@
 using System.Collections.Concurrent;
 using System.Data;
 using System.Data.Common;
-using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
@@ -625,16 +624,14 @@ public static class HydrationBatchBuilder
 
     private static void AddQueryParameters(DbCommand command, PageKeysetSpec.Query query)
     {
-        var requiredParameters = GetRequiredParameters(query.Plan);
-        ValidateRequiredParameterValues(
+        PlannedQueryParameterBinder.AddDbParameters(
+            command,
+            query.Plan,
             query.ParameterValues,
-            [.. requiredParameters.Select(static parameter => parameter.ParameterName)]
+            "Hydration query keyset",
+            "Hydration query keyset parameter",
+            "Unsupported query-parameter binding kind."
         );
-
-        foreach (var parameter in requiredParameters)
-        {
-            AddParameter(command, parameter, query.ParameterValues[parameter.ParameterName]);
-        }
     }
 
     private static void AddSelectedPageParameters(DbCommand command, PageKeysetSpec.SelectedPage selectedPage)
@@ -681,118 +678,6 @@ public static class HydrationBatchBuilder
 
     private static string SelectedPageDocumentIdParameterName(int index) => $"selectedDocumentId_{index}";
 
-    private static QuerySqlParameter[] GetRequiredParameters(PageDocumentIdSqlPlan plan)
-    {
-        List<QuerySqlParameter> requiredParameters = [];
-
-        AddRequiredParameters(requiredParameters, plan.PageParametersInOrder);
-
-        if (plan.TotalCountParametersInOrder is { } totalCountParameters)
-        {
-            AddRequiredParameters(requiredParameters, totalCountParameters);
-        }
-
-        return [.. requiredParameters];
-    }
-
-    private static void AddRequiredParameters(
-        List<QuerySqlParameter> requiredParameters,
-        IReadOnlyList<QuerySqlParameter> parameters
-    )
-    {
-        foreach (var parameter in parameters)
-        {
-            if (
-                TryGetRequiredParameter(
-                    requiredParameters,
-                    parameter.ParameterName,
-                    out var existingParameter
-                )
-            )
-            {
-                if (existingParameter != parameter)
-                {
-                    throw new InvalidOperationException(
-                        "Hydration query keyset cannot bind parameter "
-                            + $"'{parameter.ParameterName}' with conflicting binding metadata."
-                    );
-                }
-
-                continue;
-            }
-
-            requiredParameters.Add(parameter);
-        }
-    }
-
-    private static bool TryGetRequiredParameter(
-        IReadOnlyList<QuerySqlParameter> requiredParameters,
-        string candidateParameterName,
-        [NotNullWhen(true)] out QuerySqlParameter? parameter
-    )
-    {
-        parameter = requiredParameters.FirstOrDefault(candidateParameter =>
-            string.Equals(
-                candidateParameter.ParameterName,
-                candidateParameterName,
-                StringComparison.OrdinalIgnoreCase
-            )
-        );
-
-        return parameter is not null;
-    }
-
-    private static void ValidateRequiredParameterValues(
-        IReadOnlyDictionary<string, object?> parameterValues,
-        IReadOnlyList<string> requiredParameterNames
-    )
-    {
-        List<string> missingParameterNames = [];
-
-        foreach (var parameterName in requiredParameterNames)
-        {
-            if (!parameterValues.ContainsKey(parameterName))
-            {
-                missingParameterNames.Add(parameterName);
-            }
-        }
-
-        if (missingParameterNames.Count == 0)
-        {
-            return;
-        }
-
-        throw new InvalidOperationException(
-            "Hydration query keyset is missing required parameter values for "
-                + $"[{string.Join(", ", missingParameterNames.ConvertAll(parameterName => $"'{parameterName}'"))}]."
-        );
-    }
-
-    private static void AddParameter(DbCommand command, QuerySqlParameter parameter, object? value)
-    {
-        switch (parameter.Binding.Kind)
-        {
-            case QuerySqlParameterBindingKind.Scalar:
-                AddScalarParameter(command, parameter.ParameterName, value);
-                return;
-
-            case QuerySqlParameterBindingKind.PgsqlArray:
-                AddPgsqlArrayParameter(command, parameter.ParameterName, value);
-                return;
-
-            case QuerySqlParameterBindingKind.MssqlStructured:
-                AddMssqlStructuredParameter(command, parameter, value);
-                return;
-
-            default:
-                throw new ArgumentOutOfRangeException(
-                    nameof(parameter),
-                    parameter.Binding.Kind,
-                    "Unsupported query-parameter binding kind."
-                );
-        }
-    }
-
     private static void AddScalarParameter(DbCommand command, string bareName, object? value)
     {
         var parameter = command.CreateParameter();
@@ -801,83 +686,30 @@ public static class HydrationBatchBuilder
         command.Parameters.Add(parameter);
     }
 
-    private static void AddPgsqlArrayParameter(DbCommand command, string bareName, object? value)
+    /// <summary>
+    /// Ensures a SQL statement ends with a semicolon so it is properly terminated
+    /// when embedded in a multi-statement batch.
+    /// </summary>
+    private static string EnsureTrailingSemicolon(string sql)
     {
-        var parameter = command.CreateParameter();
-        parameter.ParameterName = $"@{bareName}";
-        // PostgreSQL array parameters carry either claim EdOrg ids (long[]) or namespace prefix LIKE
-        // patterns (string[]); Npgsql infers the element type from the runtime array.
-        parameter.Value = value switch
-        {
-            IReadOnlyList<long> int64Values => int64Values.ToArray(),
-            IReadOnlyList<string> stringValues => stringValues.ToArray(),
-            _ => throw new InvalidOperationException(
-                "Hydration query keyset parameter "
-                    + $"'{bareName}' requires an IReadOnlyList<long> or IReadOnlyList<string> runtime value."
-            ),
-        };
-        command.Parameters.Add(parameter);
+        var trimmed = sql.AsSpan().TrimEnd();
+        return trimmed.Length > 0 && trimmed[^1] == ';' ? sql : $"{trimmed};";
     }
 
-    private static void AddMssqlStructuredParameter(
-        DbCommand command,
-        QuerySqlParameter querySqlParameter,
-        object? value
-    )
+    /// <summary>
+    /// Strips a trailing semicolon (and surrounding whitespace) from compiled SQL so it can
+    /// be safely embedded inside a CTE body. Compiled plan SQL (e.g. from
+    /// <see cref="PageDocumentIdSqlCompiler"/>) includes a trailing semicolon as a statement
+    /// terminator, which is invalid inside <c>WITH ... AS (...)</c>.
+    /// </summary>
+    private static string StripTrailingSemicolon(string sql)
     {
-        var dbParameter = command.CreateParameter();
-        dbParameter.ParameterName = $"@{querySqlParameter.ParameterName}";
-        dbParameter.Value = CreateStructuredInt64Table(
-            querySqlParameter.Binding.StructuredColumnName
-                ?? throw new InvalidOperationException(
-                    $"Structured binding for parameter '{querySqlParameter.ParameterName}' is missing a column name."
-                ),
-            RequireInt64List(value, querySqlParameter.ParameterName)
-        );
-
-        if (dbParameter is not SqlParameter sqlParameter)
+        var trimmed = sql.AsSpan().TrimEnd();
+        if (trimmed.Length > 0 && trimmed[^1] == ';')
         {
-            throw new InvalidOperationException(
-                "SQL Server structured query-parameter binding requires a SqlParameter instance."
-            );
+            trimmed = trimmed[..^1].TrimEnd();
         }
 
-        sqlParameter.SqlDbType = SqlDbType.Structured;
-        sqlParameter.TypeName =
-            querySqlParameter.Binding.StructuredTypeName
-            ?? throw new InvalidOperationException(
-                $"Structured binding for parameter '{querySqlParameter.ParameterName}' is missing a type name."
-            );
-
-        command.Parameters.Add(sqlParameter);
-    }
-
-    private static IReadOnlyList<long> RequireInt64List(object? value, string parameterName)
-    {
-        if (value is IReadOnlyList<long> int64Values)
-        {
-            return int64Values;
-        }
-
-        throw new InvalidOperationException(
-            "Hydration query keyset parameter "
-                + $"'{parameterName}' requires an IReadOnlyList<long> runtime value."
-        );
-    }
-
-    private static DataTable CreateStructuredInt64Table(
-        string structuredColumnName,
-        IReadOnlyList<long> int64Values
-    )
-    {
-        DataTable structuredTable = new();
-        structuredTable.Columns.Add(structuredColumnName, typeof(long));
-
-        foreach (var value in int64Values)
-        {
-            structuredTable.Rows.Add(value);
-        }
-
-        return structuredTable;
+        return trimmed.ToString();
     }
 }

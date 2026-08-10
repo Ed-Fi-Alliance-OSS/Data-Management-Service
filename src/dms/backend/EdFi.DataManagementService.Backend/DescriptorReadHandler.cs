@@ -1268,64 +1268,22 @@ internal sealed class DescriptorReadHandler(
     {
         ArgumentNullException.ThrowIfNull(plannedQuery);
 
-        List<QuerySqlParameter> requiredParameters = [];
-        HashSet<string> seenParameterNames = new(StringComparer.OrdinalIgnoreCase);
-
-        AddParameters(plannedQuery.Plan.TotalCountParametersInOrder, requiredParameters, seenParameterNames);
-        AddParameters(plannedQuery.Plan.PageParametersInOrder, requiredParameters, seenParameterNames);
-
-        List<string> missingParameterNames = [];
-        List<RelationalParameter> parameters = [];
-
-        foreach (var queryParameter in requiredParameters)
-        {
-            if (
-                !plannedQuery.ParameterValues.TryGetValue(
-                    queryParameter.ParameterName,
-                    out var parameterValue
+        return
+        [
+            .. PlannedQueryParameterBinder
+                .BindParameters(
+                    plannedQuery.Plan,
+                    plannedQuery.ParameterValues,
+                    "Descriptor query keyset",
+                    "Descriptor query keyset parameter",
+                    "Unsupported descriptor query parameter binding kind."
                 )
-            )
-            {
-                missingParameterNames.Add(queryParameter.ParameterName);
-                continue;
-            }
-
-            parameters.Add(
-                NamespaceAuthorizationCommandParameterBuilder.BuildParameter(queryParameter, parameterValue)
-            );
-        }
-
-        if (missingParameterNames.Count > 0)
-        {
-            throw new InvalidOperationException(
-                "Descriptor query keyset is missing required parameter values for "
-                    + $"[{string.Join(", ", missingParameterNames.Select(parameterName => $"'{parameterName}'"))}]."
-            );
-        }
-
-        return parameters;
-    }
-
-    private static void AddParameters(
-        IReadOnlyList<QuerySqlParameter>? parameterInventory,
-        ICollection<QuerySqlParameter> requiredParameters,
-        ISet<string> seenParameterNames
-    )
-    {
-        if (parameterInventory is null)
-        {
-            return;
-        }
-
-        foreach (var parameter in parameterInventory)
-        {
-            if (!seenParameterNames.Add(parameter.ParameterName))
-            {
-                continue;
-            }
-
-            requiredParameters.Add(parameter);
-        }
+                .Select(static binding => new RelationalParameter(
+                    binding.Name,
+                    binding.Value,
+                    binding.ConfigureParameter
+                )),
+        ];
     }
 
     private static async Task<DescriptorQueryRowsPage> ReadQueryRowsPageAsync(

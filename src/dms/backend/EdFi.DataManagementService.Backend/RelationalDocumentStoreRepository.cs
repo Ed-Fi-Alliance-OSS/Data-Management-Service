@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Data;
 using System.Data.Common;
 using System.Globalization;
 using EdFi.DataManagementService.Backend.Etag;
@@ -1291,7 +1290,7 @@ public sealed class RelationalDocumentStoreRepository(
             .ConfigureAwait(false);
     }
 
-    private RelationalCommand BuildQueryCandidateSelectionCommand(
+    private static RelationalCommand BuildQueryCandidateSelectionCommand(
         MappingSet mappingSet,
         ResourceReadPlan readPlan,
         PageKeysetSpec.Query plannedQuery
@@ -1306,142 +1305,26 @@ public sealed class RelationalDocumentStoreRepository(
         return new RelationalCommand(commandText, BuildQueryCandidateSelectionParameters(plannedQuery));
     }
 
-    private IReadOnlyList<RelationalParameter> BuildQueryCandidateSelectionParameters(
+    private static IReadOnlyList<RelationalParameter> BuildQueryCandidateSelectionParameters(
         PageKeysetSpec.Query plannedQuery
     )
     {
-        var requiredParameters = GetRequiredCandidateSelectionParameters(plannedQuery.Plan);
-        List<string> missingParameterNames = [];
-        List<RelationalParameter> parameters = [];
-
-        foreach (var parameter in requiredParameters)
-        {
-            if (!plannedQuery.ParameterValues.TryGetValue(parameter.ParameterName, out var parameterValue))
-            {
-                missingParameterNames.Add(parameter.ParameterName);
-                continue;
-            }
-
-            parameters.Add(BuildQueryCandidateSelectionParameter(parameter, parameterValue));
-        }
-
-        if (missingParameterNames.Count > 0)
-        {
-            throw new InvalidOperationException(
-                "Query candidate selection keyset is missing required parameter values for "
-                    + $"[{string.Join(", ", missingParameterNames.Select(static parameterName => $"'{parameterName}'"))}]."
-            );
-        }
-
-        return parameters;
-    }
-
-    private RelationalParameter BuildQueryCandidateSelectionParameter(
-        QuerySqlParameter parameter,
-        object? value
-    ) =>
-        parameter.Binding.Kind switch
-        {
-            QuerySqlParameterBindingKind.Scalar => new RelationalParameter(
-                $"@{parameter.ParameterName}",
-                value
-            ),
-            QuerySqlParameterBindingKind.PgsqlArray => new RelationalParameter(
-                $"@{parameter.ParameterName}",
-                value switch
-                {
-                    IReadOnlyList<long> int64Values => int64Values.ToArray(),
-                    IReadOnlyList<string> stringValues => stringValues.ToArray(),
-                    _ => throw new InvalidOperationException(
-                        "Query candidate selection parameter "
-                            + $"'{parameter.ParameterName}' requires an IReadOnlyList<long> or IReadOnlyList<string> runtime value."
-                    ),
-                }
-            ),
-            QuerySqlParameterBindingKind.MssqlStructured => new RelationalParameter(
-                $"@{parameter.ParameterName}",
-                CreateStructuredInt64Table(
-                    parameter.Binding.StructuredColumnName
-                        ?? throw new InvalidOperationException(
-                            $"Structured binding for parameter '{parameter.ParameterName}' is missing a column name."
-                        ),
-                    value is IReadOnlyList<long> int64Values
-                        ? int64Values
-                        : throw new InvalidOperationException(
-                            "Query candidate selection parameter "
-                                + $"'{parameter.ParameterName}' requires an IReadOnlyList<long> runtime value."
-                        )
-                ),
-                dbParameter => _relationalParameterConfigurator.ConfigureParameter(dbParameter, parameter)
-            ),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(parameter),
-                parameter.Binding.Kind,
-                "Unsupported query candidate selection parameter binding kind."
-            ),
-        };
-
-    private static DataTable CreateStructuredInt64Table(
-        string structuredColumnName,
-        IReadOnlyList<long> int64Values
-    )
-    {
-        DataTable structuredTable = new();
-        structuredTable.MinimumCapacity = int64Values.Count;
-        structuredTable.Columns.Add(structuredColumnName, typeof(long));
-
-        foreach (var value in int64Values)
-        {
-            structuredTable.Rows.Add(value);
-        }
-
-        return structuredTable;
-    }
-
-    private static QuerySqlParameter[] GetRequiredCandidateSelectionParameters(PageDocumentIdSqlPlan plan)
-    {
-        List<QuerySqlParameter> requiredParameters = [];
-
-        AddRequiredCandidateSelectionParameters(requiredParameters, plan.PageParametersInOrder);
-
-        if (plan.TotalCountParametersInOrder is { } totalCountParameters)
-        {
-            AddRequiredCandidateSelectionParameters(requiredParameters, totalCountParameters);
-        }
-
-        return [.. requiredParameters];
-    }
-
-    private static void AddRequiredCandidateSelectionParameters(
-        List<QuerySqlParameter> requiredParameters,
-        IReadOnlyList<QuerySqlParameter> parameters
-    )
-    {
-        foreach (var parameter in parameters)
-        {
-            var existingParameter = requiredParameters.Find(candidateParameter =>
-                string.Equals(
-                    candidateParameter.ParameterName,
-                    parameter.ParameterName,
-                    StringComparison.OrdinalIgnoreCase
+        return
+        [
+            .. PlannedQueryParameterBinder
+                .BindParameters(
+                    plannedQuery.Plan,
+                    plannedQuery.ParameterValues,
+                    "Query candidate selection keyset",
+                    "Query candidate selection parameter",
+                    "Unsupported query candidate selection parameter binding kind."
                 )
-            );
-
-            if (existingParameter is not null)
-            {
-                if (existingParameter != parameter)
-                {
-                    throw new InvalidOperationException(
-                        "Query candidate selection cannot bind parameter "
-                            + $"'{parameter.ParameterName}' with conflicting binding metadata."
-                    );
-                }
-
-                continue;
-            }
-
-            requiredParameters.Add(parameter);
-        }
+                .Select(static binding => new RelationalParameter(
+                    binding.Name,
+                    binding.Value,
+                    binding.ConfigureParameter
+                )),
+        ];
     }
 
     private static async Task<DocumentCacheReadAccelerationCandidatePage> ReadDocumentCandidatePageAsync(
