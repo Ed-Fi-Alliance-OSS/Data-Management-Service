@@ -24,6 +24,7 @@ public enum DocumentCacheReadAccelerationResourceKind
 
 internal enum DocumentCacheReadAccelerationFallbackReason
 {
+    None,
     ReadAccelerationDisabled,
     InvalidTargetKey,
     SelectedDataStoreUnavailable,
@@ -139,6 +140,22 @@ internal sealed record DocumentCacheReadLookupResult<TResult>
             );
         IsAdapterAcquisitionFailure = isAdapterAcquisitionFailure;
 
+        if (CachedResult is null && FallbackReason == DocumentCacheReadAccelerationFallbackReason.None)
+        {
+            throw new ArgumentException(
+                "Fallback results must provide a fallback reason.",
+                nameof(fallbackReason)
+            );
+        }
+
+        if (CachedResult is not null && FallbackReason != DocumentCacheReadAccelerationFallbackReason.None)
+        {
+            throw new ArgumentException(
+                "Cache hit results must not provide a fallback reason.",
+                nameof(fallbackReason)
+            );
+        }
+
         if (
             IsAdapterAcquisitionFailure
             && RawLookupOutcome != DocumentCacheReadLookupOutcome.CacheUnavailable
@@ -169,7 +186,7 @@ internal sealed record DocumentCacheReadLookupResult<TResult>
 
         return new DocumentCacheReadLookupResult<TResult>(
             result,
-            DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss,
+            DocumentCacheReadAccelerationFallbackReason.None,
             rawLookupOutcome: DocumentCacheReadLookupOutcome.FreshHit
         );
     }

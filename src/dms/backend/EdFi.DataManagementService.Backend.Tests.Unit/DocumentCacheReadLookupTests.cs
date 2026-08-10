@@ -81,6 +81,34 @@ public class Given_DocumentCacheReadLookup
     }
 
     [Test]
+    public void It_marks_cache_hit_results_with_no_fallback_reason()
+    {
+        var cachedResult = new QueryResult.QuerySuccess(
+            [JsonNode.Parse("""{"id":"cached"}""")!],
+            TotalCount: 1
+        );
+
+        DocumentCacheReadLookupResult<QueryResult> result = DocumentCacheReadLookupResult<QueryResult>.Hit(
+            cachedResult
+        );
+
+        result.CachedResult.Should().BeSameAs(cachedResult);
+        result.FallbackReason.Should().Be(DocumentCacheReadAccelerationFallbackReason.None);
+        result.RawLookupOutcome.Should().Be(DocumentCacheReadLookupOutcome.FreshHit);
+    }
+
+    [Test]
+    public void It_rejects_none_as_a_fallback_reason()
+    {
+        Action act = () =>
+            DocumentCacheReadLookupResult<QueryResult>.Fallback(
+                DocumentCacheReadAccelerationFallbackReason.None
+            );
+
+        act.Should().Throw<ArgumentException>().WithParameterName("fallbackReason");
+    }
+
+    [Test]
     public void It_classifies_a_batch_as_non_fresh_when_one_document_is_stale()
     {
         DocumentCacheReadAccelerationCandidate first = Candidate(documentId: 345, contentVersion: 91);
