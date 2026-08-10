@@ -94,6 +94,25 @@ public class Given_RelationalReadTargetLookupService
             .Equal(documentUuid.Value);
     }
 
+    [Test]
+    public void It_rejects_existing_document_without_a_real_content_last_modified_timestamp()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var existingDocument = new RelationalReadTargetLookupResult.ExistingDocument(
+            404L,
+            documentUuid,
+            907L,
+            new DateTimeOffset(2026, 4, 11, 12, 30, 45, TimeSpan.Zero)
+        );
+
+        Action constructAction = () =>
+            _ = new RelationalReadTargetLookupResult.ExistingDocument(404L, documentUuid, 907L, default);
+        Action cloneAction = () => _ = existingDocument with { ContentLastModifiedAt = default };
+
+        constructAction.Should().Throw<ArgumentException>().WithMessage("*ContentLastModifiedAt*");
+        cloneAction.Should().Throw<ArgumentException>().WithMessage("*ContentLastModifiedAt*");
+    }
+
     [TestCase(SqlDialect.Pgsql, "dms.\"Document\"")]
     [TestCase(SqlDialect.Mssql, "[dms].[Document]")]
     public async Task It_distinguishes_a_uuid_that_exists_for_the_wrong_resource(

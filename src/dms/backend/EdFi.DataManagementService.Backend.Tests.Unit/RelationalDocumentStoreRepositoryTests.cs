@@ -46,6 +46,15 @@ public class Given_RelationalDocumentStoreRepositoryTests
 
     private static readonly ResourceInfo _schoolResourceInfo = CreateResourceInfo("School");
     private const string StampStyleEtagPattern = "^\"\\d+\"$";
+    private static readonly DateTimeOffset _readTargetContentLastModifiedAt = new(
+        2026,
+        4,
+        11,
+        12,
+        30,
+        45,
+        TimeSpan.FromHours(-5)
+    );
 
     // A deterministic composed-shaped write-result etag. These tests verify that the repository passes
     // the write handler's/executor's etag through unchanged (and that it is neither the client's stale
@@ -323,7 +332,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     readPlan,
@@ -873,7 +889,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     readPlan,
@@ -920,7 +943,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(346L, documentUuid, 94L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    346L,
+                    documentUuid,
+                    94L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     readPlan,
@@ -974,7 +1004,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(347L, documentUuid, 95L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    347L,
+                    documentUuid,
+                    95L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     readPlan,
@@ -1032,7 +1069,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
         A.CallTo(() =>
                 _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
                     A<SingleRecordRelationshipAuthorizationExecutionRequest>._,
@@ -1104,7 +1148,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
         A.CallTo(() =>
                 _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
                     A<SingleRecordRelationshipAuthorizationExecutionRequest>._,
@@ -1162,7 +1213,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
         A.CallTo(() =>
                 _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
                     A<SingleRecordRelationshipAuthorizationExecutionRequest>._,
@@ -1234,7 +1292,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
 
         var result = await _sut.GetDocumentById(getRequest);
 
@@ -1395,7 +1460,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
         A.CallTo(() =>
                 _namespaceAuthorizationExecutor.ExecuteAsync(
                     A<NamespaceAuthorizationExecutionRequest>._,
@@ -1477,7 +1549,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
         A.CallTo(() =>
                 _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
                     A<SingleRecordRelationshipAuthorizationExecutionRequest>._,
@@ -1545,7 +1624,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
 
         var result = await _sut.GetDocumentById(getRequest);
 
@@ -1688,7 +1774,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
         A.CallTo(() =>
                 _namespaceAuthorizationExecutor.ExecuteAsync(
                     A<NamespaceAuthorizationExecutionRequest>._,
@@ -1749,7 +1842,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             )
             .ReturnsNextFromSequence(
-                new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L),
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                ),
                 new RelationalReadTargetLookupResult.NotFound()
             );
         A.CallTo(() =>
@@ -1818,7 +1916,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
         A.CallTo(() =>
                 _namespaceAuthorizationExecutor.ExecuteAsync(
                     A<NamespaceAuthorizationExecutionRequest>._,
@@ -1863,7 +1968,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
 
         var result = await _sut.GetDocumentById(getRequest);
 
@@ -1914,7 +2026,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
 
         var result = await _sut.GetDocumentById(getRequest);
 
@@ -1973,7 +2092,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
 
         var result = await _sut.GetDocumentById(getRequest);
 
@@ -2160,7 +2286,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
         A.CallTo(() =>
                 _namespaceAuthorizationExecutor.ExecuteAsync(
                     A<NamespaceAuthorizationExecutionRequest>._,
@@ -2239,7 +2372,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
         A.CallTo(() =>
                 _namespaceAuthorizationExecutor.ExecuteAsync(
                     A<NamespaceAuthorizationExecutionRequest>._,
@@ -2298,7 +2438,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
 
         var result = await _sut.GetDocumentById(getRequest);
 
@@ -2355,7 +2502,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 5L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    5L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
         A.CallTo(() =>
                 _namespaceAuthorizationExecutor.ExecuteAsync(
                     A<NamespaceAuthorizationExecutionRequest>._,
@@ -2456,7 +2610,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     readPlan,
@@ -2524,7 +2685,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
         A.CallTo(() =>
                 _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
                     A<SingleRecordRelationshipAuthorizationExecutionRequest>._,
@@ -2586,10 +2754,30 @@ public class Given_RelationalDocumentStoreRepositoryTests
             claimEducationOrganizationIds: [255901L]
         );
         Queue<RelationalReadTargetLookupResult> targetLookupResults = new([
-            new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L),
-            new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 92L),
-            new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 92L),
-            new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 92L),
+            new RelationalReadTargetLookupResult.ExistingDocument(
+                345L,
+                documentUuid,
+                91L,
+                _readTargetContentLastModifiedAt
+            ),
+            new RelationalReadTargetLookupResult.ExistingDocument(
+                345L,
+                documentUuid,
+                92L,
+                _readTargetContentLastModifiedAt
+            ),
+            new RelationalReadTargetLookupResult.ExistingDocument(
+                345L,
+                documentUuid,
+                92L,
+                _readTargetContentLastModifiedAt
+            ),
+            new RelationalReadTargetLookupResult.ExistingDocument(
+                345L,
+                documentUuid,
+                92L,
+                _readTargetContentLastModifiedAt
+            ),
         ]);
         Queue<SingleRecordRelationshipAuthorizationExecutionResult> authorizationResults = new([
             new SingleRecordRelationshipAuthorizationExecutionResult.Authorized(91L),
@@ -2730,7 +2918,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 93L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    93L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     readPlan,

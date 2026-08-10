@@ -26,8 +26,30 @@ public abstract record RelationalReadTargetLookupResult
         long DocumentId,
         DocumentUuid DocumentUuid,
         long ContentVersion,
-        DateTimeOffset ContentLastModifiedAt = default
-    ) : RelationalReadTargetLookupResult;
+        DateTimeOffset ContentLastModifiedAt
+    ) : RelationalReadTargetLookupResult
+    {
+        private DateTimeOffset _contentLastModifiedAt = ValidateContentLastModifiedAt(ContentLastModifiedAt);
+
+        public DateTimeOffset ContentLastModifiedAt
+        {
+            get => _contentLastModifiedAt;
+            init => _contentLastModifiedAt = ValidateContentLastModifiedAt(value);
+        }
+
+        private static DateTimeOffset ValidateContentLastModifiedAt(DateTimeOffset contentLastModifiedAt)
+        {
+            if (contentLastModifiedAt == default)
+            {
+                throw new ArgumentException(
+                    "ContentLastModifiedAt must be a real persisted timestamp.",
+                    nameof(ContentLastModifiedAt)
+                );
+            }
+
+            return contentLastModifiedAt;
+        }
+    }
 
     public sealed record NotFound() : RelationalReadTargetLookupResult;
 
