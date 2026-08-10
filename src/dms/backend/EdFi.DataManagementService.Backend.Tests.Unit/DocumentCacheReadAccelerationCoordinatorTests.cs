@@ -884,7 +884,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var cachedResult = new QueryResult.QuerySuccess(
             [JsonNode.Parse("""{"id":"cached"}""")!],
             2,
-            HighestSelectedDocumentId: 346
+            HighestSelectedDocumentId: null
         );
         var lookupAdapter = new RecordingLookupAdapter
         {
@@ -900,7 +900,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var candidatePage = CandidatePage(
             [Candidate(documentId: 345, contentVersion: 91), Candidate(documentId: 346, contentVersion: 92)],
             totalCount: 2,
-            highestSelectedDocumentId: 346
+            highestSelectedDocumentId: null
         );
 
         QueryResult result = await sut.QueryAsync(
@@ -913,6 +913,11 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         );
 
         result.Should().BeSameAs(cachedResult);
+        result
+            .Should()
+            .BeOfType<QueryResult.QuerySuccess>()
+            .Which.HighestSelectedDocumentId.Should()
+            .BeNull();
         lookupAdapter.QueryAttempts.Should().Be(1);
         lookupAdapter.LastQueryRequest!.AuthorizedCandidatePage.Should().Be(candidatePage);
         lookupAdapter.LastQueryTargetContext.Should().BeSameAs(executionContext);
@@ -925,7 +930,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var fallbackResult = new QueryResult.QuerySuccess(
             [JsonNode.Parse("""{"id":"relational"}""")!],
             2,
-            HighestSelectedDocumentId: 346
+            HighestSelectedDocumentId: null
         );
         var lookupAdapter = new RecordingLookupAdapter
         {
@@ -943,7 +948,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var candidatePage = CandidatePage(
             [Candidate(documentId: 345, contentVersion: 91), Candidate(documentId: 346, contentVersion: 92)],
             totalCount: 2,
-            highestSelectedDocumentId: 346
+            highestSelectedDocumentId: null
         );
 
         QueryResult result = await sut.QueryAsync(
@@ -959,6 +964,11 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         );
 
         result.Should().BeSameAs(fallbackResult);
+        result
+            .Should()
+            .BeOfType<QueryResult.QuerySuccess>()
+            .Which.HighestSelectedDocumentId.Should()
+            .BeNull();
         lookupAdapter.QueryAttempts.Should().Be(1);
         fallbackContext.Reason.Should().Be(DocumentCacheReadAccelerationFallbackReason.CacheLookupStale);
         fallbackContext.TargetContext.Should().BeSameAs(executionContext);

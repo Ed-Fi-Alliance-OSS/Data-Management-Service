@@ -2934,7 +2934,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
         success.EdfiDocs.Should().HaveCount(2);
         success.TotalCount.Should().BeNull();
-        success.HighestSelectedDocumentId.Should().Be(678L);
+        success.HighestSelectedDocumentId.Should().BeNull();
         capturedSelectedPage.DocumentIds.Should().Equal(345L, 678L);
         readAccelerationCoordinator.QueryAttempts.Should().Be(1);
         readAccelerationCoordinator.SelectedQueryRequest.Should().NotBeNull();
@@ -2965,7 +2965,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
                         ),
                     ],
                     TotalCount: null,
-                    HighestSelectedDocumentId: 678L
+                    HighestSelectedDocumentId: null
                 )
             );
     }

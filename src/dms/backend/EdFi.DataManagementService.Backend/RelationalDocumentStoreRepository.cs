@@ -1486,10 +1486,12 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
+        // This candidate reader is used only by traditional paging. A cursor boundary must come from
+        // cursor page selection itself rather than being inferred from the selected document ids.
         return new DocumentCacheReadAccelerationCandidatePage(
             candidates,
             totalCount,
-            candidates.Count == 0 ? null : candidates.Max(static candidate => candidate.DocumentId)
+            HighestSelectedDocumentId: null
         );
     }
 

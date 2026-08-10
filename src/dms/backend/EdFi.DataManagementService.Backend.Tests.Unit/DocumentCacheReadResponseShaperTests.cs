@@ -191,7 +191,7 @@ public class Given_DocumentCacheReadResponseShaper
     }
 
     [Test]
-    public void It_shapes_a_fresh_query_page_in_candidate_order()
+    public void It_shapes_a_fresh_query_page_in_candidate_order_without_a_traditional_paging_boundary()
     {
         var sut = CreateShaper();
         var first = Candidate(documentId: 345, documentUuid: DocumentUuid);
@@ -206,7 +206,7 @@ public class Given_DocumentCacheReadResponseShaper
                 new DocumentCacheReadAccelerationCandidatePage(
                     [first, second],
                     TotalCount: 7,
-                    HighestSelectedDocumentId: 346
+                    HighestSelectedDocumentId: null
                 )
             ),
             hitPage
@@ -214,7 +214,7 @@ public class Given_DocumentCacheReadResponseShaper
 
         var success = result.CachedResult.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
         success.TotalCount.Should().Be(7);
-        success.HighestSelectedDocumentId.Should().Be(346);
+        success.HighestSelectedDocumentId.Should().BeNull();
         success
             .EdfiDocs.Select(document => document!["name"]!.GetValue<string>())
             .Should()
