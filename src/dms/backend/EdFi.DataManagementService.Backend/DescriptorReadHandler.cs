@@ -93,6 +93,21 @@ internal sealed class DescriptorReadHandler(
             : DescriptorQueryCandidateSelectionReadResult;
     }
 
+    private sealed record DescriptorQueryPreparation(
+        PageDocumentIdAuthorizationSpec? AuthorizationSpec,
+        PageKeysetSpec.Query PlannedQuery
+    );
+
+    private abstract record DescriptorQueryPreparationResult
+    {
+        private DescriptorQueryPreparationResult() { }
+
+        public sealed record Complete(QueryResult Result) : DescriptorQueryPreparationResult;
+
+        public sealed record Prepared(DescriptorQueryPreparation Preparation)
+            : DescriptorQueryPreparationResult;
+    }
+
     public async Task<GetResult> HandleGetByIdAsync(
         DescriptorGetByIdRequest request,
         CancellationToken cancellationToken = default
@@ -572,103 +587,18 @@ internal sealed class DescriptorReadHandler(
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var authorizationPreflight = ResolveDescriptorReadAuthorization(
-            request.MappingSet,
-            request.Resource,
-            request.AuthorizationStrategyEvaluators,
-            request.RelationalAuthorizationContext,
-            NamespaceAuthorizationOperation.ReadMany,
-            "descriptor query",
-            "GET-many"
-        );
-
-        switch (authorizationPreflight)
-        {
-            case DescriptorReadAuthorizationPreflightOutcome.NotImplemented notImplemented:
-                await ValidateCustomViewsAsync(request, notImplemented.CustomViewChecks, cancellationToken)
-                    .ConfigureAwait(false);
-                return new DescriptorQueryCandidateSelectionReadResult.Complete(
-                    new QueryResult.QueryFailureNotImplemented(notImplemented.FailureMessage)
-                );
-            case DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError configError:
-                await ValidateCustomViewsAsync(request, configError.CustomViewChecks, cancellationToken)
-                    .ConfigureAwait(false);
-                return new DescriptorQueryCandidateSelectionReadResult.Complete(
-                    new QueryResult.QueryFailureSecurityConfiguration(
-                        configError.Errors,
-                        configError.Diagnostics
-                    )
-                );
-            case DescriptorReadAuthorizationPreflightOutcome.NamespaceNotAuthorized namespaceNotAuthorized:
-                await ValidateCustomViewsAsync(
-                        request,
-                        namespaceNotAuthorized.CustomViewChecks,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-                return new DescriptorQueryCandidateSelectionReadResult.Complete(
-                    new QueryResult.QueryFailureNamespaceNotAuthorized(namespaceNotAuthorized.Failure)
-                );
-        }
-
-        var proceed = (DescriptorReadAuthorizationPreflightOutcome.Proceed)authorizationPreflight;
-        var authorizationSpec = BuildDescriptorQueryAuthorizationSpec(proceed);
-
-        DescriptorQueryPreprocessingResult preprocessingResult;
-
-        try
-        {
-            preprocessingResult = DescriptorQueryRequestPreprocessor.Preprocess(
-                request.MappingSet,
-                request.Resource,
-                request.QueryElements
-            );
-        }
-        catch (NotSupportedException ex)
-        {
-            return new DescriptorQueryCandidateSelectionReadResult.Complete(
-                new QueryResult.QueryFailureNotImplemented(ex.Message)
-            );
-        }
-        catch (InvalidOperationException ex)
-        {
-            return new DescriptorQueryCandidateSelectionReadResult.Complete(
-                new QueryResult.UnknownFailure(ex.Message)
-            );
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return new DescriptorQueryCandidateSelectionReadResult.Complete(
-                new QueryResult.UnknownFailure(ex.Message)
-            );
-        }
-
-        if (preprocessingResult.Outcome is RelationalQueryPreprocessingOutcome.EmptyPage)
-        {
-            await ValidateCustomViewsAsync(request, authorizationSpec?.CustomViewChecks, cancellationToken)
-                .ConfigureAwait(false);
-
-            return new DescriptorQueryCandidateSelectionReadResult.Complete(
-                new QueryResult.QuerySuccess([], request.PaginationParameters.TotalCount ? 0 : null)
-            );
-        }
-
-        await ValidateCustomViewsAsync(request, authorizationSpec?.CustomViewChecks, cancellationToken)
+        DescriptorQueryPreparationResult preparationResult = await PrepareDescriptorQueryAsync(
+                request,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
-        if (
-            BuildDescriptorQueryParameterBudgetFailure(
-                request.MappingSet.Key.Dialect,
-                request.Resource,
-                proceed.NamespacePrefixParameterization,
-                preprocessingResult.QueryElementsInOrder.Count,
-                CountChangeVersionParameters(request.ChangeVersionRange)
-            ) is
-            { } parameterBudgetFailure
-        )
+        if (preparationResult is DescriptorQueryPreparationResult.Complete complete)
         {
-            return new DescriptorQueryCandidateSelectionReadResult.Complete(parameterBudgetFailure);
+            return new DescriptorQueryCandidateSelectionReadResult.Complete(complete.Result);
         }
+
+        var preparation = ((DescriptorQueryPreparationResult.Prepared)preparationResult).Preparation;
 
         DescriptorQueryCandidatePage candidatePage;
 
@@ -676,13 +606,12 @@ internal sealed class DescriptorReadHandler(
         {
             candidatePage = await ReadQueryCandidateRowsAsync(
                     request,
-                    preprocessingResult,
-                    authorizationSpec,
+                    preparation.PlannedQuery,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
         }
-        catch (DbException ex) when (authorizationSpec?.CustomViewChecks is { Count: > 0 })
+        catch (DbException ex) when (preparation.AuthorizationSpec?.CustomViewChecks is { Count: > 0 })
         {
             throw new CustomViewAuthorizationValidationException(ex);
         }
@@ -857,121 +786,24 @@ internal sealed class DescriptorReadHandler(
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var authorizationPreflight = ResolveDescriptorReadAuthorization(
-            request.MappingSet,
-            request.Resource,
-            request.AuthorizationStrategyEvaluators,
-            request.RelationalAuthorizationContext,
-            NamespaceAuthorizationOperation.ReadMany,
-            "descriptor query",
-            "GET-many"
-        );
-
-        // Each terminal validates the custom views configured ahead of it — an empty list is a no-op — and
-        // then reports the same result it would have reported without any custom view configured.
-        switch (authorizationPreflight)
-        {
-            case DescriptorReadAuthorizationPreflightOutcome.NotImplemented notImplemented:
-                await ValidateCustomViewsAsync(request, notImplemented.CustomViewChecks, cancellationToken)
-                    .ConfigureAwait(false);
-                return new DescriptorQueryNoCacheReadResult.Complete(
-                    new QueryResult.QueryFailureNotImplemented(notImplemented.FailureMessage)
-                );
-            case DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError configError:
-                await ValidateCustomViewsAsync(request, configError.CustomViewChecks, cancellationToken)
-                    .ConfigureAwait(false);
-                return new DescriptorQueryNoCacheReadResult.Complete(
-                    new QueryResult.QueryFailureSecurityConfiguration(
-                        configError.Errors,
-                        configError.Diagnostics
-                    )
-                );
-            case DescriptorReadAuthorizationPreflightOutcome.NamespaceNotAuthorized namespaceNotAuthorized:
-                await ValidateCustomViewsAsync(
-                        request,
-                        namespaceNotAuthorized.CustomViewChecks,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-                return new DescriptorQueryNoCacheReadResult.Complete(
-                    new QueryResult.QueryFailureNamespaceNotAuthorized(namespaceNotAuthorized.Failure)
-                );
-        }
-
-        var proceed = (DescriptorReadAuthorizationPreflightOutcome.Proceed)authorizationPreflight;
-
-        // The descriptor page subquery roots on dms.Descriptor, which carries both the DocumentId keyset
-        // and the Namespace column, so the namespace and custom-view checks bind directly to the root
-        // alias. The planner consumes the orchestrator's authorization checks through
-        // PageDocumentIdAuthorizationSpec.
-        var authorizationSpec = BuildDescriptorQueryAuthorizationSpec(proceed);
-
-        DescriptorQueryPreprocessingResult preprocessingResult;
-
-        try
-        {
-            preprocessingResult = DescriptorQueryRequestPreprocessor.Preprocess(
-                request.MappingSet,
-                request.Resource,
-                request.QueryElements
-            );
-        }
-        catch (NotSupportedException ex)
-        {
-            return new DescriptorQueryNoCacheReadResult.Complete(
-                new QueryResult.QueryFailureNotImplemented(ex.Message)
-            );
-        }
-        catch (InvalidOperationException ex)
-        {
-            return new DescriptorQueryNoCacheReadResult.Complete(new QueryResult.UnknownFailure(ex.Message));
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return new DescriptorQueryNoCacheReadResult.Complete(new QueryResult.UnknownFailure(ex.Message));
-        }
-
-        if (preprocessingResult.Outcome is RelationalQueryPreprocessingOutcome.EmptyPage)
-        {
-            await ValidateCustomViewsAsync(request, authorizationSpec?.CustomViewChecks, cancellationToken)
-                .ConfigureAwait(false);
-
-            return new DescriptorQueryNoCacheReadResult.Complete(
-                new QueryResult.QuerySuccess([], request.PaginationParameters.TotalCount ? 0 : null)
-            );
-        }
-
-        // Descriptor queries still compose the namespace authorization state with the query filter,
-        // paging, ResourceKeyId, and change-version parameters. Fail closed if that exceeds SQL Server's
-        // per-command parameter ceiling rather than letting the query fail at execution.
-        await ValidateCustomViewsAsync(request, authorizationSpec?.CustomViewChecks, cancellationToken)
+        DescriptorQueryPreparationResult preparationResult = await PrepareDescriptorQueryAsync(
+                request,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
-        if (
-            BuildDescriptorQueryParameterBudgetFailure(
-                request.MappingSet.Key.Dialect,
-                request.Resource,
-                proceed.NamespacePrefixParameterization,
-                preprocessingResult.QueryElementsInOrder.Count,
-                CountPagingParameters(request),
-                CountChangeVersionParameters(request.ChangeVersionRange)
-            ) is
-            { } parameterBudgetFailure
-        )
+        if (preparationResult is DescriptorQueryPreparationResult.Complete complete)
         {
-            return new DescriptorQueryNoCacheReadResult.Complete(parameterBudgetFailure);
+            return new DescriptorQueryNoCacheReadResult.Complete(complete.Result);
         }
+
+        var preparation = ((DescriptorQueryPreparationResult.Prepared)preparationResult).Preparation;
 
         DescriptorQueryRowsPage queryRowsPage;
 
         try
         {
-            queryRowsPage = await ReadQueryRowsAsync(
-                    request,
-                    preprocessingResult,
-                    authorizationSpec,
-                    cancellationToken
-                )
+            queryRowsPage = await ReadQueryRowsAsync(request, preparation.PlannedQuery, cancellationToken)
                 .ConfigureAwait(false);
         }
         // Trade-off: a provider error raised while executing a custom-view page query is intentionally
@@ -979,7 +811,7 @@ internal sealed class DescriptorReadHandler(
         // the view. Validation above already proved the views resolve, so the alternative is letting the
         // DbException escape into the non-ProblemDetails unhandled path and lose the public
         // urn:ed-fi:api:system contract this failure is documented to carry.
-        catch (DbException ex) when (authorizationSpec?.CustomViewChecks is { Count: > 0 })
+        catch (DbException ex) when (preparation.AuthorizationSpec?.CustomViewChecks is { Count: > 0 })
         {
             throw new CustomViewAuthorizationValidationException(ex);
         }
@@ -1005,6 +837,143 @@ internal sealed class DescriptorReadHandler(
         }
 
         return new DescriptorQueryNoCacheReadResult.RowsPage(queryRowsPage);
+    }
+
+    private async Task<DescriptorQueryPreparationResult> PrepareDescriptorQueryAsync(
+        DescriptorQueryRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        var authorizationPreflight = ResolveDescriptorReadAuthorization(
+            request.MappingSet,
+            request.Resource,
+            request.AuthorizationStrategyEvaluators,
+            request.RelationalAuthorizationContext,
+            NamespaceAuthorizationOperation.ReadMany,
+            "descriptor query",
+            "GET-many"
+        );
+
+        // Each terminal validates the custom views configured ahead of it. An empty list is a no-op.
+        switch (authorizationPreflight)
+        {
+            case DescriptorReadAuthorizationPreflightOutcome.NotImplemented notImplemented:
+                await ValidateCustomViewsAsync(request, notImplemented.CustomViewChecks, cancellationToken)
+                    .ConfigureAwait(false);
+                return new DescriptorQueryPreparationResult.Complete(
+                    new QueryResult.QueryFailureNotImplemented(notImplemented.FailureMessage)
+                );
+            case DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError configError:
+                await ValidateCustomViewsAsync(request, configError.CustomViewChecks, cancellationToken)
+                    .ConfigureAwait(false);
+                return new DescriptorQueryPreparationResult.Complete(
+                    new QueryResult.QueryFailureSecurityConfiguration(
+                        configError.Errors,
+                        configError.Diagnostics
+                    )
+                );
+            case DescriptorReadAuthorizationPreflightOutcome.NamespaceNotAuthorized namespaceNotAuthorized:
+                await ValidateCustomViewsAsync(
+                        request,
+                        namespaceNotAuthorized.CustomViewChecks,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+                return new DescriptorQueryPreparationResult.Complete(
+                    new QueryResult.QueryFailureNamespaceNotAuthorized(namespaceNotAuthorized.Failure)
+                );
+        }
+
+        var proceed = (DescriptorReadAuthorizationPreflightOutcome.Proceed)authorizationPreflight;
+
+        // The descriptor page subquery roots on dms.Descriptor, which carries both the DocumentId keyset
+        // and the Namespace column, so the namespace and custom-view checks bind directly to the root
+        // alias. The planner consumes the orchestrator's authorization checks through
+        // PageDocumentIdAuthorizationSpec.
+        var authorizationSpec = BuildDescriptorQueryAuthorizationSpec(proceed);
+
+        DescriptorQueryPreprocessingResult preprocessingResult;
+
+        try
+        {
+            preprocessingResult = DescriptorQueryRequestPreprocessor.Preprocess(
+                request.MappingSet,
+                request.Resource,
+                request.QueryElements
+            );
+        }
+        catch (NotSupportedException ex)
+        {
+            return new DescriptorQueryPreparationResult.Complete(
+                new QueryResult.QueryFailureNotImplemented(ex.Message)
+            );
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new DescriptorQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return new DescriptorQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
+        }
+
+        if (preprocessingResult.Outcome is RelationalQueryPreprocessingOutcome.EmptyPage)
+        {
+            await ValidateCustomViewsAsync(request, authorizationSpec?.CustomViewChecks, cancellationToken)
+                .ConfigureAwait(false);
+
+            return new DescriptorQueryPreparationResult.Complete(
+                new QueryResult.QuerySuccess([], request.PaginationParameters.TotalCount ? 0 : null)
+            );
+        }
+
+        // Descriptor queries still compose the namespace authorization state with the query filter,
+        // paging, ResourceKeyId, and change-version parameters. Fail closed if that exceeds SQL Server's
+        // per-command parameter ceiling rather than letting the query fail at execution.
+        await ValidateCustomViewsAsync(request, authorizationSpec?.CustomViewChecks, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (
+            BuildDescriptorQueryParameterBudgetFailure(
+                request.MappingSet.Key.Dialect,
+                request.Resource,
+                proceed.NamespacePrefixParameterization,
+                preprocessingResult.QueryElementsInOrder.Count,
+                CountPagingParameters(request),
+                CountChangeVersionParameters(request.ChangeVersionRange)
+            ) is
+            { } parameterBudgetFailure
+        )
+        {
+            return new DescriptorQueryPreparationResult.Complete(parameterBudgetFailure);
+        }
+
+        PageKeysetSpec.Query plannedQuery;
+
+        try
+        {
+            plannedQuery = PlanDescriptorQuery(request, preprocessingResult, authorizationSpec);
+        }
+        catch (NotSupportedException ex)
+        {
+            return new DescriptorQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new DescriptorQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
+        }
+        catch (ArgumentException ex)
+        {
+            return new DescriptorQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return new DescriptorQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
+        }
+
+        return new DescriptorQueryPreparationResult.Prepared(
+            new DescriptorQueryPreparation(authorizationSpec, plannedQuery)
+        );
     }
 
     /// <summary>
@@ -1144,7 +1113,17 @@ internal sealed class DescriptorReadHandler(
             );
         }
 
-        var plannedQuery = new DescriptorQueryPageKeysetPlanner(request.MappingSet.Key.Dialect).Plan(
+        var plannedQuery = PlanDescriptorQuery(request, preprocessingResult, authorizationSpec);
+
+        return ReadQueryRowsAsync(request, plannedQuery, cancellationToken);
+    }
+
+    private PageKeysetSpec.Query PlanDescriptorQuery(
+        DescriptorQueryRequest request,
+        DescriptorQueryPreprocessingResult preprocessingResult,
+        PageDocumentIdAuthorizationSpec? authorizationSpec
+    ) =>
+        new DescriptorQueryPageKeysetPlanner(request.MappingSet.Key.Dialect).Plan(
             request.MappingSet,
             request.Resource,
             preprocessingResult,
@@ -1153,6 +1132,16 @@ internal sealed class DescriptorReadHandler(
             request.ChangeVersionRange,
             orderingMode: _orderingPolicy.ResolveForLiveQuery(request.ChangeVersionRange)
         );
+
+    private Task<DescriptorQueryRowsPage> ReadQueryRowsAsync(
+        DescriptorQueryRequest request,
+        PageKeysetSpec.Query plannedQuery,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(plannedQuery);
+
         var command = BuildQueryCommand(request.MappingSet.Key.Dialect, plannedQuery);
 
         return _commandExecutor.ExecuteReaderAsync(
@@ -1164,31 +1153,13 @@ internal sealed class DescriptorReadHandler(
 
     private Task<DescriptorQueryCandidatePage> ReadQueryCandidateRowsAsync(
         DescriptorQueryRequest request,
-        DescriptorQueryPreprocessingResult preprocessingResult,
-        PageDocumentIdAuthorizationSpec? authorizationSpec = null,
-        CancellationToken cancellationToken = default
+        PageKeysetSpec.Query plannedQuery,
+        CancellationToken cancellationToken
     )
     {
         ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(preprocessingResult);
+        ArgumentNullException.ThrowIfNull(plannedQuery);
 
-        if (preprocessingResult.Outcome is not RelationalQueryPreprocessingOutcome.Continue)
-        {
-            throw new ArgumentException(
-                "Descriptor query candidate retrieval requires preprocessing results in the continue state.",
-                nameof(preprocessingResult)
-            );
-        }
-
-        var plannedQuery = new DescriptorQueryPageKeysetPlanner(request.MappingSet.Key.Dialect).Plan(
-            request.MappingSet,
-            request.Resource,
-            preprocessingResult,
-            request.PaginationParameters,
-            authorizationSpec,
-            request.ChangeVersionRange,
-            orderingMode: _orderingPolicy.ResolveForLiveQuery(request.ChangeVersionRange)
-        );
         var command = BuildQueryCandidateCommand(request.MappingSet.Key.Dialect, plannedQuery);
 
         return _commandExecutor.ExecuteReaderAsync(

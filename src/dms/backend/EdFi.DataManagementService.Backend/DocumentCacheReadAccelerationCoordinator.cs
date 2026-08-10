@@ -476,6 +476,38 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                 .ConfigureAwait(false);
         }
 
+        if (
+            !TryPreflightConfiguredTarget(
+                request.TenantKey,
+                out var configuredTargetFallbackReason,
+                out var configuredTargetDirectFillSkipOutcome
+            )
+        )
+        {
+            RecordFallback(
+                DocumentCacheReadAccelerationOperation.GetById,
+                request.ResourceKind,
+                targetContext: null,
+                configuredTargetFallbackReason
+            );
+            RecordDirectFillSkipIfNeeded(
+                DocumentCacheReadAccelerationOperation.GetById,
+                request.ResourceKind,
+                targetContext: null,
+                configuredTargetDirectFillSkipOutcome
+            );
+
+            return await request
+                .RelationalFallback(
+                    new DocumentCacheReadAccelerationFallbackContext(
+                        configuredTargetFallbackReason,
+                        TargetContext: null
+                    ),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+
         if (request.LookupReadiness != DocumentCacheReadAccelerationLookupReadiness.AuthorizedCandidate)
         {
             if (request.SelectAuthorizedCandidate is null)
@@ -648,6 +680,38 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                 .RelationalFallback(
                     new DocumentCacheReadAccelerationFallbackContext(
                         DocumentCacheReadAccelerationFallbackReason.ReadAccelerationDisabled,
+                        TargetContext: null
+                    ),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+
+        if (
+            !TryPreflightConfiguredTarget(
+                request.TenantKey,
+                out var configuredTargetFallbackReason,
+                out var configuredTargetDirectFillSkipOutcome
+            )
+        )
+        {
+            RecordFallback(
+                DocumentCacheReadAccelerationOperation.Query,
+                request.ResourceKind,
+                targetContext: null,
+                configuredTargetFallbackReason
+            );
+            RecordDirectFillSkipIfNeeded(
+                DocumentCacheReadAccelerationOperation.Query,
+                request.ResourceKind,
+                targetContext: null,
+                configuredTargetDirectFillSkipOutcome
+            );
+
+            return await request
+                .RelationalFallback(
+                    new DocumentCacheReadAccelerationFallbackContext(
+                        configuredTargetFallbackReason,
                         TargetContext: null
                     ),
                     cancellationToken
@@ -1066,6 +1130,45 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             ? hitOutcome
             : lookupResult.RawLookupOutcome?.ToString() ?? lookupResult.FallbackReason.ToString();
 
+    private bool TryPreflightConfiguredTarget(
+        string tenantKey,
+        out DocumentCacheReadAccelerationFallbackReason fallbackReason,
+        out string? directFillSkipOutcome
+    )
+    {
+        directFillSkipOutcome = null;
+
+        if (
+            !TryGetSelectedTargetKey(
+                tenantKey,
+                out _,
+                out var targetKey,
+                out fallbackReason,
+                out directFillSkipOutcome
+            )
+        )
+        {
+            return false;
+        }
+
+        if (_targetRegistry is null)
+        {
+            fallbackReason = DocumentCacheReadAccelerationFallbackReason.TargetRegistryUnavailable;
+            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedTargetRegistryUnavailable;
+            return false;
+        }
+
+        if (_targetRegistry.CurrentSnapshot.GetTarget(targetKey) is null)
+        {
+            fallbackReason = DocumentCacheReadAccelerationFallbackReason.UnresolvedTarget;
+            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedUnresolvedTarget;
+            return false;
+        }
+
+        fallbackReason = DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss;
+        return true;
+    }
+
     private bool TryResolveTarget(
         string tenantKey,
         out DocumentCacheTargetExecutionContext targetContext,
@@ -1085,36 +1188,16 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             return false;
         }
 
-        if (_dataStoreSelection is null || !_dataStoreSelection.IsSet)
-        {
-            fallbackReason = DocumentCacheReadAccelerationFallbackReason.SelectedDataStoreUnavailable;
-            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedSelectedDataStoreUnavailable;
-            return false;
-        }
-
-        DataStore selectedDataStore;
-        try
-        {
-            selectedDataStore = _dataStoreSelection.GetSelectedDataStore();
-        }
-        catch (InvalidOperationException)
-        {
-            fallbackReason = DocumentCacheReadAccelerationFallbackReason.SelectedDataStoreUnavailable;
-            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedSelectedDataStoreUnavailable;
-            return false;
-        }
-
         if (
-            !DocumentCacheTargetKey.TryCreate(
+            !TryGetSelectedTargetKey(
                 tenantKey,
-                selectedDataStore.Id,
-                out DocumentCacheTargetKey? targetKey,
-                out _
+                out var selectedDataStore,
+                out var targetKey,
+                out fallbackReason,
+                out directFillSkipOutcome
             )
         )
         {
-            fallbackReason = DocumentCacheReadAccelerationFallbackReason.InvalidTargetKey;
-            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedInvalidTargetKey;
             return false;
         }
 
@@ -1157,6 +1240,55 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         }
 
         targetContext = resolvedTargetContext;
+        fallbackReason = DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss;
+        return true;
+    }
+
+    private bool TryGetSelectedTargetKey(
+        string tenantKey,
+        out DataStore selectedDataStore,
+        out DocumentCacheTargetKey targetKey,
+        out DocumentCacheReadAccelerationFallbackReason fallbackReason,
+        out string? directFillSkipOutcome
+    )
+    {
+        selectedDataStore = null!;
+        targetKey = null!;
+        directFillSkipOutcome = null;
+
+        if (_dataStoreSelection is null || !_dataStoreSelection.IsSet)
+        {
+            fallbackReason = DocumentCacheReadAccelerationFallbackReason.SelectedDataStoreUnavailable;
+            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedSelectedDataStoreUnavailable;
+            return false;
+        }
+
+        try
+        {
+            selectedDataStore = _dataStoreSelection.GetSelectedDataStore();
+        }
+        catch (InvalidOperationException)
+        {
+            fallbackReason = DocumentCacheReadAccelerationFallbackReason.SelectedDataStoreUnavailable;
+            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedSelectedDataStoreUnavailable;
+            return false;
+        }
+
+        if (
+            !DocumentCacheTargetKey.TryCreate(
+                tenantKey,
+                selectedDataStore.Id,
+                out DocumentCacheTargetKey? createdTargetKey,
+                out _
+            )
+        )
+        {
+            fallbackReason = DocumentCacheReadAccelerationFallbackReason.InvalidTargetKey;
+            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedInvalidTargetKey;
+            return false;
+        }
+
+        targetKey = createdTargetKey;
         fallbackReason = DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss;
         return true;
     }

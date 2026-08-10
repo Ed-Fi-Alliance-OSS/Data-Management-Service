@@ -1091,7 +1091,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     }
 
     [TestCaseSource(nameof(CompleteGetSelectionResults))]
-    public async Task It_returns_complete_get_selection_result_before_target_resolution(
+    public async Task It_returns_complete_get_selection_result_before_runtime_target_resolution(
         GetResult completeResult
     )
     {
@@ -1101,14 +1101,14 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var telemetry = new RecordingReadTelemetry();
         var selectionAttempts = 0;
         var fallbackAttempts = 0;
+        StaticTargetRegistry registry = CreateConfiguredOnlyRegistry();
         var sut = CreateCoordinator(
             readAccelerationEnabled: true,
             lookupAdapter,
-            new ThrowingTargetRegistry(),
+            registry,
             materializer,
             writer,
-            telemetry,
-            dataStoreSelection: new ThrowingDataStoreSelection()
+            telemetry
         );
 
         GetResult result = await sut.GetByIdAsync(
@@ -1133,6 +1133,8 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         selectionAttempts.Should().Be(1);
         fallbackAttempts.Should().Be(0);
         lookupAdapter.GetByIdAttempts.Should().Be(0);
+        registry.CurrentSnapshotAccesses.Should().Be(1);
+        registry.CurrentRuntimeSnapshotAccesses.Should().Be(0);
         materializer.Requests.Should().BeEmpty();
         writer.Requests.Should().BeEmpty();
         telemetry.Events.Should().BeEmpty();
@@ -1153,7 +1155,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     }
 
     [TestCaseSource(nameof(CompleteQuerySelectionResults))]
-    public async Task It_returns_complete_query_selection_result_before_target_resolution(
+    public async Task It_returns_complete_query_selection_result_before_runtime_target_resolution(
         QueryResult completeResult
     )
     {
@@ -1163,14 +1165,14 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var telemetry = new RecordingReadTelemetry();
         var selectionAttempts = 0;
         var fallbackAttempts = 0;
+        StaticTargetRegistry registry = CreateConfiguredOnlyRegistry();
         var sut = CreateCoordinator(
             readAccelerationEnabled: true,
             lookupAdapter,
-            new ThrowingTargetRegistry(),
+            registry,
             materializer,
             writer,
-            telemetry,
-            dataStoreSelection: new ThrowingDataStoreSelection()
+            telemetry
         );
 
         QueryResult result = await sut.QueryAsync(
@@ -1195,6 +1197,8 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         selectionAttempts.Should().Be(1);
         fallbackAttempts.Should().Be(0);
         lookupAdapter.QueryAttempts.Should().Be(0);
+        registry.CurrentSnapshotAccesses.Should().Be(1);
+        registry.CurrentRuntimeSnapshotAccesses.Should().Be(0);
         materializer.Requests.Should().BeEmpty();
         writer.Requests.Should().BeEmpty();
         telemetry.Events.Should().BeEmpty();
@@ -1202,7 +1206,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     }
 
     [Test]
-    public async Task It_returns_empty_query_selection_page_before_target_resolution()
+    public async Task It_returns_empty_query_selection_page_before_runtime_target_resolution()
     {
         var lookupAdapter = new RecordingLookupAdapter();
         var materializer = new RecordingMaterializer();
@@ -1210,14 +1214,14 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var telemetry = new RecordingReadTelemetry();
         var selectionAttempts = 0;
         var fallbackAttempts = 0;
+        StaticTargetRegistry registry = CreateConfiguredOnlyRegistry();
         var sut = CreateCoordinator(
             readAccelerationEnabled: true,
             lookupAdapter,
-            new ThrowingTargetRegistry(),
+            registry,
             materializer,
             writer,
-            telemetry,
-            dataStoreSelection: new ThrowingDataStoreSelection()
+            telemetry
         );
 
         QueryResult result = await sut.QueryAsync(
@@ -1258,10 +1262,184 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         selectionAttempts.Should().Be(1);
         fallbackAttempts.Should().Be(0);
         lookupAdapter.QueryAttempts.Should().Be(0);
+        registry.CurrentSnapshotAccesses.Should().Be(1);
+        registry.CurrentRuntimeSnapshotAccesses.Should().Be(0);
         materializer.Requests.Should().BeEmpty();
         writer.Requests.Should().BeEmpty();
         telemetry.Events.Should().BeEmpty();
         telemetry.DurationEvents.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_does_not_select_a_get_candidate_when_the_exact_target_is_not_configured()
+    {
+        var lookupAdapter = new RecordingLookupAdapter();
+        var fallbackResult = new GetResult.GetFailureNotExists();
+        var selectionAttempts = 0;
+        DocumentCacheReadAccelerationFallbackContext fallbackContext = null!;
+        StaticTargetRegistry registry = CreateRegistry();
+        var sut = CreateCoordinator(readAccelerationEnabled: true, lookupAdapter, registry);
+
+        GetResult result = await sut.GetByIdAsync(
+            CreateGetByIdRequest(
+                DocumentCacheReadAccelerationLookupReadiness.RelationalFallbackOnly,
+                (context, _) =>
+                {
+                    fallbackContext = context;
+                    return Task.FromResult<GetResult>(fallbackResult);
+                },
+                selectAuthorizedCandidate: _ =>
+                {
+                    selectionAttempts++;
+                    return Task.FromResult<DocumentCacheReadAccelerationGetByIdSelectionResult>(
+                        new DocumentCacheReadAccelerationGetByIdSelectionResult.Complete(
+                            new GetResult.UnknownFailure("candidate selection should not run")
+                        )
+                    );
+                }
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        fallbackContext.Reason.Should().Be(DocumentCacheReadAccelerationFallbackReason.UnresolvedTarget);
+        fallbackContext.TargetContext.Should().BeNull();
+        selectionAttempts.Should().Be(0);
+        lookupAdapter.GetByIdAttempts.Should().Be(0);
+        registry.CurrentSnapshotAccesses.Should().Be(1);
+        registry.CurrentRuntimeSnapshotAccesses.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_does_not_select_a_query_candidate_page_when_the_exact_target_is_not_configured()
+    {
+        var lookupAdapter = new RecordingLookupAdapter();
+        var fallbackResult = new QueryResult.QuerySuccess(
+            [new JsonObject { ["id"] = DocumentUuid.Value.ToString() }],
+            TotalCount: 1
+        );
+        var selectionAttempts = 0;
+        DocumentCacheReadAccelerationFallbackContext fallbackContext = null!;
+        StaticTargetRegistry registry = CreateRegistry();
+        var sut = CreateCoordinator(readAccelerationEnabled: true, lookupAdapter, registry);
+
+        QueryResult result = await sut.QueryAsync(
+            CreateQueryRequest(
+                DocumentCacheReadAccelerationLookupReadiness.RelationalFallbackOnly,
+                (context, _) =>
+                {
+                    fallbackContext = context;
+                    return Task.FromResult<QueryResult>(fallbackResult);
+                },
+                selectAuthorizedCandidatePage: _ =>
+                {
+                    selectionAttempts++;
+                    return Task.FromResult<DocumentCacheReadAccelerationQuerySelectionResult>(
+                        new DocumentCacheReadAccelerationQuerySelectionResult.Complete(
+                            new QueryResult.QueryFailureKnownError("candidate selection should not run")
+                        )
+                    );
+                }
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        fallbackContext.Reason.Should().Be(DocumentCacheReadAccelerationFallbackReason.UnresolvedTarget);
+        fallbackContext.TargetContext.Should().BeNull();
+        selectionAttempts.Should().Be(0);
+        lookupAdapter.QueryAttempts.Should().Be(0);
+        registry.CurrentSnapshotAccesses.Should().Be(1);
+        registry.CurrentRuntimeSnapshotAccesses.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_selects_a_get_candidate_before_runtime_resolution_for_a_configured_target()
+    {
+        var lookupAdapter = new RecordingLookupAdapter();
+        var fallbackResult = new GetResult.GetFailureNotExists();
+        var selectionAttempts = 0;
+        DocumentCacheReadAccelerationFallbackContext fallbackContext = null!;
+        StaticTargetRegistry registry = CreateConfiguredOnlyRegistry();
+        var sut = CreateCoordinator(readAccelerationEnabled: true, lookupAdapter, registry);
+
+        GetResult result = await sut.GetByIdAsync(
+            CreateGetByIdRequest(
+                DocumentCacheReadAccelerationLookupReadiness.RelationalFallbackOnly,
+                (context, _) =>
+                {
+                    fallbackContext = context;
+                    return Task.FromResult<GetResult>(fallbackResult);
+                },
+                selectAuthorizedCandidate: _ =>
+                {
+                    selectionAttempts++;
+                    registry.CurrentRuntimeSnapshotAccesses.Should().Be(0);
+                    return Task.FromResult<DocumentCacheReadAccelerationGetByIdSelectionResult>(
+                        new DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate(
+                            Candidate(),
+                            (context, cancellationToken) =>
+                            {
+                                fallbackContext = context;
+                                return Task.FromResult<GetResult>(fallbackResult);
+                            }
+                        )
+                    );
+                }
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        fallbackContext.Reason.Should().Be(DocumentCacheReadAccelerationFallbackReason.UnresolvedTarget);
+        selectionAttempts.Should().Be(1);
+        lookupAdapter.GetByIdAttempts.Should().Be(0);
+        registry.CurrentSnapshotAccesses.Should().Be(1);
+        registry.CurrentRuntimeSnapshotAccesses.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_selects_a_query_candidate_page_before_runtime_resolution_for_a_configured_target()
+    {
+        var lookupAdapter = new RecordingLookupAdapter();
+        var fallbackResult = new QueryResult.QuerySuccess(
+            [new JsonObject { ["id"] = DocumentUuid.Value.ToString() }],
+            TotalCount: 1
+        );
+        var selectionAttempts = 0;
+        DocumentCacheReadAccelerationFallbackContext fallbackContext = null!;
+        StaticTargetRegistry registry = CreateConfiguredOnlyRegistry();
+        var sut = CreateCoordinator(readAccelerationEnabled: true, lookupAdapter, registry);
+
+        QueryResult result = await sut.QueryAsync(
+            CreateQueryRequest(
+                DocumentCacheReadAccelerationLookupReadiness.RelationalFallbackOnly,
+                (context, _) =>
+                {
+                    fallbackContext = context;
+                    return Task.FromResult<QueryResult>(fallbackResult);
+                },
+                selectAuthorizedCandidatePage: _ =>
+                {
+                    selectionAttempts++;
+                    registry.CurrentRuntimeSnapshotAccesses.Should().Be(0);
+                    return Task.FromResult<DocumentCacheReadAccelerationQuerySelectionResult>(
+                        new DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage(
+                            CandidatePage([Candidate()], totalCount: 1, highestSelectedDocumentId: 345),
+                            (context, cancellationToken) =>
+                            {
+                                fallbackContext = context;
+                                return Task.FromResult<QueryResult>(fallbackResult);
+                            }
+                        )
+                    );
+                }
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        fallbackContext.Reason.Should().Be(DocumentCacheReadAccelerationFallbackReason.UnresolvedTarget);
+        selectionAttempts.Should().Be(1);
+        lookupAdapter.QueryAttempts.Should().Be(0);
+        registry.CurrentSnapshotAccesses.Should().Be(1);
+        registry.CurrentRuntimeSnapshotAccesses.Should().Be(1);
     }
 
     [Test]
@@ -3177,6 +3355,18 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         return new StaticTargetRegistry(snapshot, runtimeSnapshot);
     }
 
+    private static StaticTargetRegistry CreateConfiguredOnlyRegistry()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
+        DocumentCacheTargetRegistrySnapshot snapshot = new(
+            [DocumentCacheTargetObservation.Configured(TargetKey, executionContext.EffectiveSettings)],
+            ObservedAt
+        );
+        DocumentCacheTargetRuntimeSnapshot runtimeSnapshot = new([], ObservedAt);
+
+        return new StaticTargetRegistry(snapshot, runtimeSnapshot);
+    }
+
     private static DocumentCacheTargetExecutionContext ExecutionContext(
         DocumentCacheLifecycleState lifecycleState = DocumentCacheLifecycleState.Tracking,
         bool cacheAheadRecoveryRequired = false,
@@ -3413,31 +3603,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         {
             Entries.Add(new CapturedLogEntry(logLevel, formatter(state, exception), exception));
         }
-    }
-
-    private sealed class ThrowingDataStoreSelection : IDataStoreSelection
-    {
-        public bool IsSet => throw new InvalidOperationException("DataStoreSelection should not be read.");
-
-        public void SetSelectedDataStore(DataStore dataStore) =>
-            throw new InvalidOperationException("DataStoreSelection should not be written.");
-
-        public DataStore GetSelectedDataStore() =>
-            throw new InvalidOperationException("DataStoreSelection should not be read.");
-    }
-
-    private sealed class ThrowingTargetRegistry : IDocumentCacheTargetRegistry
-    {
-        public DocumentCacheTargetRegistrySnapshot CurrentSnapshot =>
-            throw new InvalidOperationException("Target registry should not be read.");
-
-        public DocumentCacheTargetRuntimeSnapshot CurrentRuntimeSnapshot =>
-            throw new InvalidOperationException("Target registry should not be read.");
-
-        public Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
-            DocumentCacheTargetRefreshReason reason,
-            CancellationToken cancellationToken = default
-        ) => throw new InvalidOperationException("Target registry should not be refreshed.");
     }
 
     private sealed class StaticTargetRegistry(

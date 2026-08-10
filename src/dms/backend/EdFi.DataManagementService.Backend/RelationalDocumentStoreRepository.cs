@@ -102,6 +102,23 @@ public sealed class RelationalDocumentStoreRepository(
         edOrgAuthorizationSubjectSelector
     );
 
+    private sealed record RelationalQueryPreparation(
+        QualifiedResourceName Resource,
+        ResourceReadPlan ReadPlan,
+        PageKeysetSpec.Query PlannedQuery,
+        PageDocumentIdAuthorizationSpec? Authorization
+    );
+
+    private abstract record RelationalQueryPreparationResult
+    {
+        private RelationalQueryPreparationResult() { }
+
+        public sealed record Complete(QueryResult Result) : RelationalQueryPreparationResult;
+
+        public sealed record Prepared(RelationalQueryPreparation Preparation)
+            : RelationalQueryPreparationResult;
+    }
+
     public async Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
     {
         ArgumentNullException.ThrowIfNull(upsertRequest);
@@ -867,178 +884,30 @@ public sealed class RelationalDocumentStoreRepository(
                 .ConfigureAwait(false);
         }
 
-        RelationalQueryCapability queryCapability;
-
-        try
-        {
-            queryCapability = queryRequest.MappingSet.GetQueryCapabilityOrThrow(resource);
-        }
-        catch (NotSupportedException ex)
-        {
-            return new QueryResult.QueryFailureNotImplemented(ex.Message);
-        }
-        catch (MissingQueryCapabilityLookupGuardRailException ex)
-        {
-            return new QueryResult.UnknownFailure(ex.Message);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return new QueryResult.UnknownFailure(ex.Message);
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return new QueryResult.UnknownFailure(ex.Message);
-        }
-
-        var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
-            queryRequest.AuthorizationStrategyEvaluators
-        );
-        var authorizationResolution = await ResolveQueryAuthorization(
-            mappingSet,
-            resource,
-            configuredAuthorizationStrategies,
-            queryRequest.AuthorizationContext,
-            queryRequest.Paging.IncludesTotalCount
-        );
-
-        PageDocumentIdAuthorizationSpec? pageQueryAuthorization;
-
-        switch (authorizationResolution)
-        {
-            case QueryAuthorizationResolution.Complete complete:
-                return complete.Result;
-
-            case QueryAuthorizationResolution.Proceed proceed:
-                pageQueryAuthorization = proceed.Authorization;
-                break;
-
-            default:
-                throw new InvalidOperationException(
-                    $"Unsupported query authorization resolution '{authorizationResolution.GetType().Name}'."
-                );
-        }
-
-        RelationalQueryPreprocessingResult preprocessingResult;
-
-        try
-        {
-            preprocessingResult = await RelationalQueryRequestPreprocessor
-                .PreprocessAsync(
-                    mappingSet,
-                    resource,
-                    queryRequest.QueryElements,
-                    queryCapability,
-                    _referenceResolver
-                )
-                .ConfigureAwait(false);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return new QueryResult.UnknownFailure(ex.Message);
-        }
-
-        if (preprocessingResult.Outcome is RelationalQueryPreprocessingOutcome.EmptyPage)
-        {
-            await ValidateAdaptedCustomViewsAsync(mappingSet, pageQueryAuthorization?.CustomViewChecks)
-                .ConfigureAwait(false);
-
-            return new QueryResult.QuerySuccess([], queryRequest.Paging.IncludesTotalCount ? 0 : null);
-        }
-
-        ResourceReadPlan readPlan;
-
-        try
-        {
-            readPlan = mappingSet.GetReadPlanOrThrow(resource);
-        }
-        catch (NotSupportedException ex)
-        {
-            return new QueryResult.UnknownFailure(ex.Message);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return new QueryResult.UnknownFailure(ex.Message);
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return new QueryResult.UnknownFailure(ex.Message);
-        }
-
-        PageKeysetSpec.Query? plannedQuery;
-
-        try
-        {
-            var planner = new RelationalQueryPageKeysetPlanner(mappingSet.Key.Dialect);
-
-            if (
-                !planner.TryPlan(
-                    readPlan.Model.Root,
-                    preprocessingResult,
-                    traditionalPaging,
-                    out plannedQuery,
-                    out _,
-                    authorization: pageQueryAuthorization,
-                    changeVersionRange: queryRequest.ChangeVersionRange,
-                    orderingMode: _orderingPolicy.ResolveForLiveQuery(queryRequest.ChangeVersionRange)
-                ) || plannedQuery is null
+        RelationalQueryPreparationResult preparationResult = await PrepareQueryReadAsync(
+                queryRequest,
+                traditionalPaging
             )
-            {
-                await ValidateAdaptedCustomViewsAsync(mappingSet, pageQueryAuthorization?.CustomViewChecks)
-                    .ConfigureAwait(false);
-
-                return new QueryResult.QuerySuccess([], queryRequest.Paging.IncludesTotalCount ? 0 : null);
-            }
-        }
-        catch (NotSupportedException ex)
-        {
-            return new QueryResult.UnknownFailure(ex.Message);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return new QueryResult.UnknownFailure(ex.Message);
-        }
-        catch (ArgumentException ex)
-        {
-            return new QueryResult.UnknownFailure(ex.Message);
-        }
-
-        // Fail closed when the planned page query would bind more parameters than SQL Server allows. Keyed
-        // off the final planned parameter count so it covers every empty-page short-circuit — both
-        // preprocessing (e.g. an invalid-UUID filter) and planning (e.g. an invalid scalar root-column
-        // filter), which both return an empty page above before reaching here — and reflects the exact
-        // command rather than an estimate. The non-authorization count (filter + paging parameters) is the
-        // planned total minus the authorization lists, which the message reports alongside the prefix and
-        // education-organization counts.
-        var nonAuthorizationParameterCount =
-            plannedQuery.ParameterValues.Count
-            - AuthorizationParameterBudget.CountAuthorizationParameters(
-                pageQueryAuthorization?.NamespacePrefixParameterization,
-                pageQueryAuthorization?.ClaimEducationOrganizationIdParameterization
-            );
-
-        await ValidateAdaptedCustomViewsAsync(mappingSet, pageQueryAuthorization?.CustomViewChecks)
             .ConfigureAwait(false);
 
-        if (
-            BuildQueryParameterBudgetFailure(
-                mappingSet.Key.Dialect,
-                resource,
-                pageQueryAuthorization?.NamespacePrefixParameterization,
-                pageQueryAuthorization?.ClaimEducationOrganizationIdParameterization,
-                nonAuthorizationParameterCount
-            ) is
-            { } parameterBudgetFailure
-        )
+        if (preparationResult is RelationalQueryPreparationResult.Complete complete)
         {
-            return parameterBudgetFailure;
+            return complete.Result;
         }
+
+        var preparation = ((RelationalQueryPreparationResult.Prepared)preparationResult).Preparation;
 
         HydratedPage hydratedPage;
 
         try
         {
             hydratedPage = await _documentHydrator
-                .HydrateAsync(readPlan, plannedQuery, new HydrationExecutionOptions(), cancellationToken)
+                .HydrateAsync(
+                    preparation.ReadPlan,
+                    preparation.PlannedQuery,
+                    new HydrationExecutionOptions(),
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
         }
         // Trade-off: a provider error raised while executing a custom-view page query is intentionally
@@ -1046,18 +915,17 @@ public sealed class RelationalDocumentStoreRepository(
         // the view. Validation above already proved the views resolve, so the alternative is letting the
         // DbException escape into the non-ProblemDetails unhandled path and lose the public
         // urn:ed-fi:api:system contract this failure is documented to carry.
-        catch (DbException ex) when (pageQueryAuthorization?.CustomViewChecks is { Count: > 0 })
+        catch (DbException ex) when (preparation.Authorization?.CustomViewChecks is { Count: > 0 })
         {
             throw new CustomViewAuthorizationValidationException(ex);
         }
 
-        return BuildQuerySuccess(queryRequest, resource, readPlan, hydratedPage);
+        return BuildQuerySuccess(queryRequest, preparation.Resource, preparation.ReadPlan, hydratedPage);
     }
 
-    private async Task<DocumentCacheReadAccelerationQuerySelectionResult> SelectQueryReadAccelerationCandidatePageAsync(
+    private async Task<RelationalQueryPreparationResult> PrepareQueryReadAsync(
         IQueryRequest queryRequest,
-        CollectionPaging.Traditional traditionalPaging,
-        CancellationToken cancellationToken = default
+        CollectionPaging.Traditional traditionalPaging
     )
     {
         var mappingSet = queryRequest.MappingSet;
@@ -1071,27 +939,21 @@ public sealed class RelationalDocumentStoreRepository(
         }
         catch (NotSupportedException ex)
         {
-            return new DocumentCacheReadAccelerationQuerySelectionResult.Complete(
+            return new RelationalQueryPreparationResult.Complete(
                 new QueryResult.QueryFailureNotImplemented(ex.Message)
             );
         }
         catch (MissingQueryCapabilityLookupGuardRailException ex)
         {
-            return new DocumentCacheReadAccelerationQuerySelectionResult.Complete(
-                new QueryResult.UnknownFailure(ex.Message)
-            );
+            return new RelationalQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
         }
         catch (InvalidOperationException ex)
         {
-            return new DocumentCacheReadAccelerationQuerySelectionResult.Complete(
-                new QueryResult.UnknownFailure(ex.Message)
-            );
+            return new RelationalQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
         }
         catch (KeyNotFoundException ex)
         {
-            return new DocumentCacheReadAccelerationQuerySelectionResult.Complete(
-                new QueryResult.UnknownFailure(ex.Message)
-            );
+            return new RelationalQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
         }
 
         var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
@@ -1110,7 +972,7 @@ public sealed class RelationalDocumentStoreRepository(
         switch (authorizationResolution)
         {
             case QueryAuthorizationResolution.Complete complete:
-                return new DocumentCacheReadAccelerationQuerySelectionResult.Complete(complete.Result);
+                return new RelationalQueryPreparationResult.Complete(complete.Result);
 
             case QueryAuthorizationResolution.Proceed proceed:
                 pageQueryAuthorization = proceed.Authorization;
@@ -1138,9 +1000,7 @@ public sealed class RelationalDocumentStoreRepository(
         }
         catch (InvalidOperationException ex)
         {
-            return new DocumentCacheReadAccelerationQuerySelectionResult.Complete(
-                new QueryResult.UnknownFailure(ex.Message)
-            );
+            return new RelationalQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
         }
 
         if (preprocessingResult.Outcome is RelationalQueryPreprocessingOutcome.EmptyPage)
@@ -1148,7 +1008,7 @@ public sealed class RelationalDocumentStoreRepository(
             await ValidateAdaptedCustomViewsAsync(mappingSet, pageQueryAuthorization?.CustomViewChecks)
                 .ConfigureAwait(false);
 
-            return new DocumentCacheReadAccelerationQuerySelectionResult.Complete(
+            return new RelationalQueryPreparationResult.Complete(
                 new QueryResult.QuerySuccess([], queryRequest.Paging.IncludesTotalCount ? 0 : null)
             );
         }
@@ -1161,21 +1021,15 @@ public sealed class RelationalDocumentStoreRepository(
         }
         catch (NotSupportedException ex)
         {
-            return new DocumentCacheReadAccelerationQuerySelectionResult.Complete(
-                new QueryResult.UnknownFailure(ex.Message)
-            );
+            return new RelationalQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
         }
         catch (InvalidOperationException ex)
         {
-            return new DocumentCacheReadAccelerationQuerySelectionResult.Complete(
-                new QueryResult.UnknownFailure(ex.Message)
-            );
+            return new RelationalQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
         }
         catch (KeyNotFoundException ex)
         {
-            return new DocumentCacheReadAccelerationQuerySelectionResult.Complete(
-                new QueryResult.UnknownFailure(ex.Message)
-            );
+            return new RelationalQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
         }
 
         PageKeysetSpec.Query? plannedQuery;
@@ -1200,30 +1054,27 @@ public sealed class RelationalDocumentStoreRepository(
                 await ValidateAdaptedCustomViewsAsync(mappingSet, pageQueryAuthorization?.CustomViewChecks)
                     .ConfigureAwait(false);
 
-                return new DocumentCacheReadAccelerationQuerySelectionResult.Complete(
+                return new RelationalQueryPreparationResult.Complete(
                     new QueryResult.QuerySuccess([], queryRequest.Paging.IncludesTotalCount ? 0 : null)
                 );
             }
         }
         catch (NotSupportedException ex)
         {
-            return new DocumentCacheReadAccelerationQuerySelectionResult.Complete(
-                new QueryResult.UnknownFailure(ex.Message)
-            );
+            return new RelationalQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
         }
         catch (InvalidOperationException ex)
         {
-            return new DocumentCacheReadAccelerationQuerySelectionResult.Complete(
-                new QueryResult.UnknownFailure(ex.Message)
-            );
+            return new RelationalQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
         }
         catch (ArgumentException ex)
         {
-            return new DocumentCacheReadAccelerationQuerySelectionResult.Complete(
-                new QueryResult.UnknownFailure(ex.Message)
-            );
+            return new RelationalQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
         }
 
+        // Fail closed when the planned page query would bind more parameters than SQL Server allows. Keyed
+        // off the final planned parameter count so it covers every empty-page short-circuit and reflects
+        // the exact command rather than an estimate.
         var nonAuthorizationParameterCount =
             plannedQuery.ParameterValues.Count
             - AuthorizationParameterBudget.CountAuthorizationParameters(
@@ -1245,8 +1096,33 @@ public sealed class RelationalDocumentStoreRepository(
             { } parameterBudgetFailure
         )
         {
-            return new DocumentCacheReadAccelerationQuerySelectionResult.Complete(parameterBudgetFailure);
+            return new RelationalQueryPreparationResult.Complete(parameterBudgetFailure);
         }
+
+        return new RelationalQueryPreparationResult.Prepared(
+            new RelationalQueryPreparation(resource, readPlan, plannedQuery, pageQueryAuthorization)
+        );
+    }
+
+    private async Task<DocumentCacheReadAccelerationQuerySelectionResult> SelectQueryReadAccelerationCandidatePageAsync(
+        IQueryRequest queryRequest,
+        CollectionPaging.Traditional traditionalPaging,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var mappingSet = queryRequest.MappingSet;
+        RelationalQueryPreparationResult preparationResult = await PrepareQueryReadAsync(
+                queryRequest,
+                traditionalPaging
+            )
+            .ConfigureAwait(false);
+
+        if (preparationResult is RelationalQueryPreparationResult.Complete complete)
+        {
+            return new DocumentCacheReadAccelerationQuerySelectionResult.Complete(complete.Result);
+        }
+
+        var preparation = ((RelationalQueryPreparationResult.Prepared)preparationResult).Preparation;
 
         DocumentCacheReadAccelerationCandidatePage candidatePage;
 
@@ -1254,14 +1130,14 @@ public sealed class RelationalDocumentStoreRepository(
         {
             candidatePage = await SelectDocumentCandidatePageAsync(
                     mappingSet,
-                    resource,
-                    readPlan,
-                    plannedQuery,
+                    preparation.Resource,
+                    preparation.ReadPlan,
+                    preparation.PlannedQuery,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
         }
-        catch (DbException ex) when (pageQueryAuthorization?.CustomViewChecks is { Count: > 0 })
+        catch (DbException ex) when (preparation.Authorization?.CustomViewChecks is { Count: > 0 })
         {
             throw new CustomViewAuthorizationValidationException(ex);
         }
@@ -1273,7 +1149,7 @@ public sealed class RelationalDocumentStoreRepository(
                     [],
                     queryRequest.Paging.IncludesTotalCount
                         ? RelationalReadGuardrails.ConvertTotalCountOrThrow(
-                            resource,
+                            preparation.Resource,
                             candidatePage.TotalCount,
                             "query candidate selection"
                         )
@@ -1289,8 +1165,8 @@ public sealed class RelationalDocumentStoreRepository(
                 HydrateSelectedQueryCandidatePageAsync(
                     queryRequest,
                     traditionalPaging,
-                    resource,
-                    readPlan,
+                    preparation.Resource,
+                    preparation.ReadPlan,
                     candidatePage,
                     fallbackCancellationToken
                 )
