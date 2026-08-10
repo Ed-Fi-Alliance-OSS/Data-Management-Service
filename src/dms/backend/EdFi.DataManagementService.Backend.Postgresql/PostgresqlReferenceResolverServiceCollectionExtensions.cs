@@ -86,13 +86,6 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
                 PostgresqlDocumentCacheReadLookupAdapter
             >()
         );
-        services.TryAdd(
-            ServiceDescriptor.Scoped<IDocumentCacheReadFreshnessLookupAdapter>(serviceProvider =>
-                (IDocumentCacheReadFreshnessLookupAdapter)
-                    serviceProvider.GetRequiredService<IDocumentCacheReadLookupAdapter>()
-            )
-        );
-
         return services;
     }
 

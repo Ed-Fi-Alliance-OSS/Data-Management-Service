@@ -232,21 +232,6 @@ internal sealed record DocumentCacheReadBatchLookupResult
         documents.All(static document => document.IsFreshHit);
 }
 
-internal interface IDocumentCacheReadFreshnessLookupAdapter
-{
-    Task<DocumentCacheReadDocumentLookupResult> LookupDocumentAsync(
-        DocumentCacheReadDocumentLookupRequest request,
-        DocumentCacheTargetExecutionContext targetContext,
-        CancellationToken cancellationToken = default
-    );
-
-    Task<DocumentCacheReadBatchLookupResult> LookupBatchAsync(
-        DocumentCacheReadBatchLookupRequest request,
-        DocumentCacheTargetExecutionContext targetContext,
-        CancellationToken cancellationToken = default
-    );
-}
-
 internal interface IDocumentCacheReadResponseShaper
 {
     DocumentCacheReadLookupResult<GetResult> ShapeGetById(
@@ -285,9 +270,7 @@ internal sealed class NoOpDocumentCacheReadResponseShaper : IDocumentCacheReadRe
         );
 }
 
-internal abstract class DocumentCacheReadLookupAdapterBase
-    : IDocumentCacheReadLookupAdapter,
-        IDocumentCacheReadFreshnessLookupAdapter
+internal abstract class DocumentCacheReadLookupAdapterBase : IDocumentCacheReadLookupAdapter
 {
     private readonly IDocumentCacheReadResponseShaper _responseShaper;
 
