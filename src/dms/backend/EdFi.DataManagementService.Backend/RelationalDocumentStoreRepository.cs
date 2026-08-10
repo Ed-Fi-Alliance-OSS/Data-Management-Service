@@ -886,7 +886,8 @@ public sealed class RelationalDocumentStoreRepository(
 
         RelationalQueryPreparationResult preparationResult = await PrepareQueryReadAsync(
                 queryRequest,
-                traditionalPaging
+                traditionalPaging,
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -925,7 +926,8 @@ public sealed class RelationalDocumentStoreRepository(
 
     private async Task<RelationalQueryPreparationResult> PrepareQueryReadAsync(
         IQueryRequest queryRequest,
-        CollectionPaging.Traditional traditionalPaging
+        CollectionPaging.Traditional traditionalPaging,
+        CancellationToken cancellationToken
     )
     {
         var mappingSet = queryRequest.MappingSet;
@@ -964,7 +966,8 @@ public sealed class RelationalDocumentStoreRepository(
             resource,
             configuredAuthorizationStrategies,
             queryRequest.AuthorizationContext,
-            queryRequest.Paging.IncludesTotalCount
+            queryRequest.Paging.IncludesTotalCount,
+            cancellationToken
         );
 
         PageDocumentIdAuthorizationSpec? pageQueryAuthorization;
@@ -994,7 +997,8 @@ public sealed class RelationalDocumentStoreRepository(
                     resource,
                     queryRequest.QueryElements,
                     queryCapability,
-                    _referenceResolver
+                    _referenceResolver,
+                    cancellationToken
                 )
                 .ConfigureAwait(false);
         }
@@ -1005,7 +1009,11 @@ public sealed class RelationalDocumentStoreRepository(
 
         if (preprocessingResult.Outcome is RelationalQueryPreprocessingOutcome.EmptyPage)
         {
-            await ValidateAdaptedCustomViewsAsync(mappingSet, pageQueryAuthorization?.CustomViewChecks)
+            await ValidateAdaptedCustomViewsAsync(
+                    mappingSet,
+                    pageQueryAuthorization?.CustomViewChecks,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
             return new RelationalQueryPreparationResult.Complete(
@@ -1051,7 +1059,11 @@ public sealed class RelationalDocumentStoreRepository(
                 ) || plannedQuery is null
             )
             {
-                await ValidateAdaptedCustomViewsAsync(mappingSet, pageQueryAuthorization?.CustomViewChecks)
+                await ValidateAdaptedCustomViewsAsync(
+                        mappingSet,
+                        pageQueryAuthorization?.CustomViewChecks,
+                        cancellationToken
+                    )
                     .ConfigureAwait(false);
 
                 return new RelationalQueryPreparationResult.Complete(
@@ -1082,7 +1094,11 @@ public sealed class RelationalDocumentStoreRepository(
                 pageQueryAuthorization?.ClaimEducationOrganizationIdParameterization
             );
 
-        await ValidateAdaptedCustomViewsAsync(mappingSet, pageQueryAuthorization?.CustomViewChecks)
+        await ValidateAdaptedCustomViewsAsync(
+                mappingSet,
+                pageQueryAuthorization?.CustomViewChecks,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         if (
@@ -1113,7 +1129,8 @@ public sealed class RelationalDocumentStoreRepository(
         var mappingSet = queryRequest.MappingSet;
         RelationalQueryPreparationResult preparationResult = await PrepareQueryReadAsync(
                 queryRequest,
-                traditionalPaging
+                traditionalPaging,
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -1528,7 +1545,8 @@ public sealed class RelationalDocumentStoreRepository(
         QualifiedResourceName resource,
         IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies,
         RelationalAuthorizationContext authorizationContext,
-        bool totalCount
+        bool totalCount,
+        CancellationToken cancellationToken
     )
     {
         var orchestratorOutcome = RelationalAuthorizationPlanner.Plan(
@@ -1548,7 +1566,12 @@ public sealed class RelationalDocumentStoreRepository(
                         noUsableRoot.RawConfiguredIndex
                     )
                         is { Count: > 0 } customViewsBeforeNoUsableRoot
-                    && await ValidateCustomViewsAsync(customViewsBeforeNoUsableRoot, mappingSet, resource)
+                    && await ValidateCustomViewsAsync(
+                        customViewsBeforeNoUsableRoot,
+                        mappingSet,
+                        resource,
+                        cancellationToken
+                    )
                         is { } customViewFailureBeforeNoUsableRoot
                 )
                 {
@@ -1573,7 +1596,12 @@ public sealed class RelationalDocumentStoreRepository(
                         noPrefixes.RawConfiguredIndex
                     )
                         is { Count: > 0 } customViewsBeforeNoPrefixes
-                    && await ValidateCustomViewsAsync(customViewsBeforeNoPrefixes, mappingSet, resource)
+                    && await ValidateCustomViewsAsync(
+                        customViewsBeforeNoPrefixes,
+                        mappingSet,
+                        resource,
+                        cancellationToken
+                    )
                         is { } customViewFailureBeforeNoPrefixes
                 )
                 {
@@ -1593,7 +1621,8 @@ public sealed class RelationalDocumentStoreRepository(
                     securityConfigurationError.NonNamespaceConfiguredStrategies,
                     securityConfigurationError.RelationshipClassification,
                     authorizationContext,
-                    totalCount
+                    totalCount,
+                    cancellationToken
                 );
 
             case RelationalAuthorizationPlanOutcome.StillUnsupported stillUnsupported:
@@ -1603,7 +1632,8 @@ public sealed class RelationalDocumentStoreRepository(
                     stillUnsupported.NonNamespaceConfiguredStrategies,
                     stillUnsupported.RelationshipClassification,
                     authorizationContext,
-                    totalCount
+                    totalCount,
+                    cancellationToken
                 );
 
             case RelationalAuthorizationPlanOutcome.Plan plan:
@@ -1612,7 +1642,8 @@ public sealed class RelationalDocumentStoreRepository(
                     resource,
                     plan,
                     authorizationContext,
-                    totalCount
+                    totalCount,
+                    cancellationToken
                 );
 
             default:
@@ -1628,7 +1659,8 @@ public sealed class RelationalDocumentStoreRepository(
         IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies,
         RelationshipAuthorizationClassification relationshipClassification,
         RelationalAuthorizationContext authorizationContext,
-        bool totalCount
+        bool totalCount,
+        CancellationToken cancellationToken
     )
     {
         // Every resolved custom view is excluded from the relationship bucket regardless of configured
@@ -1669,7 +1701,8 @@ public sealed class RelationalDocumentStoreRepository(
             totalCount,
             [],
             null,
-            customViewStrategiesToValidate
+            customViewStrategiesToValidate,
+            cancellationToken
         );
     }
 
@@ -1678,7 +1711,8 @@ public sealed class RelationalDocumentStoreRepository(
         QualifiedResourceName resource,
         RelationalAuthorizationPlanOutcome.Plan plan,
         RelationalAuthorizationContext authorizationContext,
-        bool totalCount
+        bool totalCount,
+        CancellationToken cancellationToken
     )
     {
         if (plan.NamespaceChecks.Count == 0)
@@ -1691,7 +1725,8 @@ public sealed class RelationalDocumentStoreRepository(
                 totalCount,
                 [],
                 null,
-                plan.CustomViewStrategies
+                plan.CustomViewStrategies,
+                cancellationToken
             );
         }
 
@@ -1711,7 +1746,12 @@ public sealed class RelationalDocumentStoreRepository(
                     plan.NamespaceChecks[0].RawConfiguredIndex
                 )
                     is { Count: > 0 } customViewStrategiesToValidate
-                && await ValidateCustomViewsAsync(customViewStrategiesToValidate, mappingSet, resource)
+                && await ValidateCustomViewsAsync(
+                    customViewStrategiesToValidate,
+                    mappingSet,
+                    resource,
+                    cancellationToken
+                )
                     is { } customViewFailureBeforeNamespaceTerminal
             )
             {
@@ -1734,7 +1774,8 @@ public sealed class RelationalDocumentStoreRepository(
             totalCount,
             plan.NamespaceChecks,
             namespacePrefixParameterization,
-            plan.CustomViewStrategies
+            plan.CustomViewStrategies,
+            cancellationToken
         );
     }
 
@@ -1746,7 +1787,8 @@ public sealed class RelationalDocumentStoreRepository(
         bool totalCount,
         IReadOnlyList<NamespaceAuthorizationCheckSpec> namespaceChecks,
         NamespacePrefixParameterization? namespacePrefixParameterization,
-        IReadOnlyList<SupportedCustomViewAuthorizationStrategy> customViewStrategies
+        IReadOnlyList<SupportedCustomViewAuthorizationStrategy> customViewStrategies,
+        CancellationToken cancellationToken
     )
     {
         IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck>? adaptedCustomViewChecks = null;
@@ -1764,7 +1806,8 @@ public sealed class RelationalDocumentStoreRepository(
                 // Validate the custom views that planned successfully and are configured ahead of the
                 // earliest planning failure first: an earlier missing or non-conforming auth view must
                 // surface its own error rather than being hidden by this later planning failure.
-                await ValidatePlannedCustomViewsBeforeFailureAsync(mappingSet, sc).ConfigureAwait(false);
+                await ValidatePlannedCustomViewsBeforeFailureAsync(mappingSet, sc, cancellationToken)
+                    .ConfigureAwait(false);
 
                 return new QueryAuthorizationResolution.Complete(
                     BuildQueryAuthorizationSecurityConfigurationFailure(mappingSet, resource, sc.Failures)
@@ -1811,7 +1854,8 @@ public sealed class RelationalDocumentStoreRepository(
                     adaptedCustomViewChecks,
                     new QueryAuthorizationResolution.Complete(
                         new QueryResult.QuerySuccess([], totalCount ? 0 : null)
-                    )
+                    ),
+                    cancellationToken
                 );
 
             case RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled:
@@ -1825,7 +1869,8 @@ public sealed class RelationalDocumentStoreRepository(
                                 knownButNotEnabled.Failures
                             )
                         )
-                    )
+                    ),
+                    cancellationToken
                 );
 
             case RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError:
@@ -1838,7 +1883,8 @@ public sealed class RelationalDocumentStoreRepository(
                             resource,
                             securityConfigurationError.Failures
                         )
-                    )
+                    ),
+                    cancellationToken
                 );
 
             default:
@@ -1851,16 +1897,19 @@ public sealed class RelationalDocumentStoreRepository(
     private async Task<QueryAuthorizationResolution> ResolveRelationshipTerminalAfterCustomViewValidation(
         MappingSet mappingSet,
         IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck>? customViewChecks,
-        QueryAuthorizationResolution terminalResolution
+        QueryAuthorizationResolution terminalResolution,
+        CancellationToken cancellationToken
     )
     {
-        await ValidateAdaptedCustomViewsAsync(mappingSet, customViewChecks).ConfigureAwait(false);
+        await ValidateAdaptedCustomViewsAsync(mappingSet, customViewChecks, cancellationToken)
+            .ConfigureAwait(false);
         return terminalResolution;
     }
 
     private async Task ValidateAdaptedCustomViewsAsync(
         MappingSet mappingSet,
-        IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck>? customViewChecks
+        IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck>? customViewChecks,
+        CancellationToken cancellationToken
     )
     {
         if (customViewChecks is null || customViewChecks.Count == 0)
@@ -1869,7 +1918,7 @@ public sealed class RelationalDocumentStoreRepository(
         }
 
         await CustomViewAuthorizationValidator
-            .ValidateAsync(_commandExecutor, mappingSet.Key.Dialect, customViewChecks)
+            .ValidateAsync(_commandExecutor, mappingSet.Key.Dialect, customViewChecks, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -1881,7 +1930,8 @@ public sealed class RelationalDocumentStoreRepository(
     /// </summary>
     private async Task ValidatePlannedCustomViewsBeforeFailureAsync(
         MappingSet mappingSet,
-        CustomViewAuthorizationPlanOutcome.SecurityConfiguration securityConfiguration
+        CustomViewAuthorizationPlanOutcome.SecurityConfiguration securityConfiguration,
+        CancellationToken cancellationToken
     )
     {
         var checksBeforeFailure = CustomViewAuthorizationTerminalOrdering.ChecksBeforeTerminal(
@@ -1893,7 +1943,8 @@ public sealed class RelationalDocumentStoreRepository(
 
         await ValidateAdaptedCustomViewsAsync(
                 mappingSet,
-                PageDocumentIdCustomViewAdapter.AdaptFromChecks(checksBeforeFailure)
+                PageDocumentIdCustomViewAdapter.AdaptFromChecks(checksBeforeFailure),
+                cancellationToken
             )
             .ConfigureAwait(false);
     }
@@ -1906,7 +1957,8 @@ public sealed class RelationalDocumentStoreRepository(
     private async Task<QueryResult?> ValidateCustomViewsAsync(
         IReadOnlyList<SupportedCustomViewAuthorizationStrategy> customViewStrategies,
         MappingSet mappingSet,
-        QualifiedResourceName resource
+        QualifiedResourceName resource,
+        CancellationToken cancellationToken
     )
     {
         CustomViewAuthorizationPlanOutcome customViewOutcome = CustomViewAuthorizationPlanner.Plan(
@@ -1917,7 +1969,11 @@ public sealed class RelationalDocumentStoreRepository(
 
         if (customViewOutcome is CustomViewAuthorizationPlanOutcome.SecurityConfiguration customViewSecurity)
         {
-            await ValidatePlannedCustomViewsBeforeFailureAsync(mappingSet, customViewSecurity)
+            await ValidatePlannedCustomViewsBeforeFailureAsync(
+                    mappingSet,
+                    customViewSecurity,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
             return BuildQueryAuthorizationSecurityConfigurationFailure(
@@ -1931,7 +1987,8 @@ public sealed class RelationalDocumentStoreRepository(
                 mappingSet,
                 PageDocumentIdCustomViewAdapter.AdaptFromChecks(
                     ((CustomViewAuthorizationPlanOutcome.Plan)customViewOutcome).Checks
-                )
+                ),
+                cancellationToken
             )
             .ConfigureAwait(false);
 

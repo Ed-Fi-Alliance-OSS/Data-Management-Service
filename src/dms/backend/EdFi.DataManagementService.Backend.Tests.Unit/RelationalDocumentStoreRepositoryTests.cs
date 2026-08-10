@@ -2971,6 +2971,143 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_propagates_query_preparation_cancellation_from_reference_resolution_for_relational_queries()
+    {
+        var mappingSet = CreateQuerySupportedMappingSet(
+            _schoolResourceInfo,
+            CreateSupportedQueryField(
+                "schoolCategoryDescriptor",
+                "$.schoolCategoryDescriptor",
+                "string",
+                new RelationalQueryFieldTarget.DescriptorIdColumn(
+                    new DbColumnName("SchoolCategoryDescriptorId"),
+                    new QualifiedResourceName("Ed-Fi", "SchoolCategoryDescriptor")
+                )
+            )
+        );
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [
+                CreateQueryElement(
+                    "schoolCategoryDescriptor",
+                    "$.schoolCategoryDescriptor",
+                    "uri://ed-fi.org/SchoolCategoryDescriptor#High School",
+                    "string"
+                ),
+            ],
+            totalCount: true
+        );
+        using var cancellationTokenSource = new CancellationTokenSource();
+        CancellationToken capturedCancellationToken = default;
+
+        await cancellationTokenSource.CancelAsync();
+
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .Invokes(call => capturedCancellationToken = call.GetArgument<CancellationToken>(1))
+            .ReturnsLazily(
+                (ReferenceResolverRequest _, CancellationToken cancellationToken) =>
+                    cancellationToken.IsCancellationRequested
+                        ? Task.FromCanceled<ResolvedReferenceSet>(cancellationToken)
+                        : Task.FromException<ResolvedReferenceSet>(
+                            new AssertionException("Expected query preparation to pass the request token.")
+                        )
+            );
+
+        Func<Task> action = () => _sut.QueryDocuments(queryRequest, cancellationTokenSource.Token);
+
+        await action.Should().ThrowAsync<OperationCanceledException>();
+        capturedCancellationToken.Should().Be(cancellationTokenSource.Token);
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_propagates_query_preparation_cancellation_from_custom_view_validation_for_cache_candidate_selection()
+    {
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+            ],
+            claimEducationOrganizationIds: [255901L]
+        );
+        var readAccelerationCoordinator = new RecordingReadAccelerationCoordinator();
+        using var cancellationTokenSource = new CancellationTokenSource();
+        CancellationToken capturedValidationToken = default;
+
+        UseReadAccelerationCoordinator(readAccelerationCoordinator);
+        await cancellationTokenSource.CancelAsync();
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => capturedValidationToken = call.GetArgument<CancellationToken>(2))
+            .ReturnsLazily(
+                (
+                    RelationalCommand _,
+                    Func<IRelationalCommandReader, CancellationToken, Task<bool>> _,
+                    CancellationToken cancellationToken
+                ) =>
+                    cancellationToken.IsCancellationRequested
+                        ? Task.FromCanceled<bool>(cancellationToken)
+                        : Task.FromException<bool>(
+                            new AssertionException(
+                                "Expected custom-view validation to pass the request token."
+                            )
+                        )
+            );
+
+        Func<Task> action = () => _sut.QueryDocuments(queryRequest, cancellationTokenSource.Token);
+
+        await action.Should().ThrowAsync<OperationCanceledException>();
+        capturedValidationToken.Should().Be(cancellationTokenSource.Token);
+        readAccelerationCoordinator.QueryAttempts.Should().Be(1);
+        readAccelerationCoordinator.SelectedQueryRequest.Should().BeNull();
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<
+                        Func<
+                            IRelationalCommandReader,
+                            CancellationToken,
+                            Task<DocumentCacheReadAccelerationCandidatePage>
+                        >
+                    >._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .MustNotHaveHappened();
+    }
+
+    [Test]
     public async Task It_uses_live_query_ordering_for_read_acceleration_candidate_selection_with_max_change_version()
     {
         var contentVersionSelectedDocumentUuid = new DocumentUuid(
