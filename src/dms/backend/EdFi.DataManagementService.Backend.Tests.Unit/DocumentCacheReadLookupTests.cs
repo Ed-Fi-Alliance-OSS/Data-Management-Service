@@ -266,38 +266,24 @@ public class Given_DocumentCacheReadLookup
         );
 
         command.CommandText.Should().Contain("\"dms\".\"DocumentCache\"");
-        command.CommandText.Should().Contain("CAST(@documentUuid0 AS uuid)");
+        command.CommandText.Should().Contain("jsonb_to_recordset(CAST(@candidatePageJson AS jsonb))");
+        command.CommandText.Should().Contain("\"ExpectedDocumentUuid\" uuid");
         command.CommandText.Should().Contain("ORDER BY requested.\"Ordinal\"");
-        command
-            .Parameters.Select(parameter => parameter.Name)
-            .Should()
-            .Equal(
-                "@ordinal0",
-                "@documentId0",
-                "@documentUuid0",
-                "@resourceKeyId0",
-                "@contentVersion0",
-                "@ordinal1",
-                "@documentId1",
-                "@documentUuid1",
-                "@resourceKeyId1",
-                "@contentVersion1"
-            );
-        command
-            .Parameters.Select(parameter => parameter.Value)
-            .Should()
-            .Equal(
-                0,
-                first.DocumentId,
-                first.DocumentUuid.Value,
-                first.ResourceKeyId,
-                first.ContentVersion,
-                1,
-                second.DocumentId,
-                second.DocumentUuid.Value,
-                second.ResourceKeyId,
-                second.ContentVersion
-            );
+        command.CommandText.Should().NotContain("@documentUuid0");
+        command.Parameters.Should().ContainSingle();
+        command.Parameters[0].Name.Should().Be("@candidatePageJson");
+
+        var candidatePage = JsonNode
+            .Parse(command.Parameters[0].Value.Should().BeOfType<string>().Subject)!
+            .AsArray();
+        candidatePage.Should().HaveCount(2);
+        candidatePage[0]!["Ordinal"]!.GetValue<int>().Should().Be(0);
+        candidatePage[0]!["DocumentId"]!.GetValue<long>().Should().Be(first.DocumentId);
+        candidatePage[0]!["ExpectedDocumentUuid"]!.GetValue<Guid>().Should().Be(first.DocumentUuid.Value);
+        candidatePage[0]!["ExpectedResourceKeyId"]!.GetValue<short>().Should().Be(first.ResourceKeyId);
+        candidatePage[0]!["ExpectedContentVersion"]!.GetValue<long>().Should().Be(first.ContentVersion);
+        candidatePage[1]!["Ordinal"]!.GetValue<int>().Should().Be(1);
+        candidatePage[1]!["DocumentId"]!.GetValue<long>().Should().Be(second.DocumentId);
     }
 
     [Test]
@@ -342,6 +328,36 @@ public class Given_DocumentCacheReadLookup
         candidatePage[0]!["ExpectedContentVersion"]!.GetValue<long>().Should().Be(first.ContentVersion);
         candidatePage[1]!["Ordinal"]!.GetValue<int>().Should().Be(1);
         candidatePage[1]!["DocumentId"]!.GetValue<long>().Should().Be(second.DocumentId);
+    }
+
+    [Test]
+    public void It_builds_one_postgresql_lookup_parameter_for_a_large_valid_page_size_batch()
+    {
+        DocumentCacheReadAccelerationCandidate[] candidates = Enumerable
+            .Range(0, 14_000)
+            .Select(index => Candidate(documentId: 1000 + index, contentVersion: 2000 + index))
+            .ToArray();
+
+        RelationalCommand command = DocumentCacheReadLookupSql.BuildCommand(SqlDialect.Pgsql, candidates);
+
+        command.CommandText.Should().Contain("jsonb_to_recordset(CAST(@candidatePageJson AS jsonb))");
+        command.CommandText.Should().NotContain("@documentId13999");
+        command.Parameters.Should().ContainSingle();
+
+        var candidatePage = JsonNode
+            .Parse(command.Parameters[0].Value.Should().BeOfType<string>().Subject)!
+            .AsArray();
+        candidatePage.Should().HaveCount(14_000);
+        candidatePage[13_999]!["Ordinal"]!.GetValue<int>().Should().Be(13_999);
+        candidatePage[13_999]!["DocumentId"]!.GetValue<long>().Should().Be(candidates[13_999].DocumentId);
+        candidatePage[13_999]!["ExpectedResourceKeyId"]!
+            .GetValue<short>()
+            .Should()
+            .Be(candidates[13_999].ResourceKeyId);
+        candidatePage[13_999]!["ExpectedContentVersion"]!
+            .GetValue<long>()
+            .Should()
+            .Be(candidates[13_999].ContentVersion);
     }
 
     [Test]

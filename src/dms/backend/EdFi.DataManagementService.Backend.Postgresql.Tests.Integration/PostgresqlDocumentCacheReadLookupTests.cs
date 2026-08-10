@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
@@ -156,6 +157,33 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
             .Select(hit => JsonNode.Parse(hit.DocumentJson)!["value"]!.GetValue<string>())
             .Should()
             .Equal("cache-11", "cache-10");
+    }
+
+    [Test]
+    public async Task It_returns_a_fresh_maximum_size_batch_hit_from_structured_candidate_page()
+    {
+        const int maximumPageSize = 500;
+
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        IReadOnlyList<SourceDocument> sources = await InsertSourceDocumentsAsync(
+            count: maximumPageSize,
+            firstContentVersion: 1_000
+        );
+        await InsertCacheRowsAsync(sources);
+
+        DocumentCacheReadAccelerationCandidate[] candidates = sources.Reverse().Select(Candidate).ToArray();
+
+        DocumentCacheReadBatchLookupResult result = await LookupBatchAsync(candidates);
+
+        result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.FreshHit);
+        result.IsFreshHit.Should().BeTrue();
+        result.Documents.Should().HaveCount(maximumPageSize);
+        result.Documents.Select(static document => document.Candidate).Should().Equal(candidates);
+        result
+            .Documents.Cast<DocumentCacheReadDocumentLookupResult.FreshHit>()
+            .Select(hit => JsonNode.Parse(hit.DocumentJson)!["value"]!.GetValue<string>())
+            .Should()
+            .Equal(candidates.Select(static candidate => $"cache-{candidate.ContentVersion}"));
     }
 
     [Test]
@@ -484,6 +512,73 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
         );
     }
 
+    private async Task<IReadOnlyList<SourceDocument>> InsertSourceDocumentsAsync(
+        int count,
+        long firstContentVersion
+    )
+    {
+        short resourceKeyId = _fixture.MappingSet.ResourceKeyIdByResource[PersonResource];
+        SourceDocumentSeed[] seed = Enumerable
+            .Range(0, count)
+            .Select(index => new SourceDocumentSeed(
+                index,
+                Guid.NewGuid(),
+                resourceKeyId,
+                firstContentVersion + index
+            ))
+            .ToArray();
+
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await _database.QueryRowsAsync(
+            """
+            WITH source_documents AS (
+                SELECT
+                    source."Ordinal",
+                    source."DocumentUuid",
+                    source."ResourceKeyId",
+                    source."ContentVersion"
+                FROM jsonb_to_recordset(CAST(@sourceDocumentsJson AS jsonb)) AS source(
+                    "Ordinal" integer,
+                    "DocumentUuid" uuid,
+                    "ResourceKeyId" smallint,
+                    "ContentVersion" bigint
+                )
+            )
+            INSERT INTO "dms"."Document" (
+                "DocumentUuid",
+                "ResourceKeyId",
+                "ContentVersion",
+                "ContentLastModifiedAt"
+            )
+            SELECT
+                source_documents."DocumentUuid",
+                source_documents."ResourceKeyId",
+                source_documents."ContentVersion",
+                @lastModifiedAt
+            FROM source_documents
+            ORDER BY source_documents."Ordinal"
+            RETURNING
+                "DocumentId",
+                "DocumentUuid",
+                "ResourceKeyId",
+                "ContentVersion";
+            """,
+            new NpgsqlParameter("sourceDocumentsJson", NpgsqlDbType.Jsonb)
+            {
+                Value = JsonSerializer.Serialize(seed),
+            },
+            new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz) { Value = LastModifiedAt }
+        );
+
+        return rows.OrderBy(static row => Convert.ToInt64(row["ContentVersion"]))
+            .Select(static row => new SourceDocument(
+                Convert.ToInt64(row["DocumentId"]),
+                (Guid)row["DocumentUuid"]!,
+                Convert.ToInt16(row["ResourceKeyId"]),
+                Convert.ToInt64(row["ContentVersion"])
+            ))
+            .ToArray();
+    }
+
     private async Task InsertDescriptorRowAsync(SourceDocument descriptor)
     {
         await _database.ExecuteNonQueryAsync(
@@ -534,6 +629,76 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
             new NpgsqlParameter("uri", NpgsqlDbType.Varchar)
             {
                 Value = "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
+            }
+        );
+    }
+
+    private async Task InsertCacheRowsAsync(IReadOnlyList<SourceDocument> sources)
+    {
+        ResourceKeyEntry resourceKey = _fixture.MappingSet.ResourceKeyById[sources[0].ResourceKeyId];
+        CacheRowSeed[] seed = sources
+            .Select(source => new CacheRowSeed(
+                source.DocumentId,
+                source.DocumentUuid,
+                source.ContentVersion,
+                ComposeFixedStreamEtag(_fixture.MappingSet, resourceKey, source.ContentVersion),
+                new JsonObject { ["value"] = $"cache-{source.ContentVersion}" }.ToJsonString()
+            ))
+            .ToArray();
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "dms"."DocumentCache" (
+                "DocumentId",
+                "DocumentUuid",
+                "ProjectName",
+                "ResourceName",
+                "ResourceVersion",
+                "ContentVersion",
+                "StreamEtag",
+                "LastModifiedAt",
+                "DocumentJson",
+                "ComputedAt"
+            )
+            SELECT
+                cache_row."DocumentId",
+                cache_row."DocumentUuid",
+                @projectName,
+                @resourceName,
+                @resourceVersion,
+                cache_row."ContentVersion",
+                cache_row."StreamEtag",
+                @lastModifiedAt,
+                cache_row."DocumentJson"::jsonb,
+                @computedAt
+            FROM jsonb_to_recordset(CAST(@cacheRowsJson AS jsonb)) AS cache_row(
+                "DocumentId" bigint,
+                "DocumentUuid" uuid,
+                "ContentVersion" bigint,
+                "StreamEtag" text,
+                "DocumentJson" text
+            );
+            """,
+            new NpgsqlParameter("cacheRowsJson", NpgsqlDbType.Jsonb)
+            {
+                Value = JsonSerializer.Serialize(seed),
+            },
+            new NpgsqlParameter("projectName", NpgsqlDbType.Varchar)
+            {
+                Value = resourceKey.Resource.ProjectName,
+            },
+            new NpgsqlParameter("resourceName", NpgsqlDbType.Varchar)
+            {
+                Value = resourceKey.Resource.ResourceName,
+            },
+            new NpgsqlParameter("resourceVersion", NpgsqlDbType.Varchar)
+            {
+                Value = resourceKey.ResourceVersion,
+            },
+            new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz) { Value = LastModifiedAt },
+            new NpgsqlParameter("computedAt", NpgsqlDbType.TimestampTz)
+            {
+                Value = LastModifiedAt.AddMinutes(1),
             }
         );
     }
@@ -678,6 +843,21 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
         Guid DocumentUuid,
         short ResourceKeyId,
         long ContentVersion
+    );
+
+    private sealed record SourceDocumentSeed(
+        int Ordinal,
+        Guid DocumentUuid,
+        short ResourceKeyId,
+        long ContentVersion
+    );
+
+    private sealed record CacheRowSeed(
+        long DocumentId,
+        Guid DocumentUuid,
+        long ContentVersion,
+        string StreamEtag,
+        string DocumentJson
     );
 
     private sealed record ProviderLookupScenario(

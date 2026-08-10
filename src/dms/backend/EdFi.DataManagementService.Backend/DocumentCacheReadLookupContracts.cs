@@ -900,7 +900,7 @@ internal static class DocumentCacheReadLookupClassifier
 
 internal static class DocumentCacheReadLookupSql
 {
-    private const string MssqlCandidatePageJsonParameterName = "@candidatePageJson";
+    private const string CandidatePageJsonParameterName = "@candidatePageJson";
 
     public static RelationalCommand BuildCommand(
         SqlDialect dialect,
@@ -959,8 +959,20 @@ internal static class DocumentCacheReadLookupSql
     ) =>
         new(
             $$"""
-            WITH requested ("Ordinal", "DocumentId", "ExpectedDocumentUuid", "ExpectedResourceKeyId", "ExpectedContentVersion") AS (
-            {{BuildPostgresqlValues(candidates.Count)}}
+            WITH requested AS (
+                SELECT
+                    candidate."Ordinal",
+                    candidate."DocumentId",
+                    candidate."ExpectedDocumentUuid",
+                    candidate."ExpectedResourceKeyId",
+                    candidate."ExpectedContentVersion"
+                FROM jsonb_to_recordset(CAST({{CandidatePageJsonParameterName}} AS jsonb)) AS candidate(
+                    "Ordinal" integer,
+                    "DocumentId" bigint,
+                    "ExpectedDocumentUuid" uuid,
+                    "ExpectedResourceKeyId" smallint,
+                    "ExpectedContentVersion" bigint
+                )
             ),
             state_rows AS (
                 SELECT
@@ -1012,7 +1024,7 @@ internal static class DocumentCacheReadLookupSql
                 ON cache."DocumentId" = requested."DocumentId"
             ORDER BY requested."Ordinal";
             """,
-            BuildCandidateParameters(candidates)
+            BuildCandidatePageJsonParameter(candidates)
         );
 
     private static RelationalCommand BuildMssqlCommand(
@@ -1027,7 +1039,7 @@ internal static class DocumentCacheReadLookupSql
                     [candidate].[ExpectedDocumentUuid],
                     [candidate].[ExpectedResourceKeyId],
                     [candidate].[ExpectedContentVersion]
-                FROM OPENJSON({{MssqlCandidatePageJsonParameterName}})
+                FROM OPENJSON({{CandidatePageJsonParameterName}})
                 WITH (
                     [Ordinal] int '$.Ordinal',
                     [DocumentId] bigint '$.DocumentId',
@@ -1085,50 +1097,20 @@ internal static class DocumentCacheReadLookupSql
                 ON [cache].[DocumentId] = [requested].[DocumentId]
             ORDER BY [requested].[Ordinal];
             """,
-            BuildMssqlCandidatePageJsonParameter(candidates)
+            BuildCandidatePageJsonParameter(candidates)
         );
 
-    private static string BuildPostgresqlValues(int count) =>
-        "VALUES\n"
-        + string.Join(
-            ",\n",
-            Enumerable
-                .Range(0, count)
-                .Select(index =>
-                    $"    (CAST(@ordinal{index} AS integer), CAST(@documentId{index} AS bigint), CAST(@documentUuid{index} AS uuid), CAST(@resourceKeyId{index} AS smallint), CAST(@contentVersion{index} AS bigint))"
-                )
-        );
-
-    private static IReadOnlyList<RelationalParameter> BuildCandidateParameters(
+    private static IReadOnlyList<RelationalParameter> BuildCandidatePageJsonParameter(
         IReadOnlyList<DocumentCacheReadAccelerationCandidate> candidates
     )
     {
-        List<RelationalParameter> parameters = new(candidates.Count * 5);
-
-        for (var index = 0; index < candidates.Count; index++)
-        {
-            DocumentCacheReadAccelerationCandidate candidate = candidates[index];
-            parameters.Add(new RelationalParameter($"@ordinal{index}", index));
-            parameters.Add(new RelationalParameter($"@documentId{index}", candidate.DocumentId));
-            parameters.Add(new RelationalParameter($"@documentUuid{index}", candidate.DocumentUuid.Value));
-            parameters.Add(new RelationalParameter($"@resourceKeyId{index}", candidate.ResourceKeyId));
-            parameters.Add(new RelationalParameter($"@contentVersion{index}", candidate.ContentVersion));
-        }
-
-        return parameters;
-    }
-
-    private static IReadOnlyList<RelationalParameter> BuildMssqlCandidatePageJsonParameter(
-        IReadOnlyList<DocumentCacheReadAccelerationCandidate> candidates
-    )
-    {
-        List<MssqlCandidatePageJsonEntry> candidateEntries = new(candidates.Count);
+        List<CandidatePageJsonEntry> candidateEntries = new(candidates.Count);
 
         for (var index = 0; index < candidates.Count; index++)
         {
             DocumentCacheReadAccelerationCandidate candidate = candidates[index];
             candidateEntries.Add(
-                new MssqlCandidatePageJsonEntry(
+                new CandidatePageJsonEntry(
                     index,
                     candidate.DocumentId,
                     candidate.DocumentUuid.Value,
@@ -1141,7 +1123,7 @@ internal static class DocumentCacheReadLookupSql
         return
         [
             new RelationalParameter(
-                MssqlCandidatePageJsonParameterName,
+                CandidatePageJsonParameterName,
                 JsonSerializer.Serialize(candidateEntries),
                 static dbParameter =>
                 {
@@ -1228,7 +1210,7 @@ internal static class DocumentCacheReadLookupSql
                 or ArgumentException
                 or FormatException;
 
-    private sealed record MssqlCandidatePageJsonEntry(
+    private sealed record CandidatePageJsonEntry(
         int Ordinal,
         long DocumentId,
         Guid ExpectedDocumentUuid,
