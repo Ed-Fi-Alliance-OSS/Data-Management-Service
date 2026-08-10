@@ -155,7 +155,8 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         var authorizationClaimParameterization = authorization?.ClaimEducationOrganizationIdParameterization;
         var parameterNamesByIndex = DeriveParameterNames(
             preprocessingResult.QueryElementsInOrder,
-            authorization
+            authorization,
+            plannedMode.OwnedParameterNames
         );
         var predicates = new List<QueryValuePredicate>(preprocessingResult.QueryElementsInOrder.Count + 2);
         Dictionary<string, object?> parameterValues = new(StringComparer.Ordinal);
@@ -447,9 +448,15 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         }
     }
 
+    /// <summary>
+    /// Allocates filter parameter names, reserving only the names the active candidate mode actually
+    /// emits. Reserving another mode's names would suffix a filter parameter over a collision this
+    /// query does not have, which would move the SQL of a mode that has no stake in the name.
+    /// </summary>
     private static IReadOnlyList<string> DeriveParameterNames(
         IReadOnlyList<PreprocessedRelationalQueryElement> queryElementsInOrder,
-        PageDocumentIdAuthorizationSpec? authorization
+        PageDocumentIdAuthorizationSpec? authorization,
+        IReadOnlyList<string> modeOwnedParameterNames
     )
     {
         var seeds = queryElementsInOrder
@@ -469,7 +476,7 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         return QueryParameterNameAllocator.Allocate(
             seeds,
             [
-                .. PageCandidateModePlanning.AllCandidateParameterNames,
+                .. modeOwnedParameterNames,
                 MinChangeVersionParameterName,
                 MaxChangeVersionParameterName,
                 .. QueryParameterNameAllocator.CollectAuthorizationParameterNames(authorization),

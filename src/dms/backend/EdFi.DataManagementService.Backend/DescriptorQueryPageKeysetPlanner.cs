@@ -90,7 +90,8 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
 
         var parameterNamesByIndex = DeriveParameterNames(
             preprocessingResult.QueryElementsInOrder,
-            authorization
+            authorization,
+            plannedMode.OwnedParameterNames
         );
         var queryPredicates = PlanPredicates(preprocessingResult.QueryElementsInOrder, parameterNamesByIndex);
         var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, requestResource);
@@ -324,9 +325,15 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
         return parameterValues;
     }
 
+    /// <summary>
+    /// Allocates filter parameter names, reserving only the names the active candidate mode actually
+    /// emits. Reserving another mode's names would suffix a filter parameter over a collision this
+    /// query does not have, which would move the SQL of a mode that has no stake in the name.
+    /// </summary>
     private static IReadOnlyList<string> DeriveParameterNames(
         IReadOnlyList<PreprocessedDescriptorQueryElement> queryElementsInOrder,
-        PageDocumentIdAuthorizationSpec? authorization
+        PageDocumentIdAuthorizationSpec? authorization,
+        IReadOnlyList<string> modeOwnedParameterNames
     )
     {
         var seeds = queryElementsInOrder
@@ -350,7 +357,7 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
             seeds,
             [
                 ResourceKeyIdParameterName,
-                .. PageCandidateModePlanning.AllCandidateParameterNames,
+                .. modeOwnedParameterNames,
                 MinChangeVersionParameterName,
                 MaxChangeVersionParameterName,
                 .. QueryParameterNameAllocator.CollectAuthorizationParameterNames(authorization),

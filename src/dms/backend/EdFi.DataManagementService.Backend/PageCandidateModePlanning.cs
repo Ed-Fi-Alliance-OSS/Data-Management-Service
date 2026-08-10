@@ -26,9 +26,16 @@ internal sealed record CandidateQueryPlan(
 /// </summary>
 /// <param name="Mode">The candidate selection mode passed to the shared SQL compiler.</param>
 /// <param name="ParameterValues">Values for the mode-owned parameters, in canonical order.</param>
+/// <param name="OwnedParameterNames">
+/// The parameter names this mode owns, reserved by filter-name allocation. Only the active mode's own
+/// names are reserved: reserving another mode's names would suffix a filter parameter that does not
+/// actually collide with anything this query emits, which would change the SQL of a mode that has no
+/// stake in the name.
+/// </param>
 internal readonly record struct PlannedCandidateMode(
     PageCandidateMode Mode,
-    IReadOnlyList<KeyValuePair<string, object?>> ParameterValues
+    IReadOnlyList<KeyValuePair<string, object?>> ParameterValues,
+    IReadOnlyList<string> OwnedParameterNames
 );
 
 /// <summary>
@@ -38,22 +45,21 @@ internal readonly record struct PlannedCandidateMode(
 /// </summary>
 internal static class PageCandidateModePlanning
 {
-    /// <summary>
-    /// Every candidate parameter name, reserved by filter-name allocation in all modes.
-    /// </summary>
-    /// <remarks>
-    /// Reserved mode-independently on purpose. If the reserved set varied by mode, a query field whose
-    /// sanitized name matched a cursor or partition parameter would be allocated one name under
-    /// traditional paging and a suffixed name under cursor paging, and the filter parameter names for
-    /// one request would stop matching across modes.
-    /// </remarks>
-    public static IReadOnlyList<string> AllCandidateParameterNames { get; } =
+    private static readonly string[] _traditionalOwnedParameterNames =
     [
         PageCandidateParameterNames.Offset,
         PageCandidateParameterNames.Limit,
+    ];
+
+    private static readonly string[] _cursorOwnedParameterNames =
+    [
         PageCandidateParameterNames.CursorInclusiveMinimum,
         PageCandidateParameterNames.CursorInclusiveMaximum,
         PageCandidateParameterNames.PageSize,
+    ];
+
+    private static readonly string[] _unpagedCandidatesOwnedParameterNames =
+    [
         PageCandidateParameterNames.PartitionCount,
         PageCandidateParameterNames.MinimumPartitionSize,
     ];
@@ -88,7 +94,8 @@ internal static class PageCandidateModePlanning
                         PageCandidateParameterNames.Limit,
                         (long)(traditional.Parameters.Limit ?? traditional.Parameters.MaximumPageSize)
                     ),
-                ]
+                ],
+                _traditionalOwnedParameterNames
             ),
             CollectionPaging.Cursor cursor => new PlannedCandidateMode(
                 new PageCandidateMode.Cursor(),
@@ -105,7 +112,8 @@ internal static class PageCandidateModePlanning
                         PageCandidateParameterNames.PageSize,
                         (long)cursor.PageSize.Value
                     ),
-                ]
+                ],
+                _cursorOwnedParameterNames
             ),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(paging),
@@ -121,6 +129,10 @@ internal static class PageCandidateModePlanning
     /// </summary>
     public static PlannedCandidateMode ForUnpagedCandidates()
     {
-        return new PlannedCandidateMode(new PageCandidateMode.UnpagedCandidates(), []);
+        return new PlannedCandidateMode(
+            new PageCandidateMode.UnpagedCandidates(),
+            [],
+            _unpagedCandidatesOwnedParameterNames
+        );
     }
 }

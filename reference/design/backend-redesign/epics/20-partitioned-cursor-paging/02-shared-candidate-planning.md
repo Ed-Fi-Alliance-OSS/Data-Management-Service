@@ -30,14 +30,10 @@ a dialect compiler emits them.
 
 ## Dependencies
 
-- Hard dependencies: DMS-1383 for typed paging/range and backend contract boundaries, and the
-  completed DMS-1391 harness and baseline.
-- The DMS-1391 baseline is required because this story modifies the shared page-selection compiler.
-  Traditional page-selection output stays behaviorally and textually unchanged, so the baseline is
-  regression insurance over that shared compiler rather than a record of an expected change: it is
-  the evidence that traditional SQL and latency did not move. DMS-1391 has no predecessor in this
-  epic and can be delivered while DMS-1383 and DMS-1384 are in progress, so this gate should not
-  idle the story.
+- Hard dependency: DMS-1383 for typed paging/range and backend contract boundaries.
+- DMS-1391 independently provides the traditional-paging harness and baseline used by DMS-1392's
+  final performance gate. DMS-1385 preserves traditional page-selection output behaviorally and
+  textually so that later comparison remains meaningful, but DMS-1391 does not gate this story.
 - External foundations: E08 regular/descriptor query planning, E10 live change-version filters,
   E14 row-level authorization planning, and E15 plan-SQL foundations plus plan-contract and
   deterministic-binding artifacts. This story extends the E15-owned `PageDocumentIdSqlCompiler`
@@ -79,9 +75,6 @@ a dialect compiler emits them.
 - Negative assertions prove cursor plans contain no offset, row-number skip, or total-count SQL.
 - Existing traditional page-selection SQL goldens remain unchanged and demonstrate no semantic
   regression.
-- The DMS-1391 baseline artifacts exist and identify a commit at or before this story, so the
-  pre-change baseline is genuinely pre-change. Comparing traditional latency against that baseline
-  is DMS-1392's acceptance gate, not this story's.
 - Edge cases cover inverted and extreme `Int64` ranges and page sizes 0, 1, and maximum.
 - Focused PostgreSQL and real SQL Server integration probes prove the generated SQL executes.
 

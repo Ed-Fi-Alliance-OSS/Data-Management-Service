@@ -9,9 +9,9 @@ status: proposed
 
 ## Outcome
 
-Provide a reproducible cross-provider performance harness and capture the narrow pre-change
-traditional-paging baseline required before DMS-1385 modifies the shared page-selection compiler and
-before its downstream story mutates shared traditional collection execution.
+Provide a reproducible cross-provider performance harness and capture a narrow traditional-paging
+baseline from an identified commit that predates shared page-selection compiler and collection
+execution changes, without sequencing those implementation stories behind harness delivery.
 
 ## Design References
 
@@ -21,9 +21,8 @@ before its downstream story mutates shared traditional collection execution.
 
 ## Dependencies
 
-- No hard dependency on another story in this epic; this story must complete before DMS-1385.
-  DMS-1383 and DMS-1384 may proceed in parallel, and this story should be started alongside them so
-  the gate never idles DMS-1385.
+- No hard dependency on another story in this epic. DMS-1391 and DMS-1385 may proceed independently;
+  the baseline records an identified pre-change commit regardless of delivery order.
 - The baseline is regression insurance over the shared page-selection compiler that DMS-1385
   modifies. DMS-1385 keeps traditional page-selection output behaviorally and textually unchanged,
   so the baseline is the evidence that traditional SQL and latency did not move, not a record of an
@@ -49,9 +48,8 @@ before its downstream story mutates shared traditional collection execution.
 
 - A clean environment can reproduce the same three scenario definitions and machine-readable
   outputs for both providers.
-- Baseline artifacts identify the commit and pinned environment and exist before DMS-1385
-  page-selection compiler work begins and, transitively, before DMS-1386 changes the shared
-  collection hydration batch.
+- Baseline artifacts identify the pre-change commit and pinned environment used for comparison with
+  the DMS-1385 compiler and DMS-1386 collection hydration-batch changes.
 - Each scenario records page size, offset, p50/p95, command count, returned rows, reads/buffers,
   CPU/time, and the provider plan in the epic's result format.
 - Harness smoke tests detect invalid configuration, fixture, provider, and incomplete result data.

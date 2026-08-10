@@ -742,6 +742,97 @@ public class Given_RelationalQueryPageKeysetPlanner
         unpagedReason.Should().Be(traditionalReason);
     }
 
+    [TestCase("pageSize")]
+    [TestCase("cursorMin")]
+    [TestCase("cursorMax")]
+    [TestCase("number")]
+    [TestCase("minimumPartitionSize")]
+    public void It_should_allocate_traditional_filter_parameter_names_unsuffixed_for_names_no_traditional_page_emits(
+        string queryFieldName
+    )
+    {
+        // Traditional page selection emits only offset and limit, so a resource field whose sanitized
+        // name matches a cursor or partition parameter has nothing to collide with and must keep its
+        // plain name. Suffixing it would move traditional SQL and its bindings.
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var traditional = planner.Plan(
+            CreateRootTable(),
+            CreateNamedFieldPreprocessingResult(queryFieldName),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            )
+        );
+
+        FilterParameterNames(traditional.Plan).Should().Equal(queryFieldName);
+        traditional.ParameterValues.Should().ContainKey(queryFieldName);
+        traditional.Plan.PageDocumentIdSql.Should().Contain($"r.\"SchoolId\" = @{queryFieldName}");
+    }
+
+    [TestCase("cursorMin")]
+    [TestCase("cursorMax")]
+    [TestCase("pageSize")]
+    public void It_should_disambiguate_cursor_filter_parameter_names_that_actually_collide(
+        string queryFieldName
+    )
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var cursor = planner.Plan(
+            CreateRootTable(),
+            CreateNamedFieldPreprocessingResult(queryFieldName),
+            new CollectionPaging.Cursor(new CursorRange(1L, 100L), new PageSize(25))
+        );
+
+        // The filter is renamed out of the way and keeps its own value; the plain name stays with the
+        // cursor parameter that actually owns it in this mode.
+        var filterParameterNames = FilterParameterNames(cursor.Plan);
+
+        filterParameterNames.Should().ContainSingle().Which.Should().NotBe(queryFieldName);
+        cursor.ParameterValues[filterParameterNames[0]].Should().Be(456);
+        cursor.ParameterValues.Should().ContainKeys("cursorMin", "cursorMax", "pageSize");
+    }
+
+    [TestCase("number")]
+    [TestCase("minimumPartitionSize")]
+    public void It_should_disambiguate_unpaged_candidate_filter_parameter_names_that_collide_with_reserved_partition_names(
+        string queryFieldName
+    )
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        planner
+            .TryPlanCandidates(
+                CreateRootTable(),
+                CreateNamedFieldPreprocessingResult(queryFieldName),
+                out var unpaged,
+                out _
+            )
+            .Should()
+            .BeTrue();
+
+        FilterParameterNames(unpaged!.Plan).Should().NotContain(queryFieldName);
+    }
+
+    private static RelationalQueryPreprocessingResult CreateNamedFieldPreprocessingResult(
+        string queryFieldName
+    )
+    {
+        return new RelationalQueryPreprocessingResult(
+            new RelationalQueryPreprocessingOutcome.Continue(),
+            [
+                CreateElement(
+                    queryFieldName,
+                    $"$.{queryFieldName}",
+                    "number",
+                    new RelationalQueryFieldTarget.RootColumn(new DbColumnName("SchoolId")),
+                    "456",
+                    new PreprocessedRelationalQueryValue.Raw("456")
+                ),
+            ]
+        );
+    }
+
     private static IReadOnlyList<string> FilterParameterNames(PageDocumentIdSqlPlan plan)
     {
         return

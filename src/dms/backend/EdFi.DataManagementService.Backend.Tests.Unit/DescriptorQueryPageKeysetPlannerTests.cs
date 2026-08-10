@@ -964,6 +964,81 @@ public class Given_DescriptorQueryPageKeysetPlanner
         unpaged.Plan.PageDocumentIdSql.Should().NotContain("TOP (");
     }
 
+    [TestCase("pageSize")]
+    [TestCase("cursorMin")]
+    [TestCase("cursorMax")]
+    [TestCase("number")]
+    [TestCase("minimumPartitionSize")]
+    public void It_should_allocate_traditional_descriptor_filter_parameter_names_unsuffixed_for_names_no_traditional_page_emits(
+        string queryFieldName
+    )
+    {
+        // Traditional descriptor page selection emits only offset and limit, so a descriptor field whose
+        // sanitized name matches a cursor or partition parameter has nothing to collide with and must
+        // keep its plain name.
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var traditional = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            CreateNamedFieldPreprocessingResult(queryFieldName),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            )
+        );
+
+        traditional.ParameterValues.Should().ContainKey(queryFieldName);
+        traditional.Plan.PageDocumentIdSql.Should().Contain($"r.\"Namespace\" = @{queryFieldName}");
+    }
+
+    [TestCase("cursorMin")]
+    [TestCase("pageSize")]
+    public void It_should_disambiguate_descriptor_cursor_filter_parameter_names_that_actually_collide(
+        string queryFieldName
+    )
+    {
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var cursor = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            CreateNamedFieldPreprocessingResult(queryFieldName),
+            new CollectionPaging.Cursor(new CursorRange(1L, 100L), new PageSize(25))
+        );
+
+        // The descriptor filter is renamed out of the way; the plain name stays with the cursor
+        // parameter that actually owns it in this mode.
+        var namespaceFilterName = cursor
+            .Plan.PageParametersInOrder.Single(parameter =>
+                parameter.Role is QuerySqlParameterRole.Filter
+                && !string.Equals(parameter.ParameterName, "resourceKeyId", StringComparison.Ordinal)
+            )
+            .ParameterName;
+
+        namespaceFilterName.Should().NotBe(queryFieldName);
+        cursor.Plan.PageDocumentIdSql.Should().Contain($"r.\"Namespace\" = @{namespaceFilterName}");
+        cursor.ParameterValues.Should().ContainKeys("cursorMin", "cursorMax", "pageSize");
+    }
+
+    private static DescriptorQueryPreprocessingResult CreateNamedFieldPreprocessingResult(
+        string queryFieldName
+    )
+    {
+        return new DescriptorQueryPreprocessingResult(
+            new RelationalQueryPreprocessingOutcome.Continue(),
+            [
+                CreateElement(
+                    queryFieldName,
+                    $"$.{queryFieldName}",
+                    "uri://ed-fi.org/descriptor#Alternative",
+                    "string",
+                    new DescriptorQueryFieldTarget.Namespace(new DbColumnName("Namespace")),
+                    new PreprocessedDescriptorQueryValue.Raw("uri://ed-fi.org/descriptor#Alternative")
+                ),
+            ]
+        );
+    }
+
     private static DescriptorQueryPreprocessingResult CreateParityPreprocessingResult()
     {
         return new DescriptorQueryPreprocessingResult(
