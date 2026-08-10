@@ -1830,6 +1830,87 @@ public class Given_DescriptorReadHandler
     }
 
     [Test]
+    public async Task It_reruns_descriptor_query_when_selected_page_fallback_returns_duplicate_document_ids()
+    {
+        var selectedDocumentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-454545454545");
+        var rerunDocumentUuid = Guid.Parse("bbbbbbbb-1111-2222-3333-454545454545");
+        var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 7))),
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(
+                        selectedDocumentUuid,
+                        documentId: 101L,
+                        shortDescription: "Before fallback",
+                        contentVersion: 42L
+                    )
+                ),
+            ]),
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(
+                        selectedDocumentUuid,
+                        documentId: 101L,
+                        shortDescription: "Duplicate fallback row",
+                        contentVersion: 42L
+                    ),
+                    CreateDescriptorRow(
+                        selectedDocumentUuid,
+                        documentId: 101L,
+                        shortDescription: "Duplicate fallback row again",
+                        contentVersion: 42L
+                    )
+                ),
+            ]),
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 8))),
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(
+                        rerunDocumentUuid,
+                        documentId: 205L,
+                        shortDescription: "No-cache rerun row",
+                        contentVersion: 95L
+                    )
+                ),
+            ]),
+        ]);
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(async call =>
+            {
+                var request = call.GetArgument<DocumentCacheReadAccelerationQueryRequest>(0)!;
+                var cancellationToken = call.GetArgument<CancellationToken>(1);
+                var selectionResult = await request
+                    .SelectAuthorizedCandidatePage(cancellationToken)
+                    .ConfigureAwait(false);
+                var candidateSelection = selectionResult
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage>()
+                    .Subject;
+
+                return await candidateSelection.RelationalFallback(cancellationToken).ConfigureAwait(false);
+            });
+
+        var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
+
+        var result = await sut.HandleQueryAsync(CreateQueryRequest(SqlDialect.Pgsql, totalCount: true));
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.TotalCount.Should().Be(8);
+        success.EdfiDocs.Should().ContainSingle();
+        success.EdfiDocs[0]!["id"]!.GetValue<string>().Should().Be(rerunDocumentUuid.ToString());
+        success.EdfiDocs[0]!["shortDescription"]!.GetValue<string>().Should().Be("No-cache rerun row");
+        commandExecutor.Commands.Should().HaveCount(3);
+        commandExecutor.Commands[1].CommandText.Should().Contain("VALUES");
+        commandExecutor.Commands[2].CommandText.Should().Contain("COUNT(1)");
+    }
+
+    [Test]
     public async Task It_applies_readable_profile_projection_and_varies_the_etag_by_profile_for_query_items()
     {
         var documentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-888888888888");

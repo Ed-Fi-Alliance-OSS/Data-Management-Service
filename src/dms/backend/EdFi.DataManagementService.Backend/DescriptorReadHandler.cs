@@ -613,16 +613,25 @@ internal sealed class DescriptorReadHandler(
             return new QueryResult.UnknownFailure(ex.Message);
         }
 
-        var descriptorRowsByDocumentId = descriptorRows.ToDictionary(
-            static row => row.DocumentId,
-            static row => row
-        );
-        DescriptorReadRow[] orderedRows =
-        [
-            .. selectedDocumentIds
-                .Where(descriptorRowsByDocumentId.ContainsKey)
-                .Select(documentId => descriptorRowsByDocumentId[documentId]),
-        ];
+        Dictionary<long, DescriptorReadRow> descriptorRowsByDocumentId = [];
+
+        foreach (DescriptorReadRow row in descriptorRows)
+        {
+            if (!descriptorRowsByDocumentId.TryAdd(row.DocumentId, row))
+            {
+                return await HandleQueryNoCacheResultAsync(request, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        List<DescriptorReadRow> orderedRows = [];
+
+        foreach (long documentId in selectedDocumentIds)
+        {
+            if (descriptorRowsByDocumentId.TryGetValue(documentId, out var row))
+            {
+                orderedRows.Add(row);
+            }
+        }
 
         if (!SelectedDescriptorQueryRowsStillMatch(selectedRowsPage.Rows, orderedRows))
         {
