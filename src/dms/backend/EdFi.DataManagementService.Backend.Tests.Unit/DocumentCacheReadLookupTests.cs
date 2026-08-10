@@ -269,6 +269,7 @@ public class Given_DocumentCacheReadLookup
         command.CommandText.Should().Contain("jsonb_to_recordset(CAST(@candidatePageJson AS jsonb))");
         command.CommandText.Should().Contain("\"ExpectedDocumentUuid\" uuid");
         command.CommandText.Should().Contain("ORDER BY requested.\"Ordinal\"");
+        command.CommandText.Should().NotContain("document.\"ContentLastModifiedAt\"");
         command.CommandText.Should().NotContain("@documentUuid0");
         command.Parameters.Should().ContainSingle();
         command.Parameters[0].Name.Should().Be("@candidatePageJson");
@@ -307,6 +308,7 @@ public class Given_DocumentCacheReadLookup
             .CommandText.Should()
             .Contain("[ExpectedDocumentUuid] uniqueidentifier '$.ExpectedDocumentUuid'");
         command.CommandText.Should().Contain("ORDER BY [requested].[Ordinal]");
+        command.CommandText.Should().NotContain("[document].[ContentLastModifiedAt]");
         command.CommandText.Should().NotContain("@documentUuid0");
         command.Parameters.Should().ContainSingle();
         command.Parameters[0].Name.Should().Be("@candidatePageJson");
@@ -1274,7 +1276,6 @@ public class Given_DocumentCacheReadLookup
             SourceDocumentUuid: candidate.DocumentUuid.Value,
             SourceResourceKeyId: candidate.ResourceKeyId,
             SourceContentVersion: candidate.ContentVersion,
-            SourceContentLastModifiedAt: candidate.ContentLastModifiedAt,
             CacheDocumentId: candidate.DocumentId,
             CacheDocumentUuid: candidate.DocumentUuid.Value,
             CacheProjectName: resourceKey.Resource.ProjectName,
