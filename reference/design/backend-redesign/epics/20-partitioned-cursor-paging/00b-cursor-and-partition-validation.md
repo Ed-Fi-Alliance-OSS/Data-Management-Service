@@ -87,9 +87,10 @@ story assert a presence semantic the other owns.
   and out-of-range `number`, including the blank case the design doc treats as malformed rather than
   absent, and prove resource-property and change-version filters are accepted rather than reported
   as unsupported.
-- Traditional-only pagination failures retain their current response shell and messages, and `limit`,
-  `offset`, and `totalCount` remain case-insensitive, with the fold made culture-invariant so a server
-  whose culture is not the invariant one recognizes them as well.
+- Traditional-only pagination failures answer with the parameter-validation shell while retaining
+  their existing messages, and `limit`, `offset`, and `totalCount` remain case-insensitive, with the
+  fold made culture-invariant so a server whose culture is not the invariant one recognizes them as
+  well.
 - `/deletes` and `/keyChanges` tests prove `pageToken` and `pageSize` are rejected rather than
   ignored.
 - Unit tests cover every typed path case, unknown child segments, extra segments, route qualifiers,

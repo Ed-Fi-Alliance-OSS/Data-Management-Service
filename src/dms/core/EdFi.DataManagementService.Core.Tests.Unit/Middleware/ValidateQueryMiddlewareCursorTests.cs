@@ -317,6 +317,27 @@ public class ValidateQueryMiddlewareCursorTests
                 MinChangeVersionNotNumeric
             );
         }
+
+        /// <summary>
+        /// The traditional twin of the cursor fixture's paging guard. Both properties are asserted
+        /// because they are kept unapplied by different mechanisms: CollectionPaging by the early
+        /// return preceding its single assignment site, and PaginationParameters by the errors-empty
+        /// guard inside the parsing helper, which is the only thing standing between a rejected
+        /// request and parsed pagination a Change Query handler would read directly.
+        /// </summary>
+        [Test]
+        public async Task It_leaves_paging_unapplied()
+        {
+            RequestInfo requestInfo = await Execute(true, ("limit", "-1"));
+
+            requestInfo
+                .CollectionPaging.Should()
+                .Be(No.CollectionPaging, "a rejected request must not leave partially applied paging behind");
+
+            requestInfo
+                .PaginationParameters.Should()
+                .Be(No.PaginationParameters, "a rejected request must not leave parsed pagination behind");
+        }
     }
 
     [TestFixture]

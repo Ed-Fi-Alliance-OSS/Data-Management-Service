@@ -2091,7 +2091,7 @@ Authorization-related ProblemDetails for Change Queries are owned by [auth.md](a
 
 #### 1. Parameter Validation Failures (400 Bad Request)
 
-These errors indicate invalid query string values on `/deletes`, `/keyChanges`, or live resource and descriptor GET-many requests using `minChangeVersion` / `maxChangeVersion`, and invalid `limit`, `offset`, or `totalCount` values on `/deletes` and `/keyChanges`. Pagination failures on live GET-many are governed by [partitioned-cursor-paging.md](partitioned-cursor-paging.md), which uses this same shell.
+These errors indicate invalid query string values on `/deletes`, `/keyChanges`, or live resource and descriptor GET-many requests using `minChangeVersion` / `maxChangeVersion`, and invalid `limit`, `offset`, or `totalCount` values on `/deletes` and `/keyChanges`. Pagination failures on live resource and descriptor GET-many are governed by [partitioned-cursor-paging.md](partitioned-cursor-paging.md), which uses this same shell.
 
 **Type**: `urn:ed-fi:api:bad-request:parameter-validation-failed`
 
@@ -2111,8 +2111,6 @@ These errors indicate invalid query string values on `/deletes`, `/keyChanges`, 
 | `totalCount` cannot be parsed as a boolean | `TotalCount must be a boolean value.` |
 
 The pagination rules are evaluated together rather than exclusively: a request with several invalid pagination parameters reports every one of them, in the order `offset`, `limit`, `totalCount`.
-
-The pagination parameter names are matched case-sensitively, unlike the change-version names, which are matched case-insensitively. A case variant such as `Limit` is therefore not a pagination parameter at all: it is reported as an invalid query field in the generic bad-request shell rather than in this one, so the two spellings of one client typo differ in `type`, `title`, and `detail`.
 
 The two families do not combine. Pagination is validated ahead of the change-version parameters and a fault there is answered immediately, so a request carrying faults in both reports only its pagination errors and its change-version values are never examined. Because both families answer with this same shell, the response does not distinguish change-version values that were accepted from ones that were never reached, and a client that corrects only the pagination values may receive a second 400.
 
