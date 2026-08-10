@@ -176,13 +176,19 @@ public class ValidateQueryMiddlewareTests
             AssertParameterValidationShell(_requestInfo);
         }
 
+        /// <summary>
+        /// The only fixture covering the upper bound, so it is asserted as the whole ordered array
+        /// rather than a substring of the serialized body: cardinality is part of the contract here,
+        /// and a spurious second entry alongside the expected message would satisfy a substring check.
+        /// </summary>
         [Test]
-        public void It_should_be_limit_errors()
+        public void It_should_report_only_the_limit_error()
         {
-            _requestInfo
-                .FrontendResponse.Body?.ToJsonString()
+            _requestInfo.FrontendResponse.Body!["errors"]!
+                .AsArray()
+                .Select(error => error!.GetValue<string>())
                 .Should()
-                .Contain($"Limit must be omitted or set to a numeric value between 0 and {_maxPageSize}.");
+                .Equal($"Limit must be omitted or set to a numeric value between 0 and {_maxPageSize}.");
         }
     }
 
