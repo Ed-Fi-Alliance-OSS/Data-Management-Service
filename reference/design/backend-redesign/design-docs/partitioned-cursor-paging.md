@@ -161,8 +161,9 @@ last value in request order. Collapsing case variants MUST NOT throw.
 ### Cursor validation and ProblemDetails
 
 The presence of either `pageToken` or `pageSize` — including a blank or malformed value — selects
-the cursor validation path and its parameter-validation ProblemDetails shell. Traditional-only
-`limit`/`offset` failures retain the existing generic bad-request response and messages.
+the cursor validation path. Both that path and traditional `limit`/`offset`/`totalCount` parsing
+answer a parameter fault with the parameter-validation ProblemDetails shell; the traditional
+failures retain their existing messages, which predate this design.
 
 A cursor request returns **exactly one** error. Evaluate the following four phases in order, use the
 exact message shown for each rule, and stop at the first match.
@@ -215,8 +216,8 @@ The numbered rules are the within-phase tie-breakers. A phase-0 failure suppress
 a mixed-mode conflict suppresses relationship and syntax/range rules; a required-relationship
 failure suppresses syntax/range rules.
 
-New cursor and partition failures use HTTP 400 with this JSON shape and the current DMS
-`application/json` response media type:
+Cursor, partition, and traditional-paging failures use HTTP 400 with this JSON shape and the
+current DMS `application/json` response media type:
 
 ```json
 {
@@ -231,7 +232,11 @@ New cursor and partition failures use HTTP 400 with this JSON shape and the curr
 ```
 
 For a cursor failure, `errors` contains exactly the one message selected above. A partition failure
-uses the same shell but may contain several ordered messages.
+uses the same shell but may contain several ordered messages. A traditional-paging failure also uses
+this shell, and reports every faulty parameter rather than the first, ordered `offset`, `limit`,
+`totalCount`. That order is not the phase-3 order above: phase 3 breaks ties to select a single
+error, while traditional parsing emits a list. Sharing one shell therefore does not mean sharing one
+cardinality — a client cannot infer from the response shape how many messages it may hold.
 
 #### Worked precedence examples
 

@@ -70,8 +70,11 @@ scope.
   precedence table.
 - The partition token count never exceeds the requested `number`, and requesting more partitions
   than the minimum size allows returns fewer tokens rather than an error.
-- Existing traditional paging response bodies, status codes, and `Total-Count` semantics remain
+- Existing traditional paging success bodies, status codes, and `Total-Count` semantics remain
   unchanged; the additional `Next-Page-Token` header is covered as an intentional contract change.
+  Traditional pagination *failure* bodies are not covered by this parity statement: their
+  ProblemDetails shell is owned by
+  [00b-cursor-and-partition-validation.md](00b-cursor-and-partition-validation.md).
 
 ## Cross-Provider and Authorization Responsibilities
 

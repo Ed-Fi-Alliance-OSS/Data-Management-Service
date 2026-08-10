@@ -2091,7 +2091,7 @@ Authorization-related ProblemDetails for Change Queries are owned by [auth.md](a
 
 #### 1. Parameter Validation Failures (400 Bad Request)
 
-These errors indicate invalid query string values on `/deletes`, `/keyChanges`, or live resource and descriptor GET-many requests using `minChangeVersion` / `maxChangeVersion`.
+These errors indicate invalid query string values on `/deletes`, `/keyChanges`, or live resource and descriptor GET-many requests using `minChangeVersion` / `maxChangeVersion`, and invalid `limit`, `offset`, or `totalCount` values on `/deletes` and `/keyChanges`. Pagination failures on live resource and descriptor GET-many are governed by [partitioned-cursor-paging.md](partitioned-cursor-paging.md), which uses this same shell.
 
 **Type**: `urn:ed-fi:api:bad-request:parameter-validation-failed`
 
@@ -2106,6 +2106,13 @@ These errors indicate invalid query string values on `/deletes`, `/keyChanges`, 
 | `minChangeVersion` cannot be parsed as an integer | `MinChangeVersion must be a numeric value greater than or equal to 0.` |
 | `maxChangeVersion` cannot be parsed as an integer | `MaxChangeVersion must be a numeric value greater than or equal to 0.` |
 | `minChangeVersion` is greater than `maxChangeVersion` | `MinChangeVersion must be less than or equal to MaxChangeVersion.` |
+| `offset` cannot be parsed as an integer, or is negative | `Offset must be a numeric value greater than or equal to 0.` |
+| `limit` cannot be parsed as an integer, or falls outside `0`–`{MaximumPageSize}` | `Limit must be omitted or set to a numeric value between 0 and {MaximumPageSize}.` |
+| `totalCount` cannot be parsed as a boolean | `TotalCount must be a boolean value.` |
+
+Within each family the rules are evaluated together rather than exclusively: a request with several invalid change-version parameters, or several invalid pagination parameters, reports every one of them — change-version in the order `minChangeVersion`, `maxChangeVersion`, then the inverted-range check, which is reached only when both bounds parse; pagination in the order `offset`, `limit`, `totalCount`.
+
+The two families do not combine. Pagination is validated ahead of the change-version parameters and a fault there is answered immediately, so a request carrying faults in both reports only its pagination errors and its change-version values are never examined. Because both families answer with this same shell, the response does not distinguish change-version values that were accepted from ones that were never reached, and a client that corrects only the pagination values may receive a second 400.
 
 
 #### 2. Resource or Endpoint Not Found (404 Not Found)

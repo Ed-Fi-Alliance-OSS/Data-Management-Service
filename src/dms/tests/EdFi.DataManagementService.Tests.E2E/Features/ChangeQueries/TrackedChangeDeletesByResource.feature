@@ -366,18 +366,18 @@ Feature: TrackedChange /deletes endpoints across resource and key shapes.
 
         @ods-migrated
         @e2e-ci-shard-4
-        # NOTE: Expected body copied verbatim from DMS's actual ProblemDetails response. DMS reports
-        # invalid limit/offset as a generic bad-request (not parameter-validation-failed), lists Offset
-        # before Limit, and phrases the bounds as "numeric value between 0 and 500".
+        # NOTE: Expected body copied verbatim from DMS's actual ProblemDetails response. The envelope
+        # matches ODS's parameter-validation-failed shape; DMS still lists Offset before Limit and
+        # phrases the bounds as "numeric value between 0 and 500".
         Scenario: 10 Deletes response rejects invalid limit and offset
              When a GET request is made to "/ed-fi/schools/deletes?limit=-1&offset=-1"
              Then it should respond with 400
               And the response body is
                   """
                   {
-                    "detail": "The request could not be processed. See 'errors' for details.",
-                    "type": "urn:ed-fi:api:bad-request",
-                    "title": "Bad Request",
+                    "detail": "Parameters supplied to the request were invalid.",
+                    "type": "urn:ed-fi:api:bad-request:parameter-validation-failed",
+                    "title": "Parameter Validation Failed",
                     "status": 400,
                     "correlationId": null,
                     "validationErrors": {},

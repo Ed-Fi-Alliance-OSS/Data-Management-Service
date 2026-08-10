@@ -48,6 +48,34 @@ public class ValidateQueryMiddlewareTests
         );
     }
 
+    /// <summary>
+    /// The parameter-validation shell a pagination or change-version fault is answered with. Every
+    /// dereference is hard on purpose: a null body or a missing key must fail the test rather than
+    /// short-circuit the assertion that follows it. The reported messages are asserted separately by
+    /// each fixture, which supplies its own faulty parameters.
+    ///
+    /// Every key of the shell is covered, including the two the shell carries empty, so a change
+    /// that stopped emitting one of them cannot pass here and be caught only by the cursor fixtures.
+    /// Every caller builds its request with an empty TraceId, which is what correlationId echoes.
+    ///
+    /// The media type is asserted alongside the body because nothing at the call site states it: it
+    /// comes from the FrontendResponse default, and the frontend appends the charset that makes it
+    /// the documented `application/json; charset=utf-8` response type.
+    /// </summary>
+    private static void AssertParameterValidationShell(RequestInfo requestInfo)
+    {
+        requestInfo.FrontendResponse.ContentType.Should().Be("application/json");
+
+        JsonNode body = requestInfo.FrontendResponse.Body!;
+
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:parameter-validation-failed");
+        body["title"]!.GetValue<string>().Should().Be("Parameter Validation Failed");
+        body["detail"]!.GetValue<string>().Should().Be("Parameters supplied to the request were invalid.");
+        body["status"]!.GetValue<int>().Should().Be(400);
+        body["correlationId"]!.GetValue<string>().Should().BeEmpty();
+        body["validationErrors"]!.AsObject().Should().BeEmpty();
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_Pipeline_Context_With_Wrong_Query_Parameters : ValidateQueryMiddlewareTests
@@ -84,39 +112,29 @@ public class ValidateQueryMiddlewareTests
         }
 
         [Test]
-        public void It_should_be_errors()
+        public void It_should_use_the_parameter_validation_failed_problem_details()
         {
-            _requestInfo
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain("The request could not be processed.");
+            AssertParameterValidationShell(_requestInfo);
         }
 
+        /// <summary>
+        /// The pagination rules are evaluated together rather than exclusively, so all three faults
+        /// are reported. Asserted as an ordered array rather than three substring checks because the
+        /// order is a documented contract, and a substring check over the serialized body cannot see
+        /// it. See change-queries.md, "Parameter Validation Failures".
+        /// </summary>
         [Test]
-        public void It_should_be_offset_errors()
+        public void It_should_report_every_pagination_error_in_the_documented_order()
         {
-            _requestInfo
-                .FrontendResponse.Body?.ToJsonString()
+            _requestInfo.FrontendResponse.Body!["errors"]!
+                .AsArray()
+                .Select(error => error!.GetValue<string>())
                 .Should()
-                .Contain("Offset must be a numeric value greater than or equal to 0.");
-        }
-
-        [Test]
-        public void It_should_be_limit_errors()
-        {
-            _requestInfo
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain($"Limit must be omitted or set to a numeric value between 0 and {_maxPageSize}.");
-        }
-
-        [Test]
-        public void It_should_be_total_count_errors()
-        {
-            _requestInfo
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain("TotalCount must be a boolean value.");
+                .Equal(
+                    "Offset must be a numeric value greater than or equal to 0.",
+                    $"Limit must be omitted or set to a numeric value between 0 and {_maxPageSize}.",
+                    "TotalCount must be a boolean value."
+                );
         }
     }
 
@@ -129,11 +147,14 @@ public class ValidateQueryMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
+            // Only limit is at fault. A second faulty parameter here would satisfy the shell
+            // assertion below on its own, leaving the limit bound pinned by nothing but the
+            // message check.
             var queryParameters = new Dictionary<string, string>
             {
                 { "offset", "0" },
                 { "limit", "800" },
-                { "totalCount", "100" },
+                { "totalCount", "true" },
             };
 
             FrontendRequest frontendRequest = new(
@@ -156,21 +177,24 @@ public class ValidateQueryMiddlewareTests
         }
 
         [Test]
-        public void It_should_be_errors()
+        public void It_should_use_the_parameter_validation_failed_problem_details()
         {
-            _requestInfo
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain("The request could not be processed.");
+            AssertParameterValidationShell(_requestInfo);
         }
 
+        /// <summary>
+        /// The only fixture covering the upper bound, so it is asserted as the whole ordered array
+        /// rather than a substring of the serialized body: cardinality is part of the contract here,
+        /// and a spurious second entry alongside the expected message would satisfy a substring check.
+        /// </summary>
         [Test]
-        public void It_should_be_limit_errors()
+        public void It_should_report_only_the_limit_error()
         {
-            _requestInfo
-                .FrontendResponse.Body?.ToJsonString()
+            _requestInfo.FrontendResponse.Body!["errors"]!
+                .AsArray()
+                .Select(error => error!.GetValue<string>())
                 .Should()
-                .Contain($"Limit must be omitted or set to a numeric value between 0 and {_maxPageSize}.");
+                .Equal($"Limit must be omitted or set to a numeric value between 0 and {_maxPageSize}.");
         }
     }
 
@@ -832,8 +856,8 @@ public class ValidateQueryMiddlewareTests
         [Test]
         public void It_should_report_the_existing_invalid_query_field_error()
         {
-            _requestInfo
-                .FrontendResponse.Body?["errors"]?[0]?.GetValue<string>()
+            _requestInfo.FrontendResponse.Body!["errors"]![0]!
+                .GetValue<string>()
                 .Should()
                 .Be("The query field 'invalidSchoolId' is not valid for this resource.");
         }
@@ -872,15 +896,7 @@ public class ValidateQueryMiddlewareTests
         [Test]
         public void It_should_use_the_parameter_validation_failed_problem_details()
         {
-            JsonNode? body = _requestInfo.FrontendResponse.Body;
-            body?["type"]?.GetValue<string>()
-                .Should()
-                .Be("urn:ed-fi:api:bad-request:parameter-validation-failed");
-            body?["title"]?.GetValue<string>().Should().Be("Parameter Validation Failed");
-            body?["detail"]?.GetValue<string>()
-                .Should()
-                .Be("Parameters supplied to the request were invalid.");
-            body?["status"]?.GetValue<int>().Should().Be(400);
+            AssertParameterValidationShell(_requestInfo);
         }
 
         [Test]
@@ -926,15 +942,7 @@ public class ValidateQueryMiddlewareTests
         [Test]
         public void It_should_use_the_parameter_validation_failed_problem_details()
         {
-            JsonNode? body = _requestInfo.FrontendResponse.Body;
-            body?["type"]?.GetValue<string>()
-                .Should()
-                .Be("urn:ed-fi:api:bad-request:parameter-validation-failed");
-            body?["title"]?.GetValue<string>().Should().Be("Parameter Validation Failed");
-            body?["detail"]?.GetValue<string>()
-                .Should()
-                .Be("Parameters supplied to the request were invalid.");
-            body?["status"]?.GetValue<int>().Should().Be(400);
+            AssertParameterValidationShell(_requestInfo);
         }
 
         [Test]
@@ -979,6 +987,12 @@ public class ValidateQueryMiddlewareTests
         public void It_should_send_bad_request()
         {
             _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_should_use_the_parameter_validation_failed_problem_details()
+        {
+            AssertParameterValidationShell(_requestInfo);
         }
 
         [Test]
@@ -1206,8 +1220,8 @@ public class ValidateQueryMiddlewareTests
         [Test]
         public void It_should_report_the_invalid_query_field()
         {
-            _requestInfo
-                .FrontendResponse.Body?["errors"]?[0]?.GetValue<string>()
+            _requestInfo.FrontendResponse.Body!["errors"]![0]!
+                .GetValue<string>()
                 .Should()
                 .Be("The query field 'Limit' is not valid for this resource.");
         }

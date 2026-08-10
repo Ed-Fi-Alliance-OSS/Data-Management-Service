@@ -76,21 +76,15 @@ internal class ValidateQueryMiddleware(
             }
         }
 
-        if (requestInfo.FrontendRequest.QueryParameters.ContainsKey("totalCount"))
+        // Unlike offset and limit, a parsed value needs no separate assignment: TryParse writes it
+        // straight to totalCount, and a failed parse writes false, which is also the value used when
+        // the parameter is omitted. The error recorded below stops the parameters being applied at all.
+        if (
+            requestInfo.FrontendRequest.QueryParameters.ContainsKey("totalCount")
+            && !bool.TryParse(requestInfo.FrontendRequest.QueryParameters["totalCount"], out totalCount)
+        )
         {
-            if (!bool.TryParse(requestInfo.FrontendRequest.QueryParameters["totalCount"], out totalCount))
-            {
-                errors.Add("TotalCount must be a boolean value.");
-            }
-            else
-            {
-                totalCount = bool.TryParse(
-                    requestInfo.FrontendRequest.QueryParameters["totalCount"],
-                    out bool totalValue
-                )
-                    ? totalValue
-                    : totalCount;
-            }
+            errors.Add("TotalCount must be a boolean value.");
         }
 
         if (errors.Count == 0)
@@ -165,9 +159,20 @@ internal class ValidateQueryMiddleware(
             requestInfo.FrontendRequest.TraceId.Value
         );
 
-        // A request that supplied either cursor parameter is validated by the cursor precedence and
-        // answered with the parameter-validation shell. Everything else keeps the traditional
-        // parsing, its generic bad-request shell, and its existing messages.
+        // All three parameter faults below - cursor, traditional pagination, and change-version -
+        // answer with the same shell, so they share one construction rather than three copies that
+        // have to be kept in step. The media type is not stated here at all; it comes from the
+        // FrontendResponse default.
+        FrontendResponse ParameterValidationFailed(string[] errors) =>
+            new(
+                StatusCode: 400,
+                Body: ForParameterValidation(errors, requestInfo.FrontendRequest.TraceId),
+                Headers: []
+            );
+
+        // A request that supplied either cursor parameter is validated by the cursor precedence.
+        // Everything else keeps the traditional parsing and its existing messages. Both paths answer
+        // a pagination fault with the parameter-validation shell, matching ODS/API.
         CursorValidationResult cursorResult = _cursorParametersRecognized
             ? CursorRequestValidator.Validate(requestInfo.FrontendRequest.QueryParameters, _maximumPageSize)
             : CursorValidationResult.NotCursorRequest.Instance;
@@ -179,14 +184,7 @@ internal class ValidateQueryMiddleware(
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
-            requestInfo.FrontendResponse = new FrontendResponse(
-                StatusCode: 400,
-                Body: ForParameterValidation(
-                    [invalidCursorRequest.Error],
-                    requestInfo.FrontendRequest.TraceId
-                ),
-                Headers: []
-            );
+            requestInfo.FrontendResponse = ParameterValidationFailed([invalidCursorRequest.Error]);
             return;
         }
 
@@ -208,13 +206,6 @@ internal class ValidateQueryMiddleware(
 
             if (errors.Count > 0)
             {
-                JsonNode failureResponse = FailureResponse.ForBadRequest(
-                    "The request could not be processed. See 'errors' for details.",
-                    requestInfo.FrontendRequest.TraceId,
-                    [],
-                    errors.ToArray()
-                );
-
                 _logger.LogDebug(
                     "'{Status}'.'{EndpointName}' - {TraceId}",
                     "400",
@@ -222,11 +213,7 @@ internal class ValidateQueryMiddleware(
                     requestInfo.FrontendRequest.TraceId.Value
                 );
 
-                requestInfo.FrontendResponse = new FrontendResponse(
-                    StatusCode: 400,
-                    Body: failureResponse,
-                    []
-                );
+                requestInfo.FrontendResponse = ParameterValidationFailed([.. errors]);
                 return;
             }
 
@@ -244,14 +231,7 @@ internal class ValidateQueryMiddleware(
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
-            requestInfo.FrontendResponse = new FrontendResponse(
-                StatusCode: 400,
-                Body: ForParameterValidation(
-                    [.. changeVersionResult.Errors],
-                    requestInfo.FrontendRequest.TraceId
-                ),
-                Headers: []
-            );
+            requestInfo.FrontendResponse = ParameterValidationFailed([.. changeVersionResult.Errors]);
             return;
         }
 
