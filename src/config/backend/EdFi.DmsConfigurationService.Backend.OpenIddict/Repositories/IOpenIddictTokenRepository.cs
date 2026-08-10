@@ -43,6 +43,13 @@ public interface IOpenIddictTokenRepository
     Task<bool> RevokeTokenAsync(Guid tokenId);
 
     /// <summary>
+    /// Deletes tokens that expired before the given UTC bound, regardless of status.
+    /// </summary>
+    /// <param name="expiredBefore">The UTC upper bound for expiration date.</param>
+    /// <returns>The number of deleted rows.</returns>
+    Task<int> DeleteExpiredTokensAsync(DateTimeOffset expiredBefore);
+
+    /// <summary>
     /// Gets the active private key for encryption.
     /// </summary>
     /// <param name="encryptionKey">The encryption key.</param>

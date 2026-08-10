@@ -747,6 +747,7 @@
           "Dapper": "[2.1.35, )",
           "EdFi.DmsConfigurationService.Backend": "[1.0.0, )",
           "Microsoft.AspNetCore.Authentication.JwtBearer": "[10.0.1, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.1, )",
           "Microsoft.Extensions.Http": "[10.0.1, )",
           "Microsoft.IdentityModel.JsonWebTokens": "[8.12.0, )",
           "OpenIddict.Abstractions": "[7.0.0, )",

@@ -407,6 +407,15 @@ UPDATE ""dmscs"".""OpenIddictApplication""
             return result > 0;
         }
 
+        public async Task<int> DeleteExpiredTokensAsync(DateTimeOffset expiredBefore)
+        {
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+            const string sql =
+                "DELETE FROM \"dmscs\".\"OpenIddictToken\" WHERE \"ExpirationDate\" <= @ExpiredBefore";
+            return await connection.ExecuteAsync(sql, new { ExpiredBefore = expiredBefore });
+        }
+
         public async Task<(string PrivateKey, string KeyId)?> GetActivePrivateKeyInternalAsync(
             string encryptionKey
         )

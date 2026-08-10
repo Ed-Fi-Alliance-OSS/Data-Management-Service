@@ -36,6 +36,11 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositorie
             return await dataRepository.RevokeTokenAsync(tokenId);
         }
 
+        public async Task<int> DeleteExpiredTokensAsync(DateTimeOffset expiredBefore)
+        {
+            return await dataRepository.DeleteExpiredTokensAsync(expiredBefore);
+        }
+
         public async Task<PrivateKeyInfo?> GetActivePrivateKeyAsync(string encryptionKey)
         {
             var result = await dataRepository.GetActivePrivateKeyInternalAsync(encryptionKey);

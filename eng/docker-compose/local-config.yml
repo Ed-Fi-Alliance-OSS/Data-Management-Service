@@ -56,6 +56,8 @@ services:
       ClaimsOptions__DataStandardVersion: ${DMS_CONFIG_DATA_STANDARD_VERSION:-5.2}
       IdentitySettings__EncryptionKey: ${DMS_CONFIG_IDENTITY_ENCRYPTION_KEY:-}
       IdentitySettings__HashingIterations: ${DMS_CONFIG_IDENTITY_HASHING_ITERATIONS:-210000}
+      IdentitySettings__TokenCleanupEnabled: ${DMS_CONFIG_IDENTITY_TOKEN_CLEANUP_ENABLED:-true}
+      IdentitySettings__TokenCleanupIntervalMinutes: ${DMS_CONFIG_IDENTITY_TOKEN_CLEANUP_INTERVAL_MINUTES:-30}
       Cors__SwaggerUIOrigin: ${DMS_SWAGGER_UI_URL:-http://localhost:8082}
     ports:
       - "127.0.0.1:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}"

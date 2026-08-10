@@ -55,6 +55,14 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                     "IdentitySettings:KeyFormatCacheSize",
                     100
                 );
+                options.TokenCleanupEnabled = configuration.GetValue<bool>(
+                    "IdentitySettings:TokenCleanupEnabled",
+                    true
+                );
+                options.TokenCleanupIntervalMinutes = configuration.GetValue<int>(
+                    "IdentitySettings:TokenCleanupIntervalMinutes",
+                    30
+                );
             });
 
             return services;
