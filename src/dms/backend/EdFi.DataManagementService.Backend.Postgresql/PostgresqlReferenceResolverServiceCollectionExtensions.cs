@@ -86,6 +86,7 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
                 PostgresqlDocumentCacheReadLookupAdapter
             >()
         );
+        services.AddDocumentCacheReadAccelerationCoordinator();
         return services;
     }
 

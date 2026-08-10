@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
@@ -34,6 +35,23 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     private static readonly DocumentCachePhysicalSourceFingerprint Fingerprint = new(
         "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     );
+
+    [TestCase("options")]
+    [TestCase("dataStoreSelection")]
+    [TestCase("targetRegistry")]
+    [TestCase("lookupAdapter")]
+    [TestCase("materializer")]
+    [TestCase("cacheWriter")]
+    [TestCase("readTelemetry")]
+    [TestCase("targetDiagnosticSink")]
+    [TestCase("timeProvider")]
+    [TestCase("logger")]
+    public void It_requires_production_dependencies_at_construction(string dependencyName)
+    {
+        Action act = () => CreateCoordinatorWithNullDependency(dependencyName);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName(dependencyName);
+    }
 
     [Test]
     public async Task It_bypasses_cache_when_read_acceleration_is_disabled()
@@ -102,24 +120,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     }
 
     [Test]
-    public async Task It_bypasses_cache_when_the_target_registry_is_unavailable()
-    {
-        var lookupAdapter = new RecordingLookupAdapter();
-        var fallbackResult = new GetResult.GetFailureNotExists();
-        var sut = CreateCoordinator(readAccelerationEnabled: true, lookupAdapter, registry: null);
-
-        GetResult result = await sut.GetByIdAsync(
-            CreateGetByIdRequest(_ =>
-            {
-                return Task.FromResult<GetResult>(fallbackResult);
-            })
-        );
-
-        result.Should().BeSameAs(fallbackResult);
-        lookupAdapter.GetByIdAttempts.Should().Be(0);
-    }
-
-    [Test]
     public async Task It_bypasses_cache_when_the_request_target_key_is_invalid()
     {
         var lookupAdapter = new RecordingLookupAdapter();
@@ -138,28 +138,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
                 },
                 tenantKey: " TenantA"
             )
-        );
-
-        result.Should().BeSameAs(fallbackResult);
-        lookupAdapter.GetByIdAttempts.Should().Be(0);
-    }
-
-    [Test]
-    public async Task It_bypasses_cache_when_the_resolved_target_has_read_acceleration_disabled()
-    {
-        var lookupAdapter = new RecordingLookupAdapter();
-        var fallbackResult = new GetResult.GetFailureNotExists();
-        var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
-            lookupAdapter,
-            CreateRegistry(ExecutionContext(targetReadAccelerationEnabled: false))
-        );
-
-        GetResult result = await sut.GetByIdAsync(
-            CreateGetByIdRequest(_ =>
-            {
-                return Task.FromResult<GetResult>(fallbackResult);
-            })
         );
 
         result.Should().BeSameAs(fallbackResult);
@@ -2728,12 +2706,12 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     private static DocumentCacheReadAccelerationCoordinator CreateCoordinator(
         bool readAccelerationEnabled,
         RecordingLookupAdapter lookupAdapter,
-        IDocumentCacheTargetRegistry? registry,
+        IDocumentCacheTargetRegistry registry,
         IDocumentCacheMaterializer? materializer = null,
         IDocumentCacheWriter? cacheWriter = null,
         IDocumentCacheReadTelemetry? readTelemetry = null,
         bool selectDataStore = true,
-        IDocumentCacheProjectionObservationSink? projectionObservationSink = null,
+        IDocumentCacheProjectionTargetDiagnosticSink? projectionObservationSink = null,
         TimeProvider? timeProvider = null,
         DataStore? selectedDataStore = null,
         IDataStoreSelection? dataStoreSelection = null,
@@ -2760,12 +2738,13 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             requestDataStoreSelection,
             registry,
             lookupAdapter,
-            materializer,
-            cacheWriter,
-            readTelemetry,
-            projectionObservationSink,
-            timeProvider,
-            logger
+            materializer ?? new RecordingMaterializer(),
+            cacheWriter ?? new RecordingCacheWriter(),
+            readTelemetry ?? NoOpDocumentCacheReadTelemetry.Instance,
+            projectionObservationSink
+                ?? new DocumentCacheProjectionObservationStore(timeProvider ?? TimeProvider.System),
+            timeProvider ?? TimeProvider.System,
+            logger ?? NullLogger<DocumentCacheReadAccelerationCoordinator>.Instance
         );
 
         IDataStoreSelection CreateDataStoreSelection()
@@ -2778,6 +2757,49 @@ public class Given_DocumentCacheReadAccelerationCoordinator
 
             return defaultDataStoreSelection;
         }
+    }
+
+    private static void CreateCoordinatorWithNullDependency(string dependencyName)
+    {
+        var options = Options.Create(
+            new DocumentCacheOptions
+            {
+                Targets =
+                [
+                    new DocumentCacheTargetOptions
+                    {
+                        TenantKey = TargetKey.TenantKey,
+                        DataStoreId = TargetKey.DataStoreId,
+                    },
+                ],
+                ReadAcceleration = new DocumentCacheReadAccelerationOptions { Enabled = true },
+            }
+        );
+        DataStoreSelection dataStoreSelection = new();
+        dataStoreSelection.SetSelectedDataStore(SelectedDataStore());
+        IDocumentCacheTargetRegistry targetRegistry = CreateRegistry(ExecutionContext());
+        var lookupAdapter = new RecordingLookupAdapter();
+        var materializer = new RecordingMaterializer();
+        var cacheWriter = new RecordingCacheWriter();
+        IDocumentCacheReadTelemetry readTelemetry = NoOpDocumentCacheReadTelemetry.Instance;
+        IDocumentCacheProjectionTargetDiagnosticSink targetDiagnosticSink =
+            new DocumentCacheProjectionObservationStore(new FixedTimeProvider(ObservedAt));
+        TimeProvider timeProvider = TimeProvider.System;
+        ILogger<DocumentCacheReadAccelerationCoordinator> logger =
+            NullLogger<DocumentCacheReadAccelerationCoordinator>.Instance;
+
+        _ = new DocumentCacheReadAccelerationCoordinator(
+            dependencyName == "options" ? null! : options,
+            dependencyName == "dataStoreSelection" ? null! : dataStoreSelection,
+            dependencyName == "targetRegistry" ? null! : targetRegistry,
+            dependencyName == "lookupAdapter" ? null! : lookupAdapter,
+            dependencyName == "materializer" ? null! : materializer,
+            dependencyName == "cacheWriter" ? null! : cacheWriter,
+            dependencyName == "readTelemetry" ? null! : readTelemetry,
+            dependencyName == "targetDiagnosticSink" ? null! : targetDiagnosticSink,
+            dependencyName == "timeProvider" ? null! : timeProvider,
+            dependencyName == "logger" ? null! : logger
+        );
     }
 
     private static DataStore SelectedDataStore(
@@ -2969,9 +2991,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         ReadAccelerationDisabled,
         SelectedDataStoreUnavailable,
         UnresolvedTarget,
-        TargetRegistryUnavailable,
         InvalidTargetKey,
-        TargetReadAccelerationDisabled,
     }
 
     private static IEnumerable<TestCaseData> TargetResolutionDirectFillSkipCases()
@@ -2992,19 +3012,9 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             DocumentCacheReadTelemetryLabel.SkippedUnresolvedTarget
         );
         yield return new TestCaseData(
-            TargetResolutionFallbackScenario.TargetRegistryUnavailable,
-            nameof(DocumentCacheReadAccelerationFallbackReason.TargetRegistryUnavailable),
-            DocumentCacheReadTelemetryLabel.SkippedTargetRegistryUnavailable
-        );
-        yield return new TestCaseData(
             TargetResolutionFallbackScenario.InvalidTargetKey,
             nameof(DocumentCacheReadAccelerationFallbackReason.InvalidTargetKey),
             DocumentCacheReadTelemetryLabel.SkippedInvalidTargetKey
-        );
-        yield return new TestCaseData(
-            TargetResolutionFallbackScenario.TargetReadAccelerationDisabled,
-            nameof(DocumentCacheReadAccelerationFallbackReason.TargetReadAccelerationDisabled),
-            DocumentCacheReadTelemetryLabel.SkippedTargetReadAccelerationDisabled
         );
     }
 
@@ -3025,16 +3035,12 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             selectDataStore: scenario != TargetResolutionFallbackScenario.SelectedDataStoreUnavailable
         );
 
-    private static IDocumentCacheTargetRegistry? RegistryForTargetResolutionScenario(
+    private static IDocumentCacheTargetRegistry RegistryForTargetResolutionScenario(
         TargetResolutionFallbackScenario scenario
     ) =>
         scenario switch
         {
-            TargetResolutionFallbackScenario.TargetRegistryUnavailable => null,
             TargetResolutionFallbackScenario.UnresolvedTarget => CreateRegistry(),
-            TargetResolutionFallbackScenario.TargetReadAccelerationDisabled => CreateRegistry(
-                ExecutionContext(targetReadAccelerationEnabled: false)
-            ),
             _ => CreateRegistry(ExecutionContext()),
         };
 
@@ -3086,14 +3092,13 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     private static DocumentCacheTargetExecutionContext ExecutionContext(
         DocumentCacheLifecycleState lifecycleState = DocumentCacheLifecycleState.Tracking,
         bool cacheAheadRecoveryRequired = false,
-        TimeSpan? directFillTimeout = null,
-        bool targetReadAccelerationEnabled = true
+        TimeSpan? directFillTimeout = null
     ) =>
         new(
             TargetKey,
             new DocumentCacheTargetContextGeneration(1),
             new DocumentCacheTargetEffectiveSettings(
-                readAccelerationEnabled: targetReadAccelerationEnabled,
+                readAccelerationEnabled: true,
                 directFillTimeout: directFillTimeout ?? TimeSpan.FromMilliseconds(250),
                 projectorPollInterval: TimeSpan.FromSeconds(5),
                 projectorPageSize: 3,

@@ -32,17 +32,13 @@ internal static class DocumentCacheReadTelemetryLabel
     public const string SkippedReadAccelerationDisabled = "SkippedReadAccelerationDisabled";
     public const string SkippedSelectedDataStoreUnavailable = "SkippedSelectedDataStoreUnavailable";
     public const string SkippedInvalidTargetKey = "SkippedInvalidTargetKey";
-    public const string SkippedTargetRegistryUnavailable = "SkippedTargetRegistryUnavailable";
     public const string SkippedUnresolvedTarget = "SkippedUnresolvedTarget";
-    public const string SkippedTargetReadAccelerationDisabled = "SkippedTargetReadAccelerationDisabled";
     public const string SkippedNoCandidates = "SkippedNoCandidates";
     public const string SkippedNoServedCandidate = "SkippedNoServedCandidate";
     public const string SkippedCacheUnavailable = "SkippedCacheUnavailable";
     public const string SkippedTargetMismatch = "SkippedTargetMismatch";
-    public const string SkippedServicesUnavailable = "SkippedServicesUnavailable";
     public const string SkippedRequestCanceled = "SkippedRequestCanceled";
     public const string SkippedTargetIneligible = "SkippedTargetIneligible";
-    public const string SkippedTimeoutDisabled = "SkippedTimeoutDisabled";
     public const string Succeeded = "Succeeded";
     public const string Failed = "Failed";
     public const string TimedOut = "TimedOut";

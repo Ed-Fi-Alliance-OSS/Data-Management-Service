@@ -103,6 +103,8 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IRelationalDeleteEtagPreconditionChecker>();
         var relationshipAuthorizationProviderFailureExtractor =
             scope.ServiceProvider.GetRequiredService<IRelationshipAuthorizationProviderFailureExtractor>();
+        var documentCacheReadAccelerationCoordinator =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheReadAccelerationCoordinator>();
 
         resolver.Should().BeOfType<ReferenceResolver>();
         writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
@@ -154,6 +156,9 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         relationshipAuthorizationProviderFailureExtractor
             .Should()
             .BeOfType<PostgresqlRelationshipAuthorizationProviderFailureExtractor>();
+        documentCacheReadAccelerationCoordinator
+            .Should()
+            .BeOfType<DocumentCacheReadAccelerationCoordinator>();
     }
 
     [Test]

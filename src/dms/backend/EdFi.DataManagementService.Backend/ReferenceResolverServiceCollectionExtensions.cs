@@ -6,11 +6,13 @@
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Profile;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Interface;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -89,15 +91,6 @@ public static class ReferenceResolverServiceCollectionExtensions
             ServiceDescriptor.Singleton<IDocumentCacheReadTelemetry, DocumentCacheReadTelemetry>()
         );
         services.TryAdd(
-            ServiceDescriptor.Singleton<IDocumentCacheReadLookupAdapter, NoOpDocumentCacheReadLookupAdapter>()
-        );
-        services.TryAdd(
-            ServiceDescriptor.Scoped<
-                IDocumentCacheReadAccelerationCoordinator,
-                DocumentCacheReadAccelerationCoordinator
-            >()
-        );
-        services.TryAdd(
             ServiceDescriptor.Singleton<ITransactionFaultInjectionObserver>(
                 NoOpTransactionFaultInjectionObserver.Instance
             )
@@ -129,6 +122,12 @@ public static class ReferenceResolverServiceCollectionExtensions
         services.TryAdd(
             ServiceDescriptor.Singleton<IDocumentCacheProjectionObservationSink>(static serviceProvider =>
                 serviceProvider.GetRequiredService<DocumentCacheProjectionObservationStore>()
+            )
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<IDocumentCacheProjectionTargetDiagnosticSink>(
+                static serviceProvider =>
+                    serviceProvider.GetRequiredService<DocumentCacheProjectionObservationStore>()
             )
         );
         services.TryAdd(
@@ -328,5 +327,31 @@ public static class ReferenceResolverServiceCollectionExtensions
         services.AddRelationalRelationshipAuthorizationServices();
 
         return services.AddReferenceResolver<TReferenceResolverAdapterFactory>();
+    }
+
+    internal static IServiceCollection AddDocumentCacheReadAccelerationCoordinator(
+        this IServiceCollection services
+    )
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.TryAdd(
+            ServiceDescriptor.Scoped<IDocumentCacheReadAccelerationCoordinator>(
+                static serviceProvider => new DocumentCacheReadAccelerationCoordinator(
+                    serviceProvider.GetRequiredService<IOptions<DocumentCacheOptions>>(),
+                    serviceProvider.GetRequiredService<IDataStoreSelection>(),
+                    serviceProvider.GetRequiredService<IDocumentCacheTargetRegistry>(),
+                    serviceProvider.GetRequiredService<IDocumentCacheReadLookupAdapter>(),
+                    serviceProvider.GetRequiredService<IDocumentCacheMaterializer>(),
+                    serviceProvider.GetRequiredService<IDocumentCacheWriter>(),
+                    serviceProvider.GetRequiredService<IDocumentCacheReadTelemetry>(),
+                    serviceProvider.GetRequiredService<IDocumentCacheProjectionTargetDiagnosticSink>(),
+                    serviceProvider.GetRequiredService<TimeProvider>(),
+                    serviceProvider.GetRequiredService<ILogger<DocumentCacheReadAccelerationCoordinator>>()
+                )
+            )
+        );
+
+        return services;
     }
 }

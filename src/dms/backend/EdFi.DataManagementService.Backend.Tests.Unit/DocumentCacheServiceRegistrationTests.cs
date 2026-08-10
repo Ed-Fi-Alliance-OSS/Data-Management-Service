@@ -71,10 +71,13 @@ public class Given_DocumentCacheServiceRegistration
         AssertSingleton<IDocumentCacheBaselineSeeder, DocumentCacheBaselineSeeder>(services);
         AssertSingleton<IDocumentCacheAdministrativeDrainer, DocumentCacheAdministrativeDrainer>(services);
         AssertScoped<IDocumentCacheWriterRetryAdapter, DocumentCacheWriterRetryAdapter>(services);
-        AssertSingleton<IDocumentCacheReadLookupAdapter, NoOpDocumentCacheReadLookupAdapter>(services);
-        AssertScoped<IDocumentCacheReadAccelerationCoordinator, DocumentCacheReadAccelerationCoordinator>(
-            services
-        );
+        AssertSingletonFactory<IDocumentCacheProjectionTargetDiagnosticSink>(services);
+        services
+            .Should()
+            .NotContain(descriptor =>
+                descriptor.ServiceType == typeof(IDocumentCacheReadLookupAdapter)
+                || descriptor.ServiceType == typeof(IDocumentCacheReadAccelerationCoordinator)
+            );
         services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IHostedService));
     }
 
@@ -119,6 +122,7 @@ public class Given_DocumentCacheServiceRegistration
             DocumentCacheProjectionDrainPageProcessor
         >(services);
         AssertScoped<IDocumentCacheReadLookupAdapter, PostgresqlDocumentCacheReadLookupAdapter>(services);
+        AssertScopedFactory<IDocumentCacheReadAccelerationCoordinator>(services);
     }
 
     [Test]
@@ -143,6 +147,7 @@ public class Given_DocumentCacheServiceRegistration
             DocumentCacheProjectionDrainPageProcessor
         >(services);
         AssertScoped<IDocumentCacheReadLookupAdapter, MssqlDocumentCacheReadLookupAdapter>(services);
+        AssertScopedFactory<IDocumentCacheReadAccelerationCoordinator>(services);
     }
 
     private static void AddSharedReferenceResolverForTest(IServiceCollection services)

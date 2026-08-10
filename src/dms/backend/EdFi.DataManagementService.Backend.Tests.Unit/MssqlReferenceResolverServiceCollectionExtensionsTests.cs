@@ -99,6 +99,8 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IRelationalDeleteEtagPreconditionChecker>();
         var relationshipAuthorizationProviderFailureExtractor =
             scope.ServiceProvider.GetRequiredService<IRelationshipAuthorizationProviderFailureExtractor>();
+        var documentCacheReadAccelerationCoordinator =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheReadAccelerationCoordinator>();
 
         resolver.Should().BeOfType<ReferenceResolver>();
         writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
@@ -149,6 +151,9 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         relationshipAuthorizationProviderFailureExtractor
             .Should()
             .BeOfType<DefaultRelationshipAuthorizationProviderFailureExtractor>();
+        documentCacheReadAccelerationCoordinator
+            .Should()
+            .BeOfType<DocumentCacheReadAccelerationCoordinator>();
     }
 
     [Test]

@@ -12,7 +12,6 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Backend;
@@ -28,9 +27,7 @@ internal enum DocumentCacheReadAccelerationFallbackReason
     ReadAccelerationDisabled,
     InvalidTargetKey,
     SelectedDataStoreUnavailable,
-    TargetRegistryUnavailable,
     UnresolvedTarget,
-    TargetReadAccelerationDisabled,
     CacheLookupMiss,
     CacheLookupStale,
     CacheLookupSourceDrift,
@@ -288,27 +285,6 @@ internal interface IDocumentCacheReadLookupAdapter
     );
 }
 
-internal sealed class NoOpDocumentCacheReadLookupAdapter : IDocumentCacheReadLookupAdapter
-{
-    public static NoOpDocumentCacheReadLookupAdapter Instance { get; } = new();
-
-    public NoOpDocumentCacheReadLookupAdapter() { }
-
-    public Task<DocumentCacheReadLookupResult<GetResult>> TryGetByIdAsync(
-        DocumentCacheReadAccelerationGetByIdRequest request,
-        DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate candidateSelection,
-        DocumentCacheTargetExecutionContext targetContext,
-        CancellationToken cancellationToken = default
-    ) => Task.FromResult(DocumentCacheReadLookupResult<GetResult>.Fallback());
-
-    public Task<DocumentCacheReadLookupResult<QueryResult>> TryQueryAsync(
-        DocumentCacheReadAccelerationQueryRequest request,
-        DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage candidateSelection,
-        DocumentCacheTargetExecutionContext targetContext,
-        CancellationToken cancellationToken = default
-    ) => Task.FromResult(DocumentCacheReadLookupResult<QueryResult>.Fallback());
-}
-
 public interface IDocumentCacheReadAccelerationCoordinator
 {
     Task<GetResult> GetByIdAsync(
@@ -351,33 +327,38 @@ internal sealed class PassthroughDocumentCacheReadAccelerationCoordinator
 }
 
 internal sealed class DocumentCacheReadAccelerationCoordinator(
-    IOptions<DocumentCacheOptions>? options = null,
-    IDataStoreSelection? dataStoreSelection = null,
-    IDocumentCacheTargetRegistry? targetRegistry = null,
-    IDocumentCacheReadLookupAdapter? lookupAdapter = null,
-    IDocumentCacheMaterializer? materializer = null,
-    IDocumentCacheWriter? cacheWriter = null,
-    IDocumentCacheReadTelemetry? readTelemetry = null,
-    IDocumentCacheProjectionObservationSink? projectionObservationSink = null,
-    TimeProvider? timeProvider = null,
-    ILogger<DocumentCacheReadAccelerationCoordinator>? logger = null
+    IOptions<DocumentCacheOptions> options,
+    IDataStoreSelection dataStoreSelection,
+    IDocumentCacheTargetRegistry targetRegistry,
+    IDocumentCacheReadLookupAdapter lookupAdapter,
+    IDocumentCacheMaterializer materializer,
+    IDocumentCacheWriter cacheWriter,
+    IDocumentCacheReadTelemetry readTelemetry,
+    IDocumentCacheProjectionTargetDiagnosticSink targetDiagnosticSink,
+    TimeProvider timeProvider,
+    ILogger<DocumentCacheReadAccelerationCoordinator> logger
 ) : IDocumentCacheReadAccelerationCoordinator
 {
     private readonly IOptions<DocumentCacheOptions> _options =
-        options ?? Options.Create(new DocumentCacheOptions());
-    private readonly IDataStoreSelection? _dataStoreSelection = dataStoreSelection;
-    private readonly IDocumentCacheTargetRegistry? _targetRegistry = targetRegistry;
+        options ?? throw new ArgumentNullException(nameof(options));
+    private readonly IDataStoreSelection _dataStoreSelection =
+        dataStoreSelection ?? throw new ArgumentNullException(nameof(dataStoreSelection));
+    private readonly IDocumentCacheTargetRegistry _targetRegistry =
+        targetRegistry ?? throw new ArgumentNullException(nameof(targetRegistry));
     private readonly IDocumentCacheReadLookupAdapter _lookupAdapter =
-        lookupAdapter ?? NoOpDocumentCacheReadLookupAdapter.Instance;
-    private readonly IDocumentCacheMaterializer? _materializer = materializer;
-    private readonly IDocumentCacheWriter? _cacheWriter = cacheWriter;
+        lookupAdapter ?? throw new ArgumentNullException(nameof(lookupAdapter));
+    private readonly IDocumentCacheMaterializer _materializer =
+        materializer ?? throw new ArgumentNullException(nameof(materializer));
+    private readonly IDocumentCacheWriter _cacheWriter =
+        cacheWriter ?? throw new ArgumentNullException(nameof(cacheWriter));
     private readonly IDocumentCacheReadTelemetry _readTelemetry =
-        readTelemetry ?? NoOpDocumentCacheReadTelemetry.Instance;
-    private readonly IDocumentCacheProjectionObservationSink? _projectionObservationSink =
-        projectionObservationSink;
-    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+        readTelemetry ?? throw new ArgumentNullException(nameof(readTelemetry));
+    private readonly IDocumentCacheProjectionTargetDiagnosticSink _targetDiagnosticSink =
+        targetDiagnosticSink ?? throw new ArgumentNullException(nameof(targetDiagnosticSink));
+    private readonly TimeProvider _timeProvider =
+        timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     private readonly ILogger<DocumentCacheReadAccelerationCoordinator> _logger =
-        logger ?? NullLogger<DocumentCacheReadAccelerationCoordinator>.Instance;
+        logger ?? throw new ArgumentNullException(nameof(logger));
 
     private sealed record DirectFillCandidateSelection(
         IReadOnlyList<DocumentCacheReadAccelerationCandidate> Candidates,
@@ -956,13 +937,6 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             return false;
         }
 
-        if (_targetRegistry is null)
-        {
-            fallbackReason = DocumentCacheReadAccelerationFallbackReason.TargetRegistryUnavailable;
-            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedTargetRegistryUnavailable;
-            return false;
-        }
-
         if (_targetRegistry.CurrentSnapshot.GetTarget(targetKey) is null)
         {
             fallbackReason = DocumentCacheReadAccelerationFallbackReason.UnresolvedTarget;
@@ -986,13 +960,6 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         directFillSkipOutcome = null;
         directFillTelemetryTargetContext = null;
 
-        if (!_options.Value.ReadAcceleration.Enabled)
-        {
-            fallbackReason = DocumentCacheReadAccelerationFallbackReason.ReadAccelerationDisabled;
-            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedReadAccelerationDisabled;
-            return false;
-        }
-
         if (
             !TryGetSelectedTargetKey(
                 tenantKey,
@@ -1003,13 +970,6 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             )
         )
         {
-            return false;
-        }
-
-        if (_targetRegistry is null)
-        {
-            fallbackReason = DocumentCacheReadAccelerationFallbackReason.TargetRegistryUnavailable;
-            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedTargetRegistryUnavailable;
             return false;
         }
 
@@ -1036,14 +996,6 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             return false;
         }
 
-        if (!resolvedTargetContext.EffectiveSettings.ReadAccelerationEnabled)
-        {
-            fallbackReason = DocumentCacheReadAccelerationFallbackReason.TargetReadAccelerationDisabled;
-            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedTargetReadAccelerationDisabled;
-            directFillTelemetryTargetContext = resolvedTargetContext;
-            return false;
-        }
-
         targetContext = resolvedTargetContext;
         fallbackReason = DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss;
         return true;
@@ -1061,7 +1013,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         targetKey = null!;
         directFillSkipOutcome = null;
 
-        if (_dataStoreSelection is null || !_dataStoreSelection.IsSet)
+        if (!_dataStoreSelection.IsSet)
         {
             fallbackReason = DocumentCacheReadAccelerationFallbackReason.SelectedDataStoreUnavailable;
             directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedSelectedDataStoreUnavailable;
@@ -1208,17 +1160,6 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             return;
         }
 
-        if (_materializer is null || _cacheWriter is null)
-        {
-            RecordDirectFill(
-                targetContext,
-                operation,
-                resourceKind,
-                DocumentCacheReadTelemetryLabel.SkippedServicesUnavailable
-            );
-            return;
-        }
-
         if (cancellationToken.IsCancellationRequested)
         {
             RecordDirectFill(
@@ -1242,17 +1183,6 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         }
 
         TimeSpan timeout = targetContext.EffectiveSettings.DirectFillTimeout;
-        if (timeout <= TimeSpan.Zero)
-        {
-            RecordDirectFill(
-                targetContext,
-                operation,
-                resourceKind,
-                DocumentCacheReadTelemetryLabel.SkippedTimeoutDisabled
-            );
-            return;
-        }
-
         using CancellationTokenSource directFillTimeout = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken
         );
@@ -1404,11 +1334,6 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         DocumentCacheReadInvariantDiagnostic invariantDiagnostic
     )
     {
-        if (_projectionObservationSink is not IDocumentCacheProjectionTargetDiagnosticSink diagnosticSink)
-        {
-            return;
-        }
-
         DateTimeOffset observedAt = _timeProvider.GetUtcNow();
         DocumentCacheTargetDiagnostic targetDiagnostic = new(
             targetContext.TargetKey,
@@ -1425,7 +1350,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             invariantDiagnostic.Message
         );
 
-        diagnosticSink.AppendTargetDiagnostic(
+        _targetDiagnosticSink.AppendTargetDiagnostic(
             new DocumentCacheProjectionTargetContextKey(targetContext.TargetKey, targetContext.Generation),
             targetDiagnostic,
             observedAt

@@ -80,6 +80,7 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
         services.Replace(
             ServiceDescriptor.Scoped<IDocumentCacheReadLookupAdapter, MssqlDocumentCacheReadLookupAdapter>()
         );
+        services.AddDocumentCacheReadAccelerationCoordinator();
         return services;
     }
 
