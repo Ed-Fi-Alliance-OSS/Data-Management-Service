@@ -128,9 +128,13 @@ internal static class DocumentCacheReadAccelerationScenario
             missingStudentDocumentUuid
         );
         await DeleteCacheRowsAsync(harness, missingStudentMetadata.DocumentId);
+        await ReplaceProjectionWorkAsync(harness, missingStudentMetadata);
         (await CountCacheRowsAsync(harness, missingStudentMetadata.DocumentId))
             .Should()
             .Be(0, "the first successful GET must prove the cache-miss fallback path");
+        (await CountProjectionWorkRowsAsync(harness, missingStudentMetadata.DocumentId))
+            .Should()
+            .Be(1, "direct-fill success requires current matching projection work");
 
         JsonObject missingFallback = await GetJsonObjectAsync(harness, missingStudentLocationPath);
 
@@ -143,7 +147,7 @@ internal static class DocumentCacheReadAccelerationScenario
             harness,
             "RecordDirectFill",
             "Succeeded",
-            "a missing cache row should be direct-filled after successful relational fallback"
+            "a missing cache row with matching projection work should be direct-filled after successful relational fallback"
         );
         DocumentCacheRow directFilledRow = await ReadCacheRowAsync(
             harness,
@@ -155,6 +159,9 @@ internal static class DocumentCacheReadAccelerationScenario
             "cache-missing-001",
             "Relational Missing"
         );
+        (await CountProjectionWorkRowsAsync(harness, missingStudentMetadata.DocumentId))
+            .Should()
+            .Be(0, "successful direct fill must acknowledge only the matching projection work row");
 
         CreatedDocument student = await CreateStudentAsync(
             harness,
@@ -922,12 +929,59 @@ internal static class DocumentCacheReadAccelerationScenario
         await command.ExecuteNonQueryAsync();
     }
 
+    private static async Task ReplaceProjectionWorkAsync(
+        ApiIntegrationHarness harness,
+        DocumentMetadata metadata
+    )
+    {
+        await ExecuteNonQueryAsync(
+            harness,
+            """
+            DELETE FROM "dms"."DocumentProjectionWork"
+            WHERE "DocumentId" = @documentId;
+
+            INSERT INTO "dms"."DocumentProjectionWork" (
+                "DocumentId",
+                "RequiredContentVersion",
+                "FirstEnqueuedAt",
+                "LastEnqueuedAt"
+            )
+            VALUES (
+                @documentId,
+                @requiredContentVersion,
+                @enqueuedAt,
+                @enqueuedAt
+            );
+            """,
+            ("@documentId", metadata.DocumentId),
+            ("@requiredContentVersion", metadata.ContentVersion),
+            ("@enqueuedAt", DateTimeOffset.UtcNow)
+        );
+    }
+
     private static async Task<int> CountCacheRowsAsync(ApiIntegrationHarness harness, long documentId)
     {
         await using DbCommand command = harness.DbConnection.CreateCommand();
         command.CommandText = """
             SELECT COUNT(*)
             FROM "dms"."DocumentCache"
+            WHERE "DocumentId" = @documentId;
+            """;
+        command.Parameters.Add(CreateParameter(command, "@documentId", documentId));
+
+        object? result = await command.ExecuteScalarAsync();
+        return Convert.ToInt32(result, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<int> CountProjectionWorkRowsAsync(
+        ApiIntegrationHarness harness,
+        long documentId
+    )
+    {
+        await using DbCommand command = harness.DbConnection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM "dms"."DocumentProjectionWork"
             WHERE "DocumentId" = @documentId;
             """;
         command.Parameters.Add(CreateParameter(command, "@documentId", documentId));

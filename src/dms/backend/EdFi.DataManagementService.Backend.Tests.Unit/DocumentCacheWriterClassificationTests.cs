@@ -87,7 +87,7 @@ public class Given_DocumentCacheWriterClassification
     }
 
     [Test]
-    public void It_allows_direct_fill_candidate_write_when_cache_is_missing_and_work_is_absent()
+    public void It_reports_missing_work_when_cache_is_missing_and_work_is_absent_even_with_candidate()
     {
         DocumentCacheMaterializationCandidate candidate = CreateCandidate(contentVersion: 11);
 
@@ -95,18 +95,21 @@ public class Given_DocumentCacheWriterClassification
             sourceContentVersion: 11,
             cacheContentVersion: null,
             workRequiredContentVersion: null,
-            purpose: DocumentCacheWriterPurpose.DirectFill,
             candidateObservation: CandidateMatches(candidate)
         );
 
-        selection.Action.Should().Be(DocumentCacheWriterSelectedAction.WriteDirectFillCandidateWithoutWork);
-        selection.Outcome.Should().Be(DocumentCacheWriterOutcome.CandidateWrittenAcknowledged);
-        selection.WritesCache.Should().BeTrue();
+        selection.Action.Should().Be(DocumentCacheWriterSelectedAction.ReturnWorkAnomaly);
+        selection.Outcome.Should().Be(DocumentCacheWriterOutcome.WorkAnomaly);
+        selection.WritesCache.Should().BeFalse();
         selection.AcknowledgesWork.Should().BeFalse();
         selection.RequestsCacheAheadLatchFlow.Should().BeFalse();
-        selection.ExpectedContentVersion.Should().Be(11);
-        selection.Candidate.Should().BeSameAs(candidate);
-        selection.TerminalResult.Should().BeNull();
+        selection.ExpectedContentVersion.Should().BeNull();
+        selection.Candidate.Should().BeNull();
+        selection
+            .TerminalResult.Should()
+            .BeOfType<DocumentCacheWriterResult.WorkAnomaly>()
+            .Which.Kind.Should()
+            .Be(DocumentCacheWriterWorkAnomalyKind.MissingWork);
     }
 
     [Test]
@@ -480,7 +483,6 @@ public class Given_DocumentCacheWriterClassification
         DocumentCacheWriterClassificationSelection missingState =
             DocumentCacheWriterClassificationSelector.Select(
                 new DocumentCacheWriterClassificationRequest(
-                    DocumentCacheWriterPurpose.DurableWorkProjection,
                     DocumentCacheLifecycleReadResult.Failure(
                         DocumentCacheLifecycleReadStatus.Missing,
                         "missing"
@@ -561,14 +563,12 @@ public class Given_DocumentCacheWriterClassification
         long? sourceContentVersion,
         long? cacheContentVersion,
         long? workRequiredContentVersion,
-        DocumentCacheWriterPurpose purpose = DocumentCacheWriterPurpose.DurableWorkProjection,
         DocumentCacheLifecycleState lifecycleState = DocumentCacheLifecycleState.Tracking,
         bool cacheAheadRecoveryRequired = false,
         DocumentCacheWriterCandidateObservation? candidateObservation = null
     ) =>
         DocumentCacheWriterClassificationSelector.Select(
             new DocumentCacheWriterClassificationRequest(
-                purpose,
                 Lifecycle(lifecycleState, cacheAheadRecoveryRequired),
                 new DocumentCacheWriterCurrentStateObservation(
                     sourceContentVersion,

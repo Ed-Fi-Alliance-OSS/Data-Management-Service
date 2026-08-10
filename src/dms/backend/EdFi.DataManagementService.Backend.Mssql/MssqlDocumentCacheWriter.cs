@@ -258,7 +258,6 @@ internal sealed class MssqlDocumentCacheWriter(
             DocumentCacheWriterClassificationSelection selection =
                 DocumentCacheWriterClassificationSelector.Select(
                     new DocumentCacheWriterClassificationRequest(
-                        request.Purpose,
                         lifecycleReadResult,
                         currentObservation.ToCurrentState(),
                         DocumentCacheWriterSupport.BuildCandidateObservation(request, currentObservation)
@@ -307,34 +306,18 @@ internal sealed class MssqlDocumentCacheWriter(
                     .ConfigureAwait(false);
             }
 
-            DocumentCacheWriterResult result;
-            if (selection.WritesCache)
-            {
-                result = selection.AcknowledgesWork
-                    ? await WriteCandidateAndAcknowledgeAsync(
-                            connection,
-                            transaction,
-                            request,
-                            lifecycleReadResult,
-                            selection,
-                            activeTransactionCancellationToken,
-                            markMutationBeforeCommit
-                        )
-                        .ConfigureAwait(false)
-                    : await WriteDirectFillCandidateWithoutAcknowledgementAsync(
-                            connection,
-                            transaction,
-                            request,
-                            lifecycleReadResult,
-                            selection,
-                            activeTransactionCancellationToken,
-                            markMutationBeforeCommit
-                        )
-                        .ConfigureAwait(false);
-            }
-            else
-            {
-                result = await AcknowledgeAlreadyCurrentAsync(
+            DocumentCacheWriterResult result = selection.WritesCache
+                ? await WriteCandidateAndAcknowledgeAsync(
+                        connection,
+                        transaction,
+                        request,
+                        lifecycleReadResult,
+                        selection,
+                        activeTransactionCancellationToken,
+                        markMutationBeforeCommit
+                    )
+                    .ConfigureAwait(false)
+                : await AcknowledgeAlreadyCurrentAsync(
                         connection,
                         transaction,
                         request,
@@ -345,7 +328,6 @@ internal sealed class MssqlDocumentCacheWriter(
                         markMutationBeforeCommit
                     )
                     .ConfigureAwait(false);
-            }
 
             telemetryOutcome = result.Outcome;
             if (result is DocumentCacheWriterResult.RacingWriterLost)
@@ -496,73 +478,6 @@ internal sealed class MssqlDocumentCacheWriter(
         }
 
         return DocumentCacheWriterResult.RacingWriterLost.Instance;
-    }
-
-    private async Task<DocumentCacheWriterResult> WriteDirectFillCandidateWithoutAcknowledgementAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        DocumentCacheWriterRequest request,
-        DocumentCacheLifecycleReadResult lifecycleReadResult,
-        DocumentCacheWriterClassificationSelection selection,
-        CancellationToken cancellationToken,
-        Action? markMutationBeforeCommit
-    )
-    {
-        DocumentCacheMaterializationCandidate candidate = selection.Candidate!;
-        long expectedContentVersion = selection.ExpectedContentVersion!.Value;
-
-        await ObserveFaultInjectionAsync(
-                DocumentCacheWriterFaultInjectionHook.AfterMainStateLockAndClassificationBeforeCacheDml,
-                request,
-                lifecycleReadResult,
-                selection.Outcome,
-                connection,
-                transaction,
-                cacheDmlRowCount: null,
-                acknowledgementRowCount: null,
-                cacheAheadLatchRowCount: null,
-                cancellationToken: cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        long cacheDmlStartTimestamp = Stopwatch.GetTimestamp();
-        int cacheRows = await ExecuteDirectFillCacheWriteAsync(
-                connection,
-                transaction,
-                candidate,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-        DocumentCacheWriterSupport.RecordCacheDmlDuration(
-            _telemetry,
-            RelationalProviderToken.SqlServer,
-            request,
-            lifecycleReadResult.Lifecycle?.State,
-            cacheRows > 0 ? selection.Outcome : DocumentCacheWriterOutcome.RacingWriterLost,
-            cacheDmlStartTimestamp
-        );
-
-        await ObserveFaultInjectionAsync(
-                DocumentCacheWriterFaultInjectionHook.AfterCacheDmlBeforeAcknowledgement,
-                request,
-                lifecycleReadResult,
-                cacheRows > 0 ? selection.Outcome : DocumentCacheWriterOutcome.RacingWriterLost,
-                connection,
-                transaction,
-                cacheRows,
-                acknowledgementRowCount: null,
-                cacheAheadLatchRowCount: null,
-                cancellationToken: cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        if (cacheRows == 0)
-        {
-            return DocumentCacheWriterResult.RacingWriterLost.Instance;
-        }
-
-        markMutationBeforeCommit?.Invoke();
-        return new DocumentCacheWriterResult.CandidateWrittenAcknowledged(candidate, expectedContentVersion);
     }
 
     private async Task<DocumentCacheWriterResult> AcknowledgeAlreadyCurrentAsync(
@@ -910,30 +825,6 @@ internal sealed class MssqlDocumentCacheWriter(
             .ConfigureAwait(false);
     }
 
-    private static async Task<int> ExecuteDirectFillCacheWriteAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        DocumentCacheMaterializationCandidate candidate,
-        CancellationToken cancellationToken
-    )
-    {
-        int updatedRows = await ExecuteDirectFillCacheUpdateAsync(
-                connection,
-                transaction,
-                candidate,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        if (updatedRows != 0)
-        {
-            return updatedRows;
-        }
-
-        return await ExecuteDirectFillCacheInsertAsync(connection, transaction, candidate, cancellationToken)
-            .ConfigureAwait(false);
-    }
-
     private static async Task<int> ExecuteCacheUpdateAsync(
         SqlConnection connection,
         SqlTransaction transaction,
@@ -1022,99 +913,6 @@ internal sealed class MssqlDocumentCacheWriter(
               AND [resourceKey].[ResourceName] = @resourceName
               AND [resourceKey].[ResourceVersion] = @resourceVersion
               AND [work].[RequiredContentVersion] = @contentVersion
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM [dms].[DocumentCache] AS [cache] WITH (UPDLOCK, HOLDLOCK)
-                  WHERE [cache].[DocumentId] = @documentId
-              );
-            """;
-
-        AddCandidateParameters(command, candidate);
-        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private static async Task<int> ExecuteDirectFillCacheUpdateAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        DocumentCacheMaterializationCandidate candidate,
-        CancellationToken cancellationToken
-    )
-    {
-        await using SqlCommand command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            UPDATE [cache]
-            SET
-                [DocumentUuid] = [document].[DocumentUuid],
-                [ProjectName] = [resourceKey].[ProjectName],
-                [ResourceName] = [resourceKey].[ResourceName],
-                [ResourceVersion] = [resourceKey].[ResourceVersion],
-                [ContentVersion] = [document].[ContentVersion],
-                [StreamEtag] = @streamEtag,
-                [LastModifiedAt] = @lastModifiedAt,
-                [DocumentJson] = @documentJson,
-                [ComputedAt] = sysutcdatetime()
-            FROM [dms].[DocumentCache] AS [cache]
-            INNER JOIN [dms].[Document] AS [document]
-                ON [document].[DocumentId] = [cache].[DocumentId]
-            INNER JOIN [dms].[ResourceKey] AS [resourceKey]
-                ON [resourceKey].[ResourceKeyId] = [document].[ResourceKeyId]
-            WHERE [cache].[DocumentId] = @documentId
-              AND [cache].[ContentVersion] < @contentVersion
-              AND [document].[DocumentId] = @documentId
-              AND [document].[DocumentUuid] = @documentUuid
-              AND [document].[ContentVersion] = @contentVersion
-              AND [resourceKey].[ProjectName] = @projectName
-              AND [resourceKey].[ResourceName] = @resourceName
-              AND [resourceKey].[ResourceVersion] = @resourceVersion;
-            """;
-
-        AddCandidateParameters(command, candidate);
-        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private static async Task<int> ExecuteDirectFillCacheInsertAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        DocumentCacheMaterializationCandidate candidate,
-        CancellationToken cancellationToken
-    )
-    {
-        await using SqlCommand command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            INSERT INTO [dms].[DocumentCache] (
-                [DocumentId],
-                [DocumentUuid],
-                [ProjectName],
-                [ResourceName],
-                [ResourceVersion],
-                [ContentVersion],
-                [StreamEtag],
-                [LastModifiedAt],
-                [DocumentJson],
-                [ComputedAt]
-            )
-            SELECT
-                [document].[DocumentId],
-                [document].[DocumentUuid],
-                [resourceKey].[ProjectName],
-                [resourceKey].[ResourceName],
-                [resourceKey].[ResourceVersion],
-                [document].[ContentVersion],
-                @streamEtag,
-                @lastModifiedAt,
-                @documentJson,
-                sysutcdatetime()
-            FROM [dms].[Document] AS [document]
-            INNER JOIN [dms].[ResourceKey] AS [resourceKey]
-                ON [resourceKey].[ResourceKeyId] = [document].[ResourceKeyId]
-            WHERE [document].[DocumentId] = @documentId
-              AND [document].[DocumentUuid] = @documentUuid
-              AND [document].[ContentVersion] = @contentVersion
-              AND [resourceKey].[ProjectName] = @projectName
-              AND [resourceKey].[ResourceName] = @resourceName
-              AND [resourceKey].[ResourceVersion] = @resourceVersion
               AND NOT EXISTS (
                   SELECT 1
                   FROM [dms].[DocumentCache] AS [cache] WITH (UPDLOCK, HOLDLOCK)

@@ -401,8 +401,10 @@ acknowledgement may briefly wait on a writer, but unrelated documents continue. 
 remains fenced by foreign keys. Multiple projectors and projector/direct-fill races remain
 correct through monotonic writes and conditional acknowledgement.
 
-Optional direct fill uses the same cache-write/acknowledgement component. It may
-acknowledge matching work, remains best effort, and never fails the relational response.
+Optional direct fill uses the same cache-write/acknowledgement component. It may write
+cache only through that component and may acknowledge matching work, remains best effort,
+and never fails the relational response. If no current matching work exists, direct fill
+does not insert or update cache; missing work remains a scrub/rebuild repair concern.
 
 ### Bounded In-Process Execution Policy
 

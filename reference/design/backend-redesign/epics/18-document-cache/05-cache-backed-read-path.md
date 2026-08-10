@@ -173,6 +173,11 @@ relational read path as the correctness path.
   response. It must use the 18-02 materializer and 18-03 shared writer with caller purpose
   `DirectFill`; it must not build cache rows from already-shaped API response JSON, update
   `DocumentCache` directly, or acknowledge work through a read-path-specific SQL path.
+- A direct-fill attempt is permission to invoke the shared materializer/writer, not a
+  request-path cache repair guarantee. The shared writer still applies the 18-03
+  source/cache/work classification. If current matching projection work is absent, direct
+  fill returns the existing work-anomaly result and performs no `DocumentCache` DML, even
+  when relational fallback produced a current materialization candidate.
 - For GET-by-id, direct fill attempts the single authorized `DocumentId` that missed or was
   stale. For GET-many, direct fill attempts the selected page's missed or stale
   `DocumentId`s sequentially and stops when the request-scoped `DirectFillTimeout` budget
@@ -186,6 +191,9 @@ relational read path as the correctness path.
   the direct-fill budget, or retry the already-computed relational response. Target-fatal
   deterministic invariant failures should also update the same target-health diagnostic
   path used by projection.
+- Direct-fill evidence that expects a cache row to appear must seed or observe matching
+  `dms.DocumentProjectionWork` first. Evidence for missing-work cases must assert no cache
+  row mutation and a failed/skipped best-effort fill, not a request-path repair.
 
 ### Telemetry and Evidence Boundary
 

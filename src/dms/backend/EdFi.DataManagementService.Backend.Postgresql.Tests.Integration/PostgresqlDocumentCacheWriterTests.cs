@@ -338,12 +338,12 @@ public class Given_A_Postgresql_DocumentCacheWriter
     }
 
     [Test]
-    public async Task It_allows_direct_fill_to_write_candidate_without_durable_work()
+    public async Task It_reports_missing_work_without_cache_dml_for_direct_fill_when_work_is_absent()
     {
         await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
         SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
         await DeleteWorkAsync(source.DocumentId);
-        DocumentCacheMaterializationCandidate candidate = CreateCandidate(source, "direct-fill-no-work");
+        DocumentCacheMaterializationCandidate candidate = CreateCandidate(source, "direct-fill-missing-work");
 
         DocumentCacheWriterResult result = await WriteAsync(
             source,
@@ -353,17 +353,12 @@ public class Given_A_Postgresql_DocumentCacheWriter
 
         result
             .Should()
-            .BeOfType<DocumentCacheWriterResult.CandidateWrittenAcknowledged>()
-            .Which.AcknowledgedContentVersion.Should()
-            .Be(10);
+            .BeOfType<DocumentCacheWriterResult.WorkAnomaly>()
+            .Which.Kind.Should()
+            .Be(DocumentCacheWriterWorkAnomalyKind.MissingWork);
         (await ReadWorkCountAsync(source.DocumentId)).Should().Be(0);
-        CacheRow cacheRow = await ReadCacheRowAsync(source.DocumentId);
-        cacheRow.ContentVersion.Should().Be(10);
-        cacheRow.StreamEtag.Should().Be("etag-10");
-        JsonNode.Parse(cacheRow.DocumentJson)!["value"]!
-            .GetValue<string>()
-            .Should()
-            .Be("direct-fill-no-work");
+        (await ReadCacheCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadCacheAheadLatchAsync()).Should().BeFalse();
     }
 
     [Test]

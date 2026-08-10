@@ -103,25 +103,17 @@ internal sealed record DocumentCacheWriterCurrentStateObservation
 internal sealed record DocumentCacheWriterClassificationRequest
 {
     public DocumentCacheWriterClassificationRequest(
-        DocumentCacheWriterPurpose purpose,
         DocumentCacheLifecycleReadResult lifecycleReadResult,
         DocumentCacheWriterCurrentStateObservation currentState,
         DocumentCacheWriterCandidateObservation candidateObservation
     )
     {
-        Purpose = DocumentCacheMaterializerGuards.RequireDefined(
-            purpose,
-            nameof(purpose),
-            "Unsupported cache-writer purpose."
-        );
         LifecycleReadResult =
             lifecycleReadResult ?? throw new ArgumentNullException(nameof(lifecycleReadResult));
         CurrentState = currentState ?? throw new ArgumentNullException(nameof(currentState));
         CandidateObservation =
             candidateObservation ?? throw new ArgumentNullException(nameof(candidateObservation));
     }
-
-    public DocumentCacheWriterPurpose Purpose { get; }
 
     public DocumentCacheLifecycleReadResult LifecycleReadResult { get; }
 
@@ -142,7 +134,6 @@ internal enum DocumentCacheWriterSelectedAction
     ReturnStaleCandidateSuppressed = 8,
     ReturnWorkAnomaly = 9,
     ReturnDeterministicInvariantOrTargetFailure = 10,
-    WriteDirectFillCandidateWithoutWork = 11,
 }
 
 internal sealed record DocumentCacheWriterClassificationSelection
@@ -228,10 +219,7 @@ internal sealed record DocumentCacheWriterClassificationSelection
 
     public DocumentCacheWriterResult? TerminalResult { get; }
 
-    public bool WritesCache =>
-        Action
-            is DocumentCacheWriterSelectedAction.WriteCandidateThenAcknowledgeWork
-                or DocumentCacheWriterSelectedAction.WriteDirectFillCandidateWithoutWork;
+    public bool WritesCache => Action is DocumentCacheWriterSelectedAction.WriteCandidateThenAcknowledgeWork;
 
     public bool AcknowledgesWork =>
         Action
@@ -245,7 +233,6 @@ internal sealed record DocumentCacheWriterClassificationSelection
         Action
             is DocumentCacheWriterSelectedAction.AcknowledgeAlreadyCurrentWork
                 or DocumentCacheWriterSelectedAction.WriteCandidateThenAcknowledgeWork
-                or DocumentCacheWriterSelectedAction.WriteDirectFillCandidateWithoutWork
                 or DocumentCacheWriterSelectedAction.RequestCacheAheadLatchFlow;
 
     public static DocumentCacheWriterClassificationSelection LifecycleOrLatchFence(
@@ -321,18 +308,6 @@ internal sealed record DocumentCacheWriterClassificationSelection
     ) =>
         new(
             DocumentCacheWriterSelectedAction.WriteCandidateThenAcknowledgeWork,
-            DocumentCacheWriterOutcome.CandidateWrittenAcknowledged,
-            expectedContentVersion,
-            candidate ?? throw new ArgumentNullException(nameof(candidate)),
-            terminalResult: null
-        );
-
-    public static DocumentCacheWriterClassificationSelection WriteDirectFillCandidateWithoutWork(
-        DocumentCacheMaterializationCandidate candidate,
-        long expectedContentVersion
-    ) =>
-        new(
-            DocumentCacheWriterSelectedAction.WriteDirectFillCandidateWithoutWork,
             DocumentCacheWriterOutcome.CandidateWrittenAcknowledged,
             expectedContentVersion,
             candidate ?? throw new ArgumentNullException(nameof(candidate)),
@@ -487,11 +462,6 @@ internal static class DocumentCacheWriterClassificationSelector
             && CacheIsAbsentOrBehind(currentState.CacheContentVersion, sourceContentVersion)
         )
         {
-            if (request.Purpose == DocumentCacheWriterPurpose.DirectFill)
-            {
-                return SelectDirectFillRepairAction(sourceContentVersion, request.CandidateObservation);
-            }
-
             return DocumentCacheWriterClassificationSelection.WorkAnomaly(
                 DocumentCacheWriterWorkAnomalyKind.MissingWork,
                 lifecycleState,
@@ -506,24 +476,6 @@ internal static class DocumentCacheWriterClassificationSelector
             sourceContentVersion,
             currentState.WorkRequiredContentVersion
         );
-    }
-
-    private static DocumentCacheWriterClassificationSelection SelectDirectFillRepairAction(
-        long sourceContentVersion,
-        DocumentCacheWriterCandidateObservation candidateObservation
-    )
-    {
-        DocumentCacheWriterClassificationSelection selection = SelectPendingProjectionAction(
-            sourceContentVersion,
-            candidateObservation
-        );
-
-        return selection.Action == DocumentCacheWriterSelectedAction.WriteCandidateThenAcknowledgeWork
-            ? DocumentCacheWriterClassificationSelection.WriteDirectFillCandidateWithoutWork(
-                selection.Candidate!,
-                sourceContentVersion
-            )
-            : selection;
     }
 
     private static DocumentCacheWriterClassificationSelection? SelectLifecycleFence(

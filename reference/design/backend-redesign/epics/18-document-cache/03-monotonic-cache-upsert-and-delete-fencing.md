@@ -166,9 +166,10 @@ Each attempt uses one short provider transaction:
   still exist at that same `ContentVersion`. Do not delete work by `DocumentId` alone.
 - Equal-version acknowledgement performs no cache update and therefore does not refresh
   `ComputedAt`.
-- A direct-fill call without current matching work does not insert or update cache. Missing
-  work for a behind or absent cache is a scrub/rebuild repair concern, not a request-path
-  repair.
+- A direct-fill call without current matching work does not insert or update cache, even
+  when the caller supplies a materialized candidate from a successful relational fallback.
+  Missing work for a behind or absent cache is a scrub/rebuild repair concern, not a
+  request-path repair.
 
 ### Cache-Ahead Latch Flow
 

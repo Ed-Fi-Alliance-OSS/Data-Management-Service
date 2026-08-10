@@ -255,7 +255,6 @@ internal sealed class PostgresqlDocumentCacheWriter(
             DocumentCacheWriterClassificationSelection selection =
                 DocumentCacheWriterClassificationSelector.Select(
                     new DocumentCacheWriterClassificationRequest(
-                        request.Purpose,
                         lifecycleReadResult,
                         currentObservation.ToCurrentState(),
                         DocumentCacheWriterSupport.BuildCandidateObservation(request, currentObservation)
@@ -304,34 +303,18 @@ internal sealed class PostgresqlDocumentCacheWriter(
                     .ConfigureAwait(false);
             }
 
-            DocumentCacheWriterResult result;
-            if (selection.WritesCache)
-            {
-                result = selection.AcknowledgesWork
-                    ? await WriteCandidateAndAcknowledgeAsync(
-                            connection,
-                            transaction,
-                            request,
-                            lifecycleReadResult,
-                            selection,
-                            activeTransactionCancellationToken,
-                            markMutationBeforeCommit
-                        )
-                        .ConfigureAwait(false)
-                    : await WriteDirectFillCandidateWithoutAcknowledgementAsync(
-                            connection,
-                            transaction,
-                            request,
-                            lifecycleReadResult,
-                            selection,
-                            activeTransactionCancellationToken,
-                            markMutationBeforeCommit
-                        )
-                        .ConfigureAwait(false);
-            }
-            else
-            {
-                result = await AcknowledgeAlreadyCurrentAsync(
+            DocumentCacheWriterResult result = selection.WritesCache
+                ? await WriteCandidateAndAcknowledgeAsync(
+                        connection,
+                        transaction,
+                        request,
+                        lifecycleReadResult,
+                        selection,
+                        activeTransactionCancellationToken,
+                        markMutationBeforeCommit
+                    )
+                    .ConfigureAwait(false)
+                : await AcknowledgeAlreadyCurrentAsync(
                         connection,
                         transaction,
                         request,
@@ -342,7 +325,6 @@ internal sealed class PostgresqlDocumentCacheWriter(
                         markMutationBeforeCommit
                     )
                     .ConfigureAwait(false);
-            }
 
             telemetryOutcome = result.Outcome;
             if (result is DocumentCacheWriterResult.RacingWriterLost)
@@ -492,73 +474,6 @@ internal sealed class PostgresqlDocumentCacheWriter(
         }
 
         return DocumentCacheWriterResult.RacingWriterLost.Instance;
-    }
-
-    private async Task<DocumentCacheWriterResult> WriteDirectFillCandidateWithoutAcknowledgementAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        DocumentCacheWriterRequest request,
-        DocumentCacheLifecycleReadResult lifecycleReadResult,
-        DocumentCacheWriterClassificationSelection selection,
-        CancellationToken cancellationToken,
-        Action? markMutationBeforeCommit
-    )
-    {
-        DocumentCacheMaterializationCandidate candidate = selection.Candidate!;
-        long expectedContentVersion = selection.ExpectedContentVersion!.Value;
-
-        await ObserveFaultInjectionAsync(
-                DocumentCacheWriterFaultInjectionHook.AfterMainStateLockAndClassificationBeforeCacheDml,
-                request,
-                lifecycleReadResult,
-                selection.Outcome,
-                connection,
-                transaction,
-                cacheDmlRowCount: null,
-                acknowledgementRowCount: null,
-                cacheAheadLatchRowCount: null,
-                cancellationToken: cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        long cacheDmlStartTimestamp = Stopwatch.GetTimestamp();
-        int cacheRows = await ExecuteDirectFillCacheWriteAsync(
-                connection,
-                transaction,
-                candidate,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-        DocumentCacheWriterSupport.RecordCacheDmlDuration(
-            _telemetry,
-            RelationalProviderToken.Postgresql,
-            request,
-            lifecycleReadResult.Lifecycle?.State,
-            cacheRows > 0 ? selection.Outcome : DocumentCacheWriterOutcome.RacingWriterLost,
-            cacheDmlStartTimestamp
-        );
-
-        await ObserveFaultInjectionAsync(
-                DocumentCacheWriterFaultInjectionHook.AfterCacheDmlBeforeAcknowledgement,
-                request,
-                lifecycleReadResult,
-                cacheRows > 0 ? selection.Outcome : DocumentCacheWriterOutcome.RacingWriterLost,
-                connection,
-                transaction,
-                cacheRows,
-                acknowledgementRowCount: null,
-                cacheAheadLatchRowCount: null,
-                cancellationToken: cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        if (cacheRows == 0)
-        {
-            return DocumentCacheWriterResult.RacingWriterLost.Instance;
-        }
-
-        markMutationBeforeCommit?.Invoke();
-        return new DocumentCacheWriterResult.CandidateWrittenAcknowledged(candidate, expectedContentVersion);
     }
 
     private async Task<DocumentCacheWriterResult> AcknowledgeAlreadyCurrentAsync(
@@ -922,66 +837,6 @@ internal sealed class PostgresqlDocumentCacheWriter(
               AND resourceKey."ResourceName" = @resourceName
               AND resourceKey."ResourceVersion" = @resourceVersion
               AND work."RequiredContentVersion" = @contentVersion
-            ON CONFLICT ("DocumentId") DO UPDATE
-            SET
-                "DocumentUuid" = EXCLUDED."DocumentUuid",
-                "ProjectName" = EXCLUDED."ProjectName",
-                "ResourceName" = EXCLUDED."ResourceName",
-                "ResourceVersion" = EXCLUDED."ResourceVersion",
-                "ContentVersion" = EXCLUDED."ContentVersion",
-                "StreamEtag" = EXCLUDED."StreamEtag",
-                "LastModifiedAt" = EXCLUDED."LastModifiedAt",
-                "DocumentJson" = EXCLUDED."DocumentJson",
-                "ComputedAt" = statement_timestamp()
-            WHERE cache."ContentVersion" < EXCLUDED."ContentVersion";
-            """;
-
-        AddCandidateParameters(command, candidate);
-        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private static async Task<int> ExecuteDirectFillCacheWriteAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        DocumentCacheMaterializationCandidate candidate,
-        CancellationToken cancellationToken
-    )
-    {
-        await using NpgsqlCommand command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            INSERT INTO "dms"."DocumentCache" AS cache (
-                "DocumentId",
-                "DocumentUuid",
-                "ProjectName",
-                "ResourceName",
-                "ResourceVersion",
-                "ContentVersion",
-                "StreamEtag",
-                "LastModifiedAt",
-                "DocumentJson",
-                "ComputedAt"
-            )
-            SELECT
-                document."DocumentId",
-                document."DocumentUuid",
-                resourceKey."ProjectName",
-                resourceKey."ResourceName",
-                resourceKey."ResourceVersion",
-                document."ContentVersion",
-                @streamEtag,
-                @lastModifiedAt,
-                @documentJson,
-                statement_timestamp()
-            FROM "dms"."Document" document
-            INNER JOIN "dms"."ResourceKey" resourceKey
-                ON resourceKey."ResourceKeyId" = document."ResourceKeyId"
-            WHERE document."DocumentId" = @documentId
-              AND document."DocumentUuid" = @documentUuid
-              AND document."ContentVersion" = @contentVersion
-              AND resourceKey."ProjectName" = @projectName
-              AND resourceKey."ResourceName" = @resourceName
-              AND resourceKey."ResourceVersion" = @resourceVersion
             ON CONFLICT ("DocumentId") DO UPDATE
             SET
                 "DocumentUuid" = EXCLUDED."DocumentUuid",
