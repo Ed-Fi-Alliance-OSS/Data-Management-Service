@@ -168,7 +168,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
-            _commandExecutor
+            _commandExecutor,
+            readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
     }
 
@@ -191,7 +192,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
-            _commandExecutor
+            _commandExecutor,
+            readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
     }
 
@@ -705,7 +707,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
-            _commandExecutor
+            _commandExecutor,
+            readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
 
         var getRequest = CreateGetRequest(
@@ -3625,7 +3628,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
-            _commandExecutor
+            _commandExecutor,
+            readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
 
         var queryRequest = CreateQueryRequest(
@@ -3743,7 +3747,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
-            _commandExecutor
+            _commandExecutor,
+            readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
 
         var queryRequest = CreateQueryRequest(
@@ -3815,7 +3820,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
-            _commandExecutor
+            _commandExecutor,
+            readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
 
         var queryRequest = CreateQueryRequest(
@@ -9231,7 +9237,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
-            _commandExecutor
+            _commandExecutor,
+            readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
 
         var documentUuid = new DocumentUuid(Guid.NewGuid());
@@ -9286,7 +9293,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
-            _commandExecutor
+            _commandExecutor,
+            readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
 
         var upsertRequest = A.Fake<IUpsertRequest>();
@@ -9326,7 +9334,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
-            _commandExecutor
+            _commandExecutor,
+            readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
 
         var documentUuid = new DocumentUuid(Guid.NewGuid());
@@ -9381,7 +9390,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
-            _commandExecutor
+            _commandExecutor,
+            readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
 
         var updateRequest = A.Fake<IUpdateRequest>();
@@ -9435,7 +9445,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
-            _commandExecutor
+            _commandExecutor,
+            readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
 
         var upsertRequest = A.Fake<IUpsertRequest>();
@@ -9499,7 +9510,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
-            _commandExecutor
+            _commandExecutor,
+            readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
 
         var updateRequest = A.Fake<IUpdateRequest>();
@@ -9598,7 +9610,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
-            _commandExecutor
+            _commandExecutor,
+            readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
 
         var deleteRequest = A.Fake<IDeleteRequest>();
@@ -9659,7 +9672,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
-            _commandExecutor
+            _commandExecutor,
+            readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
 
         var deleteRequest = A.Fake<IDeleteRequest>();
@@ -9697,7 +9711,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
-            _commandExecutor
+            _commandExecutor,
+            readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
         ConfigureResolvedDocument(documentId: 123L, documentUuid: new DocumentUuid(Guid.NewGuid()));
         ConfigureDeleteOutcome(deleted: true);

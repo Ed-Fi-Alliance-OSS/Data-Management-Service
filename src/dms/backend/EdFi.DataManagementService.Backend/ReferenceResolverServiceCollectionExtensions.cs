@@ -300,6 +300,11 @@ public static class ReferenceResolverServiceCollectionExtensions
         services.TryAdd(ServiceDescriptor.Scoped<IDescriptorReadHandler, DescriptorReadHandler>());
         services.TryAdd(ServiceDescriptor.Scoped<IDescriptorWriteHandler, DescriptorWriteHandler>());
         services.TryAdd(
+            ServiceDescriptor.Scoped<IDocumentCacheReadAccelerationCoordinator>(static _ =>
+                PassthroughDocumentCacheReadAccelerationCoordinator.Instance
+            )
+        );
+        services.TryAdd(
             ServiceDescriptor.Scoped<
                 IRelationalWriteTargetLookupService,
                 RelationalWriteTargetLookupService
@@ -335,7 +340,7 @@ public static class ReferenceResolverServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.TryAdd(
+        services.Replace(
             ServiceDescriptor.Scoped<IDocumentCacheReadAccelerationCoordinator>(
                 static serviceProvider => new DocumentCacheReadAccelerationCoordinator(
                     serviceProvider.GetRequiredService<IOptions<DocumentCacheOptions>>(),

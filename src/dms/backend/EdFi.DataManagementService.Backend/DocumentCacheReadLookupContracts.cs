@@ -246,30 +246,6 @@ internal interface IDocumentCacheReadResponseShaper
     );
 }
 
-internal sealed class NoOpDocumentCacheReadResponseShaper : IDocumentCacheReadResponseShaper
-{
-    public static NoOpDocumentCacheReadResponseShaper Instance { get; } = new();
-
-    private NoOpDocumentCacheReadResponseShaper() { }
-
-    public DocumentCacheReadLookupResult<GetResult> ShapeGetById(
-        DocumentCacheReadAccelerationGetByIdRequest request,
-        DocumentCacheReadDocumentLookupResult.FreshHit hit
-    ) =>
-        DocumentCacheReadLookupResult<GetResult>.Fallback(
-            DocumentCacheReadAccelerationFallbackReason.CacheHitResponseShapingUnavailable
-        );
-
-    public DocumentCacheReadLookupResult<QueryResult> ShapeQuery(
-        DocumentCacheReadAccelerationQueryRequest request,
-        DocumentCacheReadAccelerationCandidatePage authorizedCandidatePage,
-        DocumentCacheReadBatchLookupResult hitPage
-    ) =>
-        DocumentCacheReadLookupResult<QueryResult>.Fallback(
-            DocumentCacheReadAccelerationFallbackReason.CacheHitResponseShapingUnavailable
-        );
-}
-
 internal abstract class DocumentCacheReadLookupAdapterBase : IDocumentCacheReadLookupAdapter
 {
     private readonly IServedEtagComposer _servedEtagComposer;
@@ -277,12 +253,12 @@ internal abstract class DocumentCacheReadLookupAdapterBase : IDocumentCacheReadL
 
     protected DocumentCacheReadLookupAdapterBase(
         IServedEtagComposer servedEtagComposer,
-        IDocumentCacheReadResponseShaper? responseShaper = null
+        IDocumentCacheReadResponseShaper responseShaper
     )
     {
         _servedEtagComposer =
             servedEtagComposer ?? throw new ArgumentNullException(nameof(servedEtagComposer));
-        _responseShaper = responseShaper ?? NoOpDocumentCacheReadResponseShaper.Instance;
+        _responseShaper = responseShaper ?? throw new ArgumentNullException(nameof(responseShaper));
     }
 
     protected abstract SqlDialect Dialect { get; }
@@ -550,8 +526,11 @@ internal static class DocumentCacheReadLookupOutcomeMapper
     ) =>
         outcome switch
         {
-            DocumentCacheReadLookupOutcome.FreshHit =>
-                DocumentCacheReadAccelerationFallbackReason.CacheHitResponseShapingUnavailable,
+            DocumentCacheReadLookupOutcome.FreshHit => throw new ArgumentOutOfRangeException(
+                nameof(outcome),
+                outcome,
+                "Fresh cache hits are not fallback outcomes."
+            ),
             DocumentCacheReadLookupOutcome.CacheUnavailable =>
                 DocumentCacheReadAccelerationFallbackReason.CacheLookupUnavailable,
             DocumentCacheReadLookupOutcome.DeterministicInvariantFailure =>

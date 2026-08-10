@@ -437,7 +437,11 @@ public class Given_DocumentCacheReadLookup
     [Test]
     public async Task It_returns_an_empty_batch_without_opening_the_cache_lookup()
     {
-        var adapter = new ObservationLookupAdapter(RelationalProviderToken.Postgresql, []);
+        var adapter = new ObservationLookupAdapter(
+            RelationalProviderToken.Postgresql,
+            [],
+            new RecordingResponseShaper()
+        );
 
         DocumentCacheReadBatchLookupResult result = await adapter.LookupBatchAsync(
             new DocumentCacheReadBatchLookupRequest(MappingSet, []),
@@ -570,7 +574,8 @@ public class Given_DocumentCacheReadLookup
         DocumentCacheReadAccelerationCandidate candidate = Candidate();
         var adapter = new ObservationLookupAdapter(
             RelationalProviderToken.Postgresql,
-            [Observation(candidate) with { SourceDocumentId = 999 }]
+            [Observation(candidate) with { SourceDocumentId = 999 }],
+            new RecordingResponseShaper()
         );
 
         DocumentCacheReadLookupResult<GetResult> result = await adapter.TryGetByIdAsync(
@@ -612,7 +617,8 @@ public class Given_DocumentCacheReadLookup
                 {
                     CacheContentVersion = second.ContentVersion + 1,
                 },
-            ]
+            ],
+            new RecordingResponseShaper()
         );
 
         DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
@@ -651,7 +657,8 @@ public class Given_DocumentCacheReadLookup
         );
         var adapter = new ObservationLookupAdapter(
             RelationalProviderToken.Postgresql,
-            [Mutate(Observation(first, ordinal: 0)), Mutate(Observation(second, ordinal: 1))]
+            [Mutate(Observation(first, ordinal: 0)), Mutate(Observation(second, ordinal: 1))],
+            new RecordingResponseShaper()
         );
 
         DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
@@ -703,7 +710,8 @@ public class Given_DocumentCacheReadLookup
                 {
                     CacheDocumentId = null,
                 },
-            ]
+            ],
+            new RecordingResponseShaper()
         );
 
         DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
@@ -738,7 +746,8 @@ public class Given_DocumentCacheReadLookup
                 {
                     LifecycleState = "Rebuilding",
                 },
-            ]
+            ],
+            new RecordingResponseShaper()
         );
 
         DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
@@ -767,7 +776,8 @@ public class Given_DocumentCacheReadLookup
         DocumentCacheReadAccelerationCandidate candidate = Candidate();
         var adapter = new ObservationLookupAdapter(
             RelationalProviderToken.Postgresql,
-            [mutate(Observation(candidate))]
+            [mutate(Observation(candidate))],
+            new RecordingResponseShaper()
         );
 
         DocumentCacheReadLookupResult<GetResult> result = await adapter.TryGetByIdAsync(
@@ -787,7 +797,8 @@ public class Given_DocumentCacheReadLookup
         DocumentCacheReadAccelerationCandidate candidate = Candidate();
         var adapter = new ObservationLookupAdapter(
             RelationalProviderToken.Postgresql,
-            [Observation(candidate) with { SourceDocumentId = null }]
+            [Observation(candidate) with { SourceDocumentId = null }],
+            new RecordingResponseShaper()
         );
 
         DocumentCacheReadLookupResult<GetResult> result = await adapter.TryGetByIdAsync(
@@ -852,7 +863,8 @@ public class Given_DocumentCacheReadLookup
             new PostgresqlRelationalWriteExceptionClassifier(),
             new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance,
-            new ServedEtagComposer()
+            new ServedEtagComposer(),
+            new RecordingResponseShaper()
         );
 
         DocumentCacheReadBatchLookupResult result = await adapter.LookupBatchAsync(
@@ -873,7 +885,8 @@ public class Given_DocumentCacheReadLookup
             new PostgresqlRelationalWriteExceptionClassifier(),
             new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance,
-            new ServedEtagComposer()
+            new ServedEtagComposer(),
+            new RecordingResponseShaper()
         );
 
         DocumentCacheReadBatchLookupResult result = await adapter.LookupBatchAsync(
@@ -894,7 +907,8 @@ public class Given_DocumentCacheReadLookup
             new PostgresqlRelationalWriteExceptionClassifier(),
             new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance,
-            new ServedEtagComposer()
+            new ServedEtagComposer(),
+            new RecordingResponseShaper()
         );
 
         DocumentCacheReadBatchLookupResult result = await adapter.LookupBatchAsync(
@@ -915,7 +929,8 @@ public class Given_DocumentCacheReadLookup
             new PostgresqlRelationalWriteExceptionClassifier(),
             new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance,
-            new ServedEtagComposer()
+            new ServedEtagComposer(),
+            new RecordingResponseShaper()
         );
 
         Func<Task> act = async () =>
@@ -934,7 +949,8 @@ public class Given_DocumentCacheReadLookup
             new MssqlRelationalWriteExceptionClassifier(),
             new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance,
-            new ServedEtagComposer()
+            new ServedEtagComposer(),
+            new RecordingResponseShaper()
         );
 
         DocumentCacheReadBatchLookupResult result = await adapter.LookupBatchAsync(
@@ -959,7 +975,8 @@ public class Given_DocumentCacheReadLookup
             new MssqlRelationalWriteExceptionClassifier(),
             new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance,
-            new ServedEtagComposer()
+            new ServedEtagComposer(),
+            new RecordingResponseShaper()
         );
 
         DocumentCacheReadBatchLookupResult result = await adapter.LookupBatchAsync(
@@ -983,7 +1000,8 @@ public class Given_DocumentCacheReadLookup
             new MssqlRelationalWriteExceptionClassifier(),
             new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance,
-            new ServedEtagComposer()
+            new ServedEtagComposer(),
+            new RecordingResponseShaper()
         );
 
         DocumentCacheReadBatchLookupResult result = await adapter.LookupBatchAsync(
@@ -1007,7 +1025,8 @@ public class Given_DocumentCacheReadLookup
             new MssqlRelationalWriteExceptionClassifier(),
             new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance,
-            new ServedEtagComposer()
+            new ServedEtagComposer(),
+            new RecordingResponseShaper()
         );
 
         Func<Task> act = async () =>
@@ -1445,7 +1464,7 @@ public class Given_DocumentCacheReadLookup
     private sealed class ObservationLookupAdapter(
         RelationalProviderToken providerToken,
         IReadOnlyList<DocumentCacheReadLookupObservation> observations,
-        IDocumentCacheReadResponseShaper? responseShaper = null
+        IDocumentCacheReadResponseShaper responseShaper
     ) : DocumentCacheReadLookupAdapterBase(new ServedEtagComposer(), responseShaper)
     {
         private readonly RelationalProviderToken _providerToken = providerToken;
@@ -1515,7 +1534,7 @@ public class Given_DocumentCacheReadLookup
         RelationalProviderToken providerToken,
         Exception exception,
         bool classifyAsCacheUnavailable = false
-    ) : DocumentCacheReadLookupAdapterBase(new ServedEtagComposer())
+    ) : DocumentCacheReadLookupAdapterBase(new ServedEtagComposer(), new RecordingResponseShaper())
     {
         private readonly RelationalProviderToken _providerToken = providerToken;
         private readonly Exception _exception = exception;

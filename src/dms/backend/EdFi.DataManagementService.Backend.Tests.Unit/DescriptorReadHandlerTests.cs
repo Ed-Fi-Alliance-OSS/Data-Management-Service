@@ -1977,8 +1977,18 @@ public class Given_DescriptorReadHandler
 
     private static DescriptorReadHandler CreateHandler(
         IRelationalCommandExecutor commandExecutor,
-        IReadableProfileProjector? readableProfileProjector = null,
-        IDocumentCacheReadAccelerationCoordinator? readAccelerationCoordinator = null
+        IReadableProfileProjector? readableProfileProjector = null
+    ) =>
+        CreateHandler(
+            commandExecutor,
+            PassthroughDocumentCacheReadAccelerationCoordinator.Instance,
+            readableProfileProjector
+        );
+
+    private static DescriptorReadHandler CreateHandler(
+        IRelationalCommandExecutor commandExecutor,
+        IDocumentCacheReadAccelerationCoordinator readAccelerationCoordinator,
+        IReadableProfileProjector? readableProfileProjector = null
     )
     {
         return new DescriptorReadHandler(
@@ -1986,7 +1996,7 @@ public class Given_DescriptorReadHandler
             readableProfileProjector ?? A.Fake<IReadableProfileProjector>(),
             _servedEtagComposer,
             NullLogger<DescriptorReadHandler>.Instance,
-            readAccelerationCoordinator: readAccelerationCoordinator
+            readAccelerationCoordinator
         );
     }
 

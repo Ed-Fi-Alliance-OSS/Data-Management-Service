@@ -25,7 +25,7 @@ internal sealed class MssqlDocumentCacheReadLookupAdapter : DocumentCacheReadLoo
         IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
         ILogger<MssqlDocumentCacheReadLookupAdapter> logger,
         IServedEtagComposer servedEtagComposer,
-        IDocumentCacheReadResponseShaper? responseShaper = null
+        IDocumentCacheReadResponseShaper responseShaper
     )
         : base(servedEtagComposer, responseShaper)
     {
@@ -44,7 +44,7 @@ internal sealed class MssqlDocumentCacheReadLookupAdapter : DocumentCacheReadLoo
         IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
         ILogger<MssqlDocumentCacheReadLookupAdapter> logger,
         IServedEtagComposer servedEtagComposer,
-        IDocumentCacheReadResponseShaper? responseShaper = null
+        IDocumentCacheReadResponseShaper responseShaper
     )
         : base(servedEtagComposer, responseShaper)
     {

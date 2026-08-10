@@ -89,6 +89,8 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<ISingleRecordRelationshipAuthorizationExecutor>();
         var relationshipAuthorizationProviderFailureExtractor =
             scope.ServiceProvider.GetRequiredService<IRelationshipAuthorizationProviderFailureExtractor>();
+        var documentCacheReadAccelerationCoordinator =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheReadAccelerationCoordinator>();
         var currentStateLoader =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteCurrentStateLoader>();
         var noProfileMergeSynthesizer =
@@ -139,7 +141,9 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
         documentCacheMaterializer.Should().BeOfType<DocumentCacheMaterializer>();
         documentCacheWriterRetryAdapter.Should().BeOfType<DocumentCacheWriterRetryAdapter>();
         scope.ServiceProvider.GetService<IDocumentCacheReadLookupAdapter>().Should().BeNull();
-        scope.ServiceProvider.GetService<IDocumentCacheReadAccelerationCoordinator>().Should().BeNull();
+        documentCacheReadAccelerationCoordinator
+            .Should()
+            .BeSameAs(PassthroughDocumentCacheReadAccelerationCoordinator.Instance);
         scope.ServiceProvider.GetService<IDocumentCacheWriter>().Should().BeNull();
         readTargetLookupService.Should().BeOfType<RelationalReadTargetLookupService>();
         singleRecordRelationshipAuthorizationExecutor

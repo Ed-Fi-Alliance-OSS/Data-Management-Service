@@ -13,6 +13,7 @@ using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using FluentAssertions.Execution;
@@ -75,7 +76,8 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
             new MssqlRelationalWriteExceptionClassifier(),
             new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance,
-            new ServedEtagComposer()
+            new ServedEtagComposer(),
+            new ThrowingResponseShaper()
         );
     }
 
@@ -906,4 +908,18 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
         Func<Given_A_Mssql_DocumentCacheReadLookupAdapter, SourceDocument, Task> ArrangeAsync,
         DocumentCacheReadLookupOutcome ExpectedOutcome
     );
+
+    private sealed class ThrowingResponseShaper : IDocumentCacheReadResponseShaper
+    {
+        public DocumentCacheReadLookupResult<GetResult> ShapeGetById(
+            DocumentCacheReadAccelerationGetByIdRequest request,
+            DocumentCacheReadDocumentLookupResult.FreshHit hit
+        ) => throw new InvalidOperationException("Response shaping is not used by lookup integration tests.");
+
+        public DocumentCacheReadLookupResult<QueryResult> ShapeQuery(
+            DocumentCacheReadAccelerationQueryRequest request,
+            DocumentCacheReadAccelerationCandidatePage authorizedCandidatePage,
+            DocumentCacheReadBatchLookupResult hitPage
+        ) => throw new InvalidOperationException("Response shaping is not used by lookup integration tests.");
+    }
 }

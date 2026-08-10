@@ -37,11 +37,11 @@ public sealed class RelationalDocumentStoreRepository(
     ISingleRecordRelationshipAuthorizationExecutor singleRecordRelationshipAuthorizationExecutor,
     INamespaceAuthorizationExecutor namespaceAuthorizationExecutor,
     IRelationalCommandExecutor commandExecutor,
+    IDocumentCacheReadAccelerationCoordinator readAccelerationCoordinator,
     IRelationalParameterConfigurator? relationalParameterConfigurator = null,
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
         null,
-    ChangeQueryPageOrderingPolicy? orderingPolicy = null,
-    IDocumentCacheReadAccelerationCoordinator? readAccelerationCoordinator = null
+    ChangeQueryPageOrderingPolicy? orderingPolicy = null
 ) : IDocumentStoreRepository, IQueryHandler
 {
     private const int GetByIdRelationshipAuthorizationAuth1Index = 0;
@@ -96,7 +96,7 @@ public sealed class RelationalDocumentStoreRepository(
     private readonly ChangeQueryPageOrderingPolicy _orderingPolicy =
         orderingPolicy ?? ChangeQueryPageOrderingPolicy.Default;
     private readonly IDocumentCacheReadAccelerationCoordinator _readAccelerationCoordinator =
-        readAccelerationCoordinator ?? PassthroughDocumentCacheReadAccelerationCoordinator.Instance;
+        readAccelerationCoordinator ?? throw new ArgumentNullException(nameof(readAccelerationCoordinator));
     private readonly RelationshipAuthorizationPlanner _relationshipAuthorizationPlanner = new(
         edOrgAuthorizationSubjectSelector
     );

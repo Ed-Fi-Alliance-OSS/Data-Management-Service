@@ -26,7 +26,7 @@ internal sealed class PostgresqlDocumentCacheReadLookupAdapter : DocumentCacheRe
         IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
         ILogger<PostgresqlDocumentCacheReadLookupAdapter> logger,
         IServedEtagComposer servedEtagComposer,
-        IDocumentCacheReadResponseShaper? responseShaper = null
+        IDocumentCacheReadResponseShaper responseShaper
     )
         : base(servedEtagComposer, responseShaper)
     {
@@ -45,7 +45,7 @@ internal sealed class PostgresqlDocumentCacheReadLookupAdapter : DocumentCacheRe
         IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
         ILogger<PostgresqlDocumentCacheReadLookupAdapter> logger,
         IServedEtagComposer servedEtagComposer,
-        IDocumentCacheReadResponseShaper? responseShaper = null
+        IDocumentCacheReadResponseShaper responseShaper
     )
         : base(servedEtagComposer, responseShaper)
     {

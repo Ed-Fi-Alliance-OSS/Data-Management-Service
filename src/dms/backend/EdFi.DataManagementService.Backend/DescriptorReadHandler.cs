@@ -31,8 +31,8 @@ internal sealed class DescriptorReadHandler(
     IReadableProfileProjector readableProfileProjector,
     IServedEtagComposer servedEtagComposer,
     ILogger<DescriptorReadHandler> logger,
-    ChangeQueryPageOrderingPolicy? orderingPolicy = null,
-    IDocumentCacheReadAccelerationCoordinator? readAccelerationCoordinator = null
+    IDocumentCacheReadAccelerationCoordinator readAccelerationCoordinator,
+    ChangeQueryPageOrderingPolicy? orderingPolicy = null
 ) : IDescriptorReadHandler
 {
     private const string DocumentUuidParameterName = "@documentUuid";
@@ -59,7 +59,7 @@ internal sealed class DescriptorReadHandler(
     private readonly ChangeQueryPageOrderingPolicy _orderingPolicy =
         orderingPolicy ?? ChangeQueryPageOrderingPolicy.Default;
     private readonly IDocumentCacheReadAccelerationCoordinator _readAccelerationCoordinator =
-        readAccelerationCoordinator ?? PassthroughDocumentCacheReadAccelerationCoordinator.Instance;
+        readAccelerationCoordinator ?? throw new ArgumentNullException(nameof(readAccelerationCoordinator));
 
     private abstract record DescriptorGetByIdReadResult<TRow>
         where TRow : class, IDescriptorReadCandidateMetadata
