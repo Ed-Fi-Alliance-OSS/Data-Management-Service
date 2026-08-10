@@ -35,6 +35,8 @@ public abstract class ApiIntegrationTestBase
     private ApiIntegrationQueryRecorder? _queryRecorder;
     private ApiIntegrationProviderFailureRecorder? _providerFailureRecorder;
     private DocumentCacheReadAcquisitionFailureRecorder? _documentCacheReadAcquisitionFailureRecorder;
+    private DocumentCacheDirectFillTimeoutRecorder? _documentCacheDirectFillTimeoutRecorder;
+    private DocumentCacheReadTelemetryRecorder? _documentCacheReadTelemetryRecorder;
 
     protected ApiIntegrationHarness Harness { get; private set; } = null!;
 
@@ -88,6 +90,15 @@ public abstract class ApiIntegrationTestBase
     /// <summary>Forces cache read lookup to report an expected adapter acquisition failure.</summary>
     protected virtual bool ForceDocumentCacheReadLookupAdapterAcquisitionFailure => false;
 
+    /// <summary>Forces direct-fill materialization to wait until the direct-fill timeout cancels it.</summary>
+    protected virtual bool ForceDocumentCacheDirectFillTimeout => false;
+
+    /// <summary>Records cache read telemetry without replacing production cache lookup or direct-fill services.</summary>
+    protected virtual bool RecordDocumentCacheReadTelemetry => false;
+
+    /// <summary>Direct-fill timeout used by cache-backed API integration scenarios.</summary>
+    protected virtual string DocumentCacheReadAccelerationDirectFillTimeout => "00:00:00.250";
+
     /// <summary>Controls the public ResourceLinks response flag for scenarios that exercise link stripping.</summary>
     protected virtual bool ResourceLinksEnabled => true;
 
@@ -120,6 +131,12 @@ public abstract class ApiIntegrationTestBase
         _documentCacheReadAcquisitionFailureRecorder = ForceDocumentCacheReadLookupAdapterAcquisitionFailure
             ? new DocumentCacheReadAcquisitionFailureRecorder()
             : null;
+        _documentCacheDirectFillTimeoutRecorder = ForceDocumentCacheDirectFillTimeout
+            ? new DocumentCacheDirectFillTimeoutRecorder()
+            : null;
+        _documentCacheReadTelemetryRecorder = RecordDocumentCacheReadTelemetry
+            ? new DocumentCacheReadTelemetryRecorder()
+            : null;
         var providerFailureTransform = ProviderFailureTransform;
         _providerFailureRecorder = providerFailureTransform is null
             ? null
@@ -130,6 +147,8 @@ public abstract class ApiIntegrationTestBase
         var startupStatusFilePath = _startupStatusFilePath;
         var queryRecorder = _queryRecorder;
         var documentCacheReadAcquisitionFailureRecorder = _documentCacheReadAcquisitionFailureRecorder;
+        var documentCacheDirectFillTimeoutRecorder = _documentCacheDirectFillTimeoutRecorder;
+        var documentCacheReadTelemetryRecorder = _documentCacheReadTelemetryRecorder;
         var providerFailureRecorder = _providerFailureRecorder;
         var clientNamespacePrefixes = ClientNamespacePrefixes;
 
@@ -166,7 +185,7 @@ public abstract class ApiIntegrationTestBase
                 );
                 builder.UseSetting(
                     "DataManagement:DocumentCache:ReadAcceleration:DirectFillTimeout",
-                    "00:00:00.250"
+                    DocumentCacheReadAccelerationDirectFillTimeout
                 );
                 builder.UseSetting("DataManagement:DocumentCache:Projector:PollInterval", "01:00:00");
             }
@@ -187,7 +206,9 @@ public abstract class ApiIntegrationTestBase
                     providerFailureTransform,
                     providerFailureRecorder,
                     EnableDocumentCacheReadAcceleration ? GetRelationalProviderToken() : null,
-                    documentCacheReadAcquisitionFailureRecorder
+                    documentCacheReadAcquisitionFailureRecorder,
+                    documentCacheDirectFillTimeoutRecorder,
+                    documentCacheReadTelemetryRecorder
                 );
 
                 if (queryRecorder is not null)
@@ -213,7 +234,9 @@ public abstract class ApiIntegrationTestBase
             _fixtureContext,
             _queryRecorder,
             _providerFailureRecorder,
-            _documentCacheReadAcquisitionFailureRecorder
+            _documentCacheReadAcquisitionFailureRecorder,
+            _documentCacheDirectFillTimeoutRecorder,
+            _documentCacheReadTelemetryRecorder
         );
     }
 
@@ -250,6 +273,8 @@ public abstract class ApiIntegrationTestBase
         _queryRecorder = null;
         _providerFailureRecorder = null;
         _documentCacheReadAcquisitionFailureRecorder = null;
+        _documentCacheDirectFillTimeoutRecorder = null;
+        _documentCacheReadTelemetryRecorder = null;
 
         if (_startupStatusFilePath is not null && File.Exists(_startupStatusFilePath))
         {

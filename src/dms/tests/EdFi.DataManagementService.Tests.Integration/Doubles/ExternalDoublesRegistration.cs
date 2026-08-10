@@ -52,9 +52,21 @@ internal static class ExternalDoublesRegistration
         >? providerFailureTransform = null,
         ApiIntegrationProviderFailureRecorder? providerFailureRecorder = null,
         RelationalProviderToken? relationalProviderToken = null,
-        DocumentCacheReadAcquisitionFailureRecorder? documentCacheReadAcquisitionFailureRecorder = null
+        DocumentCacheReadAcquisitionFailureRecorder? documentCacheReadAcquisitionFailureRecorder = null,
+        DocumentCacheDirectFillTimeoutRecorder? documentCacheDirectFillTimeoutRecorder = null,
+        DocumentCacheReadTelemetryRecorder? documentCacheReadTelemetryRecorder = null
     )
     {
+        if (
+            documentCacheReadAcquisitionFailureRecorder is not null
+            && documentCacheDirectFillTimeoutRecorder is not null
+        )
+        {
+            throw new InvalidOperationException(
+                "Cache read acquisition failure and direct-fill timeout doubles cannot be active together."
+            );
+        }
+
         services.RemoveAll<IJwtValidationService>();
         services.RemoveAll<IConfigurationManager<OpenIdConnectConfiguration>>();
         services.RemoveAll<IClaimSetProvider>();
@@ -119,6 +131,23 @@ internal static class ExternalDoublesRegistration
                 AcquisitionFailureDocumentCacheReadLookupAdapter
             >();
             services.AddSingleton<IDocumentCacheReadTelemetry, RecordingDocumentCacheReadTelemetry>();
+        }
+        if (documentCacheDirectFillTimeoutRecorder is not null)
+        {
+            services.RemoveAll<IDocumentCacheMaterializer>();
+            services.RemoveAll<IDocumentCacheReadTelemetry>();
+            services.AddSingleton(documentCacheDirectFillTimeoutRecorder);
+            services.AddScoped<IDocumentCacheMaterializer, TimingOutDocumentCacheMaterializer>();
+            services.AddSingleton<
+                IDocumentCacheReadTelemetry,
+                DirectFillTimeoutRecordingDocumentCacheReadTelemetry
+            >();
+        }
+        if (documentCacheReadTelemetryRecorder is not null)
+        {
+            services.RemoveAll<IDocumentCacheReadTelemetry>();
+            services.AddSingleton(documentCacheReadTelemetryRecorder);
+            services.AddSingleton<IDocumentCacheReadTelemetry, TelemetryOnlyDocumentCacheReadTelemetry>();
         }
         services.AddSingleton<IProfileCmsProvider>(FakeProfileCmsProvider.FromFixture(fixture));
         services.AddSingleton<IStartupProcessExit, NonExitingStartupProcessExit>();

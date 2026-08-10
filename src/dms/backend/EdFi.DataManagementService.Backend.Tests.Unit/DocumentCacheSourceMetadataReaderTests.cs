@@ -77,6 +77,78 @@ public class Given_DocumentCacheSourceMetadataReader
     }
 
     [Test]
+    public async Task It_accepts_read_plan_table_models_that_omit_hydration_excluded_mirror_columns()
+    {
+        MappingSet mappingSet = CreateMappingSet();
+        ConcreteResourceModel concreteResourceModel = mappingSet.GetConcreteResourceModelOrThrow(
+            SchoolResource
+        );
+        RelationalResourceModel fullModel = concreteResourceModel.RelationalModel;
+        DbTableModel fullRoot = fullModel.Root with
+        {
+            Columns =
+            [
+                .. fullModel.Root.Columns,
+                CreateMirrorColumn("ContentVersion", ColumnKind.MirroredContentVersion),
+                CreateMirrorColumn("ContentLastModifiedAt", ColumnKind.MirroredContentLastModifiedAt),
+            ],
+        };
+        fullModel = fullModel with { Root = fullRoot, TablesInDependencyOrder = [fullRoot] };
+        DbTableModel hydrationRoot = fullRoot with
+        {
+            Columns =
+            [
+                .. fullRoot.Columns.Where(column =>
+                    column.Kind
+                        is not (ColumnKind.MirroredContentVersion or ColumnKind.MirroredContentLastModifiedAt)
+                ),
+            ],
+        };
+        ResourceReadPlan readPlan = new(
+            fullModel,
+            KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
+            [new TableReadPlan(hydrationRoot, "select DocumentId")],
+            [],
+            []
+        );
+        ConcreteResourceModel updatedConcreteResourceModel = concreteResourceModel with
+        {
+            RelationalModel = fullModel,
+        };
+        mappingSet = mappingSet with
+        {
+            Model = mappingSet.Model with
+            {
+                ConcreteResourcesInNameOrder =
+                [
+                    .. mappingSet.Model.ConcreteResourcesInNameOrder.Select(resourceModel =>
+                        resourceModel.ResourceKey.Resource == SchoolResource
+                            ? updatedConcreteResourceModel
+                            : resourceModel
+                    ),
+                ],
+            },
+            ReadPlansByResource = new Dictionary<QualifiedResourceName, ResourceReadPlan>
+            {
+                [SchoolResource] = readPlan,
+            },
+        };
+        var dataStore = new InMemoryDocumentCacheMaterializationDataStore([
+            new InMemoryRelationalCommandExecution([CreateSourceRow(resourceKeyId: 11)]),
+        ]);
+        var sut = new DocumentCacheSourceMetadataReader(dataStore);
+
+        var result = await sut.ReadAsync(CreateRequest(mappingSet));
+
+        var found = result.Should().BeOfType<DocumentCacheSourceMetadataReadResult.Found>().Subject;
+        var metadata = found
+            .Metadata.Should()
+            .BeOfType<DocumentCacheResolvedSourceMetadata.OrdinaryResource>()
+            .Subject;
+        metadata.ReadPlan.Should().BeSameAs(readPlan);
+    }
+
+    [Test]
     public async Task It_reads_current_source_metadata_without_resolving_the_resource_key_against_the_mapping_set()
     {
         var dataStore = new InMemoryDocumentCacheMaterializationDataStore([
@@ -426,6 +498,21 @@ public class Given_DocumentCacheSourceMetadataReader
             []
         );
     }
+
+    private static DbColumnModel CreateMirrorColumn(string name, ColumnKind kind) =>
+        new(
+            new DbColumnName(name),
+            kind,
+            new RelationalScalarType(
+                kind == ColumnKind.MirroredContentVersion ? ScalarKind.Int64 : ScalarKind.DateTime
+            ),
+            false,
+            null,
+            null
+        )
+        {
+            IsWritable = false,
+        };
 
     private static InMemoryRelationalResultSet CreateSourceRow(short resourceKeyId) =>
         InMemoryRelationalResultSet.Create(

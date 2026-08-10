@@ -262,6 +262,7 @@ internal static class DocumentCacheWriterCacheAheadIncidentFlow
         DocumentCacheWriterClassificationSelection selection =
             DocumentCacheWriterClassificationSelector.Select(
                 new DocumentCacheWriterClassificationRequest(
+                    DocumentCacheWriterPurpose.DurableWorkProjection,
                     lifecycleReadResult,
                     currentState,
                     candidateObservation

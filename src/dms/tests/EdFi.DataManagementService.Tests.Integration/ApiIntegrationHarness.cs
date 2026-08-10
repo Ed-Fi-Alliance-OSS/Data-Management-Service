@@ -24,7 +24,9 @@ public sealed class ApiIntegrationHarness : IAsyncDisposable
         FixtureContext fixture,
         ApiIntegrationQueryRecorder? queryRecorder = null,
         ApiIntegrationProviderFailureRecorder? providerFailureRecorder = null,
-        DocumentCacheReadAcquisitionFailureRecorder? documentCacheReadAcquisitionFailureRecorder = null
+        DocumentCacheReadAcquisitionFailureRecorder? documentCacheReadAcquisitionFailureRecorder = null,
+        DocumentCacheDirectFillTimeoutRecorder? documentCacheDirectFillTimeoutRecorder = null,
+        DocumentCacheReadTelemetryRecorder? documentCacheReadTelemetryRecorder = null
     )
     {
         HttpClient = httpClient;
@@ -33,6 +35,8 @@ public sealed class ApiIntegrationHarness : IAsyncDisposable
         QueryRecorder = queryRecorder;
         ProviderFailureRecorder = providerFailureRecorder;
         DocumentCacheReadAcquisitionFailureRecorder = documentCacheReadAcquisitionFailureRecorder;
+        DocumentCacheDirectFillTimeoutRecorder = documentCacheDirectFillTimeoutRecorder;
+        DocumentCacheReadTelemetryRecorder = documentCacheReadTelemetryRecorder;
 
         HttpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
             "Bearer",
@@ -52,6 +56,10 @@ public sealed class ApiIntegrationHarness : IAsyncDisposable
     public ApiIntegrationProviderFailureRecorder? ProviderFailureRecorder { get; }
 
     public DocumentCacheReadAcquisitionFailureRecorder? DocumentCacheReadAcquisitionFailureRecorder { get; }
+
+    public DocumentCacheDirectFillTimeoutRecorder? DocumentCacheDirectFillTimeoutRecorder { get; }
+
+    public DocumentCacheReadTelemetryRecorder? DocumentCacheReadTelemetryRecorder { get; }
 
     public async ValueTask DisposeAsync()
     {

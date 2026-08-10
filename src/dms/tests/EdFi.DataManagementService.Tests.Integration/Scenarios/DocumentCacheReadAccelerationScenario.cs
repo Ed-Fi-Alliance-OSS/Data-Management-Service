@@ -139,6 +139,22 @@ internal static class DocumentCacheReadAccelerationScenario
             .GetValue<string>()
             .Should()
             .Be("Relational Missing", "a missing cache row must use relational fallback");
+        AssertReadTelemetryContains(
+            harness,
+            "RecordDirectFill",
+            "Succeeded",
+            "a missing cache row should be direct-filled after successful relational fallback"
+        );
+        DocumentCacheRow directFilledRow = await ReadCacheRowAsync(
+            harness,
+            missingStudentMetadata.DocumentId
+        );
+        AssertDirectFilledStudentCacheRow(
+            directFilledRow,
+            missingStudentMetadata,
+            "cache-missing-001",
+            "Relational Missing"
+        );
 
         CreatedDocument student = await CreateStudentAsync(
             harness,
@@ -157,6 +173,45 @@ internal static class DocumentCacheReadAccelerationScenario
             .GetValue<string>()
             .Should()
             .Be("Relational Fallback", "a stale cache row must not replace relational fallback");
+    }
+
+    public static async Task It_times_out_direct_fill_without_replacing_relational_response(
+        ApiIntegrationHarness harness
+    )
+    {
+        await SetTrackingLifecycleAsync(harness);
+        DocumentCacheDirectFillTimeoutRecorder recorder =
+            harness.DocumentCacheDirectFillTimeoutRecorder
+            ?? throw new InvalidOperationException(
+                "The direct-fill timeout scenario requires the direct-fill timeout recorder."
+            );
+
+        string locationPath = await PostStudentAsync(harness, "cache-timeout-001", "Relational Timeout");
+        var documentUuid = Guid.Parse(locationPath.Split('/')[^1]);
+        DocumentMetadata metadata = await ReadDocumentMetadataAsync(harness, documentUuid);
+        await DeleteCacheRowsAsync(harness, metadata.DocumentId);
+        (await CountCacheRowsAsync(harness, metadata.DocumentId))
+            .Should()
+            .Be(0, "the timeout scenario must begin with a true cache miss");
+
+        JsonObject fallback = await GetJsonObjectAsync(harness, locationPath);
+
+        fallback["studentUniqueId"]!.GetValue<string>().Should().Be("cache-timeout-001");
+        fallback["firstName"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Relational Timeout", "direct-fill timeout must not replace relational fallback");
+        (await CountCacheRowsAsync(harness, metadata.DocumentId))
+            .Should()
+            .Be(0, "a timed-out direct fill must not write a partial cache row");
+
+        recorder.MaterializationAttempts.Should().Be(1);
+        recorder.MaterializationCancellations.Should().Be(1);
+        recorder.CountTelemetryRecords("RecordDirectFill", "Attempted").Should().Be(1);
+        recorder.CountTelemetryRecords("RecordDirectFill", "TimedOut").Should().Be(1);
+        recorder.CountTelemetryRecords("RecordDirectFillDuration", "TimedOut").Should().Be(1);
+        recorder.CountTelemetryRecords("RecordDirectFill", "Succeeded").Should().Be(0);
+        recorder.CountTelemetryRecords("RecordDirectFill", "Failed").Should().Be(0);
     }
 
     public static async Task It_falls_back_relationally_when_cache_adapter_acquisition_fails(
@@ -881,6 +936,62 @@ internal static class DocumentCacheReadAccelerationScenario
         return Convert.ToInt32(result, CultureInfo.InvariantCulture);
     }
 
+    private static async Task<DocumentCacheRow> ReadCacheRowAsync(
+        ApiIntegrationHarness harness,
+        long documentId
+    )
+    {
+        await using DbCommand command = harness.DbConnection.CreateCommand();
+        command.CommandText = """
+            SELECT "DocumentId",
+                   "ContentVersion",
+                   "StreamEtag",
+                   "LastModifiedAt",
+                   "DocumentJson"
+            FROM "dms"."DocumentCache"
+            WHERE "DocumentId" = @documentId;
+            """;
+        command.Parameters.Add(CreateParameter(command, "@documentId", documentId));
+
+        await using DbDataReader reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue("direct fill should write one cache row");
+
+        string documentJson =
+            Convert.ToString(reader.GetValue(4), CultureInfo.InvariantCulture)
+            ?? throw new InvalidOperationException("DocumentCache.DocumentJson was null.");
+        var row = new DocumentCacheRow(
+            Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture),
+            Convert.ToInt64(reader.GetValue(1), CultureInfo.InvariantCulture),
+            reader.GetString(2),
+            ToUtcDateTimeOffset(reader.GetValue(3)),
+            JsonNode.Parse(documentJson)!.AsObject()
+        );
+
+        (await reader.ReadAsync()).Should().BeFalse("DocumentCache.DocumentId is unique");
+        return row;
+    }
+
+    private static void AssertDirectFilledStudentCacheRow(
+        DocumentCacheRow row,
+        DocumentMetadata metadata,
+        string studentUniqueId,
+        string firstName
+    )
+    {
+        row.DocumentId.Should().Be(metadata.DocumentId);
+        row.ContentVersion.Should().Be(metadata.ContentVersion);
+        row.StreamEtag.Should().Be(ComposeStreamEtag(metadata, metadata.ContentVersion));
+        row.LastModifiedAt.Should().BeCloseTo(metadata.ContentLastModifiedAt, TimeSpan.FromTicks(10));
+        row.DocumentJson["id"]!.GetValue<string>().Should().Be(metadata.DocumentUuid.ToString());
+        row.DocumentJson["studentUniqueId"]!.GetValue<string>().Should().Be(studentUniqueId);
+        row.DocumentJson["firstName"]!.GetValue<string>().Should().Be(firstName);
+        row.DocumentJson["_lastModifiedDate"]!
+            .GetValue<string>()
+            .Should()
+            .Be(FormatLastModifiedDate(metadata.ContentLastModifiedAt));
+        row.DocumentJson.ContainsKey("_etag").Should().BeFalse("cache JSON stores fixed stream content");
+    }
+
     private static DbParameter CreateParameter(DbCommand command, string name, object? value)
     {
         DbParameter parameter = command.CreateParameter();
@@ -955,6 +1066,28 @@ internal static class DocumentCacheReadAccelerationScenario
         body.Should().NotContain("DocumentCache").And.NotContain("ReadAcceleration");
     }
 
+    private static void AssertReadTelemetryContains(
+        ApiIntegrationHarness harness,
+        string eventName,
+        string outcome,
+        string because
+    )
+    {
+        DocumentCacheReadTelemetryRecorder? recorder = harness.DocumentCacheReadTelemetryRecorder;
+        if (recorder is null)
+        {
+            return;
+        }
+
+        string[] records = recorder
+            .TelemetryRecords.Select(record => $"{record.EventName}:{record.Operation}:{record.Outcome}")
+            .ToArray();
+        recorder
+            .CountTelemetryRecords(eventName, outcome)
+            .Should()
+            .BeGreaterThan(0, $"{because}. Recorded telemetry: {string.Join(", ", records)}");
+    }
+
     private sealed record CreatedDocument(string LocationPath, Guid DocumentUuid, JsonObject Body);
 
     private sealed record DocumentMetadata(
@@ -967,5 +1100,13 @@ internal static class DocumentCacheReadAccelerationScenario
         string ProjectName,
         string ResourceName,
         string ResourceVersion
+    );
+
+    private sealed record DocumentCacheRow(
+        long DocumentId,
+        long ContentVersion,
+        string StreamEtag,
+        DateTimeOffset LastModifiedAt,
+        JsonObject DocumentJson
     );
 }

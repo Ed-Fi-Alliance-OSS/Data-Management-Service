@@ -87,6 +87,29 @@ public class Given_DocumentCacheWriterClassification
     }
 
     [Test]
+    public void It_allows_direct_fill_candidate_write_when_cache_is_missing_and_work_is_absent()
+    {
+        DocumentCacheMaterializationCandidate candidate = CreateCandidate(contentVersion: 11);
+
+        DocumentCacheWriterClassificationSelection selection = Select(
+            sourceContentVersion: 11,
+            cacheContentVersion: null,
+            workRequiredContentVersion: null,
+            purpose: DocumentCacheWriterPurpose.DirectFill,
+            candidateObservation: CandidateMatches(candidate)
+        );
+
+        selection.Action.Should().Be(DocumentCacheWriterSelectedAction.WriteDirectFillCandidateWithoutWork);
+        selection.Outcome.Should().Be(DocumentCacheWriterOutcome.CandidateWrittenAcknowledged);
+        selection.WritesCache.Should().BeTrue();
+        selection.AcknowledgesWork.Should().BeFalse();
+        selection.RequestsCacheAheadLatchFlow.Should().BeFalse();
+        selection.ExpectedContentVersion.Should().Be(11);
+        selection.Candidate.Should().BeSameAs(candidate);
+        selection.TerminalResult.Should().BeNull();
+    }
+
+    [Test]
     public void It_requests_cache_ahead_latch_flow_only_for_current_cache_ahead_relationship()
     {
         DocumentCacheWriterClassificationSelection cacheAhead = Select(
@@ -457,6 +480,7 @@ public class Given_DocumentCacheWriterClassification
         DocumentCacheWriterClassificationSelection missingState =
             DocumentCacheWriterClassificationSelector.Select(
                 new DocumentCacheWriterClassificationRequest(
+                    DocumentCacheWriterPurpose.DurableWorkProjection,
                     DocumentCacheLifecycleReadResult.Failure(
                         DocumentCacheLifecycleReadStatus.Missing,
                         "missing"
@@ -537,12 +561,14 @@ public class Given_DocumentCacheWriterClassification
         long? sourceContentVersion,
         long? cacheContentVersion,
         long? workRequiredContentVersion,
+        DocumentCacheWriterPurpose purpose = DocumentCacheWriterPurpose.DurableWorkProjection,
         DocumentCacheLifecycleState lifecycleState = DocumentCacheLifecycleState.Tracking,
         bool cacheAheadRecoveryRequired = false,
         DocumentCacheWriterCandidateObservation? candidateObservation = null
     ) =>
         DocumentCacheWriterClassificationSelector.Select(
             new DocumentCacheWriterClassificationRequest(
+                purpose,
                 Lifecycle(lifecycleState, cacheAheadRecoveryRequired),
                 new DocumentCacheWriterCurrentStateObservation(
                     sourceContentVersion,

@@ -125,6 +125,7 @@ internal static class DocumentCacheWriterSupport
         DocumentCacheWriterClassificationSelection selection =
             DocumentCacheWriterClassificationSelector.Select(
                 new DocumentCacheWriterClassificationRequest(
+                    DocumentCacheWriterPurpose.DurableWorkProjection,
                     lifecycleReadResult,
                     new DocumentCacheWriterCurrentStateObservation(
                         sourceContentVersion: null,

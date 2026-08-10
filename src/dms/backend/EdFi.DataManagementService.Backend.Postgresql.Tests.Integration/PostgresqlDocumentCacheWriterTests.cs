@@ -338,6 +338,35 @@ public class Given_A_Postgresql_DocumentCacheWriter
     }
 
     [Test]
+    public async Task It_allows_direct_fill_to_write_candidate_without_durable_work()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        await DeleteWorkAsync(source.DocumentId);
+        DocumentCacheMaterializationCandidate candidate = CreateCandidate(source, "direct-fill-no-work");
+
+        DocumentCacheWriterResult result = await WriteAsync(
+            source,
+            candidate,
+            DocumentCacheWriterPurpose.DirectFill
+        );
+
+        result
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.CandidateWrittenAcknowledged>()
+            .Which.AcknowledgedContentVersion.Should()
+            .Be(10);
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(0);
+        CacheRow cacheRow = await ReadCacheRowAsync(source.DocumentId);
+        cacheRow.ContentVersion.Should().Be(10);
+        cacheRow.StreamEtag.Should().Be("etag-10");
+        JsonNode.Parse(cacheRow.DocumentJson)!["value"]!
+            .GetValue<string>()
+            .Should()
+            .Be("direct-fill-no-work");
+    }
+
+    [Test]
     public async Task It_reports_needs_materialization_without_candidate_for_current_pending_work()
     {
         await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);

@@ -17,6 +17,10 @@ public sealed class Given_Postgresql_DocumentCacheReadAcceleration : PostgresqlA
 
     protected override bool EnableDocumentCacheReadAcceleration => true;
 
+    protected override bool RecordDocumentCacheReadTelemetry => true;
+
+    protected override string DocumentCacheReadAccelerationDirectFillTimeout => "00:00:05";
+
     [Test]
     public Task It_serves_cached_get_and_query_for_ordinary_resources() =>
         DocumentCacheReadAccelerationScenario.It_serves_cached_get_and_query_for_ordinary_resources(Harness);
@@ -79,6 +83,25 @@ public sealed class Given_Postgresql_DocumentCacheReadAcceleration_With_Unavaila
     [Test]
     public Task It_falls_back_relationally_when_cache_adapter_acquisition_fails() =>
         DocumentCacheReadAccelerationScenario.It_falls_back_relationally_when_cache_adapter_acquisition_fails(
+            Harness
+        );
+}
+
+[Category("DocumentCacheReadAcceleration")]
+public sealed class Given_Postgresql_DocumentCacheReadAcceleration_With_DirectFillTimeout
+    : PostgresqlApiIntegrationTestBase
+{
+    protected override FixtureKey Fixture => FixtureKey.ProfileRootOnlyMerge;
+
+    protected override bool EnableDocumentCacheReadAcceleration => true;
+
+    protected override bool ForceDocumentCacheDirectFillTimeout => true;
+
+    protected override string DocumentCacheReadAccelerationDirectFillTimeout => "00:00:00.010";
+
+    [Test]
+    public Task It_times_out_direct_fill_without_replacing_relational_response() =>
+        DocumentCacheReadAccelerationScenario.It_times_out_direct_fill_without_replacing_relational_response(
             Harness
         );
 }
