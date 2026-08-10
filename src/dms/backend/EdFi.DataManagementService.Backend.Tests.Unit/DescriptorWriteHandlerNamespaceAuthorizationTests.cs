@@ -917,6 +917,100 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
     }
 
     [Test]
+    public async Task It_fails_closed_for_a_descriptor_write_custom_view_needing_a_proposed_reference_value_before_a_namespace_terminal()
+    {
+        // The view is configured before the namespace terminal, so it executes first. Planning it through the
+        // page planner accepted a basis this path cannot execute and reported the namespace 403 instead; the
+        // terminal has to plan with the same descriptor-write rules the Plan outcome uses.
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(sessionFactory);
+
+        var result = await sut.HandlePostAsync(
+            CreatePostRequest(
+                namespacePrefixes: [],
+                authorizationStrategies: [CustomViewStrategy("StudentWithATag"), NamespaceStrategy()],
+                mappingSet: CreateMappingSetWithStudentReference(SqlDialect.Pgsql)
+            )
+        );
+
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>()
+            .Which.Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(
+                CustomViewAuthorizationSecurityConfigurationMessages.UnsupportedProposedBasisForDescriptorWrite(
+                    "StudentWithATag"
+                )
+            );
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_validates_an_earlier_descriptor_write_custom_view_before_an_unknown_strategy_terminal()
+    {
+        // The later basis does not resolve, so the strategy-level planner reports it and the write stops at
+        // that terminal. The earlier self-basis view is configured before it and executes first, so the
+        // terminal has to carry and validate it. Reached through WriteTerminal, which is why this fails if
+        // that terminal plans with the page planner instead of the descriptor-write single-record path.
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var validationExecutor = new RecordingCustomViewValidationExecutor();
+        var sut = CreateSut(sessionFactory, customViewValidationCommandExecutor: validationExecutor);
+
+        var result = await sut.HandlePostAsync(
+            CreatePostRequest(
+                namespacePrefixes: ["uri://ed-fi.org/"],
+                authorizationStrategies: [DeleteCustomViewStrategy(), CustomViewStrategy("MeetingWithATag")]
+            )
+        );
+
+        result.Should().BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>();
+        validationExecutor
+            .Commands.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain(DeleteCustomViewStrategyName);
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_validates_an_earlier_descriptor_write_custom_view_before_an_unsupported_proposed_basis()
+    {
+        // Same ordering rule for the fail-closed proposed-basis rejection: the view configured before it
+        // planned successfully and executes first, so it is validated before that failure is reported.
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var validationExecutor = new RecordingCustomViewValidationExecutor();
+        var sut = CreateSut(sessionFactory, customViewValidationCommandExecutor: validationExecutor);
+
+        var result = await sut.HandlePostAsync(
+            CreatePostRequest(
+                namespacePrefixes: ["uri://ed-fi.org/"],
+                authorizationStrategies: [DeleteCustomViewStrategy(), CustomViewStrategy("StudentWithATag")],
+                mappingSet: CreateMappingSetWithStudentReference(SqlDialect.Pgsql)
+            )
+        );
+
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>()
+            .Which.Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(
+                CustomViewAuthorizationSecurityConfigurationMessages.UnsupportedProposedBasisForDescriptorWrite(
+                    "StudentWithATag"
+                )
+            );
+        validationExecutor
+            .Commands.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain(DeleteCustomViewStrategyName);
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
+    [Test]
     public async Task It_fails_closed_for_a_descriptor_write_custom_view_needing_a_proposed_reference_value()
     {
         // A basis reached through a document reference needs a proposed basis value bound from the finalized

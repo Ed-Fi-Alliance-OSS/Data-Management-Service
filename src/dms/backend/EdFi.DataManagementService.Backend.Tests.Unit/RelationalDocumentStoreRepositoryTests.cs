@@ -8693,6 +8693,45 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_defers_a_put_no_claims_denial_into_the_proposed_slot_when_a_custom_view_is_pending()
+    {
+        // A custom view AND-composes before the relationship OR group, and its proposed checks run in the
+        // second command. Keeping NoClaims in the stored slot ends the write at the first phase, so those
+        // proposed checks never execute; the denial has to wait in the proposed slot instead.
+        var documentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-1111-2222-3333-aaaaaaaaaa09"));
+        GivenWriteExecutorCaptures(
+            new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateSuccess(documentUuid, ComposedWriteResultEtag)
+            )
+        );
+        var updateRequest = A.Fake<IUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet)
+            .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody("Put no claims with custom view"));
+        A.CallTo(() => updateRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+            ]);
+        A.CallTo(() => updateRequest.AuthorizationContext).Returns(new RelationalAuthorizationContext([]));
+
+        await _sut.UpdateDocumentById(updateRequest);
+
+        _capturedExecutorRequest.StoredRelationshipAuthorization.Should().BeNull();
+        _capturedExecutorRequest
+            .ProposedRelationshipAuthorization.Should()
+            .BeOfType<RelationshipAuthorizationResult.NoClaims>();
+        var customViewAuthorization = _capturedExecutorRequest.CustomViewAuthorization;
+        customViewAuthorization.Should().NotBeNull();
+        customViewAuthorization!.ProposedChecks.Should().NotBeEmpty();
+    }
+
+    [Test]
     public async Task It_validates_a_post_custom_view_when_an_unknown_strategy_stops_before_planning()
     {
         // An unknown strategy makes the strategy-level outcome SecurityConfigurationError, the sibling entry

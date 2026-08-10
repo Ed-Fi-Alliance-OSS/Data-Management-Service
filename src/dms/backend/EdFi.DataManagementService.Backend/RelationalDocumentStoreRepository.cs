@@ -2950,15 +2950,17 @@ public sealed class RelationalDocumentStoreRepository(
                     customViewAuthorization: customViewAuthorization
                 ),
 
-            // NamespaceBased AND-composes before the relationship OR group (auth.md,
-            // 08-namespace-auth-strategy.md). When a namespace check is planned, defer the stored
-            // relationship NoClaims denial into the proposed-relationship slot so the stored-then-proposed
-            // namespace checks get to deny first; the write path's second command emits the
-            // NoClaims denial only after the proposed namespace check authorizes. With no namespace check
-            // planned, keep NoClaims in the stored slot so the stored boundary emits it after the target
-            // lock, preserving the existing 404-over-403 ordering for a missing PUT target.
+            // NamespaceBased and custom view-based both AND-compose before the relationship OR group
+            // (auth.md, 08-namespace-auth-strategy.md). When either is planned, defer the stored relationship
+            // NoClaims denial into the proposed-relationship slot so those filters get to deny first; the
+            // write path's second command emits the NoClaims denial only after they authorize. Leaving it in
+            // the stored slot with custom views pending ends the write at the first phase, before the proposed
+            // custom-view checks run at all. With no AND filter planned, keep NoClaims in the stored slot so
+            // the stored boundary emits it after the target lock, preserving the existing 404-over-403
+            // ordering for a missing PUT target.
             RelationshipAuthorizationResult.NoClaims noClaims => storedNamespaceAuthorization is null
             && proposedNamespaceAuthorization is null
+            && customViewAuthorization is null
                 ? new WriteGuardRailPreflightResult<UpdateResult>.Continue(
                     noClaims,
                     null,
