@@ -230,6 +230,112 @@ public class Given_DocumentCacheProjectionObservationProvider
     }
 
     [Test]
+    public void It_buffers_target_diagnostic_until_first_target_observation()
+    {
+        RecordingProjectionTelemetry telemetry = new();
+        DocumentCacheProjectionObservationStore store = new(new FixedTimeProvider(ObservedAt), telemetry);
+        DocumentCacheProjectionTargetContextKey contextKey = ContextKey(generation: 1);
+
+        store.AppendTargetDiagnostic(
+            contextKey,
+            TargetDiagnostic("read-path invariant before supervisor observation"),
+            ObservedAt.AddSeconds(1)
+        );
+        store.CurrentSnapshot.CurrentTargetHealth.Should().BeEmpty();
+
+        store.ObserveTarget(
+            TargetHealth(generation: 1, failureDocumentIds: [401], observedAt: ObservedAt.AddSeconds(2))
+        );
+
+        DocumentCacheProjectionTargetHealthSnapshot current = store.CurrentSnapshot.GetCurrentTarget(
+            TargetKey
+        )!;
+        current
+            .TargetDiagnostics.Should()
+            .ContainSingle()
+            .Which.Message.Should()
+            .Be("read-path invariant before supervisor observation");
+        current.FailureDiagnostics.DocumentIds.Should().Equal(401);
+
+        DocumentCacheProjectionTargetHealthSnapshot recorded = telemetry
+            .TargetObservations.Should()
+            .ContainSingle()
+            .Subject;
+        recorded
+            .TargetDiagnostics.Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeSameAs(current.TargetDiagnostics[0]);
+    }
+
+    [Test]
+    public void It_caps_pending_target_diagnostics_when_first_target_observation_arrives()
+    {
+        const int effectiveProjectorPageSize = 2;
+        DocumentCacheProjectionObservationStore store = new(new FixedTimeProvider(ObservedAt));
+        DocumentCacheProjectionTargetContextKey contextKey = ContextKey(generation: 1);
+
+        store.AppendTargetDiagnostic(contextKey, TargetDiagnostic("first"), ObservedAt.AddSeconds(1));
+        store.AppendTargetDiagnostic(contextKey, TargetDiagnostic("second"), ObservedAt.AddSeconds(2));
+        store.AppendTargetDiagnostic(contextKey, TargetDiagnostic("third"), ObservedAt.AddSeconds(3));
+        store.ObserveTarget(
+            TargetHealth(generation: 1, effectiveProjectorPageSize, observedAt: ObservedAt.AddSeconds(4))
+        );
+
+        DocumentCacheProjectionTargetHealthSnapshot current = store.CurrentSnapshot.GetCurrentTarget(
+            TargetKey
+        )!;
+        current.TargetDiagnostics.Select(diagnostic => diagnostic.Message).Should().Equal("second", "third");
+    }
+
+    [Test]
+    public void It_does_not_merge_pending_target_diagnostics_from_an_older_generation()
+    {
+        DocumentCacheProjectionObservationStore store = new(new FixedTimeProvider(ObservedAt));
+
+        store.AppendTargetDiagnostic(
+            ContextKey(generation: 1),
+            TargetDiagnostic("stale read-path invariant"),
+            ObservedAt.AddSeconds(1)
+        );
+        store.ObserveTarget(TargetHealth(generation: 2, observedAt: ObservedAt.AddSeconds(2)));
+
+        DocumentCacheProjectionTargetHealthSnapshot current = store.CurrentSnapshot.GetCurrentTarget(
+            TargetKey
+        )!;
+        current.Generation.Value.Should().Be(2);
+        current.TargetDiagnostics.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_keeps_pending_target_diagnostics_for_new_generation_when_noncurrent_generation_observes()
+    {
+        DocumentCacheProjectionObservationStore store = new(new FixedTimeProvider(ObservedAt));
+        DocumentCacheProjectionTargetContextKey oldContextKey = ContextKey(generation: 1);
+        DocumentCacheProjectionTargetContextKey newContextKey = ContextKey(generation: 2);
+
+        store.ObserveTarget(TargetHealth(generation: 1, observedAt: ObservedAt));
+        store.MarkTargetContextNoncurrent(oldContextKey, ObservedAt.AddSeconds(1));
+        store.AppendTargetDiagnostic(
+            newContextKey,
+            TargetDiagnostic("new generation read-path invariant", generation: 2),
+            ObservedAt.AddSeconds(2)
+        );
+        store.ObserveTarget(TargetHealth(generation: 1, observedAt: ObservedAt.AddSeconds(3)));
+        store.ObserveTarget(TargetHealth(generation: 2, observedAt: ObservedAt.AddSeconds(4)));
+
+        DocumentCacheProjectionTargetHealthSnapshot current = store.CurrentSnapshot.GetCurrentTarget(
+            TargetKey
+        )!;
+        current.Generation.Value.Should().Be(2);
+        current
+            .TargetDiagnostics.Should()
+            .ContainSingle()
+            .Which.Message.Should()
+            .Be("new generation read-path invariant");
+    }
+
+    [Test]
     public void It_ignores_late_target_diagnostic_from_ended_generation()
     {
         DocumentCacheProjectionObservationStore store = new(new FixedTimeProvider(ObservedAt));
@@ -523,5 +629,53 @@ public class Given_DocumentCacheProjectionObservationProvider
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => utcNow;
+    }
+
+    private sealed class RecordingProjectionTelemetry : IDocumentCacheProjectionTelemetry
+    {
+        public List<DocumentCacheProjectionTargetHealthSnapshot> TargetObservations { get; } = [];
+
+        public void RecordTargetObservation(DocumentCacheProjectionTargetHealthSnapshot snapshot) =>
+            TargetObservations.Add(snapshot);
+
+        public void RecordSchedulerDispatch(
+            DocumentCacheProjectionTargetRuntimeContext targetContext,
+            DocumentCacheProjectionSchedulerDispatchResult result,
+            DocumentCacheProjectionDrainInvocationKind invocationKind
+        ) => _ = targetContext;
+
+        public void RecordItemOutcome(
+            DocumentCacheProjectionTargetRuntimeContext targetContext,
+            DocumentCacheProjectionDrainInvocationKind invocationKind,
+            string outcome,
+            string category,
+            DocumentCacheLifecycleState? lifecycle = null
+        ) => _ = targetContext;
+
+        public void RecordAdministrativeCommandObservation(
+            DocumentCacheAdministrativeCommandObservationSnapshot snapshot,
+            RelationalProviderToken providerToken
+        ) => _ = snapshot;
+
+        public void RecordAdministrativeCommandMutation(
+            DocumentCacheAdministrativeCommandObservationSnapshot snapshot,
+            RelationalProviderToken providerToken
+        ) => _ = snapshot;
+
+        public void RecordAdministrativeCommandResult(
+            DocumentCacheAdministrativeCommandResult result,
+            RelationalProviderToken? providerToken,
+            TimeSpan? effectiveWorkflowTimeout = null,
+            DocumentCacheAdministrativeCommandPhase? currentPhase = null
+        ) => _ = result;
+
+        public void RecordAdministrativeMutexOutcome(
+            DocumentCacheAdministrativeCommand command,
+            DocumentCacheTargetKey targetKey,
+            RelationalProviderToken providerToken,
+            string outcome,
+            DocumentCacheAdministrativeDiagnosticCategory? category,
+            TimeSpan duration
+        ) => _ = targetKey;
     }
 }

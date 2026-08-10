@@ -23,6 +23,10 @@ using DocumentCacheNoncurrentTargetHealthSnapshots = System.Collections.Immutabl
     EdFi.DataManagementService.Backend.DocumentCacheProjectionTargetContextKey,
     EdFi.DataManagementService.Backend.DocumentCacheProjectionTargetHealthSnapshot
 >;
+using DocumentCachePendingTargetDiagnostics = System.Collections.Immutable.ImmutableDictionary<
+    EdFi.DataManagementService.Backend.DocumentCacheProjectionTargetContextKey,
+    System.Collections.Immutable.ImmutableArray<EdFi.DataManagementService.Core.DocumentCache.DocumentCacheTargetDiagnostic>
+>;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -852,6 +856,9 @@ public sealed class DocumentCacheProjectionObservationStore
     private DocumentCacheNoncurrentTargetHealthSnapshots _noncurrentTargets =
         DocumentCacheNoncurrentTargetHealthSnapshots.Empty;
 
+    private DocumentCachePendingTargetDiagnostics _pendingTargetDiagnostics =
+        DocumentCachePendingTargetDiagnostics.Empty;
+
     private DocumentCacheActiveAdministrativeCommandSnapshots _activeCommands =
         DocumentCacheActiveAdministrativeCommandSnapshots.Empty;
 
@@ -901,10 +908,14 @@ public sealed class DocumentCacheProjectionObservationStore
                 )
             )
             {
+                snapshot = MergePendingTargetDiagnostics(snapshot);
                 snapshotToRecord = MergeTargetDiagnostics(noncurrentSnapshot, snapshot);
                 _noncurrentTargets = _noncurrentTargets.SetItem(snapshot.ContextKey, snapshotToRecord);
                 return;
             }
+
+            snapshot = MergePendingTargetDiagnostics(snapshot);
+            RemovePendingTargetDiagnosticsForReplacedGenerations(snapshot.ContextKey);
 
             if (
                 _currentTargets.TryGetValue(
@@ -965,13 +976,12 @@ public sealed class DocumentCacheProjectionObservationStore
 
         lock (_sync)
         {
-            if (
-                _currentTargets.TryGetValue(
-                    contextKey.TargetKey,
-                    out DocumentCacheProjectionTargetHealthSnapshot? currentSnapshot
-                )
-                && currentSnapshot.Generation == contextKey.Generation
-            )
+            bool hasCurrentTarget = _currentTargets.TryGetValue(
+                contextKey.TargetKey,
+                out DocumentCacheProjectionTargetHealthSnapshot? currentSnapshot
+            );
+
+            if (currentSnapshot is not null && currentSnapshot.Generation == contextKey.Generation)
             {
                 snapshotToRecord = AppendTargetDiagnostic(currentSnapshot, diagnostic, diagnosticObservedAt);
                 _currentTargets = _currentTargets.SetItem(contextKey.TargetKey, snapshotToRecord);
@@ -987,6 +997,15 @@ public sealed class DocumentCacheProjectionObservationStore
                     contextKey,
                     AppendTargetDiagnostic(noncurrentSnapshot, diagnostic, diagnosticObservedAt)
                 );
+            }
+            else if (!hasCurrentTarget)
+            {
+                ImmutableArray<DocumentCacheTargetDiagnostic> pendingDiagnostics =
+                    _pendingTargetDiagnostics.TryGetValue(contextKey, out var existingDiagnostics)
+                        ? existingDiagnostics.Add(diagnostic)
+                        : [diagnostic];
+
+                _pendingTargetDiagnostics = _pendingTargetDiagnostics.SetItem(contextKey, pendingDiagnostics);
             }
         }
 
@@ -1103,6 +1122,46 @@ public sealed class DocumentCacheProjectionObservationStore
             currentGeneration is not null && currentGeneration == commandSnapshot.TargetGeneration;
 
         return commandSnapshot.WithGenerationCurrency(isCurrentGeneration, currentGeneration);
+    }
+
+    private DocumentCacheProjectionTargetHealthSnapshot MergePendingTargetDiagnostics(
+        DocumentCacheProjectionTargetHealthSnapshot snapshot
+    )
+    {
+        if (
+            !_pendingTargetDiagnostics.TryGetValue(
+                snapshot.ContextKey,
+                out ImmutableArray<DocumentCacheTargetDiagnostic> pendingDiagnostics
+            )
+        )
+        {
+            return snapshot;
+        }
+
+        _pendingTargetDiagnostics = _pendingTargetDiagnostics.Remove(snapshot.ContextKey);
+
+        return snapshot.TargetDiagnostics.IsEmpty
+            ? snapshot.WithTargetDiagnostics(pendingDiagnostics, snapshot.ObservedAt)
+            : snapshot.WithTargetDiagnostics(
+                [.. pendingDiagnostics, .. snapshot.TargetDiagnostics],
+                snapshot.ObservedAt
+            );
+    }
+
+    private void RemovePendingTargetDiagnosticsForReplacedGenerations(
+        DocumentCacheProjectionTargetContextKey contextKey
+    )
+    {
+        foreach (
+            DocumentCacheProjectionTargetContextKey pendingContextKey in _pendingTargetDiagnostics.Keys.Where(
+                pendingContextKey =>
+                    pendingContextKey.TargetKey.Equals(contextKey.TargetKey)
+                    && pendingContextKey != contextKey
+            )
+        )
+        {
+            _pendingTargetDiagnostics = _pendingTargetDiagnostics.Remove(pendingContextKey);
+        }
     }
 
     private static DocumentCacheProjectionTargetHealthSnapshot MergeTargetDiagnostics(
