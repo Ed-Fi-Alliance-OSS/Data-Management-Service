@@ -85,7 +85,7 @@ public class TrackedChangesEndpointModuleTests
         capturedRequest.Should().NotBeNull();
         capturedRequest!.Path.Should().Be($"/ed-fi/schools/{trackedChangeSegment}");
         capturedRequest.Headers["X-Test-Header"].Should().Be("header-value");
-        A.CallTo(() => apiService.Get(A<FrontendRequest>._)).MustNotHaveHappened();
+        A.CallTo(() => apiService.Get(A<FrontendRequest>._, A<CancellationToken>._)).MustNotHaveHappened();
     }
 
     [Test]
@@ -118,7 +118,7 @@ public class TrackedChangesEndpointModuleTests
                 )
             )
             .MustHaveHappenedOnceExactly();
-        A.CallTo(() => apiService.Get(A<FrontendRequest>._)).MustNotHaveHappened();
+        A.CallTo(() => apiService.Get(A<FrontendRequest>._, A<CancellationToken>._)).MustNotHaveHappened();
     }
 
     [Test]
@@ -171,14 +171,15 @@ public class TrackedChangesEndpointModuleTests
             .RouteQualifiers[new RouteQualifierName("schoolYear")]
             .Should()
             .Be(new RouteQualifierValue("2026"));
-        A.CallTo(() => apiService.Get(A<FrontendRequest>._)).MustNotHaveHappened();
+        A.CallTo(() => apiService.Get(A<FrontendRequest>._, A<CancellationToken>._)).MustNotHaveHappened();
     }
 
     [Test]
     public async Task It_leaves_other_data_get_paths_on_the_core_catch_all()
     {
         var apiService = A.Fake<IApiService>();
-        A.CallTo(() => apiService.Get(A<FrontendRequest>._)).Returns(Task.FromResult(FakeCoreGetResponse()));
+        A.CallTo(() => apiService.Get(A<FrontendRequest>._, A<CancellationToken>._))
+            .Returns(Task.FromResult(FakeCoreGetResponse()));
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -194,7 +195,8 @@ public class TrackedChangesEndpointModuleTests
         var response = await client.GetAsync("/data/ed-fi/schools/not-a-uuid");
 
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
-        A.CallTo(() => apiService.Get(A<FrontendRequest>._)).MustHaveHappenedOnceExactly();
+        A.CallTo(() => apiService.Get(A<FrontendRequest>._, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
         A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._)).MustNotHaveHappened();
     }
 

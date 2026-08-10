@@ -1003,6 +1003,41 @@ public class QueryRequestHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Request_Cancellation_Token : QueryRequestHandlerTests
+    {
+        private sealed class Repository : NotImplementedDocumentStoreRepository
+        {
+            public CancellationToken CapturedCancellationToken { get; private set; }
+
+            public override Task<QueryResult> QueryDocuments(
+                IQueryRequest queryRequest,
+                CancellationToken cancellationToken = default
+            )
+            {
+                CapturedCancellationToken = cancellationToken;
+                return Task.FromResult<QueryResult>(new QueryResult.QuerySuccess([], 0));
+            }
+        }
+
+        [Test]
+        public async Task It_passes_the_request_token_to_the_query_repository()
+        {
+            using var cancellationSource = new CancellationTokenSource();
+            var repository = new Repository();
+            var requestInfo = RequestInfoWithRelationalMappingSet();
+            requestInfo.RequestCancellationToken = cancellationSource.Token;
+
+            var (queryHandler, serviceProvider) = Handler(repository);
+            requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await queryHandler.Execute(requestInfo, NullNext);
+
+            repository.CapturedCancellationToken.Should().Be(cancellationSource.Token);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Descriptor_Request_With_Relational_Query_Metadata : QueryRequestHandlerTests
     {
         private static ResourceInfo CreateResourceInfo(

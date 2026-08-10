@@ -63,7 +63,7 @@ internal class JwtAuthenticationMiddleware(
         (ClaimsPrincipal? principal, ClientAuthorizations? clientAuthorizations) =
             await jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
                 token,
-                CancellationToken.None
+                requestInfo.RequestCancellationToken
             );
 
         if (principal == null || clientAuthorizations == null)

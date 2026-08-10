@@ -1095,6 +1095,41 @@ actual: {requestInfo.FrontendResponse.Body}
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Request_Cancellation_Token : GetByIdHandlerTests
+    {
+        private sealed class Repository : NotImplementedDocumentStoreRepository
+        {
+            public CancellationToken CapturedCancellationToken { get; private set; }
+
+            public override Task<GetResult> GetDocumentById(
+                IGetRequest getRequest,
+                CancellationToken cancellationToken = default
+            )
+            {
+                CapturedCancellationToken = cancellationToken;
+                return Task.FromResult<GetResult>(new GetFailureNotExists());
+            }
+        }
+
+        [Test]
+        public async Task It_passes_the_request_token_to_the_repository()
+        {
+            using var cancellationSource = new CancellationTokenSource();
+            var repository = new Repository();
+            var requestInfo = RequestInfoWithRelationalMappingSet();
+            requestInfo.RequestCancellationToken = cancellationSource.Token;
+
+            var (getByIdHandler, serviceProvider) = Handler(repository);
+            requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await getByIdHandler.Execute(requestInfo, NullNext);
+
+            repository.CapturedCancellationToken.Should().Be(cancellationSource.Token);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Descriptor_Request_With_Relational_Read_Metadata : GetByIdHandlerTests
     {
         private static ResourceInfo CreateResourceInfo(

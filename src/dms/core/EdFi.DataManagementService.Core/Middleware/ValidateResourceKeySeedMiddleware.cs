@@ -66,10 +66,8 @@ internal class ValidateResourceKeySeedMiddleware(
                 connectionString,
                 () =>
                 {
-                    // CancellationToken is intentionally not passed here because the pipeline
-                    // interface (IPipelineStep) does not propagate one. The slow-path DB read
-                    // is a one-time-per-connection-string event for a small table, so the cost
-                    // of running to completion on client disconnect is negligible.
+                    // The validation task is shared through ResourceKeyValidationCacheProvider.
+                    // Do not tie first validation for a connection string to one client abort.
                     return resourceKeyValidator.ValidateAsync(
                         fingerprint,
                         effectiveSchema.ResourceKeyCount,

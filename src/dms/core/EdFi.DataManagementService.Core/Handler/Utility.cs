@@ -182,7 +182,7 @@ public static class Utility
         where TResult : class
     {
         int attemptCount = 0;
-        var context = ResilienceContextPool.Shared.Get();
+        var context = ResilienceContextPool.Shared.Get(requestInfo.RequestCancellationToken);
         context.Properties.Set(TraceIdKey, traceId.Value);
         context.Properties.Set(OperationNameKey, operationName);
 

@@ -564,10 +564,18 @@ internal class ApiService : IApiService
     /// <summary>
     /// DMS entry point for all API GET requests
     /// </summary>
-    public async Task<IFrontendResponse> Get(FrontendRequest frontendRequest)
+    public async Task<IFrontendResponse> Get(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken = default
+    )
     {
         await using var scope = _serviceScopeFactory.CreateAsyncScope();
-        RequestInfo requestInfo = new(frontendRequest, RequestMethod.GET, scope.ServiceProvider);
+        RequestInfo requestInfo = new(
+            frontendRequest,
+            RequestMethod.GET,
+            scope.ServiceProvider,
+            cancellationToken
+        );
 
         PipelineProvider steps = SelectGetPipelineKind(ResourcePathParser.Parse(frontendRequest.Path)) switch
         {

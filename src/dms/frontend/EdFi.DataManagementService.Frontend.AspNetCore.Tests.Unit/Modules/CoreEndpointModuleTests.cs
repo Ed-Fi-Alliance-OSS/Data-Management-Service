@@ -9,14 +9,18 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Frontend.AspNetCore;
 using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using NUnit.Framework;
+using AppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 
@@ -171,6 +175,41 @@ public class CoreEndpointModuleTests
         return response;
     }
 
+    [Test]
+    public async Task It_passes_request_aborted_to_core_get()
+    {
+        var apiService = A.Fake<IApiService>();
+        CancellationToken capturedCancellationToken = default;
+        A.CallTo(() => apiService.Get(A<FrontendRequest>._, A<CancellationToken>._))
+            .Invokes(
+                (FrontendRequest _, CancellationToken cancellationToken) =>
+                    capturedCancellationToken = cancellationToken
+            )
+            .Returns(Task.FromResult(FakeCoreOkResponse()));
+        using var requestAbortedSource = new CancellationTokenSource();
+        var httpContext = new DefaultHttpContext { RequestAborted = requestAbortedSource.Token };
+        httpContext.Request.Method = HttpMethods.Get;
+        httpContext.Request.Scheme = "https";
+        httpContext.Request.Host = new HostString("api.example.test");
+        httpContext.Request.Path = "/data/ed-fi/schools";
+
+        await AspNetCoreFrontend.Get(
+            httpContext,
+            apiService,
+            "ed-fi/schools",
+            Options.Create(
+                new AppSettings
+                {
+                    AuthenticationService = "test",
+                    Datastore = "postgresql",
+                    CorrelationIdHeader = "X-Correlation-ID",
+                }
+            )
+        );
+
+        capturedCancellationToken.Should().Be(requestAbortedSource.Token);
+    }
+
     /// <summary>
     /// A fake whose every request entry point answers 200, so a test can assert which entry point
     /// the router selected without any of them failing for want of a configured response.
@@ -178,7 +217,8 @@ public class CoreEndpointModuleTests
     private static IApiService FakeApiServiceAnsweringEveryVerb()
     {
         var apiService = A.Fake<IApiService>();
-        A.CallTo(() => apiService.Get(A<FrontendRequest>._)).Returns(Task.FromResult(FakeCoreOkResponse()));
+        A.CallTo(() => apiService.Get(A<FrontendRequest>._, A<CancellationToken>._))
+            .Returns(Task.FromResult(FakeCoreOkResponse()));
         A.CallTo(() => apiService.Upsert(A<FrontendRequest>._))
             .Returns(Task.FromResult(FakeCoreOkResponse()));
         A.CallTo(() => apiService.UpdateById(A<FrontendRequest>._))
@@ -573,7 +613,8 @@ public class CoreEndpointModuleTests
             // Core names the verb in the 405 body, the same way ODS/API does from
             // context.Request.Method, so the real verb has to survive the hand-off.
             terminalMethodNames.Should().Equal("HEAD");
-            A.CallTo(() => apiService.Get(A<FrontendRequest>._)).MustNotHaveHappened();
+            A.CallTo(() => apiService.Get(A<FrontendRequest>._, A<CancellationToken>._))
+                .MustNotHaveHappened();
             A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._)).MustNotHaveHappened();
         }
 
@@ -618,7 +659,8 @@ public class CoreEndpointModuleTests
         switch (verb)
         {
             case "GET":
-                A.CallTo(() => apiService.Get(A<FrontendRequest>._)).MustHaveHappenedOnceExactly();
+                A.CallTo(() => apiService.Get(A<FrontendRequest>._, A<CancellationToken>._))
+                    .MustHaveHappenedOnceExactly();
                 break;
             case "POST":
                 A.CallTo(() => apiService.Upsert(A<FrontendRequest>._)).MustHaveHappenedOnceExactly();

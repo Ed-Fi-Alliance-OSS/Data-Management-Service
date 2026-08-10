@@ -53,8 +53,8 @@ public class CursorQueryParameterCanonicalizationTests
         var apiService = A.Fake<IApiService>();
         FrontendRequest? capturedRequest = null;
 
-        A.CallTo(() => apiService.Get(A<FrontendRequest>._))
-            .Invokes((FrontendRequest request) => capturedRequest = request)
+        A.CallTo(() => apiService.Get(A<FrontendRequest>._, A<CancellationToken>._))
+            .Invokes((FrontendRequest request, CancellationToken _) => capturedRequest = request)
             .Returns(Task.FromResult(FakeGetResponse()));
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>

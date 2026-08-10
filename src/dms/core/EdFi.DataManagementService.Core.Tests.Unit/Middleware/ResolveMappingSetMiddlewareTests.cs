@@ -17,6 +17,7 @@ using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
@@ -232,6 +233,28 @@ public class ResolveMappingSetMiddlewareTests
         {
             _requestInfo.MappingSet.Should().BeSameAs(_expectedMappingSet);
         }
+    }
+
+    [Test]
+    public async Task It_passes_the_request_cancellation_token_to_mapping_set_resolution()
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        var compiler = CreateFakeCompiler();
+        var mappingSetProvider = A.Fake<IMappingSetProvider>();
+        var (middleware, _) = CreateMiddleware(compiler: compiler, mappingSetProvider: mappingSetProvider);
+        var requestInfo = CreateRequestInfo(fingerprint: CreateFingerprint());
+        requestInfo.RequestCancellationToken = cancellationSource.Token;
+        CancellationToken capturedCancellationToken = default;
+
+        A.CallTo(() =>
+                mappingSetProvider.GetOrCreateAsync(A<MappingSetKey>.Ignored, A<CancellationToken>.Ignored)
+            )
+            .Invokes((MappingSetKey _, CancellationToken token) => capturedCancellationToken = token)
+            .Returns(CreateTestMappingSet());
+
+        await middleware.Execute(requestInfo, NullNext);
+
+        capturedCancellationToken.Should().Be(cancellationSource.Token);
     }
 
     [TestFixture]
