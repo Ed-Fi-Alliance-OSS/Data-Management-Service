@@ -30,6 +30,7 @@ using FluentValidation;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
@@ -353,6 +354,7 @@ public static class WebApplicationBuilderExtensions
 
             // Expired-token cleanup applies to both database engines above; the OpenIddict token
             // store is not exposed through Keycloak, so this hosted service has no role there.
+            webApplicationBuilder.Services.TryAddSingleton(TimeProvider.System);
             webApplicationBuilder.Services.AddHostedService<TokenCleanupService>();
         }
         else // Default to Keycloak

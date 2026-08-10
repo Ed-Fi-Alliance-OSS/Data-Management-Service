@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Reflection;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
@@ -12,31 +11,41 @@ using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 
 /// <summary>
-/// TokenCleanupService sweeps once at startup and then loops on a PeriodicTimer whose
-/// period is the configured (range-clamped) interval; there is no injectable clock/timer
-/// seam. Waiting for a real timer tick would make these tests take a minute or more, so
-/// the "resilience" fixture below invokes the service's private RunSweepAsync method
-/// directly via reflection -- the same method the timer loop calls on every tick --
-/// rather than waiting on the real PeriodicTimer. The PeriodicTimer tick cadence itself
-/// is therefore not covered by a fast unit test; the disabled-flag, startup-sweep, and
-/// interval-clamping fixtures all exercise the real ExecuteAsync/StartAsync/StopAsync
-/// path, since those branches complete (or fault) before any timer tick is required.
+/// TokenCleanupService takes a TimeProvider, so these tests drive the real
+/// ExecuteAsync/PeriodicTimer loop deterministically with a FakeTimeProvider:
+/// advancing fake time fires the timer, and the sweep bound is exact fake-now minus
+/// the validation clock skew, with no wall-clock waits anywhere.
 /// </summary>
 [TestFixture]
 public class TokenCleanupServiceTests
 {
-    private static readonly MethodInfo RunSweepAsyncMethod =
-        typeof(TokenCleanupService).GetMethod("RunSweepAsync", BindingFlags.Instance | BindingFlags.NonPublic)
-        ?? throw new InvalidOperationException(
-            "TokenCleanupService.RunSweepAsync was not found; has it been renamed?"
-        );
+    private static readonly DateTimeOffset StartTime = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
-    private static Task InvokeRunSweepAsync(TokenCleanupService service) =>
-        (Task)RunSweepAsyncMethod.Invoke(service, null)!;
+    private static readonly TimeSpan SignalTimeout = TimeSpan.FromSeconds(10);
+
+    private static TokenCleanupService CreateService(
+        IOpenIddictTokenRepository tokenRepository,
+        FakeTimeProvider timeProvider,
+        bool enabled = true,
+        int intervalMinutes = 30
+    ) =>
+        new(
+            Options.Create(
+                new IdentityOptions
+                {
+                    TokenCleanupEnabled = enabled,
+                    TokenCleanupIntervalMinutes = intervalMinutes,
+                }
+            ),
+            NullLogger<TokenCleanupService>.Instance,
+            tokenRepository,
+            timeProvider
+        );
 
     [TestFixture]
     public class Given_TokenCleanupIsDisabled
@@ -48,11 +57,7 @@ public class TokenCleanupServiceTests
         {
             _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
 
-            var service = new TokenCleanupService(
-                Options.Create(new IdentityOptions { TokenCleanupEnabled = false }),
-                NullLogger<TokenCleanupService>.Instance,
-                _tokenRepository
-            );
+            var service = CreateService(_tokenRepository, new FakeTimeProvider(StartTime), enabled: false);
 
             // Disabled ExecuteAsync returns without ever awaiting the timer, so it
             // completes synchronously; StartAsync's returned task reflects that.
@@ -69,78 +74,137 @@ public class TokenCleanupServiceTests
     }
 
     [TestFixture]
-    public class Given_TokenCleanupIsEnabled_AndASweepRuns
+    public class Given_TokenCleanupIsEnabled_WhenTheServiceStartsAndIntervalsElapse
     {
         private IOpenIddictTokenRepository _tokenRepository = null!;
-        private DateTimeOffset _capturedExpiredBefore;
+        private TokenCleanupService _service = null!;
+        private FakeTimeProvider _timeProvider = null!;
+        private readonly List<DateTimeOffset> _capturedBounds = [];
+        private int _callCountAfterPartialAdvance;
+        private TaskCompletionSource _nextSweepObserved = null!;
 
         [SetUp]
         public async Task Act()
         {
+            _capturedBounds.Clear();
+            _timeProvider = new FakeTimeProvider(StartTime);
             _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
             A.CallTo(() => _tokenRepository.DeleteExpiredTokensAsync(A<DateTimeOffset>._))
-                .Invokes((DateTimeOffset expiredBefore) => _capturedExpiredBefore = expiredBefore)
-                .Returns(3);
+                .Invokes(
+                    (DateTimeOffset expiredBefore) =>
+                    {
+                        lock (_capturedBounds)
+                        {
+                            _capturedBounds.Add(expiredBefore);
+                        }
+                        _nextSweepObserved.TrySetResult();
+                    }
+                )
+                .Returns(0);
 
-            var service = new TokenCleanupService(
-                Options.Create(
-                    new IdentityOptions { TokenCleanupEnabled = true, TokenCleanupIntervalMinutes = 1 }
-                ),
-                NullLogger<TokenCleanupService>.Instance,
-                _tokenRepository
-            );
+            _nextSweepObserved = NewSignal();
+            _service = CreateService(_tokenRepository, _timeProvider, intervalMinutes: 30);
 
-            await InvokeRunSweepAsync(service);
+            // Startup sweep: happens before any timer tick.
+            await _service.StartAsync(CancellationToken.None);
+            await _nextSweepObserved.Task.WaitAsync(SignalTimeout);
+
+            // A partial interval must NOT produce a sweep: no timer tick fires, so no
+            // new repository call can originate.
+            _timeProvider.Advance(TimeSpan.FromMinutes(29));
+            lock (_capturedBounds)
+            {
+                _callCountAfterPartialAdvance = _capturedBounds.Count;
+            }
+
+            // Completing the interval fires the tick and produces the second sweep.
+            _nextSweepObserved = NewSignal();
+            _timeProvider.Advance(TimeSpan.FromMinutes(1));
+            await _nextSweepObserved.Task.WaitAsync(SignalTimeout);
+
+            // And a further full interval produces the third.
+            _nextSweepObserved = NewSignal();
+            _timeProvider.Advance(TimeSpan.FromMinutes(30));
+            await _nextSweepObserved.Task.WaitAsync(SignalTimeout);
+
+            await _service.StopAsync(CancellationToken.None);
+        }
+
+        [TearDown]
+        public void TearDown() => _service.Dispose();
+
+        private static TaskCompletionSource NewSignal() =>
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        [Test]
+        public void It_sweeps_once_at_startup_with_the_skew_adjusted_bound()
+        {
+            _capturedBounds[0].Should().Be(StartTime - JwtTokenValidator.TokenValidationClockSkew);
         }
 
         [Test]
-        public void It_calls_the_repository_exactly_once()
+        public void It_does_not_sweep_before_the_interval_elapses()
         {
-            A.CallTo(() => _tokenRepository.DeleteExpiredTokensAsync(A<DateTimeOffset>._))
-                .MustHaveHappenedOnceExactly();
+            _callCountAfterPartialAdvance.Should().Be(1);
         }
 
         [Test]
-        public void It_passes_a_timestamp_one_clock_skew_behind_utc_now()
+        public void It_sweeps_again_when_each_configured_interval_elapses()
         {
-            _capturedExpiredBefore
+            _capturedBounds.Should().HaveCount(3);
+            _capturedBounds[1]
                 .Should()
-                .BeCloseTo(
-                    DateTimeOffset.UtcNow - JwtTokenValidator.TokenValidationClockSkew,
-                    TimeSpan.FromMinutes(1)
-                );
+                .Be(StartTime + TimeSpan.FromMinutes(30) - JwtTokenValidator.TokenValidationClockSkew);
+            _capturedBounds[2]
+                .Should()
+                .Be(StartTime + TimeSpan.FromMinutes(60) - JwtTokenValidator.TokenValidationClockSkew);
         }
     }
 
     [TestFixture]
-    public class Given_TokenCleanupIsEnabled_WhenTheServiceStarts
+    public class Given_TheRepositoryThrowsOnTheStartupSweep
     {
         private IOpenIddictTokenRepository _tokenRepository = null!;
         private TokenCleanupService _service = null!;
-        private readonly TaskCompletionSource _sweepObserved = new(
+        private FakeTimeProvider _timeProvider = null!;
+        private int _callCount;
+        private readonly TaskCompletionSource _secondSweepObserved = new(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
 
         [SetUp]
         public async Task Act()
         {
+            // NUnit reuses the fixture instance across its tests; reset so every test's
+            // Act starts from the throw-then-recover scenario.
+            _callCount = 0;
+
+            _timeProvider = new FakeTimeProvider(StartTime);
             _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
             A.CallTo(() => _tokenRepository.DeleteExpiredTokensAsync(A<DateTimeOffset>._))
-                .Invokes(() => _sweepObserved.TrySetResult())
-                .Returns(0);
+                .ReturnsLazily(
+                    (DateTimeOffset _) =>
+                    {
+                        int call = Interlocked.Increment(ref _callCount);
+                        if (call == 1)
+                        {
+                            throw new InvalidOperationException("Simulated repository failure.");
+                        }
+                        _secondSweepObserved.TrySetResult();
+                        return Task.FromResult(1);
+                    }
+                );
 
-            _service = new TokenCleanupService(
-                Options.Create(
-                    new IdentityOptions { TokenCleanupEnabled = true, TokenCleanupIntervalMinutes = 30 }
-                ),
-                NullLogger<TokenCleanupService>.Instance,
-                _tokenRepository
-            );
+            _service = CreateService(_tokenRepository, _timeProvider);
 
+            // The startup sweep throws inside the service; the loop must survive it and
+            // keep ticking, or StartAsync would fault and the next advance would produce
+            // no second call.
             await _service.StartAsync(CancellationToken.None);
-            // The startup sweep happens before the first timer tick (30 minutes away),
-            // so observing the repository call at all proves it was the startup sweep.
-            await _sweepObserved.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+            _timeProvider.Advance(TimeSpan.FromMinutes(30));
+            await _secondSweepObserved.Task.WaitAsync(SignalTimeout);
+
             await _service.StopAsync(CancellationToken.None);
         }
 
@@ -148,79 +212,9 @@ public class TokenCleanupServiceTests
         public void TearDown() => _service.Dispose();
 
         [Test]
-        public void It_sweeps_once_at_startup_without_waiting_for_a_tick()
+        public void It_swallows_the_failure_and_sweeps_again_on_the_next_interval()
         {
-            A.CallTo(() => _tokenRepository.DeleteExpiredTokensAsync(A<DateTimeOffset>._))
-                .MustHaveHappenedOnceExactly();
-        }
-    }
-
-    [TestFixture]
-    public class Given_TheRepositoryThrowsOnTheFirstSweep
-    {
-        private IOpenIddictTokenRepository _tokenRepository = null!;
-        private TokenCleanupService _service = null!;
-        private int _callCount;
-        private Exception? _caughtException;
-
-        [SetUp]
-        public async Task Act()
-        {
-            // NUnit reuses the fixture instance across its tests; without these resets the
-            // second test's fake would never throw and the recover path would go untested.
-            _callCount = 0;
-            _caughtException = null;
-
-            _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
-            A.CallTo(() => _tokenRepository.DeleteExpiredTokensAsync(A<DateTimeOffset>._))
-                .ReturnsLazily(
-                    (DateTimeOffset _) =>
-                    {
-                        _callCount++;
-                        if (_callCount == 1)
-                        {
-                            throw new InvalidOperationException("Simulated repository failure.");
-                        }
-                        return Task.FromResult(1);
-                    }
-                );
-
-            _service = new TokenCleanupService(
-                Options.Create(
-                    new IdentityOptions { TokenCleanupEnabled = true, TokenCleanupIntervalMinutes = 1 }
-                ),
-                NullLogger<TokenCleanupService>.Instance,
-                _tokenRepository
-            );
-
-            try
-            {
-                // First sweep: the repository throws. RunSweepAsync must swallow it.
-                await InvokeRunSweepAsync(_service);
-                // Second sweep on the same instance proves the failure did not leave the
-                // service unable to sweep again.
-                await InvokeRunSweepAsync(_service);
-            }
-            catch (Exception ex)
-            {
-                _caughtException = ex;
-            }
-        }
-
-        [TearDown]
-        public void TearDown() => _service.Dispose();
-
-        [Test]
-        public void It_does_not_let_the_repository_exception_propagate()
-        {
-            _caughtException.Should().BeNull();
-        }
-
-        [Test]
-        public void It_still_attempts_a_second_sweep()
-        {
-            A.CallTo(() => _tokenRepository.DeleteExpiredTokensAsync(A<DateTimeOffset>._))
-                .MustHaveHappened(2, Times.Exactly);
+            _callCount.Should().Be(2);
         }
     }
 
@@ -232,14 +226,10 @@ public class TokenCleanupServiceTests
         [SetUp]
         public async Task Act()
         {
-            var tokenRepository = A.Fake<IOpenIddictTokenRepository>();
-
-            var service = new TokenCleanupService(
-                Options.Create(
-                    new IdentityOptions { TokenCleanupEnabled = true, TokenCleanupIntervalMinutes = 0 }
-                ),
-                NullLogger<TokenCleanupService>.Instance,
-                tokenRepository
+            var service = CreateService(
+                A.Fake<IOpenIddictTokenRepository>(),
+                new FakeTimeProvider(StartTime),
+                intervalMinutes: 0
             );
 
             try
@@ -274,18 +264,10 @@ public class TokenCleanupServiceTests
         [SetUp]
         public async Task Act()
         {
-            var tokenRepository = A.Fake<IOpenIddictTokenRepository>();
-
-            var service = new TokenCleanupService(
-                Options.Create(
-                    new IdentityOptions
-                    {
-                        TokenCleanupEnabled = true,
-                        TokenCleanupIntervalMinutes = int.MaxValue,
-                    }
-                ),
-                NullLogger<TokenCleanupService>.Instance,
-                tokenRepository
+            var service = CreateService(
+                A.Fake<IOpenIddictTokenRepository>(),
+                new FakeTimeProvider(StartTime),
+                intervalMinutes: int.MaxValue
             );
 
             try

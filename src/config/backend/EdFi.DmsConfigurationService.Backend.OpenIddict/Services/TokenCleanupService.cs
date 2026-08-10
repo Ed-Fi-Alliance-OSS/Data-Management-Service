@@ -18,7 +18,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 public class TokenCleanupService(
     IOptions<IdentityOptions> identityOptions,
     ILogger<TokenCleanupService> logger,
-    IOpenIddictTokenRepository tokenRepository
+    IOpenIddictTokenRepository tokenRepository,
+    TimeProvider? timeProvider = null
 ) : BackgroundService
 {
     private const int DefaultIntervalMinutes = 30;
@@ -31,6 +32,7 @@ public class TokenCleanupService(
     private readonly IOptions<IdentityOptions> _identityOptions = identityOptions;
     private readonly ILogger<TokenCleanupService> _logger = logger;
     private readonly IOpenIddictTokenRepository _tokenRepository = tokenRepository;
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -52,7 +54,7 @@ public class TokenCleanupService(
             intervalMinutes = DefaultIntervalMinutes;
         }
 
-        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(intervalMinutes));
+        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(intervalMinutes), _timeProvider);
         try
         {
             // Sweep once at startup so a pre-existing backlog does not wait a full interval,
@@ -78,7 +80,7 @@ public class TokenCleanupService(
             // expiration; rows in that window must survive or those tokens would fail
             // their status lookup.
             int deletedCount = await _tokenRepository.DeleteExpiredTokensAsync(
-                DateTimeOffset.UtcNow - JwtTokenValidator.TokenValidationClockSkew
+                _timeProvider.GetUtcNow() - JwtTokenValidator.TokenValidationClockSkew
             );
             if (deletedCount > 0)
             {
