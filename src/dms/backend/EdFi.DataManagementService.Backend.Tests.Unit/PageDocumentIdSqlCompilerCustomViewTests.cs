@@ -287,7 +287,7 @@ public class Given_CustomView_Wiring_And_Sql_Emission
             RootTable: rootTable ?? _studentSchoolAssociationTable,
             Predicates: [],
             UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
-            IncludeTotalCountSql: true,
+            Mode: new PageCandidateMode.Traditional(IncludeTotalCountSql: true),
             Authorization: new PageDocumentIdAuthorizationSpec(Strategies: [], CustomViewChecks: [check])
         );
 

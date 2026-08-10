@@ -12,8 +12,6 @@ namespace EdFi.DataManagementService.Backend;
 
 internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
 {
-    private const string OffsetParameterName = "offset";
-    private const string LimitParameterName = "limit";
     private const string ResourceKeyIdParameterName = "resourceKeyId";
     private const string ContentVersionColumnName = ChangeVersionFilterConstants.ContentVersionColumnName;
     private const string MinChangeVersionParameterName =
@@ -27,10 +25,56 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
         MappingSet mappingSet,
         QualifiedResourceName requestResource,
         DescriptorQueryPreprocessingResult preprocessingResult,
-        PaginationParameters paginationParameters,
+        CollectionPaging paging,
         PageDocumentIdAuthorizationSpec? authorization = null,
         ChangeVersionRange? changeVersionRange = null,
         PageOrderingMode orderingMode = PageOrderingMode.DocumentId
+    )
+    {
+        ArgumentNullException.ThrowIfNull(paging);
+
+        var plannedCandidates = PlanCandidates(
+            mappingSet,
+            requestResource,
+            preprocessingResult,
+            PageCandidateModePlanning.ForPaging(paging, orderingMode),
+            authorization,
+            changeVersionRange
+        );
+
+        return new PageKeysetSpec.Query(plannedCandidates.Plan, plannedCandidates.ParameterValues);
+    }
+
+    /// <summary>
+    /// Plans the unpaged, unordered descriptor candidate relation over the same
+    /// <c>dms.Descriptor</c> root, <c>ResourceKeyId</c> discriminator, filters, change-version window,
+    /// and authorization the paged modes use.
+    /// </summary>
+    public CandidateQueryPlan PlanCandidates(
+        MappingSet mappingSet,
+        QualifiedResourceName requestResource,
+        DescriptorQueryPreprocessingResult preprocessingResult,
+        PageDocumentIdAuthorizationSpec? authorization = null,
+        ChangeVersionRange? changeVersionRange = null
+    )
+    {
+        return PlanCandidates(
+            mappingSet,
+            requestResource,
+            preprocessingResult,
+            PageCandidateModePlanning.ForUnpagedCandidates(),
+            authorization,
+            changeVersionRange
+        );
+    }
+
+    private CandidateQueryPlan PlanCandidates(
+        MappingSet mappingSet,
+        QualifiedResourceName requestResource,
+        DescriptorQueryPreprocessingResult preprocessingResult,
+        PlannedCandidateMode plannedMode,
+        PageDocumentIdAuthorizationSpec? authorization,
+        ChangeVersionRange? changeVersionRange
     )
     {
         ArgumentNullException.ThrowIfNull(mappingSet);
@@ -69,23 +113,20 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
             RootTable: _descriptorTable,
             Predicates: predicates,
             UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
-            OffsetParameterName: OffsetParameterName,
-            LimitParameterName: LimitParameterName,
-            IncludeTotalCountSql: paginationParameters.TotalCount,
-            Authorization: authorization,
-            OrderingMode: orderingMode
+            Mode: plannedMode.Mode,
+            Authorization: authorization
         );
         var sqlPlan = _sqlCompiler.Compile(pageQuerySpec);
         var parameterValues = BuildParameterValues(
             resourceKeyId,
             preprocessingResult.QueryElementsInOrder,
             parameterNamesByIndex,
-            paginationParameters,
+            plannedMode,
             authorization,
             changeVersionRange
         );
 
-        return new PageKeysetSpec.Query(sqlPlan, parameterValues);
+        return new CandidateQueryPlan(sqlPlan, parameterValues);
     }
 
     /// <summary>
@@ -234,7 +275,7 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
         short resourceKeyId,
         IReadOnlyList<PreprocessedDescriptorQueryElement> queryElementsInOrder,
         IReadOnlyList<string> parameterNamesByIndex,
-        PaginationParameters paginationParameters,
+        PlannedCandidateMode plannedMode,
         PageDocumentIdAuthorizationSpec? authorization,
         ChangeVersionRange? changeVersionRange
     )
@@ -242,9 +283,12 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
         Dictionary<string, object?> parameterValues = new(StringComparer.Ordinal)
         {
             [ResourceKeyIdParameterName] = resourceKeyId,
-            [OffsetParameterName] = (long)(paginationParameters.Offset ?? 0),
-            [LimitParameterName] = (long)(paginationParameters.Limit ?? paginationParameters.MaximumPageSize),
         };
+
+        foreach (var (parameterName, parameterValue) in plannedMode.ParameterValues)
+        {
+            parameterValues[parameterName] = parameterValue;
+        }
 
         if (changeVersionRange?.MinChangeVersion is { } minChangeVersion)
         {
@@ -306,8 +350,7 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
             seeds,
             [
                 ResourceKeyIdParameterName,
-                OffsetParameterName,
-                LimitParameterName,
+                .. PageCandidateModePlanning.AllCandidateParameterNames,
                 MinChangeVersionParameterName,
                 MaxChangeVersionParameterName,
                 .. QueryParameterNameAllocator.CollectAuthorizationParameterNames(authorization),

@@ -28,11 +28,8 @@ public class Given_ChangeVersionFilters_Over_Authoritative_MappingSets
         "../Fixtures/authoritative/sample/inputs/sample-api-schema-authoritative.json";
 
     private static readonly ChangeVersionRange _changeVersionRange = new(100L, 200L);
-    private static readonly PaginationParameters _paginationParameters = new(
-        Limit: 25,
-        Offset: 0,
-        TotalCount: true,
-        MaximumPageSize: 500
+    private static readonly CollectionPaging _paginationParameters = new CollectionPaging.Traditional(
+        new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
     );
 
     private MappingSet _ds52MappingSet = null!;

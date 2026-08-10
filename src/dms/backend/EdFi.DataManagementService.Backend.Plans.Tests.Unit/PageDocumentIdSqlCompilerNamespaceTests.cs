@@ -460,7 +460,7 @@ public class Given_PageDocumentIdSqlCompiler_with_namespace_authorization
             RootTable: _documentTable,
             Predicates: [],
             UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
-            IncludeTotalCountSql: includeTotalCountSql,
+            Mode: new PageCandidateMode.Traditional(IncludeTotalCountSql: includeTotalCountSql),
             Authorization: new PageDocumentIdAuthorizationSpec(
                 Strategies: [],
                 NamespaceChecks:
@@ -489,7 +489,7 @@ public class Given_PageDocumentIdSqlCompiler_with_namespace_authorization
             RootTable: _descriptorTable,
             Predicates: [],
             UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
-            IncludeTotalCountSql: includeTotalCountSql,
+            Mode: new PageCandidateMode.Traditional(IncludeTotalCountSql: includeTotalCountSql),
             Authorization: new PageDocumentIdAuthorizationSpec(
                 Strategies: [],
                 NamespaceChecks:
@@ -518,7 +518,7 @@ public class Given_PageDocumentIdSqlCompiler_with_namespace_authorization
             RootTable: _rootTable,
             Predicates: [],
             UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
-            IncludeTotalCountSql: includeTotalCountSql,
+            Mode: new PageCandidateMode.Traditional(IncludeTotalCountSql: includeTotalCountSql),
             Authorization: new PageDocumentIdAuthorizationSpec(
                 Strategies: [],
                 NamespaceChecks:

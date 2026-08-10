@@ -1,0 +1,12 @@
+SELECT TOP (@pageSize) r.[DocumentId]
+FROM [dms].[Descriptor] r
+INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = r.[DocumentId]
+WHERE
+    (doc.[DocumentUuid] = @id)
+    AND (r.[EffectiveEndDate] = @effectiveEndDate)
+    AND (r.[Namespace] COLLATE Latin1_General_100_BIN2 = @namespace)
+    AND (r.[ResourceKeyId] = @resourceKeyId)
+    AND (r.[DocumentId] >= @cursorMin)
+    AND (r.[DocumentId] <= @cursorMax)
+ORDER BY r.[DocumentId] ASC
+;

@@ -167,6 +167,104 @@ public enum PageOrderingMode
 }
 
 /// <summary>
+/// The canonical bare SQL parameter names used by each page-<c>DocumentId</c> candidate mode.
+/// </summary>
+public static class PageCandidateParameterNames
+{
+    /// <summary>The traditional paging offset parameter name.</summary>
+    public const string Offset = "offset";
+
+    /// <summary>The traditional paging limit parameter name.</summary>
+    public const string Limit = "limit";
+
+    /// <summary>The cursor inclusive lower <c>DocumentId</c> bound parameter name.</summary>
+    public const string CursorInclusiveMinimum = "cursorMin";
+
+    /// <summary>The cursor inclusive upper <c>DocumentId</c> bound parameter name.</summary>
+    public const string CursorInclusiveMaximum = "cursorMax";
+
+    /// <summary>The cursor page size parameter name.</summary>
+    public const string PageSize = "pageSize";
+
+    /// <summary>
+    /// The requested partition count parameter name, matching the public query parameter and the
+    /// normative partition SQL. Reserved and collision-validated here; bound by partition-window SQL.
+    /// </summary>
+    public const string PartitionCount = "number";
+
+    /// <summary>
+    /// The minimum partition size parameter name. Reserved on the same terms as
+    /// <see cref="PartitionCount" />.
+    /// </summary>
+    public const string MinimumPartitionSize = "minimumPartitionSize";
+}
+
+/// <summary>
+/// How a page-<c>DocumentId</c> query selects from the shared candidate relation.
+/// </summary>
+/// <remarks>
+/// An explicit choice rather than nullable combinations, so a cursor page with a total count, a
+/// cursor page ordered by <c>ContentVersion</c>, and an unpaged candidate relation with a page size
+/// are all unrepresentable rather than rejected at runtime. Every mode compiles the same candidate
+/// root, predicates, and authorization; only the range, ordering, and size clauses differ.
+/// </remarks>
+public abstract record PageCandidateMode
+{
+    private PageCandidateMode() { }
+
+    /// <summary>
+    /// Traditional limit/offset page selection.
+    /// </summary>
+    /// <param name="OffsetParameterName">The bare paging offset parameter name.</param>
+    /// <param name="LimitParameterName">The bare paging limit parameter name.</param>
+    /// <param name="IncludeTotalCountSql">
+    /// Indicates whether the compiler should include total-count SQL in the emitted plan.
+    /// </param>
+    /// <param name="OrderingMode">
+    /// The page-selection ordering key. Page membership follows this key while hydration output
+    /// remains ordered by <c>DocumentId</c>. Ordering belongs to this mode alone: a
+    /// <c>ContentVersion</c>-ordered page cannot anchor a <c>DocumentId</c> cursor token.
+    /// </param>
+    public sealed record Traditional(
+        string OffsetParameterName = PageCandidateParameterNames.Offset,
+        string LimitParameterName = PageCandidateParameterNames.Limit,
+        bool IncludeTotalCountSql = false,
+        PageOrderingMode OrderingMode = PageOrderingMode.DocumentId
+    ) : PageCandidateMode;
+
+    /// <summary>
+    /// Seek-based cursor page selection over an inclusive <c>DocumentId</c> range, always ordered by
+    /// <c>DocumentId</c>.
+    /// </summary>
+    /// <param name="InclusiveMinimumParameterName">The inclusive lower bound parameter name.</param>
+    /// <param name="InclusiveMaximumParameterName">The inclusive upper bound parameter name.</param>
+    /// <param name="PageSizeParameterName">The page size parameter name.</param>
+    public sealed record Cursor(
+        string InclusiveMinimumParameterName = PageCandidateParameterNames.CursorInclusiveMinimum,
+        string InclusiveMaximumParameterName = PageCandidateParameterNames.CursorInclusiveMaximum,
+        string PageSizeParameterName = PageCandidateParameterNames.PageSize
+    ) : PageCandidateMode;
+
+    /// <summary>
+    /// The unpaged, unordered candidate relation used for partition planning.
+    /// </summary>
+    /// <param name="PartitionCountParameterName">The reserved partition count parameter name.</param>
+    /// <param name="MinimumPartitionSizeParameterName">
+    /// The reserved minimum partition size parameter name.
+    /// </param>
+    /// <remarks>
+    /// Emits no <c>ORDER BY</c>: the consumer wraps this relation in a common table expression and
+    /// applies its own row numbering, and SQL Server rejects <c>ORDER BY</c> in a CTE that has no
+    /// <c>TOP</c> or <c>OFFSET</c>. The two parameter names are reserved and collision-validated so a
+    /// resource filter cannot shadow them, but no role is emitted until partition-window SQL binds them.
+    /// </remarks>
+    public sealed record UnpagedCandidates(
+        string PartitionCountParameterName = PageCandidateParameterNames.PartitionCount,
+        string MinimumPartitionSizeParameterName = PageCandidateParameterNames.MinimumPartitionSize
+    ) : PageCandidateMode;
+}
+
+/// <summary>
 /// Input specification for compiling page-<c>DocumentId</c> query SQL.
 /// </summary>
 /// <param name="RootTable">The resource root table queried for <c>DocumentId</c>.</param>
@@ -174,26 +272,19 @@ public enum PageOrderingMode
 /// <param name="UnifiedAliasMappingsByColumn">
 /// Unified alias metadata keyed by API-bound alias/binding column for canonical-column predicate rewrite.
 /// </param>
-/// <param name="OffsetParameterName">The bare paging offset parameter name.</param>
-/// <param name="LimitParameterName">The bare paging limit parameter name.</param>
-/// <param name="IncludeTotalCountSql">
-/// Indicates whether the compiler should include total-count SQL in the emitted plan.
+/// <param name="Mode">
+/// The candidate selection mode. A null value is normalized to
+/// <see cref="PageCandidateMode.Traditional" /> with its own defaults; a record parameter default
+/// cannot be a constructed instance, which is the only reason this is nullable.
 /// </param>
 /// <param name="Authorization">
 /// Optional DMS-1055 authorization inputs. When present, relationship predicates are applied to both page and
 /// total-count SQL.
 /// </param>
-/// <param name="OrderingMode">
-/// The page-selection ordering key. Defaults to <see cref="PageOrderingMode.DocumentId"/>; page
-/// membership follows this key while hydration output remains ordered by <c>DocumentId</c>.
-/// </param>
 public sealed record PageDocumentIdQuerySpec(
     DbTableName RootTable,
     IReadOnlyList<QueryValuePredicate> Predicates,
     IReadOnlyDictionary<DbColumnName, ColumnStorage.UnifiedAlias> UnifiedAliasMappingsByColumn,
-    string OffsetParameterName = "offset",
-    string LimitParameterName = "limit",
-    bool IncludeTotalCountSql = false,
-    PageDocumentIdAuthorizationSpec? Authorization = null,
-    PageOrderingMode OrderingMode = PageOrderingMode.DocumentId
+    PageCandidateMode? Mode = null,
+    PageDocumentIdAuthorizationSpec? Authorization = null
 );

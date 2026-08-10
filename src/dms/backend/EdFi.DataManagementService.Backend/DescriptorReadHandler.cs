@@ -472,7 +472,9 @@ internal sealed class DescriptorReadHandler(
             request.MappingSet,
             request.Resource,
             preprocessingResult,
-            request.PaginationParameters,
+            // Descriptor query requests are constructed only from traditional paging; cursor page
+            // selection reaches the descriptor handler with cursor execution.
+            new CollectionPaging.Traditional(request.PaginationParameters),
             authorizationSpec,
             request.ChangeVersionRange,
             orderingMode: _orderingPolicy.ResolveForLiveQuery(request.ChangeVersionRange)

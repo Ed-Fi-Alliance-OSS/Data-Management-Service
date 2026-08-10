@@ -636,7 +636,8 @@ internal sealed record PageDocumentIdSqlPlanDto
         string PageDocumentIdSql,
         string? TotalCountSql,
         IEnumerable<QuerySqlParameterDto> PageParametersInOrder,
-        IEnumerable<QuerySqlParameterDto>? TotalCountParametersInOrder
+        IEnumerable<QuerySqlParameterDto>? TotalCountParametersInOrder,
+        PageCandidateModeDto? CandidateMode = null
     )
     {
         ArgumentNullException.ThrowIfNull(PageParametersInOrder);
@@ -644,6 +645,7 @@ internal sealed record PageDocumentIdSqlPlanDto
         this.PageDocumentIdSql = PageDocumentIdSql;
         this.TotalCountSql = TotalCountSql;
         this.PageParametersInOrder = [.. PageParametersInOrder];
+        this.CandidateMode = CandidateMode;
 
         if (TotalCountSql is null)
         {
@@ -675,6 +677,14 @@ internal sealed record PageDocumentIdSqlPlanDto
     public ImmutableArray<QuerySqlParameterDto> PageParametersInOrder { get; init; }
 
     public ImmutableArray<QuerySqlParameterDto>? TotalCountParametersInOrder { get; init; }
+
+    /// <summary>
+    /// The candidate mode this plan was compiled in. Null means traditional paging, which keeps every
+    /// traditional plan's serialized form byte-identical to the form that predates cursor paging.
+    /// Without this discriminator an unpaged candidate plan is indistinguishable from a traditional
+    /// plan whose paging roles went missing.
+    /// </summary>
+    public PageCandidateModeDto? CandidateMode { get; init; }
 }
 
 internal sealed record QuerySqlParameterDto(
@@ -701,4 +711,19 @@ internal enum QuerySqlParameterRoleDto
     Filter,
     Offset,
     Limit,
+    CursorInclusiveMinimum,
+    CursorInclusiveMaximum,
+    PageSize,
+    PartitionCount,
+    MinimumPartitionSize,
+}
+
+/// <summary>
+/// The non-traditional candidate modes a serialized page plan can declare. Traditional plans omit the
+/// discriminator entirely.
+/// </summary>
+internal enum PageCandidateModeDto
+{
+    Cursor,
+    UnpagedCandidates,
 }

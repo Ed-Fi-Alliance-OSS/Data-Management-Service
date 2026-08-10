@@ -179,7 +179,7 @@ public class Given_PageDocumentIdSqlCompiler
             RootTable: documentTable,
             Predicates: [],
             UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
-            IncludeTotalCountSql: true,
+            Mode: new PageCandidateMode.Traditional(IncludeTotalCountSql: true),
             Authorization: new PageDocumentIdAuthorizationSpec(
                 Strategies: [],
                 NamespaceChecks:
@@ -239,7 +239,7 @@ public class Given_PageDocumentIdSqlCompiler
                     RootTable: documentTable,
                     Predicates: [],
                     UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
-                    IncludeTotalCountSql: true,
+                    Mode: new PageCandidateMode.Traditional(IncludeTotalCountSql: true),
                     Authorization: authorization
                 )
             );
@@ -734,7 +734,7 @@ public class Given_PageDocumentIdSqlCompiler
         secondException.ParamName.Should().Be("Predicates");
         secondException
             .Message.Should()
-            .Contain("Filter parameter name 'OffSet' collides with paging parameter name 'offset'");
+            .Contain("Filter parameter name 'OffSet' collides with candidate mode parameter name 'offset'");
     }
 
     [Test]
@@ -2548,7 +2548,7 @@ public class Given_PageDocumentIdSqlCompiler
             .Throw<ArgumentException>()
             .WithParameterName("Predicates")
             .WithMessage(
-                "Filter parameter name 'OffSet' collides with paging parameter name 'offset' (case-insensitive). Rename the filter parameter or change OffsetParameterName.*"
+                "Filter parameter name 'OffSet' collides with candidate mode parameter name 'offset' (case-insensitive). Rename the filter parameter or change OffsetParameterName.*"
             );
     }
 
@@ -2573,7 +2573,7 @@ public class Given_PageDocumentIdSqlCompiler
             .Throw<ArgumentException>()
             .WithParameterName("Predicates")
             .WithMessage(
-                "Filter parameter name 'LiMit' collides with paging parameter name 'limit' (case-insensitive). Rename the filter parameter or change LimitParameterName.*"
+                "Filter parameter name 'LiMit' collides with candidate mode parameter name 'limit' (case-insensitive). Rename the filter parameter or change LimitParameterName.*"
             );
     }
 
@@ -2585,9 +2585,9 @@ public class Given_PageDocumentIdSqlCompiler
 
         act.Should()
             .Throw<ArgumentException>()
-            .WithParameterName("OffsetParameterName")
+            .WithParameterName("Mode")
             .WithMessage(
-                "Paging parameter names must be distinct (case-insensitive). OffsetParameterName='page', LimitParameterName='page'. Rename either OffsetParameterName or LimitParameterName.*"
+                "Candidate mode parameter names must be distinct (case-insensitive). OffsetParameterName='page', LimitParameterName='page'. Rename either OffsetParameterName or LimitParameterName.*"
             );
     }
 
@@ -2601,9 +2601,9 @@ public class Given_PageDocumentIdSqlCompiler
 
         act.Should()
             .Throw<ArgumentException>()
-            .WithParameterName("OffsetParameterName")
+            .WithParameterName("Mode")
             .WithMessage(
-                "Paging parameter names must be distinct (case-insensitive). OffsetParameterName='OffSet', LimitParameterName='offset'. Rename either OffsetParameterName or LimitParameterName.*"
+                "Candidate mode parameter names must be distinct (case-insensitive). OffsetParameterName='OffSet', LimitParameterName='offset'. Rename either OffsetParameterName or LimitParameterName.*"
             );
     }
 
@@ -2611,10 +2611,7 @@ public class Given_PageDocumentIdSqlCompiler
     public void It_should_order_by_content_version_when_the_ordering_mode_is_content_version()
     {
         var plan = _compiler.Compile(
-            CreateSpec([], [], includeTotalCountSql: true) with
-            {
-                OrderingMode = PageOrderingMode.ContentVersion,
-            }
+            CreateSpec([], [], includeTotalCountSql: true, orderingMode: PageOrderingMode.ContentVersion)
         );
 
         plan.PageDocumentIdSql.Should().Contain("ORDER BY r.\"ContentVersion\" ASC");
@@ -2635,12 +2632,7 @@ public class Given_PageDocumentIdSqlCompiler
     public void It_should_order_by_bracket_quoted_content_version_for_mssql()
     {
         var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Mssql);
-        var plan = compiler.Compile(
-            CreateSpec([], []) with
-            {
-                OrderingMode = PageOrderingMode.ContentVersion,
-            }
-        );
+        var plan = compiler.Compile(CreateSpec([], [], orderingMode: PageOrderingMode.ContentVersion));
 
         plan.PageDocumentIdSql.Should().Contain("ORDER BY r.[ContentVersion] ASC");
         plan.PageDocumentIdSql.Should().Contain("OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY");
@@ -2653,7 +2645,8 @@ public class Given_PageDocumentIdSqlCompiler
         string limitParameterName = "limit",
         bool includeTotalCountSql = false,
         PageDocumentIdAuthorizationSpec? authorization = null,
-        DbTableName? rootTable = null
+        DbTableName? rootTable = null,
+        PageOrderingMode orderingMode = PageOrderingMode.DocumentId
     )
     {
         var unifiedAliasMappingsByColumn = new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>();
@@ -2667,9 +2660,12 @@ public class Given_PageDocumentIdSqlCompiler
             RootTable: rootTable ?? new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation"),
             Predicates: predicates,
             UnifiedAliasMappingsByColumn: unifiedAliasMappingsByColumn,
-            OffsetParameterName: offsetParameterName,
-            LimitParameterName: limitParameterName,
-            IncludeTotalCountSql: includeTotalCountSql,
+            Mode: new PageCandidateMode.Traditional(
+                offsetParameterName,
+                limitParameterName,
+                includeTotalCountSql,
+                orderingMode
+            ),
             Authorization: authorization
         );
     }

@@ -25,8 +25,6 @@ internal static class ChangeVersionFilterConstants
 
 internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
 {
-    private const string OffsetParameterName = "offset";
-    private const string LimitParameterName = "limit";
     private const string ContentVersionColumnName = ChangeVersionFilterConstants.ContentVersionColumnName;
     private const string MinChangeVersionParameterName =
         ChangeVersionFilterConstants.MinChangeVersionParameterName;
@@ -38,34 +36,36 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
     public PageKeysetSpec.Query Plan(
         DbTableModel rootTable,
         RelationalQueryPreprocessingResult preprocessingResult,
-        PaginationParameters paginationParameters,
+        CollectionPaging paging,
         Func<PreprocessedRelationalQueryElement, QueryComparisonOperator>? comparisonOperatorResolver = null,
         PageDocumentIdAuthorizationSpec? authorization = null,
         ChangeVersionRange? changeVersionRange = null,
         PageOrderingMode orderingMode = PageOrderingMode.DocumentId
     )
     {
-        var plannedQuery = PlanOrEmptyPage(
+        ArgumentNullException.ThrowIfNull(paging);
+
+        var plannedCandidates = PlanOrEmptyPage(
             rootTable,
             preprocessingResult,
-            paginationParameters,
+            PageCandidateModePlanning.ForPaging(paging, orderingMode),
             authorization,
             out var emptyPageReason,
             comparisonOperatorResolver,
-            changeVersionRange,
-            orderingMode
+            changeVersionRange
         );
 
-        return plannedQuery
-            ?? throw new InvalidOperationException(
+        return plannedCandidates is null
+            ? throw new InvalidOperationException(
                 emptyPageReason ?? "Relational query planning could not produce a page keyset for this query."
-            );
+            )
+            : ToPageKeysetSpec(plannedCandidates);
     }
 
     public bool TryPlan(
         DbTableModel rootTable,
         RelationalQueryPreprocessingResult preprocessingResult,
-        PaginationParameters paginationParameters,
+        CollectionPaging paging,
         out PageKeysetSpec.Query? plannedQuery,
         out string? emptyPageReason,
         Func<PreprocessedRelationalQueryElement, QueryComparisonOperator>? comparisonOperatorResolver = null,
@@ -74,29 +74,64 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         PageOrderingMode orderingMode = PageOrderingMode.DocumentId
     )
     {
-        plannedQuery = PlanOrEmptyPage(
+        ArgumentNullException.ThrowIfNull(paging);
+
+        var plannedCandidates = PlanOrEmptyPage(
             rootTable,
             preprocessingResult,
-            paginationParameters,
+            PageCandidateModePlanning.ForPaging(paging, orderingMode),
             authorization,
             out emptyPageReason,
             comparisonOperatorResolver,
-            changeVersionRange,
-            orderingMode
+            changeVersionRange
         );
+
+        plannedQuery = plannedCandidates is null ? null : ToPageKeysetSpec(plannedCandidates);
 
         return plannedQuery is not null;
     }
 
-    private PageKeysetSpec.Query? PlanOrEmptyPage(
+    /// <summary>
+    /// Plans the unpaged, unordered candidate relation over the same filters, change-version window,
+    /// and authorization the paged modes use. Partition boundary planning consumes this relation and
+    /// applies its own row numbering, so the result is not a hydration keyset.
+    /// </summary>
+    public bool TryPlanCandidates(
         DbTableModel rootTable,
         RelationalQueryPreprocessingResult preprocessingResult,
-        PaginationParameters paginationParameters,
+        out CandidateQueryPlan? plannedCandidates,
+        out string? emptyPageReason,
+        Func<PreprocessedRelationalQueryElement, QueryComparisonOperator>? comparisonOperatorResolver = null,
+        PageDocumentIdAuthorizationSpec? authorization = null,
+        ChangeVersionRange? changeVersionRange = null
+    )
+    {
+        plannedCandidates = PlanOrEmptyPage(
+            rootTable,
+            preprocessingResult,
+            PageCandidateModePlanning.ForUnpagedCandidates(),
+            authorization,
+            out emptyPageReason,
+            comparisonOperatorResolver,
+            changeVersionRange
+        );
+
+        return plannedCandidates is not null;
+    }
+
+    private static PageKeysetSpec.Query ToPageKeysetSpec(CandidateQueryPlan plannedCandidates)
+    {
+        return new PageKeysetSpec.Query(plannedCandidates.Plan, plannedCandidates.ParameterValues);
+    }
+
+    private CandidateQueryPlan? PlanOrEmptyPage(
+        DbTableModel rootTable,
+        RelationalQueryPreprocessingResult preprocessingResult,
+        PlannedCandidateMode plannedMode,
         PageDocumentIdAuthorizationSpec? authorization,
         out string? emptyPageReason,
         Func<PreprocessedRelationalQueryElement, QueryComparisonOperator>? comparisonOperatorResolver = null,
-        ChangeVersionRange? changeVersionRange = null,
-        PageOrderingMode orderingMode = PageOrderingMode.DocumentId
+        ChangeVersionRange? changeVersionRange = null
     )
     {
         ArgumentNullException.ThrowIfNull(rootTable);
@@ -123,11 +158,12 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             authorization
         );
         var predicates = new List<QueryValuePredicate>(preprocessingResult.QueryElementsInOrder.Count + 2);
-        Dictionary<string, object?> parameterValues = new(StringComparer.Ordinal)
+        Dictionary<string, object?> parameterValues = new(StringComparer.Ordinal);
+
+        foreach (var (parameterName, parameterValue) in plannedMode.ParameterValues)
         {
-            [OffsetParameterName] = (long)(paginationParameters.Offset ?? 0),
-            [LimitParameterName] = (long)(paginationParameters.Limit ?? paginationParameters.MaximumPageSize),
-        };
+            parameterValues[parameterName] = parameterValue;
+        }
 
         for (var index = 0; index < preprocessingResult.QueryElementsInOrder.Count; index++)
         {
@@ -184,15 +220,12 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             RootTable: rootTable.Table,
             Predicates: predicates,
             UnifiedAliasMappingsByColumn: BuildUnifiedAliasMappingsByColumn(rootTable),
-            OffsetParameterName: OffsetParameterName,
-            LimitParameterName: LimitParameterName,
-            IncludeTotalCountSql: paginationParameters.TotalCount,
-            Authorization: authorization,
-            OrderingMode: orderingMode
+            Mode: plannedMode.Mode,
+            Authorization: authorization
         );
         var sqlPlan = _sqlCompiler.Compile(querySpec);
 
-        return new PageKeysetSpec.Query(sqlPlan, parameterValues);
+        return new CandidateQueryPlan(sqlPlan, parameterValues);
     }
 
     private static PlannedPredicate? PlanPredicate(
@@ -436,8 +469,7 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         return QueryParameterNameAllocator.Allocate(
             seeds,
             [
-                OffsetParameterName,
-                LimitParameterName,
+                .. PageCandidateModePlanning.AllCandidateParameterNames,
                 MinChangeVersionParameterName,
                 MaxChangeVersionParameterName,
                 .. QueryParameterNameAllocator.CollectAuthorizationParameterNames(authorization),

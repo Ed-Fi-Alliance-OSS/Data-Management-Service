@@ -188,4 +188,32 @@ public enum QuerySqlParameterRole
     /// Parameter for page size limit.
     /// </summary>
     Limit,
+
+    /// <summary>
+    /// Parameter for the inclusive lower <c>DocumentId</c> bound of a cursor page.
+    /// </summary>
+    CursorInclusiveMinimum,
+
+    /// <summary>
+    /// Parameter for the inclusive upper <c>DocumentId</c> bound of a cursor page.
+    /// </summary>
+    CursorInclusiveMaximum,
+
+    /// <summary>
+    /// Parameter for the number of rows a cursor page may select.
+    /// </summary>
+    PageSize,
+
+    /// <summary>
+    /// Parameter for the requested partition count. Reserved: the candidate relation reserves and
+    /// collision-validates the name so a resource filter cannot shadow it, but no compiled plan
+    /// binds this role until partition-window SQL emits it.
+    /// </summary>
+    PartitionCount,
+
+    /// <summary>
+    /// Parameter for the minimum partition size. Reserved on the same terms as
+    /// <see cref="PartitionCount" />.
+    /// </summary>
+    MinimumPartitionSize,
 }

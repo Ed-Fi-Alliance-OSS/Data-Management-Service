@@ -104,7 +104,9 @@ public class Given_RelationalQueryPageKeysetPlanner
                     ),
                 ]
             ),
-            new PaginationParameters(Limit: null, Offset: null, TotalCount: true, MaximumPageSize: 500)
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: null, Offset: null, TotalCount: true, MaximumPageSize: 500)
+            )
         );
 
         var keyset = queryResult;
@@ -149,7 +151,9 @@ public class Given_RelationalQueryPageKeysetPlanner
                 new RelationalQueryPreprocessingOutcome.Continue(),
                 [queryElement]
             ),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+            )
         );
 
         queryElement.QueryElement.DocumentPaths.Should().ContainSingle();
@@ -185,7 +189,9 @@ public class Given_RelationalQueryPageKeysetPlanner
         var keyset = planner.Plan(
             CreateRootTable(),
             new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+            ),
             authorization: new PageDocumentIdAuthorizationSpec(
                 [
                     new PageDocumentIdAuthorizationStrategy(
@@ -240,7 +246,9 @@ public class Given_RelationalQueryPageKeysetPlanner
                     ),
                 ]
             ),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+            ),
             out var plannedQuery,
             out var emptyPageReason
         );
@@ -291,7 +299,9 @@ public class Given_RelationalQueryPageKeysetPlanner
                     ),
                 ]
             ),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+            )
         );
         var second = planner.Plan(
             CreateRootTable(),
@@ -326,7 +336,9 @@ public class Given_RelationalQueryPageKeysetPlanner
                     ),
                 ]
             ),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+            )
         );
 
         second.Plan.PageDocumentIdSql.Should().Be(first.Plan.PageDocumentIdSql);
@@ -401,7 +413,9 @@ public class Given_RelationalQueryPageKeysetPlanner
                     ),
                 ]
             ),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            ),
             changeVersionRange: new ChangeVersionRange(100L, 200L)
         );
 
@@ -452,7 +466,9 @@ public class Given_RelationalQueryPageKeysetPlanner
                     ),
                 ]
             ),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            ),
             authorization: new PageDocumentIdAuthorizationSpec(
                 Strategies: [],
                 NamespaceChecks:
@@ -492,7 +508,9 @@ public class Given_RelationalQueryPageKeysetPlanner
                     new RelationalQueryPreprocessingOutcome.EmptyPage("no matches"),
                     []
                 ),
-                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+                new CollectionPaging.Traditional(
+                    new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+                )
             );
 
         act.Should()
@@ -523,7 +541,9 @@ public class Given_RelationalQueryPageKeysetPlanner
                         ),
                     ]
                 ),
-                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+                new CollectionPaging.Traditional(
+                    new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+                ),
                 static _ => QueryComparisonOperator.Like
             );
 
@@ -556,7 +576,9 @@ public class Given_RelationalQueryPageKeysetPlanner
                         ),
                     ]
                 ),
-                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+                new CollectionPaging.Traditional(
+                    new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+                )
             );
 
         act.Should()
@@ -564,6 +586,206 @@ public class Given_RelationalQueryPageKeysetPlanner
             .WithMessage(
                 "Relational query planning only supports one compiled document path per query field. Query field 'schoolId' was routed with 2 paths."
             );
+    }
+
+    [Test]
+    public void It_should_give_every_candidate_mode_the_same_filters_authorization_and_filter_values()
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+        var changeVersionRange = new ChangeVersionRange(100L, 200L);
+
+        var traditional = planner.Plan(
+            CreateRootTable(),
+            CreateParityPreprocessingResult(),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 75, TotalCount: false, MaximumPageSize: 500)
+            ),
+            changeVersionRange: changeVersionRange
+        );
+        var cursor = planner.Plan(
+            CreateRootTable(),
+            CreateParityPreprocessingResult(),
+            new CollectionPaging.Cursor(new CursorRange(10L, 90L), new PageSize(25)),
+            changeVersionRange: changeVersionRange
+        );
+
+        planner
+            .TryPlanCandidates(
+                CreateRootTable(),
+                CreateParityPreprocessingResult(),
+                out var unpaged,
+                out _,
+                changeVersionRange: changeVersionRange
+            )
+            .Should()
+            .BeTrue();
+
+        string[] filterParameterNames = ["schoolId", "minChangeVersion", "maxChangeVersion"];
+
+        foreach (var filterParameterName in filterParameterNames)
+        {
+            cursor
+                .ParameterValues[filterParameterName]
+                .Should()
+                .Be(traditional.ParameterValues[filterParameterName]);
+            unpaged!
+                .ParameterValues[filterParameterName]
+                .Should()
+                .Be(traditional.ParameterValues[filterParameterName]);
+        }
+
+        FilterParameterNames(cursor.Plan).Should().Equal(FilterParameterNames(traditional.Plan));
+        FilterParameterNames(unpaged!.Plan).Should().Equal(FilterParameterNames(traditional.Plan));
+
+        // Every mode compiles the same change-version window against the same mirrored root column.
+        foreach (var sql in new[] { traditional.Plan, cursor.Plan, unpaged.Plan })
+        {
+            sql.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
+            sql.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" <= @maxChangeVersion");
+            sql.PageDocumentIdSql.Should().Contain("r.\"SchoolId\" = @schoolId");
+            sql.PageDocumentIdSql.Should().NotContain("DISTINCT");
+        }
+    }
+
+    [Test]
+    public void It_should_bind_the_cursor_range_and_page_size_as_int64_values()
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var cursor = planner.Plan(
+            CreateRootTable(),
+            CreateParityPreprocessingResult(),
+            new CollectionPaging.Cursor(new CursorRange(10L, long.MaxValue), new PageSize(25))
+        );
+
+        cursor.ParameterValues["cursorMin"].Should().Be(10L);
+        cursor.ParameterValues["cursorMax"].Should().Be(long.MaxValue);
+        cursor.ParameterValues["pageSize"].Should().Be(25L);
+        cursor.ParameterValues.Keys.Should().NotContain("offset").And.NotContain("limit");
+    }
+
+    [Test]
+    public void It_should_bind_an_inverted_cursor_range_without_rejecting_it()
+    {
+        // An inverted range is a match-nothing window, and it is how a bounded partition reaches its
+        // terminal empty page. It is not an error.
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var cursor = planner.Plan(
+            CreateRootTable(),
+            CreateParityPreprocessingResult(),
+            new CollectionPaging.Cursor(new CursorRange(90L, 10L), new PageSize(0))
+        );
+
+        cursor.ParameterValues["cursorMin"].Should().Be(90L);
+        cursor.ParameterValues["cursorMax"].Should().Be(10L);
+        cursor.ParameterValues["pageSize"].Should().Be(0L);
+    }
+
+    [Test]
+    public void It_should_bind_extreme_int64_cursor_bounds()
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var cursor = planner.Plan(
+            CreateRootTable(),
+            CreateParityPreprocessingResult(),
+            new CollectionPaging.Cursor(new CursorRange(long.MinValue, long.MaxValue), new PageSize(500))
+        );
+
+        cursor.ParameterValues["cursorMin"].Should().Be(long.MinValue);
+        cursor.ParameterValues["cursorMax"].Should().Be(long.MaxValue);
+        cursor.ParameterValues["pageSize"].Should().Be(500L);
+    }
+
+    [Test]
+    public void It_should_reach_the_same_empty_candidate_short_circuit_in_every_candidate_mode()
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        planner
+            .TryPlan(
+                CreateRootTable(),
+                CreateUnrepresentableValuePreprocessingResult(),
+                new CollectionPaging.Traditional(
+                    new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+                ),
+                out var traditional,
+                out var traditionalReason
+            )
+            .Should()
+            .BeFalse();
+        planner
+            .TryPlan(
+                CreateRootTable(),
+                CreateUnrepresentableValuePreprocessingResult(),
+                new CollectionPaging.Cursor(new CursorRange(1L, 100L), new PageSize(25)),
+                out var cursor,
+                out var cursorReason
+            )
+            .Should()
+            .BeFalse();
+        planner
+            .TryPlanCandidates(
+                CreateRootTable(),
+                CreateUnrepresentableValuePreprocessingResult(),
+                out var unpaged,
+                out var unpagedReason
+            )
+            .Should()
+            .BeFalse();
+
+        traditional.Should().BeNull();
+        cursor.Should().BeNull();
+        unpaged.Should().BeNull();
+        cursorReason.Should().Be(traditionalReason);
+        unpagedReason.Should().Be(traditionalReason);
+    }
+
+    private static IReadOnlyList<string> FilterParameterNames(PageDocumentIdSqlPlan plan)
+    {
+        return
+        [
+            .. plan
+                .PageParametersInOrder.Where(static parameter =>
+                    parameter.Role is QuerySqlParameterRole.Filter
+                )
+                .Select(static parameter => parameter.ParameterName),
+        ];
+    }
+
+    private static RelationalQueryPreprocessingResult CreateParityPreprocessingResult()
+    {
+        return new RelationalQueryPreprocessingResult(
+            new RelationalQueryPreprocessingOutcome.Continue(),
+            [
+                CreateElement(
+                    "schoolId",
+                    "$.schoolId",
+                    "number",
+                    new RelationalQueryFieldTarget.RootColumn(new DbColumnName("SchoolId")),
+                    "456",
+                    new PreprocessedRelationalQueryValue.Raw("456")
+                ),
+            ]
+        );
+    }
+
+    private static RelationalQueryPreprocessingResult CreateUnrepresentableValuePreprocessingResult()
+    {
+        return new RelationalQueryPreprocessingResult(
+            new RelationalQueryPreprocessingOutcome.Continue(),
+            [
+                CreateElement(
+                    "schoolId",
+                    "$.schoolId",
+                    "number",
+                    new RelationalQueryFieldTarget.RootColumn(new DbColumnName("SchoolId")),
+                    "not-a-number",
+                    new PreprocessedRelationalQueryValue.Raw("not-a-number")
+                ),
+            ]
+        );
     }
 
     private static PreprocessedRelationalQueryElement CreateElement(
@@ -614,7 +836,9 @@ public class Given_RelationalQueryPageKeysetPlanner
         var keyset = planner.Plan(
             CreateRootTable(),
             new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+            ),
             changeVersionRange: new ChangeVersionRange(100L, 200L)
         );
 
@@ -646,7 +870,9 @@ public class Given_RelationalQueryPageKeysetPlanner
         var keyset = planner.Plan(
             CreateRootTable(),
             new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+            ),
             changeVersionRange: new ChangeVersionRange(100L, null)
         );
 
@@ -664,7 +890,9 @@ public class Given_RelationalQueryPageKeysetPlanner
         var keyset = planner.Plan(
             CreateRootTable(),
             new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+            ),
             changeVersionRange: new ChangeVersionRange(null, 200L)
         );
 
@@ -678,11 +906,8 @@ public class Given_RelationalQueryPageKeysetPlanner
     public void It_should_leave_the_plan_unchanged_when_no_change_version_bounds_are_supplied()
     {
         var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
-        var paginationParameters = new PaginationParameters(
-            Limit: 25,
-            Offset: 0,
-            TotalCount: true,
-            MaximumPageSize: 500
+        var paginationParameters = new CollectionPaging.Traditional(
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
         );
         var withoutRange = planner.Plan(
             CreateRootTable(),
@@ -730,7 +955,9 @@ public class Given_RelationalQueryPageKeysetPlanner
                     ),
                 ]
             ),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+            ),
             authorization: new PageDocumentIdAuthorizationSpec(
                 [
                     new PageDocumentIdAuthorizationStrategy(
@@ -774,7 +1001,9 @@ public class Given_RelationalQueryPageKeysetPlanner
                     new RelationalQueryPreprocessingOutcome.Continue(),
                     []
                 ),
-                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+                new CollectionPaging.Traditional(
+                    new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+                ),
                 changeVersionRange: new ChangeVersionRange(100L, null)
             );
 
@@ -801,7 +1030,9 @@ public class Given_RelationalQueryPageKeysetPlanner
                     new RelationalQueryPreprocessingOutcome.Continue(),
                     []
                 ),
-                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+                new CollectionPaging.Traditional(
+                    new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+                ),
                 changeVersionRange: new ChangeVersionRange(null, 200L)
             );
 
@@ -826,7 +1057,9 @@ public class Given_RelationalQueryPageKeysetPlanner
                     new RelationalQueryPreprocessingOutcome.Continue(),
                     []
                 ),
-                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+                new CollectionPaging.Traditional(
+                    new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+                ),
                 changeVersionRange: new ChangeVersionRange(100L, 200L)
             );
 

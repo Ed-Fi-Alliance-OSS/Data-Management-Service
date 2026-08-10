@@ -1949,9 +1949,8 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
 
         var exception = act.Should().Throw<ArgumentException>().Which;
         exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.PageParametersInOrder));
-        exception.Message.Should().Contain("exactly one Offset and one Limit role entry");
-        exception.Message.Should().Contain("Offset=0");
-        exception.Message.Should().Contain("Limit=1");
+        exception.Message.Should().Contain("must be filter roles followed by [Offset, Limit]");
+        exception.Message.Should().Contain("Observed roles in order:");
     }
 
     [Test]
@@ -1972,9 +1971,8 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
 
         var exception = act.Should().Throw<ArgumentException>().Which;
         exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.PageParametersInOrder));
-        exception.Message.Should().Contain("exactly one Offset and one Limit role entry");
-        exception.Message.Should().Contain("Offset=1");
-        exception.Message.Should().Contain("Limit=0");
+        exception.Message.Should().Contain("must be filter roles followed by [Offset, Limit]");
+        exception.Message.Should().Contain("Observed roles in order:");
     }
 
     [Test]
@@ -1997,9 +1995,8 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
 
         var exception = act.Should().Throw<ArgumentException>().Which;
         exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.PageParametersInOrder));
-        exception.Message.Should().Contain("exactly one Offset and one Limit role entry");
-        exception.Message.Should().Contain("Offset=2");
-        exception.Message.Should().Contain("Limit=1");
+        exception.Message.Should().Contain("must be filter roles followed by [Offset, Limit]");
+        exception.Message.Should().Contain("Observed roles in order:");
     }
 
     [Test]
@@ -2022,9 +2019,8 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
 
         var exception = act.Should().Throw<ArgumentException>().Which;
         exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.PageParametersInOrder));
-        exception.Message.Should().Contain("exactly one Offset and one Limit role entry");
-        exception.Message.Should().Contain("Offset=1");
-        exception.Message.Should().Contain("Limit=2");
+        exception.Message.Should().Contain("must be filter roles followed by [Offset, Limit]");
+        exception.Message.Should().Contain("Observed roles in order:");
     }
 
     [Test]
