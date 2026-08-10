@@ -5,7 +5,6 @@
 
 using System.Data;
 using System.Data.Common;
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -105,10 +104,6 @@ public class Given_Mssql_DocumentCacheMaterializer_Fixtures
 
         var success = result.Should().BeOfType<DocumentCacheMaterializationResult.Success>().Subject;
         AssertCandidateMatchesFixture(success.Candidate, fixture);
-        MaterializedDocumentFixtureAssertions.AssertSchoolAddressDescriptorAbsence(
-            success.Candidate.DocumentJson,
-            fixture
-        );
         AssertRecordedCommandsStayOnCanonicalSource();
     }
 

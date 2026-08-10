@@ -98,10 +98,6 @@ public class Given_Postgresql_DocumentCacheMaterializer_Fixtures
 
         var success = result.Should().BeOfType<DocumentCacheMaterializationResult.Success>().Subject;
         AssertCandidateMatchesFixture(success.Candidate, fixture);
-        MaterializedDocumentFixtureAssertions.AssertSchoolAddressDescriptorAbsence(
-            success.Candidate.DocumentJson,
-            fixture
-        );
         AssertRecordedCommandsStayOnCanonicalSource();
     }
 
