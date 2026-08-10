@@ -272,10 +272,16 @@ internal sealed class NoOpDocumentCacheReadResponseShaper : IDocumentCacheReadRe
 
 internal abstract class DocumentCacheReadLookupAdapterBase : IDocumentCacheReadLookupAdapter
 {
+    private readonly IServedEtagComposer _servedEtagComposer;
     private readonly IDocumentCacheReadResponseShaper _responseShaper;
 
-    protected DocumentCacheReadLookupAdapterBase(IDocumentCacheReadResponseShaper? responseShaper = null)
+    protected DocumentCacheReadLookupAdapterBase(
+        IServedEtagComposer servedEtagComposer,
+        IDocumentCacheReadResponseShaper? responseShaper = null
+    )
     {
+        _servedEtagComposer =
+            servedEtagComposer ?? throw new ArgumentNullException(nameof(servedEtagComposer));
         _responseShaper = responseShaper ?? NoOpDocumentCacheReadResponseShaper.Instance;
     }
 
@@ -406,7 +412,7 @@ internal abstract class DocumentCacheReadLookupAdapterBase : IDocumentCacheReadL
                 )
                 .ConfigureAwait(false);
 
-            return DocumentCacheReadLookupClassifier.Classify(request, observations);
+            return DocumentCacheReadLookupClassifier.Classify(request, observations, _servedEtagComposer);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -620,15 +626,15 @@ internal sealed record DocumentCacheReadLookupObservation(
 
 internal static class DocumentCacheReadLookupClassifier
 {
-    private static readonly ServedEtagComposer ServedEtagComposer = new();
-
     public static DocumentCacheReadBatchLookupResult Classify(
         DocumentCacheReadBatchLookupRequest request,
-        IReadOnlyList<DocumentCacheReadLookupObservation> observations
+        IReadOnlyList<DocumentCacheReadLookupObservation> observations,
+        IServedEtagComposer servedEtagComposer
     )
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(observations);
+        ArgumentNullException.ThrowIfNull(servedEtagComposer);
 
         if (observations.Count != request.Candidates.Count)
         {
@@ -657,7 +663,7 @@ internal static class DocumentCacheReadLookupClassifier
                 );
             }
 
-            results.Add(ClassifyDocument(request.MappingSet, candidate, observation));
+            results.Add(ClassifyDocument(request.MappingSet, candidate, observation, servedEtagComposer));
         }
 
         return DocumentCacheReadBatchLookupResult.FromDocuments(results);
@@ -666,7 +672,8 @@ internal static class DocumentCacheReadLookupClassifier
     private static DocumentCacheReadDocumentLookupResult ClassifyDocument(
         MappingSet mappingSet,
         DocumentCacheReadAccelerationCandidate candidate,
-        DocumentCacheReadLookupObservation observation
+        DocumentCacheReadLookupObservation observation,
+        IServedEtagComposer servedEtagComposer
     )
     {
         DocumentCacheReadDocumentLookupResult.Fallback Fallback(
@@ -839,6 +846,7 @@ internal static class DocumentCacheReadLookupClassifier
         }
 
         string expectedStreamEtag = ComposeExpectedFixedStreamEtag(
+            servedEtagComposer,
             mappingSet,
             model,
             candidate.ContentVersion
@@ -858,6 +866,7 @@ internal static class DocumentCacheReadLookupClassifier
     }
 
     private static string ComposeExpectedFixedStreamEtag(
+        IServedEtagComposer servedEtagComposer,
         MappingSet mappingSet,
         ConcreteResourceModel model,
         long contentVersion
@@ -865,12 +874,12 @@ internal static class DocumentCacheReadLookupClassifier
     {
         return model.StorageKind == ResourceStorageKind.SharedDescriptorTable
             ? DocumentCacheMaterializerStreamEtagComposer.ComposeForDescriptor(
-                ServedEtagComposer,
+                servedEtagComposer,
                 mappingSet,
                 contentVersion
             )
             : DocumentCacheMaterializerStreamEtagComposer.ComposeForResource(
-                ServedEtagComposer,
+                servedEtagComposer,
                 mappingSet,
                 contentVersion
             );

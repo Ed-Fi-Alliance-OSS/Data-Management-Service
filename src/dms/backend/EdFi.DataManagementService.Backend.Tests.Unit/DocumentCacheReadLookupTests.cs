@@ -200,6 +200,38 @@ public class Given_DocumentCacheReadLookup
     }
 
     [Test]
+    public void It_classifies_a_cache_row_composed_by_a_replacement_etag_composer_as_fresh()
+    {
+        var servedEtagComposer = new RecordingServedEtagComposer("replacement-stream-etag");
+        DocumentCacheReadAccelerationCandidate candidate = Candidate();
+        string materializerStreamEtag = DocumentCacheMaterializerStreamEtagComposer.ComposeForResource(
+            servedEtagComposer,
+            MappingSet,
+            candidate.ContentVersion
+        );
+
+        DocumentCacheReadBatchLookupResult result = Classify(
+            candidate,
+            Observation(candidate) with
+            {
+                StreamEtag = materializerStreamEtag,
+            },
+            servedEtagComposer
+        );
+
+        result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.FreshHit);
+        var expectedContext = new ServedEtagContext(
+            MappingSet.Key.EffectiveSchemaHash,
+            ResponseFormat.Json,
+            ProfileName: null,
+            LinksEnabled: true,
+            candidate.ContentVersion,
+            ResponseContentCoding.Identity
+        );
+        servedEtagComposer.Contexts.Should().Equal(expectedContext, expectedContext);
+    }
+
+    [Test]
     public void It_classifies_rebuilding_with_cache_ahead_latch_as_cache_ahead_recovery_required()
     {
         DocumentCacheReadAccelerationCandidate candidate = Candidate();
@@ -819,7 +851,8 @@ public class Given_DocumentCacheReadLookup
             dataSourceCache,
             new PostgresqlRelationalWriteExceptionClassifier(),
             new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
-            NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance
+            NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance,
+            new ServedEtagComposer()
         );
 
         DocumentCacheReadBatchLookupResult result = await adapter.LookupBatchAsync(
@@ -839,7 +872,8 @@ public class Given_DocumentCacheReadLookup
             (_, _) => Task.FromException<NpgsqlConnection>(new ArgumentException("bad target")),
             new PostgresqlRelationalWriteExceptionClassifier(),
             new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
-            NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance
+            NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance,
+            new ServedEtagComposer()
         );
 
         DocumentCacheReadBatchLookupResult result = await adapter.LookupBatchAsync(
@@ -859,7 +893,8 @@ public class Given_DocumentCacheReadLookup
             (_, _) => Task.FromException<NpgsqlConnection>(new NpgsqlException("open failed")),
             new PostgresqlRelationalWriteExceptionClassifier(),
             new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
-            NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance
+            NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance,
+            new ServedEtagComposer()
         );
 
         DocumentCacheReadBatchLookupResult result = await adapter.LookupBatchAsync(
@@ -879,7 +914,8 @@ public class Given_DocumentCacheReadLookup
             (_, _) => Task.FromException<NpgsqlConnection>(new InvalidOperationException("programming")),
             new PostgresqlRelationalWriteExceptionClassifier(),
             new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
-            NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance
+            NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance,
+            new ServedEtagComposer()
         );
 
         Func<Task> act = async () =>
@@ -897,7 +933,8 @@ public class Given_DocumentCacheReadLookup
         var adapter = new MssqlDocumentCacheReadLookupAdapter(
             new MssqlRelationalWriteExceptionClassifier(),
             new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
-            NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance
+            NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance,
+            new ServedEtagComposer()
         );
 
         DocumentCacheReadBatchLookupResult result = await adapter.LookupBatchAsync(
@@ -921,7 +958,8 @@ public class Given_DocumentCacheReadLookup
             _ => throw new ArgumentException("bad target"),
             new MssqlRelationalWriteExceptionClassifier(),
             new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
-            NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance
+            NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance,
+            new ServedEtagComposer()
         );
 
         DocumentCacheReadBatchLookupResult result = await adapter.LookupBatchAsync(
@@ -944,7 +982,8 @@ public class Given_DocumentCacheReadLookup
             _ => new ThrowingOpenDbConnection(new TestDbException("open failed")),
             new MssqlRelationalWriteExceptionClassifier(),
             new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
-            NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance
+            NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance,
+            new ServedEtagComposer()
         );
 
         DocumentCacheReadBatchLookupResult result = await adapter.LookupBatchAsync(
@@ -967,7 +1006,8 @@ public class Given_DocumentCacheReadLookup
             _ => throw new InvalidOperationException("programming"),
             new MssqlRelationalWriteExceptionClassifier(),
             new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
-            NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance
+            NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance,
+            new ServedEtagComposer()
         );
 
         Func<Task> act = async () =>
@@ -1231,16 +1271,19 @@ public class Given_DocumentCacheReadLookup
 
     private static DocumentCacheReadBatchLookupResult Classify(
         DocumentCacheReadAccelerationCandidate candidate,
-        DocumentCacheReadLookupObservation observation
-    ) => Classify([candidate], [observation]);
+        DocumentCacheReadLookupObservation observation,
+        IServedEtagComposer? servedEtagComposer = null
+    ) => Classify([candidate], [observation], servedEtagComposer);
 
     private static DocumentCacheReadBatchLookupResult Classify(
         IReadOnlyList<DocumentCacheReadAccelerationCandidate> candidates,
-        IReadOnlyList<DocumentCacheReadLookupObservation> observations
+        IReadOnlyList<DocumentCacheReadLookupObservation> observations,
+        IServedEtagComposer? servedEtagComposer = null
     ) =>
         DocumentCacheReadLookupClassifier.Classify(
             new DocumentCacheReadBatchLookupRequest(MappingSet, candidates),
-            observations
+            observations,
+            servedEtagComposer ?? new ServedEtagComposer()
         );
 
     private static DocumentCacheReadAccelerationCandidate Candidate(
@@ -1403,7 +1446,7 @@ public class Given_DocumentCacheReadLookup
         RelationalProviderToken providerToken,
         IReadOnlyList<DocumentCacheReadLookupObservation> observations,
         IDocumentCacheReadResponseShaper? responseShaper = null
-    ) : DocumentCacheReadLookupAdapterBase(responseShaper)
+    ) : DocumentCacheReadLookupAdapterBase(new ServedEtagComposer(), responseShaper)
     {
         private readonly RelationalProviderToken _providerToken = providerToken;
         private readonly IReadOnlyList<DocumentCacheReadLookupObservation> _observations = observations;
@@ -1472,7 +1515,7 @@ public class Given_DocumentCacheReadLookup
         RelationalProviderToken providerToken,
         Exception exception,
         bool classifyAsCacheUnavailable = false
-    ) : DocumentCacheReadLookupAdapterBase
+    ) : DocumentCacheReadLookupAdapterBase(new ServedEtagComposer())
     {
         private readonly RelationalProviderToken _providerToken = providerToken;
         private readonly Exception _exception = exception;
@@ -1529,4 +1572,17 @@ public class Given_DocumentCacheReadLookup
     }
 
     private sealed class TestDbException(string message) : DbException(message);
+
+    private sealed class RecordingServedEtagComposer(string returnValue) : IServedEtagComposer
+    {
+        private readonly List<ServedEtagContext> _contexts = [];
+
+        public IReadOnlyList<ServedEtagContext> Contexts => _contexts;
+
+        public string Compose(ServedEtagContext context)
+        {
+            _contexts.Add(context);
+            return returnValue;
+        }
+    }
 }

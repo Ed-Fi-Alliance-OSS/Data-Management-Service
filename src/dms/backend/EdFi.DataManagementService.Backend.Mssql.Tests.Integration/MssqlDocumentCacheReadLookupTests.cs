@@ -74,7 +74,8 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
         _adapter = new MssqlDocumentCacheReadLookupAdapter(
             new MssqlRelationalWriteExceptionClassifier(),
             new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
-            NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance
+            NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance,
+            new ServedEtagComposer()
         );
     }
 

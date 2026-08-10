@@ -70,7 +70,8 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
             _dataSourceCache,
             new PostgresqlRelationalWriteExceptionClassifier(),
             new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
-            NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance
+            NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance,
+            new ServedEtagComposer()
         );
     }
 

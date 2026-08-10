@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.Configuration;
@@ -116,6 +117,7 @@ public class Given_DocumentCacheServiceRegistration
             IDocumentCacheProviderCommandTimeoutClassifier,
             PostgresqlDocumentCacheProviderCommandTimeoutClassifier
         >(services);
+        AssertSingleton<IServedEtagComposer, ServedEtagComposer>(services);
         AssertSingletonFactory<IDocumentCacheAdministrativePrimitives>(services);
         AssertSingleton<
             IDocumentCacheProjectionDrainPageProcessor,
@@ -141,6 +143,7 @@ public class Given_DocumentCacheServiceRegistration
             IDocumentCacheProviderCommandTimeoutClassifier,
             MssqlDocumentCacheProviderCommandTimeoutClassifier
         >(services);
+        AssertSingleton<IServedEtagComposer, ServedEtagComposer>(services);
         AssertSingletonFactory<IDocumentCacheAdministrativePrimitives>(services);
         AssertSingleton<
             IDocumentCacheProjectionDrainPageProcessor,

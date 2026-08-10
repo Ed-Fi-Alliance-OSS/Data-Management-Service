@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
@@ -24,9 +25,10 @@ internal sealed class PostgresqlDocumentCacheReadLookupAdapter : DocumentCacheRe
         IRelationalWriteExceptionClassifier writeExceptionClassifier,
         IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
         ILogger<PostgresqlDocumentCacheReadLookupAdapter> logger,
+        IServedEtagComposer servedEtagComposer,
         IDocumentCacheReadResponseShaper? responseShaper = null
     )
-        : base(responseShaper)
+        : base(servedEtagComposer, responseShaper)
     {
         _openConnectionAsync = OpenConnectionFromCacheAsync(dataSourceCache);
         _writeExceptionClassifier =
@@ -42,9 +44,10 @@ internal sealed class PostgresqlDocumentCacheReadLookupAdapter : DocumentCacheRe
         IRelationalWriteExceptionClassifier writeExceptionClassifier,
         IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
         ILogger<PostgresqlDocumentCacheReadLookupAdapter> logger,
+        IServedEtagComposer servedEtagComposer,
         IDocumentCacheReadResponseShaper? responseShaper = null
     )
-        : base(responseShaper)
+        : base(servedEtagComposer, responseShaper)
     {
         _openConnectionAsync =
             openConnectionAsync ?? throw new ArgumentNullException(nameof(openConnectionAsync));

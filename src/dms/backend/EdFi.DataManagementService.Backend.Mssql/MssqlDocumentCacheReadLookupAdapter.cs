@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
@@ -23,9 +24,10 @@ internal sealed class MssqlDocumentCacheReadLookupAdapter : DocumentCacheReadLoo
         IRelationalWriteExceptionClassifier writeExceptionClassifier,
         IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
         ILogger<MssqlDocumentCacheReadLookupAdapter> logger,
+        IServedEtagComposer servedEtagComposer,
         IDocumentCacheReadResponseShaper? responseShaper = null
     )
-        : base(responseShaper)
+        : base(servedEtagComposer, responseShaper)
     {
         _createConnection = connectionString => new SqlConnection(connectionString);
         _writeExceptionClassifier =
@@ -41,9 +43,10 @@ internal sealed class MssqlDocumentCacheReadLookupAdapter : DocumentCacheReadLoo
         IRelationalWriteExceptionClassifier writeExceptionClassifier,
         IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
         ILogger<MssqlDocumentCacheReadLookupAdapter> logger,
+        IServedEtagComposer servedEtagComposer,
         IDocumentCacheReadResponseShaper? responseShaper = null
     )
-        : base(responseShaper)
+        : base(servedEtagComposer, responseShaper)
     {
         _createConnection = createConnection ?? throw new ArgumentNullException(nameof(createConnection));
         _writeExceptionClassifier =
