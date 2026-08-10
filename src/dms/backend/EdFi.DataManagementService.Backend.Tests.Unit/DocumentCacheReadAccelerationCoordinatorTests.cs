@@ -3032,6 +3032,8 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         SelectedDataStoreUnavailable,
         UnresolvedTarget,
         InvalidTargetKey,
+        TargetRegistryUnavailable,
+        TargetReadAccelerationDisabled,
     }
 
     private static IEnumerable<TestCaseData> TargetResolutionDirectFillSkipCases()
@@ -3055,6 +3057,16 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             TargetResolutionFallbackScenario.InvalidTargetKey,
             nameof(DocumentCacheReadAccelerationFallbackReason.InvalidTargetKey),
             DocumentCacheReadTelemetryLabel.SkippedInvalidTargetKey
+        );
+        yield return new TestCaseData(
+            TargetResolutionFallbackScenario.TargetRegistryUnavailable,
+            nameof(DocumentCacheReadAccelerationFallbackReason.UnresolvedTarget),
+            DocumentCacheReadTelemetryLabel.SkippedTargetRegistryUnavailable
+        );
+        yield return new TestCaseData(
+            TargetResolutionFallbackScenario.TargetReadAccelerationDisabled,
+            nameof(DocumentCacheReadAccelerationFallbackReason.ReadAccelerationDisabled),
+            DocumentCacheReadTelemetryLabel.SkippedTargetReadAccelerationDisabled
         );
     }
 
@@ -3080,7 +3092,11 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     ) =>
         scenario switch
         {
-            TargetResolutionFallbackScenario.UnresolvedTarget => CreateRegistry(),
+            TargetResolutionFallbackScenario.UnresolvedTarget => CreateConfiguredOnlyRegistry(),
+            TargetResolutionFallbackScenario.TargetRegistryUnavailable => CreateRegistry(),
+            TargetResolutionFallbackScenario.TargetReadAccelerationDisabled => CreateRegistry(
+                ExecutionContext(readAccelerationEnabled: false)
+            ),
             _ => CreateRegistry(ExecutionContext()),
         };
 
@@ -3132,13 +3148,14 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     private static DocumentCacheTargetExecutionContext ExecutionContext(
         DocumentCacheLifecycleState lifecycleState = DocumentCacheLifecycleState.Tracking,
         bool cacheAheadRecoveryRequired = false,
-        TimeSpan? directFillTimeout = null
+        TimeSpan? directFillTimeout = null,
+        bool readAccelerationEnabled = true
     ) =>
         new(
             TargetKey,
             new DocumentCacheTargetContextGeneration(1),
             new DocumentCacheTargetEffectiveSettings(
-                readAccelerationEnabled: true,
+                readAccelerationEnabled,
                 directFillTimeout: directFillTimeout ?? TimeSpan.FromMilliseconds(250),
                 projectorPollInterval: TimeSpan.FromSeconds(5),
                 projectorPageSize: 3,

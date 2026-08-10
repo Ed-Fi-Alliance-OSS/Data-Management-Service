@@ -955,10 +955,21 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             return false;
         }
 
-        if (_targetRegistry.CurrentSnapshot.GetTarget(targetKey) is null)
+        DocumentCacheTargetObservation? targetObservation = _targetRegistry.CurrentSnapshot.GetTarget(
+            targetKey
+        );
+
+        if (targetObservation is null)
         {
             fallbackReason = DocumentCacheReadAccelerationFallbackReason.UnresolvedTarget;
-            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedUnresolvedTarget;
+            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedTargetRegistryUnavailable;
+            return false;
+        }
+
+        if (!targetObservation.EffectiveSettings.ReadAccelerationEnabled)
+        {
+            fallbackReason = DocumentCacheReadAccelerationFallbackReason.ReadAccelerationDisabled;
+            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedTargetReadAccelerationDisabled;
             return false;
         }
 
@@ -998,6 +1009,13 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         {
             fallbackReason = DocumentCacheReadAccelerationFallbackReason.UnresolvedTarget;
             directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedUnresolvedTarget;
+            return false;
+        }
+
+        if (!resolvedTargetContext.EffectiveSettings.ReadAccelerationEnabled)
+        {
+            fallbackReason = DocumentCacheReadAccelerationFallbackReason.ReadAccelerationDisabled;
+            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedTargetReadAccelerationDisabled;
             return false;
         }
 
