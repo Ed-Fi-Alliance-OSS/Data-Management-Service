@@ -25,6 +25,8 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 [Parallelizable]
 public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
 {
+    private static readonly DocumentCacheTargetKey TargetKey = DocumentCacheTargetKey.Create("TenantA", 7);
+
     [Test]
     public void It_registers_the_postgresql_reference_resolution_composition_surface()
     {
@@ -158,7 +160,86 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
             .BeOfType<PostgresqlRelationshipAuthorizationProviderFailureExtractor>();
         documentCacheReadAccelerationCoordinator
             .Should()
+            .BeSameAs(PassthroughDocumentCacheReadAccelerationCoordinator.Instance);
+    }
+
+    [Test]
+    public void It_registers_the_full_read_acceleration_coordinator_when_read_acceleration_is_enabled()
+    {
+        var services = new ServiceCollection();
+
+        services.AddLogging();
+        services.AddSingleton(A.Fake<IReadableProfileProjector>());
+        services.AddSingleton<NpgsqlDataSourceCache>();
+        services.AddSingleton(A.Fake<IDataStoreProvider>());
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
+        services.AddScoped<NpgsqlDataSourceProvider>();
+        services.Configure<DocumentCacheOptions>(options => options.ReadAcceleration.Enabled = true);
+        services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
+        services.AddPostgresqlReferenceResolver();
+
+        using var serviceProvider = BuildServiceProvider(services);
+        using var scope = serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDocumentCacheReadAccelerationCoordinator>()
+            .Should()
             .BeOfType<DocumentCacheReadAccelerationCoordinator>();
+    }
+
+    [Test]
+    public async Task It_uses_passthrough_reads_without_cache_telemetry_when_read_acceleration_is_disabled()
+    {
+        var readTelemetry = A.Fake<IDocumentCacheReadTelemetry>();
+        var services = new ServiceCollection();
+
+        services.AddLogging();
+        services.AddSingleton(readTelemetry);
+        services.AddSingleton(A.Fake<IReadableProfileProjector>());
+        services.AddSingleton<NpgsqlDataSourceCache>();
+        services.AddSingleton(A.Fake<IDataStoreProvider>());
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
+        services.AddScoped<NpgsqlDataSourceProvider>();
+        services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
+        services.AddPostgresqlReferenceResolver();
+
+        using var serviceProvider = BuildServiceProvider(services);
+        using var scope = serviceProvider.CreateScope();
+
+        var coordinator =
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheReadAccelerationCoordinator>();
+        var getFallback = new GetResult.GetFailureNotExists();
+        var queryFallback = new QueryResult.QueryFailureKnownError("fallback");
+        int getFallbackCount = 0;
+        int queryFallbackCount = 0;
+
+        GetResult getResult = await coordinator.GetByIdAsync(
+            CreateReadAccelerationGetByIdRequest(
+                _ =>
+                {
+                    getFallbackCount++;
+                    return Task.FromResult<GetResult>(getFallback);
+                },
+                _ => throw new InvalidOperationException("GET candidate selection should not run.")
+            )
+        );
+        QueryResult queryResult = await coordinator.QueryAsync(
+            CreateReadAccelerationQueryRequest(
+                _ =>
+                {
+                    queryFallbackCount++;
+                    return Task.FromResult<QueryResult>(queryFallback);
+                },
+                _ => throw new InvalidOperationException("query candidate selection should not run.")
+            )
+        );
+
+        coordinator.Should().BeSameAs(PassthroughDocumentCacheReadAccelerationCoordinator.Instance);
+        getResult.Should().BeSameAs(getFallback);
+        queryResult.Should().BeSameAs(queryFallback);
+        getFallbackCount.Should().Be(1);
+        queryFallbackCount.Should().Be(1);
+        AssertNoReadTelemetry(readTelemetry);
     }
 
     [Test]
@@ -297,6 +378,76 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
         );
+    }
+
+    private static DocumentCacheReadAccelerationGetByIdRequest CreateReadAccelerationGetByIdRequest(
+        Func<CancellationToken, Task<GetResult>> fallback,
+        Func<
+            CancellationToken,
+            Task<DocumentCacheReadAccelerationGetByIdSelectionResult>
+        > selectAuthorizedCandidate
+    )
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "Student");
+
+        return new DocumentCacheReadAccelerationGetByIdRequest(
+            TargetKey.TenantKey,
+            RelationalAccessTestData.CreateMappingSet(resource),
+            resource,
+            new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
+            DocumentCacheReadAccelerationResourceKind.Resource,
+            fallback,
+            selectAuthorizedCandidate
+        );
+    }
+
+    private static DocumentCacheReadAccelerationQueryRequest CreateReadAccelerationQueryRequest(
+        Func<CancellationToken, Task<QueryResult>> fallback,
+        Func<
+            CancellationToken,
+            Task<DocumentCacheReadAccelerationQuerySelectionResult>
+        > selectAuthorizedCandidatePage
+    )
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "Student");
+
+        return new DocumentCacheReadAccelerationQueryRequest(
+            TargetKey.TenantKey,
+            RelationalAccessTestData.CreateMappingSet(resource),
+            resource,
+            DocumentCacheReadAccelerationResourceKind.Resource,
+            fallback,
+            selectAuthorizedCandidatePage
+        );
+    }
+
+    private static void AssertNoReadTelemetry(IDocumentCacheReadTelemetry readTelemetry)
+    {
+        A.CallTo(() => readTelemetry.RecordAttempt(A<DocumentCacheReadTelemetryContext>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => readTelemetry.RecordHit(A<DocumentCacheReadTelemetryContext>._)).MustNotHaveHappened();
+        A.CallTo(() => readTelemetry.RecordPageHit(A<DocumentCacheReadTelemetryContext>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => readTelemetry.RecordMiss(A<DocumentCacheReadTelemetryContext>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => readTelemetry.RecordFallback(A<DocumentCacheReadTelemetryContext>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => readTelemetry.RecordCacheUnavailable(A<DocumentCacheReadTelemetryContext>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => readTelemetry.RecordAdapterAcquisitionFailure(A<DocumentCacheReadTelemetryContext>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => readTelemetry.RecordUnexpectedException(A<DocumentCacheReadTelemetryContext>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => readTelemetry.RecordDirectFill(A<DocumentCacheReadTelemetryContext>._))
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                readTelemetry.RecordCacheLookupDuration(A<DocumentCacheReadTelemetryContext>._, A<TimeSpan>._)
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                readTelemetry.RecordDirectFillDuration(A<DocumentCacheReadTelemetryContext>._, A<TimeSpan>._)
+            )
+            .MustNotHaveHappened();
     }
 
     private static void AssertScopedFactory<TService>(IServiceCollection services)

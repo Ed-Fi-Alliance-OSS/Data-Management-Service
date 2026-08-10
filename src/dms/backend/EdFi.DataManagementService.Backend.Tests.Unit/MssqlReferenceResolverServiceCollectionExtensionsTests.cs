@@ -153,6 +153,27 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
             .BeOfType<DefaultRelationshipAuthorizationProviderFailureExtractor>();
         documentCacheReadAccelerationCoordinator
             .Should()
+            .BeSameAs(PassthroughDocumentCacheReadAccelerationCoordinator.Instance);
+    }
+
+    [Test]
+    public void It_registers_the_full_read_acceleration_coordinator_when_read_acceleration_is_enabled()
+    {
+        var services = new ServiceCollection();
+
+        services.AddLogging();
+        services.AddSingleton(A.Fake<IReadableProfileProjector>());
+        services.AddSingleton(A.Fake<IDataStoreProvider>());
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
+        services.Configure<DocumentCacheOptions>(options => options.ReadAcceleration.Enabled = true);
+        services.AddMssqlReferenceResolver();
+
+        using var serviceProvider = BuildServiceProvider(services);
+        using var scope = serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDocumentCacheReadAccelerationCoordinator>()
+            .Should()
             .BeOfType<DocumentCacheReadAccelerationCoordinator>();
     }
 

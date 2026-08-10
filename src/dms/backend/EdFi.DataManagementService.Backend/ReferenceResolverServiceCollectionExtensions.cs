@@ -341,9 +341,19 @@ public static class ReferenceResolverServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.Replace(
-            ServiceDescriptor.Scoped<IDocumentCacheReadAccelerationCoordinator>(
-                static serviceProvider => new DocumentCacheReadAccelerationCoordinator(
-                    serviceProvider.GetRequiredService<IOptions<DocumentCacheOptions>>(),
+            ServiceDescriptor.Scoped<IDocumentCacheReadAccelerationCoordinator>(static serviceProvider =>
+            {
+                IOptions<DocumentCacheOptions> options = serviceProvider.GetRequiredService<
+                    IOptions<DocumentCacheOptions>
+                >();
+
+                if (!options.Value.ReadAcceleration.Enabled)
+                {
+                    return PassthroughDocumentCacheReadAccelerationCoordinator.Instance;
+                }
+
+                return new DocumentCacheReadAccelerationCoordinator(
+                    options,
                     serviceProvider.GetRequiredService<IDataStoreSelection>(),
                     serviceProvider.GetRequiredService<IDocumentCacheTargetRegistry>(),
                     serviceProvider.GetRequiredService<IDocumentCacheReadLookupAdapter>(),
@@ -353,8 +363,8 @@ public static class ReferenceResolverServiceCollectionExtensions
                     serviceProvider.GetRequiredService<IDocumentCacheProjectionTargetDiagnosticSink>(),
                     serviceProvider.GetRequiredService<TimeProvider>(),
                     serviceProvider.GetRequiredService<ILogger<DocumentCacheReadAccelerationCoordinator>>()
-                )
-            )
+                );
+            })
         );
 
         return services;
