@@ -359,6 +359,7 @@ internal static class DocumentCacheReadAccelerationScenario
             preservedText: "relational-preserved"
         );
         DocumentMetadata profileMetadata = await ReadDocumentMetadataAsync(harness, profileItem.DocumentUuid);
+        await DeleteCacheRowsAsync(harness, profileMetadata.DocumentId);
         JsonObject profileCacheDocument = CacheDocumentFrom(profileItem.Body, profileMetadata);
         profileCacheDocument["displayName"] = "Cached Profile";
         profileCacheDocument["profileScope"] = new JsonObject
@@ -390,6 +391,7 @@ internal static class DocumentCacheReadAccelerationScenario
             harness,
             descriptor.DocumentUuid
         );
+        await DeleteCacheRowsAsync(harness, descriptorMetadata.DocumentId);
         JsonObject descriptorCacheDocument = CacheDocumentFrom(descriptor.Body, descriptorMetadata);
         descriptorCacheDocument["shortDescription"] = "Cached school type";
         await InsertCacheRowAsync(harness, descriptorMetadata, descriptorCacheDocument);
