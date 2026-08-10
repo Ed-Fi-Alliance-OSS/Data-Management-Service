@@ -1481,10 +1481,12 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
     {
         if (requestCancellationToken.IsCancellationRequested)
         {
-            return "CallerCanceled";
+            return DocumentCacheReadTelemetryLabel.CallerCanceled;
         }
 
-        return directFillTimeout.IsCancellationRequested ? "TimedOut" : "Canceled";
+        return directFillTimeout.IsCancellationRequested
+            ? DocumentCacheReadTelemetryLabel.TimedOut
+            : DocumentCacheReadTelemetryLabel.Canceled;
     }
 
     private void LogDirectFillSkipped(DocumentCacheTargetExecutionContext targetContext, string reason) =>
