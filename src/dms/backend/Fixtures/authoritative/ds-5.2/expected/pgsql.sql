@@ -37045,7 +37045,7 @@ FROM "edfi"."StudentTitleIPartAProgramAssociation"
 ;
 
 CREATE OR REPLACE VIEW "auth"."EducationOrganizationIdToContactDocumentId" AS
-SELECT DISTINCT
+SELECT
     edOrg."SourceEducationOrganizationId",
     sca."Contact_DocumentId"
 FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
@@ -37068,7 +37068,7 @@ INNER JOIN "edfi"."StaffEducationOrganizationEmploymentAssociation" seoea ON edO
 ;
 
 CREATE OR REPLACE VIEW "auth"."EducationOrganizationIdToStudentDocumentId" AS
-SELECT DISTINCT
+SELECT
     edOrg."SourceEducationOrganizationId",
     ssa."Student_DocumentId"
 FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
@@ -37076,7 +37076,7 @@ INNER JOIN "edfi"."StudentSchoolAssociation" ssa ON edOrg."TargetEducationOrgani
 ;
 
 CREATE OR REPLACE VIEW "auth"."EducationOrganizationIdToStudentDocumentIdThroughResponsibility" AS
-SELECT DISTINCT
+SELECT
     edOrg."SourceEducationOrganizationId",
     seora."Student_DocumentId"
 FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
