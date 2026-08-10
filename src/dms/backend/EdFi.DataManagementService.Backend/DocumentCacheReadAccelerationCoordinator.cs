@@ -390,7 +390,6 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
     IDocumentCacheWriter? cacheWriter = null,
     IDocumentCacheReadTelemetry? readTelemetry = null,
     IDocumentCacheProjectionObservationSink? projectionObservationSink = null,
-    IDocumentCacheProjectionObservationProvider? projectionObservationProvider = null,
     TimeProvider? timeProvider = null,
     ILogger<DocumentCacheReadAccelerationCoordinator>? logger = null
 ) : IDocumentCacheReadAccelerationCoordinator
@@ -407,8 +406,6 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         readTelemetry ?? NoOpDocumentCacheReadTelemetry.Instance;
     private readonly IDocumentCacheProjectionObservationSink? _projectionObservationSink =
         projectionObservationSink;
-    private readonly IDocumentCacheProjectionObservationProvider? _projectionObservationProvider =
-        projectionObservationProvider;
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly ILogger<DocumentCacheReadAccelerationCoordinator> _logger =
         logger ?? NullLogger<DocumentCacheReadAccelerationCoordinator>.Instance;
@@ -1470,7 +1467,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         DocumentCacheReadInvariantDiagnostic invariantDiagnostic
     )
     {
-        if (_projectionObservationSink is null)
+        if (_projectionObservationSink is not IDocumentCacheProjectionTargetDiagnosticSink diagnosticSink)
         {
             return;
         }
@@ -1491,59 +1488,10 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             invariantDiagnostic.Message
         );
 
-        _projectionObservationSink.ObserveTarget(
-            CreateTargetInvariantHealthSnapshot(targetContext, observedAt, targetDiagnostic)
-        );
-    }
-
-    private DocumentCacheProjectionTargetHealthSnapshot CreateTargetInvariantHealthSnapshot(
-        DocumentCacheTargetExecutionContext targetContext,
-        DateTimeOffset observedAt,
-        DocumentCacheTargetDiagnostic targetDiagnostic
-    )
-    {
-        var contextKey = new DocumentCacheProjectionTargetContextKey(
-            targetContext.TargetKey,
-            targetContext.Generation
-        );
-        DocumentCacheProjectionTargetHealthSnapshot? currentSnapshot =
-            _projectionObservationProvider?.CurrentSnapshot.GetCurrentTarget(contextKey);
-
-        if (currentSnapshot is not null)
-        {
-            return new DocumentCacheProjectionTargetHealthSnapshot(
-                currentSnapshot.TargetKey,
-                currentSnapshot.Generation,
-                currentSnapshot.EffectiveProjectorPageSize,
-                observedAt,
-                providerToken: currentSnapshot.ProviderToken,
-                physicalSourceFingerprint: currentSnapshot.PhysicalSourceFingerprint,
-                executionState: currentSnapshot.ExecutionState,
-                lastSuccess: currentSnapshot.LastSuccess,
-                pageThroughput: currentSnapshot.PageThroughput,
-                drainThroughput: currentSnapshot.DrainThroughput,
-                lifecycleFence: currentSnapshot.LifecycleFence,
-                poisonTraversal: currentSnapshot.PoisonTraversal,
-                failureDiagnostics: currentSnapshot.FailureDiagnostics,
-                activeCommandExecutionId: currentSnapshot.ActiveCommandExecutionId,
-                activeAdministrativeCommand: currentSnapshot.ActiveAdministrativeCommand,
-                activeAdministrativePhase: currentSnapshot.ActiveAdministrativePhase,
-                targetDiagnostics: [.. currentSnapshot.TargetDiagnostics, targetDiagnostic]
-            );
-        }
-
-        return new DocumentCacheProjectionTargetHealthSnapshot(
-            targetContext.TargetKey,
-            targetContext.Generation,
-            targetContext.EffectiveSettings.ProjectorPageSize,
-            observedAt,
-            providerToken: targetContext.ProviderToken,
-            physicalSourceFingerprint: targetContext.PhysicalSourceFingerprint,
-            lifecycleFence: DocumentCacheProjectionLifecycleFenceSnapshotFactory.FromLifecycle(
-                targetContext.Lifecycle,
-                observedAt
-            ),
-            targetDiagnostics: [targetDiagnostic]
+        diagnosticSink.AppendTargetDiagnostic(
+            new DocumentCacheProjectionTargetContextKey(targetContext.TargetKey, targetContext.Generation),
+            targetDiagnostic,
+            observedAt
         );
     }
 

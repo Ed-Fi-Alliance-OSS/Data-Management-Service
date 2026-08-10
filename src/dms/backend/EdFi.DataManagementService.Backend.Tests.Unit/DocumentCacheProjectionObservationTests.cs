@@ -154,6 +154,108 @@ public class Given_DocumentCacheProjectionObservationProvider
     }
 
     [Test]
+    public void It_appends_target_diagnostic_without_losing_newer_scheduler_observation()
+    {
+        DocumentCacheProjectionObservationStore store = new(new FixedTimeProvider(ObservedAt));
+        DocumentCacheAdministrativeCommandExecutionId executionId =
+            DocumentCacheAdministrativeCommandExecutionId.New();
+        DocumentCacheProjectionSuccessSnapshot lastSuccess = new(
+            documentId: 701,
+            contentVersion: 8001,
+            completedAt: ObservedAt.AddSeconds(1)
+        );
+
+        store.ObserveTarget(TargetHealth(generation: 1, observedAt: ObservedAt));
+        DocumentCacheProjectionTargetContextKey contextKey = store
+            .CurrentSnapshot.GetCurrentTarget(TargetKey)!
+            .ContextKey;
+        store.ObserveTarget(
+            TargetHealth(
+                generation: 1,
+                failureDocumentIds: [201, 202],
+                suppressedDocumentIds: [301],
+                observedAt: ObservedAt.AddSeconds(1),
+                lastSuccess: lastSuccess,
+                activeCommandExecutionId: executionId,
+                activeAdministrativeCommand: DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+                activeAdministrativePhase: DocumentCacheAdministrativeCommandPhase.DrainWork
+            )
+        );
+
+        store.AppendTargetDiagnostic(
+            contextKey,
+            TargetDiagnostic("read-path invariant"),
+            ObservedAt.AddSeconds(2)
+        );
+
+        DocumentCacheProjectionTargetHealthSnapshot current = store.CurrentSnapshot.GetCurrentTarget(
+            TargetKey
+        )!;
+        current.TargetDiagnostics.Should().ContainSingle().Which.Message.Should().Be("read-path invariant");
+        current.FailureDiagnostics.DocumentIds.Should().Equal(201, 202);
+        current.PoisonTraversal.SuppressedDocumentIds.Should().Equal(301);
+        current.LastSuccess.Should().BeSameAs(lastSuccess);
+        current.ActiveCommandExecutionId.Should().Be(executionId);
+        current
+            .ActiveAdministrativeCommand.Should()
+            .Be(DocumentCacheAdministrativeCommand.OnlineCacheRebuild);
+        current.ActiveAdministrativePhase.Should().Be(DocumentCacheAdministrativeCommandPhase.DrainWork);
+    }
+
+    [Test]
+    public void It_retains_bounded_appended_target_diagnostics_across_later_scheduler_observations()
+    {
+        const int effectiveProjectorPageSize = 2;
+        DocumentCacheProjectionObservationStore store = new(new FixedTimeProvider(ObservedAt));
+        DocumentCacheProjectionTargetContextKey contextKey = ContextKey(generation: 1);
+
+        store.ObserveTarget(TargetHealth(generation: 1, effectiveProjectorPageSize, observedAt: ObservedAt));
+        store.AppendTargetDiagnostic(contextKey, TargetDiagnostic("first"), ObservedAt.AddSeconds(1));
+        store.AppendTargetDiagnostic(contextKey, TargetDiagnostic("second"), ObservedAt.AddSeconds(2));
+        store.AppendTargetDiagnostic(contextKey, TargetDiagnostic("third"), ObservedAt.AddSeconds(3));
+        store.ObserveTarget(
+            TargetHealth(
+                generation: 1,
+                effectiveProjectorPageSize,
+                failureDocumentIds: [401],
+                observedAt: ObservedAt.AddSeconds(4)
+            )
+        );
+
+        DocumentCacheProjectionTargetHealthSnapshot current = store.CurrentSnapshot.GetCurrentTarget(
+            TargetKey
+        )!;
+        current.TargetDiagnostics.Select(diagnostic => diagnostic.Message).Should().Equal("second", "third");
+        current.FailureDiagnostics.DocumentIds.Should().Equal(401);
+    }
+
+    [Test]
+    public void It_ignores_late_target_diagnostic_from_ended_generation()
+    {
+        DocumentCacheProjectionObservationStore store = new(new FixedTimeProvider(ObservedAt));
+
+        store.ObserveTarget(TargetHealth(generation: 1, observedAt: ObservedAt));
+        store.ObserveTarget(TargetHealth(generation: 2, observedAt: ObservedAt.AddSeconds(1)));
+        store.AppendTargetDiagnostic(
+            ContextKey(generation: 1),
+            TargetDiagnostic("late read-path invariant"),
+            ObservedAt.AddSeconds(2)
+        );
+
+        DocumentCacheProjectionObservationSnapshot snapshot = store.CurrentSnapshot;
+        DocumentCacheProjectionTargetHealthSnapshot current = snapshot.GetCurrentTarget(TargetKey)!;
+        current.Generation.Value.Should().Be(2);
+        current.TargetDiagnostics.Should().BeEmpty();
+
+        DocumentCacheProjectionTargetEndedDiagnosticSnapshot ended = snapshot
+            .LastEndedTargetDiagnostics.Values.Should()
+            .ContainSingle()
+            .Subject;
+        ended.Generation.Value.Should().Be(1);
+        ended.FinalSnapshot.TargetDiagnostics.Should().BeEmpty();
+    }
+
+    [Test]
     public void It_retains_only_one_last_ended_diagnostic_snapshot_per_target()
     {
         DocumentCacheProjectionObservationStore store = new(new FixedTimeProvider(ObservedAt));
@@ -361,12 +463,12 @@ public class Given_DocumentCacheProjectionObservationProvider
         );
     }
 
-    private static DocumentCacheTargetDiagnostic TargetDiagnostic(string message) =>
+    private static DocumentCacheTargetDiagnostic TargetDiagnostic(string message, long generation = 1) =>
         new(
             TargetKey,
             DocumentCacheTargetResolutionState.Resolved,
             RelationalProviderToken.Postgresql,
-            new DocumentCacheTargetContextGeneration(1),
+            new DocumentCacheTargetContextGeneration(generation),
             physicalSourceFingerprint: null,
             lifecycle: null,
             inventory: null,

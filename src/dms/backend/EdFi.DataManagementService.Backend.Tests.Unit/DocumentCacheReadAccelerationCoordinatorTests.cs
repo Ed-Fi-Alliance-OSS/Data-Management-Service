@@ -559,12 +559,12 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         };
         DocumentCacheProjectionObservationStore observationStore = new(new FixedTimeProvider(ObservedAt));
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
+        ObserveCurrentTarget(observationStore, executionContext);
         var sut = CreateCoordinator(
             readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(executionContext),
             projectionObservationSink: observationStore,
-            projectionObservationProvider: observationStore,
             timeProvider: new FixedTimeProvider(ObservedAt)
         );
 
@@ -604,6 +604,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var telemetry = new RecordingReadTelemetry();
         DocumentCacheProjectionObservationStore observationStore = new(new FixedTimeProvider(ObservedAt));
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
+        ObserveCurrentTarget(observationStore, executionContext);
         DocumentCacheReadAccelerationFallbackContext fallbackContext = null!;
         var sut = CreateCoordinator(
             readAccelerationEnabled: true,
@@ -611,7 +612,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             CreateRegistry(executionContext),
             readTelemetry: telemetry,
             projectionObservationSink: observationStore,
-            projectionObservationProvider: observationStore,
             timeProvider: new FixedTimeProvider(ObservedAt)
         );
 
@@ -659,6 +659,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var telemetry = new RecordingReadTelemetry();
         DocumentCacheProjectionObservationStore observationStore = new(new FixedTimeProvider(ObservedAt));
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
+        ObserveCurrentTarget(observationStore, executionContext);
         DocumentCacheReadAccelerationFallbackContext fallbackContext = null!;
         var sut = CreateCoordinator(
             readAccelerationEnabled: true,
@@ -666,7 +667,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             CreateRegistry(executionContext),
             readTelemetry: telemetry,
             projectionObservationSink: observationStore,
-            projectionObservationProvider: observationStore,
             timeProvider: new FixedTimeProvider(ObservedAt)
         );
 
@@ -739,6 +739,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var telemetry = new RecordingReadTelemetry();
         DocumentCacheProjectionObservationStore observationStore = new(new FixedTimeProvider(ObservedAt));
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
+        ObserveCurrentTarget(observationStore, executionContext);
         DocumentCacheReadAccelerationFallbackContext fallbackContext = null!;
         var sut = CreateCoordinator(
             readAccelerationEnabled: true,
@@ -748,7 +749,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             writer,
             telemetry,
             projectionObservationSink: observationStore,
-            projectionObservationProvider: observationStore,
             timeProvider: new FixedTimeProvider(ObservedAt)
         );
 
@@ -2480,6 +2480,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         );
         DocumentCacheProjectionObservationStore observationStore = new(new FixedTimeProvider(ObservedAt));
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
+        ObserveCurrentTarget(observationStore, executionContext);
         var materializer = new RecordingMaterializer
         {
             ExceptionToThrow = new DocumentCacheTargetMappingException(
@@ -2502,7 +2503,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             materializer,
             writer,
             projectionObservationSink: observationStore,
-            projectionObservationProvider: observationStore,
             timeProvider: new FixedTimeProvider(ObservedAt),
             logger: logger
         );
@@ -2588,6 +2588,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         );
         DocumentCacheProjectionObservationStore observationStore = new(new FixedTimeProvider(ObservedAt));
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
+        ObserveCurrentTarget(observationStore, executionContext);
         var materializer = new RecordingMaterializer();
         var writer = new RecordingCacheWriter
         {
@@ -2612,7 +2613,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             writer,
             telemetry,
             projectionObservationSink: observationStore,
-            projectionObservationProvider: observationStore,
             timeProvider: new FixedTimeProvider(ObservedAt)
         );
 
@@ -2843,7 +2843,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         IDocumentCacheReadTelemetry? readTelemetry = null,
         bool selectDataStore = true,
         IDocumentCacheProjectionObservationSink? projectionObservationSink = null,
-        IDocumentCacheProjectionObservationProvider? projectionObservationProvider = null,
         TimeProvider? timeProvider = null,
         DataStore? selectedDataStore = null,
         IDataStoreSelection? dataStoreSelection = null,
@@ -2874,7 +2873,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             cacheWriter,
             readTelemetry,
             projectionObservationSink,
-            projectionObservationProvider,
             timeProvider,
             logger
         );
@@ -2904,6 +2902,27 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             providerToken ?? RelationalProviderToken.Postgresql,
             RelationalProviderMetadataStatus.Supported
         );
+
+    private static void ObserveCurrentTarget(
+        DocumentCacheProjectionObservationStore observationStore,
+        DocumentCacheTargetExecutionContext executionContext
+    )
+    {
+        observationStore.ObserveTarget(
+            new DocumentCacheProjectionTargetHealthSnapshot(
+                executionContext.TargetKey,
+                executionContext.Generation,
+                executionContext.EffectiveSettings.ProjectorPageSize,
+                ObservedAt,
+                providerToken: executionContext.ProviderToken,
+                physicalSourceFingerprint: executionContext.PhysicalSourceFingerprint,
+                lifecycleFence: DocumentCacheProjectionLifecycleFenceSnapshotFactory.FromLifecycle(
+                    executionContext.Lifecycle,
+                    ObservedAt
+                )
+            )
+        );
+    }
 
     private static DocumentCacheMaterializerFailureMetadata FailureMetadata(long documentId) =>
         new(
