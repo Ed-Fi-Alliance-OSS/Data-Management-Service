@@ -1088,6 +1088,34 @@ public class Given_DocumentCacheReadLookup
     }
 
     [Test]
+    public async Task It_wraps_result_shape_invalid_operation_failures()
+    {
+        var reader = new ThrowingRelationalCommandReader(
+            new InvalidOperationException("missing column"),
+            ReaderThrowPhase.FieldAccess
+        );
+
+        Func<Task> act = async () =>
+            await DocumentCacheReadLookupSql.ReadObservationsAsync(reader, CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<DocumentCacheReadLookupInvariantException>()
+            .WithMessage("*missing column*");
+    }
+
+    [TestCase(ReaderThrowPhase.ReadAsync)]
+    [TestCase(ReaderThrowPhase.FieldAccess)]
+    public async Task It_propagates_request_abort_disposal_from_result_reading(ReaderThrowPhase throwPhase)
+    {
+        var reader = new ThrowingRelationalCommandReader(new ObjectDisposedException("request"), throwPhase);
+
+        Func<Task> act = async () =>
+            await DocumentCacheReadLookupSql.ReadObservationsAsync(reader, CancellationToken.None);
+
+        await act.Should().ThrowAsync<ObjectDisposedException>();
+    }
+
+    [Test]
     public async Task It_propagates_target_binding_bugs()
     {
         var adapter = new ThrowingLookupAdapter(
@@ -1587,6 +1615,56 @@ public class Given_DocumentCacheReadLookup
         }
 
         protected override bool IsCacheUnavailable(Exception exception) => _classifyAsCacheUnavailable;
+    }
+
+    public enum ReaderThrowPhase
+    {
+        ReadAsync,
+        FieldAccess,
+    }
+
+    private sealed class ThrowingRelationalCommandReader(Exception exception, ReaderThrowPhase throwPhase)
+        : IRelationalCommandReader
+    {
+        private readonly Exception _exception = exception;
+        private readonly ReaderThrowPhase _throwPhase = throwPhase;
+        private bool _hasReturnedRow;
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+        public Task<bool> ReadAsync(CancellationToken cancellationToken = default)
+        {
+            if (_throwPhase == ReaderThrowPhase.ReadAsync)
+            {
+                return Task.FromException<bool>(_exception);
+            }
+
+            if (_hasReturnedRow)
+            {
+                return Task.FromResult(false);
+            }
+
+            _hasReturnedRow = true;
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> NextResultAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(false);
+
+        public int GetOrdinal(string name)
+        {
+            if (_throwPhase == ReaderThrowPhase.FieldAccess)
+            {
+                throw _exception;
+            }
+
+            return 0;
+        }
+
+        public T GetFieldValue<T>(int ordinal) =>
+            throw new InvalidOperationException("Field access was not expected.");
+
+        public bool IsDBNull(int ordinal) => false;
     }
 
     private sealed class ThrowingOpenDbConnection(Exception exception) : DbConnection

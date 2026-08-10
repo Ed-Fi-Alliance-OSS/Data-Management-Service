@@ -110,6 +110,11 @@ internal class RequestResponseLoggingMiddleware(ILogger _logger) : IPipelineStep
                     );
                 }
             }
+            catch (OperationCanceledException)
+                when (requestInfo.RequestCancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 stopwatch.Stop();

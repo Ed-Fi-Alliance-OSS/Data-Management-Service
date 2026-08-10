@@ -1167,7 +1167,8 @@ internal static class DocumentCacheReadLookupSql
     }
 
     private static bool IsResultShapeFailure(Exception exception) =>
-        exception
+        exception is not ObjectDisposedException
+        && exception
             is InvalidOperationException
                 or InvalidCastException
                 or IndexOutOfRangeException

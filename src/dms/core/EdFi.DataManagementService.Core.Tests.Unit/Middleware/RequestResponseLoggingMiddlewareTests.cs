@@ -159,6 +159,26 @@ public class Given_RequestResponseLoggingMiddleware
     }
 
     [Test]
+    public async Task It_propagates_request_cancellation_without_failure_logging_or_wrapping()
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        await cancellationSource.CancelAsync();
+        var requestInfo = No.RequestInfo("core-trace-id");
+        requestInfo.RequestCancellationToken = cancellationSource.Token;
+        requestInfo.FrontendRequest = requestInfo.FrontendRequest with { Path = "/ed-fi/students" };
+
+        Func<Task> act = async () =>
+            await _middleware.Execute(
+                requestInfo,
+                () => throw new OperationCanceledException(cancellationSource.Token)
+            );
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        _logger.Records.Should().NotContain(log => log.EventId.Name == "HttpRequestFailed");
+        _logger.Records.Should().NotContain(log => log.EventId.Name == "HttpRequestCompleted");
+    }
+
+    [Test]
     public async Task It_logs_5xx_responses_as_request_failures()
     {
         var requestInfo = No.RequestInfo("core-trace-id");

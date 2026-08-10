@@ -184,6 +184,30 @@ public class Given_LoggingMiddleware
     }
 
     [Test]
+    public async Task It_propagates_request_cancellation_without_failure_logging_or_error_response()
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        await cancellationSource.CancelAsync();
+        var exception = new OperationCanceledException(cancellationSource.Token);
+        RequestDelegate failingNext = _ => throw exception;
+        var httpContext = new DefaultHttpContext { RequestAborted = cancellationSource.Token };
+        httpContext.Request.Method = "GET";
+        httpContext.Request.Path = "/ed-fi/students";
+        var responseBody = new MemoryStream();
+        httpContext.Response.Body = responseBody;
+        var logger = new TestLogger<LoggingMiddleware>();
+        var middleware = new LoggingMiddleware(failingNext, AppSettingsWithCorrelationHeader(string.Empty));
+
+        Func<Task> invoke = () => middleware.Invoke(httpContext, logger);
+
+        await invoke.Should().ThrowAsync<OperationCanceledException>();
+        logger.Entries.Should().NotContain(e => e.EventId.Name == "HttpRequestFailed");
+        logger.Entries.Should().NotContain(e => e.EventId.Name == "HttpRequestCompleted");
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        responseBody.ToArray().Should().BeEmpty();
+    }
+
+    [Test]
     public void It_logs_500_for_unhandled_exceptions_before_the_response_starts()
     {
         var exception = new InvalidOperationException("boom");
