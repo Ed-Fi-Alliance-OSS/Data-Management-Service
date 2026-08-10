@@ -623,7 +623,7 @@ internal sealed class DescriptorReadHandler(
             }
         }
 
-        List<DescriptorReadRow> orderedRows = [];
+        List<DescriptorReadRow> orderedRows = new(selectedDocumentIds.Length);
 
         foreach (long documentId in selectedDocumentIds)
         {

@@ -1621,7 +1621,7 @@ public class Given_DescriptorReadHandler
 
     [TestCase(SqlDialect.Pgsql, """ORDER BY selected_document_ids."Ordinal" ASC""")]
     [TestCase(SqlDialect.Mssql, "ORDER BY selected_document_ids.[Ordinal] ASC")]
-    public async Task It_hydrates_only_selected_descriptor_query_candidates_on_relational_fallback(
+    public async Task It_preserves_selected_descriptor_query_order_when_fallback_hydration_returns_rows_out_of_order(
         SqlDialect dialect,
         string expectedOrderByFragment
     )
