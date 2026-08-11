@@ -12,10 +12,19 @@ public sealed record MssqlRunOwnedDatabase(string Name, string? SourceDatabaseNa
 public static class MssqlTestDatabaseHelper
 {
     private const int DefaultCommandTimeoutSeconds = 300;
+    private const int DropDatabaseMaxAttempts = 6;
     private const int GeneratedDdlDataFileSizeMb = 256;
     private const int GeneratedDdlDataFileGrowthMb = 256;
     private const int GeneratedDdlLogFileSizeMb = 128;
     private const int GeneratedDdlLogFileGrowthMb = 128;
+    private static readonly TimeSpan[] DropDatabaseRetryDelays =
+    [
+        TimeSpan.FromMilliseconds(250),
+        TimeSpan.FromMilliseconds(500),
+        TimeSpan.FromSeconds(1),
+        TimeSpan.FromSeconds(2),
+        TimeSpan.FromSeconds(4),
+    ];
     private static readonly string _runOwnedDatabasePrefix = $"dmsfp{Guid.NewGuid():N}"[..13];
 
     public static bool IsConfigured() => BaselineDatabaseConfiguration.MssqlAdminConnectionString is not null;
@@ -89,6 +98,29 @@ public static class MssqlTestDatabaseHelper
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(databaseName);
 
+        for (var attempt = 1; attempt <= DropDatabaseMaxAttempts; attempt++)
+        {
+            try
+            {
+                await ExecuteDropDatabaseUnderLifecycleGateAsync(databaseName, commandTimeoutSeconds);
+                return;
+            }
+            catch (SqlException exception) when (IsDeadlock(exception) && attempt < DropDatabaseMaxAttempts)
+            {
+                await Task.Delay(DropDatabaseRetryDelays[attempt - 1]);
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"SQL Server database '{databaseName}' drop retry loop ended without completing."
+        );
+    }
+
+    private static async Task ExecuteDropDatabaseUnderLifecycleGateAsync(
+        string databaseName,
+        int commandTimeoutSeconds
+    )
+    {
         SqlConnection.ClearAllPools();
 
         await MssqlDatabaseLifecycleCoordinator.ExecuteAsync(async connection =>
@@ -218,6 +250,19 @@ public static class MssqlTestDatabaseHelper
         command.CommandTimeout = commandTimeoutSeconds;
 
         await command.ExecuteNonQueryAsync();
+    }
+
+    private static bool IsDeadlock(SqlException exception)
+    {
+        foreach (SqlError error in exception.Errors)
+        {
+            if (error.Number == 1205)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public static string QuoteIdentifier(string value)
