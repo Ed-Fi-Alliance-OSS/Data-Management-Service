@@ -241,21 +241,19 @@ Playwright setup/teardown.
 - **All data-plane requests return 503 / `EffectiveSchemaHash` mismatch.** The provisioned
   database schema and the DMS runtime schema differ (often a `SCHEMA_PACKAGES` or engine
   mismatch). Tear down and rerun `E2ETest` so the database is reprovisioned to match the image.
-  One failure mode is worth knowing, though it is not the only way to reach this symptom: Docker
-  Compose gives **process** environment variables precedence over `--env-file` entries, and
-  `local-dms.yml` resolves `USE_API_SCHEMA_PATH`, `API_SCHEMA_PATH`, and `SCHEMA_PACKAGES` with
-  `${VAR:-default}` fallbacks that treat a present-but-blank value exactly like an unset one. Blank
-  or `false` values for those three in your shell will therefore start DMS on the image-baked
-  schemas while provisioning has already stamped the environment file's full package surface. Both
-  setup wrappers remove those three names around their Docker phases, so the selected
-  `-EnvironmentFile` is authoritative and an ambient value cannot reach Compose. Both also verify
-  the started container after the fact, so a mismatch from *any* cause fails setup rather than
-  every scenario: `build-dms.ps1 E2ETest` compares the provisioned and runtime schema hashes and
-  fails with `E2E setup mismatch: ...`, while the direct `setup-local-dms.ps1` verifies the started
-  container's schema settings against the environment file and fails with
-  `DMS E2E setup mismatch: ...`. Either way the failure happens before any scenario runs. To point a
-  run at a different package surface, select a different `-EnvironmentFile` — ambient overrides of
-  those three names are deliberately not a supported channel here.
+  Both setup paths try to catch this before any scenario runs, and they catch different things.
+  `build-dms.ps1 E2ETest` compares the provisioned and runtime schema **hashes** and fails with
+  `E2E setup mismatch: ...`. The direct `setup-local-dms.ps1` compares the started container's schema
+  **settings** against the selected environment file and fails with `DMS E2E setup mismatch: ...`;
+  that gate catches settings divergence, not every possible hash divergence. Both wrappers also run
+  each Docker phase inside a guard that removes `USE_API_SCHEMA_PATH`, `API_SCHEMA_PATH`, and
+  `SCHEMA_PACKAGES` from the process, so the selected `-EnvironmentFile` is authoritative and an
+  ambient value cannot reach Compose. A blank or `false` value for one of those three in your shell
+  is one way to reach this symptom — confirmed by construction from Compose's documented precedence
+  rather than diagnosed from a particular incident — and it is not the only way. To point a run at a
+  different package surface, select a different `-EnvironmentFile`; ambient overrides of those three
+  names are deliberately not a supported channel here. The mechanism is explained in full in
+  `eng/docker-compose/dms-schema-environment.psm1`.
 - **SQL Server stack fails to start or is unhealthy.** Treat an unavailable or unhealthy
   `dms-mssql` container as an infrastructure failure, not a test result — inspect
   `docker logs dms-mssql` and the container's health, and confirm the `1435` host port is free.

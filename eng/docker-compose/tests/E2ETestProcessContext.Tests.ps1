@@ -90,6 +90,82 @@ BeforeAll {
             $true
         ))
     }
+
+    function Get-SchemaGuardActionExtent {
+        <#
+        .SYNOPSIS
+        Returns the extent of the -Action script block of EVERY
+        Invoke-WithDmsEnvironmentFileSchemaAuthority invocation in a setup wrapper, in source order, so
+        a containment test can ask whether something is inside ANY guard.
+        .DESCRIPTION
+        One or more, deliberately not exactly one. Each phase invocation is guarded separately: the
+        guard restores the caller's prior environment when its action returns, so a single call around
+        a whole phase sequence removes the three schema names only once, before the first phase, and a
+        phase that re-creates one of them leaves it set for every later phase in that sequence.
+
+        Shared by the phase detector and the verifier-placement check below, so "which blocks count as
+        the guard" is decided in one place rather than in two that drift apart.
+        #>
+        param(
+            [Parameter(Mandatory)] [string] $ScriptPath
+        )
+
+        $parseErrors = $null
+        $tokens = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
+
+        if ($parseErrors.Count -gt 0) {
+            throw "'$ScriptPath' has $($parseErrors.Count) parse error(s)."
+        }
+
+        $guardCalls = @($ast.FindAll(
+            {
+                param($node)
+                $node -is [System.Management.Automation.Language.CommandAst] -and
+                $node.GetCommandName() -eq "Invoke-WithDmsEnvironmentFileSchemaAuthority"
+            },
+            $true
+        ))
+
+        if ($guardCalls.Count -lt 1) {
+            throw "Expected at least one Invoke-WithDmsEnvironmentFileSchemaAuthority invocation in '$ScriptPath'; found none."
+        }
+
+        return @(
+            foreach ($guardCall in $guardCalls) {
+                # Bound to the ARGUMENT of -Action, not to "the one script block anywhere under the
+                # guard call". Counting descendants made any legitimate nested script block - a
+                # ForEach-Object over the route-context databases, a Where-Object filter - break the
+                # wiring test with a detector error rather than a finding. Both spellings are accepted:
+                # '-Action { }', where the block is the following element, and '-Action:{ }', where the
+                # parser attaches it to the parameter itself.
+                $guardElements = @($guardCall.CommandElements)
+                $actionArgument = $null
+                for ($elementIndex = 0; $elementIndex -lt $guardElements.Count; $elementIndex++) {
+                    $element = $guardElements[$elementIndex]
+                    if ($element -isnot [System.Management.Automation.Language.CommandParameterAst] -or
+                        $element.ParameterName -ne "Action") {
+                        continue
+                    }
+
+                    $actionArgument = if ($null -ne $element.Argument) {
+                        $element.Argument
+                    }
+                    elseif ($elementIndex + 1 -lt $guardElements.Count) {
+                        $guardElements[$elementIndex + 1]
+                    }
+
+                    break
+                }
+
+                if ($actionArgument -isnot [System.Management.Automation.Language.ScriptBlockExpressionAst]) {
+                    throw "The guard invocation at line $($guardCall.Extent.StartLineNumber) in '$ScriptPath' does not pass a script block to -Action."
+                }
+
+                $actionArgument.Extent
+            }
+        )
+    }
 }
 
 Describe "Invoke-WithE2ETestProcessContext restores prior environment state exactly (DMS-1284)" {
@@ -461,13 +537,21 @@ Describe "Both E2E setup wrappers run every Docker phase inside the schema-setti
             <#
             .SYNOPSIS
             Returns one record per phase-script invocation in a setup wrapper, with whether the
-            invocation is lexically inside the wrapper's single Invoke-WithDmsEnvironmentFileSchemaAuthority
-            -Action block. Uses the AST rather than a text pattern, so the assertion is about the
-            structure production actually has, and is not defeated by reformatting or reindentation.
+            invocation is lexically inside ANY Invoke-WithDmsEnvironmentFileSchemaAuthority -Action
+            block, and which one. Uses the AST rather than a text pattern, so the assertion is about
+            the structure production actually has, and is not defeated by reformatting or
+            reindentation.
+            .DESCRIPTION
+            One or more guards, not exactly one: each phase is guarded on its own, so the question a
+            phase record answers is "is this phase inside SOME guard", and GuardIndex identifies which
+            - a phase sharing a guard block with an earlier phase runs after that phase has already had
+            the chance to re-create one of the three names in this process.
             #>
             param(
                 [Parameter(Mandatory)] [string] $ScriptPath
             )
+
+            $actionExtent = @(Get-SchemaGuardActionExtent -ScriptPath $ScriptPath)
 
             $parseErrors = $null
             $tokens = $null
@@ -476,50 +560,6 @@ Describe "Both E2E setup wrappers run every Docker phase inside the schema-setti
             if ($parseErrors.Count -gt 0) {
                 throw "'$ScriptPath' has $($parseErrors.Count) parse error(s)."
             }
-
-            $guardCalls = @($ast.FindAll(
-                {
-                    param($node)
-                    $node -is [System.Management.Automation.Language.CommandAst] -and
-                    $node.GetCommandName() -eq "Invoke-WithDmsEnvironmentFileSchemaAuthority"
-                },
-                $true
-            ))
-
-            if ($guardCalls.Count -ne 1) {
-                throw "Expected exactly one Invoke-WithDmsEnvironmentFileSchemaAuthority invocation in '$ScriptPath'; found $($guardCalls.Count)."
-            }
-
-            # Bound to the ARGUMENT of -Action, not to "the one script block anywhere under the guard
-            # call". Counting descendants made any legitimate nested script block - a ForEach-Object
-            # over the route-context databases, a Where-Object filter - break the wiring test with a
-            # detector error rather than a finding. Both spellings are accepted: '-Action { }', where
-            # the block is the following element, and '-Action:{ }', where the parser attaches it to
-            # the parameter itself.
-            $guardElements = @($guardCalls[0].CommandElements)
-            $actionArgument = $null
-            for ($elementIndex = 0; $elementIndex -lt $guardElements.Count; $elementIndex++) {
-                $element = $guardElements[$elementIndex]
-                if ($element -isnot [System.Management.Automation.Language.CommandParameterAst] -or
-                    $element.ParameterName -ne "Action") {
-                    continue
-                }
-
-                $actionArgument = if ($null -ne $element.Argument) {
-                    $element.Argument
-                }
-                elseif ($elementIndex + 1 -lt $guardElements.Count) {
-                    $guardElements[$elementIndex + 1]
-                }
-
-                break
-            }
-
-            if ($actionArgument -isnot [System.Management.Automation.Language.ScriptBlockExpressionAst]) {
-                throw "The guard invocation in '$ScriptPath' does not pass a script block to -Action."
-            }
-
-            $actionExtent = $actionArgument.Extent
 
             return @($ast.FindAll(
                 {
@@ -576,13 +616,29 @@ Describe "Both E2E setup wrappers run every Docker phase inside the schema-setti
                 }
 
                 if ($name -and ($isVariableDispatched -or $name -like "*.ps1" -or $isComposeOrchestration)) {
+                    # The index of the FIRST guard block containing this invocation, or $null when no
+                    # guard does. The guards are siblings in these wrappers, so at most one contains a
+                    # given phase.
+                    $phaseExtent = $_.Extent
+                    $guardIndex = $null
+                    for ($extentIndex = 0; $extentIndex -lt $actionExtent.Count; $extentIndex++) {
+                        if ($phaseExtent.StartOffset -ge $actionExtent[$extentIndex].StartOffset -and
+                            $phaseExtent.EndOffset -le $actionExtent[$extentIndex].EndOffset) {
+                            $guardIndex = $extentIndex
+                            break
+                        }
+                    }
+
                     [pscustomobject]@{
                         Name        = $name
-                        Line        = $_.Extent.StartLineNumber
+                        Line        = $phaseExtent.StartLineNumber
                         # Carried so an assertion can order the phases against another command's
                         # position, which line numbers alone cannot do for two calls on one line.
-                        EndOffset   = $_.Extent.EndOffset
-                        InsideGuard = ($_.Extent.StartOffset -ge $actionExtent.StartOffset -and $_.Extent.EndOffset -le $actionExtent.EndOffset)
+                        EndOffset   = $phaseExtent.EndOffset
+                        InsideGuard = ($null -ne $guardIndex)
+                        # Which guard block, so an assertion can tell "every phase is guarded" from
+                        # "every phase is guarded SEPARATELY".
+                        GuardIndex  = $guardIndex
                     }
                 }
             })
@@ -592,6 +648,12 @@ Describe "Both E2E setup wrappers run every Docker phase inside the schema-setti
             "DataManagementService E2E" = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1"))
             "InstanceManagement E2E"    = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1"))
         }
+
+        # The real guard, for the replay below: the leak regression has to run the same
+        # removal-and-restore production runs, not a stand-in for it.
+        . ([scriptblock]::Create((Get-ScriptFunctionText `
+                        -ScriptPath ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../dms-schema-environment.psm1"))) `
+                        -FunctionName "Invoke-WithDmsEnvironmentFileSchemaAuthority")))
     }
 
     It "runs the direct DMS E2E phase sequence inside the guard, in order" {
@@ -615,6 +677,61 @@ Describe "Both E2E setup wrappers run every Docker phase inside the schema-setti
         $invocations.Count | Should -BeGreaterThan 0 -Because "the wrapper must invoke phase scripts"
         @($invocations | Where-Object { -not $_.InsideGuard } | ForEach-Object { "$($_.Name) (line $($_.Line))" }) |
             Should -BeNullOrEmpty -Because "a Compose-invoking phase outside the guard would resolve the schema variables from the ambient process again"
+    }
+
+    It "removes SCHEMA_PACKAGES again for every later phase in the <Name> wrapper, so a phase that re-creates it cannot leak into the next" -ForEach @(
+        @{ Name = "DataManagementService E2E" }
+        @{ Name = "InstanceManagement E2E" }
+    ) {
+        # THE GUARD-SHAPE REGRESSION, replayed rather than pattern-matched. Inside the guard is not the
+        # whole requirement; inside a guard of its OWN is. The guard restores the caller's prior
+        # environment when its action returns, so one call wrapped around the whole phase sequence
+        # removes the three schema names exactly once, before phase 1. Phase scripts run in this same
+        # PowerShell process and can re-create one of them - start-local-dms.ps1 sets them in-process on
+        # purpose in bootstrap mode - after which every later phase in that one guarded sequence sees
+        # the re-created value and Compose resolves it ambient-first again.
+        #
+        # The grouping comes from production (which guard block each phase invocation actually sits in)
+        # and the guard is the real one, so this fails on a wrapper that guards its sequence once and
+        # passes on one that guards each phase. The phases themselves are not executed: what is being
+        # replayed is the removal boundary around them.
+        $invocations = @(Get-GuardedPhaseInvocation -ScriptPath $script:wrapperScripts[$Name] | Sort-Object EndOffset)
+
+        $invocations.Count |
+            Should -BeGreaterThan 1 -Because "the replay needs a later phase to observe what an earlier one left behind"
+        @($invocations | Where-Object { -not $_.InsideGuard }) |
+            Should -BeNullOrEmpty -Because "an unguarded phase has no removal boundary to replay"
+
+        # Script-scoped: '& $Action' runs the block in a child scope, so a plain assignment inside it
+        # would be discarded when the guard returns.
+        $script:replayedPhaseCount = 0
+        $script:phaseObservingLeakedPackages = @()
+
+        foreach ($guardIndex in @($invocations | ForEach-Object { $_.GuardIndex } | Select-Object -Unique)) {
+            $guardedPhases = @($invocations | Where-Object { $_.GuardIndex -eq $guardIndex })
+
+            Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
+                foreach ($phase in $guardedPhases) {
+                    $script:replayedPhaseCount++
+
+                    if ($script:replayedPhaseCount -eq 1) {
+                        # Phase 1 re-creates SCHEMA_PACKAGES in this process, as a phase script that
+                        # activates bootstrap mode does.
+                        [System.Environment]::SetEnvironmentVariable("SCHEMA_PACKAGES", '[{"name":"ReCreatedByPhaseOne"}]')
+                        continue
+                    }
+
+                    if (Test-Path -LiteralPath "Env:SCHEMA_PACKAGES") {
+                        $script:phaseObservingLeakedPackages += "$($phase.Name) (line $($phase.Line))"
+                    }
+                }
+            }
+        }
+
+        # The guard's own restore returns SCHEMA_PACKAGES to whatever this shell had, so the replay
+        # leaves no state behind whichever shape the wrapper has.
+        $script:phaseObservingLeakedPackages |
+            Should -BeNullOrEmpty -Because "each phase must be guarded on its own, so SCHEMA_PACKAGES re-created by an earlier phase is removed again before the next phase runs"
     }
 
     It "verifies the started container after the LAST guarded phase in the <Name> wrapper" -ForEach @(
@@ -1409,6 +1526,43 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
                 -ContainerName "ed-fi-api" } | Should -Throw -ExpectedMessage "DMS E2E setup mismatch: *"
     }
 
+    It "reports the file-side failure when the environment file declares packages and <Label> USE_API_SCHEMA_PATH" -ForEach @(
+        @{ Label = "omits"; Lines = @("API_SCHEMA_PATH=/app/ApiSchema") }
+        @{ Label = "blanks"; Lines = @("USE_API_SCHEMA_PATH=", "API_SCHEMA_PATH=/app/ApiSchema") }
+    ) {
+        # The file-only read's fallback, exercised rather than pattern-matched: an undeclared (or
+        # blank) USE_API_SCHEMA_PATH must resolve to false, so the verdict is the FILE-side "declares
+        # packages but does not set USE_API_SCHEMA_PATH=true" - the file is internally inconsistent and
+        # re-creating the container cannot fix it. The container in this fixture agrees with everything
+        # it can, so a fallback that defaulted the missing name to true would let this pass, and one
+        # that reported it against the container would give the wrong remediation.
+        $script:environmentFileLines = $Lines
+
+        { Assert-DmsContainerSchemaEnvironment `
+                -EnvironmentFilePath (New-EnvironmentFileFixture) `
+                -ContainerName "ed-fi-api" } |
+            Should -Throw -ExpectedMessage "DMS E2E setup mismatch: the environment file declares 4 ApiSchema package(s) but does not set USE_API_SCHEMA_PATH=true,*Set USE_API_SCHEMA_PATH=true in the environment file*"
+    }
+
+    It "reports the file-side failure when the environment file declares packages and <Label> API_SCHEMA_PATH" -ForEach @(
+        @{ Label = "omits"; Lines = @("USE_API_SCHEMA_PATH=true") }
+        @{ Label = "blanks"; Lines = @("USE_API_SCHEMA_PATH=true", "API_SCHEMA_PATH=") }
+        @{ Label = "whitespaces"; Lines = @("USE_API_SCHEMA_PATH=true", 'API_SCHEMA_PATH="   "') }
+    ) {
+        # The other file-only fallback. An undeclared, blank, or whitespace API_SCHEMA_PATH resolves to
+        # the empty string, and the file-side branch must be reached BEFORE the container's own blank
+        # path branch: the container's path is populated here, so a gate that only noticed a blank
+        # CONTAINER path would pass this file, and one that answered a missing file value with the
+        # container remediation would send a developer to tear the stack down over a value the file
+        # never declared.
+        $script:environmentFileLines = $Lines
+
+        { Assert-DmsContainerSchemaEnvironment `
+                -EnvironmentFilePath (New-EnvironmentFileFixture) `
+                -ContainerName "ed-fi-api" } |
+            Should -Throw -ExpectedMessage "DMS E2E setup mismatch: the environment file declares 4 ApiSchema package(s) but no API_SCHEMA_PATH,*Set API_SCHEMA_PATH in the environment file*"
+    }
+
     It "compares against the environment file's API_SCHEMA_PATH, not a hardcoded default" {
         # Both sides move together: a container matching a non-default environment-file path must pass.
         $script:environmentFileLines = @(
@@ -1728,18 +1882,10 @@ Describe "Both E2E setup wrappers verify the started container against the envir
                 [Parameter(Mandatory)] [string] $CommandName
             )
 
-            $guardCall = @(Get-ScriptCommandInvocation `
-                    -ScriptPath $ScriptPath `
-                    -CommandName "Invoke-WithDmsEnvironmentFileSchemaAuthority") |
-                Select-Object -First 1
-
-            $actionExtent = (@($guardCall.FindAll(
-                {
-                    param($node)
-                    $node -is [System.Management.Automation.Language.ScriptBlockExpressionAst]
-                },
-                $true
-            )) | Select-Object -First 1).Extent
+            # ANY guard block, not the first one. Each phase is guarded separately, so the verification
+            # sits in its own guard after the DMS-only start; a check bound to the first guard call
+            # would report the correctly placed verification as unguarded.
+            $actionExtent = @(Get-SchemaGuardActionExtent -ScriptPath $ScriptPath)
 
             $calls = @(Get-ScriptCommandInvocation -ScriptPath $ScriptPath -CommandName $CommandName)
 
@@ -1747,7 +1893,9 @@ Describe "Both E2E setup wrappers verify the started container against the envir
                 throw "Expected exactly one '$CommandName' invocation in '$ScriptPath'; found $($calls.Count)."
             }
 
-            return ($calls[0].Extent.StartOffset -ge $actionExtent.StartOffset -and $calls[0].Extent.EndOffset -le $actionExtent.EndOffset)
+            return @($actionExtent | Where-Object {
+                    $calls[0].Extent.StartOffset -ge $_.StartOffset -and $calls[0].Extent.EndOffset -le $_.EndOffset
+                }).Count -gt 0
         }
 
         function Get-FunctionCommandName {
@@ -1842,7 +1990,10 @@ Describe "Both E2E setup wrappers verify the started container against the envir
         $invoked | Should -Not -Contain "Get-ComposeResolvedEnvValue"
         $invoked | Should -Not -Contain "Get-EnvValue"
         $invoked | Should -Not -Contain "Resolve-ComposeEnvRawValue"
-        $script:schemaEnvironmentModuleSource | Should -Match '-Name "USE_API_SCHEMA_PATH" `\r?\n\s*-DefaultValue "false"'
+        # What each name FALLS BACK TO when the file does not declare it is asserted behaviorally,
+        # against real environment-file fixtures, in the Assert-DmsContainerSchemaEnvironment block
+        # above - not as a source pattern over the -DefaultValue arguments, which pinned the call's
+        # line wrapping and said nothing about the resulting verdict.
     }
 
     It "reads the frozen declaration rather than the ambient-precedence Effective map" {

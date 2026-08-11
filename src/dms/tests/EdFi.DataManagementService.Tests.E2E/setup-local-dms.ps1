@@ -22,22 +22,23 @@
     ./provision-e2e-database.ps1 -EnvironmentFile <selected env file> -DatabaseEngine <engine> -DatabaseName <E2E_DATABASE_NAME>
     ./start-local-dms.ps1 -DmsOnly -EnableConfig -EnvironmentFile <selected env file> -DatabaseEngine <engine> -AddExtensionSecurityMetadata
 
-    Every Docker phase above runs with USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES
-    removed from this process, so the selected environment file is the sole authority for the schema
-    package surface of the whole direct setup flow. Docker Compose gives process environment
-    variables precedence over --env-file entries, and local-dms.yml resolves each of those three
-    with a ${VAR:-default} fallback that treats a present-but-blank value exactly like an unset one.
-    An ambient blank or false value is therefore one confirmed way to start DMS on the image-baked
-    schemas while provisioning has already stamped the environment file's full package surface, after
-    which every data-plane request fails with an EffectiveSchemaHash mismatch. That is a failure mode
-    this guard closes; it is not established as the source of any particular reported incident. The
-    caller's original environment is restored exactly on completion, including the absent, empty,
-    whitespace, and valued distinctions, and on failure paths.
+    Each Docker phase above runs inside the shared schema-settings guard from
+    eng/docker-compose/dms-schema-environment.psm1, which removes USE_API_SCHEMA_PATH,
+    API_SCHEMA_PATH, and SCHEMA_PACKAGES from this process for the duration of that phase and then
+    restores the caller's exact prior state, including the absent, empty, whitespace, and valued
+    distinctions, and on failure paths. The selected environment file is therefore the sole authority
+    for the schema package surface of every phase. Each phase is guarded on its own rather than the
+    sequence as a whole, so a phase that re-creates one of the three names in this process cannot
+    leave it set for a later phase. That module explains why an ambient value would otherwise win
+    over the environment file.
 
-    After DMS starts, the script verifies the container actually received that package surface and
-    fails the setup when it did not, so a mismatch from any cause is reported here rather than as an
-    HTTP 503 EffectiveSchemaHash failure in every scenario of the suite. Both sides of the comparison
-    are read from the environment file, never with Docker Compose precedence.
+    After DMS starts, the script compares the started container's schema SETTINGS against the
+    selected environment file and fails the setup when they diverge, so that divergence is reported
+    here rather than as an HTTP 503 EffectiveSchemaHash failure in every scenario of the suite. This
+    is a settings-level check, not a schema-hash comparison: build-dms.ps1 E2ETest is the path that
+    compares the provisioned and runtime schema hashes, so a hash divergence whose settings agree is
+    caught there and not here. Both sides of this comparison are read from the environment file,
+    never with Docker Compose precedence.
 
     On completion the script prints a copyable teardown command carrying the same -DatabaseEngine and
     the resolved -EnvironmentFile, so a custom or MSSQL run is torn down against its own compose
@@ -169,49 +170,66 @@ try {
 
     Write-Output "Using file-based schema packages from $resolvedEnvironmentFile for E2E (non-bootstrap compatibility path)."
 
+    # Each phase is guarded INDIVIDUALLY rather than the sequence as a whole. The guard removes the
+    # three schema names for the phase it wraps and restores the caller's prior state when that phase
+    # returns, so wrapping the whole sequence would remove them exactly once, before phase 1: a phase
+    # script runs in this same process, and one that re-creates any of the three - start-local-dms.ps1
+    # does exactly that for bootstrap mode - would then still be setting it for every later phase.
+    # Guarding per phase re-applies the removal immediately before each Compose call.
+    #
     # Named distinctly from build-dms.ps1's own Invoke-WithEnvironmentFileSchemaSettings on purpose:
     # build-dms.ps1 invokes a setup wrapper in-process, so a shared name would resolve up the scope
     # chain to the build script's pass-through variant instead of this module's export.
+
+    # Start only the infrastructure and Configuration Service first. DMS starts after the
+    # E2E data store exists and the relational schema has been provisioned.
     Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
-        # Start only the infrastructure and Configuration Service first. DMS starts after the
-        # E2E data store exists and the relational schema has been provisioned.
         ./start-local-dms.ps1 -InfraOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -r -AddExtensionSecurityMetadata
+    }
 
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "Failed to start DMS infrastructure. Exit code: $LASTEXITCODE"
-            exit $LASTEXITCODE
-        }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to start DMS infrastructure. Exit code: $LASTEXITCODE"
+        exit $LASTEXITCODE
+    }
 
-        # Create the default data store via the configuration phase. start-local-dms.ps1 no longer
-        # creates a data store automatically; instance creation is owned by configure-local-data-store.ps1.
-        # Config Service is already healthy at this point because the -InfraOnly phase waits for
-        # CMS readiness before returning.
+    # Create the default data store via the configuration phase. start-local-dms.ps1 no longer
+    # creates a data store automatically; instance creation is owned by configure-local-data-store.ps1.
+    # Config Service is already healthy at this point because the -InfraOnly phase waits for
+    # CMS readiness before returning.
+    Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
         ./configure-local-data-store.ps1 -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -DataStoreDatabaseName $e2eDatabaseName
+    }
 
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "Failed to configure local data store. Exit code: $LASTEXITCODE"
-            exit $LASTEXITCODE
-        }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to configure local data store. Exit code: $LASTEXITCODE"
+        exit $LASTEXITCODE
+    }
 
-        Write-Host "`nProvisioning E2E database '$e2eDatabaseName'..." -ForegroundColor Cyan
+    Write-Host "`nProvisioning E2E database '$e2eDatabaseName'..." -ForegroundColor Cyan
+    Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
         ./provision-e2e-database.ps1 -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -DatabaseName $e2eDatabaseName
+    }
 
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "Failed to provision E2E database '$e2eDatabaseName'. Exit code: $LASTEXITCODE"
-            exit $LASTEXITCODE
-        }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to provision E2E database '$e2eDatabaseName'. Exit code: $LASTEXITCODE"
+        exit $LASTEXITCODE
+    }
 
-        Write-Host "`nStarting DMS after E2E database provisioning..." -ForegroundColor Cyan
+    Write-Host "`nStarting DMS after E2E database provisioning..." -ForegroundColor Cyan
+    Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
         ./start-local-dms.ps1 -DmsOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -AddExtensionSecurityMetadata
+    }
 
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "Failed to start DMS service after E2E database provisioning. Exit code: $LASTEXITCODE"
-            exit $LASTEXITCODE
-        }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to start DMS service after E2E database provisioning. Exit code: $LASTEXITCODE"
+        exit $LASTEXITCODE
+    }
 
-        # Prove DMS actually came up on the environment file's schema package surface before any
-        # scenario runs. Inside the guard, so the file-only expectation cannot be contaminated by an
-        # ambient override even if a future edit reaches for a Compose-precedence reader.
+    # Prove DMS actually came up on the environment file's schema package surface before any scenario
+    # runs. In its own guard, after the DMS-only start: the check reads a RUNNING container, and the
+    # guard keeps the file-only expectation from being contaminated by an ambient override even if a
+    # future edit reaches for a Compose-precedence reader.
+    Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
         Assert-DmsContainerSchemaEnvironment `
             -EnvironmentFilePath $resolvedEnvironmentFile `
             -ContainerName "ed-fi-api"

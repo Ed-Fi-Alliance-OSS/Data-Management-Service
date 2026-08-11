@@ -53,9 +53,15 @@ function Invoke-WithDmsEnvironmentFileSchemaAuthority {
         Compose's documented precedence; it is not a diagnosis of any particular reported incident, and
         this guard is cheap enough to hold regardless of which cause produced one.
 
-        Callers guard their WHOLE phase sequence rather than only the Compose-invoking phases: the
-        environment file is authoritative for the entire setup flow, and a Compose call added to any
-        phase later is covered by construction. Phases that do not read these three names from the
+        Callers guard EACH PHASE INVOCATION separately rather than wrapping their whole phase sequence
+        in one call. The removal lasts only for the duration of the action, because the restore below
+        has to put the caller's shell back the way it found it - so one call around the whole sequence
+        removes the three names exactly once, before the first phase. A phase script runs in the same
+        PowerShell process as the wrapper, and one that re-creates any of the three (start-local-dms.ps1
+        does exactly that in bootstrap mode, deliberately) would then still be setting it for every
+        later phase in that sequence, which is the state this guard exists to prevent. Guarding per
+        phase re-applies the removal immediately before each phase, so a Compose call added to any
+        phase later is covered by construction, and phases that do not read these three names from the
         process environment are unaffected by the removal.
 
         Defined in this shared module rather than copied into each E2E setup wrapper, for the same
