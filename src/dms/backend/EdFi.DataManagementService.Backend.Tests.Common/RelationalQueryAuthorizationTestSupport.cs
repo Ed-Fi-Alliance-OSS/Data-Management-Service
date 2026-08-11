@@ -136,6 +136,19 @@ internal sealed record StaffEducationOrganizationAssignmentAssociationSeed(
     DateOnly BeginDate
 );
 
+/// <summary>
+/// The employment half of the two staff pathways the <c>auth.EducationOrganizationIdToStaffDocumentId</c>
+/// view combines. Seeding a staff member with both an assignment and an employment association at the same
+/// EducationOrganization is what produces a cross-arm duplicate authorization pair.
+/// </summary>
+internal sealed record StaffEducationOrganizationEmploymentAssociationSeed(
+    DocumentUuid DocumentUuid,
+    string StaffUniqueId,
+    int EducationOrganizationId,
+    string EmploymentStatusDescriptor,
+    DateOnly HireDate
+);
+
 internal sealed record StudentEducationOrganizationResponsibilityAssociationSeed(
     DocumentUuid DocumentUuid,
     string StudentUniqueId,
@@ -374,6 +387,22 @@ internal static class RelationalQueryAuthorizationRequestBodies
             },
             ["staffClassificationDescriptor"] = seed.StaffClassificationDescriptor,
             ["beginDate"] = seed.BeginDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+        };
+    }
+
+    public static JsonNode CreateStaffEducationOrganizationEmploymentAssociationRequestBody(
+        StaffEducationOrganizationEmploymentAssociationSeed seed
+    )
+    {
+        return new JsonObject
+        {
+            ["staffReference"] = new JsonObject { ["staffUniqueId"] = seed.StaffUniqueId },
+            ["educationOrganizationReference"] = new JsonObject
+            {
+                ["educationOrganizationId"] = seed.EducationOrganizationId,
+            },
+            ["employmentStatusDescriptor"] = seed.EmploymentStatusDescriptor,
+            ["hireDate"] = seed.HireDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
         };
     }
 

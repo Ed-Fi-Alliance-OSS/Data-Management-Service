@@ -38,6 +38,15 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 // closure once per arm) — and a deduplicating UNION would reintroduce the per-probe
 // Subquery Scan + HashAggregate over the claim-filtered staff set that these tests
 // assert against.
+//
+// Plan-shape verification is PostgreSQL-only by design, not by omission. The pathology
+// the change removes is specific to PostgreSQL's rewriter: a dedup makes a view
+// unflattenable, so join quals cannot be pushed into it. SQL Server expands view
+// definitions and can push predicates through a distinct, so there is no equivalent plan
+// regression to guard, and the project keeps no SQL Server plan-assertion harness.
+// SQL Server parity is proven by outcome instead — the MSSQL twins of every scenario in
+// MssqlRelationalQueryAuthorizationTests and MssqlRelationalGetByIdAuthorizationTests
+// assert unchanged authorization results, including under duplicate auth pairs.
 // ═══════════════════════════════════════════════════════════════════
 
 [TestFixture]
@@ -245,15 +254,11 @@ public class Given_A_Postgresql_People_Auth_View_Query_Plan
             new NpgsqlParameter("claimEducationOrganizationIds", new[] { ClaimEducationOrganizationId })
         );
 
-        var (closurePath, associationPath) = AssertViewInlinedWithPushedPredicates(
-            plan,
-            expectStudentDocumentIdCondition: true
-        );
+        AssertViewInlinedWithPushedPredicates(plan);
 
         // Correlated per-probe shape: the plan must be entirely dedup-free — this is the
         // "no HashAggregate over the closure per probe" acceptance criterion verbatim.
-        AssertNoDedupNodeOnPath(closurePath);
-        AssertNoDedupNodeOnPath(associationPath);
+        AssertNoDedupNodeAnywhere(plan);
     }
 
     [Test]
@@ -275,10 +280,7 @@ public class Given_A_Postgresql_People_Auth_View_Query_Plan
             new NpgsqlParameter("claimEducationOrganizationIds", new[] { ClaimEducationOrganizationId })
         );
 
-        var (closurePath, _) = AssertViewInlinedWithPushedPredicates(
-            plan,
-            expectStudentDocumentIdCondition: true
-        );
+        var closurePath = AssertViewInlinedWithPushedPredicates(plan);
 
         AssertClaimFilterAppliedBeneathAnyDedup(closurePath);
     }
@@ -305,12 +307,7 @@ public class Given_A_Postgresql_People_Auth_View_Query_Plan
 
         // Correlated per-probe shape: the whole plan must be dedup-free — the staff-view
         // equivalent of the "no HashAggregate over the closure per probe" criterion.
-        CollectNodeTypes(plan)
-            .Should()
-            .NotContain(
-                nodeType => _dedupNodeTypes.Contains(nodeType),
-                "no dedup node may materialize the staff auth set per probe (DMS-1329)"
-            );
+        AssertNoDedupNodeAnywhere(plan);
 
         var conditions = CollectConditionText(plan);
         conditions.Should().Contain(text => text.Contains("SourceEducationOrganizationId"));
@@ -380,41 +377,42 @@ public class Given_A_Postgresql_People_Auth_View_Query_Plan
 
     /// <summary>
     /// Asserts the auth view was flattened into the probing query: both base relations are scanned
-    /// directly, no Subquery Scan remains, and the claim (and optionally person) predicates appear
-    /// as plan conditions. Returns the root→scan path to the closure scan for further dedup checks.
+    /// directly, no Subquery Scan remains, and the claim and person predicates appear as plan
+    /// conditions. Returns the root→scan path to the closure scan for further dedup checks.
     /// </summary>
-    private static (
-        IReadOnlyList<JsonElement> ClosurePath,
-        IReadOnlyList<JsonElement> AssociationPath
-    ) AssertViewInlinedWithPushedPredicates(JsonElement plan, bool expectStudentDocumentIdCondition)
+    private static IReadOnlyList<JsonElement> AssertViewInlinedWithPushedPredicates(JsonElement plan)
     {
         // Inlined: the view's base relations are scanned directly, with no Subquery Scan
         // anywhere (the unflattenable DISTINCT view forced one per probe before DMS-1329).
         var closurePath = FindRelationScanPath(plan, EdOrgClosureRelationName);
-        var associationPath = FindRelationScanPath(plan, StudentSchoolAssociationRelationName);
+        FindRelationScanPath(plan, StudentSchoolAssociationRelationName);
         CollectNodeTypes(plan).Should().NotContain("Subquery Scan");
 
         // Predicate pushdown: the claim filter and the person correlation both survived into
-        // plan conditions instead of being applied above a materialized view output.
+        // plan conditions instead of being applied above a materialized view output. In the
+        // GET-many shape the person correlation is the semi-join condition rather than a
+        // literal filter, so it appears among the plan conditions either way.
         var conditions = CollectConditionText(plan);
         conditions.Should().Contain(text => text.Contains("SourceEducationOrganizationId"));
-        if (expectStudentDocumentIdCondition)
-        {
-            conditions.Should().Contain(text => text.Contains("Student_DocumentId"));
-        }
+        conditions.Should().Contain(text => text.Contains("Student_DocumentId"));
 
-        return (closurePath, associationPath);
+        return closurePath;
     }
 
     private static readonly HashSet<string> _dedupNodeTypes = ["Aggregate", "Unique", "Group", "SetOp"];
 
-    private static void AssertNoDedupNodeOnPath(IReadOnlyList<JsonElement> path)
+    /// <summary>
+    /// Asserts no dedup node sits anywhere in the plan. Scoped to the whole tree rather than the
+    /// root→scan paths: a path-scoped check would miss a dedup on a sibling branch, and the two
+    /// scopes only coincide while the probe SQL stays branch-free.
+    /// </summary>
+    private static void AssertNoDedupNodeAnywhere(JsonElement plan)
     {
-        path.Select(GetNodeType)
+        CollectNodeTypes(plan)
             .Should()
             .NotContain(
                 nodeType => _dedupNodeTypes.Contains(nodeType),
-                "no dedup node may materialize the auth-view subtree per probe (DMS-1329)"
+                "no dedup node may materialize the auth set per probe (DMS-1329)"
             );
     }
 

@@ -977,6 +977,21 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         );
     }
 
+    public async Task<UpsertResult> CreateStaffEducationOrganizationEmploymentAssociationAsync(
+        StaffEducationOrganizationEmploymentAssociationSeed seed
+    )
+    {
+        return await UpsertAsync(
+            "ed-fi",
+            "StaffEducationOrganizationEmploymentAssociation",
+            RelationalQueryAuthorizationRequestBodies.CreateStaffEducationOrganizationEmploymentAssociationRequestBody(
+                seed
+            ),
+            seed.DocumentUuid,
+            $"seed-staff-employment-{seed.StaffUniqueId}-{seed.EducationOrganizationId}"
+        );
+    }
+
     public async Task<UpsertResult> CreateStudentEducationOrganizationResponsibilityAssociationAsync(
         StudentEducationOrganizationResponsibilityAssociationSeed seed
     )
@@ -1013,6 +1028,19 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             "Ed-Fi:StaffClassificationDescriptor",
             descriptor,
             "uri://ed-fi.org/StaffClassificationDescriptor",
+            descriptor[(descriptor.LastIndexOf('#') + 1)..],
+            descriptor[(descriptor.LastIndexOf('#') + 1)..]
+        );
+    }
+
+    public async Task SeedEmploymentStatusDescriptorAsync(Guid documentUuid, string descriptor)
+    {
+        await SeedDescriptorAsync(
+            documentUuid,
+            "EmploymentStatusDescriptor",
+            "Ed-Fi:EmploymentStatusDescriptor",
+            descriptor,
+            "uri://ed-fi.org/EmploymentStatusDescriptor",
             descriptor[(descriptor.LastIndexOf('#') + 1)..],
             descriptor[(descriptor.LastIndexOf('#') + 1)..]
         );
@@ -1406,6 +1434,39 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                 expectedPairCount,
                 $"the student auth view should yield exactly {expectedPairCount} row(s) for student "
                     + $"'{studentUniqueId}' under claim {claimEducationOrganizationId}"
+            );
+    }
+
+    /// <summary>
+    /// The staff twin of <see cref="AssertStudentAuthViewPairCountAsync"/>. The staff view combines its
+    /// assignment and employment arms with <c>UNION ALL</c> (DMS-1329), so a staff member both assigned and
+    /// employed at the same claim-reachable EducationOrganization yields the pair once per arm. Asserting
+    /// that cardinality before exercising consumers is what keeps their single-result assertions honest.
+    /// </summary>
+    public async Task AssertStaffAuthViewPairCountAsync(
+        string staffUniqueId,
+        long claimEducationOrganizationId,
+        long expectedPairCount
+    )
+    {
+        var pairCount = await Database.ExecuteScalarAsync<long>(
+            """
+            SELECT COUNT_BIG(*)
+            FROM [auth].[EducationOrganizationIdToStaffDocumentId] v
+            INNER JOIN [edfi].[Staff] s ON s.[DocumentId] = v.[Staff_DocumentId]
+            WHERE v.[SourceEducationOrganizationId] = @claimEducationOrganizationId
+              AND s.[StaffUniqueId] = @staffUniqueId;
+            """,
+            new SqlParameter("@claimEducationOrganizationId", claimEducationOrganizationId),
+            new SqlParameter("@staffUniqueId", staffUniqueId)
+        );
+
+        pairCount
+            .Should()
+            .Be(
+                expectedPairCount,
+                $"the staff auth view should yield exactly {expectedPairCount} row(s) for staff "
+                    + $"'{staffUniqueId}' under claim {claimEducationOrganizationId}"
             );
     }
 
@@ -3696,12 +3757,18 @@ public class Given_A_Mssql_Relational_Query_Authorization_With_A_Synthetic_EdOrg
 // ═══════════════════════════════════════════════════════════════════
 // Duplicate people-auth-pair scenarios (DMS-1329)
 //
-// The people auth views no longer SELECT DISTINCT, so a student enrolled
-// at two schools reachable from the same claim EdOrg yields the
-// (claim, student) pair twice. Each test first proves that duplicate
-// cardinality at the view level (non-vacuity), then proves the
-// IN/EXISTS consumers still return each authorized document exactly
-// once with unchanged authorization outcomes.
+// Both duplicate classes the change admits are covered:
+//   1. Within-arm — the views no longer SELECT DISTINCT, so a student
+//      enrolled at two schools reachable from the same claim EdOrg
+//      yields the (claim, student) pair once per closure path.
+//   2. Cross-arm — the staff view combines its assignment and
+//      employment arms with UNION ALL rather than UNION, so a staff
+//      member both assigned and employed at one claim-reachable EdOrg
+//      yields the (claim, staff) pair once per arm.
+// Each test first proves that duplicate cardinality at the view level
+// (non-vacuity), then proves the IN/EXISTS consumers still return each
+// authorized document exactly once with unchanged authorization
+// outcomes.
 // ═══════════════════════════════════════════════════════════════════
 
 [TestFixture]
@@ -3716,6 +3783,10 @@ public class Given_A_Mssql_Relational_Query_Authorization_With_A_Duplicate_Peopl
         RelationshipAuthorizationCrudTestSupport.ClaimEducationOrganizationId;
     private const string TermDescriptor = "uri://ed-fi.org/TermDescriptor#Fall Semester";
     private const string EntryGradeLevelDescriptor = "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade";
+    private const string StaffClassificationDescriptor =
+        "uri://ed-fi.org/StaffClassificationDescriptor#Teacher";
+    private const string EmploymentStatusDescriptor =
+        "uri://ed-fi.org/EmploymentStatusDescriptor#Substitute/temporary";
 
     private static readonly QuerySchoolSeed[] _schoolSeeds =
     [
@@ -3811,6 +3882,48 @@ public class Given_A_Mssql_Relational_Query_Authorization_With_A_Duplicate_Peopl
         TermDescriptor
     );
 
+    // Assigned AND employed at School 100, so the staff view's two UNION ALL arms each contribute the
+    // (claim, staff) pair — the cross-arm duplicate that per-arm enrollment duplicates cannot produce.
+    private static readonly StaffSeed _dualPathwayStaffSeed = new(
+        new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000071")),
+        "20071",
+        "Dana",
+        "Dualpathway"
+    );
+
+    private static readonly StaffSeed _unauthorizedStaffSeed = new(
+        new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000072")),
+        "20072",
+        "Uri",
+        "Unreachablestaff"
+    );
+
+    private static readonly StaffEducationOrganizationAssignmentAssociationSeed[] _staffAssignmentSeeds =
+    [
+        new(
+            new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000081")),
+            "20071",
+            100,
+            StaffClassificationDescriptor,
+            new DateOnly(2025, 8, 1)
+        ),
+        new(
+            new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000082")),
+            "20072",
+            300,
+            StaffClassificationDescriptor,
+            new DateOnly(2025, 8, 1)
+        ),
+    ];
+
+    private static readonly StaffEducationOrganizationEmploymentAssociationSeed _staffEmploymentSeed = new(
+        new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000091")),
+        "20071",
+        100,
+        EmploymentStatusDescriptor,
+        new DateOnly(2025, 8, 1)
+    );
+
     private MssqlRelationalQueryAuthorizationTestContext _context = null!;
 
     [OneTimeSetUp]
@@ -3853,6 +3966,32 @@ public class Given_A_Mssql_Relational_Query_Authorization_With_A_Duplicate_Peopl
         );
         RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
             await _context.CreateAuthorizationStudentAcademicRecordAsync(_unauthorizedAuthorizationSeed)
+        );
+
+        await _context.SeedStaffClassificationDescriptorAsync(
+            Guid.Parse("12121212-0000-0000-0000-000000000062"),
+            StaffClassificationDescriptor
+        );
+        await _context.SeedEmploymentStatusDescriptorAsync(
+            Guid.Parse("12121212-0000-0000-0000-000000000063"),
+            EmploymentStatusDescriptor
+        );
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateStaffAsync(_dualPathwayStaffSeed)
+        );
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateStaffAsync(_unauthorizedStaffSeed)
+        );
+
+        foreach (var assignmentSeed in _staffAssignmentSeeds)
+        {
+            RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+                await _context.CreateStaffEducationOrganizationAssignmentAssociationAsync(assignmentSeed)
+            );
+        }
+
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateStaffEducationOrganizationEmploymentAssociationAsync(_staffEmploymentSeed)
         );
 
         await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 100);
@@ -3932,6 +4071,69 @@ public class Given_A_Mssql_Relational_Query_Authorization_With_A_Duplicate_Peopl
 
         var success = authorizedResult.Should().BeOfType<GetResult.GetSuccess>().Subject;
         success.DocumentUuid.Should().Be(_dualEnrolledAuthorizationSeed.DocumentUuid);
+        unauthorizedResult.Should().BeOfType<GetResult.GetFailureRelationshipNotAuthorized>();
+    }
+
+    [Test]
+    public async Task It_returns_each_authorized_staff_exactly_once_under_cross_arm_duplicate_auth_pairs()
+    {
+        // The staff view is the only multi-arm people auth view, and DMS-1329 combines its arms with
+        // UNION ALL instead of UNION. A staff member both assigned and employed at the same
+        // claim-reachable EdOrg is therefore the one duplicate class the set-operator alone produces —
+        // the per-arm enrollment duplicates the student scenarios cover cannot reach it.
+        await _context.AssertStaffAuthViewPairCountAsync(
+            _dualPathwayStaffSeed.StaffUniqueId,
+            ClaimEducationOrganizationId,
+            expectedPairCount: 2
+        );
+        await _context.AssertStaffAuthViewPairCountAsync(
+            _unauthorizedStaffSeed.StaffUniqueId,
+            ClaimEducationOrganizationId,
+            expectedPairCount: 0
+        );
+
+        var result = await _context.QueryAsync(
+            "ed-fi",
+            "Staff",
+            [ClaimEducationOrganizationId],
+            RelationshipAuthorizationCrudTestSupport.PeopleOnlyStrategyNames
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+
+        success.TotalCount.Should().Be(1);
+        success
+            .EdfiDocs.Select(static document => document!["id"]!.GetValue<string>())
+            .Should()
+            .Equal(_dualPathwayStaffSeed.DocumentUuid.Value.ToString());
+    }
+
+    [Test]
+    public async Task It_authorizes_single_record_staff_reads_under_cross_arm_duplicate_auth_pairs()
+    {
+        await _context.AssertStaffAuthViewPairCountAsync(
+            _dualPathwayStaffSeed.StaffUniqueId,
+            ClaimEducationOrganizationId,
+            expectedPairCount: 2
+        );
+
+        var authorizedResult = await _context.GetByIdAsync(
+            "ed-fi",
+            "Staff",
+            _dualPathwayStaffSeed.DocumentUuid,
+            [ClaimEducationOrganizationId],
+            RelationshipAuthorizationCrudTestSupport.PeopleOnlyStrategyNames
+        );
+        var unauthorizedResult = await _context.GetByIdAsync(
+            "ed-fi",
+            "Staff",
+            _unauthorizedStaffSeed.DocumentUuid,
+            [ClaimEducationOrganizationId],
+            RelationshipAuthorizationCrudTestSupport.PeopleOnlyStrategyNames
+        );
+
+        var success = authorizedResult.Should().BeOfType<GetResult.GetSuccess>().Subject;
+        success.DocumentUuid.Should().Be(_dualPathwayStaffSeed.DocumentUuid);
         unauthorizedResult.Should().BeOfType<GetResult.GetFailureRelationshipNotAuthorized>();
     }
 }
