@@ -329,7 +329,8 @@ For a given request, backend already has:
   - selected top-level descriptor strings trimmed (`codeValue`, `shortDescription`)
 - `DocumentInfo`:
   - resource `DocumentIdentity`
-  - descriptor references (with concrete JSON paths, including indices)
+  - descriptor references (with concrete JSON paths, including indices); Core has rejected any
+    non-ASCII URI at that path before descriptor-specific lowercase normalization
   - document references (target identities + concrete reference-object JSON paths, including indices; grouped by wildcard path; requires addition of `DocumentReference.Path` as described below)
 - optional `ProfileAppliedWriteRequest` for profile-constrained writes:
   - `WritableRequestBody`: the request body after Core applies writable profile semantics and normal canonicalization
@@ -349,7 +350,17 @@ Before writing resource tables:
   - concrete references probe the target resource's `UX_<R>_RefKey`
   - abstract references probe `{AbstractResource}Identity` and project both `DocumentId` and the concrete `ResourceKeyId`
 - Resolve all **descriptor references**:
-  - descriptors probe the lowered ASCII URI + `ResourceKeyId` descriptor index
+  - before building any lookup entry, Core descriptor extraction validates the raw URI at its
+    concrete request JSON path; a non-ASCII value produces a path-attributed 400 and the resolver is
+    not invoked
+  - after validation, descriptors probe the lowered ASCII URI + `ResourceKeyId` descriptor index
+
+This ordering is normative: validation is not deferred to lookup and a non-ASCII URI must not be
+reported as a missing descriptor reference. For descriptor resource POST/PUT, the parallel direct
+write rule is owned by the descriptor identity/write flow: derive the URI from the canonicalized
+`$.namespace` + `#` + `$.codeValue`, validate the two client-supplied components with failures
+attributed to their source paths, and only then lowercase or probe the URI. See
+[transactions-and-concurrency.md](transactions-and-concurrency.md#descriptor-uri-ascii-validation-boundary).
 
 Memoize resolved references within the request using the structural natural-key comparer. Cross-request L1/L2 caches remain optional and should stay disabled or short-TTL unless identity-update invalidation is proven.
 
@@ -1742,7 +1753,7 @@ public interface IResourceFlattener
 /// Produced by the ApiSchema-derived natural-key resolver and used for document references.
 /// </param>
 /// <param name="DescriptorIdByKey">
-/// Maps (lowered ASCII URI, descriptor resource type) to a descriptor DocumentId.
+/// Maps (validated, lowered ASCII URI, descriptor resource type) to a descriptor DocumentId.
 /// This is a convenience map derived from Core-extracted descriptor references after descriptor-probe resolution.
 /// Used to populate descriptor FK columns without per-row database work.
 /// </param>
@@ -1758,7 +1769,7 @@ public readonly record struct ReferenceLookupKey(QualifiedResourceName TargetRes
 
 /// <summary>
 /// Key used for resolving descriptor URI strings to descriptor DocumentIds without per-row database work.
-/// The URI must be ASCII-lowered to match the descriptor probe contract.
+/// The URI must have passed request validation and then been ASCII-lowered to match the descriptor probe contract.
 /// </summary>
 public readonly record struct DescriptorKey(string LoweredUri, QualifiedResourceName DescriptorResource);
 
@@ -2196,7 +2207,9 @@ private static long? ResolveDescriptorId(
         return null;
     }
 
-    var loweredUri = uri.ToLowerInvariant();
+    // Core validation has already rejected non-ASCII input before relational resolution. Use the
+    // shared invariant-preserving helper here as defense in depth; never lowercase unchecked input.
+    var loweredUri = DescriptorUri.LowerValidatedAscii(uri);
     return resolved.DescriptorIdByKey[new DescriptorKey(loweredUri, descriptorResource)];
 }
 

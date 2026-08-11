@@ -230,12 +230,19 @@ The effective date columns are part of the descriptor field contract. This match
 Descriptor references (recommended base design):
 
 - Use an FK directly to `dms.Descriptor(DocumentId)` to guarantee “this is a descriptor” at the DB level.
-- Resolve descriptor URI strings by lowercasing the ASCII URI and probing `dms.Descriptor` by `(UriLowered, ResourceKeyId)`; `ResourceKeyId`, not `Discriminator`, is the descriptor-type authority for lookup and uniqueness.
+- Resolve descriptor URI strings only after request validation has rejected non-ASCII input at its
+  source path. Lowercase the validated ASCII URI and probe `dms.Descriptor` by
+  `(UriLowered, ResourceKeyId)`; `ResourceKeyId`, not `Discriminator`, is the descriptor-type
+  authority for lookup and uniqueness. A non-ASCII value is a 400 validation failure before the
+  descriptor probe, not a lookup miss.
 
 If DB-level enforcement of “descriptor must be of type X” becomes necessary later, it must compare the referenced `dms.Descriptor.ResourceKeyId` with the expected compile-time resource key derived from `ApiSchema`. `Discriminator` must not become a second descriptor-type authority.
 
 Descriptor update semantics:
 
+- For descriptor POST/PUT, derive `Uri` from the canonicalized `Namespace` + `#` + `CodeValue`.
+  Validate the two client-supplied components as ASCII before lowercasing, upsert detection, or
+  persistence; attribute a validation failure to `$.namespace` and/or `$.codeValue` as applicable.
 - Descriptor identity is immutable after creation: `Namespace`, `CodeValue`, and the derived `Uri` must not change on PUT.
 - `ResourceKeyId` and `Discriminator` are set at insert and never updated (a document's resource type is immutable).
 - Descriptor representation fields can be updated: `ShortDescription`, `Description`, `EffectiveBeginDate`, and `EffectiveEndDate`.

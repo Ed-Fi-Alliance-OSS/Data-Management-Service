@@ -503,9 +503,13 @@ For a write request targeting resource `R`:
    - Backend resolves insert vs update with the compiled own-natural-key probe for `R` and allocates/loads the root `DocumentId` (details in `flattening-reconstitution.md` and `natural-key-resolution.md`).
 
 3. **Bulk reference + descriptor resolution**
+   - Before constructing lookup entries, Core descriptor extraction rejects every non-ASCII
+     descriptor URI at its concrete request JSON path. The write returns a path-attributed 400 and
+     does not invoke the resolver. This validation happens before descriptor-specific lowercase
+     normalization.
    - Compute the full set of natural-key lookup entries needed for this request:
      - document references (target resource + extracted `DocumentIdentity` values), and
-     - descriptor references (descriptor resource key + lowered ASCII URI).
+     - descriptor references (descriptor resource key + validated, lowered ASCII URI).
    - Perform one batched natural-key resolver command using:
      - `MappingSet.NaturalKeyProbeTargets` for concrete and abstract document references, and
      - `MappingSet.DescriptorProbeTarget` for descriptor references.

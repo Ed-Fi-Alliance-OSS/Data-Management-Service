@@ -73,8 +73,33 @@ It is used for:
 3. Group by target resource and resolve in one batched command:
    - concrete targets probe the target root's `UX_<R>_RefKey`;
    - abstract targets probe `{AbstractResource}Identity` by its `RefKey` shape and project concrete `ResourceKeyId`;
-   - descriptor targets probe `dms.Descriptor` by lowered ASCII URI + `ResourceKeyId`.
+   - descriptor targets probe `dms.Descriptor` by validated, lowered ASCII URI + `ResourceKeyId`.
 4. Map results back by explicit request ordinal so not-found failures preserve request JSON locations.
+
+##### Descriptor URI ASCII validation boundary
+
+Descriptor URI validation is request validation, not lookup miss handling. After ordinary request
+canonicalization but before descriptor-specific lowercasing, every client-supplied descriptor URI
+must contain only characters in U+0000 through U+007F. The validation boundary depends on the entry
+point:
+
+- During write identity/reference extraction, Core validates each descriptor reference at its
+  concrete request JSON path before constructing its normalized `DocumentIdentity`. For a descriptor
+  resource POST/PUT, Core first derives the identity URI from the canonicalized `$.namespace` + `#` +
+  `$.codeValue`; it validates the two client-supplied components and attributes failures to
+  `$.namespace` and/or `$.codeValue` before lowercasing the derived URI.
+- During Core query validation, every query element whose compiled target is
+  `RelationalQueryFieldTarget.DescriptorIdColumn` is validated before backend preprocessing.
+  `RelationalQueryRequestPreprocessor` receives only validated values and asserts the ASCII
+  invariant before it creates a descriptor reference or calls `IReferenceResolver.ResolveAsync`. A
+  non-ASCII value produces the existing path-attributed query-validation 400, not an empty result
+  page.
+
+Any validation failure terminates the operation before a descriptor natural-key resolver or
+descriptor target lookup is issued. Resolver batching, request-local memoization, the write
+flattener, and key-unification logic therefore consume validated ASCII descriptor keys. Their
+normalization helpers must still assert the ASCII precondition rather than silently accepting
+arbitrary Unicode.
 
 ##### Caching
 
@@ -209,7 +234,10 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
 1. Core validates JSON and extracts:
    - `DocumentIdentity`
    - document references with target resource, fully-flattened identity values, and request paths
-   - descriptor references with target resource, normalized URI, and request paths
+   - descriptor references with target resource, concrete request paths, and URI values validated as
+     ASCII before normalization
+   - for descriptor resource writes, the URI derived from canonicalized `namespace` + `#` +
+     `codeValue`, validated before normalization with any failures attributed to the source fields
 2. Backend resolves references in bulk:
    - Use an ApiSchema-derived resolver to turn references into `DocumentId`s via generated natural-key probes, including:
      - self-contained identities
@@ -483,7 +511,10 @@ Ordering/paging contract:
 
 Query compilation patterns:
 - **Scalar query fields**: `queryFieldMapping` JSON path → derived root-table column → `r.Column = @value`
-- **Descriptor query fields**: normalize and ASCII-lowercase URI → resolve `DescriptorId` via the descriptor lowered-URI + `ResourceKeyId` index → `r.DescriptorIdColumn = @descriptorId`
+- **Descriptor query fields**: validate the URI as ASCII → on failure return a path-attributed 400
+  before lookup → lowercase the validated URI → resolve `DescriptorId` via the descriptor lowered-URI
+  + `ResourceKeyId` index → `r.DescriptorIdColumn = @descriptorId`. A valid URI that does not resolve
+  still has the existing empty-match behavior.
 - **Document reference identity query fields**: compile to predicates on local per-site identity binding columns (stored
   or alias), e.g.:
   - `r.Student_StudentUniqueId = @StudentUniqueId`
