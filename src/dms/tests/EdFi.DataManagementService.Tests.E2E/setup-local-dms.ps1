@@ -119,7 +119,12 @@ try {
     # rather than carrying their own copies. The verification reads the environment file through the
     # same file-only package reader the provision phase uses, so the container is compared against
     # exactly the package surface the database was provisioned for.
-    Import-Module ./dms-schema-environment.psm1 -Force
+    #
+    # Without -Force, the same rule this module applies to its own nested imports: -Force removes a
+    # module session-wide before re-importing it, while a plain import reuses an already-loaded
+    # instance. build-dms.ps1 loads this same module for its own -Enabled wrapper before invoking a
+    # setup wrapper in-process, so reusing that instance keeps one module serving both.
+    Import-Module ./dms-schema-environment.psm1
 
     $baseEnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path $EnvironmentFile -DockerComposeRoot $dockerComposeDir
     # Compose the data-standard overlay first, then the database-engine overlay (same order as

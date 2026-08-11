@@ -181,6 +181,14 @@ $maintainers = "Ed-Fi Alliance, LLC and contributors"
 Import-Module -Name "$PSScriptRoot/eng/build-helpers.psm1" -Force
 Import-Module -Name "$PSScriptRoot/eng/docker-compose/effective-schema-hash.psm1" -Force
 Import-Module -Name "$PSScriptRoot/package-helpers.psm1" -Force
+# The E2E setup wrappers' schema-settings guard. This script keeps its own -Enabled wrapper below and
+# delegates only the enabled body here, so the removal-and-restore sequence exists in one place.
+#
+# Without -Force, the same rule this module applies to its own nested imports: -Force removes a module
+# before re-importing it and removal is session-wide, so an already-loaded instance is reused instead.
+# This import can therefore only ADD command resolution, never take it away from a setup wrapper this
+# script invokes in-process.
+Import-Module -Name "$PSScriptRoot/eng/docker-compose/dms-schema-environment.psm1"
 
 function DotNetClean {
     Invoke-Execute { dotnet clean $defaultSolution -c $Configuration --nologo -v minimal }
@@ -501,39 +509,24 @@ function Invoke-WithEnvironmentFileSchemaSettings {
         $Action
     )
 
+    # The -Enabled pass-through is this script's own contract and stays here: several call sites gate
+    # the removal on a caller switch or on the E2E settings object, and their phases must run WITHOUT
+    # the removal when that gate is off.
     if (-not $Enabled) {
         & $Action
         return
     }
 
-    $schemaEnvironmentVariableNames = @(
-        "USE_API_SCHEMA_PATH",
-        "API_SCHEMA_PATH",
-        "SCHEMA_PACKAGES"
-    )
-    $previousValues = @{}
-
-    foreach ($name in $schemaEnvironmentVariableNames) {
-        $previousValues[$name] = [System.Environment]::GetEnvironmentVariable($name)
-    }
-
-    try {
-        foreach ($name in $schemaEnvironmentVariableNames) {
-            Remove-Item "Env:$name" -ErrorAction SilentlyContinue
-        }
-
-        & $Action
-    }
-    finally {
-        foreach ($name in $schemaEnvironmentVariableNames) {
-            if ($null -eq $previousValues[$name]) {
-                Remove-Item "Env:$name" -ErrorAction SilentlyContinue
-            }
-            else {
-                [System.Environment]::SetEnvironmentVariable($name, $previousValues[$name])
-            }
-        }
-    }
+    # Only the enabled body is delegated. The removal-and-restore sequence used to be a second copy of
+    # the module's, and the two had already drifted: this one cleared the three names without
+    # -LiteralPath, which the module had adopted. Keeping one implementation means the next fix cannot
+    # land in only one of them.
+    #
+    # This name must stay as it is. Renaming it to the module's would shadow the export for the setup
+    # wrapper this script invokes in-process with '& $instanceSetupScript': command lookup walks that
+    # child scope chain before it reaches the session state, so the wrapper's bare call would bind this
+    # -Enabled wrapper with the switch unset and remove nothing.
+    Invoke-WithDmsEnvironmentFileSchemaAuthority -Action $Action
 }
 
 function Stop-DockerEnvironment {

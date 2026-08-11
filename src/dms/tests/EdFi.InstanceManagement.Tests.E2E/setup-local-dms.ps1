@@ -252,7 +252,12 @@ try {
     Import-Module ./database-safety.psm1 -Force
     # The schema-settings guard and the post-start container schema verification, both shared with the
     # direct DMS E2E wrapper rather than copied into each.
-    Import-Module ./dms-schema-environment.psm1 -Force
+    #
+    # Without -Force, the same rule this module applies to its own nested imports: -Force removes a
+    # module session-wide before re-importing it, while a plain import reuses an already-loaded
+    # instance. build-dms.ps1 loads this same module for its own -Enabled wrapper before invoking THIS
+    # script in-process, so reusing that instance keeps one module serving both.
+    Import-Module ./dms-schema-environment.psm1
 
     # Single environment resolution. The build path (build-dms.ps1 InstanceE2ETest) already composed
     # the data-standard and engine overlays exactly once in Get-InstanceE2ETestEnvironmentContext and

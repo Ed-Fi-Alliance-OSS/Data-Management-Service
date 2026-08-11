@@ -200,7 +200,14 @@ clients, fixture state, and hydration), `Models/`, and `Hooks/` (`SetupHooks.cs`
   `dotnet test`.
 - **All routed requests return 503 / `EffectiveSchemaHash` mismatch.** A provisioned route
   database schema differs from the DMS runtime schema. Tear down and rerun so the databases are
-  reprovisioned to match the image.
+  reprovisioned to match the image. Setup tries to catch this before the suite runs: it removes
+  `USE_API_SCHEMA_PATH`, `API_SCHEMA_PATH`, and `SCHEMA_PACKAGES` from the process around its Docker
+  phases so the selected `-EnvironmentFile` is authoritative, then verifies the started `ed-fi-api`
+  container's schema settings against that file and fails with `DMS E2E setup mismatch: ...` before
+  any scenario runs. Select a different `-EnvironmentFile` to change the package surface; ambient
+  overrides of those three names are not a supported channel. See the standard suite's
+  [Troubleshooting](../EdFi.DataManagementService.Tests.E2E/README.md#troubleshooting) section for
+  the full failure mode.
 - **SQL Server stack fails to start or is unhealthy.** Treat an unavailable or unhealthy
   `dms-mssql` container as an infrastructure failure, not a test result — inspect
   `docker logs dms-mssql` and confirm the `1435` host port is free.

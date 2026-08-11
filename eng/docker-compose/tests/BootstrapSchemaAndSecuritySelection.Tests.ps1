@@ -1974,11 +1974,21 @@ exit 0
             $buildScript = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "build-dms.ps1") -Raw
 
             $buildScript | Should -Match "function Invoke-WithEnvironmentFileSchemaSettings"
-            $buildScript | Should -Match '"USE_API_SCHEMA_PATH"'
-            $buildScript | Should -Match '"API_SCHEMA_PATH"'
-            $buildScript | Should -Match '"SCHEMA_PACKAGES"'
-            $buildScript | Should -Match 'Remove-Item "Env:\$name"'
-            $buildScript | Should -Match '\[System\.Environment\]::SetEnvironmentVariable\(\$name, \$previousValues\[\$name\]\)'
+            # The -Enabled pass-through stays this script's own: several call sites gate the removal on
+            # a caller switch or on the E2E settings object, and their phases must run WITHOUT the
+            # removal when that gate is off.
+            $buildScript | Should -Match '(?s)function Invoke-WithEnvironmentFileSchemaSettings.*?if \(-not \$Enabled\).*?& \$Action.*?return'
+            # Only the ENABLED body is delegated, to the single implementation in the module both E2E
+            # setup wrappers import. This script used to carry a second copy of the removal-and-restore
+            # sequence and the two had already drifted - this one cleared with a bare
+            # 'Remove-Item "Env:$name"' while the module had moved to -LiteralPath - so the removal
+            # spelling is asserted against the module (in the sibling test below) and must not come back
+            # here. Imported without -Force, because -Force removes a module session-wide before
+            # re-importing it.
+            $buildScript | Should -Match '(?s)function Invoke-WithEnvironmentFileSchemaSettings.*?Invoke-WithDmsEnvironmentFileSchemaAuthority -Action \$Action'
+            $buildScript | Should -Match 'Import-Module -Name "\$PSScriptRoot/eng/docker-compose/dms-schema-environment\.psm1"(?! -Force)'
+            $buildScript | Should -Not -Match 'Remove-Item "Env:\$name"'
+            $buildScript | Should -Not -Match '\[System\.Environment\]::SetEnvironmentVariable\(\$name, \$previousValues\[\$name\]\)'
             # Five compose calls are gated on the caller's -UseEnvironmentFileSchemaSettings: the two
             # teardown paths and the three Start-DockerEnvironment startup shapes (deferred InfraOnly,
             # published full start, local full start). The deferred -DmsOnly start after provisioning
@@ -2043,7 +2053,10 @@ exit 0
                 $content = Get-Content -LiteralPath $path -Raw
                 $wrapperName = [System.IO.Path]::GetFileName([System.IO.Path]::GetDirectoryName($path))
 
-                $content | Should -Match "Import-Module \./dms-schema-environment\.psm1 -Force" -Because "$wrapperName must import the module that owns the guard"
+                # Without -Force: removal is session-wide, while a plain import reuses the instance
+                # build-dms.ps1 has already loaded for its own -Enabled wrapper.
+                $content | Should -Match "Import-Module \./dms-schema-environment\.psm1(?! -Force)" -Because "$wrapperName must import the module that owns the guard"
+                $content | Should -Not -Match "Import-Module \./dms-schema-environment\.psm1 -Force" -Because "$wrapperName must not force a session-wide removal of the shared module"
                 $content | Should -Match "Invoke-WithDmsEnvironmentFileSchemaAuthority -Action" -Because "$wrapperName must guard its Docker phases"
                 $content | Should -Not -Match "function Invoke-WithDmsEnvironmentFileSchemaAuthority" -Because "$wrapperName must use the shared guard rather than its own copy, which would take the next fix in only one place"
 

@@ -57,6 +57,39 @@ BeforeAll {
 
         return $functionAst.Extent.Text
     }
+
+    function Get-ScriptCommandInvocation {
+        <#
+        .SYNOPSIS
+        Returns every invocation of one command name in a script or module, as CommandAst nodes, so an
+        assertion about WHERE a command is called can read the extents production actually has.
+        .DESCRIPTION
+        Over the AST rather than the text, which matters in this file specifically: both setup wrappers
+        deliberately NAME commands they must not call, and a text search cannot tell a prohibition from
+        a call.
+        #>
+        param(
+            [Parameter(Mandatory)] [string] $ScriptPath,
+            [Parameter(Mandatory)] [string] $CommandName
+        )
+
+        $parseErrors = $null
+        $tokens = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
+
+        if ($parseErrors.Count -gt 0) {
+            throw "'$ScriptPath' has $($parseErrors.Count) parse error(s), so '$CommandName' invocations cannot be located."
+        }
+
+        return @($ast.FindAll(
+            {
+                param($node)
+                $node -is [System.Management.Automation.Language.CommandAst] -and
+                $node.GetCommandName() -eq $CommandName
+            },
+            $true
+        ))
+    }
 }
 
 Describe "Invoke-WithE2ETestProcessContext restores prior environment state exactly (DMS-1284)" {
@@ -209,6 +242,7 @@ Describe "Invoke-WithDmsEnvironmentFileSchemaAuthority makes the environment fil
 
     BeforeAll {
         $script:schemaEnvironmentModule = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../dms-schema-environment.psm1"))
+        $script:buildScriptPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../build-dms.ps1"))
         $script:guardFunctionText = Get-ScriptFunctionText -ScriptPath $script:schemaEnvironmentModule -FunctionName "Invoke-WithDmsEnvironmentFileSchemaAuthority"
         . ([scriptblock]::Create($script:guardFunctionText))
 
@@ -336,6 +370,40 @@ Describe "Invoke-WithDmsEnvironmentFileSchemaAuthority makes the environment fil
 
         (Test-Path -LiteralPath "Env:SCHEMA_PACKAGES") | Should -BeTrue
         [System.Environment]::GetEnvironmentVariable("SCHEMA_PACKAGES") | Should -Be ""
+    }
+
+    It "removes the variables through this guard for build-dms.ps1's -Enabled wrapper, and not for a bare call" {
+        # build-dms.ps1 keeps its own -Enabled wrapper - several call sites gate the removal on a switch
+        # or on the E2E settings object - and delegates only the enabled body here, so the
+        # removal-and-restore sequence exists in one place instead of two that drift.
+        #
+        # Executed, not pattern-matched. A delegation that forwards no -Action, or an inverted switch
+        # test, reads correctly in source and still leaves every gated compose call running with the
+        # ambient variables present, which is the whole defect the wrapper exists to prevent.
+        . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:buildScriptPath -FunctionName "Invoke-WithEnvironmentFileSchemaSettings")))
+
+        foreach ($name in $script:schemaVariables) {
+            [System.Environment]::SetEnvironmentVariable($name, "ambient-$name")
+        }
+
+        $script:observedWhenEnabled = $null
+        Invoke-WithEnvironmentFileSchemaSettings -Enabled -Action {
+            $script:observedWhenEnabled = Get-SchemaVariableState
+        }
+
+        $script:observedWhenBare = $null
+        Invoke-WithEnvironmentFileSchemaSettings -Action {
+            $script:observedWhenBare = Get-SchemaVariableState
+        }
+
+        foreach ($name in $script:schemaVariables) {
+            $script:observedWhenEnabled[$name].Exists |
+                Should -BeFalse -Because "-Enabled must reach this module's guard, which removes $name"
+            $script:observedWhenBare[$name].Value |
+                Should -Be "ambient-$name" -Because "a bare call is a pass-through, so it must not remove $name"
+            [System.Environment]::GetEnvironmentVariable($name) |
+                Should -Be "ambient-$name" -Because "the caller's $name must be restored either way"
+        }
     }
 
     It "restores the prior state when a guarded phase calls exit" {
@@ -493,6 +561,9 @@ Describe "Both E2E setup wrappers run every Docker phase inside the schema-setti
                     [pscustomobject]@{
                         Name        = $name
                         Line        = $_.Extent.StartLineNumber
+                        # Carried so an assertion can order the phases against another command's
+                        # position, which line numbers alone cannot do for two calls on one line.
+                        EndOffset   = $_.Extent.EndOffset
                         InsideGuard = ($_.Extent.StartOffset -ge $actionExtent.StartOffset -and $_.Extent.EndOffset -le $actionExtent.EndOffset)
                     }
                 }
@@ -526,6 +597,30 @@ Describe "Both E2E setup wrappers run every Docker phase inside the schema-setti
         $invocations.Count | Should -BeGreaterThan 0 -Because "the wrapper must invoke phase scripts"
         @($invocations | Where-Object { -not $_.InsideGuard } | ForEach-Object { "$($_.Name) (line $($_.Line))" }) |
             Should -BeNullOrEmpty -Because "a Compose-invoking phase outside the guard would resolve the schema variables from the ambient process again"
+    }
+
+    It "verifies the started container after the LAST guarded phase in the <Name> wrapper" -ForEach @(
+        @{ Name = "DataManagementService E2E" }
+        @{ Name = "InstanceManagement E2E" }
+    ) {
+        # Inside the guard is not the requirement; inside the guard AND after the DMS-only start is.
+        # The verification inspects a RUNNING container, so a call moved ahead of
+        # './start-local-dms.ps1 -DmsOnly' either inspects whatever the previous run left behind or
+        # fails to find a container at all - and neither outcome says anything about the stack the
+        # scenarios are about to run against. The sibling assertions elsewhere in this file only pin
+        # that the call sits inside the -Action block, which a verifier hoisted to the top of the
+        # guarded sequence still satisfies, so the ordering is pinned here.
+        $invocations = @(Get-GuardedPhaseInvocation -ScriptPath $script:wrapperScripts[$Name])
+        $lastGuardedPhase = @($invocations | Where-Object { $_.InsideGuard } | Sort-Object EndOffset)[-1]
+
+        $verifierCall = @(Get-ScriptCommandInvocation `
+                -ScriptPath $script:wrapperScripts[$Name] `
+                -CommandName "Assert-DmsContainerSchemaEnvironment")
+
+        $verifierCall.Count | Should -Be 1 -Because "the wrapper verifies the started container exactly once"
+        $lastGuardedPhase.Name | Should -Be "./start-local-dms.ps1" -Because "the last guarded phase is the -DmsOnly start whose container the verification reads"
+        $verifierCall[0].Extent.StartOffset |
+            Should -BeGreaterThan $lastGuardedPhase.EndOffset -Because "verifying before the last guarded phase ($($lastGuardedPhase.Name), line $($lastGuardedPhase.Line)) would read a container this run has not started yet"
     }
 
     It "detects a variable-dispatched phase whose variable is not named '...Script'" {
@@ -1495,18 +1590,10 @@ Describe "Both E2E setup wrappers verify the started container against the envir
                 [Parameter(Mandatory)] [string] $CommandName
             )
 
-            $parseErrors = $null
-            $tokens = $null
-            $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
-
-            $guardCall = @($ast.FindAll(
-                {
-                    param($node)
-                    $node -is [System.Management.Automation.Language.CommandAst] -and
-                    $node.GetCommandName() -eq "Invoke-WithDmsEnvironmentFileSchemaAuthority"
-                },
-                $true
-            )) | Select-Object -First 1
+            $guardCall = @(Get-ScriptCommandInvocation `
+                    -ScriptPath $ScriptPath `
+                    -CommandName "Invoke-WithDmsEnvironmentFileSchemaAuthority") |
+                Select-Object -First 1
 
             $actionExtent = (@($guardCall.FindAll(
                 {
@@ -1516,13 +1603,7 @@ Describe "Both E2E setup wrappers verify the started container against the envir
                 $true
             )) | Select-Object -First 1).Extent
 
-            $calls = @($ast.FindAll(
-                {
-                    param($node)
-                    $node -is [System.Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq $CommandName
-                },
-                $true
-            ))
+            $calls = @(Get-ScriptCommandInvocation -ScriptPath $ScriptPath -CommandName $CommandName)
 
             if ($calls.Count -ne 1) {
                 throw "Expected exactly one '$CommandName' invocation in '$ScriptPath'; found $($calls.Count)."
@@ -1589,7 +1670,12 @@ Describe "Both E2E setup wrappers verify the started container against the envir
         # neither wrapper may redefine it either.
         $source = Get-Content -LiteralPath $script:setupWrapperScripts[$Name] -Raw
 
-        $source | Should -Match "Import-Module \./dms-schema-environment\.psm1 -Force"
+        # Imported, and without -Force: -Force removes a module session-wide before re-importing it,
+        # while a plain import reuses an already-loaded instance - which is what build-dms.ps1 loads for
+        # its own -Enabled wrapper before invoking a setup wrapper in-process. The same rule the module
+        # applies to its own nested imports.
+        $source | Should -Match "Import-Module \./dms-schema-environment\.psm1(?! -Force)"
+        $source | Should -Not -Match "Import-Module \./dms-schema-environment\.psm1 -Force"
         $source | Should -Not -Match "function Assert-DmsContainerSchemaEnvironment"
         $source | Should -Not -Match "function Get-DmsSchemaEnvironmentVerdict"
         $source | Should -Not -Match "function Get-DmsContainerEnvironment"
@@ -1670,10 +1756,11 @@ Describe "Both E2E setup wrappers verify the started container against the envir
         $childScript = @"
 Set-Location -LiteralPath '$escapedComposeRoot'
 
-# Verbatim the order both wrappers use: the leaf dependency first, the shared verifier module last.
+# Verbatim what both wrappers do: the leaf dependency first, the shared verifier module last and
+# without -Force.
 Import-Module ./env-utility.psm1 -Force
 Import-Module ./database-safety.psm1 -Force
-Import-Module ./dms-schema-environment.psm1 -Force
+Import-Module ./dms-schema-environment.psm1
 
 foreach (`$commandName in @(
         'Assert-E2EDatabaseIsDedicated',

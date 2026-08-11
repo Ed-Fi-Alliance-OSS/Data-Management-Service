@@ -62,8 +62,10 @@ function Invoke-WithDmsEnvironmentFileSchemaAuthority {
         reason the verification below lives here: two copies drift, and only one of them gets the next
         fix. It remains a CALLER-side guard - start-local-dms.ps1 must not clear these names globally,
         because in bootstrap mode it sets them in-process on purpose so process precedence makes the
-        staged .bootstrap/ApiSchema workspace authoritative. build-dms.ps1 keeps its own -Enabled
-        variant: it has phases that must run without this removal, which the wrappers do not.
+        staged .bootstrap/ApiSchema workspace authoritative. build-dms.ps1 keeps an -Enabled WRAPPER
+        around this function rather than a second copy of it: several of its call sites gate the removal
+        on a switch or on the E2E settings object, and their phases must run without it - which the
+        setup wrappers never do, so they call this directly.
 
         THE NAME MUST STAY DISTINCT FROM build-dms.ps1's HELPER, and this one is deliberately not
         Invoke-WithEnvironmentFileSchemaSettings. build-dms.ps1 InstanceE2ETest invokes the Instance
@@ -421,6 +423,11 @@ function Get-DmsContainerEnvironment {
         throw "Unable to inspect Docker container '$ContainerName' to verify its schema environment."
     }
 
+    # A PowerShell hashtable, so its key lookups are case-INSENSITIVE, and that is deliberate here.
+    # Docker Compose is the sole writer of this container's environment and emits the exact
+    # AppSettings__* spelling local-dms.yml declares, so the gate never has two spellings to tell
+    # apart and a case-sensitive map would only add a way for the gate to miss its own keys. Casing
+    # matters for the VALUES, which is why Get-DmsSchemaEnvironmentToken compares those Ordinal.
     $containerEnvironment = @{}
 
     foreach ($entry in @($environmentJson | ConvertFrom-Json)) {
@@ -557,11 +564,11 @@ function Assert-DmsContainerSchemaEnvironment {
     Write-Host "Verified DMS container schema environment matches the environment file ($($declaredPackages.Count) ApiSchema package(s))." -ForegroundColor Green
 }
 
+# Only the two commands a caller outside this module invokes: the pre-phase guard (both E2E setup
+# wrappers, and build-dms.ps1's -Enabled wrapper delegating to it) and the post-start verification.
+# Everything else above is an internal of those two. The tests reach the internals by extracting the
+# function text through the AST and dot-sourcing it, so none of them is exported for testability - and
+# a narrower surface is also less of it exposed to the in-process shadowing described above.
 Export-ModuleMember -Function `
     Invoke-WithDmsEnvironmentFileSchemaAuthority, `
-    Get-DmsSchemaEnvironmentToken, `
-    Get-DmsContainerSchemaPackage, `
-    Get-DmsSchemaPackageIdentity, `
-    Get-DmsSchemaEnvironmentVerdict, `
-    Get-DmsContainerEnvironment, `
     Assert-DmsContainerSchemaEnvironment
