@@ -19,32 +19,48 @@
 
 param()
 
-Describe "Invoke-WithE2ETestProcessContext restores prior environment state exactly (DMS-1284)" {
-    BeforeAll {
-        function Get-ScriptFunctionText {
-            param(
-                [Parameter(Mandatory)] [string] $ScriptPath,
-                [Parameter(Mandatory)] [string] $FunctionName
-            )
+# Defined once here, in the file's root BeforeAll, so every Describe below extracts functions the same
+# way. Seven identical copies used to live in seven per-Describe BeforeAll blocks, which is exactly the
+# kind of duplication that drifts. A plain top-level function definition would not work: Pester runs the
+# file body during discovery only, so the run phase would not see it.
+BeforeAll {
+    function Get-ScriptFunctionText {
+        <#
+        .SYNOPSIS
+        Returns the source text of one function definition from a script or module, so a test can
+        dot-source just that function without executing the file's top-level body.
+        #>
+        param(
+            [Parameter(Mandatory)] [string] $ScriptPath,
+            [Parameter(Mandatory)] [string] $FunctionName
+        )
 
-            $parseErrors = $null
-            $tokens = $null
-            $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
-            $functionAst = $ast.FindAll(
-                {
-                    param($node)
-                    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $FunctionName
-                },
-                $true
-            ) | Select-Object -First 1
+        $parseErrors = $null
+        $tokens = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
 
-            if ($null -eq $functionAst) {
-                throw "Function '$FunctionName' was not found in '$ScriptPath'."
-            }
-
-            return $functionAst.Extent.Text
+        if ($parseErrors.Count -gt 0) {
+            throw "'$ScriptPath' has $($parseErrors.Count) parse error(s)."
         }
 
+        $functionAst = $ast.FindAll(
+            {
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $FunctionName
+            },
+            $true
+        ) | Select-Object -First 1
+
+        if ($null -eq $functionAst) {
+            throw "Function '$FunctionName' was not found in '$ScriptPath'."
+        }
+
+        return $functionAst.Extent.Text
+    }
+}
+
+Describe "Invoke-WithE2ETestProcessContext restores prior environment state exactly (DMS-1284)" {
+    BeforeAll {
         $buildScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../build-dms.ps1"))
         . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $buildScript -FunctionName "Invoke-WithE2ETestProcessContext")))
 
@@ -132,30 +148,6 @@ Describe "Invoke-WithE2ETestProcessContext restores prior environment state exac
 
 Describe "Get-DirectSetupTeardownCommand carries the engine and resolved environment file (DMS-1284)" {
     BeforeAll {
-        function Get-ScriptFunctionText {
-            param(
-                [Parameter(Mandatory)] [string] $ScriptPath,
-                [Parameter(Mandatory)] [string] $FunctionName
-            )
-
-            $parseErrors = $null
-            $tokens = $null
-            $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
-            $functionAst = $ast.FindAll(
-                {
-                    param($node)
-                    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $FunctionName
-                },
-                $true
-            ) | Select-Object -First 1
-
-            if ($null -eq $functionAst) {
-                throw "Function '$FunctionName' was not found in '$ScriptPath'."
-            }
-
-            return $functionAst.Extent.Text
-        }
-
         $setupScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1"))
         . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $setupScript -FunctionName "Get-DirectSetupTeardownCommand")))
     }
@@ -216,30 +208,6 @@ Describe "Invoke-WithDmsEnvironmentFileSchemaAuthority makes the environment fil
     }
 
     BeforeAll {
-        function Get-ScriptFunctionText {
-            param(
-                [Parameter(Mandatory)] [string] $ScriptPath,
-                [Parameter(Mandatory)] [string] $FunctionName
-            )
-
-            $parseErrors = $null
-            $tokens = $null
-            $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
-            $functionAst = $ast.FindAll(
-                {
-                    param($node)
-                    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $FunctionName
-                },
-                $true
-            ) | Select-Object -First 1
-
-            if ($null -eq $functionAst) {
-                throw "Function '$FunctionName' was not found in '$ScriptPath'."
-            }
-
-            return $functionAst.Extent.Text
-        }
-
         $script:schemaEnvironmentModule = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../dms-schema-environment.psm1"))
         $script:guardFunctionText = Get-ScriptFunctionText -ScriptPath $script:schemaEnvironmentModule -FunctionName "Invoke-WithDmsEnvironmentFileSchemaAuthority"
         . ([scriptblock]::Create($script:guardFunctionText))
@@ -691,30 +659,6 @@ Describe "Get-DmsSchemaEnvironmentVerdict fails setup when the DMS container dis
     # into a setup-time failure. Pure function, so no Docker is involved.
 
     BeforeAll {
-        function Get-ScriptFunctionText {
-            param(
-                [Parameter(Mandatory)] [string] $ScriptPath,
-                [Parameter(Mandatory)] [string] $FunctionName
-            )
-
-            $parseErrors = $null
-            $tokens = $null
-            $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
-            $functionAst = $ast.FindAll(
-                {
-                    param($node)
-                    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $FunctionName
-                },
-                $true
-            ) | Select-Object -First 1
-
-            if ($null -eq $functionAst) {
-                throw "Function '$FunctionName' was not found in '$ScriptPath'."
-            }
-
-            return $functionAst.Extent.Text
-        }
-
         # The verifier lives in the module both E2E setup wrappers import, not in either wrapper.
         $script:schemaEnvironmentModule = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../dms-schema-environment.psm1"))
 
@@ -1094,30 +1038,6 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
     # expectations, the verdict, and the throw is a real result rather than a source assertion. An
     # inverted 'if ($verdict.ShouldFail)' branch fails both cases below.
     BeforeAll {
-        function Get-ScriptFunctionText {
-            param(
-                [Parameter(Mandatory)] [string] $ScriptPath,
-                [Parameter(Mandatory)] [string] $FunctionName
-            )
-
-            $parseErrors = $null
-            $tokens = $null
-            $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
-            $functionAst = $ast.FindAll(
-                {
-                    param($node)
-                    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $FunctionName
-                },
-                $true
-            ) | Select-Object -First 1
-
-            if ($null -eq $functionAst) {
-                throw "Function '$FunctionName' was not found in '$ScriptPath'."
-            }
-
-            return $functionAst.Extent.Text
-        }
-
         $script:schemaEnvironmentModule = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../dms-schema-environment.psm1"))
 
         foreach ($functionName in @(
@@ -1471,30 +1391,6 @@ Describe "Get-DmsContainerEnvironment reads the container environment and fails 
     # Executes the reader against a stubbed 'docker', so its parsing rules and its fail-closed behavior
     # are real results rather than a source pattern, and no Docker daemon is required.
     BeforeAll {
-        function Get-ScriptFunctionText {
-            param(
-                [Parameter(Mandatory)] [string] $ScriptPath,
-                [Parameter(Mandatory)] [string] $FunctionName
-            )
-
-            $parseErrors = $null
-            $tokens = $null
-            $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
-            $functionAst = $ast.FindAll(
-                {
-                    param($node)
-                    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $FunctionName
-                },
-                $true
-            ) | Select-Object -First 1
-
-            if ($null -eq $functionAst) {
-                throw "Function '$FunctionName' was not found in '$ScriptPath'."
-            }
-
-            return $functionAst.Extent.Text
-        }
-
         $script:schemaEnvironmentModule = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../dms-schema-environment.psm1"))
         . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:schemaEnvironmentModule -FunctionName "Get-DmsContainerEnvironment")))
 
@@ -1840,30 +1736,6 @@ Describe "The container schema gate accepts the repository's own tracked environ
     )
 
     BeforeAll {
-        function Get-ScriptFunctionText {
-            param(
-                [Parameter(Mandatory)] [string] $ScriptPath,
-                [Parameter(Mandatory)] [string] $FunctionName
-            )
-
-            $parseErrors = $null
-            $tokens = $null
-            $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
-            $functionAst = $ast.FindAll(
-                {
-                    param($node)
-                    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $FunctionName
-                },
-                $true
-            ) | Select-Object -First 1
-
-            if ($null -eq $functionAst) {
-                throw "Function '$FunctionName' was not found in '$ScriptPath'."
-            }
-
-            return $functionAst.Extent.Text
-        }
-
         $script:schemaEnvironmentModule = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../dms-schema-environment.psm1"))
 
         foreach ($functionName in @(
