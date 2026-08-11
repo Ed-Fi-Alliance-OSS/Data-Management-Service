@@ -255,8 +255,12 @@ as a malformed native heartbeat. A relational table topic whose configured Debez
 source metadata rather than by topic prefix alone.
 
 Progress output preserves the input value schema, value, headers, source partition,
-source offset, and Connect record timestamp, including a null native-heartbeat value or
-value schema. It replaces only the output topic, key schema, and key.
+source offset, and Connect record timestamp for retained `dms.CdcHeartbeat` records and
+for native Debezium heartbeat records with non-null values. A native Debezium heartbeat
+whose value schema and value are both null is normalized to the non-null
+`Schema.STRING_SCHEMA` value `native-heartbeat` before routing, so the compacted progress
+topic does not receive a tombstone. Apart from that null native-heartbeat substitution,
+progress routing replaces only the output topic, key schema, and key.
 
 The progress topic is binding-scoped and has one partition, so its key does not repeat
 instance, generation, provider, or source-partition identity. The fixed non-null key makes
