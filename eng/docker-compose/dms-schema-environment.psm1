@@ -34,7 +34,7 @@
 Import-Module (Join-Path $PSScriptRoot "database-safety.psm1")
 Import-Module (Join-Path $PSScriptRoot "../schema-package-utility.psm1")
 
-function Invoke-WithEnvironmentFileSchemaSettings {
+function Invoke-WithDmsEnvironmentFileSchemaAuthority {
     <#
     .SYNOPSIS
         Runs a setup flow's Docker phases with the three schema package variables absent from this
@@ -64,8 +64,17 @@ function Invoke-WithEnvironmentFileSchemaSettings {
         because in bootstrap mode it sets them in-process on purpose so process precedence makes the
         staged .bootstrap/ApiSchema workspace authoritative. build-dms.ps1 keeps its own -Enabled
         variant: it has phases that must run without this removal, which the wrappers do not.
+
+        THE NAME MUST STAY DISTINCT FROM build-dms.ps1's HELPER, and this one is deliberately not
+        Invoke-WithEnvironmentFileSchemaSettings. build-dms.ps1 InstanceE2ETest invokes the Instance
+        Management wrapper IN-PROCESS with '& $instanceSetupScript', so the wrapper's scope is a CHILD
+        of build-dms.ps1's script scope, while this module's exports land in the session state. Command
+        lookup walks the scope chain before it reaches those exports, so a wrapper calling a name that
+        build-dms.ps1 also defines binds the BUILD SCRIPT's function - whose -Enabled switch is unset
+        on a bare call, making it a pass-through that removes nothing and leaves SCHEMA_PACKAGES
+        present for every guarded phase. Module-qualifying the call site would fix one call and leave
+        the next one to rediscover this, so the names are kept disjoint instead.
     #>
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Names the schema settings carried by an environment file, matching the equivalent build-dms.ps1 helper.')]
     param(
         [Parameter(Mandatory)]
         [scriptblock] $Action
@@ -549,7 +558,7 @@ function Assert-DmsContainerSchemaEnvironment {
 }
 
 Export-ModuleMember -Function `
-    Invoke-WithEnvironmentFileSchemaSettings, `
+    Invoke-WithDmsEnvironmentFileSchemaAuthority, `
     Get-DmsSchemaEnvironmentToken, `
     Get-DmsContainerSchemaPackage, `
     Get-DmsSchemaPackageIdentity, `

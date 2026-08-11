@@ -335,7 +335,13 @@ try {
     # values win over docker compose --env-file entries, so the guard removes stale overrides left by
     # teardown, an earlier bootstrap run, or the invoking shell and lets the env file provide
     # USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES.
-    Invoke-WithEnvironmentFileSchemaSettings -Action {
+    #
+    # Named distinctly from build-dms.ps1's own Invoke-WithEnvironmentFileSchemaSettings on purpose.
+    # build-dms.ps1 InstanceE2ETest invokes THIS script in-process, so this scope is a child of the
+    # build script's: a shared name would resolve up the scope chain to its pass-through variant
+    # (-Enabled unset on a bare call) instead of this module's export, and every phase below would run
+    # with the ambient schema variables still present.
+    Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
         # 1. Start only infrastructure and the Configuration Service. DMS starts after all three
         #    route-context schemas are provisioned and verified.
         Write-Host "`nStarting infrastructure and Configuration Service (DMS not yet started)..." -ForegroundColor Cyan

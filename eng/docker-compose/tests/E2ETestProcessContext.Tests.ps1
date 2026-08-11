@@ -13,7 +13,7 @@
 # - Get-DirectSetupTeardownCommand (standard setup-local-dms.ps1) must print a teardown command carrying
 #   the selected engine and the resolved environment-file path, safely single-quoted.
 #
-# DMS-1300 adds the same treatment for Invoke-WithEnvironmentFileSchemaSettings (both E2E setup
+# DMS-1300 adds the same treatment for Invoke-WithDmsEnvironmentFileSchemaAuthority (both E2E setup
 # wrappers), which must make the selected environment file the sole authority for the schema package
 # surface of the Docker phases, and must round-trip the caller's exact prior environment.
 
@@ -190,7 +190,7 @@ Describe "setup-local-dms.ps1 wires the resolved environment file into teardown 
     }
 }
 
-Describe "Invoke-WithEnvironmentFileSchemaSettings makes the environment file authoritative for the E2E setup phases (DMS-1300)" {
+Describe "Invoke-WithDmsEnvironmentFileSchemaAuthority makes the environment file authoritative for the E2E setup phases (DMS-1300)" {
     # One guard, in the module both E2E setup wrappers import, so it is executed once here rather than
     # once per wrapper copy. That the wrappers reach THIS definition - importing the module, defining no
     # guard of their own, and running every Docker phase inside it - is asserted by the wiring blocks
@@ -241,7 +241,7 @@ Describe "Invoke-WithEnvironmentFileSchemaSettings makes the environment file au
         }
 
         $script:schemaEnvironmentModule = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../dms-schema-environment.psm1"))
-        $script:guardFunctionText = Get-ScriptFunctionText -ScriptPath $script:schemaEnvironmentModule -FunctionName "Invoke-WithEnvironmentFileSchemaSettings"
+        $script:guardFunctionText = Get-ScriptFunctionText -ScriptPath $script:schemaEnvironmentModule -FunctionName "Invoke-WithDmsEnvironmentFileSchemaAuthority"
         . ([scriptblock]::Create($script:guardFunctionText))
 
         $script:schemaVariables = @("USE_API_SCHEMA_PATH", "API_SCHEMA_PATH", "SCHEMA_PACKAGES")
@@ -287,7 +287,7 @@ Describe "Invoke-WithEnvironmentFileSchemaSettings makes the environment file au
         }
 
         $script:observedInsideAction = $null
-        Invoke-WithEnvironmentFileSchemaSettings -Action {
+        Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
             $script:observedInsideAction = Get-SchemaVariableState
         }
 
@@ -309,7 +309,7 @@ Describe "Invoke-WithEnvironmentFileSchemaSettings makes the environment file au
         # must not depend on, so the property under test is that the guard restores whatever it found.
         $arranged = Get-SchemaVariableState
 
-        Invoke-WithEnvironmentFileSchemaSettings -Action { }
+        Invoke-WithDmsEnvironmentFileSchemaAuthority -Action { }
 
         $restored = Get-SchemaVariableState
         foreach ($name in $script:schemaVariables) {
@@ -325,7 +325,7 @@ Describe "Invoke-WithEnvironmentFileSchemaSettings makes the environment file au
 
         $arranged = Get-SchemaVariableState
 
-        { Invoke-WithEnvironmentFileSchemaSettings -Action { throw "phase failed" } } |
+        { Invoke-WithDmsEnvironmentFileSchemaAuthority -Action { throw "phase failed" } } |
             Should -Throw -ExpectedMessage "phase failed"
 
         $restored = Get-SchemaVariableState
@@ -342,7 +342,7 @@ Describe "Invoke-WithEnvironmentFileSchemaSettings makes the environment file au
 
         $arranged = Get-SchemaVariableState
 
-        Invoke-WithEnvironmentFileSchemaSettings -Action { }
+        Invoke-WithDmsEnvironmentFileSchemaAuthority -Action { }
 
         $restored = Get-SchemaVariableState
         $restored["USE_API_SCHEMA_PATH"].Exists | Should -BeFalse
@@ -364,7 +364,7 @@ Describe "Invoke-WithEnvironmentFileSchemaSettings makes the environment file au
             return
         }
 
-        Invoke-WithEnvironmentFileSchemaSettings -Action { }
+        Invoke-WithDmsEnvironmentFileSchemaAuthority -Action { }
 
         (Test-Path -LiteralPath "Env:SCHEMA_PACKAGES") | Should -BeTrue
         [System.Environment]::GetEnvironmentVariable("SCHEMA_PACKAGES") | Should -Be ""
@@ -389,7 +389,7 @@ Remove-Item -LiteralPath 'Env:API_SCHEMA_PATH' -ErrorAction SilentlyContinue
 `$env:SCHEMA_PACKAGES = 'prior-packages'
 
 try {
-    Invoke-WithEnvironmentFileSchemaSettings -Action {
+    Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
         'inside:' + [string](Test-Path -LiteralPath 'Env:USE_API_SCHEMA_PATH') +
             ',' + [string](Test-Path -LiteralPath 'Env:API_SCHEMA_PATH') +
             ',' + [string](Test-Path -LiteralPath 'Env:SCHEMA_PACKAGES') |
@@ -425,7 +425,7 @@ Describe "Both E2E setup wrappers run every Docker phase inside the schema-setti
             <#
             .SYNOPSIS
             Returns one record per phase-script invocation in a setup wrapper, with whether the
-            invocation is lexically inside the wrapper's single Invoke-WithEnvironmentFileSchemaSettings
+            invocation is lexically inside the wrapper's single Invoke-WithDmsEnvironmentFileSchemaAuthority
             -Action block. Uses the AST rather than a text pattern, so the assertion is about the
             structure production actually has, and is not defeated by reformatting or reindentation.
             #>
@@ -445,28 +445,45 @@ Describe "Both E2E setup wrappers run every Docker phase inside the schema-setti
                 {
                     param($node)
                     $node -is [System.Management.Automation.Language.CommandAst] -and
-                    $node.GetCommandName() -eq "Invoke-WithEnvironmentFileSchemaSettings"
+                    $node.GetCommandName() -eq "Invoke-WithDmsEnvironmentFileSchemaAuthority"
                 },
                 $true
             ))
 
             if ($guardCalls.Count -ne 1) {
-                throw "Expected exactly one Invoke-WithEnvironmentFileSchemaSettings invocation in '$ScriptPath'; found $($guardCalls.Count)."
+                throw "Expected exactly one Invoke-WithDmsEnvironmentFileSchemaAuthority invocation in '$ScriptPath'; found $($guardCalls.Count)."
             }
 
-            $actionBlocks = @($guardCalls[0].FindAll(
-                {
-                    param($node)
-                    $node -is [System.Management.Automation.Language.ScriptBlockExpressionAst]
-                },
-                $true
-            ))
+            # Bound to the ARGUMENT of -Action, not to "the one script block anywhere under the guard
+            # call". Counting descendants made any legitimate nested script block - a ForEach-Object
+            # over the route-context databases, a Where-Object filter - break the wiring test with a
+            # detector error rather than a finding. Both spellings are accepted: '-Action { }', where
+            # the block is the following element, and '-Action:{ }', where the parser attaches it to
+            # the parameter itself.
+            $guardElements = @($guardCalls[0].CommandElements)
+            $actionArgument = $null
+            for ($elementIndex = 0; $elementIndex -lt $guardElements.Count; $elementIndex++) {
+                $element = $guardElements[$elementIndex]
+                if ($element -isnot [System.Management.Automation.Language.CommandParameterAst] -or
+                    $element.ParameterName -ne "Action") {
+                    continue
+                }
 
-            if ($actionBlocks.Count -ne 1) {
-                throw "Expected exactly one -Action script block on the guard invocation in '$ScriptPath'; found $($actionBlocks.Count)."
+                $actionArgument = if ($null -ne $element.Argument) {
+                    $element.Argument
+                }
+                elseif ($elementIndex + 1 -lt $guardElements.Count) {
+                    $guardElements[$elementIndex + 1]
+                }
+
+                break
             }
 
-            $actionExtent = $actionBlocks[0].Extent
+            if ($actionArgument -isnot [System.Management.Automation.Language.ScriptBlockExpressionAst]) {
+                throw "The guard invocation in '$ScriptPath' does not pass a script block to -Action."
+            }
+
+            $actionExtent = $actionArgument.Extent
 
             return @($ast.FindAll(
                 {
@@ -551,7 +568,7 @@ Describe "Both E2E setup wrappers run every Docker phase inside the schema-setti
         # such a call OUTSIDE the guard, so a detector that misses it reports no escape at all.
         $fixturePath = Join-Path $TestDrive "variable-dispatched-phase.ps1"
         Set-Content -LiteralPath $fixturePath -Encoding utf8 -Value @'
-function Invoke-WithEnvironmentFileSchemaSettings {
+function Invoke-WithDmsEnvironmentFileSchemaAuthority {
     param([scriptblock] $Action)
     & $Action
 }
@@ -559,7 +576,7 @@ function Invoke-WithEnvironmentFileSchemaSettings {
 $guardedPhase = "./start-local-dms.ps1"
 $escapedPhase = "./provision-e2e-database.ps1"
 
-Invoke-WithEnvironmentFileSchemaSettings -Action {
+Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
     & $guardedPhase -InfraOnly
 }
 
@@ -572,6 +589,97 @@ Invoke-WithEnvironmentFileSchemaSettings -Action {
         @($invocations | ForEach-Object { $_.Name }) | Should -Be @('$guardedPhase', '$escapedPhase')
         @($invocations | Where-Object { -not $_.InsideGuard } | ForEach-Object { $_.Name }) |
             Should -Be @('$escapedPhase')
+    }
+
+    It "reads the -Action argument rather than counting script blocks, so a nested block is not a detector error" {
+        # The detector used to require exactly ONE script block anywhere under the guard call, which made
+        # a legitimate nested block inside the guarded action - a ForEach-Object over the route-context
+        # databases, say - throw out of the detector instead of producing a finding.
+        $fixturePath = Join-Path $TestDrive "nested-script-block-phase.ps1"
+        Set-Content -LiteralPath $fixturePath -Encoding utf8 -Value @'
+function Invoke-WithDmsEnvironmentFileSchemaAuthority {
+    param([scriptblock] $Action)
+    & $Action
+}
+
+Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
+    @("edfi_a", "edfi_b") | ForEach-Object {
+        ./provision-e2e-database.ps1 -DatabaseName $_
+    }
+}
+'@
+
+        $invocations = @(Get-GuardedPhaseInvocation -ScriptPath $fixturePath)
+
+        @($invocations | ForEach-Object { $_.Name }) | Should -Be @("./provision-e2e-database.ps1")
+        @($invocations | Where-Object { -not $_.InsideGuard }) | Should -BeNullOrEmpty
+    }
+
+    It "gives the shared module's guard a name build-dms.ps1 does not also define" {
+        # THE REGRESSION FOR THE IN-PROCESS BINDING DEFECT. build-dms.ps1 InstanceE2ETest invokes the
+        # Instance Management wrapper with '& $instanceSetupScript', so the wrapper's scope is a CHILD of
+        # build-dms.ps1's script scope. Command lookup walks that scope chain before it reaches the
+        # session state this module's exports live in, so any name build-dms.ps1 also defines binds the
+        # BUILD SCRIPT's function - and its schema helper is a pass-through when -Enabled is unset, which
+        # a bare call leaves so. The guarded phases then ran with SCHEMA_PACKAGES still present.
+        #
+        # Asserted over the whole export surface rather than the one guard: every name this module
+        # exports is reachable from a wrapper the build script invokes in-process, so every one of them
+        # is exposed to the same shadowing.
+        $buildScriptPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../build-dms.ps1"))
+        $modulePath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../dms-schema-environment.psm1"))
+
+        $definedFunctionName = @(
+            foreach ($path in @($buildScriptPath, $modulePath)) {
+                $parseErrors = $null
+                $tokens = $null
+                $ast = [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$parseErrors)
+
+                if ($parseErrors.Count -gt 0) {
+                    throw "'$path' has $($parseErrors.Count) parse error(s)."
+                }
+
+                , @($ast.FindAll(
+                    {
+                        param($node)
+                        $node -is [System.Management.Automation.Language.FunctionDefinitionAst]
+                    },
+                    $true
+                ) | ForEach-Object { $_.Name })
+            }
+        )
+
+        # Case-insensitive, which '-contains' is: PowerShell command resolution is too, so a module
+        # export differing from a build-script function only in casing shadows exactly the same way.
+        $collidingName = @(
+            $definedFunctionName[1] |
+                Where-Object { $definedFunctionName[0] -contains $_ }
+        )
+
+        $collidingName | Should -BeNullOrEmpty -Because "build-dms.ps1 invokes a setup wrapper in-process, so a name it also defines shadows the module export the wrapper means to call"
+    }
+
+    It "calls the module's guard in the <Name> wrapper and never build-dms.ps1's same-purpose helper" -ForEach @(
+        @{ Name = "DataManagementService E2E" }
+        @{ Name = "InstanceManagement E2E" }
+    ) {
+        # Over the AST, not the text: both wrappers CARRY a comment naming build-dms.ps1's helper in
+        # order to explain why they must not call it, and a text search cannot tell a prohibition from a
+        # call.
+        $parseErrors = $null
+        $tokens = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($script:wrapperScripts[$Name], [ref]$tokens, [ref]$parseErrors)
+
+        $invokedName = @($ast.FindAll(
+            {
+                param($node)
+                $node -is [System.Management.Automation.Language.CommandAst]
+            },
+            $true
+        ) | ForEach-Object { $_.GetCommandName() } | Where-Object { $_ })
+
+        $invokedName | Should -Contain "Invoke-WithDmsEnvironmentFileSchemaAuthority"
+        $invokedName | Should -Not -Contain "Invoke-WithEnvironmentFileSchemaSettings"
     }
 }
 
@@ -1499,7 +1607,7 @@ Describe "Both E2E setup wrappers verify the started container against the envir
                 {
                     param($node)
                     $node -is [System.Management.Automation.Language.CommandAst] -and
-                    $node.GetCommandName() -eq "Invoke-WithEnvironmentFileSchemaSettings"
+                    $node.GetCommandName() -eq "Invoke-WithDmsEnvironmentFileSchemaAuthority"
                 },
                 $true
             )) | Select-Object -First 1
@@ -1589,7 +1697,7 @@ Describe "Both E2E setup wrappers verify the started container against the envir
         $source | Should -Not -Match "function Assert-DmsContainerSchemaEnvironment"
         $source | Should -Not -Match "function Get-DmsSchemaEnvironmentVerdict"
         $source | Should -Not -Match "function Get-DmsContainerEnvironment"
-        $source | Should -Not -Match "function Invoke-WithEnvironmentFileSchemaSettings"
+        $source | Should -Not -Match "function Invoke-WithDmsEnvironmentFileSchemaAuthority"
     }
 
     It "reads both expectations from the environment file through the canonical sequential resolver" {
@@ -1676,7 +1784,7 @@ foreach (`$commandName in @(
         'Get-ComposeResolvedEnvValue',
         'Resolve-DotenvFileSequentially',
         'Assert-DmsContainerSchemaEnvironment',
-        'Invoke-WithEnvironmentFileSchemaSettings'
+        'Invoke-WithDmsEnvironmentFileSchemaAuthority'
     )) {
     `$commandName + '=' + [string][bool](Get-Command `$commandName -ErrorAction SilentlyContinue) |
         Add-Content -LiteralPath '$escapedObservationPath'
@@ -1698,7 +1806,7 @@ foreach (`$commandName in @(
         # Every other guard test extracts the function text through the AST, so only a real import can
         # catch the guard being defined in the module but left out of Export-ModuleMember - which would
         # leave both wrappers unable to resolve it at their first phase.
-        $observations | Should -Contain "Invoke-WithEnvironmentFileSchemaSettings=True" -Because "both wrappers now reach the schema-settings guard through this module's exports"
+        $observations | Should -Contain "Invoke-WithDmsEnvironmentFileSchemaAuthority=True" -Because "both wrappers now reach the schema-settings guard through this module's exports"
     }
 }
 
@@ -1710,6 +1818,27 @@ Describe "The container schema gate accepts the repository's own tracked environ
     # SCHEMA_PACKAGES='[...]' via a non-greedy regex, and a legal Compose value shape (quoting, an
     # inline comment, a ${VAR} reference) can silently break the comparison. No Docker: the container
     # side is a fixture built from the same file, exactly as Compose would pass it through.
+
+    # Discovery-phase matrix of the artifacts the wrappers actually hand the gate, shared by every
+    # assertion below so a new artifact is covered by all of them at once rather than by whichever table
+    # someone remembered to extend. Both wrappers compose the data-standard overlay first and then the
+    # database-engine overlay, so a composed MSSQL file - the artifact an MSSQL run's gate is given, and
+    # the one the engine composition rewrites and reorders - belongs here alongside the base files.
+    # .env.routeContext.e2e is the Instance Management wrapper's base, and it takes DS overlays the same
+    # way .env.e2e does, so its overlaid forms are covered too. Built here rather than in BeforeAll
+    # because -ForEach is bound during discovery.
+    $trackedEnvironmentFileCases = @(
+        @{ Label = ".env.e2e"; BaseName = ".env.e2e"; DataStandardVersion = ""; DatabaseEngine = "postgresql" }
+        @{ Label = ".env.routeContext.e2e"; BaseName = ".env.routeContext.e2e"; DataStandardVersion = ""; DatabaseEngine = "postgresql" }
+        @{ Label = ".env.e2e composed with .env.ds52"; BaseName = ".env.e2e"; DataStandardVersion = "5.2"; DatabaseEngine = "postgresql" }
+        @{ Label = ".env.e2e composed with .env.ds61"; BaseName = ".env.e2e"; DataStandardVersion = "6.1"; DatabaseEngine = "postgresql" }
+        @{ Label = ".env.routeContext.e2e composed with .env.ds52"; BaseName = ".env.routeContext.e2e"; DataStandardVersion = "5.2"; DatabaseEngine = "postgresql" }
+        @{ Label = ".env.routeContext.e2e composed with .env.ds61"; BaseName = ".env.routeContext.e2e"; DataStandardVersion = "6.1"; DatabaseEngine = "postgresql" }
+        @{ Label = ".env.e2e composed for mssql"; BaseName = ".env.e2e"; DataStandardVersion = ""; DatabaseEngine = "mssql" }
+        @{ Label = ".env.e2e composed with .env.ds61 for mssql"; BaseName = ".env.e2e"; DataStandardVersion = "6.1"; DatabaseEngine = "mssql" }
+        @{ Label = ".env.routeContext.e2e composed for mssql"; BaseName = ".env.routeContext.e2e"; DataStandardVersion = ""; DatabaseEngine = "mssql" }
+    )
+
     BeforeAll {
         function Get-ScriptFunctionText {
             param(
@@ -1799,31 +1928,40 @@ Describe "The container schema gate accepts the repository's own tracked environ
         }
 
         # .env.ds52 / .env.ds61 are OVERLAYS: they carry SCHEMA_PACKAGES but not USE_API_SCHEMA_PATH or
-        # API_SCHEMA_PATH, so they are only ever consumed composed onto a base file. Composed here with
-        # the same production helper the setup wrappers use, into an isolated root so nothing is written
-        # into the repository.
+        # API_SCHEMA_PATH, so they are only ever consumed composed onto a base file. .env.mssql is the
+        # engine overlay for the same reason. All three are composed here with the same production
+        # helpers the setup wrappers use, into an isolated root so nothing is written into the
+        # repository - the derived output lands under <overlayRoot>/.derived, not under eng/docker-compose.
         $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
         $script:overlayRoot = Join-Path $TestDrive "overlay-root"
         New-Item -ItemType Directory -Path $script:overlayRoot -Force | Out-Null
-        foreach ($overlayName in @(".env.ds52", ".env.ds61")) {
+        foreach ($overlayName in @(".env.ds52", ".env.ds61", ".env.mssql")) {
             Copy-Item -LiteralPath (Join-Path $script:dockerComposeRoot $overlayName) -Destination (Join-Path $script:overlayRoot $overlayName)
         }
 
         function Resolve-TrackedEnvironmentFile {
+            # Data standard FIRST, then database engine - the order both wrappers use, so an MSSQL case
+            # here is the same artifact production hands the gate. The engine step is a no-op for
+            # postgresql, which is why it is called unconditionally rather than branched around: the
+            # helper the wrappers call is the helper this exercises.
             param(
                 [Parameter(Mandatory)] [string] $BaseName,
-                [string] $DataStandardVersion
+                [string] $DataStandardVersion,
+                [string] $DatabaseEngine = "postgresql"
             )
 
-            $basePath = Join-Path $script:dockerComposeRoot $BaseName
+            $resolvedPath = Join-Path $script:dockerComposeRoot $BaseName
 
-            if ([string]::IsNullOrWhiteSpace($DataStandardVersion)) {
-                return $basePath
+            if (-not [string]::IsNullOrWhiteSpace($DataStandardVersion)) {
+                $resolvedPath = Resolve-DataStandardEnvironmentFile `
+                    -DataStandardVersion $DataStandardVersion `
+                    -BaseEnvironmentFile $resolvedPath `
+                    -DockerComposeRoot $script:overlayRoot
             }
 
-            return Resolve-DataStandardEnvironmentFile `
-                -DataStandardVersion $DataStandardVersion `
-                -BaseEnvironmentFile $basePath `
+            return Resolve-DatabaseEngineEnvironmentFile `
+                -DatabaseEngine $DatabaseEngine `
+                -BaseEnvironmentFile $resolvedPath `
                 -DockerComposeRoot $script:overlayRoot
         }
     }
@@ -1839,13 +1977,8 @@ Describe "The container schema gate accepts the repository's own tracked environ
         }
     }
 
-    It "the tracked <Label> satisfies the container schema gate" -ForEach @(
-        @{ Label = ".env.e2e"; BaseName = ".env.e2e"; DataStandardVersion = "" }
-        @{ Label = ".env.routeContext.e2e"; BaseName = ".env.routeContext.e2e"; DataStandardVersion = "" }
-        @{ Label = ".env.e2e composed with .env.ds52"; BaseName = ".env.e2e"; DataStandardVersion = "5.2" }
-        @{ Label = ".env.e2e composed with .env.ds61"; BaseName = ".env.e2e"; DataStandardVersion = "6.1" }
-    ) {
-        $environmentFilePath = Resolve-TrackedEnvironmentFile -BaseName $BaseName -DataStandardVersion $DataStandardVersion
+    It "the tracked <Label> satisfies the container schema gate" -ForEach $trackedEnvironmentFileCases {
+        $environmentFilePath = Resolve-TrackedEnvironmentFile -BaseName $BaseName -DataStandardVersion $DataStandardVersion -DatabaseEngine $DatabaseEngine
 
         # The container fixture is what Compose renders from this same file. Built through the
         # SEQUENTIAL model, the same one production reads: a fixture built from a collapsed key/value
@@ -1906,15 +2039,10 @@ Describe "The container schema gate accepts the repository's own tracked environ
                 -ContainerName "ed-fi-api" } | Should -Not -Throw
     }
 
-    It "the tracked <Label> enables the ApiSchema path and declares at least one package" -ForEach @(
-        @{ Label = ".env.e2e"; BaseName = ".env.e2e"; DataStandardVersion = "" }
-        @{ Label = ".env.routeContext.e2e"; BaseName = ".env.routeContext.e2e"; DataStandardVersion = "" }
-        @{ Label = ".env.e2e composed with .env.ds52"; BaseName = ".env.e2e"; DataStandardVersion = "5.2" }
-        @{ Label = ".env.e2e composed with .env.ds61"; BaseName = ".env.e2e"; DataStandardVersion = "6.1" }
-    ) {
+    It "the tracked <Label> enables the ApiSchema path and declares at least one package" -ForEach $trackedEnvironmentFileCases {
         # Without this, the gate assertion above could pass on a file that declares no packages at all
         # or leaves the ApiSchema path off, because the fixture would agree with it either way.
-        $environmentFilePath = Resolve-TrackedEnvironmentFile -BaseName $BaseName -DataStandardVersion $DataStandardVersion
+        $environmentFilePath = Resolve-TrackedEnvironmentFile -BaseName $BaseName -DataStandardVersion $DataStandardVersion -DatabaseEngine $DatabaseEngine
         $sequential = Resolve-DotenvFileSequentially -Path $environmentFilePath
 
         Get-DmsEnvironmentFileDeclaredValue `
@@ -1926,19 +2054,14 @@ Describe "The container schema gate accepts the repository's own tracked environ
             Should -BeGreaterThan 0
     }
 
-    It "declares no repeated key whose value another declaration resolves against" -ForEach @(
-        @{ Label = ".env.e2e"; BaseName = ".env.e2e"; DataStandardVersion = "" }
-        @{ Label = ".env.routeContext.e2e"; BaseName = ".env.routeContext.e2e"; DataStandardVersion = "" }
-        @{ Label = ".env.e2e composed with .env.ds52"; BaseName = ".env.e2e"; DataStandardVersion = "5.2" }
-        @{ Label = ".env.e2e composed with .env.ds61"; BaseName = ".env.e2e"; DataStandardVersion = "6.1" }
-    ) {
+    It "the tracked <Label> declares no repeated key whose value another declaration resolves against" -ForEach $trackedEnvironmentFileCases {
         # The tracked-file guard for the defect the unit fixtures cover synthetically. A key declared
         # twice is legal Compose, but if a LATER declaration re-defines a name an EARLIER line already
         # resolved against, the two models disagree - and the collapsed one silently wins arguments it
         # should lose. This reports that shape landing in a tracked file rather than waiting for a
         # setup abort. Overlay composition can legitimately introduce duplicates, so the assertion is
         # scoped to duplicates that something actually references.
-        $environmentFilePath = Resolve-TrackedEnvironmentFile -BaseName $BaseName -DataStandardVersion $DataStandardVersion
+        $environmentFilePath = Resolve-TrackedEnvironmentFile -BaseName $BaseName -DataStandardVersion $DataStandardVersion -DatabaseEngine $DatabaseEngine
         $sequential = Resolve-DotenvFileSequentially -Path $environmentFilePath
 
         $referencedNames = @($sequential.Declarations | ForEach-Object { $_.References }) | Select-Object -Unique
@@ -1947,12 +2070,7 @@ Describe "The container schema gate accepts the repository's own tracked environ
         $referencedDuplicates | Should -BeNullOrEmpty -Because "a re-declared name that another line resolves against makes the file's meaning depend on declaration order"
     }
 
-    It "the tracked <Label> declares each gate key at most once, because the provisioner reads the first declaration and Compose delivers the last" -ForEach @(
-        @{ Label = ".env.e2e"; BaseName = ".env.e2e"; DataStandardVersion = "" }
-        @{ Label = ".env.routeContext.e2e"; BaseName = ".env.routeContext.e2e"; DataStandardVersion = "" }
-        @{ Label = ".env.e2e composed with .env.ds52"; BaseName = ".env.e2e"; DataStandardVersion = "5.2" }
-        @{ Label = ".env.e2e composed with .env.ds61"; BaseName = ".env.e2e"; DataStandardVersion = "6.1" }
-    ) {
+    It "the tracked <Label> declares each gate key at most once, because the provisioner reads the first declaration and Compose delivers the last" -ForEach $trackedEnvironmentFileCases {
         # A repeated declaration of one of the three keys the gate compares is legal Compose but not
         # safe here. For SCHEMA_PACKAGES the two sides read different declarations: Get-QuotedEnvJson -
         # the file-only reader behind both the provisioner and the gate's expected side - matches the
@@ -1965,7 +2083,7 @@ Describe "The container schema gate accepts the repository's own tracked environ
         # that agreement resting on which declaration each reader happens to take. Scoped to the gate
         # keys, not to duplicates in general: overlay composition can legitimately re-declare other
         # names, which the sibling assertion above covers.
-        $environmentFilePath = Resolve-TrackedEnvironmentFile -BaseName $BaseName -DataStandardVersion $DataStandardVersion
+        $environmentFilePath = Resolve-TrackedEnvironmentFile -BaseName $BaseName -DataStandardVersion $DataStandardVersion -DatabaseEngine $DatabaseEngine
         $sequential = Resolve-DotenvFileSequentially -Path $environmentFilePath
 
         $duplicatedGateKeys = @(

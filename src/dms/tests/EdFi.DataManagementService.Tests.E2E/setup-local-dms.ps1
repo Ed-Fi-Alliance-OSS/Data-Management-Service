@@ -164,7 +164,10 @@ try {
 
     Write-Output "Using file-based schema packages from $resolvedEnvironmentFile for E2E (non-bootstrap compatibility path)."
 
-    Invoke-WithEnvironmentFileSchemaSettings -Action {
+    # Named distinctly from build-dms.ps1's own Invoke-WithEnvironmentFileSchemaSettings on purpose:
+    # build-dms.ps1 invokes a setup wrapper in-process, so a shared name would resolve up the scope
+    # chain to the build script's pass-through variant instead of this module's export.
+    Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
         # Start only the infrastructure and Configuration Service first. DMS starts after the
         # E2E data store exists and the relational schema has been provisioned.
         ./start-local-dms.ps1 -InfraOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -r -AddExtensionSecurityMetadata

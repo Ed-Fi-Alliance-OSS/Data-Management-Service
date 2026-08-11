@@ -2028,7 +2028,7 @@ exit 0
             # one built on the unreliable assignment form.
             $guardModule = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "dms-schema-environment.psm1") -Raw
 
-            $guardModule | Should -Match "function Invoke-WithEnvironmentFileSchemaSettings" -Because "the shared module must own the guard both wrappers run their Docker phases inside"
+            $guardModule | Should -Match "function Invoke-WithDmsEnvironmentFileSchemaAuthority" -Because "the shared module must own the guard both wrappers run their Docker phases inside"
             $guardModule | Should -Match '"USE_API_SCHEMA_PATH"' -Because "the guard must name USE_API_SCHEMA_PATH"
             $guardModule | Should -Match '"API_SCHEMA_PATH"' -Because "the guard must name API_SCHEMA_PATH"
             $guardModule | Should -Match '"SCHEMA_PACKAGES"' -Because "the guard must name SCHEMA_PACKAGES"
@@ -2044,8 +2044,8 @@ exit 0
                 $wrapperName = [System.IO.Path]::GetFileName([System.IO.Path]::GetDirectoryName($path))
 
                 $content | Should -Match "Import-Module \./dms-schema-environment\.psm1 -Force" -Because "$wrapperName must import the module that owns the guard"
-                $content | Should -Match "Invoke-WithEnvironmentFileSchemaSettings -Action" -Because "$wrapperName must guard its Docker phases"
-                $content | Should -Not -Match "function Invoke-WithEnvironmentFileSchemaSettings" -Because "$wrapperName must use the shared guard rather than its own copy, which would take the next fix in only one place"
+                $content | Should -Match "Invoke-WithDmsEnvironmentFileSchemaAuthority -Action" -Because "$wrapperName must guard its Docker phases"
+                $content | Should -Not -Match "function Invoke-WithDmsEnvironmentFileSchemaAuthority" -Because "$wrapperName must use the shared guard rather than its own copy, which would take the next fix in only one place"
 
                 # The unreliable primitive, in either spelling, must not come back.
                 $content | Should -Not -Match '\$env:USE_API_SCHEMA_PATH\s*=' -Because "$wrapperName must not assign USE_API_SCHEMA_PATH"
@@ -2062,7 +2062,7 @@ exit 0
             $startScript = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1") -Raw
             $manifestModule = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-manifest.psm1") -Raw
 
-            $startScript | Should -Not -Match "function Invoke-WithEnvironmentFileSchemaSettings"
+            $startScript | Should -Not -Match "function Invoke-WithDmsEnvironmentFileSchemaAuthority"
             $startScript | Should -Not -Match 'Remove-Item -LiteralPath "Env:USE_API_SCHEMA_PATH"'
             $manifestModule | Should -Match '\$env:USE_API_SCHEMA_PATH = "true"'
             $manifestModule | Should -Match '\$env:API_SCHEMA_PATH = "/app/ApiSchema"'
