@@ -1,4 +1,4 @@
-# Natural-Key Reference Resolution: Removing `dms.ReferentialIdentity`
+# Natural-Key Reference Resolution: Removing UUIDv5 `ReferentialId`
 
 > **Status: PROPOSED — for team review. Nothing described here has landed on `main`; the design is
 > written in future tense throughout.** Once approved, implementation tickets will be created under
@@ -13,8 +13,10 @@
 >
 > **`dms.Document` will not be affected by this proposal in any way.** It will remain inserted,
 > row-locked, the authoritative source of `DocumentId`/`DocumentUuid`/version metadata, the
-> GET/PUT/DELETE lookup target, and the base of the DocumentCache enqueue triggers. Only
-> `dms.ReferentialIdentity` and its dependents will be removed.
+> GET/PUT/DELETE lookup target, and the base of the DocumentCache enqueue triggers. Every UUIDv5
+> referential-id artifact is in scope for removal: the `dms.ReferentialIdentity` table, generated
+> maintenance, database helpers, Core model members/calculators/factories, backend lookup/write
+> contracts, and tests or fixtures that seed or assert them.
 
 ## Summary
 
@@ -22,8 +24,9 @@
 (`ReferentialId`) to its `DocumentId`. It exists so that reference resolution, POST upsert detection,
 and descriptor filter resolution can each be answered by one uniform, narrow index lookup.
 
-This design will remove the table and answer each of those questions with a batched natural-key
-lookup against the schema's existing natural-key indexes. The only new lookup index is the
+This design will remove the table, stop computing UUIDv5 `ReferentialId` values anywhere in DMS,
+and answer each of those questions with a batched natural-key lookup against the schema's existing
+natural-key indexes. The only new lookup index is the
 descriptor lower-URI index; abstract resolution adds a `smallint ResourceKeyId` payload column to
 existing abstract identity rows but does not add another index:
 
@@ -36,8 +39,9 @@ existing abstract identity rows but does not add another index:
 
 With the reads gone, the maintenance surface will go with them: every generated
 `TR_<R>_ReferentialIdentity` trigger, the `dms.uuidv5()` function on both engines, the PostgreSQL
-`pgcrypto` extension (uuidv5 is its only consumer in the DMS database), and the SQL Server
-`dms.UniqueIdentifierTable` table-valued parameter type.
+`pgcrypto` extension (uuidv5 is its only consumer in the DMS database), the SQL Server
+`dms.UniqueIdentifierTable` table-valued parameter type, and the Core/backend C# surfaces that
+produce, carry, accept, return, compare, or test UUIDv5 referential ids.
 
 The migration will be **code-only and re-provision-only**; no in-place upgrade scripts will be
 provided. This is a prerelease schema-shape change within the unreleased `v2` mapping line, so it
@@ -157,35 +161,31 @@ queries, and the entire DocumentCache path.
 
 ### The natural-key reference resolver
 
-A new `NaturalKeyReferenceResolver` will implement the existing `IReferenceResolver` contract, so
-consumers (the write path's reference resolution and the query preprocessor's descriptor filters)
-will be unaffected. Its input will be each reference's fully-flattened `DocumentIdentity`, which is
-always present at the Core/backend boundary. The in-memory UUIDv5 value will survive *only* as a
-request-scoped deduplication/memo key — it will never be persisted and never compared against
-database state (`ReferentialIdCalculator`/`ReferentialIdFactory` and the `ReferentialId` members on
-`DocumentReference`/`DescriptorReference`/`DocumentInfo` will all stay). The collation question does
-not apply to this survivor: it only ever compares request values against other values from the same
-request, where its ordinal equality can only *under*-dedupe — on SQL Server, two case-variant
-spellings of one reference will produce two memo entries and one redundant probe row, both of which
-the database resolves to the same `DocumentId` — and never mis-merge, since ordinal equality implies
-true equality.
+A new `NaturalKeyReferenceResolver` will own the resolver role. The DI extension names can stay, but
+the request/result contracts will stop carrying referential ids. Its input will be each reference's
+fully-flattened `DocumentIdentity`, which is always present at the Core/backend boundary.
 
-**Future simplification (out of scope for this design):** once nothing persists or hash-compares
-the value, the UUIDv5 machinery can be deleted outright in a follow-up — replace the
-hash-as-identity memo key with the flattened identity itself under a structural
-`IEqualityComparer` (`HashCode.Combine` for bucketing, full memberwise `Equals` for the verdict).
-Two guardrails for that ticket: a bare 32-bit hash must never be promoted into the identity role
-UUIDv5 plays today (at bulk scale, roughly 0.2% of 4096-reference requests would suffer a collision
-and silently merge two different references; a structural `Equals` makes collisions harmless), and
-the comparer must reproduce today's key semantics exactly — ordinal over identity values, the
-ASCII-lowercased URI as the descriptor key member — with all three call sites (Core's uniqueness
-middlewares, `DescriptorExtractor`, the resolver memo) moving together, since they share the key
-type through Core's contracts. Nothing in this design depends on UUIDv5 semantics, so the cleanup
-composes independently, before or after the drop.
+No UUIDv5 value will survive as a request-scoped memo key. DMS will replace the hash-as-identity
+memo with a request-local structural key over `(requested resource, ordered DocumentIdentity
+elements)`. The implementation must not rely on `DocumentIdentity` record equality, because it wraps
+arrays; it must use a structural `IEqualityComparer` that combines hash codes only for dictionary
+bucketing and always performs full memberwise equality for the identity verdict. Collisions are
+therefore harmless. The comparer must reproduce the current request-local semantics exactly:
+ordinal equality over regular identity values, and the ASCII-lowercased URI as the descriptor key
+member. On SQL Server, case-variant spellings of one reference may remain separate memo entries and
+produce redundant probe rows; the database will still resolve both to the same `DocumentId`, and the
+structural comparer will never mis-merge two distinct identities.
+
+The Core cleanup is part of this design, not a follow-up. `ReferentialId`,
+`ReferentialIdFactory`, `ReferentialIdCalculator`, `No.ReferentialId`, and every
+`ReferentialId` member on `DocumentReference`, `DescriptorReference`, `SuperclassIdentity`, and
+`DocumentInfo` will be removed. Extractors and middlewares that currently share the UUIDv5 key will
+move together to the structural natural-key comparer so Core does not compute a UUIDv5 value for
+documents, references, descriptors, duplicate-item validation, or write-target setup.
 
 Per request, the resolver will:
 
-1. Dedupe extracted references (memo keyed by the in-memory `ReferentialId`).
+1. Dedupe extracted references (memo keyed by the structural natural-key identity).
 2. Convert identity strings to typed values once, using the same scalar-literal parser the write
    flattener uses. This sameness is itself a correctness property: the values probed are the values
    that would be written, so resolution and storage cannot disagree about a conversion.
@@ -563,12 +563,13 @@ PostgreSQL regular-resource behavior will remain unchanged on every pin.
 
 ### Collection duplicate detection
 
-Collation-governed matching will open one gap that Core's request validation cannot close. Core
-dedupes array items ordinally (reference items by their in-memory hash; scalar identity members via
-an ordinal dictionary), so two collection items differing only in string casing pass validation —
-and on SQL Server they will then resolve to the *same* target `DocumentId` (CI collation) and
-collide in the collection's sibling unique constraint, which the constraint resolver does not
-classify: an unmapped 5xx for what is really a client input error.
+Collation-governed matching will open one gap that Core's request validation cannot close. Core's
+request-local duplicate detection will remain engine-agnostic and ordinal: reference items compare
+with the structural natural-key comparer, and scalar identity members compare through ordinal
+dictionaries. Two collection items differing only in string casing can therefore pass Core
+validation — and on SQL Server they will then resolve to the *same* target `DocumentId` (CI
+collation) and collide in the collection's sibling unique constraint, which the constraint resolver
+does not classify: an unmapped 5xx for what is really a client input error.
 
 The fix will run after reference resolution and before DML, comparing each collection item's
 flattened identity tuple per scope, in two tiers governed by one principle: *never invent an
@@ -602,8 +603,8 @@ in particular, the natural-key create-race classification and its retry behavior
 fallback replaces only the unmapped-failure terminal.
 
 A latent variant of this defect exists today in `main`: case-variant duplicate
-*descriptor* array items already hash to the same lower-cased UUIDv5 and collide in the sibling
-unique on both engines.
+*descriptor* array items already normalize to the same legacy descriptor identity and collide in the
+sibling unique on both engines.
 
 ## Consistency and integrity
 
@@ -646,9 +647,23 @@ can cascade.
 - The PostgreSQL `pgcrypto` extension (uuidv5's `digest()` call is its only DMS-database consumer).
 - `dms.UniqueIdentifierTable` TVP type (sole consumer: the SQL Server bulk RI lookup strategy).
   `dms.BigIntTable` will stay — it serves authorization.
+- Core's UUIDv5 referential-id surface: `ReferentialId`, `ReferentialIdFactory`,
+  `ReferentialIdCalculator`, `No.ReferentialId`, the `Be.Vlaanderen.Basisregisters.Generators.Guid`
+  dependency if it has no remaining consumers, and all extractor/middleware code that computes or
+  compares referential ids.
+- All Core/backend contract members that carry referential ids, including
+  `DocumentReference.ReferentialId`, `DescriptorReference.ReferentialId`,
+  `SuperclassIdentity.ReferentialId`, `DocumentInfo.ReferentialId`,
+  `DocumentReferenceFailure.ReferentialId`, `DescriptorReferenceFailure.ReferentialId`,
+  `DescriptorWriteRequest.ReferentialId`, `RelationalWriteTargetRequest.Post.ReferentialId`,
+  `ReferenceLookupRequest.ReferentialIds`, `ReferenceLookupRequestEntry.ReferentialId`,
+  `ReferenceLookupResult.ReferentialId`, `ReferenceLookupSnapshot.ReferentialId`, and
+  `ResolvedReferenceSet.LookupsByReferentialId`.
+- Backend RI lookup C# code: `ReferenceResolver`'s referential-id memoization path,
+  `ReferenceLookupResultReader`, PostgreSQL RI lookup command builders, SQL Server small-list/bulk
+  RI lookup strategies, RI adapters/factories, corruption-canary verification, and the unit or
+  integration tests dedicated to those code paths.
 - `UX_Descriptor_Uri_Discriminator` (replaced by the `ResourceKeyId`-authoritative CI unique index).
-- The old resolver arm: `ReferenceResolver`, the per-engine RI lookup builders/adapters/strategies,
-  the result reader, and the corruption-canary machinery.
 
 ### To be added
 
@@ -662,13 +677,18 @@ can cascade.
 ### To be changed
 
 - **Published-contract trims:**
-  - `DocumentReferenceFailure.ReferentialId` and `DescriptorReferenceFailure.ReferentialId` will be
-    removed.
-  - `DescriptorWriteRequest.ReferentialId` and the POST write-target request's `ReferentialId` will
-    be removed.
-  - `ReferenceLookupResult` will lose `VerificationIdentityKey` (canary-only) and
-    `ReferentialIdentityResourceKeyId`; `ResourceKeyId` remains the resolved concrete target key,
-    including abstract matches.
+  - `DocumentReference`, `DescriptorReference`, `SuperclassIdentity`, and `DocumentInfo` will retain
+    their non-hash identity, path, and reference payloads; no Core external model record will expose
+    a UUIDv5 referential id.
+  - `DocumentReferenceFailure` and `DescriptorReferenceFailure` will report the path, target
+    resource, and natural identity; no failure record will expose a UUIDv5 referential id.
+  - `DescriptorWriteRequest` and the POST write-target request will bind target existence by natural
+    identity/probe metadata; no write request will carry a UUIDv5 referential id.
+  - `ReferenceLookupRequest`, `ReferenceLookupRequestEntry`, `ReferenceLookupResult`,
+    `ReferenceLookupSnapshot`, and `ResolvedReferenceSet` will be keyed by structural lookup
+    ordinals / natural-key identities, not referential ids. `ReferenceLookupResult` will also lose
+    `VerificationIdentityKey` (canary-only) and `ReferentialIdentityResourceKeyId`; `ResourceKeyId`
+    remains the resolved concrete target key, including abstract matches.
   - `Add{Postgresql,Mssql}ReferenceResolver()` DI extensions will compose the natural-key resolver —
     a behavioral change for hosts that resolve references through the old registration.
 - Abstract identity tables and their union views will add a concrete `ResourceKeyId smallint NOT
@@ -698,10 +718,12 @@ One implementation branch, trunk-green per ticket. The list below is the propose
 one story per entry, sized like the existing stories under [`../epics/`](../epics/), except the drop
 ticket, which deliberately bundles three deletion stages as ordered commits — to be created there
 once this document is approved. Ordering is dependency order; the cutover tickets depend on the
-foundation tickets (T1–T3).
+foundation tickets (T1–T2).
 
-**Foundations — `dms.ReferentialIdentity` stays trigger-maintained throughout; its write-path
-upsert probes stay live until their cutover tickets:**
+**Foundations — the schema object can stay trigger-maintained as an unreferenced shadow until the
+final schema drop, but the natural-key cutover is the point where production Core/backend C# stops
+computing, carrying, or comparing UUIDv5 referential ids. T3–T7 are the coordinated C# cutover lane;
+after T7, no production contract may still carry a `ReferentialId` member.**
 
 - **T1 — Add abstract `ResourceKeyId`, compile natural-key probe metadata, and re-source the 409
   duplicate-identity messages.** Add `ResourceKeyId smallint NOT NULL` to each abstract identity
@@ -724,30 +746,33 @@ upsert probes stay live until their cutover tickets:**
   transition. AC: golden DDL diff shows exactly the new index shape (and SQL Server computed
   column); ASCII validation unit/integration pins green.
 - **T3 — The natural-key resolver replaces the hash resolver arm.** The dialect command builders
-  (PostgreSQL `unnest` and SQL Server OPENJSON + `FORCE ORDER` group statements, the
-  union-projection single-statement form, the parameter-budget guard) plus
-  `NaturalKeyReferenceResolver` implementing `IReferenceResolver` (memo, shared typed-value
-  conversion, ordinal result mapping) and the composite embeddability seams. This ticket
+  (PostgreSQL `unnest` and SQL Server OPENJSON +
+  `FORCE ORDER` group statements, the union-projection single-statement form, the parameter-budget
+  guard) plus `NaturalKeyReferenceResolver` implementing the resolver role (structural memo, shared
+  typed-value conversion, ordinal result mapping) and the composite embeddability seams. This ticket
   **replaces** the hash resolution arm rather than coexisting with it:
   `Add{Postgresql,Mssql}ReferenceResolver()` composes the new resolver directly, the old resolver
   (per-engine lookup builders/strategies, result reader, corruption canary) and its test suites are
-  deleted, its composite-seam consumers re-point to the new factory, and the *resolver-contract*
-  trims land here in final shape (`ReferenceLookupResult` loses `VerificationIdentityKey` and
-  `ReferentialIdentityResourceKeyId`; the failure-record `ReferentialId` members go). The
-  *write-request* `ReferentialId` members stay — they feed the RI upsert probes until T4/T7 — and
-  the RI triggers keep writing until T9. AC: SQL-shape pins (batch-size-independent text on PG,
-  leftmost OPENJSON input and one statement-level `FORCE ORDER` on MSSQL, budget-guard throw,
-  abstract probes projecting concrete `ResourceKeyId` with no discriminator-to-key map); resolver
-  unit suites green; the existing reference-resolution-dependent integration estate green
-  on both engines, now exercising the new resolver. Correctness on this branch is carried by
-  the behavior pins, the integration estate, and E2E (see ["Test strategy"](#test-strategy)). If
-  production-shaped workloads later disagree on performance, the capture-predicate contingency
-  ladder applies, with reverting the composite write-path batching (DMS-1332) accepted as the last
-  resort.
+  deleted, its composite-seam consumers re-point to the new factory, and the resolver-contract trims
+  land here in final shape. Reference failures lose their referential-id payloads, and lookup
+  requests/results/snapshots are keyed by structural natural-key identities and ordinals.
+  `DocumentReference` and `DescriptorReference` stop carrying referential ids as part of this
+  resolver cutover; the document-level POST/descriptor write consumers are removed in T4/T7 below.
+  AC: SQL-shape pins (batch-size-independent text on PG, leftmost OPENJSON input and one
+  statement-level `FORCE ORDER` on MSSQL, budget-guard throw, abstract probes projecting concrete
+  `ResourceKeyId` with no discriminator-to-key map); resolver unit suites green; the existing
+  reference-resolution-dependent integration estate green on both engines, now exercising the new
+  resolver. Correctness on this branch is carried by the behavior pins, the integration estate, and
+  E2E (see ["Test strategy"](#test-strategy)). If production-shaped workloads later disagree on
+  performance, the capture-predicate contingency ladder applies, with reverting the composite
+  write-path batching (DMS-1332) accepted as the last resort.
 - **T4 — Upsert-detection cutover in the composite write path.** Replace the capture predicate's
   hash subselect with the natural-key predicate (inline RefKey/lowered-descriptor subselects) and
-  the standalone fallback with the `UX_<R>_NK` probe. AC: command-stream pins — round-trip counts
-  unchanged (POST create stays at 2 commands), RI command classification zero; write suites green.
+  the standalone fallback with the `UX_<R>_NK` probe. The target resolver binds from
+  `DocumentInfo.DocumentIdentity` and compiled own-key probe metadata, never from a UUIDv5
+  referential id. `RelationalWriteTargetRequest.Post.ReferentialId` and the RI target-lookup
+  builders are deleted here. AC: command-stream pins — round-trip counts unchanged (POST create
+  stays at 2 commands), RI command classification zero; write suites green.
 - **T5 — Collection duplicate detection + generic conflict fallback.** The two-tier post-resolution
   duplicate detection (resolved ids exact for reference/descriptor members; dialect-matched
   comparer for local string scalars) and the ODS-parity 409 fallback for unclassified unique
@@ -760,17 +785,24 @@ upsert probes stay live until their cutover tickets:**
   `IdentityVersion` bump on SQL Server; PostgreSQL unchanged on every pin).
 - **T7 — Descriptor write handler cutover.** Lowered-URI + `ResourceKeyId` upsert detection and
   stored-wins casing (persisted-identity binding, the split no-op comparer, the case-insensitive
-  PUT identity guard). AC: descriptor write/stamping suites green; stored-wins pins per engine.
+  PUT identity guard). The descriptor handler no longer accepts `DescriptorWriteRequest.ReferentialId`
+  and no longer writes `dms.ReferentialIdentity`. With the last document-level consumer gone,
+  delete `DocumentInfo.ReferentialId`, `SuperclassIdentity.ReferentialId`, `ReferentialId`,
+  `ReferentialIdFactory`, `ReferentialIdCalculator`, `No.ReferentialId`, Core extraction-time
+  referential-id calculation, and the UUIDv5 package dependency if it has no remaining consumers.
+  AC: descriptor write/stamping suites green; stored-wins pins per engine; `rg` over production
+  Core/backend C# finds no `ReferentialId`, `ReferentialIds`, `ReferentialIdFactory`, or
+  `ReferentialIdCalculator`.
 - **T8 — Query-preprocessor cutover for descriptor filters.** The production DI flip plus
   descriptor-filter integration coverage. AC: URI filter matches, case-variant URI matches,
   nonexistent/wrong-type URIs return empty pages with unchanged reasons.
 - **T9 — Remove `dms.ReferentialIdentity` and everything that maintained it.** One ticket, three
   internally ordered stages, each landing as its own trunk-green commit:
-  1. Delete the RI write-path remnants: the RI upsert-probe SQL and service members (unread since
-     T4/T7), the remaining `ReferentialId` members on the write-request contracts
-     (`DescriptorWriteRequest`, the POST write-target request), and sweep every test fixture that
-     seeds RI rows directly — the sweep is a structural proof: a test failing for a missing RI row
-     has found a surviving reader (stop and investigate, never reseed).
+  1. Delete any RI write-path remnants left only as dead code or tests: RI upsert-probe SQL,
+     service members, and every test fixture that seeds RI rows directly. There should be no
+     production Core/backend C# `ReferentialId` members by this point; finding one is a stop-the-line
+     failure, not a reason to defer it again. The fixture sweep is a structural proof: a test failing
+     for a missing RI row has found a surviving reader (stop and investigate, never reseed).
   2. Drop the `TR_<R>_ReferentialIdentity` triggers, scope-guarded — the DocumentCache enqueue,
      stamping, and abstract-identity trigger families are kept — with the shared cross-engine
      parity-contract tests updated once for both engines.
