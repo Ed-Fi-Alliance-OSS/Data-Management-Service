@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -1004,7 +1005,8 @@ public class Given_A_Mssql_PeopleRelationship_Crud_Authorization_Matrix
         await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 200);
 
         // Non-vacuity precondition: the duplicate pair actually exists in the view.
-        await _context.AssertStudentAuthViewPairCountAsync(
+        await _context.AssertPeopleAuthViewPairCountAsync(
+            AuthPeopleViewKind.Student,
             _authorizedStudentSeed.StudentUniqueId,
             ClaimEducationOrganizationId,
             expectedPairCount: 2

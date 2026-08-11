@@ -15,29 +15,36 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 // ═══════════════════════════════════════════════════════════════════
 // People auth view query-plan evidence (DMS-1329, AC4)
 //
-// With SELECT DISTINCT removed from auth.EducationOrganizationIdToStudentDocumentId,
-// PostgreSQL flattens the view into the probing query instead of materializing the
-// client's full EdOrg→student set behind an unflattenable dedup node. These tests
-// EXPLAIN (FORMAT JSON) the two audited consumer shapes and assert, scoped to the
-// auth-view subtree (the EducationOrganizationIdToEducationOrganizationId and
-// StudentSchoolAssociation scans):
-//   1. the view is inlined — both base relations are scanned directly and no
-//      Subquery Scan node remains anywhere in the plan, and
+// With SELECT DISTINCT removed from the people auth views, PostgreSQL flattens the view
+// into the probing query instead of materializing the client's full EdOrg→person set
+// behind an unflattenable dedup node. These tests EXPLAIN (FORMAT JSON) the two audited
+// consumer shapes — the single-record EXISTS membership core and the GET-many
+// IN-membership subquery — against both the single-arm student view and the two-arm
+// staff view, and assert:
+//   1. the view is inlined — its base relations are scanned directly. For the
+//      single-arm views that additionally means no Subquery Scan node anywhere in the
+//      plan; the staff view expands into an appendrel where trivial per-arm Subquery
+//      Scan nodes may legitimately remain (see below), so there the direct
+//      base-relation scans carry the inlining evidence on their own.
 //   2. the person/claim predicates reached the plan (as Filter / Index Cond /
 //      Hash Cond / Join Filter conditions), and
-//   3. no Aggregate/HashAggregate/Unique node sits between those scans and the
-//      root — the pre-change plans dedup-materialized the closure per probe.
+//   3. the dedup node that pre-change plans used to materialize the closure per probe
+//      is gone. The tolerance differs by consumer shape: the correlated single-record
+//      probes must be dedup-free across the WHOLE plan, whereas the uncorrelated
+//      GET-many subquery runs once per query and may legitimately unique-ify its rows
+//      — but only above the claim filter. A dedup over the UNFILTERED closure is the
+//      regression, so the GET-many tests assert instead that the claim filter is
+//      applied beneath any dedup node on the path to each closure scan.
 //
 // The dedup and subquery nodes are structural for a DISTINCT view (the planner must
 // emit them regardless of row counts), so the assertions are meaningful at test scale.
 //
-// The staff view is covered separately: it is the one two-arm view (assignment +
-// employment associations, combined with UNION ALL since DMS-1329). Its probes expand
-// into an appendrel — trivial per-arm Subquery Scan nodes may legitimately remain, so
-// the inlining evidence is that both arms' base relations are scanned directly (the
-// closure once per arm) — and a deduplicating UNION would reintroduce the per-probe
-// Subquery Scan + HashAggregate over the claim-filtered staff set that these tests
-// assert against.
+// The staff view is the one two-arm view (assignment + employment associations,
+// combined with UNION ALL since DMS-1329). Its probes expand into an appendrel, so its
+// inlining evidence is that both arms' base relations are scanned directly (the closure
+// once per arm) — and a deduplicating UNION would reintroduce the per-probe Subquery
+// Scan + HashAggregate over the claim-filtered staff set that these tests assert
+// against.
 //
 // Plan-shape verification is PostgreSQL-only by design, not by omission. The pathology
 // the change removes is specific to PostgreSQL's rewriter: a dedup makes a view
