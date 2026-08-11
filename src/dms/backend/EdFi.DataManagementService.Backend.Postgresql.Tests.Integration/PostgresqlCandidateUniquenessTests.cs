@@ -22,7 +22,7 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 /// </summary>
 /// <remarks>
 /// The underlying authorization rows are deliberately seeded to fan out: two hierarchy edges reach one
-/// subject, two auth-view rows reach one person, several intermediate join rows match one root, and
+/// subject in each hierarchy direction, two auth-view rows reach one person, several intermediate join rows match one root, and
 /// several custom-view rows match one document. A join-based authorization plan would multiply the
 /// candidate row under each of those seeds, which would corrupt the row numbering and candidate count
 /// that partition boundaries are derived from. The candidate relation must stay unique by construction,
@@ -56,9 +56,11 @@ public class Given_A_Postgresql_Compiled_Candidate_Relation
     private const long MinimumChangeVersion = 30L;
 
     /// <summary>
-    /// Both claim EducationOrganization ids the probe binds. Two distinct hierarchy tuples,
-    /// <c>(900, 900)</c> and <c>(901, 900)</c>, fan into the single subject value the root rows carry.
-    /// Both tuples are legal under the production composite primary key, so the fan-out under test is
+    /// Both claim EducationOrganization ids the probe binds. Three distinct hierarchy tuples fan into
+    /// the single subject value the root rows carry, two per direction: <c>(900, 900)</c> and
+    /// <c>(901, 900)</c> for the normal direction, which reads the target column as its subject, and
+    /// <c>(900, 900)</c> and <c>(900, 901)</c> for the inverted direction, which reads the source column.
+    /// All three are legal under the production composite primary key, so the fan-out under test is
     /// reachable in production rather than an artifact of a relaxed test schema.
     /// </summary>
     private static readonly long[] _claimEducationOrganizationIds =
@@ -138,10 +140,18 @@ public class Given_A_Postgresql_Compiled_Candidate_Relation
     public async Task It_should_seed_authorization_sources_that_actually_expose_multiple_matches_per_candidate()
     {
         // Without this, every uniqueness assertion below could pass simply because nothing duplicates.
-        var hierarchyEdges = await ScalarAsync(
+        // The two hierarchy directions read opposite columns of the same table, so each needs its own
+        // count: a seed that fans out one direction can leave the other matching a single row.
+        var normalHierarchyEdges = await ScalarAsync(
             $"""
             SELECT COUNT(*) FROM {Quote(CandidateProbeAuthorizationSpecs.EdOrgAuthObject.Name)}
             WHERE "TargetEducationOrganizationId" = {DirectClaimEducationOrganizationId};
+            """
+        );
+        var invertedHierarchyEdges = await ScalarAsync(
+            $"""
+            SELECT COUNT(*) FROM {Quote(CandidateProbeAuthorizationSpecs.EdOrgAuthObject.Name)}
+            WHERE "SourceEducationOrganizationId" = {DirectClaimEducationOrganizationId};
             """
         );
         var personViewRows = await ScalarAsync(
@@ -161,9 +171,18 @@ public class Given_A_Postgresql_Compiled_Candidate_Relation
             """
         );
 
-        hierarchyEdges
+        normalHierarchyEdges
             .Should()
-            .BeGreaterThan(1, "two production-valid hierarchy tuples must fan into the one subject value");
+            .BeGreaterThan(
+                1,
+                "the normal hierarchy direction reads TargetEducationOrganizationId as its subject, so two production-valid tuples must fan into the one subject value"
+            );
+        invertedHierarchyEdges
+            .Should()
+            .BeGreaterThan(
+                1,
+                "the inverted hierarchy direction reads SourceEducationOrganizationId as its subject, so it needs its own fan-out rather than inheriting the normal direction's"
+            );
         personViewRows
             .Should()
             .BeGreaterThan(1, "the DISTINCT person auth view must still expose two rows for one person");
@@ -817,14 +836,18 @@ public class Given_A_Postgresql_Compiled_Candidate_Relation
                 FROM {Quote(_rootTable)} r
                 CROSS JOIN (VALUES (1),(2)) AS duplicate(n);
                 """,
-                // Two distinct production-legal tuples reaching the one subject value the roots carry.
+                // Three distinct production-legal tuples, all admitted by the composite primary key. The
+                // normal direction reads Target as its subject, so the first two fan into the subject
+                // value the roots carry; the inverted direction reads Source, so the first and third do.
+                // Each direction needs its own pair: one direction's fan-out is not the other's.
                 $"""
                 INSERT INTO {Quote(edOrgAuthObject.Name)} (
                     "SourceEducationOrganizationId", "TargetEducationOrganizationId"
                 )
                 VALUES
                     ({DirectClaimEducationOrganizationId}, {DirectClaimEducationOrganizationId}),
-                    ({IndirectClaimEducationOrganizationId}, {DirectClaimEducationOrganizationId});
+                    ({IndirectClaimEducationOrganizationId}, {DirectClaimEducationOrganizationId}),
+                    ({DirectClaimEducationOrganizationId}, {IndirectClaimEducationOrganizationId});
                 """,
             $"""
                 INSERT INTO {Quote(_studentSchoolAssociationTable)} ("Student_DocumentId", "SchoolId_Unified")
