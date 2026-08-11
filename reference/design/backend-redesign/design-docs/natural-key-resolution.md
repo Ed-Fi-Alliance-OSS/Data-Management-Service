@@ -393,6 +393,15 @@ descriptor architecture: `ResourceKeyId` is required and already drives type ide
 is retained for diagnostics and read compatibility but will not participate in descriptor lookup or
 uniqueness.
 
+The same identity contract applies when Change Queries determines whether a deleted row was
+recreated. Descriptor `/deletes` anti-joins, and the descriptor-valued identity joins used by
+resource `/deletes`, will probe the live descriptor table by the lowered tombstoned
+`<namespace>#<codeValue>` URI plus the descriptor resource's compile-time `ResourceKeyId`. A shared
+descriptor tombstone's `Discriminator` may be used only to route historical rows to the requested
+descriptor endpoint; it will not be used as live descriptor identity or converted into a resource
+key. Consequently, a descriptor recreated with only ASCII casing differences will suppress the old
+tombstone on both engines.
+
 The descriptor write handler will simplify from three tables to two: the `ReferentialId`
 CTE/`INSERT`/`ON CONFLICT`/`MERGE` statements will be deleted, and upsert detection will become a
 lowered-URI + `ResourceKeyId` probe. PostgreSQL will probe the expression index:
@@ -874,9 +883,16 @@ after T8, no production contract may still carry a `ReferentialId` member.**
   AC: descriptor write/stamping suites green; stored-wins pins per engine; `rg` over production
   Core/backend C# finds no `ReferentialId`, `ReferentialIds`, `ReferentialIdFactory`, or
   `ReferentialIdCalculator`.
-- **T9 — Query-preprocessor cutover for descriptor filters.** The production DI flip plus
-  descriptor-filter integration coverage. AC: URI filter matches, case-variant URI matches,
-  nonexistent/wrong-type URIs return empty pages with unchanged reasons.
+- **T9 — Descriptor query cutovers.** Flip the production query preprocessor for descriptor filters
+  and update Change Query recreated-row detection. Descriptor `/deletes` and descriptor-valued
+  identity joins in resource `/deletes` probe the live descriptor table by lowered URI plus the
+  descriptor resource's compile-time `ResourceKeyId`; shared-tombstone `Discriminator` remains a
+  routing predicate only. Remove the now-unused live
+  `IX_Descriptor_Discriminator_ContentVersion` index. AC: URI filter matches, case-variant URI
+  matches, nonexistent/wrong-type URIs return empty pages with unchanged reasons; SQL snapshots use
+  no live-descriptor `Discriminator` predicate; case-only descriptor recreation suppresses the old
+  tombstone on both engines, including when resolving a descriptor-valued identity part for a
+  resource `/deletes` anti-join; the same URI under a different `ResourceKeyId` does not suppress it.
 - **T10 — Remove `dms.ReferentialIdentity` and everything that maintained it.** One ticket, three
   internally ordered stages, each landing as its own trunk-green commit:
   1. Delete any RI write-path remnants left only as dead code or tests: RI upsert-probe SQL,
@@ -992,7 +1008,11 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
   - Abstract-reference pins: valid concrete members resolve through the abstract target with their
     concrete `ResourceKeyId`, and compatibility classification still returns `IncompatibleTargetType`
     for a resolved concrete key outside the target metadata's allowed set.
-  - Tombstone and change-query suites must stay green untouched.
+  - Change Query descriptor-identity pins on both engines: a case-only descriptor recreation
+    suppresses its old tombstone; descriptor-valued resource identity joins resolve the recreated
+    descriptor; the same URI under a different descriptor `ResourceKeyId` does not suppress the
+    tombstone; generated live-descriptor probes use lowered URI plus compile-time `ResourceKeyId`
+    and never `Discriminator`.
 - **E2E** will gate the merge in CI on both engines. HTTP-visible contract points are pinned at the
   E2E level where possible; in particular, the case-variant duplicate descriptor-item scenario will
   be a dedicated E2E test (`EdFi.DataManagementService.Tests.E2E`): POST a resource whose collection

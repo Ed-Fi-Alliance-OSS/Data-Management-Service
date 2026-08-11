@@ -388,6 +388,7 @@ Notes:
   - `IsOldColumnNullable` follows the nullability of the tracked source value. Required identity and required securable-element values are `false`; optional securable-element values, such as override-driven nullable paths, are `true`.
   - `IsNewColumnNullable` is normally `true` because delete tombstones leave `NewX` values `NULL`. If a future tracked-change table records only key-change rows and never tombstones, it may set `IsNewColumnNullable` from the source value nullability instead.
   - `DescriptorJoinName` and `PersonJoinName` reference entries in `DescriptorJoins` and `PersonJoins`; join definitions are owned once at the table level and are not duplicated per value column. Both lists are stored in ordinal name order (`DescriptorJoinName` and `PersonJoinName`, respectively) for deterministic manifests and emission.
+  - `TrackedChangeDescriptorJoinInfo.DescriptorResource` supplies the qualified descriptor resource whose compile-time key is resolved through `MappingSet.ResourceKeyIdByResource` whenever a Change Query probes the live descriptor table. Consumers must not derive that key from `Discriminator`.
   - `CanonicalStorageColumn` identifies the canonical writable storage column when the source uses key-unified storage; it is otherwise null, except that a zero-hop self-person `PersonDocumentId` column uses `DocumentId`.
   - `Origin` classifies whether the column serves identity, securable-element, or combined purposes.
   - `TrackedChangeColumnRole.DescriptorNamespace` and `TrackedChangeColumnRole.DescriptorCodeValue` require `DescriptorJoinName` and require `PersonJoinName = null`.
@@ -397,7 +398,7 @@ Notes:
   - `TrackedChangeSystemColumnRole.Id`: `NOT NULL`, copied from `dms.Document.DocumentUuid`; `ScalarType = null` because dialect emitters render PostgreSQL `uuid` / SQL Server `uniqueidentifier` by role.
   - `TrackedChangeSystemColumnRole.ChangeVersion`: `NOT NULL`, copied from the bumped `dms.Document.ContentVersion`; `ScalarType = Int64`; primary tracked-change window/sort column.
   - `TrackedChangeSystemColumnRole.CreatedAt`: `NOT NULL`, tracked row insert timestamp; `ScalarType = DateTime`; dialect emitters add PostgreSQL `now()` / SQL Server `sysutcdatetime()` defaults.
-  - `TrackedChangeSystemColumnRole.Discriminator`: present only when `Kind = SharedDescriptor`; `NOT NULL`; `ScalarType = String(MaxLength: 128)`; omitted from `SystemColumns` for per-resource tracked-change tables.
+  - `TrackedChangeSystemColumnRole.Discriminator`: present only when `Kind = SharedDescriptor`; `NOT NULL`; `ScalarType = String(MaxLength: 128)`; omitted from `SystemColumns` for per-resource tracked-change tables. It routes historical rows in the shared table to a descriptor endpoint and is not a live descriptor identity or type authority.
 
 ### 2.3 Mapping set (dialect-specific)
 

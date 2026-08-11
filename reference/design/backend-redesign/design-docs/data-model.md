@@ -232,7 +232,7 @@ Descriptor references (recommended base design):
 - Use an FK directly to `dms.Descriptor(DocumentId)` to guarantee “this is a descriptor” at the DB level.
 - Resolve descriptor URI strings by lowercasing the ASCII URI and probing `dms.Descriptor` by `(UriLowered, ResourceKeyId)`; `ResourceKeyId`, not `Discriminator`, is the descriptor-type authority for lookup and uniqueness.
 
-If DB-level enforcement of “descriptor must be of type X” becomes necessary later we can add checks that the referenced `dms.Descriptor.Discriminator` is the expected type for that FK column (derived from `ApiSchema`).
+If DB-level enforcement of “descriptor must be of type X” becomes necessary later, it must compare the referenced `dms.Descriptor.ResourceKeyId` with the expected compile-time resource key derived from `ApiSchema`. `Discriminator` must not become a second descriptor-type authority.
 
 Descriptor update semantics:
 
@@ -973,7 +973,8 @@ CREATE TABLE IF NOT EXISTS edfi.Student (
 );
 
 -- Descriptor references are stored as FKs directly to dms.Descriptor.
--- The expected descriptor type is validated via dms.Descriptor.Discriminator (application-level, or triggers if desired).
+-- The expected descriptor type is validated via dms.Descriptor.ResourceKeyId
+-- using the compile-time resource key (application-level, or triggers if desired).
 
 CREATE TABLE IF NOT EXISTS edfi.School (
     DocumentId             bigint PRIMARY KEY
