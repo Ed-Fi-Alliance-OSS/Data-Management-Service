@@ -27,10 +27,10 @@ Capture major strengths and risks of the baseline redesign, with an emphasis on 
 - Embraces relational storage instead of JSONB-first querying.
 - Stable `BIGINT` surrogate keys keep reference integrity stable across identity changes.
 
-### `ReferentialId` retention (uniform natural-identity index)
+### Natural-key resolver reuses relational identity indexes
 
-- Keeps a single generic resolution path for all identities (`ReferentialId → DocumentId`) without per-resource identity resolution SQL.
-- Works alongside per-site binding identity columns (which may be generated/persisted aliases under key unification): the database stores stable `DocumentId` FKs, while `ReferentialId` provides uniform resolution and upsert detection.
+- Resolves concrete references through existing `RefKey` indexes, abstract references through `{AbstractResource}Identity`, and descriptors through the lowered-URI + `ResourceKeyId` descriptor index.
+- Avoids maintaining a duplicate UUIDv5 identity table while still keeping stable `DocumentId` FKs for storage, authorization, and reconstitution.
 
 ### Full natural-key propagation for document references
 
@@ -124,25 +124,25 @@ Mitigations:
 
 Correctness depends on generated triggers to:
 - stamp `dms.Document` on all representation changes (including propagation updates from PostgreSQL or SQL Server FK cascades), and
-- maintain `dms.ReferentialIdentity` and abstract identity tables transactionally.
+- maintain abstract identity tables transactionally.
 
-Failure mode: missing or incorrect triggers can cause stale `_etag/_lastModifiedDate/ChangeVersion` or incorrect identity resolution.
+Failure mode: missing or incorrect triggers can cause stale `_etag/_lastModifiedDate/ChangeVersion` or stale abstract reference resolution.
 
 Mitigations:
 - Make DB-apply smoke tests include stamping and `tracked_changes_*` population behavior (see [ddl-generator-testing.md](ddl-generator-testing.md)).
 - Add fixture-based tests covering identity propagation scenarios (identity-component and non-identity references) on both PostgreSQL and SQL Server.
 
-### ReferentialIdentity incorrect mapping (High Correctness/Security Risk)
+### Natural-key probe metadata incorrect mapping (High Correctness/Security Risk)
 
-`dms.ReferentialIdentity` is the canonical resolver for `ReferentialId → DocumentId` (including superclass/abstract alias rows). If a bug ever causes a `ReferentialId` to map to the wrong `DocumentId`, the system can become silently corrupt:
+The natural-key resolver compiles generic lookup metadata from the relational model. If a bug binds the wrong target table, storage column, descriptor type key, or abstract compatibility key, the system can become silently corrupt:
 - identity-based upserts can update/overwrite the wrong document,
 - references can resolve to incorrect targets,
 - downstream authorization decisions can be incorrect (potential data exposure or denial).
 
 Mitigations:
-- Treat “same `ReferentialId`, different `DocumentId`” as incident-grade: fail the transaction and emit high-severity diagnostics.
-- Add sampling-based verification: recompute expected referential ids from relational source-of-truth and verify round-trip mappings.
-- Provide an audit/repair tool to rebuild `dms.ReferentialIdentity` from relational tables.
+- Compile probe metadata from the derived relational model, not from trigger SQL, constraint-name parsing, or runtime discriminator string parsing.
+- Keep SQL-shape and behavior tests for concrete, abstract, descriptor, and POST-upsert probes on both engines.
+- During rollout, keep the parity guard described in [natural-key-resolution.md](natural-key-resolution.md) until the old hash path is fully removed.
 
 ### Authorization correctness and performance (Security Risk)
 
@@ -181,7 +181,7 @@ At very large scale (e.g., ~100M documents), several tables and behaviors become
 ### `dms.Document` (~100M rows)
 
 - Hot updates to `ContentVersion/ContentLastModifiedAt` can increase write amplification (every representation change writes `dms.Document`).
-- Random UUID index insertion (`DocumentUuid`, `dms.ReferentialIdentity.ReferentialId`) can increase fragmentation/bloat under sustained ingest.
+- Random UUID index insertion (`DocumentUuid`) can increase fragmentation/bloat under sustained ingest.
 
 Mitigations:
 - Keep `dms.Document` indexes narrow and purpose-built.

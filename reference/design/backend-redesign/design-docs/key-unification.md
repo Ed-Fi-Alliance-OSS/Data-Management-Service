@@ -1888,7 +1888,7 @@ Implementation guidance (dialect-neutral semantics):
   the alias column name).
 - Bump **Identity** stamps only for `identityChangedDocumentIds`.
 
-#### `TriggerKindParameters.ReferentialIdentityMaintenance` + `TriggerKindParameters.AbstractIdentityMaintenance`
+#### `TriggerKindParameters.AbstractIdentityMaintenance`
 
 These triggers must use the same value-diff gating:
 
@@ -1896,8 +1896,7 @@ These triggers must use the same value-diff gating:
   values differ between `inserted` and `deleted` (null-safe).
 - For unified identity members, the identity value is the presence-gated canonical expression above.
 
-This guarantees that cascade updates to canonical columns correctly cause referential-id and abstract-identity
-maintenance, even though alias columns are read-only.
+This guarantees that cascade updates to canonical columns correctly cause abstract-identity maintenance, even though alias columns are read-only.
 
 Design note (applies to `07-index-and-trigger-inventory.md` and any DDL emission docs):
 

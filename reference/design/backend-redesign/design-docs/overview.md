@@ -45,23 +45,24 @@ Draft. This is an initial design proposal for replacing the current three-table 
 - In this redesign, canonical storage is relational (tables per resource). Referencing relationships are stored as stable `DocumentId` FKs, so:
   - the database enforces referential integrity via FKs (no `dms.Reference` required), and
   - responses can reconstitute reference identity values directly from local reference-identity binding columns. Propagation to those columns is database-driven: PostgreSQL uses `ON UPDATE CASCADE` for eligible edges, and SQL Server uses retained native cascades plus safe full-composite `NO ACTION` cuts selected by [SQL Server foreign-key pruning](sql-server-pruning.md). Under key unification, those binding columns may be presence-gated aliases of canonical stored columns, preserving “absent optional reference ⇒ `NULL` at the binding columns”.
-- Identity/URI changes do not rewrite stable `..._DocumentId` foreign keys, but **do** propagate into the local canonical stored identity columns that underpin reference-identity bindings through retained native cascades. Cascades still exist for derived artifacts, but they are handled row-locally:
-  - `dms.ReferentialIdentity` is maintained transactionally by per-resource triggers that recompute referential ids from locally present identity columns (including propagated reference identity values).
+- Identity/URI changes do not rewrite stable `..._DocumentId` foreign keys, but **do** propagate into the local canonical stored identity columns that underpin reference-identity bindings through retained native cascades. Row-local maintenance keeps only the surviving derived artifacts aligned:
+  - abstract identity tables are maintained transactionally for polymorphic reference targets, and
   - update tracking metadata is maintained by normal stamping on `dms.Document` (no read-time dependency derivation required); see [update-tracking.md](update-tracking.md).
-- Identity uniqueness is enforced by:
-  - `dms.ReferentialIdentity` (for all identities, including reference-bearing), and
-  - the resource root table’s natural-key unique constraint (including FK `..._DocumentId` columns) as a relational guardrail.
+- Identity uniqueness and lookup are enforced by the relational identity indexes themselves:
+  - concrete resources use the resource root table’s natural-key unique constraint and `RefKey` index,
+  - abstract targets use `{AbstractResource}Identity` uniqueness/`RefKey` indexes, and
+  - descriptors use the lowered-URI + `ResourceKeyId` descriptor index.
 
 ## High-Level Architecture
 
 Keep DMS Core mostly intact:
 
-- Core remains the home of API canonicalization, validation, identity extraction, and referential-id computation.
+- Core remains the home of API canonicalization, validation, and identity/reference extraction. It does not compute UUIDv5 referential ids in the natural-key design.
 - For baseline non-profile relational writes, the required Core extraction-model change is to add concrete *JSON location* (with indices) to extracted document references (see “Document references inside nested collections” in [flattening-reconstitution.md](flattening-reconstitution.md)). Descriptors already carry location via `DescriptorReference.Path`.
 - Profile-constrained collection merges add a second Core/backend contract: Core supplies an optional request-scoped `ProfileAppliedWriteRequest` with a `WritableRequestBody`; backend then loads the current stored document and invokes a Core-owned projector to derive `ProfileAppliedWriteContext` (`VisibleStoredBody`, `StoredScopeStates`, and `VisibleStoredCollectionRows`) so merge/delete decisions come from Core-projected stored state rather than backend-owned profile evaluation.
 - Core MUST reject any writable profile definition that excludes a field required to compute the compiled semantic identity of a persisted multi-item collection scope.
 
-- Core continues to produce `DocumentInfo` (identity + `ReferentialId` + extracted references/descriptors, including reference locations) and operates on JSON bodies. When profile-specific collection filtering applies, Core also provides the request-scoped write-shaping input described above.
+- Core continues to produce `DocumentInfo` (document identity + extracted references/descriptors, including reference locations) and operates on JSON bodies. When profile-specific collection filtering applies, Core also provides the request-scoped write-shaping input described above.
 - Backend repositories (`IDocumentStoreRepository`, `IQueryHandler`) become responsible for:
   1. **Flattening** incoming JSON into relational tables
   2. **Reference resolution** (natural keys → `DocumentId`)
@@ -83,6 +84,7 @@ This redesign is split into focused docs in this directory:
 - Mapping pack file format (normative `.mpack` schema): [mpack-format-v1.md](mpack-format-v1.md)
 - Extensions (`_ext`, resource/common-type extensions, naming): [extensions.md](extensions.md)
 - Transactions, concurrency, and cascades (reference validation, transactional cascades, runtime caching): [transactions-and-concurrency.md](transactions-and-concurrency.md)
+- Natural-key reference resolution (replacement for UUIDv5 `ReferentialId` / `dms.ReferentialIdentity` lookup): [natural-key-resolution.md](natural-key-resolution.md)
 - Update tracking (stored stamps for `_lastModifiedDate` / `ChangeVersion`, composed `_etag`): [update-tracking.md](update-tracking.md)
 - Change Queries (`/deletes`, `/keyChanges`, `/availableChangeVersions`, `ContentVersion` mirror, `tracked_changes_*` tables): [change-queries.md](change-queries.md)
 - Partitioned cursor paging (`pageToken`/`pageSize`, `Next-Page-Token`, `/partitions`, cursor token contract, range-seek page selection): [partitioned-cursor-paging.md](partitioned-cursor-paging.md)

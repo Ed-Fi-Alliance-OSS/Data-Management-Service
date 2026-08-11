@@ -186,7 +186,7 @@ and bidirectional convergence; that is explicitly out-of-scope for the initial i
 DLEP runs inside the database transaction as part of derived maintenance, similar to:
 
 - identity propagation (PostgreSQL `ON UPDATE CASCADE`; SQL Server `MssqlIdentityPropagationTrigger` triggers), and
-- `dms.ReferentialIdentity` maintenance triggers.
+- abstract identity / document stamping maintenance triggers.
 
 Recommended execution strategy:
 
@@ -236,8 +236,7 @@ When a propagation rule targets an identity-part column that belongs to a refere
      - non-unified parts retain their existing stored values (or are themselves updated by other rules in the same pass).
   2. Resolve the new target `..._DocumentId` by joining on the referenced resource’s identity:
      - concrete target: join to the referenced resource root table’s API-semantic identity unique key (binding columns),
-     - abstract target: join to `{schema}.{AbstractResource}Identity`,
-     - (alternative) join via `dms.ReferentialIdentity` if we need polymorphic behavior without per-target joins.
+     - abstract target: join to `{schema}.{AbstractResource}Identity`.
   3. `SET`:
      - the dependent `..._DocumentId` to the resolved DocumentId, and
      - all dependent identity-part **storage** columns to the computed identity values.
@@ -259,7 +258,7 @@ Complexity note:
   - update `..._DocumentId` and all identity-part **storage** columns atomically and presence-gated.
 - It is straightforward for simple concrete targets (single-part identities) but becomes significantly more complex for:
   - multi-part natural keys,
-  - polymorphic/abstract targets (requiring `{AbstractResource}Identity` or `dms.ReferentialIdentity`-based resolution),
+  - polymorphic/abstract targets (requiring `{AbstractResource}Identity`-based resolution),
   - reference-bearing identity parts (identity elements that are themselves references),
   - and strict failure semantics when resolution yields no match (or multiple matches).
 

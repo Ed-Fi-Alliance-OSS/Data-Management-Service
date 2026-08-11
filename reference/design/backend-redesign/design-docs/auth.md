@@ -462,7 +462,7 @@ ODS executes an additional DB roundtrip for single-record authorizations, presum
 - Roundtrip #2
   - Run authorization check using the already-stored values (throw if unauthorized)
   - Run authorization check using the values from the request body (throw if unauthorized) (only if identifying values changed)
-  - Retrieve the referenced resources' DocumentIds (using `dms.ReferentialIdentity`)
+  - Retrieve the referenced resources' DocumentIds (using the generated natural-key resolver)
   - Reconstitute the record and/or materialize comparable current rowsets for no-op detection
 - Roundtrip #3
   - Execute guarded no-op or update (only if it actually changed)
@@ -472,7 +472,7 @@ ODS requires at least 4 roundtrips for the same operation, and more if the resou
 #### POST
 
 - Roundtrip #1
-  - Retrieve the referenced resources' DocumentIds (using `dms.ReferentialIdentity`).
+  - Retrieve the referenced resources' DocumentIds (using the generated natural-key resolver).
 - Roundtrip #2
   - Retrieve the DocumentId and etag by its identifying values (to check if already exists, and for reconstitution) (etag to enforce `If-Match`, if applicable)
 - Roundtrip #3
@@ -576,7 +576,8 @@ async Task GetManyCourses()
     // - RelationshipsWithEdOrgsAndPeople
     // - RelationshipsWithEdOrgsAndPeopleInverted
 
-    // Omitted roundtrip #1: If filtering by Descriptor(s), convert DescriptorUris -> DocumentIds (using dms.ReferentialIdentity)
+    // Omitted roundtrip #1: If filtering by Descriptor(s), convert DescriptorUris -> DocumentIds
+    // using the descriptor lowered-URI + ResourceKeyId probe.
 
     var filterSql = @"
         SELECT edfi.Course.DocumentId
@@ -649,7 +650,7 @@ async Task PostCourseTranscript()
         }
     };
 
-    // Omitted roundtrip #1: Retrieve referenced resources using dms.ReferentialIdentity, the next values are dummy
+    // Omitted roundtrip #1: Retrieve referenced resources using the generated natural-key resolver; the next values are dummy
     var resolvedCourseAttemptResultDescriptorId = 12;
     var resolvedCourseDocumentId = 34;
     var resolvedStudentAcademicRecordDocumentId = 56;
@@ -821,7 +822,7 @@ async Task PostCourseTranscript()
         roundtrip3.Parameters.AddWithValue("NewStudentAcademicRecord_DocumentId", resolvedStudentAcademicRecordDocumentId);
         roundtrip3.Parameters.AddWithValue("NewEducationOrganizationId", requestBody.studentAcademicRecordReference.educationOrganizationId);
 
-        // Omitted command: Retrieve referenced resources using dms.ReferentialIdentity
+        // Omitted command: Retrieve referenced resources using the generated natural-key resolver
         // Omitted command: Reconstitution queries
 
         try
@@ -1158,27 +1159,23 @@ There are a few SQL queries that must filter based on a list:
 1. Filter `auth.EducationOrganizationIdToEducationOrganizationId` based on the EdOrgIds defined in the token
 2. Filter the resource's Namespace based on the prefixes defined in the token
 3. In the GET-many scenario, filter the page by the authorized DocumentIds
-4. When retrieving the referenced resources DocumentIds using the `dms.ReferentialIdentity` table, we need to filter by a list of ReferentialIds
-5. Filter the resource's `CreatedByOwnershipTokenId` by the ownership tokens configured in the token
+4. Filter the resource's `CreatedByOwnershipTokenId` by the ownership tokens configured in the token
 
-PostgreSQL allows sending arrays as parameters (as shown in the POC above); the equivalent in SQL Server is Table-Valued Parameters (TVPs). Note that TVPs seem to degrade performance as reported [here](https://dba.stackexchange.com/a/344923).
+Natural-key reference resolution uses its own batched SQL shapes (PostgreSQL arrays and SQL Server `OPENJSON`) rather than authorization TVPs.
+
+PostgreSQL allows sending arrays as parameters (as shown in the POC above); the equivalent in SQL Server for the authorization lists above is Table-Valued Parameters (TVPs). Note that TVPs seem to degrade performance as reported [here](https://dba.stackexchange.com/a/344923).
 
 When the list has fewer than 2,000 records, ODS uses `IN(@p1, @p2, @p3...)`. Otherwise, it uses TVPs to avoid hitting the parameter limit and presumably to improve performance.
 
 DMS should follow a similar approach for SQL Server: when any of the lists mentioned above have fewer than 2,000 records, it should fall back to a parameterized `IN` clause (or an `OR` clause for Namespace prefixes) and use TVPs when the list has 2,000 or more entries.
 
-This means that the DDL generator has to create the following User-Defined Table Types:
+This means that the DDL generator has to create the following User-Defined Table Type:
 
 - Table of bigint (covers point 1. and 3. from the list above)
-- Table of uniqueidentifier (covers point 4.)
 
 ```sql
 CREATE TYPE dms.BigIntTable AS TABLE(
   Id BIGINT NOT NULL
-);
-
-CREATE TYPE dms.UniqueIdentifierTable AS TABLE(
- Id uniqueidentifier NOT NULL
 );
 ```
 

@@ -214,7 +214,7 @@ This is not preferred if the goal is full parity with document-level `equalityCo
      - limiting cross-scope equality propagation to scalar/descriptor columns that are not part of a composite reference
        FK,
      - propagating an entire reference site (update `..._DocumentId` and identity-part columns together, potentially
-       requiring `ReferentialId → DocumentId` resolution inside the DB), or
+       requiring natural-key target resolution inside the DB), or
      - changing modeling so the child does not store an independent reference site when it is equality-constrained to an
        inherited/root value.
 

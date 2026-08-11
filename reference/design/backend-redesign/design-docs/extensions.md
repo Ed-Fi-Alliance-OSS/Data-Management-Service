@@ -161,8 +161,8 @@ Extension fields may include:
 
 The mapping for references/descriptors inside `_ext` is identical to core:
 
-- document references become `..._DocumentId` FK columns (resolved via `dms.ReferentialIdentity`)
-- descriptor references become `..._DescriptorId` FK columns to `dms.Descriptor` (resolved via `dms.ReferentialIdentity`, validated via `dms.Descriptor`)
+- document references become `..._DocumentId` FK columns (resolved via the generated natural-key resolver)
+- descriptor references become `..._DescriptorId` FK columns to `dms.Descriptor` (resolved via the descriptor lowered-URI + `ResourceKeyId` probe, validated via `dms.Descriptor`)
 
 `documentPathsMapping` remains the authoritative source for “this is a reference/descriptor” and for identity mapping.
 

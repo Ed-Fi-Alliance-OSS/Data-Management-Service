@@ -35,7 +35,7 @@ This redesign therefore requires a separate utility (“DDL generation utility�
 The DDL generation utility is responsible for database objects derived from the effective schema:
 
 - Core `dms.*` objects required for correctness, projection support, and update tracking:
-  - `dms.ResourceKey`, `dms.Document`, `dms.ReferentialIdentity`, `dms.Descriptor`
+  - `dms.ResourceKey`, `dms.Document`, `dms.Descriptor`
   - always-provisioned `dms.DataStoreIdentity`, `dms.DocumentCache`,
     `dms.DocumentProjectionWork`, and singleton `dms.DocumentCacheState`; projection
     starts in durable lifecycle state `Disabled`
@@ -139,7 +139,7 @@ The DDL generator is the authoritative source of dialect-specific SQL text for p
 
 - schemas/tables/sequences/constraints/indexes,
 - abstract identity tables and union views,
-- trigger/function definitions (update tracking stamping, change tracking, and identity maintenance),
+- trigger/function definitions (update tracking stamping, change tracking, and abstract identity maintenance),
 - deterministic seeding and schema-fingerprint recording.
 
 Any SQL called out as “sketch” in design documents must be implemented as generator output and covered by DDL text snapshots and/or golden tests.
@@ -162,7 +162,6 @@ This inventory is the explicit “what exists in the database” contract that t
 
 - `dms.ResourceKey`
 - `dms.Document`
-- `dms.ReferentialIdentity`
 - `dms.Descriptor`
 - `dms.DataStoreIdentity` (singleton source identity stable during ordinary operation)
 - `dms.DocumentCache` (always present; optionally populated/read)
@@ -238,7 +237,7 @@ Authorization is enforced at the SQL layer using companion tables/views in the `
 - Dialect-specific helper constructs used by batched authorization checks (e.g., a PostgreSQL `throw_error` function) are provisioned as part of schema setup.
 
 **SQL Server user-defined table types (TVPs)**
-The authorization design relies on filtering by caller-provided lists (EdOrgIds, namespace prefixes, referential ids, etc.). To avoid SQL Server parameter-count limits, the DDL generator provisions user-defined table types used by authorization queries (see `auth.md` for the rules/thresholds).
+The authorization design relies on filtering by caller-provided lists (EdOrgIds, authorized page `DocumentId`s, namespace prefixes, ownership tokens, etc.). To avoid SQL Server parameter-count limits, the DDL generator provisions user-defined table types used by authorization queries (see `auth.md` for the rules/thresholds). Natural-key reference resolution does not use TVPs.
 
 ### 3) Project objects (per project schema)
 
@@ -313,8 +312,9 @@ See [key-unification.md](key-unification.md) for the normative rules and dialect
 Emit per-table triggers derived from ApiSchema that:
 
 - stamp `dms.Document` representation/identity versions on writes to resource root/child/extension tables (see [update-tracking.md](update-tracking.md)),
-- maintain `dms.ReferentialIdentity` rows transactionally on identity projection changes, and
 - maintain `{schema}.{AbstractResource}Identity` tables from participating concrete root tables.
+
+The DDL generator does not emit `dms.ReferentialIdentity`, `TR_<R>_ReferentialIdentity`, `dms.uuidv5()`, PostgreSQL `pgcrypto` solely for UUIDv5, or SQL Server `dms.UniqueIdentifierTable`. Reference resolution and POST upsert detection use the compiled natural-key probe metadata described in [natural-key-resolution.md](natural-key-resolution.md).
 
 **Indexes**
 
@@ -462,7 +462,7 @@ Recommended derivation:
 - Build the set of `(ProjectName, ResourceName)` pairs from the effective schema (core + extensions):
   - include all concrete `resourceSchemas[*].resourceName` where `isResourceExtension` is not `true` (including descriptors and non-extension resources from extension projects),
   - exclude `isResourceExtension: true` resource-extension overlays because they compile into `_ext` extension tables on the owning base resource rather than standalone document/resource-key rows,
-  - include all `abstractResources[*]` names (used for polymorphic/superclass alias rows in `dms.ReferentialIdentity`).
+  - include all `abstractResources[*]` names (used by abstract identity tables, union views, and natural-key resolver compatibility checks).
 - Sort pairs by `(ProjectName, ResourceName)` using **ordinal** (culture-invariant) string ordering.
 - Assign `ResourceKeyId` sequentially from 1..N and emit seed inserts (deriving `ResourceVersion` from the owning `projectSchema.projectVersion`):
   - `INSERT INTO dms.ResourceKey(ResourceKeyId, ProjectName, ResourceName, ResourceVersion) VALUES ...`

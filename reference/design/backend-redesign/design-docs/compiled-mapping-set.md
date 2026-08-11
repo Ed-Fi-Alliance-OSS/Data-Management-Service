@@ -322,14 +322,6 @@ public abstract record TriggerKindParameters
 {
     public sealed record DocumentStamping(TrackedChangeAttachment? ChangeTracking = null) : TriggerKindParameters;
 
-    public sealed record ReferentialIdentityMaintenance(
-        short ResourceKeyId,
-        string ProjectName,
-        string ResourceName,
-        IReadOnlyList<IdentityElementMapping> IdentityElements,
-        SuperclassAliasInfo? SuperclassAlias = null
-    ) : TriggerKindParameters;
-
     public sealed record AbstractIdentityMaintenance(
         DbTableName TargetTable,
         IReadOnlyList<TriggerColumnMapping> TargetColumnMappings,
@@ -412,13 +404,48 @@ Notes:
 The mapping set is what runtime code uses after selection. It is also the semantic target of mapping pack decode.
 
 ```csharp
+public enum NaturalKeyProbeTargetKind
+{
+    Concrete,
+    Abstract
+}
+
+public sealed record NaturalKeyProbeTarget(
+    QualifiedResourceName Resource,
+    NaturalKeyProbeTargetKind Kind,
+    DbTableName Table,
+    IReadOnlyList<DbColumnName> KeyColumns,
+    DbColumnName DocumentIdColumn,
+    // Present for abstract probes so the resolver can return the concrete member key for compatibility checks.
+    DbColumnName? ResourceKeyIdColumn = null
+);
+
+public sealed record OwnNaturalKeyProbe(
+    QualifiedResourceName Resource,
+    DbTableName RootTable,
+    IReadOnlyList<DbColumnName> KeyColumns,
+    DbColumnName DocumentIdColumn
+);
+
+public sealed record DescriptorProbeTarget(
+    DbTableName DescriptorTable,
+    DbColumnName UriColumn,
+    // SQL Server binds the computed column; PostgreSQL emits lower(UriColumn) against the expression index.
+    DbColumnName? UriLoweredColumn,
+    DbColumnName ResourceKeyIdColumn,
+    DbColumnName DocumentIdColumn
+);
+
 public sealed record MappingSet(
     MappingSetKey Key,
     DerivedRelationalModelSet Model,
     IReadOnlyDictionary<QualifiedResourceName, ResourceWritePlan> WritePlansByResource,
     IReadOnlyDictionary<QualifiedResourceName, ResourceReadPlan> ReadPlansByResource,
     IReadOnlyDictionary<QualifiedResourceName, short> ResourceKeyIdByResource,
-    IReadOnlyDictionary<short, ResourceKeyEntry> ResourceKeyById
+    IReadOnlyDictionary<short, ResourceKeyEntry> ResourceKeyById,
+    IReadOnlyDictionary<QualifiedResourceName, NaturalKeyProbeTarget> NaturalKeyProbeTargets,
+    IReadOnlyDictionary<QualifiedResourceName, OwnNaturalKeyProbe> OwnNaturalKeyProbesByResource,
+    DescriptorProbeTarget DescriptorProbeTarget
 )
 {
     // Required for AOT mode. Must validate payload invariants before returning.
@@ -468,20 +495,22 @@ For a write request targeting resource `R`:
 1. **Plan lookup**
    - Resolve `QualifiedResourceName` from routing (project + resource).
    - Lookup `ResourceWritePlan` via `MappingSet.WritePlansByResource[R]`.
-   - Use `MappingSet.ResourceKeyIdByResource[R]` when writing to shared tables like `dms.Document` / `dms.ReferentialIdentity`.
+   - Use `MappingSet.ResourceKeyIdByResource[R]` when writing to shared tables like `dms.Document` / `dms.Descriptor` and when binding descriptor/abstract probe literals.
 
 2. **Document identity and `DocumentId`**
-   - Core computes referential ids and extracts reference instances with concrete JSON locations.
-   - Backend resolves insert vs update and allocates/loads the root `DocumentId` (details in `flattening-reconstitution.md`).
+   - Core extracts the document identity and reference instances with concrete JSON locations.
+   - Backend resolves insert vs update with the compiled own-natural-key probe for `R` and allocates/loads the root `DocumentId` (details in `flattening-reconstitution.md` and `natural-key-resolution.md`).
 
 3. **Bulk reference + descriptor resolution**
-   - Compute the full set of referential ids needed for this request:
-     - document references (target resource key + extracted identity values), and
-     - descriptor references (descriptor resource key + normalized URI).
-   - Perform a single batched lookup against `dms.ReferentialIdentity` to resolve `ReferentialId → DocumentId` for *all* of them.
+   - Compute the full set of natural-key lookup entries needed for this request:
+     - document references (target resource + extracted `DocumentIdentity` values), and
+     - descriptor references (descriptor resource key + lowered ASCII URI).
+   - Perform one batched natural-key resolver command using:
+     - `MappingSet.NaturalKeyProbeTargets` for concrete and abstract document references, and
+     - `MappingSet.DescriptorProbeTarget` for descriptor references.
    - Split the resolved rows into the request-scoped maps needed by the flattener:
-     - `ResolvedReferenceSet.DocumentIdByReferentialId` for document references, and
-     - `ResolvedReferenceSet.DescriptorIdByKey` for descriptor references (keyed by `(normalizedUri, descriptorResource)`).
+     - a structural natural-key lookup map for document references, and
+     - `ResolvedReferenceSet.DescriptorIdByKey` for descriptor references (keyed by `(loweredUri, descriptorResource)`).
    - Materialize `ResolvedReferenceSet` for this request.
    - Note: under key unification, this same `ResolvedReferenceSet.DescriptorIdByKey` map is also consumed by `KeyUnificationWritePlan`
      when coalescing unified descriptor endpoints into canonical storage columns (see `key-unification.md`).
@@ -490,7 +519,7 @@ For a write request targeting resource `R`:
    - Build an `IDocumentReferenceInstanceIndex` for this request using:
      - `ResourceWritePlan.Model.DocumentReferenceBindings` (the “reference sites”: wildcard reference-object path + FK column + target resource), and
      - Core’s extracted `DocumentReferenceArrays` (reference instances with concrete JSON locations that include array indices), and
-     - `ResolvedReferenceSet.DocumentIdByReferentialId` (to convert each instance’s referential id → referenced `DocumentId`).
+     - the structural natural-key lookup map from `ResolvedReferenceSet` (to convert each instance’s target resource + `DocumentIdentity` → referenced `DocumentId`).
    - The index answers: “for this `DocumentReferenceBinding` and this row’s `ordinalPath` (array indices along the wildcard reference path), what referenced `DocumentId` should be written to the FK column?”
      - `ordinalPath` examples: root reference `[]`; `$.students[*].studentReference` → `[studentOrdinal]`; `$.addresses[*].periods[*].calendarReference` → `[addressOrdinal, periodOrdinal]`.
    - This is what allows the flattener to populate FK columns for nested arrays in O(1) without per-row DB calls.

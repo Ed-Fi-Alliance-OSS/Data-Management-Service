@@ -11,7 +11,7 @@ Provide optional read-only database views that:
 - look like composite natural key tables (instead of `..._DocumentId` / `..._DescriptorId` surrogate keys), and
 - include `LastModifiedDate` and `ChangeVersion` per row, aligned to the stored-stamp semantics in [update-tracking.md](update-tracking.md).
 
-This is intended for direct database ETL and analytics-style consumers. It does **not** change the write model (DMS still stores stable `DocumentId` FKs and resolves identities via `dms.ReferentialIdentity`).
+This is intended for direct database ETL and analytics-style consumers. It does **not** change the write model (DMS still stores stable `DocumentId` FKs and resolves identities via generated natural-key probes).
 
 Security note:
 - These ETL views do **not** enforce DMS API authorization. Any direct database access must be secured independently (network/credentials/roles). API-facing authorization behavior is defined in [auth.md](auth.md).
