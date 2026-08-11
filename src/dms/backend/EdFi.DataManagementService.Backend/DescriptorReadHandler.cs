@@ -86,8 +86,10 @@ internal sealed class DescriptorReadHandler(
 
         public sealed record Complete(QueryResult Result) : DescriptorQueryCandidateSelectionReadResult;
 
-        public sealed record CandidatePage(DescriptorQueryCandidatePage Page)
-            : DescriptorQueryCandidateSelectionReadResult;
+        public sealed record CandidatePage(
+            DescriptorQueryCandidatePage Page,
+            IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck>? CustomViewChecks
+        ) : DescriptorQueryCandidateSelectionReadResult;
     }
 
     private sealed record DescriptorQueryPreparation(
@@ -475,6 +477,7 @@ internal sealed class DescriptorReadHandler(
                     request,
                     rowsPage.Page,
                     candidatePage,
+                    rowsPage.CustomViewChecks,
                     fallbackCancellationToken
                 )
         );
@@ -547,13 +550,17 @@ internal sealed class DescriptorReadHandler(
             );
         }
 
-        return new DescriptorQueryCandidateSelectionReadResult.CandidatePage(candidatePage);
+        return new DescriptorQueryCandidateSelectionReadResult.CandidatePage(
+            candidatePage,
+            preparation.AuthorizationSpec?.CustomViewChecks
+        );
     }
 
     private async Task<QueryResult> HydrateSelectedDescriptorQueryCandidatePageAsync(
         DescriptorQueryRequest request,
         DescriptorQueryCandidatePage selectedRowsPage,
         DocumentCacheReadAccelerationCandidatePage candidatePage,
+        IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck>? customViewChecks,
         CancellationToken cancellationToken
     )
     {
@@ -599,6 +606,10 @@ internal sealed class DescriptorReadHandler(
             descriptorRows = await _commandExecutor
                 .ExecuteReaderAsync(command, DescriptorReadRowReader.ReadAllAsync, cancellationToken)
                 .ConfigureAwait(false);
+        }
+        catch (DbException ex) when (customViewChecks is { Count: > 0 })
+        {
+            throw new CustomViewAuthorizationValidationException(ex);
         }
         catch (DescriptorReadInvariantException ex)
         {

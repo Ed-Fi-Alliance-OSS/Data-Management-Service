@@ -3335,6 +3335,94 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_wraps_a_provider_error_raised_by_custom_view_selected_page_fallback_hydration()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-aaaaaaaaaaaa"));
+        var contentLastModifiedAt = new DateTimeOffset(2026, 6, 2, 10, 30, 0, TimeSpan.Zero);
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var readPlan = mappingSet.ReadPlansByResource[resource];
+        var readAccelerationCoordinator = new RecordingReadAccelerationCoordinator();
+        var databaseException = new StubDbException("custom view does not exist during fallback");
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+            ]
+        );
+
+        UseReadAccelerationCoordinator(readAccelerationCoordinator);
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(Task.FromResult(true));
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<
+                        Func<
+                            IRelationalCommandReader,
+                            CancellationToken,
+                            Task<DocumentCacheReadAccelerationCandidatePage>
+                        >
+                    >._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(
+                (
+                    RelationalCommand _,
+                    Func<
+                        IRelationalCommandReader,
+                        CancellationToken,
+                        Task<DocumentCacheReadAccelerationCandidatePage>
+                    > readAsync,
+                    CancellationToken cancellationToken
+                ) =>
+                    readAsync(
+                        new InMemoryRelationalCommandReader([
+                            InMemoryRelationalResultSet.Create(
+                                RelationalAccessTestData.CreateRow(
+                                    ("DocumentId", 345L),
+                                    ("DocumentUuid", documentUuid.Value),
+                                    ("ContentVersion", 91L),
+                                    ("ContentLastModifiedAt", contentLastModifiedAt)
+                                )
+                            ),
+                        ]),
+                        cancellationToken
+                    )
+            );
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec.SelectedPage>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Throws(databaseException);
+
+        var action = () => _sut.QueryDocuments(queryRequest);
+
+        var assertion = await action.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+
+        assertion.Which.InnerException.Should().BeSameAs(databaseException);
+        readAccelerationCoordinator.QueryAttempts.Should().Be(1);
+        readAccelerationCoordinator.SelectedQueryCandidatePage.Should().NotBeNull();
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .MustNotHaveHappened();
+    }
+
+    [Test]
     public async Task It_propagates_query_preparation_cancellation_from_reference_resolution_for_relational_queries()
     {
         var mappingSet = CreateQuerySupportedMappingSet(

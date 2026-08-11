@@ -1619,6 +1619,115 @@ public class Given_DescriptorReadHandler
             .MustHaveHappenedOnceExactly();
     }
 
+    [Test]
+    public async Task It_wraps_a_provider_error_raised_by_descriptor_custom_view_selected_page_fallback()
+    {
+        var documentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-999999999993");
+        var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        var commandExecutor = A.Fake<IRelationalCommandExecutor>();
+        var databaseException = new StubDbException("custom view does not exist during fallback");
+
+        A.CallTo(() =>
+                commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(Task.FromResult(true));
+        A.CallTo(() =>
+                commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<
+                        Func<IRelationalCommandReader, CancellationToken, Task<DescriptorQueryCandidatePage>>
+                    >._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(
+                (
+                    RelationalCommand _,
+                    Func<
+                        IRelationalCommandReader,
+                        CancellationToken,
+                        Task<DescriptorQueryCandidatePage>
+                    > readAsync,
+                    CancellationToken cancellationToken
+                ) =>
+                    readAsync(
+                        new InMemoryRelationalCommandReader([
+                            InMemoryRelationalResultSet.Create(
+                                CreateDescriptorRow(documentUuid, documentId: 101L)
+                            ),
+                        ]),
+                        cancellationToken
+                    )
+            );
+        A.CallTo(() =>
+                commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<
+                        Func<
+                            IRelationalCommandReader,
+                            CancellationToken,
+                            Task<IReadOnlyList<DescriptorReadRow>>
+                        >
+                    >._,
+                    A<CancellationToken>._
+                )
+            )
+            .Throws(databaseException);
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(async call =>
+            {
+                var request = call.GetArgument<DocumentCacheReadAccelerationQueryRequest>(0)!;
+                var cancellationToken = call.GetArgument<CancellationToken>(1);
+                var selectionResult = await request
+                    .SelectAuthorizedCandidatePage(cancellationToken)
+                    .ConfigureAwait(false);
+                var candidateSelection = selectionResult
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage>()
+                    .Subject;
+
+                return await candidateSelection.RelationalFallback(cancellationToken).ConfigureAwait(false);
+            });
+        var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
+        var request = CreateQueryRequest(
+            SqlDialect.Pgsql,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("SchoolTypeDescriptorWithCustomViewProviderTest"),
+            ]
+        );
+
+        var action = () => sut.HandleQueryAsync(request);
+
+        var assertion = await action.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+
+        assertion.Which.InnerException.Should().BeSameAs(databaseException);
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() =>
+                commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<DescriptorQueryRowsPage>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
     [TestCase(SqlDialect.Pgsql, """ORDER BY selected_document_ids."Ordinal" ASC""")]
     [TestCase(SqlDialect.Mssql, "ORDER BY selected_document_ids.[Ordinal] ASC")]
     public async Task It_preserves_selected_descriptor_query_order_when_fallback_hydration_returns_rows_out_of_order(

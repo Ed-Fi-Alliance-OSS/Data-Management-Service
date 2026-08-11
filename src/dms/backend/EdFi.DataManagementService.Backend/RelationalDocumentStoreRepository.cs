@@ -1181,6 +1181,7 @@ public sealed class RelationalDocumentStoreRepository(
                     traditionalPaging,
                     preparation.Resource,
                     preparation.ReadPlan,
+                    preparation.Authorization?.CustomViewChecks,
                     candidatePage,
                     fallbackCancellationToken
                 )
@@ -1192,6 +1193,7 @@ public sealed class RelationalDocumentStoreRepository(
         CollectionPaging.Traditional traditionalPaging,
         QualifiedResourceName resource,
         ResourceReadPlan readPlan,
+        IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck>? customViewChecks,
         DocumentCacheReadAccelerationCandidatePage candidatePage,
         CancellationToken cancellationToken
     )
@@ -1200,14 +1202,23 @@ public sealed class RelationalDocumentStoreRepository(
             .Candidates.Select(static candidate => candidate.DocumentId)
             .ToArray();
 
-        var hydratedPage = await _documentHydrator
-            .HydrateAsync(
-                readPlan,
-                new PageKeysetSpec.SelectedPage(selectedDocumentIds),
-                new HydrationExecutionOptions(),
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        HydratedPage hydratedPage;
+
+        try
+        {
+            hydratedPage = await _documentHydrator
+                .HydrateAsync(
+                    readPlan,
+                    new PageKeysetSpec.SelectedPage(selectedDocumentIds),
+                    new HydrationExecutionOptions(),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (DbException ex) when (customViewChecks is { Count: > 0 })
+        {
+            throw new CustomViewAuthorizationValidationException(ex);
+        }
 
         hydratedPage = hydratedPage with
         {
