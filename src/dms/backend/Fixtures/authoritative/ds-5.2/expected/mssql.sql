@@ -36478,7 +36478,7 @@ SELECT
     seoaa.[Staff_DocumentId]
 FROM [auth].[EducationOrganizationIdToEducationOrganizationId] edOrg
 INNER JOIN [edfi].[StaffEducationOrganizationAssignmentAssociation] seoaa ON edOrg.[TargetEducationOrganizationId] = seoaa.[EducationOrganization_EducationOrganizationId]
-UNION
+UNION ALL
 SELECT
     edOrg.[SourceEducationOrganizationId],
     seoea.[Staff_DocumentId]

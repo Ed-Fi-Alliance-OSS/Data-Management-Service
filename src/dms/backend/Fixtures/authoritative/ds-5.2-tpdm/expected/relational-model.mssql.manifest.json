@@ -76603,7 +76603,7 @@
           "schema": "auth",
           "name": "EducationOrganizationIdToStaffDocumentId"
         },
-        "arms_set_operator": "UNION",
+        "arms_set_operator": "UNION_ALL",
         "arms": [
           {
             "select_distinct": false,

@@ -127123,7 +127123,7 @@
     {
       "schema_name": "auth",
       "view_name": "EducationOrganizationIdToStaffDocumentId",
-      "definition": "SELECT edorg.\u0022SourceEducationOrganizationId\u0022,\n    seoaa.\u0022Staff_DocumentId\u0022\n   FROM (auth.\u0022EducationOrganizationIdToEducationOrganizationId\u0022 edorg\n     JOIN edfi.\u0022StaffEducationOrganizationAssignmentAssociation\u0022 seoaa ON ((edorg.\u0022TargetEducationOrganizationId\u0022 = seoaa.\u0022EducationOrganization_EducationOrganizationId\u0022)))\nUNION\n SELECT edorg.\u0022SourceEducationOrganizationId\u0022,\n    seoea.\u0022Staff_DocumentId\u0022\n   FROM (auth.\u0022EducationOrganizationIdToEducationOrganizationId\u0022 edorg\n     JOIN edfi.\u0022StaffEducationOrganizationEmploymentAssociation\u0022 seoea ON ((edorg.\u0022TargetEducationOrganizationId\u0022 = seoea.\u0022EducationOrganization_EducationOrganizationId\u0022)));"
+      "definition": "SELECT edorg.\u0022SourceEducationOrganizationId\u0022,\n    seoaa.\u0022Staff_DocumentId\u0022\n   FROM (auth.\u0022EducationOrganizationIdToEducationOrganizationId\u0022 edorg\n     JOIN edfi.\u0022StaffEducationOrganizationAssignmentAssociation\u0022 seoaa ON ((edorg.\u0022TargetEducationOrganizationId\u0022 = seoaa.\u0022EducationOrganization_EducationOrganizationId\u0022)))\nUNION ALL\n SELECT edorg.\u0022SourceEducationOrganizationId\u0022,\n    seoea.\u0022Staff_DocumentId\u0022\n   FROM (auth.\u0022EducationOrganizationIdToEducationOrganizationId\u0022 edorg\n     JOIN edfi.\u0022StaffEducationOrganizationEmploymentAssociation\u0022 seoea ON ((edorg.\u0022TargetEducationOrganizationId\u0022 = seoea.\u0022EducationOrganization_EducationOrganizationId\u0022)));"
     },
     {
       "schema_name": "auth",

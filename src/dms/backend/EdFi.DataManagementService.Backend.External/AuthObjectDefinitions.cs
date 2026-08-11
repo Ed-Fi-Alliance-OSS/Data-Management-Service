@@ -358,14 +358,17 @@ public static class AuthObjectDefinitions
             FailureHint: "You may need to create corresponding 'StudentSchoolAssociation' and 'StudentContactAssociation' items."
         );
 
-        // 2. EducationOrganizationIdToStaffDocumentId — UNION of two arms (assignment + employment).
-        // The deduplicating UNION (not UNION ALL) between arms is retained deliberately; DMS-1329
-        // removed only per-arm SELECT DISTINCT.
+        // 2. EducationOrganizationIdToStaffDocumentId — UNION ALL of two arms (assignment + employment).
+        // UNION ALL (not UNION) for the same reason the arms drop DISTINCT: IN/EXISTS consumers cannot
+        // observe a staff member assigned and employed at the same EdOrg twice, and a deduplicating
+        // set-operator blocks PostgreSQL from flattening the view into the probing query exactly like
+        // per-arm DISTINCT did (DMS-1329). The ReadChanges staff view that selects from this view
+        // dedups via its own UNION, so its output is unchanged.
         var staffView = new AuthPeopleAuthViewDefinition(
             Kind: AuthPeopleViewKind.Staff,
             ViewDefinition: new AuthViewDefinition(
                 View: new DbTableName(AuthNames.AuthSchema, "EducationOrganizationIdToStaffDocumentId"),
-                ArmsSetOperator: AuthViewSetOperator.Union,
+                ArmsSetOperator: AuthViewSetOperator.UnionAll,
                 Arms:
                 [
                     new AuthViewArm(

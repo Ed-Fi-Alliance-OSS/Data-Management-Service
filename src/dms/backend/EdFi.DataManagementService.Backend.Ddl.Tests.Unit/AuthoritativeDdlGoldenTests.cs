@@ -265,9 +265,10 @@ public class Given_AuthoritativeDdl_With_Ds52Core_And_SampleExtension : DdlGolde
                 "the four people auth views must each appear exactly once in alphabetical order"
             );
 
-        // Staff has a UNION of two arms (assignment + employment); all others have one.
-        // The `arms_set_operator` is also asserted so a swap from UNION → UNION ALL (which changes
-        // dedup semantics) flips this manifest snapshot, not only the SQL goldens.
+        // Staff has a UNION ALL of two arms (assignment + employment); all others have one.
+        // The `arms_set_operator` is also asserted so a swap between set-operators (which changes
+        // dedup semantics and PostgreSQL view flattening) flips this manifest snapshot, not only
+        // the SQL goldens.
         foreach (var view in views.EnumerateArray())
         {
             var name = view.GetProperty("view").GetProperty("name").GetString();
@@ -281,8 +282,10 @@ public class Given_AuthoritativeDdl_With_Ds52Core_And_SampleExtension : DdlGolde
                 setOperator
                     .Should()
                     .Be(
-                        "UNION",
-                        "Staff view arms are joined with deduplicating UNION; swapping to UNION ALL is a semantic regression"
+                        "UNION_ALL",
+                        "Staff view arms are joined with UNION ALL — IN/EXISTS consumers cannot observe "
+                            + "cross-arm duplicates, and a deduplicating UNION blocks PostgreSQL view "
+                            + "flattening (DMS-1329)"
                     );
             }
             else

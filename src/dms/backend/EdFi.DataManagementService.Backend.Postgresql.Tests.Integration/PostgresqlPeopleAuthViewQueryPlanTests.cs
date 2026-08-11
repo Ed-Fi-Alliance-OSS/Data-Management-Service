@@ -30,6 +30,14 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 //
 // The dedup and subquery nodes are structural for a DISTINCT view (the planner must
 // emit them regardless of row counts), so the assertions are meaningful at test scale.
+//
+// The staff view is covered separately: it is the one two-arm view (assignment +
+// employment associations, combined with UNION ALL since DMS-1329). Its probes expand
+// into an appendrel — trivial per-arm Subquery Scan nodes may legitimately remain, so
+// the inlining evidence is that both arms' base relations are scanned directly (the
+// closure once per arm) — and a deduplicating UNION would reintroduce the per-probe
+// Subquery Scan + HashAggregate over the claim-filtered staff set that these tests
+// assert against.
 // ═══════════════════════════════════════════════════════════════════
 
 [TestFixture]
@@ -43,8 +51,14 @@ public class Given_A_Postgresql_People_Auth_View_Query_Plan
         RelationshipAuthorizationCrudTestSupport.ClaimEducationOrganizationId;
     private const string TermDescriptor = "uri://ed-fi.org/TermDescriptor#Fall Semester";
     private const string EntryGradeLevelDescriptor = "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade";
+    private const string StaffClassificationDescriptor =
+        "uri://ed-fi.org/StaffClassificationDescriptor#Teacher";
     private const string EdOrgClosureRelationName = "EducationOrganizationIdToEducationOrganizationId";
     private const string StudentSchoolAssociationRelationName = "StudentSchoolAssociation";
+    private const string AssignmentAssociationRelationName =
+        "StaffEducationOrganizationAssignmentAssociation";
+    private const string EmploymentAssociationRelationName =
+        "StaffEducationOrganizationEmploymentAssociation";
 
     private static readonly QuerySchoolSeed[] _schoolSeeds =
     [
@@ -72,6 +86,21 @@ public class Given_A_Postgresql_People_Auth_View_Query_Plan
         "30002",
         "Uri",
         "Unreachable"
+    );
+
+    private static readonly StaffSeed _assignedStaffSeed = new(
+        new DocumentUuid(Guid.Parse("13131313-0000-0000-0000-000000000071")),
+        "40001",
+        "Avery",
+        "Assigned"
+    );
+
+    private static readonly StaffEducationOrganizationAssignmentAssociationSeed _staffAssignmentSeed = new(
+        new DocumentUuid(Guid.Parse("13131313-0000-0000-0000-000000000072")),
+        "40001",
+        100,
+        StaffClassificationDescriptor,
+        new DateOnly(2025, 8, 1)
     );
 
     private static readonly StudentSchoolAssociationSeed[] _studentSchoolAssociationSeeds =
@@ -122,6 +151,7 @@ public class Given_A_Postgresql_People_Auth_View_Query_Plan
 
     private PostgresqlRelationalQueryAuthorizationTestContext _context = null!;
     private long _dualEnrolledStudentDocumentId;
+    private long _assignedStaffDocumentId;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -158,6 +188,17 @@ public class Given_A_Postgresql_People_Auth_View_Query_Plan
             await _context.SeedStudentAcademicRecordAsync(studentAcademicRecordSeed);
         }
 
+        await _context.SeedStaffClassificationDescriptorAsync(
+            Guid.Parse("13131313-0000-0000-0000-000000000073"),
+            StaffClassificationDescriptor
+        );
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateStaffAsync(_assignedStaffSeed)
+        );
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateStaffEducationOrganizationAssignmentAssociationAsync(_staffAssignmentSeed)
+        );
+
         await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 100);
         await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 200);
 
@@ -168,6 +209,14 @@ public class Given_A_Postgresql_People_Auth_View_Query_Plan
             WHERE "StudentUniqueId" = @studentUniqueId;
             """,
             new NpgsqlParameter("studentUniqueId", _dualEnrolledStudentSeed.StudentUniqueId)
+        );
+        _assignedStaffDocumentId = await _context.Database.ExecuteScalarAsync<long>(
+            """
+            SELECT "DocumentId"
+            FROM "edfi"."Staff"
+            WHERE "StaffUniqueId" = @staffUniqueId;
+            """,
+            new NpgsqlParameter("staffUniqueId", _assignedStaffSeed.StaffUniqueId)
         );
     }
 
@@ -232,6 +281,86 @@ public class Given_A_Postgresql_People_Auth_View_Query_Plan
         );
 
         AssertClaimFilterAppliedBeneathAnyDedup(closurePath);
+    }
+
+    [Test]
+    public async Task It_expands_the_staff_single_record_exists_probe_into_both_arms_without_a_dedup_node()
+    {
+        // The same single-record EXISTS membership core, against the two-arm staff view. With
+        // UNION ALL between the arms (DMS-1329), the probe expands into per-arm probes with no
+        // dedup node anywhere; a deduplicating UNION would reintroduce the per-probe
+        // Subquery Scan + HashAggregate over the claim-filtered staff set.
+        var plan = await ExplainJsonAsync(
+            """
+            SELECT 1
+            FROM "auth"."EducationOrganizationIdToStaffDocumentId" a
+            WHERE a."Staff_DocumentId" = @staffDocumentId
+              AND a."SourceEducationOrganizationId" = ANY(@claimEducationOrganizationIds)
+            """,
+            new NpgsqlParameter("staffDocumentId", _assignedStaffDocumentId),
+            new NpgsqlParameter("claimEducationOrganizationIds", new[] { ClaimEducationOrganizationId })
+        );
+
+        AssertStaffViewArmsInlined(plan);
+
+        // Correlated per-probe shape: the whole plan must be dedup-free — the staff-view
+        // equivalent of the "no HashAggregate over the closure per probe" criterion.
+        CollectNodeTypes(plan)
+            .Should()
+            .NotContain(
+                nodeType => _dedupNodeTypes.Contains(nodeType),
+                "no dedup node may materialize the staff auth set per probe (DMS-1329)"
+            );
+
+        var conditions = CollectConditionText(plan);
+        conditions.Should().Contain(text => text.Contains("SourceEducationOrganizationId"));
+        conditions.Should().Contain(text => text.Contains("Staff_DocumentId"));
+    }
+
+    [Test]
+    public async Task It_keeps_any_staff_get_many_dedup_above_the_claim_filter()
+    {
+        // The GET-many membership shape against the staff view. Same tolerance as the student
+        // GET-many test: a once-per-query dedup of the claim-filtered rows is legitimate; a dedup
+        // over an unfiltered arm is the regression.
+        var plan = await ExplainJsonAsync(
+            """
+            SELECT r."DocumentId"
+            FROM "edfi"."Staff" r
+            WHERE r."DocumentId" IN (
+                SELECT a."Staff_DocumentId"
+                FROM "auth"."EducationOrganizationIdToStaffDocumentId" a
+                WHERE a."SourceEducationOrganizationId" = ANY(@claimEducationOrganizationIds)
+            )
+            """,
+            new NpgsqlParameter("claimEducationOrganizationIds", new[] { ClaimEducationOrganizationId })
+        );
+
+        AssertStaffViewArmsInlined(plan);
+
+        foreach (var closurePath in FindAllRelationScanPaths(plan, EdOrgClosureRelationName))
+        {
+            AssertClaimFilterAppliedBeneathAnyDedup(closurePath);
+        }
+    }
+
+    /// <summary>
+    /// Asserts the two-arm staff view was expanded into the probing query: each arm's association
+    /// table is scanned directly and the EdOrg closure is scanned once per arm. Unlike the
+    /// single-arm views, trivial per-arm Subquery Scan nodes may legitimately remain over the
+    /// appendrel, so direct base-relation scans are the inlining evidence here.
+    /// </summary>
+    private static void AssertStaffViewArmsInlined(JsonElement plan)
+    {
+        FindAllRelationScanPaths(plan, AssignmentAssociationRelationName)
+            .Should()
+            .ContainSingle("the assignment arm should scan its association table directly");
+        FindAllRelationScanPaths(plan, EmploymentAssociationRelationName)
+            .Should()
+            .ContainSingle("the employment arm should scan its association table directly");
+        FindAllRelationScanPaths(plan, EdOrgClosureRelationName)
+            .Should()
+            .HaveCount(2, "each staff view arm should scan the EdOrg closure directly");
     }
 
     private async Task<JsonElement> ExplainJsonAsync(string sql, params NpgsqlParameter[] parameters)
@@ -335,6 +464,46 @@ public class Given_A_Postgresql_People_Auth_View_Query_Plan
             .Should()
             .BeTrue($"relation '{relationName}' should be scanned directly in the flattened plan");
         return path;
+    }
+
+    /// <summary>
+    /// Returns the root→scan node path for every direct scan of <paramref name="relationName"/>.
+    /// Multi-arm (appendrel) plans scan the same relation once per arm, so callers assert on the
+    /// full path set instead of the single path <see cref="FindRelationScanPath"/> returns.
+    /// </summary>
+    private static IReadOnlyList<IReadOnlyList<JsonElement>> FindAllRelationScanPaths(
+        JsonElement plan,
+        string relationName
+    )
+    {
+        var paths = new List<IReadOnlyList<JsonElement>>();
+        CollectRelationScanPaths(plan, relationName, [], paths);
+        return paths;
+    }
+
+    private static void CollectRelationScanPaths(
+        JsonElement node,
+        string relationName,
+        List<JsonElement> currentPath,
+        List<IReadOnlyList<JsonElement>> paths
+    )
+    {
+        currentPath.Add(node);
+
+        if (node.TryGetProperty("Relation Name", out var relation) && relation.GetString() == relationName)
+        {
+            paths.Add([.. currentPath]);
+        }
+
+        if (node.TryGetProperty("Plans", out var children))
+        {
+            foreach (var child in children.EnumerateArray())
+            {
+                CollectRelationScanPaths(child, relationName, currentPath, paths);
+            }
+        }
+
+        currentPath.RemoveAt(currentPath.Count - 1);
     }
 
     private static bool TryFindRelationScanPath(JsonElement node, string relationName, List<JsonElement> path)
