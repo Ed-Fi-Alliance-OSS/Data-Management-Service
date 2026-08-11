@@ -265,6 +265,50 @@ public class Given_MssqlGeneratedDdlBaselineDatabase
         snapshotExistsAfterLastDispose.Should().BeFalse();
     }
 
+    [Test]
+    public async Task It_discovers_and_drops_all_owned_snapshots_before_dropping_the_source_database()
+    {
+        MssqlGeneratedDdlBaselineDatabase? baselineDatabase =
+            await MssqlGeneratedDdlBaselineDatabase.CreateAsync(
+                CreateFixtureSignature("composite-snapshot-source-teardown"),
+                _fixture.GeneratedDdl
+            );
+        MssqlGeneratedDdlBaselineLease? lease = null;
+        var databaseName = string.Empty;
+        var baselineSnapshotName = string.Empty;
+        var additionalSnapshotName = string.Empty;
+
+        try
+        {
+            lease = await baselineDatabase.AcquireRestoredDatabaseAsync();
+            databaseName = lease.Database.DatabaseName;
+            baselineSnapshotName = lease.SnapshotName;
+            additionalSnapshotName = $"{databaseName}_additional";
+            await CreateAdditionalSnapshotAsync(databaseName, additionalSnapshotName);
+
+            await lease.DisposeAsync();
+            lease = null;
+            await baselineDatabase.DisposeAsync();
+            baselineDatabase = null;
+
+            (await DatabaseExistsAsync(baselineSnapshotName)).Should().BeFalse();
+            (await DatabaseExistsAsync(additionalSnapshotName)).Should().BeFalse();
+            (await DatabaseExistsAsync(databaseName)).Should().BeFalse();
+        }
+        finally
+        {
+            if (lease is not null)
+            {
+                await lease.DisposeAsync();
+            }
+
+            if (baselineDatabase is not null)
+            {
+                await baselineDatabase.DisposeAsync();
+            }
+        }
+    }
+
     private static async Task<MssqlGeneratedDdlBaselineCounts> ReadBaselineCountsAsync(
         MssqlGeneratedDdlTestDatabase database
     )
@@ -416,6 +460,39 @@ public class Given_MssqlGeneratedDdlBaselineDatabase
     private static string CreateFixtureSignature(string scenario)
     {
         return $"{FixtureRelativePath}#{scenario}";
+    }
+
+    private static async Task CreateAdditionalSnapshotAsync(string databaseName, string snapshotName)
+    {
+        IReadOnlyList<MssqlDatabaseFileMetadata> databaseFiles =
+            await MssqlGeneratedDdlBackupBaselineDatabase.ReadDatabaseFilesAsync(databaseName);
+        var snapshotFileDefinitions = string.Join(
+            "," + Environment.NewLine,
+            databaseFiles
+                .Where(file => file.Type.Equals("D", StringComparison.OrdinalIgnoreCase))
+                .Select(file =>
+                {
+                    var snapshotPath = MssqlTestDatabaseHelper.BuildSiblingFilePath(
+                        file.PhysicalName,
+                        $"{snapshotName}_{file.FileId}.ss"
+                    );
+                    return $"""    ( NAME = N'{MssqlTestDatabaseHelper.EscapeSqlLiteral(file.LogicalName)}', FILENAME = N'{MssqlTestDatabaseHelper.EscapeSqlLiteral(snapshotPath)}' )""";
+                })
+        );
+        var sql = $"""
+            CREATE DATABASE {MssqlTestDatabaseHelper.QuoteIdentifier(snapshotName)}
+            ON
+            {snapshotFileDefinitions}
+            AS SNAPSHOT OF {MssqlTestDatabaseHelper.QuoteIdentifier(databaseName)};
+            """;
+
+        await MssqlDatabaseLifecycleCoordinator.ExecuteAsync(async connection =>
+        {
+            await using SqlCommand command = connection.CreateCommand();
+            command.CommandText = sql;
+            command.CommandTimeout = 300;
+            await command.ExecuteNonQueryAsync();
+        });
     }
 
     private static async Task<bool> DatabaseExistsAsync(string databaseName)
