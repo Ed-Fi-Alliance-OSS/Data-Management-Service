@@ -1015,6 +1015,11 @@ the provider source-position barrier.
   validation trigger and canonical UUID uniqueness.
 - Set `dms.Document` to `REPLICA IDENTITY FULL` so its non-primary-key
   `DocumentUuid` is available in delete records.
+- Set `unavailable.value.placeholder=__debezium_unavailable_value` explicitly. Debezium
+  3.6 can use this marker when an unchanged TOAST-backed value is unavailable in an update
+  event. A retained cache upsert whose required `DocumentJson` column value equals the
+  marker fails transformation; it is never treated as JSON `null` or published as document
+  state.
 - Verify exact quoted table identifiers, `message.key.columns`, replica-identity SQL,
   and connector properties against the pinned Connect/Debezium image.
 
