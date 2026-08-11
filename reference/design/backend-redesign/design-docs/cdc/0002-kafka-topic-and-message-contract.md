@@ -255,8 +255,12 @@ as a malformed native heartbeat. A relational table topic whose configured Debez
 source metadata rather than by topic prefix alone.
 
 Progress output preserves the input value schema, value, headers, source partition,
-source offset, and Connect record timestamp, including a null native-heartbeat value or
-value schema. It replaces only the output topic, key schema, and key.
+source offset, and Connect record timestamp for retained `dms.CdcHeartbeat` records and
+for native Debezium heartbeat records with non-null values. A native Debezium heartbeat
+whose value is null is normalized to the non-null `Schema.STRING_SCHEMA` value
+`native-heartbeat` before routing, so the compacted progress topic does not receive a
+tombstone. Apart from that null native-heartbeat substitution, progress routing replaces
+only the output topic, key schema, and key.
 
 The progress topic is binding-scoped and has one partition, so its key does not repeat
 instance, generation, provider, or source-partition identity. The fixed non-null key makes
@@ -375,16 +379,18 @@ next second, or plain field rename is non-conforming. The transform also verifie
 emitted value exactly matches `document._lastModifiedDate`; a mismatch fails the record
 rather than publishing inconsistent metadata.
 
-For SQL Server `nvarchar(max)` source data, including `DocumentJson`, the connector pins
-Debezium 3.6's unavailable-value marker. A required retained value carrying that marker is
-a transformation failure; it is never interpreted as JSON `null` or emitted in the public
-record.
+For provider source data that Debezium can report as unavailable, including PostgreSQL
+TOAST-backed `jsonb` and SQL Server `nvarchar(max)` `DocumentJson`, the connector pins
+Debezium 3.6's unavailable-value marker. A required retained `DocumentJson` value carrying
+that marker is a transformation failure; it is never interpreted as JSON `null` or emitted
+in the public record.
 
 The transform validates every required retained `dms.DocumentCache` field against the
 pinned provider fixture schema as well as its semantic content. `DocumentJson` is a
 schema-backed Kafka Connect `STRING`: PostgreSQL `jsonb` uses Debezium's
-`io.debezium.data.Json` logical string shape, and SQL Server `nvarchar(max)` uses the
-pinned string shape plus the unavailable-marker check above. `ContentVersion` is the
+`io.debezium.data.Json` logical string shape, SQL Server `nvarchar(max)` uses the pinned
+string shape, and both provider shapes apply the required-field unavailable-marker check
+above. `ContentVersion` is the
 pinned `INT64`/Java `Long` shape. `ProjectName`, `ResourceName`, `ResourceVersion`, and
 `StreamEtag` are pinned schema-backed string fields. `LastModifiedAt` is PostgreSQL's
 pinned `io.debezium.time.ZonedTimestamp` string shape for `TIMESTAMPTZ` or SQL Server's
