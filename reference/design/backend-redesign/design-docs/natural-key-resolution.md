@@ -3,12 +3,10 @@
 > **Status: PROPOSED — for team review. Nothing described here has landed on `main`; the design is
 > written in future tense throughout.** Once approved, implementation tickets will be created under
 > [`../epics/`](../epics/). Once implemented, this document will supersede the
-> [overview.md "Why keep ReferentialId"](overview.md#why-keep-referentialid) rationale and the
-> recommendation of [the-problem-with-removing-referentialids.md](the-problem-with-removing-referentialids.md)
-> (see ["Response to the earlier analysis"](#response-to-the-earlier-analysis) for why the balance has
-> changed), and the passages of [data-model.md](data-model.md), [ddl-generation.md](ddl-generation.md),
-> [transactions-and-concurrency.md](transactions-and-concurrency.md), and
-> [referential-identity-test-plan.md](referential-identity-test-plan.md) that describe
+> earlier `ReferentialId` retention rationale (see
+> ["Response to the earlier analysis"](#response-to-the-earlier-analysis) for why the balance has
+> changed), and the passages of [overview.md](overview.md), [data-model.md](data-model.md),
+> [ddl-generation.md](ddl-generation.md), and [transactions-and-concurrency.md](transactions-and-concurrency.md) that describe
 > `dms.ReferentialIdentity` as current.
 >
 > **`dms.Document` will not be affected by this proposal in any way.** It will remain inserted,
@@ -60,10 +58,8 @@ PostgreSQL + SQL Server integration suites and E2E ran green on the prototype.
 
 Four reasons, in decreasing order of weight:
 
-**1. The schema already paid for the replacement.** When the baseline rationale
-([overview.md "Why keep ReferentialId"](overview.md#why-keep-referentialid)) and the follow-up
-analysis ([the-problem-with-removing-referentialids.md](the-problem-with-removing-referentialids.md))
-were written, removing the hash meant *building* natural-key resolution machinery: denormalized
+**1. The schema already paid for the replacement.** When the baseline rationale and follow-up
+analysis were written, removing the hash meant *building* natural-key resolution machinery: denormalized
 identity columns, composite indexes, abstract identity tables. Since then, all of that machinery was
 built anyway, for reasons unrelated to reference resolution:
 
@@ -113,9 +109,8 @@ performance risk as unknown, this design comes with measurements: the natural-ke
 
 ## Response to the earlier analysis
 
-[the-problem-with-removing-referentialids.md](the-problem-with-removing-referentialids.md) recommended
-against removal. Its concerns were correct for the model era in which it was written; each is
-addressed structurally today:
+The earlier removal analysis recommended against removal. Its concerns were correct for the model
+era in which it was written; each is addressed structurally today:
 
 | Concern (2025 analysis) | Status today |
 |---|---|
