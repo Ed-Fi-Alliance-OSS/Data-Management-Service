@@ -289,12 +289,15 @@ public class Given_DocumentCacheProjectionObservationProvider
     }
 
     [Test]
-    public void It_caps_pending_target_diagnostics_before_first_target_observation()
+    public void It_uses_configured_pending_target_diagnostic_limit_before_first_target_observation()
     {
-        int pendingTargetDiagnosticLimit = new DocumentCacheProjectorOptions().PageSize;
-        int appendedDiagnosticCount = pendingTargetDiagnosticLimit + 5;
-        int effectiveProjectorPageSize = pendingTargetDiagnosticLimit + 50;
-        DocumentCacheProjectionObservationStore store = new(new FixedTimeProvider(ObservedAt));
+        const int pendingTargetDiagnosticLimit = 3;
+        const int appendedDiagnosticCount = pendingTargetDiagnosticLimit + 5;
+        const int effectiveProjectorPageSize = pendingTargetDiagnosticLimit + 50;
+        DocumentCacheProjectionObservationStore store = new(
+            new FixedTimeProvider(ObservedAt),
+            pendingTargetDiagnosticLimit
+        );
         DocumentCacheProjectionTargetContextKey contextKey = ContextKey(generation: 1);
 
         foreach (int diagnosticIndex in Enumerable.Range(1, appendedDiagnosticCount))

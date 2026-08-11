@@ -43,9 +43,11 @@ public sealed class DocumentCacheReadAccelerationOptions
 
 public sealed class DocumentCacheProjectorOptions
 {
+    public const int DefaultPageSize = 100;
+
     public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(5);
 
-    public int PageSize { get; set; } = 100;
+    public int PageSize { get; set; } = DefaultPageSize;
 
     public int MaxConcurrentTargets { get; set; } = 2;
 

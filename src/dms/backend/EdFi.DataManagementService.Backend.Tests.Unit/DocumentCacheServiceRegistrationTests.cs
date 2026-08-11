@@ -27,9 +27,7 @@ public class Given_DocumentCacheServiceRegistration
 
         AddSharedReferenceResolverForTest(services);
 
-        AssertSingleton<DocumentCacheProjectionObservationStore, DocumentCacheProjectionObservationStore>(
-            services
-        );
+        AssertSingletonFactory<DocumentCacheProjectionObservationStore>(services);
         AssertSingleton<IDocumentCacheProjectionTelemetry, DocumentCacheProjectionTelemetry>(services);
         AssertSingleton<
             IDocumentCacheDownstreamPublicationHistoryProvider,
@@ -79,6 +77,28 @@ public class Given_DocumentCacheServiceRegistration
             .Should()
             .NotContain(descriptor => descriptor.ServiceType == typeof(IDocumentCacheReadLookupAdapter));
         services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IHostedService));
+    }
+
+    [Test]
+    public void It_resolves_the_projection_observation_store_from_configured_document_cache_options()
+    {
+        IServiceCollection services = new ServiceCollection();
+        services.Configure<DocumentCacheOptions>(options => options.Projector.PageSize = 3);
+
+        AddSharedReferenceResolverForTest(services);
+
+        using ServiceProvider serviceProvider = services.BuildServiceProvider();
+        DocumentCacheProjectionObservationStore store =
+            serviceProvider.GetRequiredService<DocumentCacheProjectionObservationStore>();
+
+        serviceProvider
+            .GetRequiredService<IDocumentCacheProjectionObservationProvider>()
+            .Should()
+            .BeSameAs(store);
+        serviceProvider
+            .GetRequiredService<IDocumentCacheProjectionObservationSink>()
+            .Should()
+            .BeSameAs(store);
     }
 
     [Test]

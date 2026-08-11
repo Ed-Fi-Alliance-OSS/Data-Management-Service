@@ -109,10 +109,18 @@ public static class ReferenceResolverServiceCollectionExtensions
             >()
         );
         services.TryAdd(
-            ServiceDescriptor.Singleton<
-                DocumentCacheProjectionObservationStore,
-                DocumentCacheProjectionObservationStore
-            >()
+            ServiceDescriptor.Singleton<DocumentCacheProjectionObservationStore>(static serviceProvider =>
+            {
+                DocumentCacheOptions options = serviceProvider
+                    .GetRequiredService<IOptions<DocumentCacheOptions>>()
+                    .Value;
+
+                return new DocumentCacheProjectionObservationStore(
+                    serviceProvider.GetRequiredService<TimeProvider>(),
+                    options.Projector.PageSize,
+                    serviceProvider.GetService<IDocumentCacheProjectionTelemetry>()
+                );
+            })
         );
         services.TryAdd(
             ServiceDescriptor.Singleton<IDocumentCacheProjectionObservationProvider>(static serviceProvider =>

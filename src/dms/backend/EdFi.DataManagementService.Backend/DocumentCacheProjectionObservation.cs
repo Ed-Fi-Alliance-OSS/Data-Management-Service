@@ -833,11 +833,10 @@ public sealed class DocumentCacheProjectionObservationStore
         IDocumentCacheProjectionCurrentTargetHealthSink,
         IDocumentCacheProjectionTargetDiagnosticSink
 {
-    private static readonly int PendingTargetDiagnosticLimit = new DocumentCacheProjectorOptions().PageSize;
-
     private readonly object _sync = new();
     private readonly TimeProvider _timeProvider;
     private readonly IDocumentCacheProjectionTelemetry _telemetry;
+    private readonly int _pendingTargetDiagnosticLimit;
 
     private ImmutableDictionary<
         DocumentCacheTargetKey,
@@ -871,8 +870,19 @@ public sealed class DocumentCacheProjectionObservationStore
         TimeProvider timeProvider,
         IDocumentCacheProjectionTelemetry? telemetry = null
     )
+        : this(timeProvider, DocumentCacheProjectorOptions.DefaultPageSize, telemetry) { }
+
+    public DocumentCacheProjectionObservationStore(
+        TimeProvider timeProvider,
+        int pendingTargetDiagnosticLimit,
+        IDocumentCacheProjectionTelemetry? telemetry = null
+    )
     {
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+        _pendingTargetDiagnosticLimit = DocumentCacheProjectionObservationGuard.RequirePositive(
+            pendingTargetDiagnosticLimit,
+            nameof(pendingTargetDiagnosticLimit)
+        );
         _telemetry = telemetry ?? NoOpDocumentCacheProjectionTelemetry.Instance;
     }
 
@@ -1006,7 +1016,7 @@ public sealed class DocumentCacheProjectionObservationStore
                     _pendingTargetDiagnostics.TryGetValue(contextKey, out var existingDiagnostics)
                         ? DocumentCacheProjectionObservationBounds.CapLatest(
                             existingDiagnostics.Add(diagnostic),
-                            PendingTargetDiagnosticLimit
+                            _pendingTargetDiagnosticLimit
                         )
                         : [diagnostic];
 
