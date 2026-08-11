@@ -23,14 +23,15 @@
 and descriptor filter resolution can each be answered by one uniform, narrow index lookup.
 
 This design will remove the table and answer each of those questions with a batched natural-key
-lookup against indexes that — with one exception — **already exist in the schema for independent
-reasons**:
+lookup against the schema's existing natural-key indexes. The only new lookup index is the
+descriptor lower-URI index; abstract resolution adds a `smallint ResourceKeyId` payload column to
+existing abstract identity rows but does not add another index:
 
 | Lookup | Will be replaced by |
 |---|---|
 | Concrete document references | Scalar probe of the target's `UX_<Target>_RefKey` |
-| Abstract (polymorphic) references | Probe of `UX_<Abstract>Identity_RefKey` |
-| Descriptor references and filters | Probe of `UX_Descriptor_UriLowered_ResourceKeyId` (new lower-expression/computed-column index — the one addition) |
+| Abstract (polymorphic) references | Probe of `UX_<Abstract>Identity_RefKey`, projecting the concrete `ResourceKeyId` |
+| Descriptor references and filters | Probe of `UX_Descriptor_UriLowered_ResourceKeyId` (new lower-expression/computed-column index) |
 | POST upsert detection | The document's own `UX_<R>_NK` |
 
 With the reads gone, the maintenance surface will go with them: every generated
@@ -72,13 +73,15 @@ built anyway, for reasons unrelated to reference resolution:
   `..._DocumentId` columns — exists as the identity-uniqueness enforcement and the source of
   create-race unique violations (the 409/retry path).
 - **`<Abstract>Identity` tables** with their own `RefKey` indexes exist to enforce cross-subclass
-  identity uniqueness and to serve as polymorphic FK targets. Abstract reference resolution is one
-  probe of one table — not a union over subtype tables.
+  identity uniqueness and to serve as polymorphic FK targets. This design will add the concrete
+  member `ResourceKeyId` to those rows so abstract reference resolution can return the same
+  compatibility token the runtime uses today. Resolution is still one probe of one table — not a
+  union over subtype tables.
 
-The one thing missing was a case-insensitive descriptor probe target, which this design will add as
-a lower-storage unique index on the existing `dms.Descriptor` table: a PostgreSQL expression index,
-and a SQL Server non-persisted computed-column index. Descriptor URI identity will be ASCII-only so
-the lowercasing contract is deterministic across C#, PostgreSQL, and SQL Server.
+The descriptor-specific probe target missing was a case-insensitive descriptor lookup, which this
+design will add as a lower-storage unique index on the existing `dms.Descriptor` table: a PostgreSQL
+expression index, and a SQL Server non-persisted computed-column index. Descriptor URI identity will
+be ASCII-only so the lowercasing contract is deterministic across C#, PostgreSQL, and SQL Server.
 
 **2. The hash is derived state, and derived state has carrying costs.** Every document insert and
 identity update fires a generated trigger that recomputes UUIDv5 hashes and writes one or two
@@ -113,7 +116,7 @@ addressed structurally today:
 | Concern (2025 analysis) | Status today |
 |---|---|
 | "Reference-bearing identities force multi-pass resolution or denormalization" | Denormalization happened — for FK-cascade reasons, not resolution ([key-unification.md](key-unification.md)). `RefKey` flattening collapses transitive identity chains to one seek per reference. There is no multi-pass, no dependency layering, no cycle handling. |
-| "Polymorphic targets get significantly harder; abstract identity tables reintroduce central indexes with drift risk" | Abstract identity tables already exist and are already trigger-maintained — for cross-subclass uniqueness enforcement. Resolution will reuse them; this design will add zero objects and zero write amplification for polymorphism. |
+| "Polymorphic targets get significantly harder; abstract identity tables reintroduce central indexes with drift risk" | Abstract identity tables already exist and are already trigger-maintained — for cross-subclass uniqueness enforcement. Resolution will reuse them and add only a concrete-member `ResourceKeyId` column to the existing rows; no new tables, indexes, trigger families, or extra row writes are introduced for polymorphism. |
 | "Batching needs TVPs/temp tables; parameter limits make giant OR-predicates non-viable" | Batching will be one prepared statement per target group, all groups in **one command, one round trip**: PostgreSQL will use typed `unnest` parallel arrays (SQL text independent of batch size); SQL Server will shred one JSON parameter per group via `OPENJSON … WITH` under `OPTION (FORCE ORDER)`. No TVPs, no temp tables. A guard will enforce SQL Server's parameter budget (`MssqlCommandLimits.MaxUserParametersPerCommand`). |
 | "≥1 lookup per referenced resource type; round trips grow" | One multi-statement command will be one round trip regardless of group count; inside the composite write pipeline, a union-projection form will embed the entire lookup as a *single statement* so existing round-trip counts will not regress (enforced by command-stream pinning tests). |
 | "Many query shapes → plan variability, cross-engine divergence" | The shapes will be generated from compiled metadata (uniform per group); the prototype differential-tested them old-vs-new over seeded databases on both engines and validated performance (see below). The SQL Server input-shape risk was real — two candidate shapes failed measurably in the prototype — and the surviving shape will be pinned by tests. |
@@ -235,8 +238,14 @@ column (DMS-1251) and will be the authoritative descriptor-type key for lookup a
 `Discriminator` remains stored for diagnostics/read compatibility, but descriptor resolution will
 not depend on it.
 
-**Abstract targets** — a probe of `UX_<Abstract>Identity_RefKey` projecting `Discriminator`. One
-table, one seek, no per-subtype SQL.
+**Abstract targets** — a probe of `UX_<Abstract>Identity_RefKey` projecting
+`(Ordinal, DocumentId, ResourceKeyId)`. `ResourceKeyId` is the concrete member resource key stored on
+the abstract identity row and populated by the abstract-identity trigger from the same compile-time
+member metadata that supplies the diagnostic `Discriminator`. The resolver will not parse or map the
+abstract `Discriminator`; `IncompatibleTargetType` will continue to compare the resolved concrete
+`ResourceKeyId` with the target's allowed concrete resource keys. The abstract `RefKey` and `NK`
+index key shapes will remain unchanged; `ResourceKeyId` is payload only, not part of abstract
+identity equality. One table, one seek, no per-subtype SQL.
 
 Results will map by explicit ordinal (`Entries[ordinal-1]`, never row position); unmatched ordinals
 will flow into the unchanged reference-validation failure response, so error shapes and JSON-location
@@ -245,10 +254,11 @@ parameter budget (`MssqlCommandLimits.MaxUserParametersPerCommand`, 2098) before
 
 The probe metadata (`NaturalKeyProbeTargets`, `OwnNaturalKeyProbesByResource`,
 `DescriptorProbeTarget` on the compiled `MappingSet`) will be compiled from the relational model
-itself — never from trigger metadata and never by parsing constraint names (dialect identifier
-shortening hash-truncates names). It will be storage-resolved, so key-unified identity parts will
-bind their canonical stored columns. It will not be serialized into manifests, so it will cause zero
-golden-manifest churn.
+itself — never from trigger metadata, never by parsing constraint names (dialect identifier
+shortening hash-truncates names), and never by converting abstract discriminator strings to resource
+keys at runtime. It will be storage-resolved, so key-unified identity parts will bind their canonical
+stored columns and abstract probes will bind the stored concrete `ResourceKeyId`. The probe metadata
+itself will not be serialized into manifests, so it will cause zero golden-manifest churn.
 
 ### POST upsert detection
 
@@ -337,9 +347,10 @@ The composite write pipeline co-batches an embeddable reference lookup when the 
 it as a single statement with a single result set (`TryBuildSessionLookupCommand`). Per-target-group
 statements are multi-statement, so the natural-key builders will also expose a **union-projection
 form**: `UNION ALL` across target groups projecting the superset columns
-`(GroupOrdinal, Ordinal, DocumentId, Discriminator, ResourceKeyId)` with NULLs where a group does not
-produce a column. On SQL Server every branch will keep its OPENJSON input leftmost under one
-statement-level `OPTION (FORCE ORDER)`.
+`(GroupOrdinal, Ordinal, DocumentId, ResourceKeyId)` plus an optional diagnostic
+`AbstractDiscriminator` for abstract groups. The resolver's compatibility path will use
+`ResourceKeyId`, not the discriminator string. On SQL Server every branch will keep its OPENJSON input
+leftmost under one statement-level `OPTION (FORCE ORDER)`.
 
 Returning null from this seam (falling back to ordered segments) would be *correct but would regress
 round-trip counts* for reference-bearing writes on that engine — acceptable only as a recorded,
@@ -603,6 +614,7 @@ removal:
 |---|---|
 | Concrete identity uniqueness | `UX_<R>_NK` (always was the primary enforcement) |
 | Cross-subclass abstract identity uniqueness | `UX_<Abstract>Identity_NK` on the abstract identity tables (this is the alias row's real job, and the tables already enforce it) |
+| Abstract reference compatibility | The concrete `ResourceKeyId` stored on the matched abstract identity row, compared with the target's allowed concrete resource-key set |
 | Descriptor identity uniqueness | `UX_Descriptor_UriLowered_ResourceKeyId` (CI over ASCII URI, both engines) |
 | Create-race detection (409/retry) | `UX_<R>_NK` unique violations, classified exactly as today |
 | Reference targets exist and stay consistent | Composite FKs onto `RefKey` targets, unchanged |
@@ -654,11 +666,17 @@ can cascade.
     removed.
   - `DescriptorWriteRequest.ReferentialId` and the POST write-target request's `ReferentialId` will
     be removed.
-  - `ReferenceLookupResult` will lose `VerificationIdentityKey` (canary-only) and rename
-    `ReferentialIdentityResourceKeyId` to `RequestedTargetResourceKeyId` (a live member — the
-    requested-target key id for abstract targets).
+  - `ReferenceLookupResult` will lose `VerificationIdentityKey` (canary-only) and
+    `ReferentialIdentityResourceKeyId`; `ResourceKeyId` remains the resolved concrete target key,
+    including abstract matches.
   - `Add{Postgresql,Mssql}ReferenceResolver()` DI extensions will compose the natural-key resolver —
     a behavioral change for hosts that resolve references through the old registration.
+- Abstract identity tables and their union views will add a concrete `ResourceKeyId smallint NOT
+  NULL` payload column. Existing abstract-identity maintenance triggers will populate it from
+  compile-time concrete-member metadata. The abstract identity `Discriminator` column remains for
+  diagnostics/readability only; resolver compatibility will not parse it. Consumers that enumerate
+  abstract identity scalar columns must continue to exclude both payload columns (`ResourceKeyId` and
+  `Discriminator`) from identity-equality logic.
 - Ops: the seed-clone script's TRUNCATE list will lose `dms."ReferentialIdentity"`; template
   management will drop its pgcrypto preamble.
 
@@ -668,7 +686,8 @@ can cascade.
 `DocumentId`, the DocumentCache enqueue triggers, all FKs into it); `dms.Descriptor` except for the
 descriptor unique-index swap and SQL Server's non-persisted `UriLowered` computed column (including
 `ResourceKeyId NOT NULL` and `Discriminator` storage/read compatibility); `UX_<R>_RefKey` /
-`UX_<R>_NK` / abstract identity tables and their triggers; the DocumentCache table family;
+`UX_<R>_NK`; the abstract identity table family, its uniqueness/FK constraints, and its trigger
+topology except for concrete `ResourceKeyId` column population; the DocumentCache table family;
 tracked-change tables and triggers; `auth.*`; `dms.ResourceKey` / `dms.EffectiveSchema` /
 `dms.SchemaComponent`; the read/reconstitution pipeline; `RelationalMappingVersion` remains `v2`
 for this unreleased aggregate mapping shape.
@@ -684,12 +703,17 @@ foundation tickets (T1–T3).
 **Foundations — `dms.ReferentialIdentity` stays trigger-maintained throughout; its write-path
 upsert probes stay live until their cutover tickets:**
 
-- **T1 — Compile natural-key probe metadata; re-source the 409 duplicate-identity messages.**
-  Compile per-resource probe metadata (reference targets, own-key probes, the descriptor probe)
-  from the relational model — never from trigger metadata or constraint names — with an
-  empty-identity compile guard and an every-resource parity guard against the live trigger
-  derivation. Re-source the 409 `duplicateIdentityValues` machinery from the compiled probes,
-  severing its trigger-metadata dependency before the triggers drop. AC: parity guard green for
+- **T1 — Add abstract `ResourceKeyId`, compile natural-key probe metadata, and re-source the 409
+  duplicate-identity messages.** Add `ResourceKeyId smallint NOT NULL` to each abstract identity
+  table and union view, then populate the table column from the existing abstract-identity
+  maintenance triggers using compile-time concrete-member metadata. Compile per-resource probe
+  metadata (reference targets, own-key probes, the descriptor probe) from the relational model —
+  never from trigger metadata, constraint names, or discriminator string parsing — with an
+  empty-identity compile guard and an every-resource parity guard against the live trigger derivation.
+  Re-source the 409 `duplicateIdentityValues` machinery from the compiled probes, severing its
+  trigger-metadata dependency before the triggers drop. AC: golden DDL/manifest diffs show only the
+  abstract `ResourceKeyId` column/view/trigger-value change for this part; abstract identity-column
+  consumers exclude `ResourceKeyId` and `Discriminator` from identity equality; parity guard green for
   every resource; 409 responses unchanged.
 - **T2 — Add descriptor ASCII validation + `UX_Descriptor_UriLowered_ResourceKeyId`.** Reject
   non-ASCII descriptor URI values on descriptor writes, descriptor references, and
@@ -709,11 +733,12 @@ upsert probes stay live until their cutover tickets:**
   (per-engine lookup builders/strategies, result reader, corruption canary) and its test suites are
   deleted, its composite-seam consumers re-point to the new factory, and the *resolver-contract*
   trims land here in final shape (`ReferenceLookupResult` loses `VerificationIdentityKey` and
-  renames `ReferentialIdentityResourceKeyId`; the failure-record `ReferentialId` members go). The
+  `ReferentialIdentityResourceKeyId`; the failure-record `ReferentialId` members go). The
   *write-request* `ReferentialId` members stay — they feed the RI upsert probes until T4/T7 — and
   the RI triggers keep writing until T9. AC: SQL-shape pins (batch-size-independent text on PG,
-  leftmost OPENJSON input and one statement-level `FORCE ORDER` on MSSQL, budget-guard throw);
-  resolver unit suites green; the existing reference-resolution-dependent integration estate green
+  leftmost OPENJSON input and one statement-level `FORCE ORDER` on MSSQL, budget-guard throw,
+  abstract probes projecting concrete `ResourceKeyId` with no discriminator-to-key map); resolver
+  unit suites green; the existing reference-resolution-dependent integration estate green
   on both engines, now exercising the new resolver. Correctness on this branch is carried by
   the behavior pins, the integration estate, and E2E (see ["Test strategy"](#test-strategy)). If
   production-shaped workloads later disagree on performance, the capture-predicate contingency
@@ -747,7 +772,7 @@ upsert probes stay live until their cutover tickets:**
      seeds RI rows directly — the sweep is a structural proof: a test failing for a missing RI row
      has found a surviving reader (stop and investigate, never reseed).
   2. Drop the `TR_<R>_ReferentialIdentity` triggers, scope-guarded — the DocumentCache enqueue,
-     stamping, and abstract-identity trigger families are untouched — with the shared cross-engine
+     stamping, and abstract-identity trigger families are kept — with the shared cross-engine
      parity-contract tests updated once for both engines.
   3. Drop the table, `uuidv5`, pgcrypto, and the TVP, and collapse descriptor uniqueness onto the
      new `ResourceKeyId`-authoritative case-insensitive index.
@@ -811,7 +836,8 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
   descriptor-valued query filters containing non-ASCII URI values return a path-attributed 400
   before any relational lookup.
 - **Probe-compilation unit tests**, including an every-resource parity guard that will prove the
-  compiled probes reproduce the legacy trigger derivation for as long as both exist.
+  compiled probes reproduce the legacy trigger derivation for as long as both exist, and abstract
+  target pins proving the probe projects concrete `ResourceKeyId` without a discriminator-to-key map.
 - **Dialect SQL unit tests**: statement shape independent of batch size (PostgreSQL), OPENJSON +
   FORCE ORDER + leftmost-input pins and the parameter-budget guard (SQL Server), and the
   union-projection single-statement form.
@@ -840,6 +866,9 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
     (`ß`/`ss`-class) duplicate string-scalar items → **409 Conflict** on SQL Server via the generic
     fallback, never an unmapped 5xx, and success-with-both-items on PostgreSQL — engine-divergent
     expectations, so this pair stays at the integration level rather than E2E).
+  - Abstract-reference pins: valid concrete members resolve through the abstract target with their
+    concrete `ResourceKeyId`, and compatibility classification still returns `IncompatibleTargetType`
+    for a resolved concrete key outside the target metadata's allowed set.
   - Tombstone and change-query suites must stay green untouched.
 - **E2E** will gate the merge in CI on both engines. HTTP-visible contract points are pinned at the
   E2E level where possible; in particular, the case-variant duplicate descriptor-item scenario will
