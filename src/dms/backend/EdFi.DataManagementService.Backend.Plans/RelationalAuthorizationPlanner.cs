@@ -103,10 +103,11 @@ public abstract record RelationalAuthorizationPlanOutcome
 /// <item><see cref="RelationalAuthorizationPlanOutcome.Plan"/> — everything else.</item>
 /// </list>
 /// <para>
-/// <c>OwnershipBased</c> is known but not enabled for every operation, <c>ReadMany</c> included: DMS-1060 owns
-/// the complete strategy — the tenant-qualified CMS application-context token source and write-side
-/// <c>CreatedByOwnershipTokenId</c> stamping — and is still open. DMS-1062 therefore never promotes it to a
-/// supported AND filter, so it always reaches its fail-closed 501 rather than filtering a page against
+/// <c>OwnershipBased</c> is known but not enabled for every operation, <c>ReadMany</c> included:
+/// DMS-1410 owns enabling it for <c>ReadMany</c>, while DMS-1060 owns write-side
+/// <c>CreatedByOwnershipTokenId</c> stamping.
+/// Until that required work lands, DMS-1062 never promotes it to a supported AND filter, so it always reaches
+/// its fail-closed 501 rather than filtering a page against
 /// ownership context this story cannot provision. A custom view configured ahead of that terminal is still
 /// validated first, so an earlier custom-view configuration failure keeps its own response.
 /// </para>

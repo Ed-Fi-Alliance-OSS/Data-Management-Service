@@ -5,6 +5,7 @@ jira: DMS-1374
 related:
   - DMS-1058
   - DMS-1060
+  - DMS-1410
   - DMS-1372
   - DMS-1373
 ---
@@ -52,7 +53,8 @@ This spike adopts the following answers:
 | This decision record | Operational lifecycle answers: revocation SLA, freshness mechanism, administration surface, retirement, hand-off, diagnostics, and capacity |
 | [DMS-1058 decision record](ownership-token-maintenance.md) | The base maintenance, delivery, and cache contract; this record changes nothing in it except the erratum below |
 | [DMS-1374 spike mirror](../epics/14-authorization/25-ownership-token-operational-lifecycle-spike.md) | Spike scope, acceptance criteria, and boundaries |
-| [DMS-1060 story mirror](../epics/14-authorization/11-ownership-auth-strategy.md) | Ownership CRUD semantics; unaffected and not blocked by this record |
+| [DMS-1060 story mirror](../epics/14-authorization/11-ownership-auth-strategy.md) | POST stamping and single-record ownership authorization; unaffected and not blocked by this record |
+| [DMS-1410 story mirror](../epics/14-authorization/11b-ownership-auth-get-many.md) | GET-many ownership filtering; unaffected and not blocked by this record |
 
 ## Evidence Baseline
 
@@ -225,7 +227,7 @@ DMS-1058 contract.
    policy, which affects only tokens issued after the change.
 
 No product or security requirement on record rejects these bounds, so the bounded-staleness
-contract stands and DMS-1060 is not blocked.
+contract stands and blocks neither DMS-1060 nor DMS-1410.
 
 ## Cache Freshness and Invalidation
 

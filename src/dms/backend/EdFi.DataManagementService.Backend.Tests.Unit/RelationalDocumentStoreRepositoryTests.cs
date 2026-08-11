@@ -4128,9 +4128,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_fails_closed_when_a_custom_view_is_composed_with_OwnershipBased()
     {
-        // OwnershipBased belongs to DMS-1060. Even alongside a resolved custom view and a relationship
-        // strategy, GET-many must fail closed rather than emit an ownership filter: nothing stamps
-        // CreatedByOwnershipTokenId yet, so a filter would silently drop every row.
+        // DMS-1410 owns GET-many OwnershipBased support. Even alongside a resolved custom view and a
+        // relationship strategy, GET-many must fail closed rather than emit an ownership filter:
+        // DMS-1060 has not stamped CreatedByOwnershipTokenId yet, so a filter would silently drop every row.
         var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
         var queryRequest = CreateQueryRequest(
             mappingSet,
@@ -4290,8 +4290,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
     [Test]
     public async Task It_fails_closed_for_ownership_only_queries()
     {
-        // OwnershipBased belongs to DMS-1060, so GET-many keeps the known-but-not-enabled 501 rather
-        // than silently returning an empty page.
+        // OwnershipBased GET-many support belongs to DMS-1410, so GET-many keeps the known-but-not-enabled
+        // 501 rather than silently returning an empty page.
         var queryRequest = CreateQueryRequest(
             CreateQuerySupportedMappingSet(_schoolResourceInfo),
             [],

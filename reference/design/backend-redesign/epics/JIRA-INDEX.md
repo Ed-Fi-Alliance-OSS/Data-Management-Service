@@ -155,7 +155,8 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `DMS-1057` — Implement Namespace-based Authorization Strategy — `reference/design/backend-redesign/epics/14-authorization/08-namespace-auth-strategy.md`
   - `DMS-1058` — Design Ownership-token maintenance in CMS — `reference/design/backend-redesign/epics/14-authorization/09-design-ownership-token-maintenance.md`
   - `DMS-1059` — Emit the CreatedByOwnershipTokenId column and index — `reference/design/backend-redesign/epics/14-authorization/10-emit-ownership-column-and-index.md`
-  - `DMS-1060` — Implement Ownership-based Authorization Strategy — `reference/design/backend-redesign/epics/14-authorization/11-ownership-auth-strategy.md`
+  - `DMS-1060` — Implement Ownership-based Authorization for GET-by-id, POST, PUT, and DELETE — `reference/design/backend-redesign/epics/14-authorization/11-ownership-auth-strategy.md`
+  - `DMS-1410` — Implement Ownership-based Authorization for GET-many — `reference/design/backend-redesign/epics/14-authorization/11b-ownership-auth-get-many.md`
   - `DMS-1061` — Add support for View-based strategy in the ResolveSecurableElementColumnPath function — `reference/design/backend-redesign/epics/14-authorization/12-view-based-resolve-column-path.md`
   - `DMS-1062` — Implement View-based Authorization Strategy for GET-many — `reference/design/backend-redesign/epics/14-authorization/13-view-based-auth-get-many.md`
   - `DMS-1063` — Implement View-based Authorization Strategy for GET-by-id, POST, PUT, and DELETE — `reference/design/backend-redesign/epics/14-authorization/14-view-based-auth-crud.md`

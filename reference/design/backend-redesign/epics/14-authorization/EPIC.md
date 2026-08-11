@@ -33,7 +33,8 @@ All authorization stories (design, DDL/provisioning, runtime integration, and te
 - `DMS-1057` — `08-namespace-auth-strategy.md` — Implement Namespace-based Authorization Strategy
 - `DMS-1058` — `09-design-ownership-token-maintenance.md` — Design Ownership-token maintenance in CMS
 - `DMS-1059` — `10-emit-ownership-column-and-index.md` — Emit the CreatedByOwnershipTokenId column and index
-- `DMS-1060` — `11-ownership-auth-strategy.md` — Implement Ownership-based Authorization Strategy
+- `DMS-1060` — `11-ownership-auth-strategy.md` — Implement Ownership-based Authorization for GET-by-id, POST, PUT, and DELETE
+- `DMS-1410` — `11b-ownership-auth-get-many.md` — Implement Ownership-based Authorization for GET-many
 - `DMS-1061` — `12-view-based-resolve-column-path.md` — Add support for View-based strategy in the ResolveSecurableElementColumnPath function
 - `DMS-1062` — `13-view-based-auth-get-many.md` — Implement View-based Authorization Strategy for GET-many
 - `DMS-1063` — `14-view-based-auth-crud.md` — Implement View-based Authorization Strategy for GET-by-id, POST, PUT, and DELETE
