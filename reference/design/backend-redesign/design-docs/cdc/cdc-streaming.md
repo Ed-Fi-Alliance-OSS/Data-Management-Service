@@ -1094,18 +1094,25 @@ Connector templates invoke the required Ed-Fi `DocumentState` SMT defined by the
 That ADR owns source and operation classification, transform configuration, public
 key/value/tombstone shaping, progress routing, malformed-record behavior, and compatibility.
 Templates and live registration use those fixed values with the pinned connector runtime.
-They also set and validate the exact public value converter path required by the ADR:
+They also set and validate the exact key converter, public value converter, and duplicate
+delete-tombstone suppression required by the ADR:
 
 ```properties
+key.converter=org.apache.kafka.connect.storage.StringConverter
 value.converter=org.edfi.kafka.connect.converters.DocumentStateJsonConverter
 value.converter.schemas.enable=false
 value.converter.decimal.format=NUMERIC
+tombstones.on.delete=false
 ```
 
-Rendering rejects missing, duplicate, or conflicting converter properties before connector
-startup, and live validation rejects drift from those exact values. Verification asserts
-final published bytes, routing, and failure behavior rather than treating generated
-connector JSON alone as evidence.
+Rendering rejects missing, duplicate, or conflicting key converter, value converter, and
+delete-tombstone properties before connector startup, and live validation rejects drift
+from those exact values. `StringConverter` preserves public document keys and internal
+progress keys as unwrapped UTF-8 strings. `tombstones.on.delete=false` keeps Debezium's
+automatic delete tombstone from adding a second source tombstone after the single
+authoritative `dms.Document` delete that `DocumentState` converts to a public tombstone.
+Verification asserts final published bytes, routing, and failure behavior rather than
+treating generated connector JSON alone as evidence.
 
 ## Contract Change and Repair Operations
 

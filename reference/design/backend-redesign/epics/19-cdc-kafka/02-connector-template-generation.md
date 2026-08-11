@@ -38,6 +38,10 @@ the published `DocumentState` transform.
   reject any connector configuration that includes `DocumentProjectionWork`.
 - Integrate binding-derived identity, provider setup, Kafka policy, transform, heartbeat,
   metrics, and source-offset settings owned by the design.
+- Generate and validate the exact key converter and Debezium delete-tombstone settings
+  required by the public document and progress key contracts:
+  `key.converter=org.apache.kafka.connect.storage.StringConverter` and
+  `tombstones.on.delete=false`.
 - Generate and validate the exact value-converter settings required for public document
   state publication:
   `value.converter=org.edfi.kafka.connect.converters.DocumentStateJsonConverter`,
@@ -55,6 +59,9 @@ the published `DocumentState` transform.
 
 - Rendering tests cover every generated and rejected configuration category in the design
   references.
+- Rendering and live-validation tests require the exact `StringConverter` key-converter
+  path and `tombstones.on.delete=false` for PostgreSQL and SQL Server connector templates,
+  and reject missing, duplicate, or conflicting values.
 - Rendering and live-validation tests require the exact `DocumentStateJsonConverter`
   value-converter path and the `schemas.enable=false` and `decimal.format=NUMERIC`
   delegate settings, and reject missing, duplicate, or conflicting converter properties.
