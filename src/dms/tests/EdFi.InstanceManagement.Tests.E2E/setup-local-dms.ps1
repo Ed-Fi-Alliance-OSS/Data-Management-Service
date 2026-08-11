@@ -25,6 +25,11 @@
     restored exactly on completion, including the absent, empty, whitespace, and valued distinctions,
     and on failure paths.
 
+    After DMS starts, the container's schema settings are verified against the environment file with
+    the shared Assert-DmsContainerSchemaEnvironment, the same check the direct DMS E2E wrapper runs, so
+    a disagreement is reported here rather than as opaque routed-request 503s across all three route
+    contexts.
+
     Suite-owned fixture registration (tenants, vendor, data stores, route contexts, applications) and
     the single post-registration DMS restart are performed by build-dms.ps1 InstanceE2ETest, not here.
 .PARAMETER SkipDockerBuild
@@ -220,7 +225,9 @@ function Invoke-WithEnvironmentFileSchemaSettings {
     # and DMS loads only the image-baked schemas. Provisioning is not affected, because it reads
     # SCHEMA_PACKAGES from the environment file only - so each route-context database is stamped for
     # the file's full package surface while DMS computes a different runtime hash, and every routed
-    # data request fails with an EffectiveSchemaHash mismatch.
+    # data request fails with an EffectiveSchemaHash mismatch. That path is confirmed by construction
+    # from Compose's documented precedence; it is not a diagnosis of any particular reported incident,
+    # and this guard is cheap enough to hold regardless of which cause produced one.
     #
     # This is deliberately a caller-side guard. start-local-dms.ps1 must not clear these globally:
     # in bootstrap mode it sets them in-process on purpose, so process precedence makes the staged
@@ -308,6 +315,8 @@ try {
     Set-Location $dockerComposeDir
     Import-Module ./env-utility.psm1 -Force
     Import-Module ./database-safety.psm1 -Force
+    # The post-start container schema verification shared with the direct DMS E2E wrapper.
+    Import-Module ./dms-schema-environment.psm1 -Force
 
     # Single environment resolution. The build path (build-dms.ps1 InstanceE2ETest) already composed
     # the data-standard and engine overlays exactly once in Get-InstanceE2ETestEnvironmentContext and
@@ -441,6 +450,16 @@ try {
             Write-Error "Failed to start DMS service after route-context database provisioning. Exit code: $LASTEXITCODE"
             exit $LASTEXITCODE
         }
+
+        # Prove DMS actually came up on the environment file's schema package surface before the suite
+        # registers any route context. Inside the guard, so the file-only expectation cannot be
+        # contaminated by an ambient override even if a future edit reaches for a Compose-precedence
+        # reader. Assert-RouteContextSchemaProvisioned above checks that each database HAS the tables;
+        # this checks that the runtime is loading the packages those tables were generated from.
+        Assert-DmsContainerSchemaEnvironment `
+            -EnvironmentFilePath $resolvedEnvironmentFile `
+            -EnvironmentValues $envValues `
+            -ContainerName "ed-fi-api"
     }
 
     Write-Host "`n========================================" -ForegroundColor Green

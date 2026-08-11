@@ -475,16 +475,36 @@ Describe "Both E2E setup wrappers run every Docker phase inside the schema-setti
                     $node -is [System.Management.Automation.Language.CommandAst]
                 },
                 $true
-            ) | ForEach-Object {
-                # Bareword script invocations report their own name; a script dispatched through a
-                # variable (the Instance Management provision call) reports none, so fall back to the
-                # variable name so that form is covered too.
+            ) | Where-Object {
+                # Only the wrapper's own body dispatches phases. Commands inside a function definition
+                # are the wrapper's helpers - including the guard's own '& $Action', which is variable-
+                # dispatched and by construction sits outside the -Action block it invokes - so
+                # including them would report the guard as a phase escaping itself.
+                $ancestor = $_.Parent
+                $insideFunction = $false
+                while ($null -ne $ancestor) {
+                    if ($ancestor -is [System.Management.Automation.Language.FunctionDefinitionAst]) {
+                        $insideFunction = $true
+                        break
+                    }
+                    $ancestor = $ancestor.Parent
+                }
+
+                -not $insideFunction
+            } | ForEach-Object {
+                # Bareword script invocations report their own name. A phase dispatched through a
+                # VARIABLE reports none, and every such call in a wrapper body is a phase invocation,
+                # so all of them are collected rather than only the ones whose variable happens to be
+                # named '...Script'. Narrowing on the name silently dropped forms like '& $phase' from
+                # the result set, and the sibling "nothing outside the guard" assertion then passed
+                # vacuously for exactly the call it was meant to cover.
                 $name = $_.GetCommandName()
-                if ($null -eq $name -and $_.CommandElements[0] -is [System.Management.Automation.Language.VariableExpressionAst]) {
+                $isVariableDispatched = $_.CommandElements[0] -is [System.Management.Automation.Language.VariableExpressionAst]
+                if ($null -eq $name -and $isVariableDispatched) {
                     $name = '$' + $_.CommandElements[0].VariablePath.UserPath
                 }
 
-                if ($name -and ($name -like "*.ps1" -or $name -like '$*Script')) {
+                if ($name -and ($isVariableDispatched -or $name -like "*.ps1")) {
                     [pscustomobject]@{
                         Name        = $name
                         Line        = $_.Extent.StartLineNumber
@@ -522,6 +542,37 @@ Describe "Both E2E setup wrappers run every Docker phase inside the schema-setti
         @($invocations | Where-Object { -not $_.InsideGuard } | ForEach-Object { "$($_.Name) (line $($_.Line))" }) |
             Should -BeNullOrEmpty -Because "a Compose-invoking phase outside the guard would resolve the schema variables from the ambient process again"
     }
+
+    It "detects a variable-dispatched phase whose variable is not named '...Script'" {
+        # The detector's own regression guard. It previously matched only '*.ps1' barewords and
+        # variables named '$*Script', so a future phase dispatched as '& $provisionPath' or '& $phase'
+        # was dropped from the result set entirely - and the sibling "nothing outside the guard"
+        # assertion then passed vacuously for precisely the call it exists to cover. The fixture puts
+        # such a call OUTSIDE the guard, so a detector that misses it reports no escape at all.
+        $fixturePath = Join-Path $TestDrive "variable-dispatched-phase.ps1"
+        Set-Content -LiteralPath $fixturePath -Encoding utf8 -Value @'
+function Invoke-WithEnvironmentFileSchemaSettings {
+    param([scriptblock] $Action)
+    & $Action
+}
+
+$guardedPhase = "./start-local-dms.ps1"
+$escapedPhase = "./provision-e2e-database.ps1"
+
+Invoke-WithEnvironmentFileSchemaSettings -Action {
+    & $guardedPhase -InfraOnly
+}
+
+& $escapedPhase -DatabaseName "edfi_e2e"
+'@
+
+        $invocations = @(Get-GuardedPhaseInvocation -ScriptPath $fixturePath)
+
+        # '& $Action' inside the guard function is excluded: it is the guard's own dispatch, not a phase.
+        @($invocations | ForEach-Object { $_.Name }) | Should -Be @('$guardedPhase', '$escapedPhase')
+        @($invocations | Where-Object { -not $_.InsideGuard } | ForEach-Object { $_.Name }) |
+            Should -Be @('$escapedPhase')
+    }
 }
 
 Describe "Get-DmsSchemaEnvironmentVerdict fails setup when the DMS container disagrees with the provisioned package surface (DMS-1300)" {
@@ -556,7 +607,8 @@ Describe "Get-DmsSchemaEnvironmentVerdict fails setup when the DMS container dis
             return $functionAst.Extent.Text
         }
 
-        $script:directSetupScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1"))
+        # The verifier lives in the module both E2E setup wrappers import, not in either wrapper.
+        $script:schemaEnvironmentModule = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../dms-schema-environment.psm1"))
 
         # The verdict delegates classification, parsing, and identity normalization, so all four come
         # across together.
@@ -566,7 +618,7 @@ Describe "Get-DmsSchemaEnvironmentVerdict fails setup when the DMS container dis
                 "Get-DmsSchemaPackageIdentity",
                 "Get-DmsSchemaEnvironmentVerdict"
             )) {
-            . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:directSetupScript -FunctionName $functionName)))
+            . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:schemaEnvironmentModule -FunctionName $functionName)))
         }
 
         # The path both sides of a passing comparison use, so a test that means "container agrees with
@@ -940,7 +992,7 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
             return $functionAst.Extent.Text
         }
 
-        $script:directSetupScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1"))
+        $script:schemaEnvironmentModule = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../dms-schema-environment.psm1"))
 
         foreach ($functionName in @(
                 "Get-DmsSchemaEnvironmentToken",
@@ -949,7 +1001,7 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
                 "Get-DmsSchemaEnvironmentVerdict",
                 "Assert-DmsContainerSchemaEnvironment"
             )) {
-            . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:directSetupScript -FunctionName $functionName)))
+            . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:schemaEnvironmentModule -FunctionName $functionName)))
         }
 
         # The real Compose value semantics, not a stub: the quoting and inline-comment cases below are
@@ -1108,6 +1160,44 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
                 -ContainerName "ed-fi-api" } | Should -Not -Throw
     }
 
+    It 'resolves a ${VAR} reference in API_SCHEMA_PATH the way Docker Compose does' {
+        # Compose interpolates ${VAR}/$VAR in an --env-file entry before the container sees it, so the
+        # container legitimately carries the RESOLVED path. Comparing the literal reference text kept
+        # the expected side as '${SCHEMA_ROOT}/ApiSchema', which can never equal what the container
+        # received - a hard setup abort on a stack that came up correctly.
+        $script:stubEnvironmentFileValues["API_SCHEMA_PATH"] = '${SCHEMA_ROOT}/ApiSchema'
+        $script:stubContainerEnvironment["AppSettings__ApiSchemaPath"] = "/app/ApiSchema"
+
+        { Assert-DmsContainerSchemaEnvironment `
+                -EnvironmentFilePath "/repo/eng/docker-compose/.env.e2e" `
+                -EnvironmentValues @{ SCHEMA_ROOT = "/app" } `
+                -ContainerName "ed-fi-api" } | Should -Not -Throw
+    }
+
+    It 'resolves a ${VAR} reference in USE_API_SCHEMA_PATH the way Docker Compose does' {
+        # Same false failure on the other file-read expectation: the unresolved reference is not
+        # "true", so the gate reported an internally consistent environment file as declaring packages
+        # without enabling the ApiSchema path.
+        $script:stubEnvironmentFileValues["USE_API_SCHEMA_PATH"] = '${ENABLE_SCHEMA_PATH}'
+
+        { Assert-DmsContainerSchemaEnvironment `
+                -EnvironmentFilePath "/repo/eng/docker-compose/.env.e2e" `
+                -EnvironmentValues @{ ENABLE_SCHEMA_PATH = "true" } `
+                -ContainerName "ed-fi-api" } | Should -Not -Throw
+    }
+
+    It 'still fails a genuinely different path when the declaration is a ${VAR} reference' {
+        # Reference resolution must not turn the path comparison into a no-op: a file pointing
+        # somewhere the container is not is still the mismatch this gate exists to report.
+        $script:stubEnvironmentFileValues["API_SCHEMA_PATH"] = '${SCHEMA_ROOT}/ApiSchema'
+        $script:stubContainerEnvironment["AppSettings__ApiSchemaPath"] = "/app/ApiSchema"
+
+        { Assert-DmsContainerSchemaEnvironment `
+                -EnvironmentFilePath "/repo/eng/docker-compose/.env.e2e" `
+                -EnvironmentValues @{ SCHEMA_ROOT = "/somewhere/else" } `
+                -ContainerName "ed-fi-api" } | Should -Throw -ExpectedMessage "DMS E2E setup mismatch: *"
+    }
+
     It "throws when the environment file spells USE_API_SCHEMA_PATH as <Label>" -ForEach @(
         @{ Label = "uppercase TRUE"; RawValue = "TRUE" }
         @{ Label = "title-case True"; RawValue = "True" }
@@ -1168,8 +1258,8 @@ Describe "Get-DmsContainerEnvironment reads the container environment and fails 
             return $functionAst.Extent.Text
         }
 
-        $script:directSetupScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1"))
-        . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:directSetupScript -FunctionName "Get-DmsContainerEnvironment")))
+        $script:schemaEnvironmentModule = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../dms-schema-environment.psm1"))
+        . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:schemaEnvironmentModule -FunctionName "Get-DmsContainerEnvironment")))
 
         # A PowerShell function shadows the native command of the same name, so the reader's
         # 'docker inspect' resolves here. Production decides success from $LASTEXITCODE, which only a
@@ -1253,10 +1343,18 @@ Describe "Get-DmsContainerEnvironment reads the container environment and fails 
     }
 }
 
-Describe "The direct DMS E2E setup wrapper verifies the started container against the environment file only (DMS-1300)" {
+Describe "Both E2E setup wrappers verify the started container against the environment file only (DMS-1300)" {
     BeforeAll {
-        $script:directSetupScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1"))
-        $script:directSetupSource = Get-Content -LiteralPath $script:directSetupScript -Raw
+        # The verifier is shared, so the wrappers own only the call site and the import; the module
+        # owns how the expectations are read. Assertions are aimed at whichever file now holds the
+        # behavior, never at the wrapper for code that has moved.
+        $script:schemaEnvironmentModule = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../dms-schema-environment.psm1"))
+        $script:schemaEnvironmentModuleSource = Get-Content -LiteralPath $script:schemaEnvironmentModule -Raw
+
+        $script:setupWrapperScripts = [ordered]@{
+            "DataManagementService E2E" = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1"))
+            "InstanceManagement E2E"    = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1"))
+        }
 
         function Test-CommandInsideSchemaGuard {
             param(
@@ -1338,11 +1436,29 @@ Describe "The direct DMS E2E setup wrapper verifies the started container agains
         }
     }
 
-    It "runs the container verification inside the schema-settings guard" {
+    It "runs the container verification inside the schema-settings guard in the <Name> wrapper" -ForEach @(
+        @{ Name = "DataManagementService E2E" }
+        @{ Name = "InstanceManagement E2E" }
+    ) {
         # Inside the guard, so the file-only expectation cannot be contaminated by an ambient override
-        # even if a future edit reaches for a Compose-precedence reader.
-        Test-CommandInsideSchemaGuard -ScriptPath $script:directSetupScript -CommandName "Assert-DmsContainerSchemaEnvironment" |
+        # even if a future edit reaches for a Compose-precedence reader. Both wrappers provision from
+        # the environment file and start DMS through ambient-first Compose, so both need the check.
+        Test-CommandInsideSchemaGuard -ScriptPath $script:setupWrapperScripts[$Name] -CommandName "Assert-DmsContainerSchemaEnvironment" |
             Should -BeTrue
+    }
+
+    It "imports the shared verifier in the <Name> wrapper rather than carrying its own copy" -ForEach @(
+        @{ Name = "DataManagementService E2E" }
+        @{ Name = "InstanceManagement E2E" }
+    ) {
+        # A second copy is what this module exists to prevent: two verifiers drift, and only one of
+        # them gets the next fix.
+        $source = Get-Content -LiteralPath $script:setupWrapperScripts[$Name] -Raw
+
+        $source | Should -Match "Import-Module \./dms-schema-environment\.psm1 -Force"
+        $source | Should -Not -Match "function Assert-DmsContainerSchemaEnvironment"
+        $source | Should -Not -Match "function Get-DmsSchemaEnvironmentVerdict"
+        $source | Should -Not -Match "function Get-DmsContainerEnvironment"
     }
 
     It "reads both expectations from the environment file, never with Compose precedence" {
@@ -1352,21 +1468,186 @@ Describe "The direct DMS E2E setup wrapper verifies the started container agains
         #
         # Get-ComposeResolvedEnvValue resolves ambient-first. Using it for either expectation would let
         # the very override this gate exists to catch decide what "correct" means, so the gate would
-        # agree with a wrongly-started container and pass.
-        $invoked = @(Get-FunctionCommandName -ScriptPath $script:directSetupScript -FunctionName "Assert-DmsContainerSchemaEnvironment")
+        # agree with a wrongly-started container and pass. Resolve-ComposeEnvRawValue is not that
+        # reader: it takes the file's raw value directly and applies only the value semantics Compose
+        # gives one --env-file entry, so the expected side stays file-authored while still matching
+        # what Compose actually rendered into the container.
+        $invoked = @(Get-FunctionCommandName -ScriptPath $script:schemaEnvironmentModule -FunctionName "Assert-DmsContainerSchemaEnvironment")
 
         $invoked | Should -Contain "Get-SchemaPackagesFromEnvironmentFile"
         $invoked | Should -Contain "Get-EnvValue"
+        $invoked | Should -Contain "Resolve-ComposeEnvRawValue"
         $invoked | Should -Not -Contain "Get-ComposeResolvedEnvValue"
-        $script:directSetupSource | Should -Match 'Get-EnvValue -EnvValues \$EnvironmentValues -Name "USE_API_SCHEMA_PATH"'
+        $script:schemaEnvironmentModuleSource | Should -Match 'Get-EnvValue -EnvValues \$EnvironmentValues -Name "USE_API_SCHEMA_PATH"'
     }
 
     It "imports the same file-only package reader the provision phase uses" {
-        $script:directSetupSource | Should -Match "Import-Module \.\./schema-package-utility\.psm1 -Force"
+        # The module imports its own dependencies rather than relying on whatever the invoking wrapper
+        # happened to import, so command resolution does not depend on the call site.
+        $script:schemaEnvironmentModuleSource | Should -Match 'Import-Module \(Join-Path \$PSScriptRoot "\.\./schema-package-utility\.psm1"\) -Force'
+        $script:schemaEnvironmentModuleSource | Should -Match 'Import-Module \(Join-Path \$PSScriptRoot "database-safety\.psm1"\) -Force'
+        $script:schemaEnvironmentModuleSource | Should -Match 'Import-Module \(Join-Path \$PSScriptRoot "env-utility\.psm1"\) -Force'
     }
 
     It "throws rather than warning when the verdict fails" {
-        $script:directSetupSource | Should -Match 'throw "DMS E2E setup mismatch: '
-        $script:directSetupSource | Should -Not -Match 'Write-Warning[^\r\n]*setup mismatch'
+        $script:schemaEnvironmentModuleSource | Should -Match 'throw "DMS E2E setup mismatch: '
+        $script:schemaEnvironmentModuleSource | Should -Not -Match 'Write-Warning[^\r\n]*setup mismatch'
+    }
+}
+
+Describe "The container schema gate accepts the repository's own tracked environment files (DMS-1300)" {
+    # The rest of this suite stubs every reader, so nothing pins that the env files the E2E flows
+    # actually ship with satisfy the gate. The coupling that matters in production is "what the
+    # file-only readers extract from the file" versus "what Compose puts in the container", and it is
+    # fragile in ways pure-logic tests cannot see: Get-QuotedEnvJson matches only a single-quoted
+    # SCHEMA_PACKAGES='[...]' via a non-greedy regex, and a legal Compose value shape (quoting, an
+    # inline comment, a ${VAR} reference) can silently break the comparison. No Docker: the container
+    # side is a fixture built from the same file, exactly as Compose would pass it through.
+    BeforeAll {
+        function Get-ScriptFunctionText {
+            param(
+                [Parameter(Mandatory)] [string] $ScriptPath,
+                [Parameter(Mandatory)] [string] $FunctionName
+            )
+
+            $parseErrors = $null
+            $tokens = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
+            $functionAst = $ast.FindAll(
+                {
+                    param($node)
+                    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $FunctionName
+                },
+                $true
+            ) | Select-Object -First 1
+
+            if ($null -eq $functionAst) {
+                throw "Function '$FunctionName' was not found in '$ScriptPath'."
+            }
+
+            return $functionAst.Extent.Text
+        }
+
+        $script:schemaEnvironmentModule = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../dms-schema-environment.psm1"))
+
+        foreach ($functionName in @(
+                "Get-DmsSchemaEnvironmentToken",
+                "Get-DmsContainerSchemaPackage",
+                "Get-DmsSchemaPackageIdentity",
+                "Get-DmsSchemaEnvironmentVerdict",
+                "Assert-DmsContainerSchemaEnvironment"
+            )) {
+            . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:schemaEnvironmentModule -FunctionName $functionName)))
+        }
+
+        # The REAL readers, exactly the ones production reaches through the module's own imports:
+        # ReadValuesFromEnvFile / Get-EnvValue / Resolve-DataStandardEnvironmentFile (env-utility),
+        # Resolve-ComposeEnvRawValue (database-safety), Get-SchemaPackagesFromEnvironmentFile
+        # (schema-package-utility). Nothing about the file side is stubbed here.
+        Import-Module (Join-Path $PSScriptRoot "../env-utility.psm1") -Force
+        Import-Module (Join-Path $PSScriptRoot "../database-safety.psm1") -Force
+        Import-Module (Join-Path $PSScriptRoot "../../schema-package-utility.psm1") -Force
+
+        # The one reader that would need Docker. Everything else runs for real.
+        function Get-DmsContainerEnvironment {
+            param([Parameter(Mandatory)] [string] $ContainerName)
+
+            $null = $ContainerName
+            return $script:stubContainerEnvironment
+        }
+
+        function Get-TrackedSchemaPackagesRawValue {
+            # The file's VERBATIM single-quoted SCHEMA_PACKAGES text, which is what Compose passes into
+            # the container (single-quoted, so Compose strips the quotes and interpolates nothing).
+            # Deliberately not a re-serialization of what Get-SchemaPackagesFromEnvironmentFile parsed:
+            # the container side has to be the file's own bytes, so the gate's parse of the container
+            # value and the production reader's parse of the file are two independent paths that this
+            # test requires to agree.
+            param([Parameter(Mandatory)] [string] $EnvironmentFilePath)
+
+            $content = Get-Content -LiteralPath $EnvironmentFilePath -Raw
+            $match = [regex]::Match($content, "(?ms)^[ \t]*SCHEMA_PACKAGES='(?<value>\[.*?\])'")
+
+            if (-not $match.Success) {
+                throw "'$EnvironmentFilePath' carries no single-quoted SCHEMA_PACKAGES array."
+            }
+
+            return $match.Groups["value"].Value
+        }
+
+        # .env.ds52 / .env.ds61 are OVERLAYS: they carry SCHEMA_PACKAGES but not USE_API_SCHEMA_PATH or
+        # API_SCHEMA_PATH, so they are only ever consumed composed onto a base file. Composed here with
+        # the same production helper the setup wrappers use, into an isolated root so nothing is written
+        # into the repository.
+        $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        $script:overlayRoot = Join-Path $TestDrive "overlay-root"
+        New-Item -ItemType Directory -Path $script:overlayRoot -Force | Out-Null
+        foreach ($overlayName in @(".env.ds52", ".env.ds61")) {
+            Copy-Item -LiteralPath (Join-Path $script:dockerComposeRoot $overlayName) -Destination (Join-Path $script:overlayRoot $overlayName)
+        }
+
+        function Resolve-TrackedEnvironmentFile {
+            param(
+                [Parameter(Mandatory)] [string] $BaseName,
+                [string] $DataStandardVersion
+            )
+
+            $basePath = Join-Path $script:dockerComposeRoot $BaseName
+
+            if ([string]::IsNullOrWhiteSpace($DataStandardVersion)) {
+                return $basePath
+            }
+
+            return Resolve-DataStandardEnvironmentFile `
+                -DataStandardVersion $DataStandardVersion `
+                -BaseEnvironmentFile $basePath `
+                -DockerComposeRoot $script:overlayRoot
+        }
+    }
+
+    It "the tracked <Label> satisfies the container schema gate" -ForEach @(
+        @{ Label = ".env.e2e"; BaseName = ".env.e2e"; DataStandardVersion = "" }
+        @{ Label = ".env.routeContext.e2e"; BaseName = ".env.routeContext.e2e"; DataStandardVersion = "" }
+        @{ Label = ".env.e2e composed with .env.ds52"; BaseName = ".env.e2e"; DataStandardVersion = "5.2" }
+        @{ Label = ".env.e2e composed with .env.ds61"; BaseName = ".env.e2e"; DataStandardVersion = "6.1" }
+    ) {
+        $environmentFilePath = Resolve-TrackedEnvironmentFile -BaseName $BaseName -DataStandardVersion $DataStandardVersion
+        $environmentValues = ReadValuesFromEnvFile $environmentFilePath
+
+        # The container fixture is what Compose renders from this same file: each scalar resolved with
+        # Compose's single-entry value semantics, and SCHEMA_PACKAGES passed through verbatim.
+        $script:stubContainerEnvironment = @{
+            "AppSettings__UseApiSchemaPath" = Resolve-ComposeEnvRawValue `
+                -EnvironmentValues $environmentValues `
+                -RawValue (Get-EnvValue -EnvValues $environmentValues -Name "USE_API_SCHEMA_PATH" -DefaultValue "false")
+            "AppSettings__ApiSchemaPath"    = Resolve-ComposeEnvRawValue `
+                -EnvironmentValues $environmentValues `
+                -RawValue (Get-EnvValue -EnvValues $environmentValues -Name "API_SCHEMA_PATH" -DefaultValue "")
+            "SCHEMA_PACKAGES"              = Get-TrackedSchemaPackagesRawValue -EnvironmentFilePath $environmentFilePath
+        }
+
+        { Assert-DmsContainerSchemaEnvironment `
+                -EnvironmentFilePath $environmentFilePath `
+                -EnvironmentValues $environmentValues `
+                -ContainerName "ed-fi-api" } | Should -Not -Throw
+    }
+
+    It "the tracked <Label> enables the ApiSchema path and declares at least one package" -ForEach @(
+        @{ Label = ".env.e2e"; BaseName = ".env.e2e"; DataStandardVersion = "" }
+        @{ Label = ".env.routeContext.e2e"; BaseName = ".env.routeContext.e2e"; DataStandardVersion = "" }
+        @{ Label = ".env.e2e composed with .env.ds52"; BaseName = ".env.e2e"; DataStandardVersion = "5.2" }
+        @{ Label = ".env.e2e composed with .env.ds61"; BaseName = ".env.e2e"; DataStandardVersion = "6.1" }
+    ) {
+        # Without this, the gate assertion above could pass on a file that declares no packages at all
+        # or leaves the ApiSchema path off, because the fixture would agree with it either way.
+        $environmentFilePath = Resolve-TrackedEnvironmentFile -BaseName $BaseName -DataStandardVersion $DataStandardVersion
+        $environmentValues = ReadValuesFromEnvFile $environmentFilePath
+
+        Resolve-ComposeEnvRawValue `
+            -EnvironmentValues $environmentValues `
+            -RawValue (Get-EnvValue -EnvValues $environmentValues -Name "USE_API_SCHEMA_PATH" -DefaultValue "false") |
+            Should -BeExactly "true"
+        @(Get-SchemaPackagesFromEnvironmentFile -EnvironmentFilePath $environmentFilePath).Count |
+            Should -BeGreaterThan 0
     }
 }
