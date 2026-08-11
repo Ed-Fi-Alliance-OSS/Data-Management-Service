@@ -7645,9 +7645,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .MustNotHaveHappened();
     }
 
-    [Test]
-    public async Task It_short_circuits_invalid_id_queries_to_an_empty_page_without_hydration()
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task It_short_circuits_invalid_id_queries_to_an_empty_page_without_hydration(bool totalCount)
     {
+        var readAccelerationCoordinator = new RecordingReadAccelerationCoordinator();
         var queryRequest = CreateQueryRequest(
             CreateQuerySupportedMappingSet(
                 _schoolResourceInfo,
@@ -7659,12 +7661,97 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             ),
             [CreateQueryElement("id", "$.id", "not-a-guid", "string")],
-            totalCount: true
+            totalCount: totalCount
         );
+
+        UseReadAccelerationCoordinator(readAccelerationCoordinator);
 
         var result = await _sut.QueryDocuments(queryRequest);
 
-        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0));
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], totalCount ? 0 : null));
+        readAccelerationCoordinator.QueryAttempts.Should().Be(1);
+        readAccelerationCoordinator.SelectedQueryRequest.Should().BeNull();
+        readAccelerationCoordinator.SelectedQueryCandidatePage.Should().BeNull();
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .MustNotHaveHappened();
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task It_returns_zero_size_query_pages_before_exposing_cache_candidate_pages(bool totalCount)
+    {
+        var readAccelerationCoordinator = new RecordingReadAccelerationCoordinator();
+        var mappingSet = CreateQuerySupportedMappingSet(_schoolResourceInfo);
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount,
+            paginationParameters: new PaginationParameters(
+                Limit: 0,
+                Offset: 0,
+                TotalCount: totalCount,
+                MaximumPageSize: 500
+            )
+        );
+
+        UseReadAccelerationCoordinator(readAccelerationCoordinator);
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<
+                        Func<
+                            IRelationalCommandReader,
+                            CancellationToken,
+                            Task<DocumentCacheReadAccelerationCandidatePage>
+                        >
+                    >._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(
+                (
+                    RelationalCommand _,
+                    Func<
+                        IRelationalCommandReader,
+                        CancellationToken,
+                        Task<DocumentCacheReadAccelerationCandidatePage>
+                    > readAsync,
+                    CancellationToken cancellationToken
+                ) =>
+                    readAsync(
+                        new InMemoryRelationalCommandReader(
+                            totalCount
+                                ?
+                                [
+                                    InMemoryRelationalResultSet.Create(
+                                        RelationalAccessTestData.CreateRow(("TotalCount", 7L))
+                                    ),
+                                    InMemoryRelationalResultSet.Create(),
+                                ]
+                                : [InMemoryRelationalResultSet.Create()]
+                        ),
+                        cancellationToken
+                    )
+            );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], totalCount ? 7 : null));
+        readAccelerationCoordinator.QueryAttempts.Should().Be(1);
+        readAccelerationCoordinator.SelectedQueryRequest.Should().BeNull();
+        readAccelerationCoordinator.SelectedQueryCandidatePage.Should().BeNull();
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,

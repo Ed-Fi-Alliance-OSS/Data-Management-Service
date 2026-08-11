@@ -1122,24 +1122,115 @@ public class Given_DescriptorReadHandler
         commandExecutor.Commands.Should().BeEmpty();
     }
 
-    [Test]
-    public async Task It_short_circuits_invalid_descriptor_query_ids_to_an_empty_page_without_executing_sql()
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task It_short_circuits_invalid_descriptor_query_ids_to_an_empty_page_without_executing_sql(
+        bool totalCount
+    )
     {
         var commandExecutor = new InMemoryRelationalCommandExecutor([]);
-        var sut = CreateHandler(commandExecutor);
+        var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        DocumentCacheReadAccelerationQuerySelectionResult selectionResult = null!;
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(async call =>
+            {
+                var request = call.GetArgument<DocumentCacheReadAccelerationQueryRequest>(0)!;
+                var cancellationToken = call.GetArgument<CancellationToken>(1);
+                selectionResult = await request
+                    .SelectAuthorizedCandidatePage(cancellationToken)
+                    .ConfigureAwait(false);
+                return selectionResult
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.Complete>()
+                    .Subject.Result;
+            });
+        var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
 
         var result = await sut.HandleQueryAsync(
             CreateQueryRequest(
                 SqlDialect.Pgsql,
                 queryElements: [CreateQueryElement("id", "$.id", "not-a-guid", "string")],
-                totalCount: true
+                totalCount: totalCount
             )
         );
 
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
         success.EdfiDocs.Should().BeEmpty();
-        success.TotalCount.Should().Be(0);
+        success.TotalCount.Should().Be(totalCount ? 0 : null);
+        selectionResult.Should().BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.Complete>();
         commandExecutor.Commands.Should().BeEmpty();
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task It_returns_zero_size_descriptor_query_pages_before_exposing_cache_candidate_pages(
+        bool totalCount
+    )
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution(
+                totalCount
+                    ?
+                    [
+                        InMemoryRelationalResultSet.Create(
+                            RelationalAccessTestData.CreateRow(("TotalCount", 7L))
+                        ),
+                        InMemoryRelationalResultSet.Create(),
+                    ]
+                    : [InMemoryRelationalResultSet.Create()]
+            ),
+        ]);
+        var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        DocumentCacheReadAccelerationQuerySelectionResult selectionResult = null!;
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(async call =>
+            {
+                var request = call.GetArgument<DocumentCacheReadAccelerationQueryRequest>(0)!;
+                var cancellationToken = call.GetArgument<CancellationToken>(1);
+                selectionResult = await request
+                    .SelectAuthorizedCandidatePage(cancellationToken)
+                    .ConfigureAwait(false);
+                return selectionResult
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.Complete>()
+                    .Subject.Result;
+            });
+        var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
+
+        var result = await sut.HandleQueryAsync(
+            CreateQueryRequest(SqlDialect.Pgsql, totalCount: totalCount, limit: 0)
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.EdfiDocs.Should().BeEmpty();
+        success.TotalCount.Should().Be(totalCount ? 7 : null);
+        selectionResult.Should().BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.Complete>();
+        RelationalCommand command = commandExecutor.Commands.Should().ContainSingle().Subject;
+        AssertDescriptorCandidateCommandOmitsBodyColumns(command);
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
     }
 
     [Test]

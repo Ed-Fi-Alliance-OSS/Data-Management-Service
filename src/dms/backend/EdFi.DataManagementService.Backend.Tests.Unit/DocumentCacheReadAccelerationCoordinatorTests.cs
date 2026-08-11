@@ -781,66 +781,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         lookupAdapter.QueryAttempts.Should().Be(1);
     }
 
-    [Test]
-    public async Task It_returns_an_empty_authorized_query_page_without_lookup_or_relational_fallback()
-    {
-        var lookupAdapter = new RecordingLookupAdapter();
-        var fallbackAttempts = 0;
-        var sut = CreateCoordinator(lookupAdapter, CreateRegistry(ExecutionContext()));
-
-        QueryResult result = await sut.QueryAsync(
-            CreateQueryRequest(
-                _ =>
-                {
-                    fallbackAttempts++;
-                    return Task.FromResult<QueryResult>(
-                        new QueryResult.QueryFailureKnownError("fallback should not run")
-                    );
-                },
-                new DocumentCacheReadAccelerationCandidatePage(
-                    [],
-                    TotalCount: 0,
-                    HighestSelectedDocumentId: null,
-                    IncludesTotalCount: true
-                )
-            )
-        );
-
-        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
-        success.EdfiDocs.Should().BeEmpty();
-        success.TotalCount.Should().Be(0);
-        success.HighestSelectedDocumentId.Should().BeNull();
-        lookupAdapter.QueryAttempts.Should().Be(0);
-        fallbackAttempts.Should().Be(0);
-    }
-
-    [Test]
-    public async Task It_omits_total_count_for_an_empty_authorized_query_page_when_not_requested()
-    {
-        var lookupAdapter = new RecordingLookupAdapter();
-        var sut = CreateCoordinator(lookupAdapter, CreateRegistry(ExecutionContext()));
-
-        QueryResult result = await sut.QueryAsync(
-            CreateQueryRequest(
-                _ =>
-                    Task.FromResult<QueryResult>(
-                        new QueryResult.QueryFailureKnownError("fallback should not run")
-                    ),
-                new DocumentCacheReadAccelerationCandidatePage(
-                    [],
-                    TotalCount: 7,
-                    HighestSelectedDocumentId: null,
-                    IncludesTotalCount: false
-                )
-            )
-        );
-
-        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
-        success.EdfiDocs.Should().BeEmpty();
-        success.TotalCount.Should().BeNull();
-        lookupAdapter.QueryAttempts.Should().Be(0);
-    }
-
     private static IEnumerable<TestCaseData> CompleteGetSelectionResults()
     {
         yield return new TestCaseData(new GetResult.GetFailureNotExists()).SetName("GET complete not-exists");
@@ -944,64 +884,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         );
 
         result.Should().BeSameAs(completeResult);
-        selectionAttempts.Should().Be(1);
-        fallbackAttempts.Should().Be(0);
-        lookupAdapter.QueryAttempts.Should().Be(0);
-        registry.CurrentSnapshotAccesses.Should().Be(1);
-        registry.CurrentRuntimeSnapshotAccesses.Should().Be(0);
-        materializer.Requests.Should().BeEmpty();
-        writer.Requests.Should().BeEmpty();
-        telemetry.Events.Should().BeEmpty();
-        telemetry.DurationEvents.Should().BeEmpty();
-    }
-
-    [Test]
-    public async Task It_returns_empty_query_selection_page_before_runtime_target_resolution()
-    {
-        var lookupAdapter = new RecordingLookupAdapter();
-        var materializer = new RecordingMaterializer();
-        var writer = new RecordingCacheWriter();
-        var telemetry = new RecordingReadTelemetry();
-        var selectionAttempts = 0;
-        var fallbackAttempts = 0;
-        StaticTargetRegistry registry = CreateConfiguredOnlyRegistry();
-        var sut = CreateCoordinator(lookupAdapter, registry, materializer, writer, telemetry);
-
-        QueryResult result = await sut.QueryAsync(
-            CreateQueryRequest(
-                _ =>
-                {
-                    fallbackAttempts++;
-                    return Task.FromResult<QueryResult>(new QueryResult.QueryFailureKnownError("fallback"));
-                },
-                selectAuthorizedCandidatePage: _ =>
-                {
-                    selectionAttempts++;
-                    return Task.FromResult<DocumentCacheReadAccelerationQuerySelectionResult>(
-                        new DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage(
-                            new DocumentCacheReadAccelerationCandidatePage(
-                                [],
-                                TotalCount: 0,
-                                HighestSelectedDocumentId: null,
-                                IncludesTotalCount: true
-                            ),
-                            _ =>
-                            {
-                                fallbackAttempts++;
-                                return Task.FromResult<QueryResult>(
-                                    new QueryResult.QueryFailureKnownError("selected fallback")
-                                );
-                            }
-                        )
-                    );
-                }
-            )
-        );
-
-        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
-        success.EdfiDocs.Should().BeEmpty();
-        success.TotalCount.Should().Be(0);
-        success.HighestSelectedDocumentId.Should().BeNull();
         selectionAttempts.Should().Be(1);
         fallbackAttempts.Should().Be(0);
         lookupAdapter.QueryAttempts.Should().Be(0);

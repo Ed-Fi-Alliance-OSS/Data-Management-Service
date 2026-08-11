@@ -554,21 +554,6 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                 $"Unsupported query candidate selection result '{selectionResult.GetType().Name}'."
             );
 
-        if (candidateSelection.AuthorizedCandidatePage.IsEmpty)
-        {
-            return new QueryResult.QuerySuccess(
-                [],
-                candidateSelection.AuthorizedCandidatePage.IncludesTotalCount
-                    ? RelationalReadGuardrails.ConvertTotalCountOrThrow(
-                        request.Resource,
-                        candidateSelection.AuthorizedCandidatePage.TotalCount,
-                        "cache query empty-page response"
-                    )
-                    : null,
-                candidateSelection.AuthorizedCandidatePage.HighestSelectedDocumentId
-            );
-        }
-
         if (
             !TryResolveTarget(
                 request.TenantKey,
