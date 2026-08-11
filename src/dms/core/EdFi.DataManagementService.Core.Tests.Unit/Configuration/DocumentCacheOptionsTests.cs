@@ -332,6 +332,65 @@ public class DocumentCacheOptionsTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Too_Large_DirectFillTimeout : DocumentCacheOptionsTests
+    {
+        private ValidateOptionsResult _validationResult = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            DocumentCacheOptions options = new()
+            {
+                ReadAcceleration = new DocumentCacheReadAccelerationOptions
+                {
+                    DirectFillTimeout = TimeSpan.FromMilliseconds(4_294_967_295D),
+                },
+            };
+
+            _validationResult = Validate(options);
+        }
+
+        [Test]
+        public void It_should_fail_validation()
+        {
+            _validationResult.Failed.Should().BeTrue();
+            _validationResult
+                .Failures.Should()
+                .ContainSingle(failure =>
+                    failure.Contains("ReadAcceleration:DirectFillTimeout") && failure.Contains("4294967294")
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Maximum_Supported_DirectFillTimeout : DocumentCacheOptionsTests
+    {
+        private ValidateOptionsResult _validationResult = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            DocumentCacheOptions options = new()
+            {
+                ReadAcceleration = new DocumentCacheReadAccelerationOptions
+                {
+                    DirectFillTimeout = TimeSpan.FromMilliseconds(4_294_967_294D),
+                },
+            };
+
+            _validationResult = Validate(options);
+        }
+
+        [Test]
+        public void It_should_validate_successfully()
+        {
+            _validationResult.Succeeded.Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Maximum_Supported_BaselineHighWaterMark : DocumentCacheOptionsTests
     {
         private ValidateOptionsResult _validationResult = null!;

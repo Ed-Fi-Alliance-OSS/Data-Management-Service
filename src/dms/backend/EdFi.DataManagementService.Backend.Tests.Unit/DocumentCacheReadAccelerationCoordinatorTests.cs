@@ -2510,6 +2510,54 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     }
 
     [Test]
+    public async Task It_returns_relational_result_when_direct_fill_timeout_exceeds_cancel_after_limit()
+    {
+        var fallbackResult = new GetResult.GetSuccess(
+            DocumentUuid,
+            new JsonObject { ["id"] = DocumentUuid.Value.ToString() },
+            new DateTime(2026, 8, 1, 12, 0, 0, DateTimeKind.Utc),
+            LastModifiedTraceId: null
+        );
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter();
+        var telemetry = new RecordingReadTelemetry();
+        var logger = new CapturingLogger<DocumentCacheReadAccelerationCoordinator>();
+        var sut = CreateCoordinator(
+            new RecordingLookupAdapter
+            {
+                GetByIdResult = DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
+                    DocumentCacheReadLookupOutcome.MissingCacheRow,
+                    [Candidate()]
+                ),
+            },
+            CreateRegistry(ExecutionContext(directFillTimeout: TimeSpan.FromMilliseconds(4_294_967_295D))),
+            materializer,
+            writer,
+            telemetry,
+            logger: logger
+        );
+
+        GetResult result = await sut.GetByIdAsync(
+            CreateGetByIdRequest(_ => Task.FromResult<GetResult>(fallbackResult))
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        materializer.Requests.Should().BeEmpty();
+        writer.Requests.Should().BeEmpty();
+        telemetry.Events.Should().Contain(("directFill", DocumentCacheReadTelemetryLabel.Failed));
+        telemetry
+            .DurationEvents.Should()
+            .Contain(
+                (DocumentCacheReadTelemetry.DirectFillDurationName, DocumentCacheReadTelemetryLabel.Failed)
+            );
+        AssertDirectFillWarningIsSanitized(
+            logger.Entries.Should().ContainSingle().Subject,
+            typeof(ArgumentOutOfRangeException),
+            DocumentCacheReadTelemetryLabel.UnexpectedException
+        );
+    }
+
+    [Test]
     public async Task It_skips_direct_fill_when_request_is_canceled_before_fill_starts()
     {
         var fallbackResult = new GetResult.GetSuccess(

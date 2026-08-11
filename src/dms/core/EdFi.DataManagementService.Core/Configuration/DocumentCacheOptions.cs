@@ -171,6 +171,8 @@ public sealed class DocumentCacheTargetKey : IEquatable<DocumentCacheTargetKey>
 
 public sealed class DocumentCacheOptionsValidator : IValidateOptions<DocumentCacheOptions>
 {
+    private const long MaximumCancelAfterTimeoutMilliseconds = 4_294_967_294;
+
     public ValidateOptionsResult Validate(string? name, DocumentCacheOptions options)
     {
         List<string> failures = [];
@@ -272,7 +274,7 @@ public sealed class DocumentCacheOptionsValidator : IValidateOptions<DocumentCac
             return;
         }
 
-        AddFailureIfNonPositive(
+        AddFailureIfInvalidCancelAfterTimeout(
             readAcceleration.DirectFillTimeout,
             $"{nameof(DocumentCacheOptions.ReadAcceleration)}:{nameof(DocumentCacheReadAccelerationOptions.DirectFillTimeout)}",
             failures
@@ -300,6 +302,26 @@ public sealed class DocumentCacheOptionsValidator : IValidateOptions<DocumentCac
         if (value <= TimeSpan.Zero)
         {
             failures.Add($"{settingName} must be positive.");
+        }
+    }
+
+    private static void AddFailureIfInvalidCancelAfterTimeout(
+        TimeSpan value,
+        string settingName,
+        List<string> failures
+    )
+    {
+        if (value <= TimeSpan.Zero)
+        {
+            failures.Add($"{settingName} must be positive.");
+            return;
+        }
+
+        if (value.TotalMilliseconds > MaximumCancelAfterTimeoutMilliseconds)
+        {
+            failures.Add(
+                $"{settingName} must be no greater than {MaximumCancelAfterTimeoutMilliseconds} milliseconds."
+            );
         }
     }
 

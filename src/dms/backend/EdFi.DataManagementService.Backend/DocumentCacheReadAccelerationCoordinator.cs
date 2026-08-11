@@ -1177,27 +1177,26 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             return;
         }
 
-        TimeSpan timeout = targetContext.EffectiveSettings.DirectFillTimeout;
-        using CancellationTokenSource directFillTimeout = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken
-        );
-        directFillTimeout.CancelAfter(timeout);
-
-        var materializationTargetContext = new DocumentCacheMaterializationTargetContext(
-            new DocumentCacheProjectionTargetKey(
-                targetContext.TargetKey.TenantKey,
-                new DataStoreId(targetContext.TargetKey.DataStoreId)
-            ),
-            mappingSet,
-            DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated,
-            targetContext.ConnectionInput.Value
-        );
-
         long directFillStartTimestamp = Stopwatch.GetTimestamp();
         string directFillDurationOutcome = DocumentCacheReadTelemetryLabel.Completed;
+        CancellationTokenSource? directFillTimeout = null;
 
         try
         {
+            TimeSpan timeout = targetContext.EffectiveSettings.DirectFillTimeout;
+            directFillTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            directFillTimeout.CancelAfter(timeout);
+
+            var materializationTargetContext = new DocumentCacheMaterializationTargetContext(
+                new DocumentCacheProjectionTargetKey(
+                    targetContext.TargetKey.TenantKey,
+                    new DataStoreId(targetContext.TargetKey.DataStoreId)
+                ),
+                mappingSet,
+                DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated,
+                targetContext.ConnectionInput.Value
+            );
+
             foreach (DocumentCacheReadAccelerationCandidate candidate in candidates)
             {
                 if (directFillTimeout.IsCancellationRequested)
@@ -1315,8 +1314,28 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                 }
             }
         }
+        catch (OperationCanceledException)
+        {
+            directFillDurationOutcome = SelectDirectFillCancellationReason(
+                cancellationToken,
+                directFillTimeout
+            );
+            RecordDirectFill(targetContext, operation, resourceKind, directFillDurationOutcome);
+            LogDirectFillSkipped(targetContext, directFillDurationOutcome);
+        }
+        catch (Exception exception)
+        {
+            directFillDurationOutcome = DocumentCacheReadTelemetryLabel.Failed;
+            RecordDirectFill(targetContext, operation, resourceKind, directFillDurationOutcome);
+            LogDirectFillFailure(
+                targetContext,
+                exception,
+                DocumentCacheReadTelemetryLabel.UnexpectedException
+            );
+        }
         finally
         {
+            directFillTimeout?.Dispose();
             _readTelemetry.RecordDirectFillDuration(
                 CreateReadTelemetryContext(targetContext, operation, resourceKind, directFillDurationOutcome),
                 DocumentCacheReadTelemetry.GetElapsedTime(directFillStartTimestamp)
@@ -1453,7 +1472,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
 
     private static string SelectDirectFillCancellationReason(
         CancellationToken requestCancellationToken,
-        CancellationTokenSource directFillTimeout
+        CancellationTokenSource? directFillTimeout
     )
     {
         if (requestCancellationToken.IsCancellationRequested)
@@ -1461,7 +1480,7 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             return DocumentCacheReadTelemetryLabel.CallerCanceled;
         }
 
-        return directFillTimeout.IsCancellationRequested
+        return directFillTimeout?.IsCancellationRequested == true
             ? DocumentCacheReadTelemetryLabel.TimedOut
             : DocumentCacheReadTelemetryLabel.Canceled;
     }
