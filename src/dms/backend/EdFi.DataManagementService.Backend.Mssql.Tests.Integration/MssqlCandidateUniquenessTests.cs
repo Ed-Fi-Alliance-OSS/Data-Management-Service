@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using NUnit.Framework;
@@ -18,7 +19,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 /// Real-SQL-Server execution evidence for the shared candidate relation, mirroring the PostgreSQL
 /// candidate uniqueness probes: the compiled traditional, cursor, and unpaged candidate SQL runs,
 /// returns the expected ordered identifiers, and yields exactly one row per <c>DocumentId</c> for every
-/// authorization shape the candidate compiler emits.
+/// authorization shape the candidate compiler emits and for every planner consumer that reaches it.
 /// </summary>
 /// <remarks>
 /// PostgreSQL behavior does not establish SQL Server behavior, so both providers are certified
@@ -26,10 +27,15 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 /// <c>TOP</c> selects the intended page, and the unordered unpaged candidate relation is legal inside a
 /// common table expression, which an <c>ORDER BY</c> without <c>TOP</c> or <c>OFFSET</c> would not be.
 /// <para>
-/// The underlying authorization rows are seeded to duplicate, so a join-based authorization plan would
+/// The underlying authorization rows are seeded to fan out, so a join-based authorization plan would
 /// multiply candidate rows and corrupt the row numbering and count that partition boundaries derive
 /// from. Uniqueness is asserted against real results, not enforced by a runtime guard or concealed by an
 /// unconditional <c>DISTINCT</c>.
+/// </para>
+/// <para>
+/// The fan-out is produced only from data the production schema can actually hold. The authorization
+/// hierarchy table carries its production composite primary key, and the person auth object is the
+/// production <c>SELECT DISTINCT</c> view over its real source tables rather than a base-table stand-in.
 /// </para>
 /// </remarks>
 [TestFixture]
@@ -40,11 +46,34 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [Category(MssqlCiShards.Shard4)]
 public class Given_A_Mssql_Compiled_Candidate_Relation
 {
-    private const long ClaimEducationOrganizationId = 900L;
+    private const long DirectClaimEducationOrganizationId = 900L;
+    private const long IndirectClaimEducationOrganizationId = 901L;
     private const string AuthorizedNamespacePrefix = "uri://ed-fi.org/";
+    private const string AuthorizedNamespace = "uri://ed-fi.org/Probe";
+    private const string UnauthorizedNamespace = "uri://other.org/Probe";
+    private const string MatchingDescriptorCodeValue = "Probe";
+    private const string NonMatchingDescriptorCodeValue = "Other";
+    private const long MinimumChangeVersion = 30L;
+
+    /// <summary>
+    /// Both claim EducationOrganization ids the probe binds. Two distinct hierarchy tuples,
+    /// <c>(900, 900)</c> and <c>(901, 900)</c>, fan into the single subject value the root rows carry.
+    /// Both tuples are legal under the production composite primary key, so the fan-out under test is
+    /// reachable in production rather than an artifact of a relaxed test schema.
+    /// </summary>
+    private static readonly long[] _claimEducationOrganizationIds =
+    [
+        DirectClaimEducationOrganizationId,
+        IndirectClaimEducationOrganizationId,
+    ];
 
     private static readonly DbTableName _rootTable = new(new DbSchemaName("edfi"), "CandidateProbeRoot");
     private static readonly DbTableName _childTable = new(new DbSchemaName("edfi"), "CandidateProbeChild");
+    private static readonly DbTableName _descriptorTable = new(new DbSchemaName("dms"), "Descriptor");
+    private static readonly DbTableName _studentSchoolAssociationTable = new(
+        new DbSchemaName("edfi"),
+        "StudentSchoolAssociation"
+    );
     private static readonly DbTableName _customViewTable = new(
         new DbSchemaName("auth"),
         "CandidateProbeView"
@@ -56,6 +85,27 @@ public class Given_A_Mssql_Compiled_Candidate_Relation
 
     /// <summary>Every seeded root <c>DocumentId</c>, ascending.</summary>
     private static readonly long[] _allDocumentIds = [10L, 20L, 30L, 40L, 50L];
+
+    /// <summary>
+    /// The root <c>DocumentId</c>s inside the change-version window the planner probes request. A strict
+    /// subset of <see cref="_allDocumentIds" />, so a planner that dropped the window would be caught.
+    /// </summary>
+    private static readonly long[] _documentIdsInChangeVersionWindow = [30L, 40L, 50L];
+
+    /// <summary>
+    /// Descriptor <c>DocumentId</c>s carrying the requested <c>ResourceKeyId</c>, the matching code
+    /// value, and an authorized namespace.
+    /// </summary>
+    private static readonly long[] _authorizedDescriptorDocumentIds = [110L, 120L, 130L, 140L, 150L];
+
+    /// <summary>
+    /// Descriptor rows the requested query must exclude, each for exactly one reason so the exclusion is
+    /// attributable: an unrequested <c>ResourceKeyId</c>, an unauthorized namespace, and a non-matching
+    /// code value.
+    /// </summary>
+    private const long UnrelatedResourceKeyDescriptorDocumentId = 160L;
+    private const long UnauthorizedNamespaceDescriptorDocumentId = 170L;
+    private const long NonMatchingCodeValueDescriptorDocumentId = 180L;
 
     private string _connectionString = null!;
     private string _databaseName = null!;
@@ -91,6 +141,43 @@ public class Given_A_Mssql_Compiled_Candidate_Relation
     }
 
     [Test]
+    public async Task It_should_seed_authorization_sources_that_actually_expose_multiple_matches_per_candidate()
+    {
+        // Without this, every uniqueness assertion below could pass simply because nothing duplicates.
+        var hierarchyEdges = await ScalarAsync(
+            $"""
+            SELECT COUNT_BIG(*) FROM {Quote(CandidateProbeAuthorizationSpecs.EdOrgAuthObject.Name)}
+            WHERE [TargetEducationOrganizationId] = {DirectClaimEducationOrganizationId};
+            """
+        );
+        var personViewRows = await ScalarAsync(
+            $"""
+            SELECT COUNT_BIG(*) FROM {Quote(CandidateProbeAuthorizationSpecs.SelfPersonAuthObject.Name)}
+            WHERE [Student_DocumentId] = {_allDocumentIds[0]};
+            """
+        );
+        var childRows = await ScalarAsync(
+            $"""
+            SELECT COUNT_BIG(*) FROM {Quote(_childTable)} WHERE [DocumentId] = {_allDocumentIds[0]};
+            """
+        );
+        var customViewRows = await ScalarAsync(
+            $"""
+            SELECT COUNT_BIG(*) FROM {Quote(_customViewTable)} WHERE [DocumentId] = {_allDocumentIds[0]};
+            """
+        );
+
+        hierarchyEdges
+            .Should()
+            .BeGreaterThan(1, "two production-valid hierarchy tuples must fan into the one subject value");
+        personViewRows
+            .Should()
+            .BeGreaterThan(1, "the DISTINCT person auth view must still expose two rows for one person");
+        childRows.Should().BeGreaterThan(1, "the intermediate join table must duplicate per root");
+        customViewRows.Should().BeGreaterThan(1, "the custom auth view must duplicate per document");
+    }
+
+    [Test]
     public async Task It_should_execute_traditional_cursor_and_unpaged_candidate_sql_for_every_authorization_shape()
     {
         foreach (var (description, authorization) in BuildAuthorizationMatrix())
@@ -119,6 +206,126 @@ public class Given_A_Mssql_Compiled_Candidate_Relation
                         );
                 }
             }
+        }
+    }
+
+    [Test]
+    public async Task It_should_yield_one_row_per_document_id_for_every_regular_resource_planner_consumer()
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Mssql);
+        var rootTableModel = CandidateProbePlannerInputs.CreateRootTableModel(_rootTable);
+        var changeVersionRange = new ChangeVersionRange(MinimumChangeVersion, null);
+
+        foreach (var (description, authorization) in BuildRegularResourceAuthorizationMatrix())
+        {
+            foreach (var paging in BuildEveryPagingChoice())
+            {
+                var planned = planner.Plan(
+                    rootTableModel,
+                    CandidateProbePlannerInputs.CreateRootSchoolIdFilter(DirectClaimEducationOrganizationId),
+                    paging,
+                    comparisonOperatorResolver: null,
+                    authorization,
+                    changeVersionRange
+                );
+
+                var ids = await SelectPlannedIdsAsync(planned.Plan, planned.ParameterValues);
+
+                ids.Should()
+                    .OnlyHaveUniqueItems(
+                        $"the regular-resource consumer must produce one row per DocumentId for {description} in {paging.GetType().Name} paging"
+                    );
+                ids.Should()
+                    .BeEquivalentTo(
+                        _documentIdsInChangeVersionWindow,
+                        $"the resource filter and change-version window must both restrict the candidate relation for {description}"
+                    );
+            }
+
+            var planCandidatesSucceeded = planner.TryPlanCandidates(
+                rootTableModel,
+                CandidateProbePlannerInputs.CreateRootSchoolIdFilter(DirectClaimEducationOrganizationId),
+                out var unpagedCandidates,
+                out var emptyPageReason,
+                comparisonOperatorResolver: null,
+                authorization,
+                changeVersionRange
+            );
+
+            planCandidatesSucceeded
+                .Should()
+                .BeTrue($"the unpaged candidate relation must plan for {description}: {emptyPageReason}");
+
+            var unpagedIds = await SelectPlannedIdsAsync(
+                unpagedCandidates!.Plan,
+                unpagedCandidates.ParameterValues
+            );
+
+            unpagedIds
+                .Should()
+                .OnlyHaveUniqueItems(
+                    $"the unpaged regular-resource candidate relation must produce one row per DocumentId for {description}"
+                );
+            unpagedIds.Should().BeEquivalentTo(_documentIdsInChangeVersionWindow);
+        }
+    }
+
+    [Test]
+    public async Task It_should_yield_one_row_per_document_id_for_every_descriptor_planner_consumer()
+    {
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Mssql);
+        var mappingSet = CandidateProbePlannerInputs.CreateDescriptorMappingSet(SqlDialect.Mssql);
+
+        foreach (var (description, authorization, expectedIds) in BuildDescriptorAuthorizationMatrix())
+        {
+            foreach (var paging in BuildEveryPagingChoice())
+            {
+                var planned = planner.Plan(
+                    mappingSet,
+                    CandidateProbePlannerInputs.DescriptorResource,
+                    CandidateProbePlannerInputs.CreateDescriptorCodeValueFilter(MatchingDescriptorCodeValue),
+                    paging,
+                    authorization
+                );
+
+                var ids = await SelectPlannedIdsAsync(planned.Plan, planned.ParameterValues);
+
+                ids.Should()
+                    .OnlyHaveUniqueItems(
+                        $"the descriptor consumer must produce one row per DocumentId for {description} in {paging.GetType().Name} paging"
+                    );
+                ids.Should()
+                    .BeEquivalentTo(
+                        expectedIds,
+                        $"the ResourceKeyId discriminator and descriptor filter must both restrict the candidate relation for {description}"
+                    );
+                ids.Should()
+                    .NotContain(
+                        UnrelatedResourceKeyDescriptorDocumentId,
+                        "the mandatory ResourceKeyId discriminator must exclude an otherwise matching descriptor row"
+                    );
+                ids.Should()
+                    .NotContain(
+                        NonMatchingCodeValueDescriptorDocumentId,
+                        "the descriptor filter must exclude a row whose code value does not match"
+                    );
+            }
+
+            var unpaged = planner.PlanCandidates(
+                mappingSet,
+                CandidateProbePlannerInputs.DescriptorResource,
+                CandidateProbePlannerInputs.CreateDescriptorCodeValueFilter(MatchingDescriptorCodeValue),
+                authorization
+            );
+
+            var unpagedIds = await SelectPlannedIdsAsync(unpaged.Plan, unpaged.ParameterValues);
+
+            unpagedIds
+                .Should()
+                .OnlyHaveUniqueItems(
+                    $"the unpaged descriptor candidate relation must produce one row per DocumentId for {description}"
+                );
+            unpagedIds.Should().BeEquivalentTo(expectedIds);
         }
     }
 
@@ -249,6 +456,15 @@ public class Given_A_Mssql_Compiled_Candidate_Relation
         candidateCount.Should().Be(_allDocumentIds.Length);
     }
 
+    private async Task<long> ScalarAsync(string sql)
+    {
+        await using SqlConnection connection = new(_connectionString);
+        await connection.OpenAsync();
+        await using SqlCommand command = new(sql, connection);
+
+        return (long)(await command.ExecuteScalarAsync())!;
+    }
+
     private async Task<IReadOnlyList<long>> SelectCandidateIdsAsync(
         PageCandidateMode mode,
         PageDocumentIdAuthorizationSpec? authorization,
@@ -259,15 +475,22 @@ public class Given_A_Mssql_Compiled_Candidate_Relation
     {
         var plan = Compile(mode, authorization);
 
+        return await SelectPlannedIdsAsync(
+            plan,
+            BuildParameterValues(mode, authorization, cursorMinimum, cursorMaximum, pageSize)
+        );
+    }
+
+    private async Task<IReadOnlyList<long>> SelectPlannedIdsAsync(
+        PageDocumentIdSqlPlan plan,
+        IReadOnlyDictionary<string, object?> parameterValues
+    )
+    {
         await using SqlConnection connection = new(_connectionString);
         await connection.OpenAsync();
         await using SqlCommand command = new(plan.PageDocumentIdSql, connection);
 
-        BindParameters(
-            command,
-            plan,
-            BuildParameterValues(mode, authorization, cursorMinimum, cursorMaximum, pageSize)
-        );
+        BindParameters(command, plan, parameterValues);
 
         List<long> ids = [];
 
@@ -374,6 +597,84 @@ public class Given_A_Mssql_Compiled_Candidate_Relation
         ];
 
     /// <summary>
+    /// The traditional and cursor paging choices a live collection request can carry. Both select every
+    /// candidate the filters allow, so the expected membership isolates filtering from paging.
+    /// </summary>
+    private static IReadOnlyList<CollectionPaging> BuildEveryPagingChoice() =>
+        [
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 500, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            ),
+            new CollectionPaging.Cursor(new CursorRange(long.MinValue, long.MaxValue), new PageSize(500)),
+        ];
+
+    /// <summary>
+    /// The authorization shapes the regular-resource planner supports: no further restrictions, a
+    /// relationship strategy, a namespace check, and a custom view check.
+    /// </summary>
+    private static IReadOnlyList<(
+        string Description,
+        PageDocumentIdAuthorizationSpec? Authorization
+    )> BuildRegularResourceAuthorizationMatrix() =>
+        [
+            ("no further restrictions", null),
+            (
+                "relationship authorization on a root EducationOrganization subject",
+                CandidateProbeAuthorizationSpecs.RelationshipEdOrg(
+                    SqlDialect.Mssql,
+                    _rootTable,
+                    _schoolIdColumn,
+                    _claimEducationOrganizationIds
+                )
+            ),
+            (
+                "namespace authorization",
+                CandidateProbeAuthorizationSpecs.Namespace(
+                    SqlDialect.Mssql,
+                    _rootTable,
+                    _namespaceColumn,
+                    AuthorizedNamespacePrefix
+                )
+            ),
+            (
+                "single-step custom view authorization",
+                CandidateProbeAuthorizationSpecs.SingleStepCustomView(
+                    _rootTable,
+                    _documentIdColumn,
+                    _customViewTable
+                )
+            ),
+        ];
+
+    /// <summary>
+    /// The authorization shapes the descriptor planner supports. Relationship and custom-view strategies
+    /// are absent because the descriptor planner binds no claim EducationOrganization values and
+    /// compiles no relationship group for descriptor endpoints.
+    /// </summary>
+    private static IReadOnlyList<(
+        string Description,
+        PageDocumentIdAuthorizationSpec? Authorization,
+        long[] ExpectedIds
+    )> BuildDescriptorAuthorizationMatrix() =>
+        [
+            (
+                "no further restrictions",
+                null,
+                [.. _authorizedDescriptorDocumentIds, UnauthorizedNamespaceDescriptorDocumentId]
+            ),
+            (
+                "namespace authorization",
+                CandidateProbeAuthorizationSpecs.Namespace(
+                    SqlDialect.Mssql,
+                    _descriptorTable,
+                    _namespaceColumn,
+                    AuthorizedNamespacePrefix
+                ),
+                _authorizedDescriptorDocumentIds
+            ),
+        ];
+
+    /// <summary>
     /// Every authorization shape the candidate compiler emits. <c>OwnershipBased</c> is deliberately
     /// absent: it is known but not enabled for GET-many and fails closed in the authorization planner, so
     /// no candidate SQL is ever compiled for it.
@@ -390,7 +691,7 @@ public class Given_A_Mssql_Compiled_Candidate_Relation
                     SqlDialect.Mssql,
                     _rootTable,
                     _schoolIdColumn,
-                    ClaimEducationOrganizationId
+                    _claimEducationOrganizationIds
                 )
             ),
             (
@@ -399,7 +700,7 @@ public class Given_A_Mssql_Compiled_Candidate_Relation
                     SqlDialect.Mssql,
                     _rootTable,
                     _schoolIdColumn,
-                    ClaimEducationOrganizationId
+                    _claimEducationOrganizationIds
                 )
             ),
             (
@@ -408,7 +709,7 @@ public class Given_A_Mssql_Compiled_Candidate_Relation
                     SqlDialect.Mssql,
                     _rootTable,
                     _documentIdColumn,
-                    ClaimEducationOrganizationId
+                    _claimEducationOrganizationIds
                 )
             ),
             (
@@ -470,7 +771,8 @@ public class Given_A_Mssql_Compiled_Candidate_Relation
                 CREATE TABLE {Quote(_rootTable)} (
                     [DocumentId] bigint NOT NULL PRIMARY KEY,
                     [SchoolId] bigint NOT NULL,
-                    [Namespace] nvarchar(255) NOT NULL
+                    [Namespace] nvarchar(255) NOT NULL,
+                    [ContentVersion] bigint NOT NULL
                 );
                 """,
             $"""
@@ -480,25 +782,54 @@ public class Given_A_Mssql_Compiled_Candidate_Relation
                 );
                 """,
             $"CREATE TABLE {Quote(_customViewTable)} ([DocumentId] bigint NOT NULL);",
-            $"""
-                CREATE TABLE {Quote(edOrgAuthObject.Name)} (
-                    [{edOrgAuthObject.ClaimEducationOrganizationIdColumn.Value}] bigint NOT NULL,
-                    [{edOrgAuthObject.SubjectValueColumn.Value}] bigint NOT NULL
-                );
-                """,
-            $"""
-                CREATE TABLE {Quote(personAuthObject.Name)} (
-                    [{personAuthObject.ClaimEducationOrganizationIdColumn.Value}] bigint NOT NULL,
-                    [{personAuthObject.SubjectValueColumn.Value}] bigint NOT NULL
-                );
-                """,
-                // Every root row is reachable, and every authorization source is seeded to duplicate: two
-                // hierarchy edges per subject, two auth-view rows per person, two child rows per root, and two
-                // custom-view rows per document.
+                // The descriptor consumer's real root, carrying the columns its discriminator, filters,
+                // change-version window, and namespace authorization read.
                 $"""
-                INSERT INTO {Quote(_rootTable)} ([DocumentId], [SchoolId], [Namespace])
-                SELECT seed.id, {ClaimEducationOrganizationId}, '{AuthorizedNamespacePrefix}Probe'
+                CREATE TABLE {Quote(_descriptorTable)} (
+                    [DocumentId] bigint NOT NULL PRIMARY KEY,
+                    [ResourceKeyId] smallint NOT NULL,
+                    [Namespace] nvarchar(255) NOT NULL,
+                    [CodeValue] nvarchar(50) NOT NULL,
+                    [ContentVersion] bigint NOT NULL
+                );
+                """,
+                // The production authorization hierarchy table, with the composite primary key the generated
+                // DDL declares. Fan-out must come from distinct legal tuples, never from a duplicate this
+                // constraint forbids.
+                $"""
+                CREATE TABLE {Quote(edOrgAuthObject.Name)} (
+                    [SourceEducationOrganizationId] bigint NOT NULL,
+                    [TargetEducationOrganizationId] bigint NOT NULL,
+                    CONSTRAINT [PK_EducationOrganizationIdToEducationOrganizationId]
+                        PRIMARY KEY ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
+                );
+                """,
+                // The person auth object is a view over this association in production, so the probe supplies
+                // the association rather than standing the view up as a base table.
+                $"""
+                CREATE TABLE {Quote(_studentSchoolAssociationTable)} (
+                    [Student_DocumentId] bigint NOT NULL,
+                    [SchoolId_Unified] bigint NOT NULL
+                );
+                """,
+            $"""
+                INSERT INTO {Quote(_rootTable)} ([DocumentId], [SchoolId], [Namespace], [ContentVersion])
+                SELECT seed.id, {DirectClaimEducationOrganizationId}, '{AuthorizedNamespace}', seed.id
                 FROM (VALUES (10),(20),(30),(40),(50)) AS seed(id);
+                """,
+            $"""
+                INSERT INTO {Quote(_descriptorTable)} (
+                    [DocumentId], [ResourceKeyId], [Namespace], [CodeValue], [ContentVersion]
+                )
+                VALUES
+                    (110, {CandidateProbePlannerInputs.DescriptorResourceKeyId}, '{AuthorizedNamespace}', '{MatchingDescriptorCodeValue}', 110),
+                    (120, {CandidateProbePlannerInputs.DescriptorResourceKeyId}, '{AuthorizedNamespace}', '{MatchingDescriptorCodeValue}', 120),
+                    (130, {CandidateProbePlannerInputs.DescriptorResourceKeyId}, '{AuthorizedNamespace}', '{MatchingDescriptorCodeValue}', 130),
+                    (140, {CandidateProbePlannerInputs.DescriptorResourceKeyId}, '{AuthorizedNamespace}', '{MatchingDescriptorCodeValue}', 140),
+                    (150, {CandidateProbePlannerInputs.DescriptorResourceKeyId}, '{AuthorizedNamespace}', '{MatchingDescriptorCodeValue}', 150),
+                    ({UnrelatedResourceKeyDescriptorDocumentId}, {CandidateProbePlannerInputs.UnrelatedDescriptorResourceKeyId}, '{AuthorizedNamespace}', '{MatchingDescriptorCodeValue}', {UnrelatedResourceKeyDescriptorDocumentId}),
+                    ({UnauthorizedNamespaceDescriptorDocumentId}, {CandidateProbePlannerInputs.DescriptorResourceKeyId}, '{UnauthorizedNamespace}', '{MatchingDescriptorCodeValue}', {UnauthorizedNamespaceDescriptorDocumentId}),
+                    ({NonMatchingCodeValueDescriptorDocumentId}, {CandidateProbePlannerInputs.DescriptorResourceKeyId}, '{AuthorizedNamespace}', '{NonMatchingDescriptorCodeValue}', {NonMatchingCodeValueDescriptorDocumentId});
                 """,
             $"""
                 INSERT INTO {Quote(_childTable)} ([DocumentId], [Student_DocumentId])
@@ -512,22 +843,31 @@ public class Given_A_Mssql_Compiled_Candidate_Relation
                 FROM {Quote(_rootTable)} r
                 CROSS JOIN (VALUES (1),(2)) AS duplicate(n);
                 """,
-            $"""
+                // Two distinct production-legal tuples reaching the one subject value the roots carry.
+                $"""
                 INSERT INTO {Quote(edOrgAuthObject.Name)} (
-                    [{edOrgAuthObject.ClaimEducationOrganizationIdColumn.Value}],
-                    [{edOrgAuthObject.SubjectValueColumn.Value}]
+                    [SourceEducationOrganizationId], [TargetEducationOrganizationId]
                 )
-                SELECT {ClaimEducationOrganizationId}, {ClaimEducationOrganizationId}
-                FROM (VALUES (1),(2)) AS duplicate(n);
+                VALUES
+                    ({DirectClaimEducationOrganizationId}, {DirectClaimEducationOrganizationId}),
+                    ({IndirectClaimEducationOrganizationId}, {DirectClaimEducationOrganizationId});
                 """,
             $"""
-                INSERT INTO {Quote(personAuthObject.Name)} (
-                    [{personAuthObject.ClaimEducationOrganizationIdColumn.Value}],
-                    [{personAuthObject.SubjectValueColumn.Value}]
-                )
-                SELECT {ClaimEducationOrganizationId}, r.[DocumentId]
-                FROM {Quote(_rootTable)} r
-                CROSS JOIN (VALUES (1),(2)) AS duplicate(n);
+                INSERT INTO {Quote(_studentSchoolAssociationTable)} ([Student_DocumentId], [SchoolId_Unified])
+                SELECT r.[DocumentId], {DirectClaimEducationOrganizationId}
+                FROM {Quote(_rootTable)} r;
+                """,
+                // The production person auth view, verbatim in shape: DISTINCT over the hierarchy joined to
+                // the association. Its two hierarchy sources still expose two rows per person, so the fan-out
+                // survives the DISTINCT exactly as production would produce it.
+                $"""
+                CREATE VIEW {Quote(personAuthObject.Name)} AS
+                SELECT DISTINCT
+                    edOrg.[SourceEducationOrganizationId],
+                    ssa.[Student_DocumentId]
+                FROM {Quote(edOrgAuthObject.Name)} edOrg
+                INNER JOIN {Quote(_studentSchoolAssociationTable)} ssa
+                    ON edOrg.[TargetEducationOrganizationId] = ssa.[SchoolId_Unified];
                 """,
         ];
     }

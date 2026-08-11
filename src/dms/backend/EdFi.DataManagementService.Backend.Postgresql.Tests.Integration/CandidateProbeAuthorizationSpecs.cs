@@ -35,7 +35,7 @@ internal static class CandidateProbeAuthorizationSpecs
         SqlDialect dialect,
         DbTableName rootTable,
         DbColumnName schoolIdColumn,
-        long claimEducationOrganizationId
+        IReadOnlyList<long> claimEducationOrganizationIds
     ) =>
         new(
             Strategies:
@@ -47,7 +47,7 @@ internal static class CandidateProbeAuthorizationSpecs
             ],
             ClaimEducationOrganizationIdParameterization: CreateClaimParameterization(
                 dialect,
-                claimEducationOrganizationId
+                claimEducationOrganizationIds
             )
         );
 
@@ -55,7 +55,7 @@ internal static class CandidateProbeAuthorizationSpecs
         SqlDialect dialect,
         DbTableName rootTable,
         DbColumnName schoolIdColumn,
-        long claimEducationOrganizationId
+        IReadOnlyList<long> claimEducationOrganizationIds
     ) =>
         new(
             Strategies:
@@ -71,7 +71,7 @@ internal static class CandidateProbeAuthorizationSpecs
             ],
             ClaimEducationOrganizationIdParameterization: CreateClaimParameterization(
                 dialect,
-                claimEducationOrganizationId
+                claimEducationOrganizationIds
             )
         );
 
@@ -79,7 +79,7 @@ internal static class CandidateProbeAuthorizationSpecs
         SqlDialect dialect,
         DbTableName rootTable,
         DbColumnName documentIdColumn,
-        long claimEducationOrganizationId
+        IReadOnlyList<long> claimEducationOrganizationIds
     ) =>
         new(
             Strategies:
@@ -107,7 +107,7 @@ internal static class CandidateProbeAuthorizationSpecs
             ],
             ClaimEducationOrganizationIdParameterization: CreateClaimParameterization(
                 dialect,
-                claimEducationOrganizationId
+                claimEducationOrganizationIds
             )
         );
 
@@ -228,11 +228,11 @@ internal static class CandidateProbeAuthorizationSpecs
 
     private static AuthorizationClaimEducationOrganizationIdParameterization CreateClaimParameterization(
         SqlDialect dialect,
-        long claimEducationOrganizationId
+        IReadOnlyList<long> claimEducationOrganizationIds
     ) =>
         AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
             dialect,
-            [claimEducationOrganizationId],
+            claimEducationOrganizationIds,
             "ClaimEducationOrganizationIds"
         );
 }
