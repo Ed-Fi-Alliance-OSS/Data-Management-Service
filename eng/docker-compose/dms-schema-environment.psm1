@@ -223,8 +223,10 @@ function Get-DmsSchemaPackageIdentity {
         normalizes to an empty string rather than throwing, so a malformed entry compares unequal
         instead of failing the verification.
 
-        The identities are only ever compared; they are never returned to a failure message, so no
-        container-supplied text can reach the console.
+        Identities from BOTH sides are compared, but only the environment FILE's identity is ever
+        returned to a failure message - the surface-mismatch reason names the expected package at the
+        mismatching index, because "they differ somehow" is not something a developer can act on. The
+        CONTAINER's identity is never returned, so no container-supplied text can reach the console.
     #>
     param(
         [Parameter(Mandatory)]
@@ -302,11 +304,23 @@ function Get-DmsSchemaEnvironmentVerdict {
         [string] $EnvironmentFileApiSchemaPath
     )
 
-    # Cause-neutral by construction. Every branch below can be reached without any ambient value being
-    # involved - a wrong value in the file itself, a stale container, or an image whose settings differ
-    # all produce the same disagreement - so the remediation states what disagrees and offers the two
-    # actions that resolve it, rather than naming a cause the verdict cannot establish.
-    $ambientRemediation = "The environment file and the started DMS container disagree. Re-run setup from a shell that does not set USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES, or select a different -EnvironmentFile."
+    # Cause-neutral by construction, and named for what it reports rather than for a cause. Every
+    # branch below can be reached without any ambient value being involved - a wrong value in the file
+    # itself, a stale container left by an earlier run, or an image whose baked settings differ all
+    # produce the same disagreement - so the remediation offers the two actions that resolve those
+    # reachable causes rather than naming one the verdict cannot establish.
+    #
+    # Both actions are reachable from where a developer already is. The stack is torn down through the
+    # E2E suite's own teardown wrapper, so the container is REMOVED rather than reused, and the
+    # subsequent setup re-creates it from the selected environment file; if that file is the wrong one
+    # for the run, choosing another is the second action. Deliberately not a path to that wrapper: the
+    # setup flows run their phases from eng/docker-compose, where no such relative path resolves, and
+    # this module is shared by two suites that each have their own copy in their own directory.
+    #
+    # The advice this replaced asked for a re-run "from a shell that does not set USE_API_SCHEMA_PATH,
+    # API_SCHEMA_PATH, and SCHEMA_PACKAGES", which sent developers after a cause that cannot apply:
+    # the guard has already removed those three names from the process by the time this runs.
+    $containerDisagreementRemediation = "The environment file and the started DMS container disagree. Tear the stack down with this E2E suite's teardown-local-dms.ps1 wrapper and re-run setup, so the DMS container is re-created from the selected environment file, or select a different -EnvironmentFile."
     $expectedPackageCount = $ExpectedPackageIdentity.Count
 
     if (-not $EnvironmentFileUsesApiSchemaPath) {
@@ -320,8 +334,8 @@ function Get-DmsSchemaEnvironmentVerdict {
     # The symmetric file-side inconsistency, checked before any container value: a file that declares
     # packages and enables the ApiSchema path but selects no path leaves those packages nowhere to be
     # materialized. Reaching this only through the container's blank-path branch below would answer a
-    # missing file value with $ambientRemediation, which points at the invoking shell - and the shell
-    # cannot be the cause of a value the file never declared.
+    # missing file value with $containerDisagreementRemediation, which asks for a teardown and a re-run
+    # - and re-creating the container cannot fix a value the file never declared.
     if ([string]::IsNullOrWhiteSpace($EnvironmentFileApiSchemaPath)) {
         return [pscustomobject]@{
             ShouldFail  = $true
@@ -335,7 +349,7 @@ function Get-DmsSchemaEnvironmentVerdict {
         return [pscustomobject]@{
             ShouldFail  = $true
             Reason      = "the DMS container's AppSettings__UseApiSchemaPath is $useApiSchemaPathToken but the environment file declares $expectedPackageCount ApiSchema package(s), so DMS loaded only the schemas baked into the image while the E2E database was provisioned for those packages."
-            Remediation = $ambientRemediation
+            Remediation = $containerDisagreementRemediation
         }
     }
 
@@ -344,7 +358,7 @@ function Get-DmsSchemaEnvironmentVerdict {
         return [pscustomobject]@{
             ShouldFail  = $true
             Reason      = "the DMS container's AppSettings__ApiSchemaPath is $apiSchemaPathToken, so the declared ApiSchema packages have nowhere to be materialized."
-            Remediation = $ambientRemediation
+            Remediation = $containerDisagreementRemediation
         }
     }
 
@@ -359,7 +373,7 @@ function Get-DmsSchemaEnvironmentVerdict {
         return [pscustomobject]@{
             ShouldFail  = $true
             Reason      = "the DMS container's AppSettings__ApiSchemaPath differs from the environment file's API_SCHEMA_PATH, so DMS is not materializing the declared ApiSchema packages where the environment file selected."
-            Remediation = $ambientRemediation
+            Remediation = $containerDisagreementRemediation
         }
     }
 
@@ -368,7 +382,7 @@ function Get-DmsSchemaEnvironmentVerdict {
         return [pscustomobject]@{
             ShouldFail  = $true
             Reason      = "the DMS container's SCHEMA_PACKAGES is absent, blank, or not a JSON array, but the environment file declares $expectedPackageCount ApiSchema package(s)."
-            Remediation = $ambientRemediation
+            Remediation = $containerDisagreementRemediation
         }
     }
 
@@ -376,14 +390,20 @@ function Get-DmsSchemaEnvironmentVerdict {
         return [pscustomobject]@{
             ShouldFail  = $true
             Reason      = "the DMS container received $($containerPackages.Count) ApiSchema package(s) but the E2E database was provisioned for the environment file's $expectedPackageCount."
-            Remediation = $ambientRemediation
+            Remediation = $containerDisagreementRemediation
         }
     }
 
     # Counts agreeing is not the surface agreeing. A container carrying the same number of packages at
     # a different name, version, or feed URL downloads different schemas, computes a different runtime
     # hash, and fails every data-plane request exactly as a count mismatch would. Both sides are already
-    # sorted, so this is a positional comparison of equal-length identity lists; neither side is echoed.
+    # sorted, so this is a positional comparison of equal-length identity lists.
+    #
+    # The FILE-side identity at the mismatching index is named, so the failure says which package the
+    # database was provisioned for rather than only that something differs - "differ by name, version,
+    # or feed URL" alone leaves a developer to diff two package sets by hand, neither of which the
+    # message showed them. The CONTAINER-side identity stays unechoed: it is the untrusted half, and
+    # naming the expected package is what makes the failure actionable anyway.
     $containerPackageIdentity = Get-DmsSchemaPackageIdentity -Package $containerPackages
     for ($index = 0; $index -lt $expectedPackageCount; $index++) {
         if (-not [string]::Equals(
@@ -392,8 +412,8 @@ function Get-DmsSchemaEnvironmentVerdict {
                 [System.StringComparison]::Ordinal)) {
             return [pscustomobject]@{
                 ShouldFail  = $true
-                Reason      = "the DMS container's $expectedPackageCount ApiSchema package(s) differ from the environment file's declared packages by name, version, or feed URL, so DMS is loading a different schema surface than the E2E database was provisioned for."
-                Remediation = $ambientRemediation
+                Reason      = "the DMS container's $expectedPackageCount ApiSchema package(s) differ from the environment file's declared packages by name, version, or feed URL, so DMS is loading a different schema surface than the E2E database was provisioned for. The first difference is at sorted position $($index + 1) of $expectedPackageCount, where the environment file declares $($ExpectedPackageIdentity[$index])."
+                Remediation = $containerDisagreementRemediation
             }
         }
     }
@@ -411,6 +431,11 @@ function Get-DmsContainerEnvironment {
         Reads a container's environment into a key/value map.
     .DESCRIPTION
         Fails closed: an inspect that does not succeed is an inability to verify, never a pass.
+
+        Exported, because build-dms.ps1's runtime effective-schema-hash gate reads the same
+        'docker inspect' output to print the container's schema settings before it compares hashes.
+        That script carried a second copy of this reader; one implementation means the next fix
+        cannot land in only one of them.
     #>
     param(
         [Parameter(Mandatory)]
@@ -501,6 +526,14 @@ function Assert-DmsContainerSchemaEnvironment {
         Fails the setup when the started DMS container's schema environment disagrees with the
         environment file the E2E database was provisioned from, so this class of mismatch surfaces here
         instead of as HTTP 503 EffectiveSchemaHash failures in every scenario of the suite.
+    .DESCRIPTION
+        Verification is at the CONFIGURATION level - the container's schema settings against the
+        environment file's - rather than at the effective-schema-hash level, which is the stronger
+        check. The stronger one is not available on this path: the direct setup wrappers do not
+        capture the provisioned hash that provision-e2e-database.ps1 reports, so there is nothing
+        here to compare a runtime hash against. build-dms.ps1 E2ETest does capture it and already
+        gates on the hash comparison, so that path is covered by the stronger check and this one adds
+        the same protection to the direct wrappers without reworking their phase output capture.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Reports setup progress to the console of a host-oriented setup script, matching its surrounding output.')]
     param(
@@ -564,11 +597,18 @@ function Assert-DmsContainerSchemaEnvironment {
     Write-Host "Verified DMS container schema environment matches the environment file ($($declaredPackages.Count) ApiSchema package(s))." -ForegroundColor Green
 }
 
-# Only the two commands a caller outside this module invokes: the pre-phase guard (both E2E setup
-# wrappers, and build-dms.ps1's -Enabled wrapper delegating to it) and the post-start verification.
-# Everything else above is an internal of those two. The tests reach the internals by extracting the
-# function text through the AST and dot-sourcing it, so none of them is exported for testability - and
-# a narrower surface is also less of it exposed to the in-process shadowing described above.
+# Only the three commands a caller outside this module invokes: the pre-phase guard (both E2E setup
+# wrappers, and build-dms.ps1's -Enabled wrapper delegating to it), the post-start verification (both
+# wrappers), and the container-environment reader (build-dms.ps1's runtime hash gate, which reads the
+# same 'docker inspect' output to print the container's schema settings before comparing hashes).
+# Get-DmsContainerEnvironment is exported because build-dms.ps1 is a real external caller of it, not
+# for testability: it used to have a second copy of this reader under its own name.
+#
+# Nothing else above is exported. The remaining functions are internals of these three, and the tests
+# reach them by extracting the function text through the AST and dot-sourcing it, so none of them
+# needs an export - and a narrower surface is also less of it exposed to the in-process shadowing
+# described above.
 Export-ModuleMember -Function `
     Invoke-WithDmsEnvironmentFileSchemaAuthority, `
-    Assert-DmsContainerSchemaEnvironment
+    Assert-DmsContainerSchemaEnvironment, `
+    Get-DmsContainerEnvironment

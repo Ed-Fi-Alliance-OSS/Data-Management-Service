@@ -2003,6 +2003,39 @@ exit 0
             $buildScript | Should -Match '-UseEnvironmentFileSchemaSettings:\$e2eTestSettings\.ShouldProvisionE2EDatabase'
         }
 
+        It "build-dms.ps1 reads the container environment through the shared module's exported reader" {
+            # DMS-1300. This script and dms-schema-environment.psm1 each had their own function that ran
+            # 'docker inspect --format {{json .Config.Env}}', parsed the entries the same way, and threw
+            # on a non-zero exit. Two copies of one reader means the next fix lands in only one of them,
+            # so the module's is now the single implementation and this script calls it - which is why
+            # the module exports it: build-dms.ps1's runtime effective-schema-hash gate is a real
+            # external caller, not a test.
+            $buildScript = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "build-dms.ps1") -Raw
+            $guardModule = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "dms-schema-environment.psm1") -Raw
+
+            $buildScript | Should -Not -Match 'function Get-DockerContainerEnvironmentMap' -Because "the second copy of the container-environment reader must not come back"
+            $buildScript | Should -Not -Match 'Get-DockerContainerEnvironmentMap -ContainerName' -Because "no call site may reach for the deleted copy"
+            $buildScript | Should -Match 'Get-DmsContainerEnvironment -ContainerName \$ContainerName' -Because "the runtime hash gate reads the container environment through the module's reader"
+            $buildScript | Should -Not -Match 'function Get-DmsContainerEnvironment' -Because "this script must call the module's reader rather than redefine the name, which would shadow the export"
+
+            # Exactly the three commands with a caller outside the module: the pre-phase guard, the
+            # post-start verification, and this reader. The other five functions stay unexported - their
+            # tests reach them by extracting the function text through the AST - so a wider surface would
+            # only add names exposed to the in-process shadowing the guard's own name avoids.
+            #
+            # Read as a SET of names rather than as a pattern over the statement's line wrapping, so the
+            # assertion is about what the module exports and not about how the continuation happens to be
+            # formatted.
+            $exportStatement = [regex]::Match($guardModule, '(?s)Export-ModuleMember\s+-Function\s*`?\s*(?<names>[A-Za-z][\w-]*(\s*,\s*`?\s*[A-Za-z][\w-]*)*)')
+
+            $exportStatement.Success | Should -BeTrue -Because "the module must declare its export surface explicitly"
+            @($exportStatement.Groups["names"].Value -split '[,`\s]+' | Where-Object { $_ }) | Should -Be @(
+                "Invoke-WithDmsEnvironmentFileSchemaAuthority",
+                "Assert-DmsContainerSchemaEnvironment",
+                "Get-DmsContainerEnvironment"
+            )
+        }
+
         It "build-dms.ps1 StartEnvironment uses the bootstrap phase contract" {
             # StartEnvironment is a developer stack command, not the E2E generated-database path.
             # It must use the bootstrap wrapper so configure-local-data-store.ps1 and

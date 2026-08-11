@@ -557,7 +557,25 @@ Describe "Both E2E setup wrappers run every Docker phase inside the schema-setti
                     $name = '$' + $_.CommandElements[0].VariablePath.UserPath
                 }
 
-                if ($name -and ($isVariableDispatched -or $name -like "*.ps1")) {
+                # A bareword 'docker' can orchestrate Compose directly - 'docker compose --env-file ...
+                # up ...' - and such a call is a phase for this detector's purposes: it resolves the
+                # three schema names ambient-first exactly as a phase script's own compose call does, so
+                # one added outside the guard is the same escape. Matching only '*.ps1' barewords made
+                # every such call invisible, and the sibling "nothing outside the guard" assertion would
+                # have passed while the orchestration ran unguarded.
+                #
+                # Classified by what the command DOES, not by being named 'docker': both wrappers run
+                # 'docker version' as a pre-flight daemon check that reads none of the three names and
+                # legitimately sits before the guard, so it must stay excluded. The backtick in the
+                # character class keeps a line-continued 'docker `<newline> compose' matching.
+                $isComposeOrchestration = $false
+                if ($name -eq "docker") {
+                    $commandText = $_.Extent.Text
+                    $isComposeOrchestration =
+                        $commandText -match 'docker[\s`]+compose' -or $commandText -match '--env-file'
+                }
+
+                if ($name -and ($isVariableDispatched -or $name -like "*.ps1" -or $isComposeOrchestration)) {
                     [pscustomobject]@{
                         Name        = $name
                         Line        = $_.Extent.StartLineNumber
@@ -652,6 +670,37 @@ Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
         @($invocations | ForEach-Object { $_.Name }) | Should -Be @('$guardedPhase', '$escapedPhase')
         @($invocations | Where-Object { -not $_.InsideGuard } | ForEach-Object { $_.Name }) |
             Should -Be @('$escapedPhase')
+    }
+
+    It "detects a bareword 'docker compose --env-file' call outside the guard while ignoring 'docker version'" {
+        # The detector's second regression guard. A phase does not have to be a .ps1 script: a compose
+        # call written inline resolves USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES
+        # ambient-first exactly as a phase script's does, so one added outside the guard is the same
+        # escape - and a detector that only recognized '*.ps1' barewords reported no escape at all.
+        # 'docker version' is in the fixture too, unguarded, because both wrappers really do run it as a
+        # pre-flight daemon check before the guard: it reads none of the three names, so classifying it
+        # as an escape would fail the wiring tests on correct wrappers.
+        $fixturePath = Join-Path $TestDrive "bareword-compose-phase.ps1"
+        Set-Content -LiteralPath $fixturePath -Encoding utf8 -Value @'
+function Invoke-WithDmsEnvironmentFileSchemaAuthority {
+    param([scriptblock] $Action)
+    & $Action
+}
+
+docker version 2>&1
+
+Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
+    ./start-local-dms.ps1 -InfraOnly
+}
+
+docker compose -p dms-local --env-file ./.env.e2e -f local-dms.yml up -d dms
+'@
+
+        $invocations = @(Get-GuardedPhaseInvocation -ScriptPath $fixturePath)
+
+        @($invocations | ForEach-Object { $_.Name }) | Should -Be @("./start-local-dms.ps1", "docker")
+        @($invocations | Where-Object { -not $_.InsideGuard } | ForEach-Object { $_.Name }) |
+            Should -Be @("docker") -Because "an unguarded compose call resolves the schema variables from the ambient process again"
     }
 
     It "reads the -Action argument rather than counting script blocks, so a nested block is not a detector error" {
@@ -864,7 +913,18 @@ Describe "Get-DmsSchemaEnvironmentVerdict fails setup when the DMS container dis
         $verdict.ShouldFail | Should -BeTrue
         $verdict.Reason | Should -Match "AppSettings__UseApiSchemaPath is false"
         $verdict.Reason | Should -Match "4 ApiSchema package"
-        $verdict.Remediation | Should -Match "USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES"
+        # The remediation names actions that reach the causes this verdict can actually have. It used to
+        # ask for a re-run "from a shell that does not set USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and
+        # SCHEMA_PACKAGES", which cannot apply: the gate runs inside the guard that has already removed
+        # those three names from the process, so a developer following that advice changed nothing. A
+        # stale container and a wrong environment file are reachable, and both of these address them.
+        $verdict.Remediation | Should -Match "teardown-local-dms\.ps1"
+        $verdict.Remediation | Should -Match "re-run setup"
+        $verdict.Remediation | Should -Match "-EnvironmentFile"
+        $verdict.Remediation | Should -Not -Match "Re-run setup from a shell"
+        # No path to the teardown wrapper: the setup flows run their phases from eng/docker-compose,
+        # where no relative path to either suite's copy resolves.
+        $verdict.Remediation | Should -Not -Match "\./teardown-local-dms\.ps1"
     }
 
     It "fails when AppSettings__UseApiSchemaPath is <Label>, reporting a fixed token" -ForEach @(
@@ -934,6 +994,10 @@ Describe "Get-DmsSchemaEnvironmentVerdict fails setup when the DMS container dis
         $verdict.Reason | Should -Match "differ from the environment file's declared packages by name, version, or feed URL"
         # Not misreported as a count problem: the counts agree.
         $verdict.Reason | Should -Not -Match "but the E2E database was provisioned for the environment file's"
+        # Actionable: the FILE's expected identity at the mismatching index is named, so the failure says
+        # which package the E2E database was provisioned for. Every entry differs in this case, so the
+        # first sorted position is the one reported.
+        $verdict.Reason | Should -Match ([regex]::Escape($script:fixturePackageIdentity[0]))
     }
 
     It "fails when the count matches and only one of the packages differs" {
@@ -955,9 +1019,39 @@ Describe "Get-DmsSchemaEnvironmentVerdict fails setup when the DMS container dis
         $verdict.Reason | Should -Match "differ from the environment file's declared packages by name, version, or feed URL"
     }
 
-    It "never echoes the differing package values into the surface-mismatch failure text" {
-        # The mismatch message is derived vocabulary, so container-supplied package text cannot forge
-        # log lines or leak a feed URL into the console.
+    It "names the environment file's expected package at the mismatching sorted position" {
+        # The point of reporting the expected identity: with one entry diverging, the message has to
+        # identify THAT package rather than the first one, or a developer is sent to diff the wrong
+        # entry. Only Package3's version differs, and the identities sort by their JSON text - which
+        # begins with the name - so the mismatch lands at sorted position 3.
+        $divergentPackages = @(New-SchemaPackageFixture -Count 4)
+        $divergentPackages[2] = [pscustomobject]@{
+            name    = $divergentPackages[2].name
+            version = "7.7.7"
+            feedUrl = $divergentPackages[2].feedUrl
+        }
+
+        $verdict = Get-DmsSchemaEnvironmentVerdict `
+            -ContainerEnvironment (Get-ContainerEnvironmentFixture -Package $divergentPackages) `
+            -ExpectedPackageIdentity $script:fixturePackageIdentity `
+            -EnvironmentFileUsesApiSchemaPath $true `
+            -EnvironmentFileApiSchemaPath $script:fixtureApiSchemaPath
+
+        $verdict.ShouldFail | Should -BeTrue
+        $verdict.Reason | Should -Match "The first difference is at sorted position 3 of 4"
+        $verdict.Reason | Should -Match ([regex]::Escape($script:fixturePackageIdentity[2]))
+        $verdict.Reason | Should -Match "EdFi\.ApiSchema\.Package3"
+        # The expected identity, not the container's: the container is on 7.7.7 at that position, and the
+        # environment file's 1.0.0 is what the E2E database was provisioned for.
+        $verdict.Reason | Should -Match '"version":"1\.0\.0"'
+        $verdict.Reason | Should -Not -Match "7\.7\.7"
+    }
+
+    It "never echoes the container's package values into the surface-mismatch failure text" {
+        # The container-supplied half stays out of the message, so it cannot forge log lines or leak a
+        # feed URL into the console. Only the environment FILE's expected identity is named, and this
+        # fixture keeps the sentinel on the container side to pin that split: the file's own packages
+        # carry the default feed.
         $sentinelPackages = @(New-SchemaPackageFixture -Count 4 -FeedUrl "https://SENTINEL-FEED-DO-NOT-ECHO.example.net/index.json")
 
         $verdict = Get-DmsSchemaEnvironmentVerdict `
@@ -968,6 +1062,22 @@ Describe "Get-DmsSchemaEnvironmentVerdict fails setup when the DMS container dis
 
         $verdict.ShouldFail | Should -BeTrue
         "$($verdict.Reason) $($verdict.Remediation)" | Should -Not -Match "SENTINEL-FEED-DO-NOT-ECHO"
+        # Not satisfiable by dropping the expected identity too: the actionable half must still be there.
+        $verdict.Reason | Should -Match ([regex]::Escape($script:fixturePackageIdentity[0]))
+    }
+
+    It "keeps the surface-mismatch failure text single-line, so a package blob cannot forge log lines" {
+        # The expected identity comes from the environment file rather than the container, but it is
+        # still interpolated into the message, so it is pinned to the same shape the rest of this
+        # vocabulary has: compact JSON on one line, which is what Get-DmsSchemaPackageIdentity emits.
+        $verdict = Get-DmsSchemaEnvironmentVerdict `
+            -ContainerEnvironment (Get-ContainerEnvironmentFixture -Package (New-SchemaPackageFixture -Count 4 -Version "9.9.9")) `
+            -ExpectedPackageIdentity $script:fixturePackageIdentity `
+            -EnvironmentFileUsesApiSchemaPath $true `
+            -EnvironmentFileApiSchemaPath $script:fixtureApiSchemaPath
+
+        $verdict.ShouldFail | Should -BeTrue
+        "$($verdict.Reason) $($verdict.Remediation)" | Should -Not -Match "`n"
     }
 
     It "accepts the same package surface declared in a different order" {
@@ -1082,12 +1192,10 @@ Describe "Get-DmsSchemaEnvironmentVerdict fails setup when the DMS container dis
         $verdict.Remediation | Should -Match "Set USE_API_SCHEMA_PATH=true in the environment file"
     }
 
-    It "reports a package-bearing environment file with no API_SCHEMA_PATH against the file, not the shell" {
+    It "reports a package-bearing environment file with no API_SCHEMA_PATH against the file, not the container" {
         # The symmetric file-side inconsistency to the case above. Without its own branch this reaches
-        # the container's blank-path check, whose remediation opens by asking for a re-run from a shell
-        # that sets none of the three names - a cause that cannot apply to a value the FILE never
-        # declared, and one the gate can rule out because it runs inside the guard that already removed
-        # those names.
+        # the container's blank-path check, whose remediation asks for a teardown and a re-run - and
+        # re-creating the container cannot fix a value the FILE never declared.
         $verdict = Get-DmsSchemaEnvironmentVerdict `
             -ContainerEnvironment (Get-ContainerEnvironmentFixture -ApiSchemaPath "") `
             -ExpectedPackageIdentity $script:fixturePackageIdentity `
@@ -1097,7 +1205,37 @@ Describe "Get-DmsSchemaEnvironmentVerdict fails setup when the DMS container dis
         $verdict.ShouldFail | Should -BeTrue
         $verdict.Reason | Should -Match "the environment file declares 4 ApiSchema package\(s\) but no API_SCHEMA_PATH"
         $verdict.Remediation | Should -Match "Set API_SCHEMA_PATH in the environment file"
+        $verdict.Remediation | Should -Not -Match "teardown-local-dms"
+    }
+
+    It "answers every container-side branch with the teardown-and-re-run remediation and no stale shell advice" -ForEach @(
+        @{ Label = "UseApiSchemaPath false"; Container = @{ UseApiSchemaPath = "false" } }
+        @{ Label = "a blank ApiSchemaPath"; Container = @{ ApiSchemaPath = "" } }
+        @{ Label = "a different ApiSchemaPath"; Container = @{ ApiSchemaPath = "/somewhere/else" } }
+        @{ Label = "a non-array SCHEMA_PACKAGES"; Container = @{ RawSchemaPackages = "not-json" } }
+        @{ Label = "a different package count"; Container = @{ PackageCount = 2 } }
+        @{ Label = "the same count at a different version"; Container = @{ Package = @(1..4 | ForEach-Object {
+                    [pscustomobject]@{ name = "EdFi.ApiSchema.Package$_"; version = "9.9.9"; feedUrl = "https://pkgs.example.org/v3/index.json" }
+                }) }
+        }
+    ) {
+        # Every branch the CONTAINER can fail on, held to the same remediation in one table rather than
+        # one branch at a time: the advice that had to be replaced ("Re-run setup from a shell that does
+        # not set USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES") reached all six, and it
+        # named a cause the gate has already ruled out - it runs inside the guard that removed those
+        # three names. A future edit that restores it in any one branch fails here.
+        $verdict = Get-DmsSchemaEnvironmentVerdict `
+            -ContainerEnvironment (Get-ContainerEnvironmentFixture @Container) `
+            -ExpectedPackageIdentity $script:fixturePackageIdentity `
+            -EnvironmentFileUsesApiSchemaPath $true `
+            -EnvironmentFileApiSchemaPath $script:fixtureApiSchemaPath
+
+        $verdict.ShouldFail | Should -BeTrue
+        $verdict.Remediation | Should -Match "teardown-local-dms\.ps1"
+        $verdict.Remediation | Should -Match "re-created from the selected environment file"
+        $verdict.Remediation | Should -Match "select a different -EnvironmentFile"
         $verdict.Remediation | Should -Not -Match "Re-run setup from a shell"
+        $verdict.Remediation | Should -Not -Match "\./teardown-local-dms\.ps1"
     }
 
     It "refuses an empty declared package surface, because the file-only reader cannot produce one" {
@@ -1736,47 +1874,103 @@ Describe "Both E2E setup wrappers verify the started container against the envir
         $script:schemaEnvironmentModuleSource | Should -Not -Match 'Write-Warning[^\r\n]*setup mismatch'
     }
 
-    It "leaves the wrappers' already-imported database-safety commands resolvable after this module loads" {
+    It "leaves every imported command resolvable, and the verifier's own dependencies resolvable, in the <Label> import order" -ForEach @(
+        @{
+            Label       = "direct wrapper"
+            ImportOrder = @(
+                "Import-Module ./env-utility.psm1 -Force"
+                "Import-Module ./database-safety.psm1 -Force"
+                "Import-Module ./dms-schema-environment.psm1"
+            )
+        }
+        @{
+            # The build path. build-dms.ps1 imports this module at the top of the script and then invokes
+            # a setup wrapper IN-PROCESS, so the wrapper's own three imports run against a session where
+            # this module is already loaded - and its two -Force imports remove and re-import the very
+            # leaf modules this module nested-imported for itself. The wrapper's final plain import
+            # cannot repair that: an already-loaded module is reused, not re-processed, so its import
+            # block does not run again. Only exercising this order proves the module's internal
+            # dependency resolution survives it.
+            Label       = "build-dms.ps1"
+            ImportOrder = @(
+                "Import-Module ./dms-schema-environment.psm1"
+                "Import-Module ./env-utility.psm1 -Force"
+                "Import-Module ./database-safety.psm1 -Force"
+                "Import-Module ./dms-schema-environment.psm1"
+            )
+        }
+    ) {
         # A real import, not a source assertion. Every other test in this suite reaches this module by
         # extracting function text through the AST, so nothing here ever executed its import block - and
         # a nested 'Import-Module ... -Force' unloaded database-safety out of the importing session,
         # leaving both wrappers to fail at their first database-safety call after the import while every
         # test stayed green.
         #
-        # Run in a child pwsh, in the wrappers' own order and from the wrappers' own working directory,
-        # so the observation is a fresh session's command resolution rather than one this suite has
-        # already populated with -Force imports of its own.
+        # Run in a child pwsh, in a real import order and from the wrappers' own working directory, so
+        # the observation is a fresh session's command resolution rather than one this suite has already
+        # populated with -Force imports of its own.
         $dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
-        $observationPath = Join-Path $TestDrive "wrapper-import-observations.txt"
-        $childScriptPath = Join-Path $TestDrive "wrapper-import-child.ps1"
-        # Both paths are embedded in single-quoted literals in the generated child script, so an
-        # apostrophe in either would close the quote early. Doubling keeps the literals intact.
+        $observationPath = Join-Path $TestDrive "wrapper-import-observations-$Label.txt"
+        $childScriptPath = Join-Path $TestDrive "wrapper-import-child-$Label.ps1"
+        $environmentFilePath = Join-Path $TestDrive "wrapper-import-fixture-$Label.env"
+        # A package-bearing environment file, so the verifier gets past its file-only reader and reaches
+        # the container read. Written here rather than pointing at a tracked .env file, so the case does
+        # not depend on repository content it is not about.
+        Set-Content -LiteralPath $environmentFilePath -Encoding utf8 -Value @'
+USE_API_SCHEMA_PATH=true
+API_SCHEMA_PATH=/app/ApiSchema
+SCHEMA_PACKAGES='[{"name":"EdFi.ApiSchema.Package1","version":"1.0.0","feedUrl":"https://pkgs.example.org/v3/index.json"}]'
+'@
+
+        # Every path is embedded in a single-quoted literal in the generated child script, so an
+        # apostrophe in any of them would close the quote early. Doubling keeps the literals intact.
         $escapedObservationPath = $observationPath -replace "'", "''"
         $escapedComposeRoot = $dockerComposeRoot -replace "'", "''"
+        $escapedEnvironmentFilePath = $environmentFilePath -replace "'", "''"
+        $importBlock = $ImportOrder -join [System.Environment]::NewLine
         $childScript = @"
 Set-Location -LiteralPath '$escapedComposeRoot'
 
-# Verbatim what both wrappers do: the leaf dependency first, the shared verifier module last and
-# without -Force.
-Import-Module ./env-utility.psm1 -Force
-Import-Module ./database-safety.psm1 -Force
-Import-Module ./dms-schema-environment.psm1
+$importBlock
 
 foreach (`$commandName in @(
         'Assert-E2EDatabaseIsDedicated',
         'Get-ComposeResolvedEnvValue',
         'Resolve-DotenvFileSequentially',
         'Assert-DmsContainerSchemaEnvironment',
-        'Invoke-WithDmsEnvironmentFileSchemaAuthority'
+        'Invoke-WithDmsEnvironmentFileSchemaAuthority',
+        'Get-DmsContainerEnvironment',
+        'Get-DmsSchemaEnvironmentVerdict',
+        'Get-DmsSchemaPackageIdentity'
     )) {
     `$commandName + '=' + [string][bool](Get-Command `$commandName -ErrorAction SilentlyContinue) |
         Add-Content -LiteralPath '$escapedObservationPath'
+}
+
+# GLOBAL, so the module's own 'docker inspect' resolves to it: a module function looks up commands in
+# its own session state and then in the global one, never in this script's scope. Fails closed, which
+# is the outcome the verifier turns into a throw.
+function global:docker {
+    `$global:LASTEXITCODE = 1
+    return ''
+}
+
+# Reaching 'docker inspect' means every module-internal dependency resolved on the way there:
+# Get-SchemaPackagesFromEnvironmentFile (schema-package-utility) and Resolve-DotenvFileSequentially
+# (database-safety), both nested-imported by this module. A broken one throws CommandNotFoundException
+# BEFORE the container read, so the observation distinguishes them.
+try {
+    Assert-DmsContainerSchemaEnvironment -EnvironmentFilePath '$escapedEnvironmentFilePath' -ContainerName 'ed-fi-api'
+    'VerifierOutcome=returned-without-reading-the-container' | Add-Content -LiteralPath '$escapedObservationPath'
+}
+catch {
+    'VerifierOutcome=' + `$_.Exception.Message | Add-Content -LiteralPath '$escapedObservationPath'
 }
 "@
         Set-Content -LiteralPath $childScriptPath -Value $childScript -Encoding utf8
 
         & (Get-Process -Id $PID).Path -NoProfile -File $childScriptPath
-        $LASTEXITCODE | Should -Be 0 -Because "the wrappers' import sequence must not fail"
+        $LASTEXITCODE | Should -Be 0 -Because "the $Label import sequence must not fail"
 
         $observations = @(Get-Content -LiteralPath $observationPath)
         # The three the wrappers call after importing this module: the up-front dedicated-database gate,
@@ -1790,6 +1984,19 @@ foreach (`$commandName in @(
         # catch the guard being defined in the module but left out of Export-ModuleMember - which would
         # leave both wrappers unable to resolve it at their first phase.
         $observations | Should -Contain "Invoke-WithDmsEnvironmentFileSchemaAuthority=True" -Because "both wrappers now reach the schema-settings guard through this module's exports"
+        # build-dms.ps1's runtime hash gate calls this reader by name after importing the module, having
+        # dropped its own copy of it, so the export is load-bearing for that script the same way.
+        $observations | Should -Contain "Get-DmsContainerEnvironment=True" -Because "build-dms.ps1 reads the container environment through this module's export"
+        # The export surface stays at the three commands with an external caller. The internals reach
+        # their tests through AST extraction, so exporting them would buy nothing and widen what the
+        # in-process shadowing described above can bind to.
+        $observations | Should -Contain "Get-DmsSchemaEnvironmentVerdict=False" -Because "the verdict has no caller outside the module"
+        $observations | Should -Contain "Get-DmsSchemaPackageIdentity=False" -Because "the identity reducer has no caller outside the module"
+
+        # The behavioral half: resolving the exports says nothing about whether the module can still
+        # resolve the commands IT calls. Only a run that gets all the way to the container read proves
+        # that, which a source assertion or a Get-Command check cannot.
+        $observations | Should -Contain "VerifierOutcome=Unable to inspect Docker container 'ed-fi-api' to verify its schema environment." -Because "the verifier must reach its 'docker inspect' step, which means the module resolved its own nested-imported dependencies in this order"
     }
 }
 

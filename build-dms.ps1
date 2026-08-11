@@ -742,37 +742,6 @@ function Invoke-E2EDatabaseProvisioning {
     }
 }
 
-function Get-DockerContainerEnvironmentMap {
-    param(
-        [string]
-        $ContainerName
-    )
-
-    $environmentJson = docker inspect $ContainerName --format '{{json .Config.Env}}'
-
-    if ($LASTEXITCODE -ne 0) {
-        throw "Unable to inspect Docker container '$ContainerName'."
-    }
-
-    $environmentEntries = @($environmentJson | ConvertFrom-Json)
-    $environmentValues = @{}
-
-    foreach ($entry in $environmentEntries) {
-        $entryText = [string]$entry
-        $separatorIndex = $entryText.IndexOf("=")
-
-        if ($separatorIndex -lt 0) {
-            continue
-        }
-
-        $key = $entryText.Substring(0, $separatorIndex)
-        $value = $entryText.Substring($separatorIndex + 1)
-        $environmentValues[$key] = $value
-    }
-
-    return $environmentValues
-}
-
 function Write-DmsSchemaContainerEnvironment {
     param(
         [hashtable]
@@ -834,7 +803,11 @@ function Assert-DmsRuntimeSchemaMatchesProvisionedDatabase {
 
     Write-Output "Validating DMS runtime effective schema before E2E tests..."
 
-    $environmentValues = Get-DockerContainerEnvironmentMap -ContainerName $ContainerName
+    # The single container-environment reader, exported by the module imported at the top of this
+    # script. This function used to carry its own copy under a different name; the two parsed the
+    # same 'docker inspect --format {{json .Config.Env}}' output the same way and both failed closed,
+    # so the copy only gave the next fix somewhere to land unnoticed.
+    $environmentValues = Get-DmsContainerEnvironment -ContainerName $ContainerName
     Write-DmsSchemaContainerEnvironment -EnvironmentValues $environmentValues
 
     $dmsRuntimeEffectiveSchemaHash = Get-DmsRuntimeEffectiveSchemaHash `
