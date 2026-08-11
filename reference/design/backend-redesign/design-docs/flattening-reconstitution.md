@@ -233,7 +233,7 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
    - derive a deterministic natural-key UNIQUE constraint on the root table:
      - scalar identity elements map to scalar columns
      - identity elements that come from document references map to the corresponding `..._DocumentId` FK columns
-   - compile the resource's own natural-key probe from the same identity bindings so POST upsert detection can find the current `DocumentId` through `UX_<R>_NK` without a UUIDv5 referential id.
+   - compile the resource's own natural-key probe from the same identity bindings so POST upsert detection can find the current `DocumentId` through `UX_<R>_NK`.
 
 5. Apply collection semantic-identity inputs:
    - resolve `arrayUniquenessConstraints` into scope-relative bindings for persisted multi-item collection scopes
@@ -371,7 +371,7 @@ DMS uses a single required approach: Core emits each reference instance *with it
 Core changes:
 - Add `JsonPath Path` to `Core.External.Model.DocumentReference` representing the **concrete reference-object path including indices**, e.g. `$.addresses[2].periods[0].calendarReference`.
 - Continue emitting the **wildcard reference-object path** via `DocumentReferenceArray.arrayPath`, e.g. `$.addresses[*].periods[*].calendarReference`.
-- Keep the ordered `DocumentIdentity` values on each `DocumentReference`; no UUIDv5 `ReferentialId` is carried.
+- Keep the ordered `DocumentIdentity` values on each `DocumentReference` for backend natural-key resolution.
 
 This is the same pattern already used for descriptor extraction (`DescriptorReference.Path`).
 

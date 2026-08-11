@@ -39,7 +39,7 @@ Draft. This is an initial design proposal for replacing the current three-table 
 
 - Today, the backend uses:
   - `dms.Document` as JSONB canonical storage,
-  - `dms.Alias` for `ReferentialId → DocumentId` lookup,
+  - `dms.Alias` as the legacy identity-alias lookup table,
   - `dms.Reference` (+ FK) for reference validation and reverse lookups,
   - plus JSON rewrite cascades (`UpdateCascadeHandler`) to keep embedded reference identity values consistent.
 - In this redesign, canonical storage is relational (tables per resource). Referencing relationships are stored as stable `DocumentId` FKs, so:
@@ -57,7 +57,7 @@ Draft. This is an initial design proposal for replacing the current three-table 
 
 Keep DMS Core mostly intact:
 
-- Core remains the home of API canonicalization, validation, and identity/reference extraction. It does not compute UUIDv5 referential ids in the natural-key design.
+- Core remains the home of API canonicalization, validation, and identity/reference extraction. It preserves ordered document identity and reference details for backend natural-key resolution.
 - For baseline non-profile relational writes, the required Core extraction-model change is to add concrete *JSON location* (with indices) to extracted document references (see “Document references inside nested collections” in [flattening-reconstitution.md](flattening-reconstitution.md)). Descriptors already carry location via `DescriptorReference.Path`.
 - Profile-constrained collection merges add a second Core/backend contract: Core supplies an optional request-scoped `ProfileAppliedWriteRequest` with a `WritableRequestBody`; backend then loads the current stored document and invokes a Core-owned projector to derive `ProfileAppliedWriteContext` (`VisibleStoredBody`, `StoredScopeStates`, and `VisibleStoredCollectionRows`) so merge/delete decisions come from Core-projected stored state rather than backend-owned profile evaluation.
 - Core MUST reject any writable profile definition that excludes a field required to compute the compiled semantic identity of a persisted multi-item collection scope.
@@ -84,7 +84,7 @@ This redesign is split into focused docs in this directory:
 - Mapping pack file format (normative `.mpack` schema): [mpack-format-v1.md](mpack-format-v1.md)
 - Extensions (`_ext`, resource/common-type extensions, naming): [extensions.md](extensions.md)
 - Transactions, concurrency, and cascades (reference validation, transactional cascades, runtime caching): [transactions-and-concurrency.md](transactions-and-concurrency.md)
-- Natural-key reference resolution (replacement for UUIDv5 `ReferentialId` / `dms.ReferentialIdentity` lookup): [natural-key-resolution.md](natural-key-resolution.md)
+- Natural-key reference resolution: [natural-key-resolution.md](natural-key-resolution.md)
 - Update tracking (stored stamps for `_lastModifiedDate` / `ChangeVersion`, composed `_etag`): [update-tracking.md](update-tracking.md)
 - Change Queries (`/deletes`, `/keyChanges`, `/availableChangeVersions`, `ContentVersion` mirror, `tracked_changes_*` tables): [change-queries.md](change-queries.md)
 - Partitioned cursor paging (`pageToken`/`pageSize`, `Next-Page-Token`, `/partitions`, cursor token contract, range-seek page selection): [partitioned-cursor-paging.md](partitioned-cursor-paging.md)

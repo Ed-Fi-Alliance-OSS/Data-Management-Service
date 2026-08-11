@@ -30,7 +30,7 @@ Capture major strengths and risks of the baseline redesign, with an emphasis on 
 ### Natural-key resolver reuses relational identity indexes
 
 - Resolves concrete references through existing `RefKey` indexes, abstract references through `{AbstractResource}Identity`, and descriptors through the lowered-URI + `ResourceKeyId` descriptor index.
-- Avoids maintaining a duplicate UUIDv5 identity table while still keeping stable `DocumentId` FKs for storage, authorization, and reconstitution.
+- Avoids maintaining a duplicate identity lookup table while still keeping stable `DocumentId` FKs for storage, authorization, and reconstitution.
 
 ### Full natural-key propagation for document references
 
