@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Etag;
@@ -30,7 +29,6 @@ internal sealed class DocumentCacheReadResponseShaper(
     private const string IdPropertyName = "id";
     private const string EtagPropertyName = "_etag";
     private const string LastModifiedDatePropertyName = "_lastModifiedDate";
-    private const string LastModifiedDateFormat = "yyyy-MM-ddTHH:mm:ss'Z'";
 
     private readonly IRelationalReadMaterializer _readMaterializer =
         readMaterializer ?? throw new ArgumentNullException(nameof(readMaterializer));
@@ -314,7 +312,7 @@ internal sealed class DocumentCacheReadResponseShaper(
     }
 
     private static string FormatLastModifiedDate(DateTimeOffset lastModifiedAt) =>
-        lastModifiedAt.UtcDateTime.ToString(LastModifiedDateFormat, CultureInfo.InvariantCulture);
+        LastModifiedDateFormatter.Format(lastModifiedAt);
 
     private void LogShapingFailure(DocumentCacheReadResponseShapingFailureReason reason)
     {

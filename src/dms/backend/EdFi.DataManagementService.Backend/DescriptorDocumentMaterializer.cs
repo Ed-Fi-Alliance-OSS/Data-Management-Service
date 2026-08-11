@@ -11,7 +11,6 @@ namespace EdFi.DataManagementService.Backend;
 internal static class DescriptorDocumentMaterializer
 {
     private const string DateOnlyFormat = "yyyy-MM-dd";
-    private const string LastModifiedDateFormat = "yyyy-MM-ddTHH:mm:ss'Z'";
     private const string IdPropertyName = "id";
     private const string EtagPropertyName = "_etag";
     private const string LastModifiedDatePropertyName = "_lastModifiedDate";
@@ -119,8 +118,5 @@ internal static class DescriptorDocumentMaterializer
     }
 
     private static string FormatLastModifiedDate(DescriptorReadRow descriptorRow) =>
-        descriptorRow.ContentLastModifiedAt.UtcDateTime.ToString(
-            LastModifiedDateFormat,
-            CultureInfo.InvariantCulture
-        );
+        LastModifiedDateFormatter.Format(descriptorRow.ContentLastModifiedAt);
 }
