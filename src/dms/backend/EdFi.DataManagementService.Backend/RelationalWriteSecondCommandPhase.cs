@@ -750,6 +750,22 @@ internal sealed class CompositeRelationalWriteSecondCommand(
 
             return this;
         }
+
+        /// <summary>
+        /// The emitted checks the CMS configured at or before <paramref name="namespaceConfiguredIndex"/> —
+        /// exactly the ones whose statements precede the namespace statement in this command. A check
+        /// configured after it is emitted behind that statement, so an abort there never reached it, and
+        /// probing its view would report a contract failure ahead of the namespace answer configured first.
+        /// </summary>
+        public EmittedCustomViewRuns BeforeNamespace(int namespaceConfiguredIndex) =>
+            this with
+            {
+                // The same splitter the runs were partitioned with, so "before the namespace position" —
+                // including its tie rule — has one definition.
+                EmittedChecks = CustomViewAuthorizationCheckSplitter
+                    .PartitionByConfiguredIndex(EmittedChecks, namespaceConfiguredIndex)
+                    .Before,
+            };
     }
 
     private sealed record CommandRun(
@@ -2201,6 +2217,19 @@ internal sealed class CompositeRelationalWriteSecondCommand(
                 .Checks.Select(static check => check.ValueSource)
                 .ToArray();
 
+            // The custom-view statements this command emitted ahead of the namespace one. They already
+            // answered — a table masquerading as auth.{StrategyName} satisfies the membership SQL silently —
+            // so a namespace answer is the caller's answer only once the views configured before it are known
+            // to conform. Every namespace disposition validates them, because each one returns in their place.
+            var reachedBeforeNamespace = customViewRuns?.BeforeNamespace(
+                namespacePlan.Checks[0].RawConfiguredIndex
+            );
+
+            Task ValidateReachedCustomViewsAsync() =>
+                reachedBeforeNamespace is null
+                    ? Task.CompletedTask
+                    : ValidateEmittedCustomViewsAsync(request, reachedBeforeNamespace, cancellationToken);
+
             if (
                 NamespaceAuthorizationProviderFailureMapper.TryMapNamespaceAuthorizationFailure(
                     dialect,
@@ -2212,6 +2241,8 @@ internal sealed class CompositeRelationalWriteSecondCommand(
                 )
             )
             {
+                await ValidateReachedCustomViewsAsync().ConfigureAwait(false);
+
                 return RelationalWriteExecutorResults.BuildNamespaceAuthorizationFailureResult(
                     request.OperationKind,
                     namespaceFailure!
@@ -2229,6 +2260,8 @@ internal sealed class CompositeRelationalWriteSecondCommand(
                 )
             )
             {
+                await ValidateReachedCustomViewsAsync().ConfigureAwait(false);
+
                 return RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
                     request.OperationKind,
                     [NamespaceAuthorizationSecurityConfigurationMessages.InvalidAuthorizationMetadata],
@@ -2243,6 +2276,16 @@ internal sealed class CompositeRelationalWriteSecondCommand(
 
         if (runtimeCheck is not null)
         {
+            // The relationship statement is emitted last — after the namespace check and after both
+            // custom-view runs — so every view this command emitted ran ahead of it and owes its
+            // urn:ed-fi:api:system 500 before this denial. The whole emitted set is probed for that reason,
+            // where a namespace denial probes only the runs configured before it.
+            if (customViewRuns is not null && IsRelationshipFamilyFailure(dialect, runtimeCheck, exception))
+            {
+                await ValidateEmittedCustomViewsAsync(request, customViewRuns, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             // Throws the authorization exceptions the executor already maps to results, or rethrows the
             // provider failure unchanged when it is not an authorization denial.
             ProposedRelationshipAuthorizationCommand.ThrowMappedFailure(
@@ -2256,4 +2299,23 @@ internal sealed class CompositeRelationalWriteSecondCommand(
 
         throw exception;
     }
+
+    /// <summary>
+    /// Whether the failure carries a payload the relationship family owns — a denial, or one it recognizes but
+    /// cannot map. A failure carrying no recognized payload at all has already been probed as an
+    /// unattributable failure, so asking here is what keeps that probe from running a second time.
+    /// </summary>
+    private bool IsRelationshipFamilyFailure(
+        SqlDialect dialect,
+        ProposedRelationshipAuthorizationRuntimeCheck runtimeCheck,
+        DbException exception
+    ) =>
+        ProposedRelationshipAuthorizationCommand.TryMapFailure(
+            dialect,
+            _providerFailureExtractor,
+            runtimeCheck,
+            exception,
+            out _,
+            out var invalidFailureDiagnostic
+        ) || invalidFailureDiagnostic is not null;
 }

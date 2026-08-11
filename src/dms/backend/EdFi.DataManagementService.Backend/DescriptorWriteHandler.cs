@@ -1175,7 +1175,8 @@ internal sealed class DescriptorWriteHandler(
         if (lockedCurrentState is DescriptorCurrentStateLoadResult.Loaded)
         {
             // Custom views AND-compose with NamespaceBased in CMS-configured order, so those configured at or
-            // before it run first and those configured after it run once namespace has authorized.
+            // before it run first and those configured after it run once the stored namespace check has
+            // authorized. The whole stored sequence completes before any proposed check runs.
             var preconditionFromEarlyCustomViews = await EvaluateLockedCustomViewAuthorizationAsync(
                     mappingSet,
                     existingTargetContext.DocumentId,
@@ -1209,6 +1210,24 @@ internal sealed class DescriptorWriteHandler(
                 }
             }
 
+            var preconditionFromLateCustomViews = await EvaluateLockedCustomViewAuthorizationAsync(
+                    mappingSet,
+                    existingTargetContext.DocumentId,
+                    customViewsAfterNamespace,
+                    customViewAuthorization,
+                    sessionCommandExecutor,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            if (preconditionFromLateCustomViews is not null)
+            {
+                return preconditionFromLateCustomViews;
+            }
+
+            // Last, because it reads the request's proposed value: every stored check has to have answered
+            // against the locked row first, or a proposed denial would mask the stored custom-view answer
+            // configured after NamespaceBased — including the 500 a nonconforming view behind it owes.
             if (proposedNamespaceAuthorization is not null)
             {
                 var preconditionFromProposed = await EvaluateNamespaceAuthorizationAsync(
@@ -1225,21 +1244,6 @@ internal sealed class DescriptorWriteHandler(
                 {
                     return preconditionFromProposed;
                 }
-            }
-
-            var preconditionFromLateCustomViews = await EvaluateLockedCustomViewAuthorizationAsync(
-                    mappingSet,
-                    existingTargetContext.DocumentId,
-                    customViewsAfterNamespace,
-                    customViewAuthorization,
-                    sessionCommandExecutor,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-
-            if (preconditionFromLateCustomViews is not null)
-            {
-                return preconditionFromLateCustomViews;
             }
         }
 
@@ -2955,10 +2959,11 @@ internal sealed class DescriptorWriteHandler(
 
                 case DescriptorCurrentStateLoadResult.Loaded(var persisted, var currentEtag):
                     // AND-compose the configured filters against the locked target before applying any
-                    // change: the custom views configured at or before NamespaceBased, then stored and
-                    // proposed namespace, then the views configured after it. Any denial returns its 403 with
-                    // no INSERT/UPDATE statement, and short-circuits before the no-op or immutable-identity
-                    // checks so 403 wins over those outcomes too.
+                    // change: the stored sequence in configured order — the custom views at or before
+                    // NamespaceBased, the stored namespace check, then the views after it — and only then
+                    // the proposed namespace check. Any denial returns its 403 with no INSERT/UPDATE
+                    // statement, and short-circuits before the no-op or immutable-identity checks so 403
+                    // wins over those outcomes too.
                     var sessionCommandExecutor = writeSession.CreateCommandExecutor();
                     var (customViewsBeforeNamespace, customViewsAfterNamespace) =
                         PartitionDescriptorCustomViewRuns(
@@ -3011,6 +3016,29 @@ internal sealed class DescriptorWriteHandler(
                         }
                     }
 
+                    var lateCustomViewFailure = await EvaluateLockedDescriptorWriteCustomViewsAsync(
+                            request.MappingSet,
+                            documentId,
+                            customViewsAfterNamespace,
+                            customViewAuthorization,
+                            sessionCommandExecutor,
+                            customViewNotAuthorizedFactory,
+                            namespaceAuthorizationInvalidFactory,
+                            namespaceStaleTargetFactory,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+
+                    if (lateCustomViewFailure is not null)
+                    {
+                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return lateCustomViewFailure;
+                    }
+
+                    // Last, because it reads the request's proposed value: every stored check has to have
+                    // answered against the locked row first, or a proposed denial would mask the stored
+                    // custom-view answer configured after NamespaceBased — including the 500 a nonconforming
+                    // view behind it owes.
                     if (proposedNamespaceAuthorization is not null)
                     {
                         var proposedResult = await ExecuteDescriptorNamespaceAuthorizationAsync(
@@ -3035,25 +3063,6 @@ internal sealed class DescriptorWriteHandler(
                             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
                             return proposedFailure;
                         }
-                    }
-
-                    var lateCustomViewFailure = await EvaluateLockedDescriptorWriteCustomViewsAsync(
-                            request.MappingSet,
-                            documentId,
-                            customViewsAfterNamespace,
-                            customViewAuthorization,
-                            sessionCommandExecutor,
-                            customViewNotAuthorizedFactory,
-                            namespaceAuthorizationInvalidFactory,
-                            namespaceStaleTargetFactory,
-                            cancellationToken
-                        )
-                        .ConfigureAwait(false);
-
-                    if (lateCustomViewFailure is not null)
-                    {
-                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                        return lateCustomViewFailure;
                     }
 
                     // A self-basis proposed check against an existing target is satisfied by the paired stored

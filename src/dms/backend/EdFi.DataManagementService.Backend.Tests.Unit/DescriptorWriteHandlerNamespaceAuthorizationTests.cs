@@ -1226,6 +1226,103 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
     }
 
     [Test]
+    public async Task It_runs_a_descriptor_update_custom_view_configured_after_namespace_before_the_proposed_namespace_check()
+    {
+        // Every stored check AND-composes against the locked row, in configured order, before the proposed
+        // value's own check reads the request body. Running the proposed namespace check first would let its
+        // 403 mask the stored custom-view answer configured after NamespaceBased — here, the
+        // urn:ed-fi:api:system 500 its nonconforming view owes.
+        var documentId = 345L;
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(
+                documentId,
+                _documentUuid,
+                44L
+            ),
+        };
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
+        // The stored namespace check authorizes; the proposed one would deny, and must not get to answer
+        // while a stored check configured after it is still owed.
+        sessionFactory.Session.Executor.NamespaceResults.Enqueue(
+            new NamespaceAuthorizationExecutionResult.Authorized()
+        );
+        sessionFactory.Session.Executor.NamespaceResults.Enqueue(
+            new NamespaceAuthorizationExecutionResult.NotAuthorized(ProposedMismatchFailure())
+        );
+        var validationExecutor = new RecordingCustomViewValidationExecutor(
+            new StubDbException("missing authorization view")
+        );
+        var sut = CreateSut(
+            sessionFactory,
+            targetLookupService,
+            customViewValidationCommandExecutor: validationExecutor
+        );
+
+        var act = async () =>
+            await sut.HandlePutAsync(
+                CreatePutRequest(
+                    namespacePrefixes: ["uri://ed-fi.org/"],
+                    authorizationStrategies: [NamespaceStrategy(), DeleteCustomViewStrategy()],
+                    @namespace: "uri://other.org/SchoolTypeDescriptor"
+                )
+            );
+
+        await act.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+        validationExecutor
+            .Commands.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain(DeleteCustomViewStrategyName);
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_runs_a_precondition_path_custom_view_configured_after_namespace_before_the_proposed_namespace_check()
+    {
+        // The same ordering through the shared locked-precondition helper. The exact defect this guards is the
+        // two paths disagreeing, so the stored sequence has to complete before the proposed check here too.
+        var documentId = 345L;
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        // IfMatch PUT path: resolve target via session executor -> lock scalar -> load persisted -> checks.
+        sessionFactory.Session.Executor.ResultSets.Enqueue([
+            CreateResolvedExistingDocumentRowWithId(documentId),
+        ]);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
+        sessionFactory.Session.Executor.NamespaceResults.Enqueue(
+            new NamespaceAuthorizationExecutionResult.Authorized()
+        );
+        sessionFactory.Session.Executor.NamespaceResults.Enqueue(
+            new NamespaceAuthorizationExecutionResult.NotAuthorized(ProposedMismatchFailure())
+        );
+        var validationExecutor = new RecordingCustomViewValidationExecutor(
+            new StubDbException("missing authorization view")
+        );
+        var sut = CreateSut(sessionFactory, customViewValidationCommandExecutor: validationExecutor);
+        var request = CreatePutRequest(
+            namespacePrefixes: ["uri://ed-fi.org/"],
+            authorizationStrategies: [NamespaceStrategy(), DeleteCustomViewStrategy()],
+            @namespace: "uri://other.org/SchoolTypeDescriptor"
+        ) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch("\"stale-etag\""),
+        };
+
+        var act = async () => await sut.HandlePutAsync(request);
+
+        await act.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+        validationExecutor
+            .Commands.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain(DeleteCustomViewStrategyName);
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+    }
+
+    [Test]
     public async Task It_validates_a_descriptor_delete_custom_view_configured_before_a_namespace_no_prefixes_terminal()
     {
         // The namespace 403 resolves before the write session opens, but a custom view configured ahead of it
@@ -2192,9 +2289,11 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
 
 /// <summary>
 /// Records the custom-view validation probes a descriptor write terminal issues. The probe is parameterless
-/// catalog SQL, so the recorded command text is the whole observable effect.
+/// catalog SQL, so the recorded command text is the whole observable effect. Supplying
+/// <paramref name="failure"/> makes every probe fail the way a missing or nonconforming view does.
 /// </summary>
-internal sealed class RecordingCustomViewValidationExecutor : IRelationalCommandExecutor
+internal sealed class RecordingCustomViewValidationExecutor(DbException? failure = null)
+    : IRelationalCommandExecutor
 {
     public SqlDialect Dialect => SqlDialect.Pgsql;
 
@@ -2209,6 +2308,6 @@ internal sealed class RecordingCustomViewValidationExecutor : IRelationalCommand
         ArgumentNullException.ThrowIfNull(command);
         Commands.Add(command.CommandText);
 
-        return Task.FromResult(default(TResult)!);
+        return failure is null ? Task.FromResult(default(TResult)!) : Task.FromException<TResult>(failure);
     }
 }
