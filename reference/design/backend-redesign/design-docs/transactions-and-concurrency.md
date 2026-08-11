@@ -111,9 +111,9 @@ DDL generator requirements (derived from ApiSchema):
   - Rationale: a composite FK does not enforce anything if *any* referencing column is `NULL`.
 - Enforce a composite FK anchored on canonical/storage identity-part columns:
   - PostgreSQL:
-    - concrete target: `{schema}.{TargetResource}(DocumentId, <CanonicalIdentityParts...>)` using `ON UPDATE CASCADE`
+    - concrete target: `{schema}.{TargetResource}(<CanonicalIdentityParts...>, DocumentId)` using `ON UPDATE CASCADE`
       when the target is transitively mutable (otherwise `ON UPDATE NO ACTION`).
-    - abstract target: `{schema}.{AbstractResource}Identity(DocumentId, <CanonicalIdentityParts...>)` using
+    - abstract target: `{schema}.{AbstractResource}Identity(<CanonicalIdentityParts...>, DocumentId)` using
       `ON UPDATE CASCADE`.
   - SQL Server:
     - concrete and abstract targets use full-composite FKs whose `ON UPDATE` actions are selected by

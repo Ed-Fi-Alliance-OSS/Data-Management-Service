@@ -791,7 +791,7 @@ Typical structure:
 - Natural key columns (from `identityJsonPaths`) → **API-semantic** unique constraint over the identity **binding/path** columns.
   - For identity elements that come from a document reference object, the unique constraint uses the corresponding `..._DocumentId` FK column (stable) plus the per-site identity-part binding columns.
   - Under key unification, per-site identity-part binding columns may be generated/persisted aliases of canonical storage columns; the natural-key unique constraint remains defined over binding columns to preserve API path/presence semantics.
-- Reference key columns → **FK-supporting** unique constraint over `(DocumentId, <StorageIdentityParts...>)` (the referenced key used by composite reference FKs).
+- Reference key columns → **FK-supporting** unique constraint over `(<StorageIdentityParts...>, DocumentId)` (the referenced key used by composite reference FKs and natural-key probes).
   - Under key unification, `<StorageIdentityParts...>` uses canonical storage columns (never per-site `UnifiedAlias` binding columns); see `key-unification.md`.
 - Scalar columns for top-level non-collection properties
 - Reference columns (document references):
@@ -800,7 +800,7 @@ Typical structure:
     - one **binding/path** column per referenced identity field (e.g., `{RefBaseName}_{IdentityPart}`).
       - Under key unification, these per-site columns remain in the table shape but may be generated/persisted `UnifiedAlias` columns of canonical storage columns; see `key-unification.md`.
   - Enforce a composite reference FK using only stored/writable **storage** columns:
-    - `FOREIGN KEY (..._DocumentId, <StorageIdentityParts...>) REFERENCES <TargetRefKey>(DocumentId, <TargetStorageIdentityParts...>)`
+    - `FOREIGN KEY (<StorageIdentityParts...>, ..._DocumentId) REFERENCES <TargetRefKey>(<TargetStorageIdentityParts...>, DocumentId)`
       - For each referenced identity part, derive the referencing-side storage column by mapping the per-site binding column through `DbColumnModel.Storage` (i.e., when the binding column is a `UnifiedAlias`, use its canonical column).
       - FKs MUST NOT be defined over `UnifiedAlias` columns (generated columns are not cascade targets).
       - PostgreSQL:
@@ -869,7 +869,7 @@ This redesign provisions an **identity table per abstract resource**:
 - Maintenance:
   - triggers on each concrete member root table upsert the corresponding `{AbstractResource}Identity` row on insert/update of the concrete identity fields (including identity renames), populating `ResourceKeyId` from compile-time concrete-member metadata.
 - FKs for abstract reference sites:
-  - referencing tables use composite FKs to `{schema}.{AbstractResource}Identity(DocumentId, <AbstractIdentityFields...>)`.
+  - referencing tables use composite FKs to `{schema}.{AbstractResource}Identity(<AbstractIdentityFields...>, DocumentId)`.
     - PostgreSQL: `ON UPDATE CASCADE`.
     - SQL Server: native full-composite `ON UPDATE CASCADE` where retained by
       [SQL Server foreign-key pruning](sql-server-pruning.md), otherwise a safe `ON UPDATE NO ACTION` cut.
@@ -969,7 +969,7 @@ CREATE TABLE IF NOT EXISTS edfi.Student (
     BirthDate        date         NULL,
 
     CONSTRAINT UX_Student_NK UNIQUE (StudentUniqueId),
-    CONSTRAINT UX_Student_RefKey UNIQUE (DocumentId, StudentUniqueId)
+    CONSTRAINT UX_Student_RefKey UNIQUE (StudentUniqueId, DocumentId)
 );
 
 -- Descriptor references are stored as FKs directly to dms.Descriptor.
@@ -986,7 +986,7 @@ CREATE TABLE IF NOT EXISTS edfi.School (
                            REFERENCES dms.Descriptor(DocumentId),
 
     CONSTRAINT UX_School_NK UNIQUE (SchoolId),
-    CONSTRAINT UX_School_RefKey UNIQUE (DocumentId, SchoolId)
+    CONSTRAINT UX_School_RefKey UNIQUE (SchoolId, DocumentId)
 );
 
 -- Example collection table: School has a collection of GradeLevelDescriptor values
@@ -1056,12 +1056,12 @@ CREATE TABLE IF NOT EXISTS edfi.StudentSchoolAssociation (
     EntryDate          date   NOT NULL,
     ExitWithdrawDate   date   NULL,
 
-    CONSTRAINT FK_StudentSchoolAssociation_Student_RefKey FOREIGN KEY (Student_DocumentId, Student_StudentUniqueId)
-        REFERENCES edfi.Student (DocumentId, StudentUniqueId),
-    CONSTRAINT FK_StudentSchoolAssociation_School_RefKey FOREIGN KEY (School_DocumentId, School_SchoolId)
-        REFERENCES edfi.School (DocumentId, SchoolId),
+    CONSTRAINT FK_StudentSchoolAssociation_Student_RefKey FOREIGN KEY (Student_StudentUniqueId, Student_DocumentId)
+        REFERENCES edfi.Student (StudentUniqueId, DocumentId),
+    CONSTRAINT FK_StudentSchoolAssociation_School_RefKey FOREIGN KEY (School_SchoolId, School_DocumentId)
+        REFERENCES edfi.School (SchoolId, DocumentId),
     CONSTRAINT UX_StudentSchoolAssociation_NK UNIQUE (Student_DocumentId, School_DocumentId, EntryDate),
-    CONSTRAINT UX_StudentSchoolAssociation_RefKey UNIQUE (DocumentId, Student_StudentUniqueId, School_SchoolId, EntryDate)
+    CONSTRAINT UX_StudentSchoolAssociation_RefKey UNIQUE (Student_StudentUniqueId, School_SchoolId, EntryDate, DocumentId)
 );
 
 CREATE INDEX IF NOT EXISTS IX_SSA_StudentDocumentId ON edfi.StudentSchoolAssociation(Student_DocumentId);
@@ -1195,14 +1195,14 @@ Object names are deterministic and derived from the owning table plus purpose to
 - Primary key constraints: `PK_{TableName}`
 - Unique constraints:
   - Natural key (API semantics; binding/path columns from `identityJsonPaths`): `UX_{TableName}_NK`
-  - Reference key (FK target; `DocumentId` + storage identity columns, using canonical columns under key unification): `UX_{TableName}_RefKey`
+  - Reference key (FK target; storage identity columns + `DocumentId`, using canonical columns under key unification): `UX_{TableName}_RefKey`
   - Array uniqueness: `UX_{TableName}_{Tokens}` where tokens are the constrained column names with shared
     prefixes collapsed (e.g., `Assessment_DocumentId_AssessmentIdentifier_Namespace`)
 - Foreign keys: `FK_{TableName}_{Token}`, where `Token` is:
   - `Document` for FKs to `dms.Document`
   - `{DescriptorBaseName}` for descriptor FKs (no `_DescriptorId` suffix)
   - `{ReferenceBaseName}` for single-column reference FKs
-  - `{ReferenceBaseName}_RefKey` for composite reference FKs (document id + storage identity columns; canonicalized under key unification)
+  - `{ReferenceBaseName}_RefKey` for composite reference FKs (storage identity columns + document id; canonicalized under key unification)
   - `{ParentTableName}` for parent/extension table links
 - All-or-none checks: `CK_{TableName}_{ReferenceBaseName}_AllNone`
 - Indexes: `IX_{TableName}_{Column1}_{Column2}_...` (columns in index key order)
