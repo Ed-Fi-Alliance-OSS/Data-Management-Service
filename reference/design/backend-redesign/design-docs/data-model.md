@@ -880,7 +880,7 @@ Also provision a union view per abstract resource for diagnostics/ad-hoc queryin
 
 - View name: `{schema}.{AbstractResource}_View`
 - Columns: `DocumentId`, abstract identity fields in `identityJsonPaths` order, `ResourceKeyId`, `Discriminator` (NOT NULL; literal format `ProjectName:ResourceName`)
-- Rows: `UNION ALL` over concrete member root tables, projecting `DocumentId` and the abstract identity fields (including identity renames)
+- Rows: `UNION ALL` over concrete member root tables, projecting `DocumentId`, the abstract identity fields (including identity renames), and compile-time concrete-member literals for `ResourceKeyId` and `Discriminator`; `ResourceKeyId` is not derived from `Discriminator`
 
 Usage:
 

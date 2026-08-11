@@ -525,7 +525,7 @@ Within each phase:
 - **Constraints**: group by kind in fixed order `PK → UNIQUE → FK → CHECK`, then order by constraint name (ordinal).
 - **Indexes**: order by table name, then index name (ordinal).
 - **Views**: order by view name (ordinal).
-  - For abstract union views (`{schema}.{AbstractResource}_View`), order `UNION ALL` arms by concrete `ResourceName` (ordinal), then by `ProjectName` (ordinal) as a tie-breaker, and use a fixed select-list order: `DocumentId`, abstract identity fields in `identityJsonPaths` order, then `Discriminator`.
+  - For abstract union views (`{schema}.{AbstractResource}_View`), order `UNION ALL` arms by concrete `ResourceName` (ordinal), then by `ProjectName` (ordinal) as a tie-breaker, and use a fixed select-list order: `DocumentId`, abstract identity fields in `identityJsonPaths` order, concrete-member `ResourceKeyId`, then `Discriminator`. Each arm projects `ResourceKeyId` from the same compile-time concrete-member metadata used to populate the abstract identity table; it is not derived from `Discriminator`.
 - **Triggers**: order by table name, then trigger name (ordinal).
 - **Functions and grants**: order by schema-qualified object name, then principal and
   permission (ordinal).
