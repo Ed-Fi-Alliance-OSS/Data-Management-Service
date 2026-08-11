@@ -256,8 +256,8 @@ try {
     #
     # Without -Force, the same rule this module applies to its own nested imports: -Force removes a
     # module session-wide before re-importing it, while a plain import reuses an already-loaded
-    # instance. build-dms.ps1 loads this same module for its own -Enabled wrapper before invoking THIS
-    # script in-process, so reusing that instance keeps one module serving both.
+    # instance. build-dms.ps1 loads this same module for its own guarded call sites before invoking
+    # THIS script in-process, so reusing that instance keeps one module serving both.
     Import-Module ./dms-schema-environment.psm1
 
     # Single environment resolution. The build path (build-dms.ps1 InstanceE2ETest) already composed
@@ -346,12 +346,6 @@ try {
     # the first phase - and a phase script runs in this same process, so one that re-creates any of
     # them (start-local-dms.ps1 does exactly that for bootstrap mode) would still be setting it for
     # every later phase.
-    #
-    # Named distinctly from build-dms.ps1's own Invoke-WithEnvironmentFileSchemaSettings on purpose.
-    # build-dms.ps1 InstanceE2ETest invokes THIS script in-process, so this scope is a child of the
-    # build script's: a shared name would resolve up the scope chain to its pass-through variant
-    # (-Enabled unset on a bare call) instead of this module's export, and every phase below would run
-    # with the ambient schema variables still present.
 
     # 1. Start only infrastructure and the Configuration Service. DMS starts after all three
     #    route-context schemas are provisioned and verified.

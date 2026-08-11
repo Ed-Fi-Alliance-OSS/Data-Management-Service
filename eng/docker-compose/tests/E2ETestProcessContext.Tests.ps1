@@ -318,7 +318,6 @@ Describe "Invoke-WithDmsEnvironmentFileSchemaAuthority makes the environment fil
 
     BeforeAll {
         $script:schemaEnvironmentModule = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../dms-schema-environment.psm1"))
-        $script:buildScriptPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../build-dms.ps1"))
         $script:guardFunctionText = Get-ScriptFunctionText -ScriptPath $script:schemaEnvironmentModule -FunctionName "Invoke-WithDmsEnvironmentFileSchemaAuthority"
         . ([scriptblock]::Create($script:guardFunctionText))
 
@@ -448,35 +447,38 @@ Describe "Invoke-WithDmsEnvironmentFileSchemaAuthority makes the environment fil
         [System.Environment]::GetEnvironmentVariable("SCHEMA_PACKAGES") | Should -Be ""
     }
 
-    It "removes the variables through this guard for build-dms.ps1's -Enabled wrapper, and not for a bare call" {
-        # build-dms.ps1 keeps its own -Enabled wrapper - several call sites gate the removal on a switch
-        # or on the E2E settings object - and delegates only the enabled body here, so the
-        # removal-and-restore sequence exists in one place instead of two that drift.
+    It "guards a call that omits -Enabled and passes through one made with -Enabled:`$false" {
+        # The gate build-dms.ps1 needs - several of its call sites gate the removal on a caller switch
+        # or on the E2E settings object, and their phases must run WITHOUT it - is a PARAMETER of this
+        # guard rather than a wrapper around it. build-dms.ps1 used to carry that wrapper, and its name
+        # was one more name in the scope chain of the setup wrappers it invokes in-process.
         #
-        # Executed, not pattern-matched. A delegation that forwards no -Action, or an inverted switch
-        # test, reads correctly in source and still leaves every gated compose call running with the
-        # ambient variables present, which is the whole defect the wrapper exists to prevent.
-        . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:buildScriptPath -FunctionName "Invoke-WithEnvironmentFileSchemaSettings")))
-
+        # Both directions matter and both are executed, not pattern-matched. A default that came out
+        # false would leave every unparameterized caller - which is both E2E setup wrappers - running
+        # its Compose phases with the ambient variables present, and an inverted test would do the same
+        # to the gated build-script call sites; either reads correctly in source.
         foreach ($name in $script:schemaVariables) {
             [System.Environment]::SetEnvironmentVariable($name, "ambient-$name")
         }
 
-        $script:observedWhenEnabled = $null
-        Invoke-WithEnvironmentFileSchemaSettings -Enabled -Action {
-            $script:observedWhenEnabled = Get-SchemaVariableState
+        $script:observedWhenDefault = $null
+        Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
+            $script:observedWhenDefault = Get-SchemaVariableState
         }
 
-        $script:observedWhenBare = $null
-        Invoke-WithEnvironmentFileSchemaSettings -Action {
-            $script:observedWhenBare = Get-SchemaVariableState
+        $script:observedWhenDisabled = $null
+        Invoke-WithDmsEnvironmentFileSchemaAuthority -Enabled:$false -Action {
+            $script:observedWhenDisabled = Get-SchemaVariableState
         }
+
+        # A disabled call still RUNS the action: it is a pass-through, not a skip.
+        $script:observedWhenDisabled | Should -Not -BeNullOrEmpty -Because "-Enabled:`$false must still invoke the action"
 
         foreach ($name in $script:schemaVariables) {
-            $script:observedWhenEnabled[$name].Exists |
-                Should -BeFalse -Because "-Enabled must reach this module's guard, which removes $name"
-            $script:observedWhenBare[$name].Value |
-                Should -Be "ambient-$name" -Because "a bare call is a pass-through, so it must not remove $name"
+            $script:observedWhenDefault[$name].Exists |
+                Should -BeFalse -Because "a call that omits -Enabled must guard, which removes $name"
+            $script:observedWhenDisabled[$name].Value |
+                Should -Be "ambient-$name" -Because "-Enabled:`$false must be a pass-through, so it must not remove $name"
             [System.Environment]::GetEnvironmentVariable($name) |
                 Should -Be "ambient-$name" -Because "the caller's $name must be restored either way"
         }
@@ -844,13 +846,17 @@ Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
         @($invocations | Where-Object { -not $_.InsideGuard }) | Should -BeNullOrEmpty
     }
 
-    It "gives the shared module's guard a name build-dms.ps1 does not also define" {
+    It "defines no function in build-dms.ps1 that shadows one of the module's exports" {
         # THE REGRESSION FOR THE IN-PROCESS BINDING DEFECT. build-dms.ps1 InstanceE2ETest invokes the
         # Instance Management wrapper with '& $instanceSetupScript', so the wrapper's scope is a CHILD of
         # build-dms.ps1's script scope. Command lookup walks that scope chain before it reaches the
         # session state this module's exports live in, so any name build-dms.ps1 also defines binds the
-        # BUILD SCRIPT's function - and its schema helper is a pass-through when -Enabled is unset, which
-        # a bare call leaves so. The guarded phases then ran with SCHEMA_PACKAGES still present.
+        # BUILD SCRIPT's function rather than the export the wrapper meant to call.
+        #
+        # build-dms.ps1 no longer defines a same-purpose helper at all - it imports this module and
+        # calls the guard directly, passing -Enabled where its call sites gate the removal - so there is
+        # nothing to collide today. This holds that property: a helper reintroduced here under an
+        # exported name silently rebinds the wrappers' calls.
         #
         # Asserted over the whole export surface rather than the one guard: every name this module
         # exports is reachable from a wrapper the build script invokes in-process, so every one of them
@@ -888,13 +894,12 @@ Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
         $collidingName | Should -BeNullOrEmpty -Because "build-dms.ps1 invokes a setup wrapper in-process, so a name it also defines shadows the module export the wrapper means to call"
     }
 
-    It "calls the module's guard in the <Name> wrapper and never build-dms.ps1's same-purpose helper" -ForEach @(
+    It "reaches the guard by its exported name in the <Name> wrapper" -ForEach @(
         @{ Name = "DataManagementService E2E" }
         @{ Name = "InstanceManagement E2E" }
     ) {
-        # Over the AST, not the text: both wrappers CARRY a comment naming build-dms.ps1's helper in
-        # order to explain why they must not call it, and a text search cannot tell a prohibition from a
-        # call.
+        # Over the AST, not the text: both wrappers name commands in comments in order to explain what
+        # they must not do, and a text search cannot tell a prohibition from a call.
         $parseErrors = $null
         $tokens = $null
         $ast = [System.Management.Automation.Language.Parser]::ParseFile($script:wrapperScripts[$Name], [ref]$tokens, [ref]$parseErrors)
@@ -908,7 +913,6 @@ Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
         ) | ForEach-Object { $_.GetCommandName() } | Where-Object { $_ })
 
         $invokedName | Should -Contain "Invoke-WithDmsEnvironmentFileSchemaAuthority"
-        $invokedName | Should -Not -Contain "Invoke-WithEnvironmentFileSchemaSettings"
     }
 }
 
@@ -1958,8 +1962,8 @@ Describe "Both E2E setup wrappers verify the started container against the envir
 
         # Imported, and without -Force: -Force removes a module session-wide before re-importing it,
         # while a plain import reuses an already-loaded instance - which is what build-dms.ps1 loads for
-        # its own -Enabled wrapper before invoking a setup wrapper in-process. The same rule the module
-        # applies to its own nested imports.
+        # its own guarded call sites before invoking a setup wrapper in-process. The same rule the
+        # module applies to its own nested imports.
         $source | Should -Match "Import-Module \./dms-schema-environment\.psm1(?! -Force)"
         $source | Should -Not -Match "Import-Module \./dms-schema-environment\.psm1 -Force"
         $source | Should -Not -Match "function Assert-DmsContainerSchemaEnvironment"
@@ -2409,5 +2413,178 @@ Describe "The container schema gate accepts the repository's own tracked environ
         )
 
         $duplicatedGateKeys | Should -BeNullOrEmpty -Because "the file-only reader takes the first SCHEMA_PACKAGES declaration while Compose passes the last into the container, so a repeated gate key leaves the gate's two sides depending on which declaration each reader took"
+    }
+}
+
+Describe "The guard removes exactly the names local-dms.yml resolves for the DMS schema surface (DMS-1300)" {
+    # The guard's variable list and the compose file's ${VAR:-default} references are two halves of one
+    # contract, and nothing in this suite held them together. The guard removes names so Compose has to
+    # fall back to the --env-file; a name local-dms.yml resolves for one of the three DMS schema
+    # settings but the guard does not remove is resolved ambient-first again, which is the whole defect.
+    # A rename on either side, or a fourth schema setting added to the compose file, would leave the
+    # guard silently short while every behavioral test above still passed - they arrange the names the
+    # guard already knows.
+    #
+    # Read with a narrow reader rather than a YAML dependency: only the dms service's environment block
+    # is parsed, and only the three keys below are looked up in it. Both sides are also asserted
+    # non-empty, so neither a compose-file restructure that the reader cannot follow nor a guard whose
+    # list stops being a literal can turn this into an empty-equals-empty pass.
+
+    BeforeAll {
+        $script:composeFilePath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../local-dms.yml"))
+        $script:schemaEnvironmentModule = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../dms-schema-environment.psm1"))
+
+        # The compose keys the DMS container's schema surface is delivered through: the two
+        # AppSettings__* names run.sh and DMS read, and SCHEMA_PACKAGES, which run.sh downloads from.
+        $script:schemaComposeKey = @(
+            "AppSettings__UseApiSchemaPath",
+            "AppSettings__ApiSchemaPath",
+            "SCHEMA_PACKAGES"
+        )
+
+        function Get-ComposeServiceEnvironmentEntry {
+            <#
+            .SYNOPSIS
+            Returns one compose service's 'environment:' mapping as an ordered key/value map of the
+            VERBATIM value text, so a caller can read the ${VAR:-default} references a key resolves.
+            .DESCRIPTION
+            Scoped to this file's one question rather than general: the repository's compose files are
+            two-space-indented block mappings with an inline 'environment:' map, so the block is located
+            by indentation depth and left the moment the indentation returns to the service's own level.
+            Any other shape - a list-form environment block, a different indent width, a renamed service
+            - produces no entries, which the caller turns into a failure rather than a vacuous pass.
+            #>
+            param(
+                [Parameter(Mandatory)] [string] $ComposeFilePath,
+                [Parameter(Mandatory)] [string] $ServiceName
+            )
+
+            $entries = [ordered]@{}
+            $inServices = $false
+            $inService = $false
+            $inEnvironment = $false
+
+            foreach ($line in (Get-Content -LiteralPath $ComposeFilePath)) {
+                # Blank lines and whole-line comments carry no structure, and a comment can be indented
+                # to any depth, so neither may move the state machine.
+                if ($line -match '^\s*(#.*)?$') {
+                    continue
+                }
+
+                if ($line -match '^\S') {
+                    $inServices = $line -match '^services:\s*$'
+                    $inService = $false
+                    $inEnvironment = $false
+                    continue
+                }
+
+                if ($inServices -and $line -match '^  (?<name>[^\s:]+):\s*$') {
+                    # Ordinal: a compose service name is case-sensitive.
+                    $inService = [string]::Equals($Matches["name"], $ServiceName, [System.StringComparison]::Ordinal)
+                    $inEnvironment = $false
+                    continue
+                }
+
+                if ($inService -and $line -match '^    (?<key>[^\s:]+):') {
+                    # Any other key at the service's own depth ends the environment block.
+                    $inEnvironment = $Matches["key"] -ceq "environment"
+                    continue
+                }
+
+                if ($inEnvironment -and $line -match '^      (?<key>[^\s:]+):[ \t]*(?<value>.*)$') {
+                    $entries[$Matches["key"]] = $Matches["value"]
+                }
+            }
+
+            return $entries
+        }
+
+        function Get-ComposeInterpolatedName {
+            <#
+            .SYNOPSIS
+            Returns every environment-variable name a compose value interpolates, in order.
+            .DESCRIPTION
+            Both '${VAR}' and '${VAR:-default}' - the name runs to the first character that cannot be
+            part of one, which is where a ':-' default or the closing brace begins.
+            #>
+            param(
+                [Parameter(Mandatory)] [AllowEmptyString()] [string] $Value
+            )
+
+            return @(
+                [regex]::Matches($Value, '\$\{(?<name>[A-Za-z_][A-Za-z0-9_]*)') |
+                    ForEach-Object { $_.Groups["name"].Value }
+            )
+        }
+
+        function Get-SchemaGuardVariableName {
+            <#
+            .SYNOPSIS
+            Returns the names the guard removes, read as the string literals of its
+            $schemaEnvironmentVariableNames assignment.
+            .DESCRIPTION
+            Over the AST rather than by executing the guard, so the list is read even though it is a
+            local variable of the function - and so this test states the guard's own list rather than
+            re-deriving it from the observable behavior the other blocks already cover.
+            #>
+            param(
+                [Parameter(Mandatory)] [string] $ModulePath
+            )
+
+            $guardAst = [scriptblock]::Create(
+                (Get-ScriptFunctionText -ScriptPath $ModulePath -FunctionName "Invoke-WithDmsEnvironmentFileSchemaAuthority")
+            ).Ast
+
+            $assignment = @($guardAst.FindAll(
+                    {
+                        param($node)
+                        $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                        $node.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
+                        $node.Left.VariablePath.UserPath -eq "schemaEnvironmentVariableNames"
+                    },
+                    $true
+                )) | Select-Object -First 1
+
+            if ($null -eq $assignment) {
+                throw "The guard in '$ModulePath' no longer assigns `$schemaEnvironmentVariableNames, so the names it removes cannot be read."
+            }
+
+            return @(
+                $assignment.Right.FindAll(
+                    {
+                        param($node)
+                        $node -is [System.Management.Automation.Language.StringConstantExpressionAst]
+                    },
+                    $true
+                ) | ForEach-Object { $_.Value }
+            )
+        }
+    }
+
+    It "names the same set local-dms.yml resolves for the dms service's schema settings" {
+        $dmsEnvironment = Get-ComposeServiceEnvironmentEntry -ComposeFilePath $script:composeFilePath -ServiceName "dms"
+
+        $dmsEnvironment.Count |
+            Should -BeGreaterThan 0 -Because "the reader must have found the dms service's environment block in local-dms.yml"
+
+        $composeReferencedName = @(
+            foreach ($key in $script:schemaComposeKey) {
+                $dmsEnvironment.Contains($key) |
+                    Should -BeTrue -Because "local-dms.yml's dms service must still deliver $key, which is what the gate reads off the container"
+
+                $referenced = @(Get-ComposeInterpolatedName -Value ([string]$dmsEnvironment[$key]))
+                $referenced.Count |
+                    Should -BeGreaterThan 0 -Because "$key must resolve from an environment variable, which is what makes the guard's removal decide its value"
+
+                $referenced
+            }
+        ) | Select-Object -Unique
+
+        $guardVariableName = @(Get-SchemaGuardVariableName -ModulePath $script:schemaEnvironmentModule)
+
+        # Set equality, sorted Ordinal so the comparison cannot vary with the host's culture, and
+        # -BeExactly because a dotenv name is case-sensitive on the Linux runtime path these resolve on.
+        @($guardVariableName | Sort-Object -CaseSensitive) |
+            Should -BeExactly @($composeReferencedName | Sort-Object -CaseSensitive) -Because "the guard must remove exactly the names local-dms.yml resolves for the DMS schema surface: one it misses is resolved ambient-first again, and one it removes that compose does not read is a name it clears for no reason"
     }
 }

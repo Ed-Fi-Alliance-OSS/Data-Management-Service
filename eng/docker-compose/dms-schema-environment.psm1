@@ -68,25 +68,33 @@ function Invoke-WithDmsEnvironmentFileSchemaAuthority {
         reason the verification below lives here: two copies drift, and only one of them gets the next
         fix. It remains a CALLER-side guard - start-local-dms.ps1 must not clear these names globally,
         because in bootstrap mode it sets them in-process on purpose so process precedence makes the
-        staged .bootstrap/ApiSchema workspace authoritative. build-dms.ps1 keeps an -Enabled WRAPPER
-        around this function rather than a second copy of it: several of its call sites gate the removal
-        on a switch or on the E2E settings object, and their phases must run without it - which the
-        setup wrappers never do, so they call this directly.
-
-        THE NAME MUST STAY DISTINCT FROM build-dms.ps1's HELPER, and this one is deliberately not
-        Invoke-WithEnvironmentFileSchemaSettings. build-dms.ps1 InstanceE2ETest invokes the Instance
-        Management wrapper IN-PROCESS with '& $instanceSetupScript', so the wrapper's scope is a CHILD
-        of build-dms.ps1's script scope, while this module's exports land in the session state. Command
-        lookup walks the scope chain before it reaches those exports, so a wrapper calling a name that
-        build-dms.ps1 also defines binds the BUILD SCRIPT's function - whose -Enabled switch is unset
-        on a bare call, making it a pass-through that removes nothing and leaves SCHEMA_PACKAGES
-        present for every guarded phase. Module-qualifying the call site would fix one call and leave
-        the next one to rediscover this, so the names are kept disjoint instead.
+        staged .bootstrap/ApiSchema workspace authoritative. build-dms.ps1 imports this module and
+        calls this function directly at every one of its schema-guarded call sites; the -Enabled
+        parameter below is what lets it do that rather than keep a gating wrapper of its own.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidDefaultValueSwitchParameter', '', Justification = 'Guarding is the safe default: a call site that omits -Enabled must remove the three schema names, not silently run its Compose phase with them present.')]
     param(
         [Parameter(Mandatory)]
-        [scriptblock] $Action
+        [scriptblock] $Action,
+
+        # Whether to guard at all, for the callers that gate the removal. build-dms.ps1 gates most of
+        # its call sites on a caller switch or on the E2E settings object, and those phases must run
+        # WITHOUT the removal when the gate is off - the developer-stack bootstrap path depends on the
+        # process precedence this otherwise removes.
+        #
+        # Defaults to ON, which is why it is a parameter here rather than a wrapper around this
+        # function: the E2E setup wrappers call without it and get the guard, a new call site that
+        # forgets it fails safe, and there is no second name for a caller's command lookup to bind
+        # instead of this one.
+        [switch] $Enabled = $true
     )
+
+    if (-not $Enabled) {
+        # A pass-through, deliberately: a gated-off call site must behave exactly as if the guard were
+        # not there, leaving the three names as its phase found them.
+        & $Action
+        return
+    }
 
     $schemaEnvironmentVariableNames = @(
         "USE_API_SCHEMA_PATH",
@@ -604,16 +612,16 @@ function Assert-DmsContainerSchemaEnvironment {
 }
 
 # Only the three commands a caller outside this module invokes: the pre-phase guard (both E2E setup
-# wrappers, and build-dms.ps1's -Enabled wrapper delegating to it), the post-start verification (both
-# wrappers), and the container-environment reader (build-dms.ps1's runtime hash gate, which reads the
-# same 'docker inspect' output to print the container's schema settings before comparing hashes).
-# Get-DmsContainerEnvironment is exported because build-dms.ps1 is a real external caller of it, not
-# for testability: it used to have a second copy of this reader under its own name.
+# wrappers, and build-dms.ps1, which passes -Enabled at its gated call sites), the post-start
+# verification (both wrappers), and the container-environment reader (build-dms.ps1's runtime hash
+# gate, which reads the same 'docker inspect' output to print the container's schema settings before
+# comparing hashes). Get-DmsContainerEnvironment is exported because build-dms.ps1 is a real external
+# caller of it, not for testability: it used to have a second copy of this reader under its own name.
 #
 # Nothing else above is exported. The remaining functions are internals of these three, and the tests
 # reach them by extracting the function text through the AST and dot-sourcing it, so none of them
-# needs an export - and a narrower surface is also less of it exposed to the in-process shadowing
-# described above.
+# needs an export - and a narrower surface is also less of it reachable from the E2E setup wrappers
+# build-dms.ps1 invokes in-process, whose scope chain is searched before this module's exports.
 Export-ModuleMember -Function `
     Invoke-WithDmsEnvironmentFileSchemaAuthority, `
     Assert-DmsContainerSchemaEnvironment, `

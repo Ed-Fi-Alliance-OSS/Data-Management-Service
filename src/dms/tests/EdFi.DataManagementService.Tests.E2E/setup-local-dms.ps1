@@ -123,7 +123,7 @@ try {
     #
     # Without -Force, the same rule this module applies to its own nested imports: -Force removes a
     # module session-wide before re-importing it, while a plain import reuses an already-loaded
-    # instance. build-dms.ps1 loads this same module for its own -Enabled wrapper before invoking a
+    # instance. build-dms.ps1 loads this same module for its own guarded call sites before invoking a
     # setup wrapper in-process, so reusing that instance keeps one module serving both.
     Import-Module ./dms-schema-environment.psm1
 
@@ -176,10 +176,6 @@ try {
     # script runs in this same process, and one that re-creates any of the three - start-local-dms.ps1
     # does exactly that for bootstrap mode - would then still be setting it for every later phase.
     # Guarding per phase re-applies the removal immediately before each Compose call.
-    #
-    # Named distinctly from build-dms.ps1's own Invoke-WithEnvironmentFileSchemaSettings on purpose:
-    # build-dms.ps1 invokes a setup wrapper in-process, so a shared name would resolve up the scope
-    # chain to the build script's pass-through variant instead of this module's export.
 
     # Start only the infrastructure and Configuration Service first. DMS starts after the
     # E2E data store exists and the relational schema has been provisioned.
