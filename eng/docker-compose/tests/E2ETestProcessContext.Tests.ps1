@@ -1607,16 +1607,73 @@ Describe "Both E2E setup wrappers verify the started container against the envir
         $script:schemaEnvironmentModuleSource | Should -Match 'Select-Object -Last 1'
     }
 
-    It "imports the same file-only package reader the provision phase uses" {
+    It "imports the same file-only package reader the provision phase uses, without -Force" {
         # The module imports its own dependencies rather than relying on whatever the invoking wrapper
         # happened to import, so command resolution does not depend on the call site.
-        $script:schemaEnvironmentModuleSource | Should -Match 'Import-Module \(Join-Path \$PSScriptRoot "\.\./schema-package-utility\.psm1"\) -Force'
-        $script:schemaEnvironmentModuleSource | Should -Match 'Import-Module \(Join-Path \$PSScriptRoot "database-safety\.psm1"\) -Force'
+        #
+        # Never with -Force on these nested imports. -Force removes the module before re-importing it
+        # and removal is session-wide, so it strips an already-imported dependency out of the CALLER's
+        # session state and re-imports it into this module's scope alone - which is what left both setup
+        # wrappers unable to resolve any database-safety command. The behavioral regression is below;
+        # this pins the spelling that causes it.
+        $script:schemaEnvironmentModuleSource | Should -Match 'Import-Module \(Join-Path \$PSScriptRoot "\.\./schema-package-utility\.psm1"\)(?! -Force)'
+        $script:schemaEnvironmentModuleSource | Should -Match 'Import-Module \(Join-Path \$PSScriptRoot "database-safety\.psm1"\)(?! -Force)'
+        $script:schemaEnvironmentModuleSource | Should -Not -Match 'Import-Module[^\r\n]*\.psm1"\) -Force'
     }
 
     It "throws rather than warning when the verdict fails" {
         $script:schemaEnvironmentModuleSource | Should -Match 'throw "DMS E2E setup mismatch: '
         $script:schemaEnvironmentModuleSource | Should -Not -Match 'Write-Warning[^\r\n]*setup mismatch'
+    }
+
+    It "leaves the wrappers' already-imported database-safety commands resolvable after this module loads" {
+        # A real import, not a source assertion. Every other test in this suite reaches this module by
+        # extracting function text through the AST, so nothing here ever executed its import block - and
+        # a nested 'Import-Module ... -Force' unloaded database-safety out of the importing session,
+        # leaving both wrappers to fail at their first database-safety call after the import while every
+        # test stayed green.
+        #
+        # Run in a child pwsh, in the wrappers' own order and from the wrappers' own working directory,
+        # so the observation is a fresh session's command resolution rather than one this suite has
+        # already populated with -Force imports of its own.
+        $dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        $observationPath = Join-Path $TestDrive "wrapper-import-observations.txt"
+        $childScriptPath = Join-Path $TestDrive "wrapper-import-child.ps1"
+        # Both paths are embedded in single-quoted literals in the generated child script, so an
+        # apostrophe in either would close the quote early. Doubling keeps the literals intact.
+        $escapedObservationPath = $observationPath -replace "'", "''"
+        $escapedComposeRoot = $dockerComposeRoot -replace "'", "''"
+        $childScript = @"
+Set-Location -LiteralPath '$escapedComposeRoot'
+
+# Verbatim the order both wrappers use: the leaf dependency first, the shared verifier module last.
+Import-Module ./env-utility.psm1 -Force
+Import-Module ./database-safety.psm1 -Force
+Import-Module ./dms-schema-environment.psm1 -Force
+
+foreach (`$commandName in @(
+        'Assert-E2EDatabaseIsDedicated',
+        'Get-ComposeResolvedEnvValue',
+        'Resolve-DotenvFileSequentially',
+        'Assert-DmsContainerSchemaEnvironment'
+    )) {
+    `$commandName + '=' + [string][bool](Get-Command `$commandName -ErrorAction SilentlyContinue) |
+        Add-Content -LiteralPath '$escapedObservationPath'
+}
+"@
+        Set-Content -LiteralPath $childScriptPath -Value $childScript -Encoding utf8
+
+        & (Get-Process -Id $PID).Path -NoProfile -File $childScriptPath
+        $LASTEXITCODE | Should -Be 0 -Because "the wrappers' import sequence must not fail"
+
+        $observations = @(Get-Content -LiteralPath $observationPath)
+        # The three the wrappers call after importing this module: the up-front dedicated-database gate,
+        # the Compose-equivalent scalar reader, and the sequential env-file resolver.
+        $observations | Should -Contain "Assert-E2EDatabaseIsDedicated=True" -Because "the Instance Management wrapper's up-front dedicated-database gate runs after this import"
+        $observations | Should -Contain "Get-ComposeResolvedEnvValue=True" -Because "both wrappers read a scalar through it after this import"
+        $observations | Should -Contain "Resolve-DotenvFileSequentially=True" -Because "no import may strip the caller's sequential env-file resolver"
+        # The import still has to do its own job, so this is not satisfiable by removing it outright.
+        $observations | Should -Contain "Assert-DmsContainerSchemaEnvironment=True" -Because "the module must still export the verifier the wrappers import it for"
     }
 }
 

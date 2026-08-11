@@ -23,8 +23,15 @@
 # it calls regardless of what the invoking script happened to import: Resolve-DotenvFileSequentially
 # (database-safety) and Get-SchemaPackagesFromEnvironmentFile (schema-package-utility, the same
 # file-only reader the provision phase uses).
-Import-Module (Join-Path $PSScriptRoot "database-safety.psm1") -Force
-Import-Module (Join-Path $PSScriptRoot "../schema-package-utility.psm1") -Force
+#
+# Deliberately without -Force. -Force removes a module before re-importing it, and removal is
+# session-wide: a caller that had already imported database-safety.psm1 into its own session state
+# lost every command from it the moment this module loaded, and the E2E setup wrappers then failed at
+# their first database-safety call after this import. Without -Force an already-loaded module is
+# reused, so this import can only ADD command resolution for this module - never take it away from a
+# caller - and it still loads the dependency when nothing else has.
+Import-Module (Join-Path $PSScriptRoot "database-safety.psm1")
+Import-Module (Join-Path $PSScriptRoot "../schema-package-utility.psm1")
 
 function Get-DmsSchemaEnvironmentToken {
     <#
