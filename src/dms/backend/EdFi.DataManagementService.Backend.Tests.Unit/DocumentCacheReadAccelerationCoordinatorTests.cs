@@ -12,7 +12,6 @@ using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -36,7 +35,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     );
 
-    [TestCase("options")]
     [TestCase("dataStoreSelection")]
     [TestCase("targetRegistry")]
     [TestCase("lookupAdapter")]
@@ -54,36 +52,11 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     }
 
     [Test]
-    public async Task It_bypasses_cache_when_read_acceleration_is_disabled()
-    {
-        var lookupAdapter = new RecordingLookupAdapter();
-        var fallbackResult = new GetResult.GetFailureNotExists();
-        using var cancellationSource = new CancellationTokenSource();
-        var sut = CreateCoordinator(
-            readAccelerationEnabled: false,
-            lookupAdapter,
-            CreateRegistry(ExecutionContext())
-        );
-
-        GetResult result = await sut.GetByIdAsync(
-            CreateGetByIdRequest(cancellationToken =>
-            {
-                cancellationToken.Should().Be(cancellationSource.Token);
-                return Task.FromResult<GetResult>(fallbackResult);
-            }),
-            cancellationSource.Token
-        );
-
-        result.Should().BeSameAs(fallbackResult);
-        lookupAdapter.GetByIdAttempts.Should().Be(0);
-    }
-
-    [Test]
     public async Task It_bypasses_cache_when_the_selected_target_is_unresolved()
     {
         var lookupAdapter = new RecordingLookupAdapter();
         var fallbackResult = new GetResult.GetFailureNotExists();
-        var sut = CreateCoordinator(readAccelerationEnabled: true, lookupAdapter, CreateRegistry());
+        var sut = CreateCoordinator(lookupAdapter, CreateRegistry());
 
         GetResult result = await sut.GetByIdAsync(
             CreateGetByIdRequest(_ =>
@@ -102,7 +75,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var lookupAdapter = new RecordingLookupAdapter();
         var fallbackResult = new GetResult.GetFailureNotExists();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(ExecutionContext()),
             selectDataStore: false
@@ -124,11 +96,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     {
         var lookupAdapter = new RecordingLookupAdapter();
         var fallbackResult = new GetResult.GetFailureNotExists();
-        var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
-            lookupAdapter,
-            CreateRegistry(ExecutionContext())
-        );
+        var sut = CreateCoordinator(lookupAdapter, CreateRegistry(ExecutionContext()));
 
         GetResult result = await sut.GetByIdAsync(
             CreateGetByIdRequest(
@@ -174,7 +142,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
                 ? SelectedDataStore(RelationalProviderToken.SqlServer, "Host=localhost")
                 : SelectedDataStore(RelationalProviderToken.Postgresql, "Host=changed");
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(ExecutionContext(lifecycleState: DocumentCacheLifecycleState.Rebuilding)),
             materializer,
@@ -220,7 +187,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var writer = new RecordingCacheWriter();
         var telemetry = new RecordingReadTelemetry();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(ExecutionContext(lifecycleState: DocumentCacheLifecycleState.Rebuilding)),
             materializer,
@@ -347,11 +313,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             GetByIdResult = DocumentCacheReadLookupResult<GetResult>.Hit(cachedResult),
         };
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
-        var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
-            lookupAdapter,
-            CreateRegistry(executionContext)
-        );
+        var sut = CreateCoordinator(lookupAdapter, CreateRegistry(executionContext));
         using var cancellationSource = new CancellationTokenSource();
 
         GetResult result = await sut.GetByIdAsync(
@@ -371,7 +333,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     [TestCase(nameof(DocumentCacheReadAccelerationFallbackReason.CacheLookupFenced))]
     [TestCase(nameof(DocumentCacheReadAccelerationFallbackReason.CacheLookupUnavailable))]
     [TestCase(nameof(DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure))]
-    [TestCase(nameof(DocumentCacheReadAccelerationFallbackReason.CacheHitResponseShapingUnavailable))]
     public async Task It_preserves_relational_get_results_for_cache_lookup_fallbacks(
         string fallbackReasonName
     )
@@ -390,7 +351,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var telemetry = new RecordingReadTelemetry();
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(executionContext),
             readTelemetry: telemetry
@@ -435,7 +395,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
         ObserveCurrentTarget(observationStore, executionContext);
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(executionContext),
             projectionObservationSink: observationStore,
@@ -477,7 +436,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
         ObserveCurrentTarget(observationStore, executionContext);
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(executionContext),
             readTelemetry: telemetry,
@@ -524,7 +482,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
         ObserveCurrentTarget(observationStore, executionContext);
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(executionContext),
             readTelemetry: telemetry,
@@ -596,7 +553,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
         ObserveCurrentTarget(observationStore, executionContext);
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(executionContext),
             materializer,
@@ -648,11 +604,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         {
             ExceptionToThrow = new OperationCanceledException(cancellationSource.Token),
         };
-        var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
-            lookupAdapter,
-            CreateRegistry(ExecutionContext())
-        );
+        var sut = CreateCoordinator(lookupAdapter, CreateRegistry(ExecutionContext()));
 
         Func<Task> act = async () =>
             await sut.GetByIdAsync(
@@ -671,11 +623,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         {
             ExceptionToThrow = new ObjectDisposedException("request"),
         };
-        var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
-            lookupAdapter,
-            CreateRegistry(ExecutionContext())
-        );
+        var sut = CreateCoordinator(lookupAdapter, CreateRegistry(ExecutionContext()));
         var fallbackAttempts = 0;
 
         Func<Task> act = async () =>
@@ -701,7 +649,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         };
         var telemetry = new RecordingReadTelemetry();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(ExecutionContext()),
             readTelemetry: telemetry
@@ -731,11 +678,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             QueryResult = DocumentCacheReadLookupResult<QueryResult>.Hit(cachedResult),
         };
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
-        var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
-            lookupAdapter,
-            CreateRegistry(executionContext)
-        );
+        var sut = CreateCoordinator(lookupAdapter, CreateRegistry(executionContext));
         using var cancellationSource = new CancellationTokenSource();
         var candidatePage = CandidatePage(
             [Candidate(documentId: 345, contentVersion: 91), Candidate(documentId: 346, contentVersion: 92)],
@@ -778,11 +721,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             ),
         };
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
-        var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
-            lookupAdapter,
-            CreateRegistry(executionContext)
-        );
+        var sut = CreateCoordinator(lookupAdapter, CreateRegistry(executionContext));
         var candidatePage = CandidatePage(
             [Candidate(documentId: 345, contentVersion: 91), Candidate(documentId: 346, contentVersion: 92)],
             totalCount: 2,
@@ -814,7 +753,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     [TestCase(nameof(DocumentCacheReadAccelerationFallbackReason.CacheLookupFenced))]
     [TestCase(nameof(DocumentCacheReadAccelerationFallbackReason.CacheLookupUnavailable))]
     [TestCase(nameof(DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure))]
-    [TestCase(nameof(DocumentCacheReadAccelerationFallbackReason.CacheHitResponseShapingUnavailable))]
     public async Task It_preserves_relational_query_results_for_cache_lookup_fallbacks(
         string fallbackReasonName
     )
@@ -830,11 +768,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             QueryResult = DocumentCacheReadLookupResult<QueryResult>.Fallback(fallbackReason, [Candidate()]),
         };
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
-        var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
-            lookupAdapter,
-            CreateRegistry(executionContext)
-        );
+        var sut = CreateCoordinator(lookupAdapter, CreateRegistry(executionContext));
 
         QueryResult result = await sut.QueryAsync(
             CreateQueryRequest(_ =>
@@ -852,11 +786,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     {
         var lookupAdapter = new RecordingLookupAdapter();
         var fallbackAttempts = 0;
-        var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
-            lookupAdapter,
-            CreateRegistry(ExecutionContext())
-        );
+        var sut = CreateCoordinator(lookupAdapter, CreateRegistry(ExecutionContext()));
 
         QueryResult result = await sut.QueryAsync(
             CreateQueryRequest(
@@ -888,11 +818,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     public async Task It_omits_total_count_for_an_empty_authorized_query_page_when_not_requested()
     {
         var lookupAdapter = new RecordingLookupAdapter();
-        var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
-            lookupAdapter,
-            CreateRegistry(ExecutionContext())
-        );
+        var sut = CreateCoordinator(lookupAdapter, CreateRegistry(ExecutionContext()));
 
         QueryResult result = await sut.QueryAsync(
             CreateQueryRequest(
@@ -942,14 +868,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var selectionAttempts = 0;
         var fallbackAttempts = 0;
         StaticTargetRegistry registry = CreateConfiguredOnlyRegistry();
-        var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
-            lookupAdapter,
-            registry,
-            materializer,
-            writer,
-            telemetry
-        );
+        var sut = CreateCoordinator(lookupAdapter, registry, materializer, writer, telemetry);
 
         GetResult result = await sut.GetByIdAsync(
             CreateGetByIdRequest(
@@ -1005,14 +924,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var selectionAttempts = 0;
         var fallbackAttempts = 0;
         StaticTargetRegistry registry = CreateConfiguredOnlyRegistry();
-        var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
-            lookupAdapter,
-            registry,
-            materializer,
-            writer,
-            telemetry
-        );
+        var sut = CreateCoordinator(lookupAdapter, registry, materializer, writer, telemetry);
 
         QueryResult result = await sut.QueryAsync(
             CreateQueryRequest(
@@ -1053,14 +965,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var selectionAttempts = 0;
         var fallbackAttempts = 0;
         StaticTargetRegistry registry = CreateConfiguredOnlyRegistry();
-        var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
-            lookupAdapter,
-            registry,
-            materializer,
-            writer,
-            telemetry
-        );
+        var sut = CreateCoordinator(lookupAdapter, registry, materializer, writer, telemetry);
 
         QueryResult result = await sut.QueryAsync(
             CreateQueryRequest(
@@ -1115,7 +1020,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var fallbackResult = new GetResult.GetFailureNotExists();
         var selectionAttempts = 0;
         StaticTargetRegistry registry = CreateRegistry();
-        var sut = CreateCoordinator(readAccelerationEnabled: true, lookupAdapter, registry);
+        var sut = CreateCoordinator(lookupAdapter, registry);
 
         GetResult result = await sut.GetByIdAsync(
             CreateGetByIdRequest(
@@ -1152,7 +1057,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         );
         var selectionAttempts = 0;
         StaticTargetRegistry registry = CreateRegistry();
-        var sut = CreateCoordinator(readAccelerationEnabled: true, lookupAdapter, registry);
+        var sut = CreateCoordinator(lookupAdapter, registry);
 
         QueryResult result = await sut.QueryAsync(
             CreateQueryRequest(
@@ -1186,7 +1091,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var fallbackResult = new GetResult.GetFailureNotExists();
         var selectionAttempts = 0;
         StaticTargetRegistry registry = CreateConfiguredOnlyRegistry();
-        var sut = CreateCoordinator(readAccelerationEnabled: true, lookupAdapter, registry);
+        var sut = CreateCoordinator(lookupAdapter, registry);
 
         GetResult result = await sut.GetByIdAsync(
             CreateGetByIdRequest(
@@ -1228,7 +1133,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         );
         var selectionAttempts = 0;
         StaticTargetRegistry registry = CreateConfiguredOnlyRegistry();
-        var sut = CreateCoordinator(readAccelerationEnabled: true, lookupAdapter, registry);
+        var sut = CreateCoordinator(lookupAdapter, registry);
 
         QueryResult result = await sut.QueryAsync(
             CreateQueryRequest(
@@ -1266,7 +1171,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var lookupAdapter = new RecordingLookupAdapter();
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
         StaticTargetRegistry registry = CreateRegistry(executionContext);
-        var sut = CreateCoordinator(readAccelerationEnabled: true, lookupAdapter, registry);
+        var sut = CreateCoordinator(lookupAdapter, registry);
         var selectedCandidate = Candidate() with { DocumentId = 987, ContentVersion = 654 };
         var selectionAttempts = 0;
 
@@ -1299,7 +1204,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var lookupAdapter = new RecordingLookupAdapter();
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext();
         StaticTargetRegistry registry = CreateRegistry(executionContext);
-        var sut = CreateCoordinator(readAccelerationEnabled: true, lookupAdapter, registry);
+        var sut = CreateCoordinator(lookupAdapter, registry);
         var selectedCandidatePage = CandidatePage(
             [Candidate(documentId: 987, contentVersion: 654)],
             totalCount: 1,
@@ -1334,38 +1239,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     }
 
     [Test]
-    public async Task It_does_not_select_a_candidate_when_read_acceleration_is_disabled()
-    {
-        var lookupAdapter = new RecordingLookupAdapter();
-        var fallbackResult = new GetResult.GetFailureNotExists();
-        var selectionAttempts = 0;
-        var sut = CreateCoordinator(
-            readAccelerationEnabled: false,
-            lookupAdapter,
-            CreateRegistry(ExecutionContext())
-        );
-
-        GetResult result = await sut.GetByIdAsync(
-            CreateGetByIdRequest(
-                _ => Task.FromResult<GetResult>(fallbackResult),
-                selectAuthorizedCandidate: _ =>
-                {
-                    selectionAttempts++;
-                    return Task.FromResult<DocumentCacheReadAccelerationGetByIdSelectionResult>(
-                        new DocumentCacheReadAccelerationGetByIdSelectionResult.Complete(
-                            new GetResult.UnknownFailure("should not select")
-                        )
-                    );
-                }
-            )
-        );
-
-        result.Should().BeSameAs(fallbackResult);
-        selectionAttempts.Should().Be(0);
-        lookupAdapter.GetByIdAttempts.Should().Be(0);
-    }
-
-    [Test]
     public async Task It_direct_fills_get_by_id_after_successful_relational_fallback_for_a_document_miss()
     {
         var fallbackResult = new GetResult.GetSuccess(
@@ -1383,13 +1256,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         };
         var materializer = new RecordingMaterializer();
         var writer = new RecordingCacheWriter();
-        var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
-            lookupAdapter,
-            CreateRegistry(ExecutionContext()),
-            materializer,
-            writer
-        );
+        var sut = CreateCoordinator(lookupAdapter, CreateRegistry(ExecutionContext()), materializer, writer);
 
         GetResult result = await sut.GetByIdAsync(
             CreateGetByIdRequest(_ => Task.FromResult<GetResult>(fallbackResult))
@@ -1436,7 +1303,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var writer = new RecordingCacheWriter();
         var telemetry = new RecordingReadTelemetry();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(ExecutionContext()),
             materializer,
@@ -1473,7 +1339,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var writer = new RecordingCacheWriter();
         var telemetry = new RecordingReadTelemetry();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(ExecutionContext()),
             materializer,
@@ -1515,7 +1380,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         };
         var telemetry = new RecordingReadTelemetry();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(ExecutionContext()),
             new RecordingMaterializer(),
@@ -1571,7 +1435,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         };
         var telemetry = new RecordingReadTelemetry();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(ExecutionContext()),
             readTelemetry: telemetry
@@ -1605,7 +1468,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         };
         var telemetry = new RecordingReadTelemetry();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(ExecutionContext()),
             readTelemetry: telemetry
@@ -1650,7 +1512,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var writer = new RecordingCacheWriter();
         var telemetry = new RecordingReadTelemetry();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(ExecutionContext()),
             materializer,
@@ -1699,7 +1560,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var writer = new RecordingCacheWriter();
         var telemetry = new RecordingReadTelemetry();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(ExecutionContext()),
             materializer,
@@ -1739,13 +1599,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         };
         var materializer = new RecordingMaterializer();
         var writer = new RecordingCacheWriter();
-        var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
-            lookupAdapter,
-            CreateRegistry(ExecutionContext()),
-            materializer,
-            writer
-        );
+        var sut = CreateCoordinator(lookupAdapter, CreateRegistry(ExecutionContext()), materializer, writer);
 
         GetResult result = await sut.GetByIdAsync(
             CreateGetByIdRequest(_ => Task.FromResult<GetResult>(new GetResult.GetFailureNotExists()))
@@ -1780,13 +1634,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         };
         var materializer = new RecordingMaterializer();
         var writer = new RecordingCacheWriter();
-        var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
-            lookupAdapter,
-            CreateRegistry(ExecutionContext()),
-            materializer,
-            writer
-        );
+        var sut = CreateCoordinator(lookupAdapter, CreateRegistry(ExecutionContext()), materializer, writer);
 
         QueryResult result = await sut.QueryAsync(
             CreateQueryRequest(_ => Task.FromResult<QueryResult>(fallbackResult), candidatePage)
@@ -1820,13 +1668,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         };
         var materializer = new RecordingMaterializer();
         var writer = new RecordingCacheWriter();
-        var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
-            lookupAdapter,
-            CreateRegistry(ExecutionContext()),
-            materializer,
-            writer
-        );
+        var sut = CreateCoordinator(lookupAdapter, CreateRegistry(ExecutionContext()), materializer, writer);
 
         QueryResult result = await sut.QueryAsync(
             CreateQueryRequest(
@@ -1856,13 +1698,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         };
         var materializer = new RecordingMaterializer();
         var writer = new RecordingCacheWriter();
-        var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
-            lookupAdapter,
-            CreateRegistry(ExecutionContext()),
-            materializer,
-            writer
-        );
+        var sut = CreateCoordinator(lookupAdapter, CreateRegistry(ExecutionContext()), materializer, writer);
 
         QueryResult result = await sut.QueryAsync(
             CreateQueryRequest(_ => Task.FromResult<QueryResult>(fallbackResult))
@@ -1891,7 +1727,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var materializer = new RecordingMaterializer();
         var writer = new RecordingCacheWriter();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(ExecutionContext(lifecycleState: DocumentCacheLifecycleState.Rebuilding)),
             materializer,
@@ -1933,7 +1768,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var materializer = new RecordingMaterializer();
         var writer = new RecordingCacheWriter();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(ExecutionContext(lifecycleState: DocumentCacheLifecycleState.Rebuilding)),
             materializer,
@@ -1975,7 +1809,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var materializer = new RecordingMaterializer();
         var writer = new RecordingCacheWriter();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(
                 ExecutionContext(
@@ -2024,7 +1857,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var materializer = new RecordingMaterializer();
         var writer = new RecordingCacheWriter();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(
                 ExecutionContext(
@@ -2070,7 +1902,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var writer = new RecordingCacheWriter();
         var telemetry = new RecordingReadTelemetry();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(ExecutionContext(lifecycleState: DocumentCacheLifecycleState.Tracking)),
             materializer,
@@ -2112,7 +1943,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var writer = new RecordingCacheWriter();
         var telemetry = new RecordingReadTelemetry();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(ExecutionContext(lifecycleState: DocumentCacheLifecycleState.Rebuilding)),
             materializer,
@@ -2156,7 +1986,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var writer = new RecordingCacheWriter();
         var telemetry = new RecordingReadTelemetry();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(ExecutionContext(lifecycleState: DocumentCacheLifecycleState.Rebuilding)),
             materializer,
@@ -2202,7 +2031,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var materializer = new RecordingMaterializer();
         var writer = new RecordingCacheWriter();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(ExecutionContext(lifecycleState: DocumentCacheLifecycleState.Rebuilding)),
             materializer,
@@ -2238,13 +2066,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         };
         var materializer = new RecordingMaterializer();
         var writer = new RecordingCacheWriter();
-        var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
-            lookupAdapter,
-            CreateRegistry(ExecutionContext()),
-            materializer,
-            writer
-        );
+        var sut = CreateCoordinator(lookupAdapter, CreateRegistry(ExecutionContext()), materializer, writer);
 
         GetResult result = await sut.GetByIdAsync(
             CreateGetByIdRequest(_ => Task.FromResult<GetResult>(fallbackResult))
@@ -2279,7 +2101,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var materializer = new RecordingMaterializer();
         var writer = new RecordingCacheWriter();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(
                 ExecutionContext(
@@ -2323,7 +2144,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var materializer = new RecordingMaterializer();
         var writer = new RecordingCacheWriter();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             lookupAdapter,
             CreateRegistry(
                 ExecutionContext(
@@ -2362,7 +2182,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var writer = new RecordingCacheWriter();
         var logger = new CapturingLogger<DocumentCacheReadAccelerationCoordinator>();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             new RecordingLookupAdapter
             {
                 GetByIdResult = DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
@@ -2412,7 +2231,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var writer = new RecordingCacheWriter();
         var logger = new CapturingLogger<DocumentCacheReadAccelerationCoordinator>();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             new RecordingLookupAdapter
             {
                 GetByIdResult = DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
@@ -2464,7 +2282,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         };
         var logger = new CapturingLogger<DocumentCacheReadAccelerationCoordinator>();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             new RecordingLookupAdapter
             {
                 GetByIdResult = DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
@@ -2515,7 +2332,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         };
         var telemetry = new RecordingReadTelemetry();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             new RecordingLookupAdapter
             {
                 GetByIdResult = DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
@@ -2564,7 +2380,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var telemetry = new RecordingReadTelemetry();
         var logger = new CapturingLogger<DocumentCacheReadAccelerationCoordinator>();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             new RecordingLookupAdapter
             {
                 GetByIdResult = DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
@@ -2628,7 +2443,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var writer = new RecordingCacheWriter();
         var telemetry = new RecordingReadTelemetry();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             new RecordingLookupAdapter
             {
                 QueryResult = DocumentCacheReadLookupResult<QueryResult>.FallbackFromLookupOutcome(
@@ -2669,7 +2483,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var writer = new RecordingCacheWriter();
         var logger = new CapturingLogger<DocumentCacheReadAccelerationCoordinator>();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             new RecordingLookupAdapter
             {
                 QueryResult = DocumentCacheReadLookupResult<QueryResult>.FallbackFromLookupOutcome(
@@ -2709,7 +2522,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var materializer = new RecordingMaterializer();
         var writer = new RecordingCacheWriter();
         var sut = CreateCoordinator(
-            readAccelerationEnabled: true,
             new RecordingLookupAdapter
             {
                 GetByIdResult = DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
@@ -2737,7 +2549,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     }
 
     private static DocumentCacheReadAccelerationCoordinator CreateCoordinator(
-        bool readAccelerationEnabled,
         RecordingLookupAdapter lookupAdapter,
         IDocumentCacheTargetRegistry registry,
         IDocumentCacheMaterializer? materializer = null,
@@ -2753,21 +2564,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     {
         IDataStoreSelection requestDataStoreSelection = dataStoreSelection ?? CreateDataStoreSelection();
 
-        DocumentCacheOptions options = new()
-        {
-            Targets =
-            [
-                new DocumentCacheTargetOptions
-                {
-                    TenantKey = TargetKey.TenantKey,
-                    DataStoreId = TargetKey.DataStoreId,
-                },
-            ],
-            ReadAcceleration = new DocumentCacheReadAccelerationOptions { Enabled = readAccelerationEnabled },
-        };
-
         return new DocumentCacheReadAccelerationCoordinator(
-            Options.Create(options),
             requestDataStoreSelection,
             registry,
             lookupAdapter,
@@ -2794,20 +2591,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
 
     private static void CreateCoordinatorWithNullDependency(string dependencyName)
     {
-        var options = Options.Create(
-            new DocumentCacheOptions
-            {
-                Targets =
-                [
-                    new DocumentCacheTargetOptions
-                    {
-                        TenantKey = TargetKey.TenantKey,
-                        DataStoreId = TargetKey.DataStoreId,
-                    },
-                ],
-                ReadAcceleration = new DocumentCacheReadAccelerationOptions { Enabled = true },
-            }
-        );
         DataStoreSelection dataStoreSelection = new();
         dataStoreSelection.SetSelectedDataStore(SelectedDataStore());
         IDocumentCacheTargetRegistry targetRegistry = CreateRegistry(ExecutionContext());
@@ -2822,7 +2605,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             NullLogger<DocumentCacheReadAccelerationCoordinator>.Instance;
 
         _ = new DocumentCacheReadAccelerationCoordinator(
-            dependencyName == "options" ? null! : options,
             dependencyName == "dataStoreSelection" ? null! : dataStoreSelection,
             dependencyName == "targetRegistry" ? null! : targetRegistry,
             dependencyName == "lookupAdapter" ? null! : lookupAdapter,
@@ -3028,7 +2810,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
 
     public enum TargetResolutionFallbackScenario
     {
-        ReadAccelerationDisabled,
         SelectedDataStoreUnavailable,
         UnresolvedTarget,
         InvalidTargetKey,
@@ -3038,11 +2819,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
 
     private static IEnumerable<TestCaseData> TargetResolutionDirectFillSkipCases()
     {
-        yield return new TestCaseData(
-            TargetResolutionFallbackScenario.ReadAccelerationDisabled,
-            nameof(DocumentCacheReadAccelerationFallbackReason.ReadAccelerationDisabled),
-            DocumentCacheReadTelemetryLabel.SkippedReadAccelerationDisabled
-        );
         yield return new TestCaseData(
             TargetResolutionFallbackScenario.SelectedDataStoreUnavailable,
             nameof(DocumentCacheReadAccelerationFallbackReason.SelectedDataStoreUnavailable),
@@ -3078,7 +2854,6 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         RecordingReadTelemetry telemetry
     ) =>
         CreateCoordinator(
-            scenario != TargetResolutionFallbackScenario.ReadAccelerationDisabled,
             lookupAdapter,
             RegistryForTargetResolutionScenario(scenario),
             materializer,

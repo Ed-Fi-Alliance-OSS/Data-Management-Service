@@ -289,6 +289,68 @@ public class Given_DocumentCacheProjectionObservationProvider
     }
 
     [Test]
+    public void It_caps_pending_target_diagnostics_before_first_target_observation()
+    {
+        int pendingTargetDiagnosticLimit = new DocumentCacheProjectorOptions().PageSize;
+        int appendedDiagnosticCount = pendingTargetDiagnosticLimit + 5;
+        int effectiveProjectorPageSize = pendingTargetDiagnosticLimit + 50;
+        DocumentCacheProjectionObservationStore store = new(new FixedTimeProvider(ObservedAt));
+        DocumentCacheProjectionTargetContextKey contextKey = ContextKey(generation: 1);
+
+        foreach (int diagnosticIndex in Enumerable.Range(1, appendedDiagnosticCount))
+        {
+            store.AppendTargetDiagnostic(
+                contextKey,
+                TargetDiagnostic($"diagnostic {diagnosticIndex}"),
+                ObservedAt.AddSeconds(diagnosticIndex)
+            );
+        }
+
+        store.ObserveTarget(
+            TargetHealth(generation: 1, effectiveProjectorPageSize, observedAt: ObservedAt.AddMinutes(1))
+        );
+
+        DocumentCacheProjectionTargetHealthSnapshot current = store.CurrentSnapshot.GetCurrentTarget(
+            TargetKey
+        )!;
+        current
+            .TargetDiagnostics.Select(diagnostic => diagnostic.Message)
+            .Should()
+            .Equal(
+                Enumerable
+                    .Range(
+                        appendedDiagnosticCount - pendingTargetDiagnosticLimit + 1,
+                        pendingTargetDiagnosticLimit
+                    )
+                    .Select(diagnosticIndex => $"diagnostic {diagnosticIndex}")
+            );
+    }
+
+    [Test]
+    public void It_discards_pending_target_diagnostics_when_unobserved_context_ends()
+    {
+        DocumentCacheProjectionObservationStore store = new(new FixedTimeProvider(ObservedAt));
+        DocumentCacheProjectionTargetContextKey contextKey = ContextKey(generation: 1);
+
+        store.AppendTargetDiagnostic(
+            contextKey,
+            TargetDiagnostic("read-path invariant before supervisor observation"),
+            ObservedAt.AddSeconds(1)
+        );
+        store.EndTargetContext(
+            contextKey,
+            DocumentCacheProjectionTargetEndReason.Removed,
+            ObservedAt.AddSeconds(2)
+        );
+        store.ObserveTarget(TargetHealth(generation: 1, observedAt: ObservedAt.AddSeconds(3)));
+
+        DocumentCacheProjectionTargetHealthSnapshot current = store.CurrentSnapshot.GetCurrentTarget(
+            TargetKey
+        )!;
+        current.TargetDiagnostics.Should().BeEmpty();
+    }
+
+    [Test]
     public void It_does_not_merge_pending_target_diagnostics_from_an_older_generation()
     {
         DocumentCacheProjectionObservationStore store = new(new FixedTimeProvider(ObservedAt));

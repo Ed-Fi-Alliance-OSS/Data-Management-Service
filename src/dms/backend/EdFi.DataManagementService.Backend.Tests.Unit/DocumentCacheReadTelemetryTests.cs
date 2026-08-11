@@ -99,7 +99,7 @@ public class Given_DocumentCacheReadTelemetry
                 targetContext,
                 DocumentCacheReadAccelerationOperation.GetById,
                 DocumentCacheReadAccelerationResourceKind.Resource,
-                DocumentCacheReadTelemetryLabel.Skipped
+                DocumentCacheReadTelemetryLabel.SkippedNoCandidates
             )
         );
         telemetry.RecordCacheLookupDuration(attemptContext, TimeSpan.FromMilliseconds(11));
@@ -142,7 +142,7 @@ public class Given_DocumentCacheReadTelemetry
                 DocumentCacheReadTelemetryLabel.Succeeded,
                 DocumentCacheReadTelemetryLabel.Failed,
                 DocumentCacheReadTelemetryLabel.TimedOut,
-                DocumentCacheReadTelemetryLabel.Skipped,
+                DocumentCacheReadTelemetryLabel.SkippedNoCandidates,
             ]);
         collector
             .MeasurementsFor(DocumentCacheReadTelemetry.CacheLookupDurationName)
@@ -205,7 +205,7 @@ public class Given_DocumentCacheReadTelemetry
                 DocumentCacheReadTelemetryContext.ForNoTarget(
                     operation,
                     resourceKind,
-                    DocumentCacheReadTelemetryLabel.Skipped
+                    DocumentCacheReadTelemetryLabel.SkippedNoCandidates
                 );
 
             targetLabelContext.Operation.Should().Be(expectedOperation);

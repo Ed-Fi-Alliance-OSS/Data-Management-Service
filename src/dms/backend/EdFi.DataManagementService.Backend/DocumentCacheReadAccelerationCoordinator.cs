@@ -12,7 +12,6 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -35,7 +34,6 @@ internal enum DocumentCacheReadAccelerationFallbackReason
     CacheLookupFenced,
     CacheLookupUnavailable,
     CacheLookupInvariantFailure,
-    CacheHitResponseShapingUnavailable,
 }
 
 public sealed record DocumentCacheReadAccelerationCandidate(
@@ -345,7 +343,6 @@ internal sealed class PassthroughDocumentCacheReadAccelerationCoordinator
 }
 
 internal sealed class DocumentCacheReadAccelerationCoordinator(
-    IOptions<DocumentCacheOptions> options,
     IDataStoreSelection dataStoreSelection,
     IDocumentCacheTargetRegistry targetRegistry,
     IDocumentCacheReadLookupAdapter lookupAdapter,
@@ -357,8 +354,6 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
     ILogger<DocumentCacheReadAccelerationCoordinator> logger
 ) : IDocumentCacheReadAccelerationCoordinator
 {
-    private readonly IOptions<DocumentCacheOptions> _options =
-        options ?? throw new ArgumentNullException(nameof(options));
     private readonly IDataStoreSelection _dataStoreSelection =
         dataStoreSelection ?? throw new ArgumentNullException(nameof(dataStoreSelection));
     private readonly IDocumentCacheTargetRegistry _targetRegistry =
@@ -399,24 +394,6 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.RelationalFallback);
         ArgumentNullException.ThrowIfNull(request.SelectAuthorizedCandidate);
-
-        if (!_options.Value.ReadAcceleration.Enabled)
-        {
-            RecordFallback(
-                DocumentCacheReadAccelerationOperation.GetById,
-                request.ResourceKind,
-                targetContext: null,
-                DocumentCacheReadAccelerationFallbackReason.ReadAccelerationDisabled
-            );
-            RecordDirectFillSkipIfNeeded(
-                DocumentCacheReadAccelerationOperation.GetById,
-                request.ResourceKind,
-                targetContext: null,
-                DocumentCacheReadTelemetryLabel.SkippedReadAccelerationDisabled
-            );
-
-            return await request.RelationalFallback(cancellationToken).ConfigureAwait(false);
-        }
 
         if (
             !TryPreflightConfiguredTarget(
@@ -537,24 +514,6 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.RelationalFallback);
         ArgumentNullException.ThrowIfNull(request.SelectAuthorizedCandidatePage);
-
-        if (!_options.Value.ReadAcceleration.Enabled)
-        {
-            RecordFallback(
-                DocumentCacheReadAccelerationOperation.Query,
-                request.ResourceKind,
-                targetContext: null,
-                DocumentCacheReadAccelerationFallbackReason.ReadAccelerationDisabled
-            );
-            RecordDirectFillSkipIfNeeded(
-                DocumentCacheReadAccelerationOperation.Query,
-                request.ResourceKind,
-                targetContext: null,
-                DocumentCacheReadTelemetryLabel.SkippedReadAccelerationDisabled
-            );
-
-            return await request.RelationalFallback(cancellationToken).ConfigureAwait(false);
-        }
 
         if (
             !TryPreflightConfiguredTarget(

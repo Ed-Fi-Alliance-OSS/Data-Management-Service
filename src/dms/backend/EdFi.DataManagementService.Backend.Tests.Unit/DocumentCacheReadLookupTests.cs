@@ -1563,7 +1563,7 @@ public class Given_DocumentCacheReadLookup
 
         public DocumentCacheReadLookupResult<QueryResult> QueryResult { get; init; } =
             DocumentCacheReadLookupResult<QueryResult>.Fallback(
-                DocumentCacheReadAccelerationFallbackReason.CacheHitResponseShapingUnavailable
+                DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure
             );
 
         public DocumentCacheReadLookupResult<GetResult> ShapeGetById(
@@ -1571,7 +1571,7 @@ public class Given_DocumentCacheReadLookup
             DocumentCacheReadDocumentLookupResult.FreshHit hit
         ) =>
             DocumentCacheReadLookupResult<GetResult>.Fallback(
-                DocumentCacheReadAccelerationFallbackReason.CacheHitResponseShapingUnavailable
+                DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure
             );
 
         public DocumentCacheReadLookupResult<QueryResult> ShapeQuery(

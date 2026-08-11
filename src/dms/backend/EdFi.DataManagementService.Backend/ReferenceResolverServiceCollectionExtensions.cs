@@ -353,7 +353,6 @@ public static class ReferenceResolverServiceCollectionExtensions
                 }
 
                 return new DocumentCacheReadAccelerationCoordinator(
-                    options,
                     serviceProvider.GetRequiredService<IDataStoreSelection>(),
                     serviceProvider.GetRequiredService<IDocumentCacheTargetRegistry>(),
                     serviceProvider.GetRequiredService<IDocumentCacheReadLookupAdapter>(),
