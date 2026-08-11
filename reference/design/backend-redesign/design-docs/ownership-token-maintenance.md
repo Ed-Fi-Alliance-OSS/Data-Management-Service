@@ -611,7 +611,8 @@ cap the setting, or remove caching; those are not part of the simplest first imp
 
 ## Impact on DMS-1060, DMS-1410, and `auth.md`
 
-DMS-1060's CRUD and SQL semantics remain unchanged. Its description is updated to state:
+DMS-1060's POST stamping and single-record authorization semantics remain unchanged. Its
+description is updated to state:
 
 > `CreatorOwnershipTokenId` and `OwnershipTokenIds` come from the tenant-qualified CMS
 > `ApplicationContext`, not JWT claims. DMS resolves and caches this context through
@@ -688,9 +689,9 @@ The approved handoff:
 2. adds the CMS application-context paragraphs above to both tickets: DMS-1060 consumes both
    ownership fields for POST stamping and single-record authorization, while DMS-1410 consumes
    `OwnershipTokenIds` for GET-many filtering only;
-3. retains DMS-1060's ownership CRUD, ProblemDetails, batching, and database-provider acceptance
-   criteria, while assigning GET-many filtering and removal of the temporary GET-many 501 only to
-   DMS-1410; and
+3. retains DMS-1060's POST stamping and single-record authorization ProblemDetails, batching, and
+   database-provider acceptance criteria, while assigning GET-many filtering and removal of the
+   temporary GET-many 501 only to DMS-1410; and
 4. retains the defensive SQL Server failure at 2,000 or more tokens for both consumers.
 
 ## Acceptance Criteria Traceability
