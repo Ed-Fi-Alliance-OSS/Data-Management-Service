@@ -1186,11 +1186,15 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             {
                 if (directFillTimeout.IsCancellationRequested)
                 {
-                    directFillDurationOutcome = SelectDirectFillCancellationReason(
+                    string cancellationOutcome = SelectDirectFillCancellationReason(
                         cancellationToken,
                         directFillTimeout
                     );
-                    RecordDirectFill(targetContext, operation, resourceKind, directFillDurationOutcome);
+                    directFillDurationOutcome = AggregateDirectFillDurationOutcome(
+                        directFillDurationOutcome,
+                        cancellationOutcome
+                    );
+                    RecordDirectFill(targetContext, operation, resourceKind, cancellationOutcome);
                     return;
                 }
 
@@ -1217,8 +1221,12 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
 
                     if (materializationResult is not DocumentCacheMaterializationResult.Success success)
                     {
-                        directFillDurationOutcome = DocumentCacheReadTelemetryLabel.Failed;
-                        RecordDirectFill(targetContext, operation, resourceKind, directFillDurationOutcome);
+                        string materializationOutcome = DocumentCacheReadTelemetryLabel.Failed;
+                        directFillDurationOutcome = AggregateDirectFillDurationOutcome(
+                            directFillDurationOutcome,
+                            materializationOutcome
+                        );
+                        RecordDirectFill(targetContext, operation, resourceKind, materializationOutcome);
                         continue;
                     }
 
@@ -1248,25 +1256,37 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                         );
                     }
 
-                    directFillDurationOutcome = IsDirectFillWriterSuccess(writerResult)
+                    string writerOutcome = IsDirectFillWriterSuccess(writerResult)
                         ? DocumentCacheReadTelemetryLabel.Succeeded
                         : DocumentCacheReadTelemetryLabel.Failed;
-                    RecordDirectFill(targetContext, operation, resourceKind, directFillDurationOutcome);
+                    directFillDurationOutcome = AggregateDirectFillDurationOutcome(
+                        directFillDurationOutcome,
+                        writerOutcome
+                    );
+                    RecordDirectFill(targetContext, operation, resourceKind, writerOutcome);
                 }
                 catch (OperationCanceledException)
                 {
-                    directFillDurationOutcome = SelectDirectFillCancellationReason(
+                    string cancellationOutcome = SelectDirectFillCancellationReason(
                         cancellationToken,
                         directFillTimeout
                     );
-                    RecordDirectFill(targetContext, operation, resourceKind, directFillDurationOutcome);
-                    LogDirectFillSkipped(targetContext, directFillDurationOutcome);
+                    directFillDurationOutcome = AggregateDirectFillDurationOutcome(
+                        directFillDurationOutcome,
+                        cancellationOutcome
+                    );
+                    RecordDirectFill(targetContext, operation, resourceKind, cancellationOutcome);
+                    LogDirectFillSkipped(targetContext, cancellationOutcome);
                     return;
                 }
                 catch (DocumentCacheProjectionProcessingException exception)
                 {
-                    directFillDurationOutcome = DocumentCacheReadTelemetryLabel.Failed;
-                    RecordDirectFill(targetContext, operation, resourceKind, directFillDurationOutcome);
+                    string projectionFailureOutcome = DocumentCacheReadTelemetryLabel.Failed;
+                    directFillDurationOutcome = AggregateDirectFillDurationOutcome(
+                        directFillDurationOutcome,
+                        projectionFailureOutcome
+                    );
+                    RecordDirectFill(targetContext, operation, resourceKind, projectionFailureOutcome);
                     RecordTargetInvariantDiagnostic(
                         targetContext,
                         DocumentCacheReadInvariantDiagnostic.DirectFillMaterializerProjectionFailure(
@@ -1277,8 +1297,12 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                 }
                 catch (DocumentCacheTargetMappingException exception)
                 {
-                    directFillDurationOutcome = DocumentCacheReadTelemetryLabel.Failed;
-                    RecordDirectFill(targetContext, operation, resourceKind, directFillDurationOutcome);
+                    string targetFailureOutcome = DocumentCacheReadTelemetryLabel.Failed;
+                    directFillDurationOutcome = AggregateDirectFillDurationOutcome(
+                        directFillDurationOutcome,
+                        targetFailureOutcome
+                    );
+                    RecordDirectFill(targetContext, operation, resourceKind, targetFailureOutcome);
                     RecordTargetInvariantDiagnostic(
                         targetContext,
                         DocumentCacheReadInvariantDiagnostic.DirectFillMaterializerTargetFailure(
@@ -1289,8 +1313,12 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                 }
                 catch (Exception exception)
                 {
-                    directFillDurationOutcome = DocumentCacheReadTelemetryLabel.Failed;
-                    RecordDirectFill(targetContext, operation, resourceKind, directFillDurationOutcome);
+                    string unexpectedFailureOutcome = DocumentCacheReadTelemetryLabel.Failed;
+                    directFillDurationOutcome = AggregateDirectFillDurationOutcome(
+                        directFillDurationOutcome,
+                        unexpectedFailureOutcome
+                    );
+                    RecordDirectFill(targetContext, operation, resourceKind, unexpectedFailureOutcome);
                     LogDirectFillFailure(
                         targetContext,
                         exception,
@@ -1301,17 +1329,25 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         }
         catch (OperationCanceledException)
         {
-            directFillDurationOutcome = SelectDirectFillCancellationReason(
+            string cancellationOutcome = SelectDirectFillCancellationReason(
                 cancellationToken,
                 directFillTimeout
             );
-            RecordDirectFill(targetContext, operation, resourceKind, directFillDurationOutcome);
-            LogDirectFillSkipped(targetContext, directFillDurationOutcome);
+            directFillDurationOutcome = AggregateDirectFillDurationOutcome(
+                directFillDurationOutcome,
+                cancellationOutcome
+            );
+            RecordDirectFill(targetContext, operation, resourceKind, cancellationOutcome);
+            LogDirectFillSkipped(targetContext, cancellationOutcome);
         }
         catch (Exception exception)
         {
-            directFillDurationOutcome = DocumentCacheReadTelemetryLabel.Failed;
-            RecordDirectFill(targetContext, operation, resourceKind, directFillDurationOutcome);
+            string setupFailureOutcome = DocumentCacheReadTelemetryLabel.Failed;
+            directFillDurationOutcome = AggregateDirectFillDurationOutcome(
+                directFillDurationOutcome,
+                setupFailureOutcome
+            );
+            RecordDirectFill(targetContext, operation, resourceKind, setupFailureOutcome);
             LogDirectFillFailure(
                 targetContext,
                 exception,
@@ -1454,6 +1490,26 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             is DocumentCacheWriterResult.CandidateWrittenAcknowledged
                 or DocumentCacheWriterResult.AlreadyCurrentAcknowledged
                 or DocumentCacheWriterResult.AlreadyCurrentNoWork;
+
+    private static string AggregateDirectFillDurationOutcome(
+        string currentOutcome,
+        string candidateOutcome
+    ) =>
+        GetDirectFillDurationOutcomePriority(candidateOutcome)
+        > GetDirectFillDurationOutcomePriority(currentOutcome)
+            ? candidateOutcome
+            : currentOutcome;
+
+    private static int GetDirectFillDurationOutcomePriority(string outcome) =>
+        outcome switch
+        {
+            DocumentCacheReadTelemetryLabel.CallerCanceled => 5,
+            DocumentCacheReadTelemetryLabel.TimedOut => 4,
+            DocumentCacheReadTelemetryLabel.Canceled => 3,
+            DocumentCacheReadTelemetryLabel.Failed => 2,
+            DocumentCacheReadTelemetryLabel.Succeeded => 1,
+            _ => 0,
+        };
 
     private static string SelectDirectFillCancellationReason(
         CancellationToken requestCancellationToken,

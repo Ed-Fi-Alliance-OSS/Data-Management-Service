@@ -1289,6 +1289,193 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         durationMetrics.Should().Contain(DocumentCacheReadTelemetry.DirectFillDurationName);
     }
 
+    [Test]
+    public async Task It_records_failed_direct_fill_duration_when_an_earlier_query_candidate_fails_and_a_later_candidate_succeeds()
+    {
+        DocumentCacheReadAccelerationCandidate first = Candidate(documentId: 345, contentVersion: 91);
+        DocumentCacheReadAccelerationCandidate second = Candidate(
+            documentId: 346,
+            contentVersion: 92,
+            documentUuid: SecondDocumentUuid
+        );
+        var fallbackResult = new QueryResult.QuerySuccess(
+            [
+                new JsonObject { ["id"] = DocumentUuid.Value.ToString() },
+                new JsonObject { ["id"] = SecondDocumentUuid.Value.ToString() },
+            ],
+            2,
+            HighestSelectedDocumentId: 346
+        );
+        var materializer = new RecordingMaterializer
+        {
+            ResultFactory = request =>
+                Task.FromResult<DocumentCacheMaterializationResult?>(
+                    request.DocumentId == first.DocumentId
+                        ? DocumentCacheMaterializationResult.MissingSource.Instance
+                        : null
+                ),
+        };
+        var telemetry = new RecordingReadTelemetry();
+        var sut = CreateCoordinator(
+            new RecordingLookupAdapter
+            {
+                QueryResult = DocumentCacheReadLookupResult<QueryResult>.FallbackFromLookupOutcome(
+                    DocumentCacheReadLookupOutcome.MissingCacheRow,
+                    [first, second]
+                ),
+            },
+            CreateRegistry(ExecutionContext()),
+            materializer,
+            new RecordingCacheWriter(),
+            telemetry
+        );
+
+        QueryResult result = await sut.QueryAsync(
+            CreateQueryRequest(
+                _ => Task.FromResult<QueryResult>(fallbackResult),
+                CandidatePage([first, second], totalCount: 2, highestSelectedDocumentId: 346)
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        materializer.Requests.Select(request => request.DocumentId).Should().Equal(345, 346);
+        telemetry.Events.Should().Contain(("directFill", DocumentCacheReadTelemetryLabel.Failed));
+        telemetry.Events.Should().Contain(("directFill", DocumentCacheReadTelemetryLabel.Succeeded));
+        AssertSingleDirectFillDurationOutcome(telemetry, DocumentCacheReadTelemetryLabel.Failed);
+    }
+
+    [Test]
+    public async Task It_records_timed_out_direct_fill_duration_when_timeout_occurs_after_a_successful_candidate()
+    {
+        DocumentCacheReadAccelerationCandidate first = Candidate(documentId: 345, contentVersion: 91);
+        DocumentCacheReadAccelerationCandidate second = Candidate(
+            documentId: 346,
+            contentVersion: 92,
+            documentUuid: SecondDocumentUuid
+        );
+        var fallbackResult = new QueryResult.QuerySuccess(
+            [
+                new JsonObject { ["id"] = DocumentUuid.Value.ToString() },
+                new JsonObject { ["id"] = SecondDocumentUuid.Value.ToString() },
+            ],
+            2,
+            HighestSelectedDocumentId: 346
+        );
+        var materializer = new RecordingMaterializer
+        {
+            ResultFactory = async request =>
+            {
+                if (request.DocumentId == second.DocumentId)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(30), request.CancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                return null;
+            },
+        };
+        var telemetry = new RecordingReadTelemetry();
+        var logger = new CapturingLogger<DocumentCacheReadAccelerationCoordinator>();
+        var sut = CreateCoordinator(
+            new RecordingLookupAdapter
+            {
+                QueryResult = DocumentCacheReadLookupResult<QueryResult>.FallbackFromLookupOutcome(
+                    DocumentCacheReadLookupOutcome.MissingCacheRow,
+                    [first, second]
+                ),
+            },
+            CreateRegistry(ExecutionContext(directFillTimeout: TimeSpan.FromMilliseconds(25))),
+            materializer,
+            new RecordingCacheWriter(),
+            telemetry,
+            logger: logger
+        );
+
+        QueryResult result = await sut.QueryAsync(
+            CreateQueryRequest(
+                _ => Task.FromResult<QueryResult>(fallbackResult),
+                CandidatePage([first, second], totalCount: 2, highestSelectedDocumentId: 346)
+            )
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        telemetry.Events.Should().Contain(("directFill", DocumentCacheReadTelemetryLabel.Succeeded));
+        telemetry.Events.Should().Contain(("directFill", DocumentCacheReadTelemetryLabel.TimedOut));
+        AssertSingleDirectFillDurationOutcome(telemetry, DocumentCacheReadTelemetryLabel.TimedOut);
+        AssertDirectFillSkippedLog(
+            logger.Entries.Should().ContainSingle().Subject,
+            DocumentCacheReadTelemetryLabel.TimedOut
+        );
+    }
+
+    [Test]
+    public async Task It_records_caller_canceled_direct_fill_duration_when_caller_cancels_after_a_failed_candidate()
+    {
+        DocumentCacheReadAccelerationCandidate first = Candidate(documentId: 345, contentVersion: 91);
+        DocumentCacheReadAccelerationCandidate second = Candidate(
+            documentId: 346,
+            contentVersion: 92,
+            documentUuid: SecondDocumentUuid
+        );
+        var fallbackResult = new QueryResult.QuerySuccess(
+            [
+                new JsonObject { ["id"] = DocumentUuid.Value.ToString() },
+                new JsonObject { ["id"] = SecondDocumentUuid.Value.ToString() },
+            ],
+            2,
+            HighestSelectedDocumentId: 346
+        );
+        using var cancellationSource = new CancellationTokenSource();
+        var materializer = new RecordingMaterializer
+        {
+            ResultFactory = request =>
+            {
+                if (request.DocumentId == first.DocumentId)
+                {
+                    return Task.FromResult<DocumentCacheMaterializationResult?>(
+                        DocumentCacheMaterializationResult.MissingSource.Instance
+                    );
+                }
+
+                cancellationSource.Cancel();
+                throw new OperationCanceledException(cancellationSource.Token);
+            },
+        };
+        var telemetry = new RecordingReadTelemetry();
+        var logger = new CapturingLogger<DocumentCacheReadAccelerationCoordinator>();
+        var sut = CreateCoordinator(
+            new RecordingLookupAdapter
+            {
+                QueryResult = DocumentCacheReadLookupResult<QueryResult>.FallbackFromLookupOutcome(
+                    DocumentCacheReadLookupOutcome.MissingCacheRow,
+                    [first, second]
+                ),
+            },
+            CreateRegistry(ExecutionContext()),
+            materializer,
+            new RecordingCacheWriter(),
+            telemetry,
+            logger: logger
+        );
+
+        QueryResult result = await sut.QueryAsync(
+            CreateQueryRequest(
+                _ => Task.FromResult<QueryResult>(fallbackResult),
+                CandidatePage([first, second], totalCount: 2, highestSelectedDocumentId: 346)
+            ),
+            cancellationSource.Token
+        );
+
+        result.Should().BeSameAs(fallbackResult);
+        telemetry.Events.Should().Contain(("directFill", DocumentCacheReadTelemetryLabel.Failed));
+        telemetry.Events.Should().Contain(("directFill", DocumentCacheReadTelemetryLabel.CallerCanceled));
+        AssertSingleDirectFillDurationOutcome(telemetry, DocumentCacheReadTelemetryLabel.CallerCanceled);
+        AssertDirectFillSkippedLog(
+            logger.Entries.Should().ContainSingle().Subject,
+            DocumentCacheReadTelemetryLabel.CallerCanceled
+        );
+    }
+
     [TestCase(nameof(DocumentCacheReadLookupOutcome.LifecycleDisabled))]
     [TestCase(nameof(DocumentCacheReadLookupOutcome.LifecycleResetting))]
     [TestCase(nameof(DocumentCacheReadLookupOutcome.LifecycleRebuilding))]
@@ -2628,6 +2815,19 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         logEntry.Message.Should().NotContain("Host=localhost");
     }
 
+    private static void AssertSingleDirectFillDurationOutcome(
+        RecordingReadTelemetry telemetry,
+        string expectedOutcome
+    ) =>
+        telemetry
+            .DurationEvents.Where(durationEvent =>
+                durationEvent.Metric == DocumentCacheReadTelemetry.DirectFillDurationName
+            )
+            .Should()
+            .ContainSingle()
+            .Which.Outcome.Should()
+            .Be(expectedOutcome);
+
     private static void AssertDirectFillSkippedLog(CapturedLogEntry logEntry, string expectedReason)
     {
         logEntry.Level.Should().Be(LogLevel.Debug);
@@ -2965,11 +3165,17 @@ public class Given_DocumentCacheReadAccelerationCoordinator
 
     private sealed class RecordingMaterializer : IDocumentCacheMaterializer
     {
+        public delegate Task<DocumentCacheMaterializationResult?> MaterializationResultFactory(
+            DocumentCacheMaterializationRequest request
+        );
+
         public List<DocumentCacheMaterializationRequest> Requests { get; } = [];
 
         public Exception? ExceptionToThrow { get; init; }
 
         public Action<DocumentCacheMaterializationRequest>? OnMaterialize { get; init; }
+
+        public MaterializationResultFactory? ResultFactory { get; init; }
 
         public TimeSpan? DelayUntilCancellation { get; init; }
 
@@ -2979,6 +3185,16 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         {
             Requests.Add(request);
             OnMaterialize?.Invoke(request);
+
+            if (ResultFactory is not null)
+            {
+                DocumentCacheMaterializationResult? result = await ResultFactory(request)
+                    .ConfigureAwait(false);
+                if (result is not null)
+                {
+                    return result;
+                }
+            }
 
             if (DelayUntilCancellation is { } delay)
             {
