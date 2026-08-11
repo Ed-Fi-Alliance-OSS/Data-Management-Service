@@ -24,8 +24,8 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 //   1. the view is inlined — its base relations are scanned directly. For the
 //      single-arm views that additionally means no Subquery Scan node anywhere in the
 //      plan; the staff view expands into an appendrel where trivial per-arm Subquery
-//      Scan nodes may legitimately remain (see below), so there the direct
-//      base-relation scans carry the inlining evidence on their own.
+//      Scan nodes may legitimately remain, so there the inlining evidence is that no
+//      Subquery Scan spans BOTH arms (see below).
 //   2. the person/claim predicates reached the plan (as Filter / Index Cond /
 //      Hash Cond / Join Filter conditions), and
 //   3. the dedup node that pre-change plans used to materialize the closure per probe
@@ -40,11 +40,15 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 // emit them regardless of row counts), so the assertions are meaningful at test scale.
 //
 // The staff view is the one two-arm view (assignment + employment associations,
-// combined with UNION ALL since DMS-1329). Its probes expand into an appendrel, so its
-// inlining evidence is that both arms' base relations are scanned directly (the closure
-// once per arm) — and a deduplicating UNION would reintroduce the per-probe Subquery
-// Scan + HashAggregate over the claim-filtered staff set that these tests assert
-// against.
+// combined with UNION ALL since DMS-1329). Its probes expand into an appendrel, so the
+// inlining evidence is twofold: both arms' base relations are scanned directly (the
+// closure once per arm), AND no Subquery Scan spans both arms. The second half is what
+// discriminates. A deduplicating UNION scans exactly the same three relations directly
+// — the arms stay separate subplans — and merely stacks one Subquery Scan + dedup node
+// over the whole appendrel; PostgreSQL also pushes the simple claim qual beneath that
+// dedup either way, because only join quals are blocked from entering an unflattenable
+// subquery. So for the staff view the signal is the SCOPE of the Subquery Scan, not the
+// presence of one, and not where the claim filter lands.
 //
 // Plan-shape verification is PostgreSQL-only by design, not by omission. The pathology
 // the change removes is specific to PostgreSQL's rewriter: a dedup makes a view
@@ -326,7 +330,10 @@ public class Given_A_Postgresql_People_Auth_View_Query_Plan
     {
         // The GET-many membership shape against the staff view. Same tolerance as the student
         // GET-many test: a once-per-query dedup of the claim-filtered rows is legitimate; a dedup
-        // over an unfiltered arm is the regression.
+        // over an unfiltered arm is the regression. Note that the dedup-placement check below is
+        // satisfied by a deduplicating UNION as well (the claim qual is pushed beneath its dedup),
+        // so the regression signal for this shape comes from AssertStaffViewArmsInlined's
+        // spans-both-arms Subquery Scan assertion, not from the dedup placement.
         var plan = await ExplainJsonAsync(
             """
             SELECT r."DocumentId"
@@ -342,6 +349,12 @@ public class Given_A_Postgresql_People_Auth_View_Query_Plan
 
         AssertStaffViewArmsInlined(plan);
 
+        // Asserted unconditionally, because AssertClaimFilterAppliedBeneathAnyDedup returns early on
+        // a fully dedup-free plan and would otherwise leave pushdown unverified for this shape.
+        var conditions = CollectConditionText(plan);
+        conditions.Should().Contain(text => text.Contains("SourceEducationOrganizationId"));
+        conditions.Should().Contain(text => text.Contains("Staff_DocumentId"));
+
         foreach (var closurePath in FindAllRelationScanPaths(plan, EdOrgClosureRelationName))
         {
             AssertClaimFilterAppliedBeneathAnyDedup(closurePath);
@@ -350,9 +363,12 @@ public class Given_A_Postgresql_People_Auth_View_Query_Plan
 
     /// <summary>
     /// Asserts the two-arm staff view was expanded into the probing query: each arm's association
-    /// table is scanned directly and the EdOrg closure is scanned once per arm. Unlike the
-    /// single-arm views, trivial per-arm Subquery Scan nodes may legitimately remain over the
-    /// appendrel, so direct base-relation scans are the inlining evidence here.
+    /// table is scanned directly, the EdOrg closure is scanned once per arm, and no Subquery Scan
+    /// spans both arms. Unlike the single-arm views, trivial per-arm Subquery Scan nodes may
+    /// legitimately remain over the appendrel, so a whole-plan Subquery Scan ban would be wrong
+    /// here. The last assertion is the load-bearing one: the direct base-relation scans hold for a
+    /// deduplicating UNION too, whereas a Subquery Scan reaching both arms' closure scans is
+    /// precisely the unflattened pre-DMS-1329 shape.
     /// </summary>
     private static void AssertStaffViewArmsInlined(JsonElement plan)
     {
@@ -365,6 +381,20 @@ public class Given_A_Postgresql_People_Auth_View_Query_Plan
         FindAllRelationScanPaths(plan, EdOrgClosureRelationName)
             .Should()
             .HaveCount(2, "each staff view arm should scan the EdOrg closure directly");
+
+        // Per-arm Subquery Scans reach one closure scan each; an unflattened set-operation subquery
+        // reaches both. Scoping the check this way also survives the planner choosing to unique-ify
+        // the whole membership subquery once per query, which AssertNoDedupNodeAnywhere would not.
+        foreach (var subqueryScan in CollectNodes(plan).Where(node => GetNodeType(node) == "Subquery Scan"))
+        {
+            FindAllRelationScanPaths(subqueryScan, EdOrgClosureRelationName)
+                .Should()
+                .HaveCountLessThanOrEqualTo(
+                    1,
+                    "a Subquery Scan spanning both staff arms means the view was not flattened into "
+                        + "the probing query — the shape a deduplicating UNION produces (DMS-1329)"
+                );
+        }
     }
 
     private async Task<JsonElement> ExplainJsonAsync(string sql, params NpgsqlParameter[] parameters)
@@ -384,8 +414,10 @@ public class Given_A_Postgresql_People_Auth_View_Query_Plan
 
     /// <summary>
     /// Asserts the auth view was flattened into the probing query: both base relations are scanned
-    /// directly, no Subquery Scan remains, and the claim and person predicates appear as plan
-    /// conditions. Returns the root→scan path to the closure scan for further dedup checks.
+    /// directly and exactly once, no Subquery Scan remains, and the claim and person predicates
+    /// appear as plan conditions. Applies to the single-arm views only — the staff view scans the
+    /// closure once per arm, so it uses <see cref="AssertStaffViewArmsInlined"/> instead. Returns
+    /// the root→scan path to the closure scan for further dedup checks.
     /// </summary>
     private static IReadOnlyList<JsonElement> AssertViewInlinedWithPushedPredicates(JsonElement plan)
     {
@@ -459,17 +491,16 @@ public class Given_A_Postgresql_People_Auth_View_Query_Plan
     }
 
     /// <summary>
-    /// Returns the root→scan node path for the single scan of <paramref name="relationName"/>,
-    /// failing the test when the relation is not scanned directly (i.e. the view was not inlined).
+    /// Returns the root→scan node path for the one and only scan of <paramref name="relationName"/>,
+    /// failing the test when the relation is not scanned directly (i.e. the view was not inlined) or
+    /// is scanned more than once. Callers are the single-arm views, where exactly one scan per base
+    /// relation is the invariant; multi-arm plans use <see cref="FindAllRelationScanPaths"/>.
     /// </summary>
-    private static IReadOnlyList<JsonElement> FindRelationScanPath(JsonElement plan, string relationName)
-    {
-        var path = new List<JsonElement>();
-        TryFindRelationScanPath(plan, relationName, path)
+    private static IReadOnlyList<JsonElement> FindRelationScanPath(JsonElement plan, string relationName) =>
+        FindAllRelationScanPaths(plan, relationName)
             .Should()
-            .BeTrue($"relation '{relationName}' should be scanned directly in the flattened plan");
-        return path;
-    }
+            .ContainSingle($"relation '{relationName}' should be scanned exactly once in the flattened plan")
+            .Subject;
 
     /// <summary>
     /// Returns the root→scan node path for every direct scan of <paramref name="relationName"/>.
@@ -511,35 +542,18 @@ public class Given_A_Postgresql_People_Auth_View_Query_Plan
         currentPath.RemoveAt(currentPath.Count - 1);
     }
 
-    private static bool TryFindRelationScanPath(JsonElement node, string relationName, List<JsonElement> path)
-    {
-        path.Add(node);
-
-        if (node.TryGetProperty("Relation Name", out var relation) && relation.GetString() == relationName)
-        {
-            return true;
-        }
-
-        if (node.TryGetProperty("Plans", out var children))
-        {
-            foreach (var child in children.EnumerateArray())
-            {
-                if (TryFindRelationScanPath(child, relationName, path))
-                {
-                    return true;
-                }
-            }
-        }
-
-        path.RemoveAt(path.Count - 1);
-        return false;
-    }
-
     private static List<string> CollectNodeTypes(JsonElement plan)
     {
         var nodeTypes = new List<string>();
         Visit(plan, node => nodeTypes.Add(GetNodeType(node)));
         return nodeTypes;
+    }
+
+    private static List<JsonElement> CollectNodes(JsonElement plan)
+    {
+        var nodes = new List<JsonElement>();
+        Visit(plan, nodes.Add);
+        return nodes;
     }
 
     private static readonly string[] _conditionProperties =

@@ -362,8 +362,13 @@ public static class AuthObjectDefinitions
         // UNION ALL (not UNION) for the same reason the arms drop DISTINCT: IN/EXISTS consumers cannot
         // observe a staff member assigned and employed at the same EdOrg twice, and a deduplicating
         // set-operator blocks PostgreSQL from flattening the view into the probing query exactly like
-        // per-arm DISTINCT did (DMS-1329). The ReadChanges staff view that selects from this view
-        // dedups via its own UNION, so its output is unchanged.
+        // per-arm DISTINCT did (DMS-1329).
+        //
+        // This is also what keeps change queries unaffected, even though the ReadChanges staff view
+        // selects from this one and therefore now receives duplicate rows: that view is probed with the
+        // same IN-membership predicate (TrackedChangeAuthorizationSqlEmitter), so duplicates cannot
+        // reach /deletes or /keyChanges results. Its own UNION additionally collapses them, leaving its
+        // output byte-identical — but the IN-membership predicate, not that UNION, is the guarantee.
         var staffView = new AuthPeopleAuthViewDefinition(
             Kind: AuthPeopleViewKind.Staff,
             ViewDefinition: new AuthViewDefinition(
