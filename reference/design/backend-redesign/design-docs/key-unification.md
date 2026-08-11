@@ -1914,23 +1914,36 @@ compilation, manifests, and DDL generation) see a unified model.
 
 ### Recommended placement in `RelationalModelSetPasses` order
 
-Recommended set-level pass order (relative to the current default implementation in
-`src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/RelationalModelSetPasses.cs`):
+The executable set-level pass order, as built by
+`src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/RelationalModelSetPasses.cs`
+(the strict pass list additionally inserts `ValidateCollectionSemanticIdentityPass` where noted):
 
 1. `BaseTraversalAndDescriptorBindingPass`
 2. `DescriptorResourceMappingPass`
 3. `ExtensionTableDerivationPass`
 4. `ReferenceBindingPass`
-5. **`KeyUnificationPass` (new)** ← applies canonical columns + presence-gated aliases + `KeyUnificationClasses`
+5. `KeyUnificationPass` ← applies canonical columns + presence-gated aliases + `KeyUnificationClasses`
 6. `AbstractIdentityTableAndUnionViewDerivationPass`
-7. `RootIdentityConstraintPass`
-8. `ReferenceConstraintPass`
-9. `ArrayUniquenessConstraintPass`
-10. `ApplyConstraintDialectHashingPass`
-11. *(When implemented in E01)* `DeriveIndexInventoryPass` (DMS-945)
-12. *(When implemented in E01)* `DeriveTriggerInventoryPass` (DMS-945)
-13. `ApplyDialectIdentifierShorteningPass`
-14. `CanonicalizeOrderingPass`
+7. `ValidateUnifiedAliasMetadataPass`
+8. `RootIdentityConstraintPass`
+9. `TransitiveIdentityMutabilityPass`
+10. `ReferenceConstraintPass`
+11. `SemanticIdentityCompilationPass`
+12. `ValidateCollectionSemanticIdentityPass` *(strict pass list only)*
+13. `ArrayUniquenessConstraintPass`
+14. `StableCollectionConstraintPass`
+15. `DescriptorForeignKeyConstraintPass`
+16. `MssqlForeignKeyPruningPass`
+17. `ApplyConstraintDialectHashingPass`
+18. `ValidateForeignKeyStorageInvariantPass`
+19. `DeriveContentVersionMirrorPass`
+20. `DeriveIndexInventoryPass`
+21. `DeriveTriggerInventoryPass`
+22. `DeriveTrackedChangeInventoryPass`
+23. `DeriveAuthHierarchyPass`
+24. `DeriveAuthorizationIndexInventoryPass`
+25. `ApplyDialectIdentifierShorteningPass`
+26. `CanonicalizeOrderingPass`
 
 Notes:
 
@@ -1942,9 +1955,11 @@ Notes:
 - `KeyUnificationPass` MUST run **before** any constraint derivation pass that needs to target canonical storage
   columns (notably reference composite FKs), and before any pass that builds SourceJsonPath-based lookups that must see
   the post-unification table/column inventory.
-- If E01 derives index/trigger inventories (DMS-945), `DeriveIndexInventoryPass` and `DeriveTriggerInventoryPass`
-  SHOULD run **after** `ApplyConstraintDialectHashingPass` so PK/UK-implied index names that mirror constraint names
-  reflect the final hashed constraint identifiers.
+- `DeriveIndexInventoryPass` and `DeriveTriggerInventoryPass` run **after**
+  `ApplyConstraintDialectHashingPass` so PK/UK-implied index names that mirror constraint names
+  reflect the final hashed constraint identifiers, and **before**
+  `ApplyDialectIdentifierShorteningPass`, which rewrites all identifiers including those in the
+  inventories.
 
 ### Required postconditions for downstream passes
 

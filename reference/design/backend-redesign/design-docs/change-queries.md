@@ -1293,19 +1293,21 @@ PostgreSQL is the same shape with `DEFAULT 0` and `now()` defaults and a `timest
 
 The mirror `ContentVersion` default is a non-null sentinel, not a real change-version allocation. The production write path always goes through the `*_Stamp` trigger. Root-resource and descriptor inserts copy the existing `dms.Document` content stamp initialized by document defaults; updates, deletes, child writes, and `_ext` writes allocate a fresh `dms.Document.ContentVersion` and mirror that captured value.
 
-**`dms.Descriptor` uses two paging indexes.** Descriptor GET-many queries use `ResourceKeyId`
-as the authoritative, project-qualified resource-type predicate. The existing
-`IX_Descriptor_ResourceKeyId_DocumentId (ResourceKeyId, DocumentId)` index supports unfiltered
-and min-only requests, which page in `DocumentId` order. Max-bearing requests page in
-`ContentVersion` order and require
-`IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId (ResourceKeyId, ContentVersion, DocumentId)`.
-The trailing `DocumentId` covers the value returned by page selection.
+**`dms.Descriptor` has two ResourceKeyId-leading paging indexes.** Descriptor GET-many page
+selection roots on `dms.Descriptor` and uses `ResourceKeyId` as the authoritative,
+project-qualified resource-type predicate. `DocumentId`-ordered requests—unfiltered and min-only
+requests, plus requests using the legacy-ordering switch—can ride the core-owned
+`IX_Descriptor_ResourceKeyId_DocumentId (ResourceKeyId, DocumentId)` index. Any `ContentVersion`
+bounds on that path are residual predicates because `ContentVersion` is not an index key.
 
-`IX_Descriptor_Discriminator_ContentVersion` remains in the derived inventory for a different
-consumer: tracked-change probes qualify shared-descriptor rows by `Discriminator` (see
-`TrackedChangeQueryPlanner`) because the tracked-change tables carry no `ResourceKeyId`. The live
-descriptor page query never filters by `Discriminator`, so it uses the `ResourceKeyId`-leading
-indexes above instead.
+Non-legacy max-bearing requests use `ContentVersion` page ordering and can use the derived
+`IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId (ResourceKeyId, ContentVersion, DocumentId)`
+index for the `ResourceKeyId` equality, `ContentVersion` range, and page ordering. The trailing
+`DocumentId` covers the page key returned by selection.
+
+`IX_Descriptor_Discriminator_ContentVersion` is derived for tracked-change probes, which qualify
+shared-descriptor tracked rows by `Discriminator` because those rows do not carry `ResourceKeyId`.
+Live descriptor page selection does not use a `Discriminator` predicate.
 
 **Compiled-mapping-set additions** (defined in [compiled-mapping-set.md](compiled-mapping-set.md)):
 
@@ -1962,40 +1964,25 @@ FROM page_ids;
 -- The rest of the reconstitution queries are omitted for brevity.
 ```
 
-Descriptor GET-many page selection starts from `dms.Descriptor`. The query filters by the
-authoritative `ResourceKeyId` and reads the mirrored `ContentVersion` from the same table. For a
-max-bearing request, the
-`IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId` index supports both the range predicate
-and page ordering:
+Descriptor GET-many page selection starts from `dms.Descriptor`. For a max-bearing request when legacy ordering is disabled, the
+page-keyset SQL filters by the authoritative `ResourceKeyId` and reads the mirrored
+`ContentVersion` from the same table:
 
 ```sql
-SELECT 
-  page_document_ids."DocumentId" AS "DocumentId", 
-  document."DocumentUuid" AS "DocumentUuid", 
-  document."ContentLastModifiedAt" AS "ContentLastModifiedAt", 
-  document."ResourceKeyId" AS "ResourceKeyId", 
-  descriptor."Namespace" AS "Namespace", 
-  descriptor."CodeValue" AS "CodeValue", 
-  descriptor."ShortDescription" AS "ShortDescription", 
-  descriptor."Description" AS "Description", 
-  descriptor."EffectiveBeginDate" AS "EffectiveBeginDate", 
-  descriptor."EffectiveEndDate" AS "EffectiveEndDate", 
-  descriptor."Discriminator" AS "Discriminator" 
-FROM
-  (
-    SELECT d."DocumentId"
-    FROM "dms"."Descriptor" d
-    WHERE d."ResourceKeyId" = @resourceKeyId
-      AND d."ContentVersion" >= @MinChangeVersion
-      AND d."ContentVersion" <= @MaxChangeVersion
-    ORDER BY d."ContentVersion" ASC -- Conditional: see "Page-selection ordering (DMS-1298)" below
-    LIMIT @limit OFFSET @offset
-  ) page_document_ids 
-  INNER JOIN dms."Document" document ON document."DocumentId" = page_document_ids."DocumentId" 
-  LEFT JOIN dms."Descriptor" descriptor ON descriptor."DocumentId" = page_document_ids."DocumentId" 
-ORDER BY 
-  page_document_ids."DocumentId" ASC;
+SELECT r."DocumentId"
+FROM "dms"."Descriptor" r
+WHERE r."ResourceKeyId" = @resourceKeyId
+  AND r."ContentVersion" >= @minChangeVersion
+  AND r."ContentVersion" <= @maxChangeVersion
+ORDER BY r."ContentVersion" ASC
+LIMIT @limit OFFSET @offset;
 ```
+
+Min-only or legacy-ordering requests use `ORDER BY r."DocumentId" ASC`; on that path the core
+`(ResourceKeyId, DocumentId)` index supplies the ordering and `ContentVersion` is residual. Neither
+ordering path adds a `Discriminator` predicate, and the change-version window adds no
+`dms.Document` join to page selection (only an `?id=` query filter joins `dms.Document` there).
+Hydration may still read response metadata from `dms.Document`.
 
 The planner uses this path for every resource with a `MirroredContentVersion` column in its `DbTableModel` — which is every `StorageKind = RelationalTables` resource. There is no fallback path; the mirror is universal for in-scope tables.
 
@@ -2082,7 +2069,9 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
 - DB-behavior: `IdentityVersion` and `IdentityLastModifiedAt` columns are absent from every in-scope root table and from `dms.Descriptor`.
 - Emitted-SQL snapshot: `?minChangeVersion=X&maxChangeVersion=Y` produces a single-table range
   filter on the concrete table for `/ed-fi/students`, on `dms.Descriptor` with the authoritative
-  `ResourceKeyId` predicate for descriptors, and on at least one extension-project resource.
+  `ResourceKeyId` predicate for descriptors, and on at least one extension-project resource. The
+  descriptor page-selection snapshot contains neither a `Discriminator` predicate nor a
+  `dms.Document` join.
 
 ### ProblemDetails
 
