@@ -80,6 +80,16 @@ public class Given_A_Mssql_Compiled_Candidate_Relation
         new DbSchemaName("auth"),
         "CandidateProbeView"
     );
+
+    /// <summary>
+    /// The descriptor consumer's custom auth view. It is a separate relation from
+    /// <see cref="_customViewTable" /> because that one is seeded with regular-resource root
+    /// <c>DocumentId</c>s, which no descriptor row carries.
+    /// </summary>
+    private static readonly DbTableName _descriptorCustomViewTable = new(
+        new DbSchemaName("auth"),
+        "CandidateProbeDescriptorView"
+    );
     private static readonly DbColumnName _documentIdColumn = new("DocumentId");
     private static readonly DbColumnName _namespaceColumn = new("Namespace");
     private static readonly DbColumnName _schoolIdColumn = new("SchoolId");
@@ -99,6 +109,13 @@ public class Given_A_Mssql_Compiled_Candidate_Relation
     /// value, and an authorized namespace.
     /// </summary>
     private static readonly long[] _authorizedDescriptorDocumentIds = [110L, 120L, 130L, 140L, 150L];
+
+    /// <summary>
+    /// <see cref="_authorizedDescriptorDocumentIds" /> as a SQL literal list, so the descriptor auth
+    /// view seed cannot drift from the set the descriptor assertions expect.
+    /// </summary>
+    private static string AuthorizedDescriptorDocumentIdList =>
+        string.Join(", ", _authorizedDescriptorDocumentIds);
 
     /// <summary>
     /// Descriptor rows the requested query must exclude, each for exactly one reason so the exclusion is
@@ -176,6 +193,12 @@ public class Given_A_Mssql_Compiled_Candidate_Relation
             SELECT COUNT_BIG(*) FROM {Quote(_customViewTable)} WHERE [DocumentId] = {_allDocumentIds[0]};
             """
         );
+        var descriptorCustomViewRows = await ScalarAsync(
+            $"""
+            SELECT COUNT_BIG(*) FROM {Quote(_descriptorCustomViewTable)}
+            WHERE [DocumentId] = {_authorizedDescriptorDocumentIds[0]};
+            """
+        );
 
         normalHierarchyEdges
             .Should()
@@ -194,6 +217,12 @@ public class Given_A_Mssql_Compiled_Candidate_Relation
             .BeGreaterThan(1, "the DISTINCT person auth view must still expose two rows for one person");
         childRows.Should().BeGreaterThan(1, "the intermediate join table must duplicate per root");
         customViewRows.Should().BeGreaterThan(1, "the custom auth view must duplicate per document");
+        descriptorCustomViewRows
+            .Should()
+            .BeGreaterThan(
+                1,
+                "the descriptor custom auth view must duplicate per descriptor, or the descriptor custom-view cases would prove uniqueness against a single-row seed"
+            );
     }
 
     [Test]
@@ -666,9 +695,12 @@ public class Given_A_Mssql_Compiled_Candidate_Relation
         ];
 
     /// <summary>
-    /// The authorization shapes the descriptor planner supports. Relationship and custom-view strategies
-    /// are absent because the descriptor planner binds no claim EducationOrganization values and
-    /// compiles no relationship group for descriptor endpoints.
+    /// The authorization shapes the descriptor planner supports: no further restrictions, a namespace
+    /// check, a custom view check, and the two combined. Only relationship strategies are absent,
+    /// because the descriptor path compiles no relationship group and binds no claim
+    /// EducationOrganization values. Custom-view checks need no claim binding and do reach this
+    /// consumer: the descriptor read handler passes its configured checks straight into the shared
+    /// authorization spec.
     /// </summary>
     private static IReadOnlyList<(
         string Description,
@@ -687,6 +719,27 @@ public class Given_A_Mssql_Compiled_Candidate_Relation
                     SqlDialect.Mssql,
                     _descriptorTable,
                     _namespaceColumn,
+                    AuthorizedNamespacePrefix
+                ),
+                _authorizedDescriptorDocumentIds
+            ),
+            (
+                "single-step custom view authorization",
+                CandidateProbeAuthorizationSpecs.SingleStepCustomView(
+                    _descriptorTable,
+                    _documentIdColumn,
+                    _descriptorCustomViewTable
+                ),
+                _authorizedDescriptorDocumentIds
+            ),
+            (
+                "namespace and custom view authorization combined",
+                CandidateProbeAuthorizationSpecs.NamespaceAndCustomView(
+                    SqlDialect.Mssql,
+                    _descriptorTable,
+                    _namespaceColumn,
+                    _documentIdColumn,
+                    _descriptorCustomViewTable,
                     AuthorizedNamespacePrefix
                 ),
                 _authorizedDescriptorDocumentIds
@@ -801,6 +854,7 @@ public class Given_A_Mssql_Compiled_Candidate_Relation
                 );
                 """,
             $"CREATE TABLE {Quote(_customViewTable)} ([DocumentId] bigint NOT NULL);",
+            $"CREATE TABLE {Quote(_descriptorCustomViewTable)} ([DocumentId] bigint NOT NULL);",
                 // The descriptor consumer's real root, carrying the columns its discriminator, filters,
                 // change-version window, and namespace authorization read.
                 $"""
@@ -861,6 +915,17 @@ public class Given_A_Mssql_Compiled_Candidate_Relation
                 SELECT r.[DocumentId]
                 FROM {Quote(_rootTable)} r
                 CROSS JOIN (VALUES (1),(2)) AS duplicate(n);
+                """,
+                // Two rows per authorized descriptor, and deliberately no row for the unauthorized-namespace
+                // descriptor. The duplication proves a join-based implementation would multiply a descriptor
+                // candidate; the omission makes the custom-view case exclude a row that passes both the
+                // ResourceKeyId discriminator and the CodeValue filter, so the check demonstrably restricts.
+                $"""
+                INSERT INTO {Quote(_descriptorCustomViewTable)} ([DocumentId])
+                SELECT d.[DocumentId]
+                FROM {Quote(_descriptorTable)} d
+                CROSS JOIN (VALUES (1),(2)) AS duplicate(n)
+                WHERE d.[DocumentId] IN ({AuthorizedDescriptorDocumentIdList});
                 """,
                 // Three distinct production-legal tuples, all admitted by the composite primary key. The
                 // normal direction reads Target as its subject, so the first two fan into the subject
