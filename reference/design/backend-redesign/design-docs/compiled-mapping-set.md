@@ -449,7 +449,8 @@ public sealed record MappingSet(
     DescriptorProbeTarget DescriptorProbeTarget
 )
 {
-    // Required for AOT mode. Must validate payload invariants before returning.
+    // Required for AOT mode. Must validate payload invariants, including serialized natural-key
+    // probe metadata, before returning.
     public static MappingSet FromPayload(MappingPackPayload payload) => throw new NotImplementedException();
 }
 ```
@@ -466,8 +467,8 @@ Design invariants:
 - **Model derivation** (E01) produces `DerivedRelationalModelSet` from the effective schema set.
 - **DDL emission** (E02/E03) consumes `DerivedRelationalModelSet` and a dialect to emit deterministic SQL and manifests.
 - **Plan compilation** (E15) consumes `DerivedRelationalModelSet` and a dialect to produce the `WritePlansByResource`/`ReadPlansByResource` dictionaries used by `MappingSet`.
-- **Pack build** (E05) serializes the `MappingSet` *semantics* into `.mpack` (payload is a subset required for runtime execution).
-- **Pack load** (E05-S05) and **runtime mapping selection** (E06-S02) must return the same `MappingSet` shape regardless of whether it came from packs or runtime compilation.
+- **Pack build** (E05) serializes the `MappingSet` *semantics* into `.mpack` (payload is a subset required for runtime execution), including the storage-resolved target, own-key, and descriptor probe metadata.
+- **Pack load** (E05-S05) reconstructs the probe dictionaries and shared descriptor probe from those authoritative payload records without rerunning the probe compiler. Pack load and **runtime mapping selection** (E06-S02) must return the same `MappingSet` shape regardless of whether it came from packs or runtime compilation.
 
 ---
 

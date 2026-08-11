@@ -269,8 +269,10 @@ The probe metadata (`NaturalKeyProbeTargets`, `OwnNaturalKeyProbesByResource`,
 itself — never from trigger metadata, never by parsing constraint names (dialect identifier
 shortening hash-truncates names), and never by converting abstract discriminator strings to resource
 keys at runtime. It will be storage-resolved, so key-unified identity parts will bind their canonical
-stored columns and abstract probes will bind the stored concrete `ResourceKeyId`. The probe metadata
-itself will not be serialized into manifests, so it will cause zero golden-manifest churn.
+stored columns and abstract probes will bind the stored concrete `ResourceKeyId`. Pack producers will
+serialize that storage-resolved metadata into `.mpack` payloads so AOT consumers can reconstruct the
+same `MappingSet` without running the probe compiler. The metadata will not be serialized into DDL
+manifests, so it will cause zero golden-manifest churn.
 
 ### POST upsert detection
 
@@ -778,7 +780,8 @@ can cascade.
 - PostgreSQL `UX_Descriptor_UriLowered_ResourceKeyId` expression index, plus SQL Server
   non-persisted `dms.Descriptor.UriLowered` computed column and
   `UX_Descriptor_UriLowered_ResourceKeyId` index (definitions above).
-- Compiled natural-key probe metadata on the mapping set (not serialized; zero manifest churn).
+- Compiled natural-key probe metadata on the mapping set, serialized into mapping packs for AOT
+  reconstruction but omitted from DDL manifests (zero manifest churn).
 - `NaturalKeyReferenceResolver` + per-engine natural-key lookup command builders.
 
 ### To be changed
@@ -854,11 +857,16 @@ after T8, no production contract may still carry a `ReferentialId` member.**
   metadata (reference targets, own-key probes, the descriptor probe) from the relational model —
   never from trigger metadata, constraint names, or discriminator string parsing — with an
   empty-identity compile guard and an every-resource parity guard against the live trigger derivation.
+  Serialize the storage-resolved probe records into PackFormatVersion 1 mapping packs: target and
+  own-key records live with their resource packs, and the shared descriptor probe lives at payload
+  scope. AOT decode reconstructs the mapping-set dictionaries from those authoritative records and
+  does not rerun the probe compiler.
   Re-source the 409 `duplicateIdentityValues` machinery from the compiled probes, severing its
   trigger-metadata dependency before the triggers drop. AC: golden DDL/manifest diffs show only the
   abstract `ResourceKeyId` column/view/trigger-value change for this part; abstract identity-column
   consumers exclude `ResourceKeyId` and `Discriminator` from identity equality; parity guard green for
-  every resource; 409 responses unchanged.
+  every resource; mapping-pack round trips reproduce all three mapping-set probe contracts with
+  semantic key-column order intact; 409 responses unchanged.
 - **T3 — Add descriptor ASCII validation + `UX_Descriptor_UriLowered_ResourceKeyId`.** Reject
   non-ASCII descriptor URI values on descriptor writes, descriptor references, and
   descriptor-valued query filters. This changes the current implementations: Core descriptor
@@ -1015,6 +1023,10 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
 - **Probe-compilation unit tests**, including an every-resource parity guard that will prove the
   compiled probes reproduce the legacy trigger derivation for as long as both exist, and abstract
   target pins proving the probe projects concrete `ResourceKeyId` without a discriminator-to-key map.
+- **Mapping-pack round-trip tests** prove target probes, own-key probes, and the shared descriptor
+  probe survive PackFormatVersion 1 encode/decode with storage-resolved columns and semantic
+  key-column order unchanged; malformed presence, resource-kind, column, and dialect combinations
+  fail fast.
 - **Dialect SQL unit tests**: statement shape independent of batch size (PostgreSQL), OPENJSON +
   FORCE ORDER + leftmost-input pins, explicit DMS identity collation on every textual OPENJSON key
   operand, and the parameter-budget guard (SQL Server), plus the union-projection single-statement

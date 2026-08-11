@@ -21,6 +21,8 @@ The `.mpack` format is a redistributable artifact that contains **dialect-specif
 - deterministic `dms.ResourceKey` seed mapping for that schema
 - per-resource relational models (tables/columns/paths) needed by generic flatten/reconstitute
 - per-resource, dialect-specific SQL plans and projection metadata (write/read/reference-identity/descriptor-URI)
+- storage-resolved natural-key probe metadata for document-reference resolution, POST/PUT upsert
+  detection, and descriptor resolution
 
 The consumer (DMS runtime) MUST be able to execute schema-dependent relational work for that effective schema **without compiling** models or SQL from `ApiSchema.json` at runtime (but Core may still load `ApiSchema.json` for validation and identity extraction).
 
@@ -84,11 +86,14 @@ Stored in payload (authoritative):
 - SQL text and deterministic parameter/binding metadata
 - deterministic indices/ordinals and ordering-sensitive lists
 - deterministic batching metadata
+- storage-resolved natural-key probe table/column identifiers and semantic key-column order
 
 Derived at pack load/reconstruction time:
 - `KeysetTableContract` values from `SqlDialect` (`page` for PGSQL, `#page` for MSSQL; `DocumentId` column)
 - `JsonPathExpression` runtime objects (`Segments`) by compiling canonical JsonPath strings
 - table/column object references by lookup (`(schema, name)` for tables, `DbColumnName.value` within table for columns)
+- `NaturalKeyProbeTarget.Resource` / `Kind` and `OwnNaturalKeyProbe.Resource` from the enclosing
+  `ResourcePack`
 
 Consumers MUST reconstruct executor-facing contracts from these normalized payload values and MUST NOT infer bindings from SQL text parsing.
 
@@ -122,6 +127,11 @@ All collections are `repeated` and MUST be emitted in stable deterministic order
 
 - `resource_keys`: ascending by `(resource_key_id)` (and then by `(project_name, resource_name)` for tie-breaking, though ties are invalid).
 - `resources`: ascending by `(project_name, resource_name)` using ordinal (culture-invariant) string ordering.
+- Within each `ResourcePack`:
+  - `natural_key_probe_target.key_columns` preserves compiler-produced RefKey identity order and
+    MUST NOT be sorted
+  - `own_natural_key_probe.key_columns` preserves compiler-produced natural-key order and MUST NOT
+    be sorted
 - Within each `RelationalResourceModel`:
   - `tables_in_dependency_order`: root-first, then depth-first; stable within sibling set by `(json_scope, table_name)` using ordinal string ordering
     - This canonical order MUST match in-memory `RelationalResourceModel.TablesInDependencyOrder` and is used by both read hydration and write flattening.
@@ -248,8 +258,28 @@ Given `(expectedEffectiveSchemaHash, expectedDialect, expectedRelationalMappingV
    - `resource_key_count == resource_keys.Count`
    - recompute `resource_key_seed_hash` from `resource_keys` and compare
    - `resources` are unique by `(project_name, resource_name)` and sorted
+   - every `ResourcePack` matches exactly one `resource_keys` entry by `(project_name, resource_name)`,
+     and their `is_abstract_resource` values agree
+   - `descriptor_probe_target` is present; its table identifier and all required column identifiers
+     are present, and its column identifiers are distinct; `uri_lowered_column` is omitted for
+     PostgreSQL and is required for SQL Server
    - For each `ResourcePack`:
-     - if `is_abstract=false`, has `relational_model`, `write_plan`, and `read_plan`
+     - if `is_abstract_resource=false`, has `relational_model`, `write_plan`, and `read_plan`
+     - natural-key probe presence matches resource storage:
+       - an abstract resource has `natural_key_probe_target` and does not have `own_natural_key_probe`
+       - a concrete resource with `ResourceStorageKind.RelationalTables` has both probe records
+       - a concrete resource with `ResourceStorageKind.SharedDescriptorTable` has neither record and
+         uses the payload-level `descriptor_probe_target`
+     - every natural-key probe has a non-empty, duplicate-free `key_columns` list in authoritative
+       semantic identity order; `document_id_column` is not a key column
+     - an abstract natural-key probe has `resource_key_id_column`, which is not a key column; a
+       concrete natural-key probe omits `resource_key_id_column`
+     - every own-natural-key probe has a non-empty, duplicate-free `key_columns` list in authoritative
+       semantic natural-key order; its `root_table` equals `relational_model.root.table`, and its
+       `document_id_column` is not a key column
+     - all concrete target-probe and own-probe table/column references exist in the resource model;
+       key columns are already storage-resolved and therefore name stored canonical columns rather
+       than `UnifiedAlias` columns
      - within `relational_model`, canonical path keys are unique:
        - `document_reference_bindings[*].reference_object_path` has no duplicates
        - `descriptor_edge_sources[*].descriptor_value_path` has no duplicates
@@ -270,12 +300,19 @@ Given `(expectedEffectiveSchemaHash, expectedDialect, expectedRelationalMappingV
        - any `UnifiedAlias` storage references only stored columns on the same table (canonical + optional presence)
        - any `DbTableModel.key_unification_classes` entries reference only columns on the same table and the member list is ordered and distinct
        - any `WriteValueSource.precomputed` bindings are populated either by exactly one `TableWritePlan.key_unification_plans` entry or by deterministic collection-id reservation associated with `TableWritePlan.collection_merge_plan`
+   - every `relational_model.document_reference_bindings[*].target_resource` resolves to a
+     `ResourcePack` with a `natural_key_probe_target`
 7. Reconstruct executor-facing contracts deterministically from normalized payload values:
    - resolve table identities by `(schema, name)` and columns by `DbColumnName.value` (within each resolved table)
    - compile canonical JsonPath strings into `JsonPathExpression` runtime objects
    - derive keyset temp-table contract from dialect constants (`page`/`#page`, column `DocumentId`)
    - preserve authoritative payload order for all ordering-sensitive collections (no runtime resorting)
    - bind parameters by explicit metadata (`column_bindings`, query parameter inventories), never by SQL-text parsing
+   - construct `NaturalKeyProbeTargets` and `OwnNaturalKeyProbesByResource` from the per-resource
+     probe records, deriving `Resource` and `Kind` from the enclosing `ResourcePack`, and construct
+     `DescriptorProbeTarget` from the payload-level record
+   - treat serialized probe table/column identifiers and key-column order as authoritative; never
+     rederive probes from trigger metadata, constraint names, discriminator strings, or SQL text
 8. Validate `dms.ResourceKey` mapping in the target database (fast path if available; otherwise full diff) and cache:
    - `(ProjectName, ResourceName) -> ResourceKeyId`
    - `ResourceKeyId -> (ProjectName, ResourceName, ResourceVersion)`
@@ -293,6 +330,13 @@ During step 7, consumers MUST fail fast with deterministic errors when any recon
 - duplicate `document_reference_bindings[*].identity_bindings[*].reference_json_path` values that are not confined to one same-site flattened reference group
 - duplicate/ambiguous parameter names where uniqueness is required
 - unsupported dialect values when deriving keyset table constants
+- a `ResourcePack` with no matching resource-key entry or a conflicting `is_abstract_resource` value
+- missing or unexpected natural-key probe records for a resource's storage kind
+- empty or duplicate probe key-column lists, or probe projection columns included in key equality
+- missing abstract `resource_key_id_column`, a concrete target with that column present, or a
+  descriptor `uri_lowered_column` whose presence does not match the selected dialect
+- a document-reference target without a serialized natural-key probe
+- probe table/column identifiers that do not resolve against the applicable decoded model inventory
 
 ---
 
@@ -363,6 +407,9 @@ message MappingPackPayload {
 
   // Per-resource artifacts.
   repeated ResourcePack resources = 20;
+
+  // Shared descriptor lookup/upsert metadata. Required.
+  DescriptorProbeTarget descriptor_probe_target = 21;
 }
 
 message SchemaComponent {
@@ -392,6 +439,36 @@ message ResourcePack {
   RelationalResourceModel relational_model = 20;
   ResourceWritePlan write_plan = 21;
   ResourceReadPlan read_plan = 22;
+
+  // Required for abstract resources and concrete resources stored in relational tables.
+  // Omitted for resources stored in the shared descriptor table.
+  NaturalKeyProbeTarget natural_key_probe_target = 23;
+
+  // Required only for concrete resources stored in relational tables.
+  OwnNaturalKeyProbe own_natural_key_probe = 24;
+}
+
+// Resource and target kind are reconstructed from the enclosing ResourcePack.
+message NaturalKeyProbeTarget {
+  DbTableName table = 1;
+  repeated DbColumnName key_columns = 2;                 // storage-resolved semantic identity order; do not sort
+  DbColumnName document_id_column = 3;
+  DbColumnName resource_key_id_column = 4;               // required only when enclosing resource is abstract
+}
+
+// Resource is reconstructed from the enclosing ResourcePack.
+message OwnNaturalKeyProbe {
+  DbTableName root_table = 1;
+  repeated DbColumnName key_columns = 2;                 // storage-resolved semantic natural-key order; do not sort
+  DbColumnName document_id_column = 3;
+}
+
+message DescriptorProbeTarget {
+  DbTableName descriptor_table = 1;
+  DbColumnName uri_column = 2;
+  DbColumnName uri_lowered_column = 3;                    // required for MSSQL; omitted for PGSQL
+  DbColumnName resource_key_id_column = 4;
+  DbColumnName document_id_column = 5;
 }
 
 // ---------- Model ----------
@@ -759,6 +836,10 @@ Bump it only for breaking changes to:
 - payload compression/encryption semantics,
 - protobuf schema changes that are not wire-compatible (field renames/removals with tag reuse),
 - any change where an older consumer would misinterpret bytes.
+
+Repository status note (non-normative): PackFormatVersion 1 has not yet been implemented or
+distributed. The natural-key probe records in this document are therefore part of the initial v1
+contract and do not require a `PackFormatVersion` bump.
 
 ### 9.2 `RelationalMappingVersion`
 
