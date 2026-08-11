@@ -20,10 +20,9 @@
 #>
 
 # Imported here rather than relied on from the caller's session, so the module resolves every command
-# it calls regardless of what the invoking script happened to import: Get-EnvValue (env-utility),
-# Resolve-ComposeEnvRawValue (database-safety), and Get-SchemaPackagesFromEnvironmentFile
-# (schema-package-utility, the same file-only reader the provision phase uses).
-Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
+# it calls regardless of what the invoking script happened to import: Resolve-DotenvFileSequentially
+# (database-safety) and Get-SchemaPackagesFromEnvironmentFile (schema-package-utility, the same
+# file-only reader the provision phase uses).
 Import-Module (Join-Path $PSScriptRoot "database-safety.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "../schema-package-utility.psm1") -Force
 
@@ -331,6 +330,57 @@ function Get-DmsContainerEnvironment {
     return $containerEnvironment
 }
 
+function Get-DmsEnvironmentFileDeclaredValue {
+    <#
+    .SYNOPSIS
+        Returns the value an environment FILE declares for a name, as Docker Compose froze it while
+        reading that file.
+    .DESCRIPTION
+        Docker Compose resolves an --env-file in declaration order: each value is resolved against
+        what is in effect at its own line, and a value it has resolved is terminal. A later
+        re-declaration of a name that an earlier line referenced therefore cannot change that earlier
+        value. A collapsed key/value map cannot express this - it keeps only the final value of every
+        name - so reading an expected value from one resolves references against declarations Compose
+        had not yet read, and reports a correctly started stack as a mismatch.
+
+        The LAST declaration of the requested name wins, which is what the compose file itself sees.
+        Read from Declarations rather than the Effective map deliberately: Effective applies ambient
+        precedence to the requested key, and the setup guard has removed these names from the process
+        before this runs, so the expected side must come from the file alone. Taking Effective would
+        let a shell value that Compose never saw define what "correct" means.
+
+        Names REFERENCED by a declaration are still resolved ambient-first inside the sequential
+        resolver, which is exactly what Compose does.
+    #>
+    param(
+        # A Resolve-DotenvFileSequentially result.
+        [Parameter(Mandatory)]
+        [object] $ResolvedEnvironmentFile,
+
+        [Parameter(Mandatory)]
+        [string] $Name,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $DefaultValue
+    )
+
+    # Ordinal: a dotenv identifier is case-sensitive on the Linux CI and runtime path, and
+    # PowerShell's -eq is not, so a lowercase decoy declaration must not satisfy an uppercase lookup.
+    $declaration = @(
+        $ResolvedEnvironmentFile.Declarations |
+            Where-Object { [string]::Equals($_.Key, $Name, [System.StringComparison]::Ordinal) }
+    ) | Select-Object -Last 1
+
+    # Absent and resolving-to-nothing both fall back to the documented default, matching the
+    # file-only reader this replaced.
+    if ($null -eq $declaration -or [string]::IsNullOrWhiteSpace($declaration.ResolvedValue)) {
+        return $DefaultValue
+    }
+
+    return [string]$declaration.ResolvedValue
+}
+
 function Assert-DmsContainerSchemaEnvironment {
     <#
     .SYNOPSIS
@@ -344,42 +394,48 @@ function Assert-DmsContainerSchemaEnvironment {
         [string] $EnvironmentFilePath,
 
         [Parameter(Mandatory)]
-        [hashtable] $EnvironmentValues,
-
-        [Parameter(Mandatory)]
         [string] $ContainerName
     )
 
     # Both expectations come from the environment FILE. Get-SchemaPackagesFromEnvironmentFile is the
     # same reader the provision phase used and it throws unless at least one package is declared, so a
     # malformed or empty declaration has already failed provisioning rather than being treated as
-    # acceptable here. Get-EnvValue is file-only by contract; Get-ComposeResolvedEnvValue must not be
-    # used for either value, because resolving the expected side ambient-first would let the very
-    # override this gate exists to catch decide what "correct" means.
+    # acceptable here. Get-ComposeResolvedEnvValue must not be used for either scalar, because
+    # resolving the expected side ambient-first would let the very override this gate exists to catch
+    # decide what "correct" means.
     #
-    # Resolve-ComposeEnvRawValue is not a Compose-precedence reader either: it takes the file's raw
-    # value directly and applies the value semantics Compose gives a single --env-file entry -
-    # surrounding quotes stripped, an inline comment dropped, and ${VAR}/$VAR references resolved
-    # (single-quoted values stay literal). All three are legal Compose syntax that Compose itself
-    # applies before the container sees the value, so a declaration using any of them is compared as
-    # the container actually received it rather than failing on raw file text.
+    # Resolve-DotenvFileSequentially is this repository's model of how Compose actually reads an
+    # --env-file: line by line, in declaration order, so each value is frozen against what was in
+    # effect at its own line. It is the single canonical parser for that, which is why the scalars are
+    # read through it rather than through another normalization step layered on a collapsed map.
     $declaredPackages = @(Get-SchemaPackagesFromEnvironmentFile -EnvironmentFilePath $EnvironmentFilePath)
+
+    # Resolved to an absolute path first: Resolve-DotenvFileSequentially reads through
+    # [System.IO.File], which resolves a relative path against the PROCESS working directory rather
+    # than PowerShell's current location. Get-SchemaPackagesFromEnvironmentFile above reads with
+    # Get-Content, which honours the location, so it has always accepted either form.
+    $sequentialEnvironmentFile = Resolve-DotenvFileSequentially `
+        -Path (Resolve-Path -LiteralPath $EnvironmentFilePath).ProviderPath
+
     # Ordinal against lowercase 'true', matching run.sh's byte-exact gate. Compose passes the resolved
     # value through verbatim, so a file declaring USE_API_SCHEMA_PATH=TRUE yields a container that
     # skips the package download while provisioning still stamps the file's packages; reporting that
     # against the file, with the remediation that names the file, is the actionable failure. The
-    # quote/comment/reference normalization still runs first, so "true", 'true' and ${SOMETHING} that
-    # resolves to true all pass, and only the casing is significant.
+    # sequential resolution above already applied Compose's quote, inline-comment and reference
+    # semantics, so "true", 'true' and a reference that resolves to true all pass, and only the casing
+    # is significant.
     $environmentFileUsesApiSchemaPath = [string]::Equals(
-        (Resolve-ComposeEnvRawValue `
-            -EnvironmentValues $EnvironmentValues `
-            -RawValue (Get-EnvValue -EnvValues $EnvironmentValues -Name "USE_API_SCHEMA_PATH" -DefaultValue "false")),
+        (Get-DmsEnvironmentFileDeclaredValue `
+            -ResolvedEnvironmentFile $sequentialEnvironmentFile `
+            -Name "USE_API_SCHEMA_PATH" `
+            -DefaultValue "false"),
         "true",
         [System.StringComparison]::Ordinal
     )
-    $environmentFileApiSchemaPath = Resolve-ComposeEnvRawValue `
-        -EnvironmentValues $EnvironmentValues `
-        -RawValue (Get-EnvValue -EnvValues $EnvironmentValues -Name "API_SCHEMA_PATH" -DefaultValue "")
+    $environmentFileApiSchemaPath = Get-DmsEnvironmentFileDeclaredValue `
+        -ResolvedEnvironmentFile $sequentialEnvironmentFile `
+        -Name "API_SCHEMA_PATH" `
+        -DefaultValue ""
 
     $verdict = Get-DmsSchemaEnvironmentVerdict `
         -ContainerEnvironment (Get-DmsContainerEnvironment -ContainerName $ContainerName) `

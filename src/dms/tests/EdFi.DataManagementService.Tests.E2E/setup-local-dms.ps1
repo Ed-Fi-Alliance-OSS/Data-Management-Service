@@ -274,7 +274,6 @@ try {
         # ambient override even if a future edit reaches for a Compose-precedence reader.
         Assert-DmsContainerSchemaEnvironment `
             -EnvironmentFilePath $resolvedEnvironmentFile `
-            -EnvironmentValues $envValues `
             -ContainerName "ed-fi-api"
     }
 

@@ -999,21 +999,35 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
                 "Get-DmsContainerSchemaPackage",
                 "Get-DmsSchemaPackageIdentity",
                 "Get-DmsSchemaEnvironmentVerdict",
+                "Get-DmsEnvironmentFileDeclaredValue",
                 "Assert-DmsContainerSchemaEnvironment"
             )) {
             . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:schemaEnvironmentModule -FunctionName $functionName)))
         }
 
-        # The real Compose value semantics, not a stub: the quoting and inline-comment cases below are
-        # only meaningful if the assertion normalizes the environment file's raw text the way Docker
-        # Compose does. Production reaches this function through the same module import.
+        # The real sequential env-file resolver, not a stub: the quoting, inline-comment, reference and
+        # declaration-order cases below are only meaningful if the assertion reads the environment file
+        # the way Docker Compose does. Production reaches this function through the same module import.
         Import-Module (Join-Path $PSScriptRoot "../database-safety.psm1") -Force
 
-        # Stubs for the three readers the assertion depends on, so no Docker and no environment file are
-        # involved. Each returns whatever the current test arranged.
+        # Referenced names are resolved ambient-first inside the sequential resolver, exactly as Compose
+        # does, so the fixtures below would inherit a value from a dirty dev shell. Removed for the
+        # duration of this block and restored afterward, which also mirrors the production precondition:
+        # the setup guard has already removed the schema names before the gate runs.
+        $script:neutralizedNames = @(
+            "USE_API_SCHEMA_PATH", "API_SCHEMA_PATH", "SCHEMA_PACKAGES", "SCHEMA_ROOT", "ENABLE_SCHEMA_PATH"
+        )
+        $script:neutralizedPriorValues = @{}
+        foreach ($name in $script:neutralizedNames) {
+            $script:neutralizedPriorValues[$name] = [System.Environment]::GetEnvironmentVariable($name)
+            Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+        }
+
+        # Only the two readers that would need Docker or a package declaration are stubbed. The
+        # environment file itself is real: production resolves it sequentially from disk, so a stubbed
+        # key/value map would reintroduce exactly the collapsed-map model this suite has to reject.
         # Each stub declares the parameters production binds by name, so a renamed argument at the call
-        # site fails here rather than silently passing. The values themselves are not needed, hence the
-        # discards.
+        # site fails here rather than silently passing.
         function Get-DmsContainerEnvironment {
             param([Parameter(Mandatory)] [string] $ContainerName)
 
@@ -1028,20 +1042,32 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
             return $script:stubDeclaredPackages
         }
 
-        function Get-EnvValue {
-            param(
-                [hashtable] $EnvValues,
-                [Parameter(Mandatory)] [string] $Name,
-                [string] $DefaultValue = ""
-            )
+        $script:environmentFileFixtureCount = 0
 
-            $null = $EnvValues
+        function New-EnvironmentFileFixture {
+            <#
+            .SYNOPSIS
+            Writes $script:environmentFileLines to a real file and returns its path, so declaration
+            ORDER is part of the fixture rather than being flattened into a hashtable.
+            #>
+            [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Writes a throwaway fixture under TestDrive; -WhatIf/-Confirm semantics add no value.')]
+            param()
 
-            if ($script:stubEnvironmentFileValues.ContainsKey($Name)) {
-                return $script:stubEnvironmentFileValues[$Name]
+            $script:environmentFileFixtureCount++
+            $path = Join-Path $TestDrive "gate-fixture-$($script:environmentFileFixtureCount).env"
+            [System.IO.File]::WriteAllLines($path, [string[]]$script:environmentFileLines)
+            return $path
+        }
+    }
+
+    AfterAll {
+        foreach ($name in $script:neutralizedNames) {
+            if ($null -eq $script:neutralizedPriorValues[$name]) {
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
             }
-
-            return $DefaultValue
+            else {
+                [System.Environment]::SetEnvironmentVariable($name, $script:neutralizedPriorValues[$name])
+            }
         }
     }
 
@@ -1056,10 +1082,10 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
                     feedUrl = "https://pkgs.example.org/v3/index.json"
                 }
             })
-        $script:stubEnvironmentFileValues = @{
-            USE_API_SCHEMA_PATH = "true"
-            API_SCHEMA_PATH     = "/app/ApiSchema"
-        }
+        $script:environmentFileLines = @(
+            "USE_API_SCHEMA_PATH=true"
+            "API_SCHEMA_PATH=/app/ApiSchema"
+        )
         $script:stubContainerEnvironment = @{
             "AppSettings__UseApiSchemaPath" = "true"
             "AppSettings__ApiSchemaPath"    = "/app/ApiSchema"
@@ -1069,8 +1095,7 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
 
     It "returns without throwing when the container agrees with the environment file" {
         { Assert-DmsContainerSchemaEnvironment `
-                -EnvironmentFilePath "/repo/eng/docker-compose/.env.e2e" `
-                -EnvironmentValues @{} `
+                -EnvironmentFilePath (New-EnvironmentFileFixture) `
                 -ContainerName "ed-fi-api" } | Should -Not -Throw
     }
 
@@ -1090,28 +1115,31 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
         & $Mutate
 
         { Assert-DmsContainerSchemaEnvironment `
-                -EnvironmentFilePath "/repo/eng/docker-compose/.env.e2e" `
-                -EnvironmentValues @{} `
+                -EnvironmentFilePath (New-EnvironmentFileFixture) `
                 -ContainerName "ed-fi-api" } | Should -Throw -ExpectedMessage "DMS E2E setup mismatch: *"
     }
 
     It "throws when the environment file declares packages without enabling the ApiSchema path" {
-        $script:stubEnvironmentFileValues["USE_API_SCHEMA_PATH"] = "false"
+        $script:environmentFileLines = @(
+            "USE_API_SCHEMA_PATH=false"
+            "API_SCHEMA_PATH=/app/ApiSchema"
+        )
 
         { Assert-DmsContainerSchemaEnvironment `
-                -EnvironmentFilePath "/repo/eng/docker-compose/.env.e2e" `
-                -EnvironmentValues @{} `
+                -EnvironmentFilePath (New-EnvironmentFileFixture) `
                 -ContainerName "ed-fi-api" } | Should -Throw -ExpectedMessage "DMS E2E setup mismatch: *"
     }
 
     It "compares against the environment file's API_SCHEMA_PATH, not a hardcoded default" {
         # Both sides move together: a container matching a non-default environment-file path must pass.
-        $script:stubEnvironmentFileValues["API_SCHEMA_PATH"] = "/custom/ApiSchema"
+        $script:environmentFileLines = @(
+            "USE_API_SCHEMA_PATH=true"
+            "API_SCHEMA_PATH=/custom/ApiSchema"
+        )
         $script:stubContainerEnvironment["AppSettings__ApiSchemaPath"] = "/custom/ApiSchema"
 
         { Assert-DmsContainerSchemaEnvironment `
-                -EnvironmentFilePath "/repo/eng/docker-compose/.env.e2e" `
-                -EnvironmentValues @{} `
+                -EnvironmentFilePath (New-EnvironmentFileFixture) `
                 -ContainerName "ed-fi-api" } | Should -Not -Throw
     }
 
@@ -1125,23 +1153,27 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
         # passes the value into the container, so a correctly started container legitimately carries the
         # bare path. Comparing the environment file's raw text failed such a stack at setup time even
         # though nothing was wrong with it - a false failure a custom -EnvironmentFile can easily hit.
-        $script:stubEnvironmentFileValues["API_SCHEMA_PATH"] = $RawValue
+        $script:environmentFileLines = @(
+            "USE_API_SCHEMA_PATH=true"
+            "API_SCHEMA_PATH=$RawValue"
+        )
         $script:stubContainerEnvironment["AppSettings__ApiSchemaPath"] = "/custom/ApiSchema"
 
         { Assert-DmsContainerSchemaEnvironment `
-                -EnvironmentFilePath "/repo/eng/docker-compose/.env.e2e" `
-                -EnvironmentValues @{} `
+                -EnvironmentFilePath (New-EnvironmentFileFixture) `
                 -ContainerName "ed-fi-api" } | Should -Not -Throw
     }
 
     It "still fails a genuinely different path when the declaration is quoted" {
         # Normalization must not turn the path comparison into a no-op.
-        $script:stubEnvironmentFileValues["API_SCHEMA_PATH"] = '"/custom/ApiSchema"'
+        $script:environmentFileLines = @(
+            "USE_API_SCHEMA_PATH=true"
+            'API_SCHEMA_PATH="/custom/ApiSchema"'
+        )
         $script:stubContainerEnvironment["AppSettings__ApiSchemaPath"] = "/somewhere/else"
 
         { Assert-DmsContainerSchemaEnvironment `
-                -EnvironmentFilePath "/repo/eng/docker-compose/.env.e2e" `
-                -EnvironmentValues @{} `
+                -EnvironmentFilePath (New-EnvironmentFileFixture) `
                 -ContainerName "ed-fi-api" } | Should -Throw -ExpectedMessage "DMS E2E setup mismatch: *"
     }
 
@@ -1152,11 +1184,13 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
     ) {
         # Same false failure on the other file-read expectation: raw quoted text is not equal to "true",
         # so the gate reported a correctly configured environment file as internally inconsistent.
-        $script:stubEnvironmentFileValues["USE_API_SCHEMA_PATH"] = $RawValue
+        $script:environmentFileLines = @(
+            "USE_API_SCHEMA_PATH=$RawValue"
+            "API_SCHEMA_PATH=/app/ApiSchema"
+        )
 
         { Assert-DmsContainerSchemaEnvironment `
-                -EnvironmentFilePath "/repo/eng/docker-compose/.env.e2e" `
-                -EnvironmentValues @{} `
+                -EnvironmentFilePath (New-EnvironmentFileFixture) `
                 -ContainerName "ed-fi-api" } | Should -Not -Throw
     }
 
@@ -1165,12 +1199,15 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
         # container legitimately carries the RESOLVED path. Comparing the literal reference text kept
         # the expected side as '${SCHEMA_ROOT}/ApiSchema', which can never equal what the container
         # received - a hard setup abort on a stack that came up correctly.
-        $script:stubEnvironmentFileValues["API_SCHEMA_PATH"] = '${SCHEMA_ROOT}/ApiSchema'
+        $script:environmentFileLines = @(
+            "USE_API_SCHEMA_PATH=true"
+            "SCHEMA_ROOT=/app"
+            'API_SCHEMA_PATH=${SCHEMA_ROOT}/ApiSchema'
+        )
         $script:stubContainerEnvironment["AppSettings__ApiSchemaPath"] = "/app/ApiSchema"
 
         { Assert-DmsContainerSchemaEnvironment `
-                -EnvironmentFilePath "/repo/eng/docker-compose/.env.e2e" `
-                -EnvironmentValues @{ SCHEMA_ROOT = "/app" } `
+                -EnvironmentFilePath (New-EnvironmentFileFixture) `
                 -ContainerName "ed-fi-api" } | Should -Not -Throw
     }
 
@@ -1178,24 +1215,97 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
         # Same false failure on the other file-read expectation: the unresolved reference is not
         # "true", so the gate reported an internally consistent environment file as declaring packages
         # without enabling the ApiSchema path.
-        $script:stubEnvironmentFileValues["USE_API_SCHEMA_PATH"] = '${ENABLE_SCHEMA_PATH}'
+        $script:environmentFileLines = @(
+            "ENABLE_SCHEMA_PATH=true"
+            'USE_API_SCHEMA_PATH=${ENABLE_SCHEMA_PATH}'
+            "API_SCHEMA_PATH=/app/ApiSchema"
+        )
 
         { Assert-DmsContainerSchemaEnvironment `
-                -EnvironmentFilePath "/repo/eng/docker-compose/.env.e2e" `
-                -EnvironmentValues @{ ENABLE_SCHEMA_PATH = "true" } `
+                -EnvironmentFilePath (New-EnvironmentFileFixture) `
                 -ContainerName "ed-fi-api" } | Should -Not -Throw
     }
 
     It 'still fails a genuinely different path when the declaration is a ${VAR} reference' {
         # Reference resolution must not turn the path comparison into a no-op: a file pointing
         # somewhere the container is not is still the mismatch this gate exists to report.
-        $script:stubEnvironmentFileValues["API_SCHEMA_PATH"] = '${SCHEMA_ROOT}/ApiSchema'
+        $script:environmentFileLines = @(
+            "USE_API_SCHEMA_PATH=true"
+            "SCHEMA_ROOT=/somewhere/else"
+            'API_SCHEMA_PATH=${SCHEMA_ROOT}/ApiSchema'
+        )
         $script:stubContainerEnvironment["AppSettings__ApiSchemaPath"] = "/app/ApiSchema"
 
         { Assert-DmsContainerSchemaEnvironment `
-                -EnvironmentFilePath "/repo/eng/docker-compose/.env.e2e" `
-                -EnvironmentValues @{ SCHEMA_ROOT = "/somewhere/else" } `
+                -EnvironmentFilePath (New-EnvironmentFileFixture) `
                 -ContainerName "ed-fi-api" } | Should -Throw -ExpectedMessage "DMS E2E setup mismatch: *"
+    }
+
+    It 'freezes API_SCHEMA_PATH at its own line, so a later re-declaration of the name it referenced cannot change it' {
+        # Docker Compose resolves an --env-file in declaration ORDER: API_SCHEMA_PATH is frozen as
+        # /app/ApiSchema when Compose reads that line, and the later SCHEMA_ROOT=/other applies only to
+        # lines after it. Reading the expected value from a collapsed key/value map instead kept just
+        # the FINAL SCHEMA_ROOT, expected /other/ApiSchema, and failed a correctly started stack.
+        $script:environmentFileLines = @(
+            "USE_API_SCHEMA_PATH=true"
+            "SCHEMA_ROOT=/app"
+            'API_SCHEMA_PATH=${SCHEMA_ROOT}/ApiSchema'
+            "SCHEMA_ROOT=/other"
+        )
+        $script:stubContainerEnvironment["AppSettings__ApiSchemaPath"] = "/app/ApiSchema"
+
+        { Assert-DmsContainerSchemaEnvironment `
+                -EnvironmentFilePath (New-EnvironmentFileFixture) `
+                -ContainerName "ed-fi-api" } | Should -Not -Throw
+    }
+
+    It 'still fails when the container carries what the collapsed key/value model would have expected' {
+        # The mirror of the case above, so the fix is not merely "accept both". The container is on
+        # /other/ApiSchema - the value the collapsed model computed - which Compose never produced from
+        # this file, and that must still be reported as a mismatch.
+        $script:environmentFileLines = @(
+            "USE_API_SCHEMA_PATH=true"
+            "SCHEMA_ROOT=/app"
+            'API_SCHEMA_PATH=${SCHEMA_ROOT}/ApiSchema'
+            "SCHEMA_ROOT=/other"
+        )
+        $script:stubContainerEnvironment["AppSettings__ApiSchemaPath"] = "/other/ApiSchema"
+
+        { Assert-DmsContainerSchemaEnvironment `
+                -EnvironmentFilePath (New-EnvironmentFileFixture) `
+                -ContainerName "ed-fi-api" } | Should -Throw -ExpectedMessage "DMS E2E setup mismatch: *"
+    }
+
+    It 'freezes USE_API_SCHEMA_PATH at its own line, so a later re-declaration of the name it referenced cannot change it' {
+        # The same declaration-order rule on the boolean. USE_API_SCHEMA_PATH is frozen as true; the
+        # later ENABLE_SCHEMA_PATH=false does not reach back. The collapsed model resolved the
+        # reference against the final false and reported the file as declaring packages without
+        # enabling the ApiSchema path.
+        $script:environmentFileLines = @(
+            "ENABLE_SCHEMA_PATH=true"
+            'USE_API_SCHEMA_PATH=${ENABLE_SCHEMA_PATH}'
+            "API_SCHEMA_PATH=/app/ApiSchema"
+            "ENABLE_SCHEMA_PATH=false"
+        )
+
+        { Assert-DmsContainerSchemaEnvironment `
+                -EnvironmentFilePath (New-EnvironmentFileFixture) `
+                -ContainerName "ed-fi-api" } | Should -Not -Throw
+    }
+
+    It 'uses the last declaration of a repeated key, which is what the compose file itself sees' {
+        # Declaration order decides a referencing line's value, but for the key being read it is the
+        # LAST declaration that Compose hands to the compose file. Both rules have to hold at once.
+        $script:environmentFileLines = @(
+            "USE_API_SCHEMA_PATH=true"
+            "API_SCHEMA_PATH=/first/ApiSchema"
+            "API_SCHEMA_PATH=/last/ApiSchema"
+        )
+        $script:stubContainerEnvironment["AppSettings__ApiSchemaPath"] = "/last/ApiSchema"
+
+        { Assert-DmsContainerSchemaEnvironment `
+                -EnvironmentFilePath (New-EnvironmentFileFixture) `
+                -ContainerName "ed-fi-api" } | Should -Not -Throw
     }
 
     It "throws when the environment file spells USE_API_SCHEMA_PATH as <Label>" -ForEach @(
@@ -1207,11 +1317,13 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
         # declaring TRUE starts a container that downloads no packages while phase 3 already stamped the
         # database for the file's full surface. Normalization strips the quotes but must not fold case,
         # which the quoted variant pins.
-        $script:stubEnvironmentFileValues["USE_API_SCHEMA_PATH"] = $RawValue
+        $script:environmentFileLines = @(
+            "USE_API_SCHEMA_PATH=$RawValue"
+            "API_SCHEMA_PATH=/app/ApiSchema"
+        )
 
         { Assert-DmsContainerSchemaEnvironment `
-                -EnvironmentFilePath "/repo/eng/docker-compose/.env.e2e" `
-                -EnvironmentValues @{} `
+                -EnvironmentFilePath (New-EnvironmentFileFixture) `
                 -ContainerName "ed-fi-api" } | Should -Throw -ExpectedMessage "DMS E2E setup mismatch: *"
     }
 
@@ -1224,8 +1336,7 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
         $script:stubContainerEnvironment["AppSettings__UseApiSchemaPath"] = $Value
 
         { Assert-DmsContainerSchemaEnvironment `
-                -EnvironmentFilePath "/repo/eng/docker-compose/.env.e2e" `
-                -EnvironmentValues @{} `
+                -EnvironmentFilePath (New-EnvironmentFileFixture) `
                 -ContainerName "ed-fi-api" } | Should -Throw -ExpectedMessage "DMS E2E setup mismatch: *"
     }
 }
@@ -1461,24 +1572,39 @@ Describe "Both E2E setup wrappers verify the started container against the envir
         $source | Should -Not -Match "function Get-DmsContainerEnvironment"
     }
 
-    It "reads both expectations from the environment file, never with Compose precedence" {
+    It "reads both expectations from the environment file through the canonical sequential resolver" {
         # Asserted over the commands the function actually invokes, not its text: the function's own
         # comment names Get-ComposeResolvedEnvValue in order to prohibit it, and a text search cannot
         # tell a prohibition from a call.
         #
         # Get-ComposeResolvedEnvValue resolves ambient-first. Using it for either expectation would let
         # the very override this gate exists to catch decide what "correct" means, so the gate would
-        # agree with a wrongly-started container and pass. Resolve-ComposeEnvRawValue is not that
-        # reader: it takes the file's raw value directly and applies only the value semantics Compose
-        # gives one --env-file entry, so the expected side stays file-authored while still matching
-        # what Compose actually rendered into the container.
+        # agree with a wrongly-started container and pass.
+        #
+        # Resolve-DotenvFileSequentially is this repository's one model of how Compose reads an
+        # --env-file. Pinning it by name is deliberate: the alternative that keeps being reached for is
+        # another normalization step layered on a COLLAPSED key/value map, which cannot express
+        # declaration order and is exactly how the frozen-value defect got in. Neither the collapsed
+        # reader nor a per-value resolver over it may come back for these two scalars.
         $invoked = @(Get-FunctionCommandName -ScriptPath $script:schemaEnvironmentModule -FunctionName "Assert-DmsContainerSchemaEnvironment")
 
         $invoked | Should -Contain "Get-SchemaPackagesFromEnvironmentFile"
-        $invoked | Should -Contain "Get-EnvValue"
-        $invoked | Should -Contain "Resolve-ComposeEnvRawValue"
+        $invoked | Should -Contain "Resolve-DotenvFileSequentially"
+        $invoked | Should -Contain "Get-DmsEnvironmentFileDeclaredValue"
         $invoked | Should -Not -Contain "Get-ComposeResolvedEnvValue"
-        $script:schemaEnvironmentModuleSource | Should -Match 'Get-EnvValue -EnvValues \$EnvironmentValues -Name "USE_API_SCHEMA_PATH"'
+        $invoked | Should -Not -Contain "Get-EnvValue"
+        $invoked | Should -Not -Contain "Resolve-ComposeEnvRawValue"
+        $script:schemaEnvironmentModuleSource | Should -Match '-Name "USE_API_SCHEMA_PATH" `\r?\n\s*-DefaultValue "false"'
+    }
+
+    It "reads the frozen declaration rather than the ambient-precedence Effective map" {
+        # Resolve-DotenvFileSequentially returns both. Effective applies ambient precedence to the
+        # requested key, so taking it would let a shell value Compose never saw define the expected
+        # side - the same class of defect as using Get-ComposeResolvedEnvValue.
+        $script:schemaEnvironmentModuleSource | Should -Match '\$ResolvedEnvironmentFile\.Declarations'
+        $script:schemaEnvironmentModuleSource | Should -Not -Match '\$ResolvedEnvironmentFile\.Effective'
+        # Last declaration wins, which is what the compose file itself sees.
+        $script:schemaEnvironmentModuleSource | Should -Match 'Select-Object -Last 1'
     }
 
     It "imports the same file-only package reader the provision phase uses" {
@@ -1486,7 +1612,6 @@ Describe "Both E2E setup wrappers verify the started container against the envir
         # happened to import, so command resolution does not depend on the call site.
         $script:schemaEnvironmentModuleSource | Should -Match 'Import-Module \(Join-Path \$PSScriptRoot "\.\./schema-package-utility\.psm1"\) -Force'
         $script:schemaEnvironmentModuleSource | Should -Match 'Import-Module \(Join-Path \$PSScriptRoot "database-safety\.psm1"\) -Force'
-        $script:schemaEnvironmentModuleSource | Should -Match 'Import-Module \(Join-Path \$PSScriptRoot "env-utility\.psm1"\) -Force'
     }
 
     It "throws rather than warning when the verdict fails" {
@@ -1535,18 +1660,34 @@ Describe "The container schema gate accepts the repository's own tracked environ
                 "Get-DmsContainerSchemaPackage",
                 "Get-DmsSchemaPackageIdentity",
                 "Get-DmsSchemaEnvironmentVerdict",
+                "Get-DmsEnvironmentFileDeclaredValue",
                 "Assert-DmsContainerSchemaEnvironment"
             )) {
             . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:schemaEnvironmentModule -FunctionName $functionName)))
         }
 
-        # The REAL readers, exactly the ones production reaches through the module's own imports:
-        # ReadValuesFromEnvFile / Get-EnvValue / Resolve-DataStandardEnvironmentFile (env-utility),
-        # Resolve-ComposeEnvRawValue (database-safety), Get-SchemaPackagesFromEnvironmentFile
-        # (schema-package-utility). Nothing about the file side is stubbed here.
+        # The REAL readers: Resolve-DotenvFileSequentially (database-safety) and
+        # Get-SchemaPackagesFromEnvironmentFile (schema-package-utility) are the two production reaches
+        # through the module's own imports; Resolve-DataStandardEnvironmentFile (env-utility) is the
+        # production overlay composer used below. Nothing about the file side is stubbed here.
         Import-Module (Join-Path $PSScriptRoot "../env-utility.psm1") -Force
         Import-Module (Join-Path $PSScriptRoot "../database-safety.psm1") -Force
         Import-Module (Join-Path $PSScriptRoot "../../schema-package-utility.psm1") -Force
+
+        # Production reaches Assert-DmsContainerSchemaEnvironment from inside the setup guard, after
+        # USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES have been REMOVED from the process.
+        # The container fixtures below are built from the sequential resolver's Effective map, which
+        # applies ambient precedence, so an invoking shell still carrying USE_API_SCHEMA_PATH=false - the
+        # exact dirty-shell shape the guard exists to tolerate - would define the fixture side from a
+        # value Compose never sees and fail this block while wrapper behavior is correct. Removed for the
+        # duration of the block and restored afterward, so the fixtures are built under the same
+        # precondition production's gate runs under.
+        $script:guardedSchemaNames = @("USE_API_SCHEMA_PATH", "API_SCHEMA_PATH", "SCHEMA_PACKAGES")
+        $script:guardedSchemaPriorValues = @{}
+        foreach ($name in $script:guardedSchemaNames) {
+            $script:guardedSchemaPriorValues[$name] = [System.Environment]::GetEnvironmentVariable($name)
+            Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+        }
 
         # The one reader that would need Docker. Everything else runs for real.
         function Get-DmsContainerEnvironment {
@@ -1605,6 +1746,17 @@ Describe "The container schema gate accepts the repository's own tracked environ
         }
     }
 
+    AfterAll {
+        foreach ($name in $script:guardedSchemaNames) {
+            if ($null -eq $script:guardedSchemaPriorValues[$name]) {
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+            }
+            else {
+                [System.Environment]::SetEnvironmentVariable($name, $script:guardedSchemaPriorValues[$name])
+            }
+        }
+    }
+
     It "the tracked <Label> satisfies the container schema gate" -ForEach @(
         @{ Label = ".env.e2e"; BaseName = ".env.e2e"; DataStandardVersion = "" }
         @{ Label = ".env.routeContext.e2e"; BaseName = ".env.routeContext.e2e"; DataStandardVersion = "" }
@@ -1612,23 +1764,63 @@ Describe "The container schema gate accepts the repository's own tracked environ
         @{ Label = ".env.e2e composed with .env.ds61"; BaseName = ".env.e2e"; DataStandardVersion = "6.1" }
     ) {
         $environmentFilePath = Resolve-TrackedEnvironmentFile -BaseName $BaseName -DataStandardVersion $DataStandardVersion
-        $environmentValues = ReadValuesFromEnvFile $environmentFilePath
 
-        # The container fixture is what Compose renders from this same file: each scalar resolved with
-        # Compose's single-entry value semantics, and SCHEMA_PACKAGES passed through verbatim.
+        # The container fixture is what Compose renders from this same file. Built through the
+        # SEQUENTIAL model, the same one production reads: a fixture built from a collapsed key/value
+        # map would mirror the very defect this suite has to catch. The Effective map is the right
+        # choice on THIS side - it is what the compose file receives, ambient precedence included - and
+        # it is a different code path from production's frozen-declaration read, so the two are not
+        # asserting each other into agreement. SCHEMA_PACKAGES is passed through verbatim.
+        $sequential = Resolve-DotenvFileSequentially -Path $environmentFilePath
         $script:stubContainerEnvironment = @{
-            "AppSettings__UseApiSchemaPath" = Resolve-ComposeEnvRawValue `
-                -EnvironmentValues $environmentValues `
-                -RawValue (Get-EnvValue -EnvValues $environmentValues -Name "USE_API_SCHEMA_PATH" -DefaultValue "false")
-            "AppSettings__ApiSchemaPath"    = Resolve-ComposeEnvRawValue `
-                -EnvironmentValues $environmentValues `
-                -RawValue (Get-EnvValue -EnvValues $environmentValues -Name "API_SCHEMA_PATH" -DefaultValue "")
-            "SCHEMA_PACKAGES"              = Get-TrackedSchemaPackagesRawValue -EnvironmentFilePath $environmentFilePath
+            "AppSettings__UseApiSchemaPath" = [string]$sequential.Effective["USE_API_SCHEMA_PATH"]
+            "AppSettings__ApiSchemaPath"    = [string]$sequential.Effective["API_SCHEMA_PATH"]
+            "SCHEMA_PACKAGES"               = Get-TrackedSchemaPackagesRawValue -EnvironmentFilePath $environmentFilePath
         }
 
         { Assert-DmsContainerSchemaEnvironment `
                 -EnvironmentFilePath $environmentFilePath `
-                -EnvironmentValues $environmentValues `
+                -ContainerName "ed-fi-api" } | Should -Not -Throw
+    }
+
+    It "builds its container fixture under production's precondition, so a dirty invoking shell cannot fail this block" {
+        # The regression for the exact shell state DMS-1300 exists to tolerate: a developer shell still
+        # carrying USE_API_SCHEMA_PATH=false. The fixtures here read the ambient-first Effective map, so
+        # without the block's removal of the three schema names that ambient value - not the file's -
+        # defines what the container is claimed to have, and every case above fails for a reason wrapper
+        # behavior has nothing to do with.
+        foreach ($name in $script:guardedSchemaNames) {
+            (Test-Path -LiteralPath "Env:$name") |
+                Should -BeFalse -Because "$name must be absent while these fixtures are built, which is the precondition the setup guard leaves for production's gate"
+        }
+
+        $environmentFilePath = Resolve-TrackedEnvironmentFile -BaseName ".env.e2e" -DataStandardVersion ""
+
+        # The dirty shell is arranged here rather than assumed, so the mechanism is a real result on a
+        # clean CI runner as well as on a polluted developer shell.
+        [System.Environment]::SetEnvironmentVariable("USE_API_SCHEMA_PATH", "false")
+        try {
+            [string](Resolve-DotenvFileSequentially -Path $environmentFilePath).Effective["USE_API_SCHEMA_PATH"] |
+                Should -BeExactly "false" -Because "the Effective map applies ambient precedence, which is why the fixtures may only be built with these names removed"
+        }
+        finally {
+            foreach ($name in $script:guardedSchemaNames) {
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+            }
+        }
+
+        # Restored to the production precondition, the identical construction takes the FILE's value and
+        # the gate agrees.
+        $sequential = Resolve-DotenvFileSequentially -Path $environmentFilePath
+        [string]$sequential.Effective["USE_API_SCHEMA_PATH"] | Should -BeExactly "true"
+        $script:stubContainerEnvironment = @{
+            "AppSettings__UseApiSchemaPath" = [string]$sequential.Effective["USE_API_SCHEMA_PATH"]
+            "AppSettings__ApiSchemaPath"    = [string]$sequential.Effective["API_SCHEMA_PATH"]
+            "SCHEMA_PACKAGES"               = Get-TrackedSchemaPackagesRawValue -EnvironmentFilePath $environmentFilePath
+        }
+
+        { Assert-DmsContainerSchemaEnvironment `
+                -EnvironmentFilePath $environmentFilePath `
                 -ContainerName "ed-fi-api" } | Should -Not -Throw
     }
 
@@ -1641,13 +1833,35 @@ Describe "The container schema gate accepts the repository's own tracked environ
         # Without this, the gate assertion above could pass on a file that declares no packages at all
         # or leaves the ApiSchema path off, because the fixture would agree with it either way.
         $environmentFilePath = Resolve-TrackedEnvironmentFile -BaseName $BaseName -DataStandardVersion $DataStandardVersion
-        $environmentValues = ReadValuesFromEnvFile $environmentFilePath
+        $sequential = Resolve-DotenvFileSequentially -Path $environmentFilePath
 
-        Resolve-ComposeEnvRawValue `
-            -EnvironmentValues $environmentValues `
-            -RawValue (Get-EnvValue -EnvValues $environmentValues -Name "USE_API_SCHEMA_PATH" -DefaultValue "false") |
+        Get-DmsEnvironmentFileDeclaredValue `
+            -ResolvedEnvironmentFile $sequential `
+            -Name "USE_API_SCHEMA_PATH" `
+            -DefaultValue "false" |
             Should -BeExactly "true"
         @(Get-SchemaPackagesFromEnvironmentFile -EnvironmentFilePath $environmentFilePath).Count |
             Should -BeGreaterThan 0
+    }
+
+    It "declares no repeated key whose value another declaration resolves against" -ForEach @(
+        @{ Label = ".env.e2e"; BaseName = ".env.e2e"; DataStandardVersion = "" }
+        @{ Label = ".env.routeContext.e2e"; BaseName = ".env.routeContext.e2e"; DataStandardVersion = "" }
+        @{ Label = ".env.e2e composed with .env.ds52"; BaseName = ".env.e2e"; DataStandardVersion = "5.2" }
+        @{ Label = ".env.e2e composed with .env.ds61"; BaseName = ".env.e2e"; DataStandardVersion = "6.1" }
+    ) {
+        # The tracked-file guard for the defect the unit fixtures cover synthetically. A key declared
+        # twice is legal Compose, but if a LATER declaration re-defines a name an EARLIER line already
+        # resolved against, the two models disagree - and the collapsed one silently wins arguments it
+        # should lose. This reports that shape landing in a tracked file rather than waiting for a
+        # setup abort. Overlay composition can legitimately introduce duplicates, so the assertion is
+        # scoped to duplicates that something actually references.
+        $environmentFilePath = Resolve-TrackedEnvironmentFile -BaseName $BaseName -DataStandardVersion $DataStandardVersion
+        $sequential = Resolve-DotenvFileSequentially -Path $environmentFilePath
+
+        $referencedNames = @($sequential.Declarations | ForEach-Object { $_.References }) | Select-Object -Unique
+        $referencedDuplicates = @($sequential.DuplicateKeys | Where-Object { $referencedNames -contains $_ })
+
+        $referencedDuplicates | Should -BeNullOrEmpty -Because "a re-declared name that another line resolves against makes the file's meaning depend on declaration order"
     }
 }

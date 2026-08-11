@@ -458,7 +458,6 @@ try {
         # this checks that the runtime is loading the packages those tables were generated from.
         Assert-DmsContainerSchemaEnvironment `
             -EnvironmentFilePath $resolvedEnvironmentFile `
-            -EnvironmentValues $envValues `
             -ContainerName "ed-fi-api"
     }
 
