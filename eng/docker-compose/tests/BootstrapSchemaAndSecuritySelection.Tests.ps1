@@ -2015,15 +2015,27 @@ exit 0
         It "both E2E setup wrappers let the selected environment file provide the schema package settings" {
             # DMS-1300. Docker Compose gives process env vars precedence over --env-file entries, and
             # local-dms.yml resolves all three names with a ${VAR:-default} fallback that treats a
-            # present-but-blank value as unset. Both wrappers must therefore REMOVE the three names
+            # present-but-blank value as unset. Both setup flows must therefore REMOVE the three names
             # around their Docker phases, never blank them: an assignment-based clear is
             # platform- and PowerShell-version-dependent and can leave a present-but-blank value,
             # which satisfies the fallback and silently starts DMS on the image-baked schemas while
             # provisioning already stamped the environment file's full package surface.
             #
-            # The symmetric pair is asserted together so the two wrappers cannot drift apart: the
-            # direct DMS wrapper had no guard at all, and the Instance Management wrapper had one built
-            # on the unreliable assignment form.
+            # The guard is defined once, in the module both wrappers import, so the removal-and-restore
+            # spelling is asserted against that module and each wrapper is asserted to reach it rather
+            # than to carry a copy. The pair is still asserted together so the two flows cannot drift
+            # apart: the direct DMS wrapper had no guard at all, and the Instance Management wrapper had
+            # one built on the unreliable assignment form.
+            $guardModule = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "dms-schema-environment.psm1") -Raw
+
+            $guardModule | Should -Match "function Invoke-WithEnvironmentFileSchemaSettings" -Because "the shared module must own the guard both wrappers run their Docker phases inside"
+            $guardModule | Should -Match '"USE_API_SCHEMA_PATH"' -Because "the guard must name USE_API_SCHEMA_PATH"
+            $guardModule | Should -Match '"API_SCHEMA_PATH"' -Because "the guard must name API_SCHEMA_PATH"
+            $guardModule | Should -Match '"SCHEMA_PACKAGES"' -Because "the guard must name SCHEMA_PACKAGES"
+            $guardModule | Should -Match 'Remove-Item -LiteralPath "Env:\$name"' -Because "the guard must clear by removal, not by assignment"
+            $guardModule | Should -Match '\[System\.Environment\]::SetEnvironmentVariable\(\$name, \$previousValues\[\$name\]\)' -Because "the guard must restore a present prior value verbatim"
+            $guardModule | Should -Match 'if \(\$null -eq \$previousValues\[\$name\]\)' -Because "the guard must distinguish an absent prior state from a present-but-empty one"
+
             foreach ($path in @(
                 (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1"),
                 (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1")
@@ -2031,13 +2043,9 @@ exit 0
                 $content = Get-Content -LiteralPath $path -Raw
                 $wrapperName = [System.IO.Path]::GetFileName([System.IO.Path]::GetDirectoryName($path))
 
-                $content | Should -Match "function Invoke-WithEnvironmentFileSchemaSettings" -Because "$wrapperName must guard its Docker phases"
-                $content | Should -Match '"USE_API_SCHEMA_PATH"' -Because "$wrapperName must name USE_API_SCHEMA_PATH in the guard"
-                $content | Should -Match '"API_SCHEMA_PATH"' -Because "$wrapperName must name API_SCHEMA_PATH in the guard"
-                $content | Should -Match '"SCHEMA_PACKAGES"' -Because "$wrapperName must name SCHEMA_PACKAGES in the guard"
-                $content | Should -Match 'Remove-Item -LiteralPath "Env:\$name"' -Because "$wrapperName must clear by removal, not by assignment"
-                $content | Should -Match '\[System\.Environment\]::SetEnvironmentVariable\(\$name, \$previousValues\[\$name\]\)' -Because "$wrapperName must restore a present prior value verbatim"
-                $content | Should -Match 'if \(\$null -eq \$previousValues\[\$name\]\)' -Because "$wrapperName must distinguish an absent prior state from a present-but-empty one"
+                $content | Should -Match "Import-Module \./dms-schema-environment\.psm1 -Force" -Because "$wrapperName must import the module that owns the guard"
+                $content | Should -Match "Invoke-WithEnvironmentFileSchemaSettings -Action" -Because "$wrapperName must guard its Docker phases"
+                $content | Should -Not -Match "function Invoke-WithEnvironmentFileSchemaSettings" -Because "$wrapperName must use the shared guard rather than its own copy, which would take the next fix in only one place"
 
                 # The unreliable primitive, in either spelling, must not come back.
                 $content | Should -Not -Match '\$env:USE_API_SCHEMA_PATH\s*=' -Because "$wrapperName must not assign USE_API_SCHEMA_PATH"

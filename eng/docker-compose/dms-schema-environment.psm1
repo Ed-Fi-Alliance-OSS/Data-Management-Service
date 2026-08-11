@@ -5,12 +5,13 @@
 
 <#
 .SYNOPSIS
-    Post-start verification that a started DMS container's ApiSchema package settings agree with the
-    environment file the E2E database was provisioned from.
+    The environment file's authority over a DMS E2E setup flow's ApiSchema package surface: the
+    pre-phase process guard that hands the file that authority, and the post-start verification that
+    the started DMS container actually received it.
 .DESCRIPTION
     Shared by both E2E setup wrappers (EdFi.DataManagementService.Tests.E2E and
-    EdFi.InstanceManagement.Tests.E2E) so the direct and route-context flows verify the same thing in
-    the same way rather than carrying two copies of the check.
+    EdFi.InstanceManagement.Tests.E2E) so the direct and route-context flows guard and verify the same
+    thing in the same way rather than carrying two copies of each.
 
     The provisioner reads SCHEMA_PACKAGES from the environment file only, so the E2E database is
     always stamped for the file's package surface. DMS receives its settings through Docker Compose,
@@ -32,6 +33,82 @@
 # caller - and it still loads the dependency when nothing else has.
 Import-Module (Join-Path $PSScriptRoot "database-safety.psm1")
 Import-Module (Join-Path $PSScriptRoot "../schema-package-utility.psm1")
+
+function Invoke-WithEnvironmentFileSchemaSettings {
+    <#
+    .SYNOPSIS
+        Runs a setup flow's Docker phases with the three schema package variables absent from this
+        process, so Docker Compose must resolve them from the selected --env-file, and restores the
+        caller's exact prior state afterward.
+    .DESCRIPTION
+        Compose gives process environment variables precedence over --env-file entries, and
+        local-dms.yml resolves all three with a ${VAR:-default} fallback. Because ':-' substitutes the
+        default for an empty value as well as an unset one, an ambient blank value silently wins over
+        the environment file: the DMS container is created with AppSettings__UseApiSchemaPath=false and
+        empty AppSettings__ApiSchemaPath/SCHEMA_PACKAGES, run.sh skips the package download entirely,
+        and DMS loads only the image-baked schemas. Provisioning is not affected, because it reads
+        SCHEMA_PACKAGES from the environment file only - so the provisioned database is stamped for the
+        file's full package surface while DMS computes a different runtime hash, and every data-plane
+        request fails with an EffectiveSchemaHash mismatch. That path is confirmed by construction from
+        Compose's documented precedence; it is not a diagnosis of any particular reported incident, and
+        this guard is cheap enough to hold regardless of which cause produced one.
+
+        Callers guard their WHOLE phase sequence rather than only the Compose-invoking phases: the
+        environment file is authoritative for the entire setup flow, and a Compose call added to any
+        phase later is covered by construction. Phases that do not read these three names from the
+        process environment are unaffected by the removal.
+
+        Defined in this shared module rather than copied into each E2E setup wrapper, for the same
+        reason the verification below lives here: two copies drift, and only one of them gets the next
+        fix. It remains a CALLER-side guard - start-local-dms.ps1 must not clear these names globally,
+        because in bootstrap mode it sets them in-process on purpose so process precedence makes the
+        staged .bootstrap/ApiSchema workspace authoritative. build-dms.ps1 keeps its own -Enabled
+        variant: it has phases that must run without this removal, which the wrappers do not.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Names the schema settings carried by an environment file, matching the equivalent build-dms.ps1 helper.')]
+    param(
+        [Parameter(Mandatory)]
+        [scriptblock] $Action
+    )
+
+    $schemaEnvironmentVariableNames = @(
+        "USE_API_SCHEMA_PATH",
+        "API_SCHEMA_PATH",
+        "SCHEMA_PACKAGES"
+    )
+
+    # $null distinguishes absent from present-and-empty, which is the distinction the restore below
+    # has to reproduce.
+    $previousValues = @{}
+    foreach ($name in $schemaEnvironmentVariableNames) {
+        $previousValues[$name] = [System.Environment]::GetEnvironmentVariable($name)
+    }
+
+    try {
+        foreach ($name in $schemaEnvironmentVariableNames) {
+            # Remove-Item, never an assignment: whether '$env:X = $null' removes the variable or
+            # leaves it present-and-blank varies by platform and PowerShell/.NET version, and a blank
+            # value satisfies ${VAR:-default} - so an assignment-based clear can leave this guard
+            # doing nothing at all, which is the bug it exists to prevent.
+            Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+        }
+
+        & $Action
+    }
+    finally {
+        # Restore each variable to its exact prior state: re-create it with the verbatim prior value
+        # (including empty and whitespace) when it existed, otherwise remove it. This runs on the
+        # success path, when the action throws, and when the action calls exit.
+        foreach ($name in $schemaEnvironmentVariableNames) {
+            if ($null -eq $previousValues[$name]) {
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+            }
+            else {
+                [System.Environment]::SetEnvironmentVariable($name, $previousValues[$name])
+            }
+        }
+    }
+}
 
 function Get-DmsSchemaEnvironmentToken {
     <#
@@ -181,9 +258,10 @@ function Get-DmsSchemaEnvironmentVerdict {
         Every requirement here is unconditional. The caller obtains ExpectedPackageIdentity from the same
         reader the provision phase used, which throws unless the file declares at least one package, so
         by the time this runs the database has been provisioned for a real package surface and the
-        runtime must match it. That includes the environment file's own USE_API_SCHEMA_PATH: a file that
-        declares packages but does not enable the ApiSchema path is internally inconsistent and
-        guarantees the mismatch, so it is reported rather than tolerated.
+        runtime must match it. That includes the environment file's own USE_API_SCHEMA_PATH and
+        API_SCHEMA_PATH: a file that declares packages but does not enable the ApiSchema path, or enables
+        it without selecting a path, is internally inconsistent and guarantees the mismatch, so each is
+        reported against the file rather than tolerated or reported against the container.
     .OUTPUTS
         [pscustomobject] with ShouldFail, Reason, and Remediation.
     #>
@@ -225,6 +303,19 @@ function Get-DmsSchemaEnvironmentVerdict {
             ShouldFail  = $true
             Reason      = "the environment file declares $expectedPackageCount ApiSchema package(s) but does not set USE_API_SCHEMA_PATH=true, so the E2E database was provisioned for those packages while DMS was configured to load only the schemas baked into the image."
             Remediation = "Set USE_API_SCHEMA_PATH=true in the environment file so its declared packages are the runtime schema surface."
+        }
+    }
+
+    # The symmetric file-side inconsistency, checked before any container value: a file that declares
+    # packages and enables the ApiSchema path but selects no path leaves those packages nowhere to be
+    # materialized. Reaching this only through the container's blank-path branch below would answer a
+    # missing file value with $ambientRemediation, which points at the invoking shell - and the shell
+    # cannot be the cause of a value the file never declared.
+    if ([string]::IsNullOrWhiteSpace($EnvironmentFileApiSchemaPath)) {
+        return [pscustomobject]@{
+            ShouldFail  = $true
+            Reason      = "the environment file declares $expectedPackageCount ApiSchema package(s) but no API_SCHEMA_PATH, so the E2E database was provisioned for those packages while the environment file selected nowhere for DMS to materialize them."
+            Remediation = "Set API_SCHEMA_PATH in the environment file so its declared packages have a materialization path."
         }
     }
 
@@ -458,6 +549,7 @@ function Assert-DmsContainerSchemaEnvironment {
 }
 
 Export-ModuleMember -Function `
+    Invoke-WithEnvironmentFileSchemaSettings, `
     Get-DmsSchemaEnvironmentToken, `
     Get-DmsContainerSchemaPackage, `
     Get-DmsSchemaPackageIdentity, `

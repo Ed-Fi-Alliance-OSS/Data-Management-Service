@@ -212,71 +212,6 @@ function Assert-RouteContextDatabaseNamesAreDedicated {
     }
 }
 
-function Invoke-WithEnvironmentFileSchemaSettings {
-    # Runs the route-context setup flow's Docker phases with the three schema package variables absent
-    # from this process, so Docker Compose must resolve them from the selected --env-file, and restores
-    # the caller's exact prior state afterward.
-    #
-    # Compose gives process environment variables precedence over --env-file entries, and
-    # local-dms.yml resolves all three with a ${VAR:-default} fallback. Because ':-' substitutes the
-    # default for an empty value as well as an unset one, an ambient blank value silently wins over
-    # the environment file: the DMS container is created with AppSettings__UseApiSchemaPath=false and
-    # empty AppSettings__ApiSchemaPath/SCHEMA_PACKAGES, run.sh skips the package download entirely,
-    # and DMS loads only the image-baked schemas. Provisioning is not affected, because it reads
-    # SCHEMA_PACKAGES from the environment file only - so each route-context database is stamped for
-    # the file's full package surface while DMS computes a different runtime hash, and every routed
-    # data request fails with an EffectiveSchemaHash mismatch. That path is confirmed by construction
-    # from Compose's documented precedence; it is not a diagnosis of any particular reported incident,
-    # and this guard is cheap enough to hold regardless of which cause produced one.
-    #
-    # This is deliberately a caller-side guard. start-local-dms.ps1 must not clear these globally:
-    # in bootstrap mode it sets them in-process on purpose, so process precedence makes the staged
-    # .bootstrap/ApiSchema workspace authoritative.
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Names the schema settings carried by an environment file, matching the equivalent build-dms.ps1 helper.')]
-    param(
-        [Parameter(Mandatory)]
-        [scriptblock] $Action
-    )
-
-    $schemaEnvironmentVariableNames = @(
-        "USE_API_SCHEMA_PATH",
-        "API_SCHEMA_PATH",
-        "SCHEMA_PACKAGES"
-    )
-
-    # $null distinguishes absent from present-and-empty, which is the distinction the restore below
-    # has to reproduce.
-    $previousValues = @{}
-    foreach ($name in $schemaEnvironmentVariableNames) {
-        $previousValues[$name] = [System.Environment]::GetEnvironmentVariable($name)
-    }
-
-    try {
-        foreach ($name in $schemaEnvironmentVariableNames) {
-            # Remove-Item, never an assignment: whether '$env:X = $null' removes the variable or
-            # leaves it present-and-blank varies by platform and PowerShell/.NET version, and a blank
-            # value still satisfies ${VAR:-default} - so an assignment-based clear can leave this
-            # guard doing nothing at all.
-            Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
-        }
-
-        & $Action
-    }
-    finally {
-        # Restore each variable to its exact prior state: re-create it with the verbatim prior value
-        # (including empty and whitespace) when it existed, otherwise remove it. This runs on the
-        # success path, when the action throws, and when the action calls exit.
-        foreach ($name in $schemaEnvironmentVariableNames) {
-            if ($null -eq $previousValues[$name]) {
-                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
-            }
-            else {
-                [System.Environment]::SetEnvironmentVariable($name, $previousValues[$name])
-            }
-        }
-    }
-}
-
 Write-Host @"
 Ed-Fi DMS Local Environment Setup for Instance Management E2E Testing
 ======================================================================
@@ -315,7 +250,8 @@ try {
     Set-Location $dockerComposeDir
     Import-Module ./env-utility.psm1 -Force
     Import-Module ./database-safety.psm1 -Force
-    # The post-start container schema verification shared with the direct DMS E2E wrapper.
+    # The schema-settings guard and the post-start container schema verification, both shared with the
+    # direct DMS E2E wrapper rather than copied into each.
     Import-Module ./dms-schema-environment.psm1 -Force
 
     # Single environment resolution. The build path (build-dms.ps1 InstanceE2ETest) already composed

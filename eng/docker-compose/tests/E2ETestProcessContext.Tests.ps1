@@ -190,13 +190,12 @@ Describe "setup-local-dms.ps1 wires the resolved environment file into teardown 
     }
 }
 
-Describe "Invoke-WithEnvironmentFileSchemaSettings makes the environment file authoritative for the <Wrapper> setup phases (DMS-1300)" -ForEach @(
-    @{ Wrapper = "direct DMS E2E"; RelativePath = "../../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1" }
-    @{ Wrapper = "Instance Management E2E"; RelativePath = "../../../src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1" }
-) {
-    # Both wrappers carry their own copy of this guard, so both copies are executed here rather than
-    # only the direct one. A copy that drifted - an assignment-based clear, a restore that collapses
-    # present-but-empty to absent, a finally that does not run on exit - fails in its own iteration.
+Describe "Invoke-WithEnvironmentFileSchemaSettings makes the environment file authoritative for the E2E setup phases (DMS-1300)" {
+    # One guard, in the module both E2E setup wrappers import, so it is executed once here rather than
+    # once per wrapper copy. That the wrappers reach THIS definition - importing the module, defining no
+    # guard of their own, and running every Docker phase inside it - is asserted by the wiring blocks
+    # below; this block is about what the guard does when it runs: an assignment-based clear, a restore
+    # that collapses present-but-empty to absent, or a finally that does not run on exit each fail here.
     #
     # Docker Compose gives process environment variables precedence over --env-file entries, and
     # local-dms.yml resolves USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES with
@@ -241,8 +240,8 @@ Describe "Invoke-WithEnvironmentFileSchemaSettings makes the environment file au
             return $functionAst.Extent.Text
         }
 
-        $script:wrapperScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $RelativePath))
-        $script:guardFunctionText = Get-ScriptFunctionText -ScriptPath $script:wrapperScript -FunctionName "Invoke-WithEnvironmentFileSchemaSettings"
+        $script:schemaEnvironmentModule = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../dms-schema-environment.psm1"))
+        $script:guardFunctionText = Get-ScriptFunctionText -ScriptPath $script:schemaEnvironmentModule -FunctionName "Invoke-WithEnvironmentFileSchemaSettings"
         . ([scriptblock]::Create($script:guardFunctionText))
 
         $script:schemaVariables = @("USE_API_SCHEMA_PATH", "API_SCHEMA_PATH", "SCHEMA_PACKAGES")
@@ -477,9 +476,10 @@ Describe "Both E2E setup wrappers run every Docker phase inside the schema-setti
                 $true
             ) | Where-Object {
                 # Only the wrapper's own body dispatches phases. Commands inside a function definition
-                # are the wrapper's helpers - including the guard's own '& $Action', which is variable-
-                # dispatched and by construction sits outside the -Action block it invokes - so
-                # including them would report the guard as a phase escaping itself.
+                # belong to a helper rather than to the phase sequence - including the guard's own
+                # '& $Action' (in the shared module for the wrappers, inline in the fixture below),
+                # which is variable-dispatched and by construction sits outside the -Action block it
+                # invokes, so including it would report the guard as a phase escaping itself.
                 $ancestor = $_.Parent
                 $insideFunction = $false
                 while ($null -ne $ancestor) {
@@ -933,6 +933,24 @@ Describe "Get-DmsSchemaEnvironmentVerdict fails setup when the DMS container dis
         $verdict.ShouldFail | Should -BeTrue
         $verdict.Reason | Should -Match "the environment file declares 4 ApiSchema package\(s\) but does not set USE_API_SCHEMA_PATH=true"
         $verdict.Remediation | Should -Match "Set USE_API_SCHEMA_PATH=true in the environment file"
+    }
+
+    It "reports a package-bearing environment file with no API_SCHEMA_PATH against the file, not the shell" {
+        # The symmetric file-side inconsistency to the case above. Without its own branch this reaches
+        # the container's blank-path check, whose remediation opens by asking for a re-run from a shell
+        # that sets none of the three names - a cause that cannot apply to a value the FILE never
+        # declared, and one the gate can rule out because it runs inside the guard that already removed
+        # those names.
+        $verdict = Get-DmsSchemaEnvironmentVerdict `
+            -ContainerEnvironment (Get-ContainerEnvironmentFixture -ApiSchemaPath "") `
+            -ExpectedPackageIdentity $script:fixturePackageIdentity `
+            -EnvironmentFileUsesApiSchemaPath $true `
+            -EnvironmentFileApiSchemaPath ""
+
+        $verdict.ShouldFail | Should -BeTrue
+        $verdict.Reason | Should -Match "the environment file declares 4 ApiSchema package\(s\) but no API_SCHEMA_PATH"
+        $verdict.Remediation | Should -Match "Set API_SCHEMA_PATH in the environment file"
+        $verdict.Remediation | Should -Not -Match "Re-run setup from a shell"
     }
 
     It "refuses an empty declared package surface, because the file-only reader cannot produce one" {
@@ -1558,18 +1576,20 @@ Describe "Both E2E setup wrappers verify the started container against the envir
             Should -BeTrue
     }
 
-    It "imports the shared verifier in the <Name> wrapper rather than carrying its own copy" -ForEach @(
+    It "imports the shared guard and verifier in the <Name> wrapper rather than carrying its own copies" -ForEach @(
         @{ Name = "DataManagementService E2E" }
         @{ Name = "InstanceManagement E2E" }
     ) {
         # A second copy is what this module exists to prevent: two verifiers drift, and only one of
-        # them gets the next fix.
+        # them gets the next fix. The same argument applies to the pre-phase schema-settings guard, so
+        # neither wrapper may redefine it either.
         $source = Get-Content -LiteralPath $script:setupWrapperScripts[$Name] -Raw
 
         $source | Should -Match "Import-Module \./dms-schema-environment\.psm1 -Force"
         $source | Should -Not -Match "function Assert-DmsContainerSchemaEnvironment"
         $source | Should -Not -Match "function Get-DmsSchemaEnvironmentVerdict"
         $source | Should -Not -Match "function Get-DmsContainerEnvironment"
+        $source | Should -Not -Match "function Invoke-WithEnvironmentFileSchemaSettings"
     }
 
     It "reads both expectations from the environment file through the canonical sequential resolver" {
@@ -1655,7 +1675,8 @@ foreach (`$commandName in @(
         'Assert-E2EDatabaseIsDedicated',
         'Get-ComposeResolvedEnvValue',
         'Resolve-DotenvFileSequentially',
-        'Assert-DmsContainerSchemaEnvironment'
+        'Assert-DmsContainerSchemaEnvironment',
+        'Invoke-WithEnvironmentFileSchemaSettings'
     )) {
     `$commandName + '=' + [string][bool](Get-Command `$commandName -ErrorAction SilentlyContinue) |
         Add-Content -LiteralPath '$escapedObservationPath'
@@ -1674,6 +1695,10 @@ foreach (`$commandName in @(
         $observations | Should -Contain "Resolve-DotenvFileSequentially=True" -Because "no import may strip the caller's sequential env-file resolver"
         # The import still has to do its own job, so this is not satisfiable by removing it outright.
         $observations | Should -Contain "Assert-DmsContainerSchemaEnvironment=True" -Because "the module must still export the verifier the wrappers import it for"
+        # Every other guard test extracts the function text through the AST, so only a real import can
+        # catch the guard being defined in the module but left out of Export-ModuleMember - which would
+        # leave both wrappers unable to resolve it at their first phase.
+        $observations | Should -Contain "Invoke-WithEnvironmentFileSchemaSettings=True" -Because "both wrappers now reach the schema-settings guard through this module's exports"
     }
 }
 
@@ -1920,5 +1945,34 @@ Describe "The container schema gate accepts the repository's own tracked environ
         $referencedDuplicates = @($sequential.DuplicateKeys | Where-Object { $referencedNames -contains $_ })
 
         $referencedDuplicates | Should -BeNullOrEmpty -Because "a re-declared name that another line resolves against makes the file's meaning depend on declaration order"
+    }
+
+    It "the tracked <Label> declares each gate key at most once, because the provisioner reads the first declaration and Compose delivers the last" -ForEach @(
+        @{ Label = ".env.e2e"; BaseName = ".env.e2e"; DataStandardVersion = "" }
+        @{ Label = ".env.routeContext.e2e"; BaseName = ".env.routeContext.e2e"; DataStandardVersion = "" }
+        @{ Label = ".env.e2e composed with .env.ds52"; BaseName = ".env.e2e"; DataStandardVersion = "5.2" }
+        @{ Label = ".env.e2e composed with .env.ds61"; BaseName = ".env.e2e"; DataStandardVersion = "6.1" }
+    ) {
+        # A repeated declaration of one of the three keys the gate compares is legal Compose but not
+        # safe here. For SCHEMA_PACKAGES the two sides read different declarations: Get-QuotedEnvJson -
+        # the file-only reader behind both the provisioner and the gate's expected side - matches the
+        # FIRST declaration, while Compose passes the LAST into the container (the last-wins rule pinned
+        # for scalars above). A tracked or composed file carrying two different SCHEMA_PACKAGES values
+        # therefore aborts every production setup deterministically, while this block's fixtures agree
+        # with themselves and stay green, because they build the container side from the same first
+        # match. For USE_API_SCHEMA_PATH and API_SCHEMA_PATH the gate already reads the last declaration
+        # and so agrees with Compose today; they are held to the same rule because a duplicate leaves
+        # that agreement resting on which declaration each reader happens to take. Scoped to the gate
+        # keys, not to duplicates in general: overlay composition can legitimately re-declare other
+        # names, which the sibling assertion above covers.
+        $environmentFilePath = Resolve-TrackedEnvironmentFile -BaseName $BaseName -DataStandardVersion $DataStandardVersion
+        $sequential = Resolve-DotenvFileSequentially -Path $environmentFilePath
+
+        $duplicatedGateKeys = @(
+            $sequential.DuplicateKeys |
+                Where-Object { $_ -in @("SCHEMA_PACKAGES", "USE_API_SCHEMA_PATH", "API_SCHEMA_PATH") }
+        )
+
+        $duplicatedGateKeys | Should -BeNullOrEmpty -Because "the file-only reader takes the first SCHEMA_PACKAGES declaration while Compose passes the last into the container, so a repeated gate key leaves the gate's two sides depending on which declaration each reader took"
     }
 }
