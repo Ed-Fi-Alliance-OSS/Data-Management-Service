@@ -35,6 +35,15 @@ existing abstract identity rows but does not add another index:
 | Descriptor references and filters | Probe of `UX_Descriptor_UriLowered_ResourceKeyId` (new lower-expression/computed-column index) |
 | POST upsert detection | The document's own `UX_<R>_NK` |
 
+On SQL Server, those lookups will not inherit identity equality from the database default collation.
+The DDL generator will explicitly apply DMS's default case-insensitive collation,
+`SQL_Latin1_General_CP1_CI_AS`, to every string column that stores or copies an identity value. This
+includes canonical natural-key columns, flattened RefKey copies, abstract-identity columns, and
+string members of collection identity constraints. A case-sensitive database default will remain
+supported and unchanged; it simply will not govern DMS identity columns. Runtime identity comparers
+will be selected from this same schema contract (`OrdinalIgnoreCase` for the SQL Server contract and
+`Ordinal` for PostgreSQL), not from a general assumption about the database engine.
+
 With the reads gone, the maintenance surface will go with them: every generated
 `TR_<R>_ReferentialIdentity` trigger, the `dms.uuidv5()` function on both engines, the PostgreSQL
 `pgcrypto` extension (uuidv5 is its only consumer in the DMS database), the SQL Server
@@ -49,10 +58,13 @@ re-provision after picking up these changes. Once a mapping version has been rel
 incompatible mapping changes must bump `RelationalMappingVersion` so stale released databases fail
 fast with the designed 503.
 
-The design was validated end to end by a complete working prototype: differential tests proved
-old-vs-new resolution equivalence over seeded databases on both engines, benchmarks compared the two
-resolvers under bulk, deep-identity, and small-batch workloads (results below), and the full
-PostgreSQL + SQL Server integration suites and E2E ran green on the prototype.
+The resolver design was validated end to end by a complete working prototype: differential tests
+proved old-vs-new resolution equivalence over seeded databases on both engines, benchmarks compared
+the two resolvers under bulk, deep-identity, and small-batch workloads (results below), and the full
+PostgreSQL + SQL Server integration suites and E2E ran green on the prototype. The explicit SQL
+Server identity-column collation is a design-review correction after that prototype. Its required
+case-sensitive-database coverage is therefore an implementation gate described under
+["Test strategy"](#test-strategy), not claimed as completed prototype evidence.
 
 ## Why remove it
 
@@ -93,19 +105,24 @@ the derived state itself introduces. Natural-key lookups will read the rows dire
 class and its canary will both disappear.
 
 **3. The hash disagrees with the database about equality.** `ReferentialId` is computed over the
-identity's exact bytes — ordinal, case-sensitive. SQL Server storage is case-insensitive
-(collation-governed unique constraints). The result is an internal inconsistency on SQL Server
-today: a case-variant re-POST of an existing document hashes to a *different* `ReferentialId`, misses
-the lookup, attempts an insert, and fails on the CI unique index — surfacing as a 409 for a request
-ODS would have accepted. This is the same "application equality disagrees with collation equality"
-disease class that an Ed-Fi ODS advisory (April 2022) documented for NHibernate-era casing bugs. The
-natural-key design will move matching *into* the database, so matching and storage will share one
-equality definition per engine — making the deliberate casing contract below possible.
+identity's exact bytes — ordinal, case-sensitive. Today's generated SQL Server identity columns
+inherit their database's collation; under the standard case-insensitive default, their unique
+constraints therefore disagree with the hash. A case-variant re-POST hashes to a *different*
+`ReferentialId`, misses the lookup, attempts an insert, and fails on the CI unique index — surfacing
+as a 409 for a request ODS would have accepted. A database provisioned with a case-sensitive default
+behaves differently, which demonstrates why "SQL Server is case-insensitive" is not a sufficient
+contract. This is the same "application equality disagrees with collation equality" disease class
+that an Ed-Fi ODS advisory (April 2022) documented for NHibernate-era casing bugs. The natural-key
+design will move matching into the database and explicitly collate every SQL Server identity string
+column, so matching and storage will share the DMS-declared equality definition — making the
+deliberate casing contract below independent of the containing database's default collation.
 
-**4. It was validated before being proposed.** Unlike the original analysis, which correctly flagged
-performance risk as unknown, this design comes with measurements: the natural-key resolver is
-*faster* than the hash resolver in most measured cases on both engines (see
-["Performance validation"](#performance-validation)).
+**4. The resolver was validated before being proposed.** Unlike the original analysis, which
+correctly flagged performance risk as unknown, this design comes with measurements: the natural-key
+resolver is *faster* than the hash resolver in most measured cases on both engines (see
+["Performance validation"](#performance-validation)). The later explicit-collation correction does
+not change the index or query shapes measured under the same standard SQL Server CI collation; its
+case-sensitive-database correctness is covered by the new implementation gates.
 
 ## Response to the earlier analysis
 
@@ -219,7 +236,7 @@ FROM OPENJSON(@sessionKeys) WITH (
 INNER JOIN edfi.[Session] AS target
     ON  target.[SchoolReference_SchoolId] = keys.SchoolId
     AND target.[SchoolYearTypeReference_SchoolYear] = keys.SchoolYear
-    AND target.[SessionName] = keys.SessionName
+    AND target.[SessionName] = keys.SessionName COLLATE SQL_Latin1_General_CP1_CI_AS
 OPTION (FORCE ORDER);
 ```
 
@@ -368,7 +385,7 @@ PostgreSQL `lower(...)`, and SQL Server `LOWER(...)` produce the same lowered va
 | SQL Server `UX_Descriptor_UriLowered_ResourceKeyId` | Unique index on `[UriLowered], [ResourceKeyId]` |
 
 The lowercased value is stored only in the index key (and only as computed index state on SQL
-Server), not as a persisted duplicate in the descriptor row. The old case-sensitive
+Server), not as a persisted duplicate in the descriptor row. The legacy
 `UX_Descriptor_Uri_Discriminator` will be dropped when the new index is in place.
 
 `ResourceKeyId`, not `Discriminator`, is the descriptor-type authority. This matches the existing
@@ -410,10 +427,12 @@ and descriptor paging will be untouched.
 
 ## Casing and identity semantics
 
-Moving identity matching into the database forces the casing question into the open, because the two
-engines disagree: SQL Server compares strings case-insensitively (collation-governed), PostgreSQL
-case-sensitively. The hash era *hid* this behind an ordinal hash that disagreed with SQL Server's own
-storage semantics (the internal inconsistency described above). This design states the contract
+Moving identity matching into the database forces the casing question into the open. PostgreSQL's
+DMS schema compares strings case-sensitively. SQL Server does not supply one dialect-wide answer:
+string equality follows the participating column or expression collation, and DMS provisioning
+supports and preserves a case-sensitive database default. The hash era *hid* this distinction behind
+an ordinal hash that disagreed with the standard SQL Server case-insensitive deployment (the internal
+inconsistency described above). This design states and enforces the SQL Server column contract
 explicitly. The target model is **ODS behavior minus its bugs**, verified against ODS v7.3.2 code and
 a sweep of the official documentation.
 
@@ -426,22 +445,63 @@ draft anticipates case sensitivity as a declared per-implementation setting. And
 contains `DescriptorCaseInsensitiveValidation.feature`, which asserts a descriptor echoes its
 first-created canonical form — the only official test artifact on casing.
 
+### SQL Server column-level identity collation
+
+The SQL Server DDL generator will define one DMS default case-insensitive collation:
+`SQL_Latin1_General_CP1_CI_AS`. It will emit that collation explicitly on every generated string
+column that stores or copies an identity value, rather than allowing the column to inherit the
+database default. For example:
+
+```sql
+[StudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL
+```
+
+The rule covers canonical natural-key string columns on resource roots, every flattened RefKey copy,
+string identity columns in abstract-identity tables, and local string identity members used by child
+or extension collection uniqueness. Both sides of any string-bearing identity FK therefore have the
+same explicit collation. Descriptor identity keeps its lowered-ASCII lookup contract described above;
+its SQL Server source and computed identity columns will also be emitted under the DMS default CI
+collation. Columns with a purpose-specific stronger contract, such as the existing
+`Latin1_General_100_BIN2` lifecycle token, retain that explicit collation.
+
+This is a column contract, not a database provisioning constraint. SchemaTools will continue to
+preserve an operator-selected case-sensitive database collation; generated DMS identity columns will
+still compare case-insensitively because their `COLLATE` clauses take precedence. Natural-key unique
+constraints and lookup predicates use those columns directly, so they necessarily evaluate under the
+same equality semantics.
+
+Ordinary scalar parameters are coercible to the target column's collation under SQL Server's
+collation-precedence rules. A string projected as a column by `OPENJSON ... WITH`, however, can carry
+the containing database's default collation. Every generated natural-key probe will therefore apply
+the same DMS CI collation explicitly to each textual OPENJSON key operand, as shown in the SQL Server
+probe above. This prevents a collation conflict on a case-sensitive database and keeps both operands
+under the declared identity contract; it is not runtime discovery of the database default.
+
+The backend's runtime identity-equality provider will derive its comparer from this declared schema
+contract. The SQL Server contract selects `OrdinalIgnoreCase`; the PostgreSQL contract selects
+`Ordinal`. Runtime code must not infer a comparer from the product name alone, inspect the database
+default, or maintain an independent dialect switch disconnected from DDL generation. The fixed SQL
+Server collation and its comparer selection are one backend contract and will be pinned together by
+tests. `OrdinalIgnoreCase` remains an in-process approximation of the SQL collation rather than a
+general-purpose collation emulator; where the database has produced a resolved id, that database
+verdict remains authoritative, and the documented fail-closed residue below still applies.
+
 ### The contract
 
-One principle covers every surface: **the store's own equality decides identity; when it says "same
-document," stored casing wins, and a casing-only write is a true no-op — never an error, never a
-cascade, never a version bump.**
+One principle covers every surface: **the DMS-declared store equality decides identity; when it says
+"same document," stored casing wins, and a casing-only write is a true no-op — never an error, never
+a cascade, never a version bump.**
 
 The rows below state the target behavior once this design ships:
 
 | Surface | SQL Server | PostgreSQL |
 |---|---|---|
-| Regular natural-key matching (reference resolution and upsert detection) | Case-insensitive (collation-governed — the probe runs in the DB). Matches ODS. | Case-sensitive. Matches ODS. |
+| Regular natural-key matching (reference resolution and upsert detection) | Case-insensitive under the explicitly emitted `SQL_Latin1_General_CP1_CI_AS` identity-column collation, independent of the database default. Matches ODS. | Case-sensitive. Matches ODS. |
 | Case-variant natural-key POST of an existing document | **200** — silent update; stored casing preserved; if the payload is otherwise identical, a true no-op (no `ContentVersion` bump, no change event). Matches ODS. | Creates a second document (a case variant is a different value). Matches ODS. |
 | Case-variant (casing-only) key change via PUT | Not a key change: stored key casing is **immutable** on SQL Server, exactly as it is structurally in ODS. Real key changes on cascade-enabled resources behave as today. | A real key change (allowed on cascade-enabled resources, as today). |
 | Descriptor matching + uniqueness | Case-insensitive via lowered ASCII URI + `ResourceKeyId`. | Same — uniform across engines, a first (ODS *intended* CI descriptors but its PostgreSQL implementation stored CS and could accumulate case-variant duplicates). |
 | Descriptor POST-as-update casing | Stored-wins: the update preserves stored `Namespace`/`CodeValue`/`Uri` casing; a casing-only re-POST is a true no-op. A case-only descriptor PUT is a 200 update/no-op, not an error. Matches `DescriptorCaseInsensitiveValidation.feature`. | Same. |
-| Core-side equality constraints and duplicate-item validation | Ordinal (stricter than the collation; fails closed with 400). The gap this leaves for collections is closed below. | Ordinal (exact). |
+| Core-side equality constraints and duplicate-item validation | Ordinal (stricter than the DMS identity collation; fails closed with 400). The gap this leaves for collections is closed below. | Ordinal (exact). |
 
 ### How the write path will preserve stored casing (SQL Server)
 
@@ -450,11 +510,13 @@ uses a case-insensitive comparer on SQL Server, so a CI-equal key property is si
 and the UPDATE omits it. DMS's write path is a full-row replacement with no ORM dirty checking, so
 preservation must be explicit. Three pieces will be added, all in the shared write executor:
 
-1. **Dialect-matched identity comparer.** The identity-stability guard (which today compares the
-   merged root row's identity values against the current row ordinally, and rejects changes to an
-   immutable identity) will compare string values per column with `OrdinalIgnoreCase` on SQL Server
-   and `Ordinal` on PostgreSQL. All-columns-CI-equal will mean "identity unchanged — proceed as an
-   update."
+1. **Schema-contract-derived identity comparer.** The identity-stability guard (which today compares
+   the merged root row's identity values against the current row ordinally, and rejects changes to an
+   immutable identity) will obtain its comparer from the backend identity-equality contract used by
+   DDL generation. That contract supplies `OrdinalIgnoreCase` for SQL Server because the identity
+   columns are explicitly `SQL_Latin1_General_CP1_CI_AS`, and `Ordinal` for PostgreSQL. It is not an
+   assumption that every SQL Server database is case-insensitive. All-columns-CI-equal will mean
+   "identity unchanged — proceed as an update."
 2. **Stored-identity rebind.** Before authorization-on-proposed-values and no-op detection, every
    CI-equal-but-byte-different identity value in the merged root row will be replaced with the
    persisted row's value. This is the load-bearing piece, for three verified reasons: GET
@@ -481,12 +543,12 @@ fields case-insensitively and descriptive fields ordinally, and the PUT identity
 the URI case-insensitively with the same rebind. Descriptors have no cascade or key-change
 machinery, so this path carries no side-effect risk.
 
-**Fail-closed residue (documented):** `OrdinalIgnoreCase` approximates but does not equal collation
-equality (linguistic equalities such as `ß`/`ss` or culture-specific case foldings that a collation
-may fold but invariant case mapping does not). Where the two diverge, the guard will fail closed — a
-400 on POST, or treated-as-a-real-key-change on PUT — never silent corruption. On POST the comparer
-will additionally be backstopped by the database itself: the update target can only exist because
-the CI probe matched under the real collation.
+**Fail-closed residue (documented):** `OrdinalIgnoreCase` approximates but does not equal the fixed
+DMS SQL Server collation (linguistic equalities such as `ß`/`ss` or culture-specific case foldings
+that the collation may fold but invariant case mapping does not). Where the two diverge, the guard
+will fail closed — a 400 on POST, or treated-as-a-real-key-change on PUT — never silent corruption.
+On POST the comparer will additionally be backstopped by the database itself: the update target can
+only exist because the CI probe matched under the explicit identity-column collation.
 
 For reference: ODS behaves the same way in this residue, because it uses the same approximation
 (`DatabaseEngineSpecificStringEqualityComparerProvider` is `OrdinalIgnoreCase` on SQL Server). Its
@@ -503,10 +565,11 @@ whose binary diff existed *for* the hash is `TR_<R>_ReferentialIdentity` (the ha
 exact bytes, so its maintenance triggers had to see byte changes), and that family will be deleted
 wholesale, diff included. Every surviving consumer of the binary diff serves a contract this design
 keeps: **DMS serves stored bytes** (GET reconstitutes from the tables), so ETags and change versions
-must move exactly when stored bytes move. A plain collation-governed `<>` is blind to case-only and
-trailing-space-only changes on SQL Server; PostgreSQL needs no cast because `IS DISTINCT FROM`
-under its case-sensitive deterministic collation is already byte-accurate — the cast is what gives
-both engines the same trigger semantics.
+must move exactly when stored bytes move. A plain collation-governed `<>` is blind to case-only
+identity changes under the explicit DMS CI collation and to trailing-space-only changes under SQL
+Server's string-padding rules; other string columns could also vary with the database default.
+PostgreSQL needs no cast because `IS DISTINCT FROM` under its case-sensitive deterministic collation
+is already byte-accurate — the cast is what gives both engines the same trigger semantics.
 
 | Trigger family (all will be kept) | What the binary diff gates | Why it must stay byte-level |
 |---|---|---|
@@ -540,6 +603,9 @@ diffs make DMS strictly more accurate there while keeping the same API-surface b
 
 Relative to current DMS behavior (the hash era), on SQL Server:
 
+- Databases whose default collation is case-sensitive will keep that database setting, but generated
+  DMS identity string columns will become explicitly case-insensitive after re-provisioning. Their
+  natural-key lookup and uniqueness behavior will therefore match the standard SQL Server deployment.
 - Case-variant natural-key POST of an existing document will shift **409 → 200** (silent update; ODS
   parity).
 - Casing-only PUT on a cascade-enabled resource: today a real key change (cascade through every
@@ -562,9 +628,9 @@ Collation-governed matching will open one gap that Core's request validation can
 request-local duplicate detection will remain engine-agnostic and ordinal: reference items compare
 with the structural natural-key comparer, and scalar identity members compare through ordinal
 dictionaries. Two collection items differing only in string casing can therefore pass Core
-validation — and on SQL Server they will then resolve to the *same* target `DocumentId` (CI
-collation) and collide in the collection's sibling unique constraint, which the constraint resolver
-does not classify: an unmapped 5xx for what is really a client input error.
+validation — and on SQL Server they will then resolve to the *same* target `DocumentId` under the
+explicit DMS identity collation and collide in the collection's sibling unique constraint, which the
+constraint resolver does not classify: an unmapped 5xx for what is really a client input error.
 
 The fix will run after reference resolution and before DML, comparing each collection item's
 flattened identity tuple per scope, in two tiers governed by one principle: *never invent an
@@ -576,12 +642,13 @@ hasn't spoken, and say so.*
    approximation error. Deliberately not a string comparison: a C# string comparer would only
    approximate the collation and would reintroduce the same defect in rarer forms.
 2. **Local string-scalar identity members (approximation tier):** no database verdict exists before
-   the write, so they will compare with a dialect-matched comparer — `OrdinalIgnoreCase` on SQL
-   Server, `Ordinal` on PostgreSQL (where it is exact). This will live backend-side so Core stays
-   engine-agnostic (the same placement ODS uses for its engine-specific string comparer). Documented
-   residual: the SQL Server comparer will not reproduce collation padding rules or linguistic
-   equalities; those exotic cases will fall through to the sibling unique constraint as an integrity
-   backstop (and natural-key strings with leading/trailing spaces are already rejected with 400).
+   the write, so they will compare with the same schema-contract-derived comparer —
+   `OrdinalIgnoreCase` for the SQL Server identity-column contract, `Ordinal` on PostgreSQL (where it
+   is exact). This will live backend-side so Core stays engine-agnostic (the same placement ODS uses
+   for its engine-specific string comparer). Documented residual: the SQL Server comparer will not
+   reproduce the fixed collation's padding rules or linguistic equalities; those exotic cases will
+   fall through to the sibling unique constraint as an integrity backstop (and natural-key strings
+   with leading/trailing spaces are already rejected with 400).
 
 Duplicates will produce the same path-attributed 400 duplicate-item error Core produces today. The
 sibling unique constraint's runtime meaning will stay "race/integrity backstop," never routine input
@@ -662,6 +729,9 @@ can cascade.
 
 ### To be added
 
+- A SQL Server identity-equality contract pairing the emitted
+  `SQL_Latin1_General_CP1_CI_AS` column collation with the runtime `OrdinalIgnoreCase` comparer;
+  PostgreSQL's corresponding contract pairs its existing case-sensitive storage with `Ordinal`.
 - Descriptor URI ASCII validation.
 - PostgreSQL `UX_Descriptor_UriLowered_ResourceKeyId` expression index, plus SQL Server
   non-persisted `dms.Descriptor.UriLowered` computed column and
@@ -671,6 +741,9 @@ can cascade.
 
 ### To be changed
 
+- The SQL Server DDL generator will emit `COLLATE SQL_Latin1_General_CP1_CI_AS` on every string
+  column that stores or copies an identity value. The database default collation is neither changed
+  nor treated as the identity contract. Purpose-specific explicit collations remain authoritative.
 - **Published-contract trims:**
   - `DocumentReference`, `DescriptorReference`, `SuperclassIdentity`, and `DocumentInfo` will retain
     their non-hash identity, path, and reference payloads; no Core external model record will expose
@@ -699,13 +772,14 @@ can cascade.
 
 `dms.Document` in every respect (columns including `CreatedByOwnershipTokenId`, identity
 `DocumentId`, the DocumentCache enqueue triggers, all FKs into it); `dms.Descriptor` except for the
-descriptor unique-index swap and SQL Server's non-persisted `UriLowered` computed column (including
-`ResourceKeyId NOT NULL` and `Discriminator` storage/read compatibility); `UX_<R>_RefKey` /
-`UX_<R>_NK`; the abstract identity table family, its uniqueness/FK constraints, and its trigger
-topology except for concrete `ResourceKeyId` column population; the DocumentCache table family;
-tracked-change tables and triggers; `auth.*`; `dms.ResourceKey` / `dms.EffectiveSchema` /
-`dms.SchemaComponent`; the read/reconstitution pipeline; `RelationalMappingVersion` remains `v2`
-for this unreleased aggregate mapping shape.
+descriptor unique-index swap, SQL Server's non-persisted `UriLowered` computed column, and the
+explicit SQL Server identity collation (including `ResourceKeyId NOT NULL` and `Discriminator`
+storage/read compatibility); the logical shapes of `UX_<R>_RefKey` / `UX_<R>_NK`; the abstract
+identity table family, its uniqueness/FK constraints, and its trigger topology except for concrete
+`ResourceKeyId` column population and explicit SQL Server identity collation; the DocumentCache table
+family; tracked-change tables and triggers; `auth.*`; `dms.ResourceKey` / `dms.EffectiveSchema` /
+`dms.SchemaComponent`; the read/reconstitution pipeline; `RelationalMappingVersion` remains `v2` for
+this unreleased aggregate mapping shape.
 
 ## Migration and rollout: proposed tickets
 
@@ -713,14 +787,25 @@ One implementation branch, trunk-green per ticket. The list below is the propose
 one story per entry, sized like the existing stories under [`../epics/`](../epics/), except the drop
 ticket, which deliberately bundles three deletion stages as ordered commits — to be created there
 once this document is approved. Ordering is dependency order; the cutover tickets depend on the
-foundation tickets (T1–T2).
+foundation tickets (T1–T3).
 
 **Foundations — the schema object can stay trigger-maintained as an unreferenced shadow until the
 final schema drop, but the natural-key cutover is the point where production Core/backend C# stops
-computing, carrying, or comparing UUIDv5 referential ids. T3–T7 are the coordinated C# cutover lane;
-after T7, no production contract may still carry a `ReferentialId` member.**
+computing, carrying, or comparing UUIDv5 referential ids. T4–T8 are the coordinated C# cutover lane;
+after T8, no production contract may still carry a `ReferentialId` member.**
 
-- **T1 — Add abstract `ResourceKeyId`, compile natural-key probe metadata, and re-source the 409
+- **T1 — Pin the SQL Server identity collation and runtime equality contract.** Emit
+  `COLLATE SQL_Latin1_General_CP1_CI_AS` on every generated SQL Server string column that stores or
+  copies an identity value, including root natural keys, RefKey copies, abstract identities,
+  descriptor identity, and local collection identity members. Preserve purpose-specific explicit
+  collations. Introduce the backend identity-equality contract consumed by both DDL/runtime
+  composition, selecting `OrdinalIgnoreCase` for this SQL Server contract and `Ordinal` for
+  PostgreSQL. AC: golden DDL proves full identity-column coverage with no inherited-collation gaps;
+  provisioning against `Latin1_General_100_CS_AS_SC_UTF8` preserves that database default while
+  `sys.columns` reports the pinned CI collation for representative canonical, copied, abstract, and
+  descriptor identity columns; comparer-provider tests pin each schema contract; PostgreSQL DDL and
+  comparer behavior are unchanged.
+- **T2 — Add abstract `ResourceKeyId`, compile natural-key probe metadata, and re-source the 409
   duplicate-identity messages.** Add `ResourceKeyId smallint NOT NULL` to each abstract identity
   table and union view, then populate the table column from the existing abstract-identity
   maintenance triggers using compile-time concrete-member metadata. Compile per-resource probe
@@ -732,15 +817,15 @@ after T7, no production contract may still carry a `ReferentialId` member.**
   abstract `ResourceKeyId` column/view/trigger-value change for this part; abstract identity-column
   consumers exclude `ResourceKeyId` and `Discriminator` from identity equality; parity guard green for
   every resource; 409 responses unchanged.
-- **T2 — Add descriptor ASCII validation + `UX_Descriptor_UriLowered_ResourceKeyId`.** Reject
+- **T3 — Add descriptor ASCII validation + `UX_Descriptor_UriLowered_ResourceKeyId`.** Reject
   non-ASCII descriptor URI values on descriptor writes, descriptor references, and
   descriptor-valued query filters. Emit the final lower-storage index shape on both engines:
   PostgreSQL gets the unique expression index on `lower("Uri"), "ResourceKeyId"` with no new
   column; SQL Server gets the non-persisted `UriLowered AS LOWER([Uri])` computed column and a
-  unique index on `UriLowered, ResourceKeyId`. The old case-sensitive index stays through the
-  transition. AC: golden DDL diff shows exactly the new index shape (and SQL Server computed
-  column); ASCII validation unit/integration pins green.
-- **T3 — The natural-key resolver replaces the hash resolver arm.** The dialect command builders
+  unique index on `UriLowered, ResourceKeyId`. The legacy Discriminator-authoritative index stays
+  through the transition. AC: golden DDL diff shows exactly the new index shape (and SQL Server
+  computed column); ASCII validation unit/integration pins green.
+- **T4 — The natural-key resolver replaces the hash resolver arm.** The dialect command builders
   (PostgreSQL `unnest` and SQL Server OPENJSON +
   `FORCE ORDER` group statements, the union-projection single-statement form, the parameter-budget
   guard) plus `NaturalKeyReferenceResolver` implementing the resolver role (structural memo, shared
@@ -752,33 +837,34 @@ after T7, no production contract may still carry a `ReferentialId` member.**
   land here in final shape. Reference failures lose their referential-id payloads, and lookup
   requests/results/snapshots are keyed by structural natural-key identities and ordinals.
   `DocumentReference` and `DescriptorReference` stop carrying referential ids as part of this
-  resolver cutover; the document-level POST/descriptor write consumers are removed in T4/T7 below.
-  AC: SQL-shape pins (batch-size-independent text on PG, leftmost OPENJSON input and one
-  statement-level `FORCE ORDER` on MSSQL, budget-guard throw, abstract probes projecting concrete
-  `ResourceKeyId` with no discriminator-to-key map); resolver unit suites green; the existing
+  resolver cutover; the document-level POST/descriptor write consumers are removed in T5/T8 below.
+  AC: SQL-shape pins (batch-size-independent text on PG, leftmost OPENJSON input, explicit DMS
+  identity collation on every textual OPENJSON key operand, and one statement-level `FORCE ORDER` on
+  MSSQL, budget-guard throw, abstract probes projecting concrete `ResourceKeyId` with no
+  discriminator-to-key map); resolver unit suites green; the existing
   reference-resolution-dependent integration estate green on both engines, now exercising the new
   resolver. Correctness on this branch is carried by the behavior pins, the integration estate, and
   E2E (see ["Test strategy"](#test-strategy)). If production-shaped workloads later disagree on
   performance, the capture-predicate contingency ladder applies, with reverting the composite
   write-path batching (DMS-1332) accepted as the last resort.
-- **T4 — Upsert-detection cutover in the composite write path.** Replace the capture predicate's
+- **T5 — Upsert-detection cutover in the composite write path.** Replace the capture predicate's
   hash subselect with the natural-key predicate (inline RefKey/lowered-descriptor subselects) and
   the standalone fallback with the `UX_<R>_NK` probe. The target resolver binds from
   `DocumentInfo.DocumentIdentity` and compiled own-key probe metadata, never from a UUIDv5
   referential id. `RelationalWriteTargetRequest.Post.ReferentialId` and the RI target-lookup
   builders are deleted here. AC: command-stream pins — round-trip counts unchanged (POST create
   stays at 2 commands), RI command classification zero; write suites green.
-- **T5 — Collection duplicate detection + generic conflict fallback.** The two-tier post-resolution
-  duplicate detection (resolved ids exact for reference/descriptor members; dialect-matched
+- **T6 — Collection duplicate detection + generic conflict fallback.** The two-tier post-resolution
+  duplicate detection (resolved ids exact for reference/descriptor members; schema-contract-derived
   comparer for local string scalars) and the ODS-parity 409 fallback for unclassified unique
   violations; includes the case-variant duplicate-descriptor E2E scenario. AC: the per-engine
   duplicate-detection pin matrix + the E2E scenario green.
-- **T6 — ODS-parity casing: CI identity guard + stored-identity rebind (SQL Server).** The
-  dialect-matched identity comparer, the merged-row stored-identity rebind ahead of authorization
-  and no-op detection, and the per-column PUT semantics. AC: the case-variant POST/PUT pin matrix
-  (200, stored casing served, guarded no-op, no referrer rewrite / key-change row /
+- **T7 — ODS-parity casing: CI identity guard + stored-identity rebind (SQL Server).** The
+  schema-contract-derived identity comparer, the merged-row stored-identity rebind ahead of
+  authorization and no-op detection, and the per-column PUT semantics. AC: the case-variant POST/PUT
+  pin matrix (200, stored casing served, guarded no-op, no referrer rewrite / key-change row /
   `IdentityVersion` bump on SQL Server; PostgreSQL unchanged on every pin).
-- **T7 — Descriptor write handler cutover.** Lowered-URI + `ResourceKeyId` upsert detection and
+- **T8 — Descriptor write handler cutover.** Lowered-URI + `ResourceKeyId` upsert detection and
   stored-wins casing (persisted-identity binding, the split no-op comparer, the case-insensitive
   PUT identity guard). The descriptor handler no longer accepts `DescriptorWriteRequest.ReferentialId`
   and no longer writes `dms.ReferentialIdentity`. With the last document-level consumer gone,
@@ -788,10 +874,10 @@ after T7, no production contract may still carry a `ReferentialId` member.**
   AC: descriptor write/stamping suites green; stored-wins pins per engine; `rg` over production
   Core/backend C# finds no `ReferentialId`, `ReferentialIds`, `ReferentialIdFactory`, or
   `ReferentialIdCalculator`.
-- **T8 — Query-preprocessor cutover for descriptor filters.** The production DI flip plus
+- **T9 — Query-preprocessor cutover for descriptor filters.** The production DI flip plus
   descriptor-filter integration coverage. AC: URI filter matches, case-variant URI matches,
   nonexistent/wrong-type URIs return empty pages with unchanged reasons.
-- **T9 — Remove `dms.ReferentialIdentity` and everything that maintained it.** One ticket, three
+- **T10 — Remove `dms.ReferentialIdentity` and everything that maintained it.** One ticket, three
   internally ordered stages, each landing as its own trunk-green commit:
   1. Delete any RI write-path remnants left only as dead code or tests: RI upsert-probe SQL,
      service members, and every test fixture that seeds RI rows directly. There should be no
@@ -814,7 +900,7 @@ must bump `RelationalMappingVersion` and re-bless the schema-hash pin so stale r
 fail fast with the designed 503.
 
 Rollback before the drop ticket will be a commit revert: `dms.ReferentialIdentity` stays
-trigger-maintained until T9, so reverting the resolver swap (or any cutover ticket) resumes against
+trigger-maintained until T10, so reverting the resolver swap (or any cutover ticket) resumes against
 current data. After the drop ticket, rollback will be re-provisioning with the previous build —
 consistent with the re-provision-only migration stance.
 
@@ -858,7 +944,16 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
 ## Test strategy
 
 - **Golden DDL fixtures** are the schema review surface; they will be regenerated per
-  schema-affecting step and proven to be a fixed point after every regeneration.
+  schema-affecting step and proven to be a fixed point after every regeneration. SQL Server fixtures
+  will additionally prove that every string identity role carries
+  `COLLATE SQL_Latin1_General_CP1_CI_AS`, including canonical, RefKey-copy, abstract, descriptor, and
+  local collection identity columns, while purpose-specific binary columns retain their collation.
+- **SQL Server collation-contract integration tests** will provision against the supported
+  `Latin1_General_100_CS_AS_SC_UTF8` database default, assert that SchemaTools preserves that default,
+  query `sys.columns` to prove representative identity columns use
+  `SQL_Latin1_General_CP1_CI_AS`, and run the case-variant natural-key lookup/uniqueness behavior pins
+  with the same expectations as the standard default-collation fixture. Runtime unit tests will pin
+  `OrdinalIgnoreCase` to this declared SQL Server schema contract and `Ordinal` to PostgreSQL's.
 - **Descriptor ASCII validation pins**: descriptor writes, descriptor references, and
   descriptor-valued query filters containing non-ASCII URI values return a path-attributed 400
   before any relational lookup.
@@ -866,12 +961,13 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
   compiled probes reproduce the legacy trigger derivation for as long as both exist, and abstract
   target pins proving the probe projects concrete `ResourceKeyId` without a discriminator-to-key map.
 - **Dialect SQL unit tests**: statement shape independent of batch size (PostgreSQL), OPENJSON +
-  FORCE ORDER + leftmost-input pins and the parameter-budget guard (SQL Server), and the
-  union-projection single-statement form.
+  FORCE ORDER + leftmost-input pins, explicit DMS identity collation on every textual OPENJSON key
+  operand, and the parameter-budget guard (SQL Server), plus the union-projection single-statement
+  form.
 - **No old-vs-new gates.** The prototype's differential equivalence proof and benchmark matrix stand
   as the transition evidence; neither suite is ported to the implementation branch. Correctness is
   carried by the behavior pins below, the existing integration estate (running against the new
-  resolver from T3 onward), and E2E; performance remedies are pre-agreed (the contingency ladder,
+  resolver from T4 onward), and E2E; performance remedies are pre-agreed (the contingency ladder,
   then the accepted DMS-1332-revert last resort).
 - **Command-stream pins**: round-trip counts must not regress; RI command classification will go to
   zero at cutover.
@@ -916,15 +1012,19 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
 3. **Write-path churn on recent code** — the composite write pipeline (DMS-1332) is recent, and the
    cutover will land on top of it. Mitigated by the seam-level replacement design (a predicate and a
    lookup swap, no structural change) and by keeping the DMS-1332 pinning suites green throughout.
-4. **Collation-governed matching deltas on SQL Server** — accepted and asserted deliberately (see
-   the casing contract); the deltas will move DMS *toward* ODS behavior.
+4. **The DMS identity collation overrides a case-sensitive SQL Server database default** — accepted
+   and asserted deliberately. SchemaTools preserves the database default, but generated identity
+   columns explicitly use `SQL_Latin1_General_CP1_CI_AS`; this removes deployment-dependent identity
+   behavior and moves DMS toward ODS behavior.
 5. **Descriptor case-variant duplicates** will be rejected by a table-level CI unique index over
    lowered ASCII URI + `ResourceKeyId` (they are same-document by hash semantics today) — accepted;
    identical effective semantics, newly enforced by the engine.
 6. **Lost corruption canary** — accepted by construction: the derived state it guarded will no
    longer exist.
-7. **Casing comparer approximation** — `OrdinalIgnoreCase` vs collation divergences will fail closed
-   (documented above); never silent.
+7. **Casing comparer approximation** — the runtime provider derives `OrdinalIgnoreCase` from the
+   fixed SQL Server identity contract, but it still does not emulate every
+   `SQL_Latin1_General_CP1_CI_AS` equality; divergences will fail closed (documented above), never
+   silently redefine database identity.
 8. **ASCII-only descriptor URIs** — accepted to keep descriptor matching deterministic while
    minimizing storage. Non-ASCII descriptor URI values will be rejected explicitly rather than
    normalized differently by different engines.
@@ -933,6 +1033,8 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
 
 - Any change to `dms.Document` (columns, locking, DELETE shape, readers, or its DocumentCache
   triggers).
+- Changing or constraining the SQL Server database default collation. The column-level identity
+  contract is specifically what allows the supported case-sensitive database default to remain.
 - In-place upgrade scripts (the migration is re-provision-only; prerelease databases provisioned
   from an earlier shape must be re-provisioned).
 - DocumentCache/CDC work (live, RI-free, orthogonal).
