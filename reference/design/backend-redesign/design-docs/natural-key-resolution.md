@@ -72,15 +72,20 @@ Four reasons, in decreasing order of weight:
 
 **1. The schema already paid for the replacement.** When the baseline rationale and follow-up
 analysis were written, removing the hash meant *building* natural-key resolution machinery: denormalized
-identity columns, composite indexes, abstract identity tables. Since then, all of that machinery was
-built anyway, for reasons unrelated to reference resolution:
+identity columns, composite indexes, abstract identity tables. Since then, the relational model has
+standardized on that machinery for FK enforcement, identity lookup, Change Queries, and AOT metadata:
 
 - **`UX_<R>_RefKey`** — the fully-flattened scalar identity plus `DocumentId` — exists on every
-  referenced resource as the composite-FK target that keeps reference binding columns consistent
-  under cascades ([key-unification.md](key-unification.md)). Because identity flattening is recursive,
-  a reference-bearing identity (e.g., a Section, whose identity contains a CourseOffering reference,
-  whose identity contains Course and Session references) collapses to **one flat list of scalars** —
-  resolvable in a single index seek, no multi-pass dependency layering.
+  concrete resource stored in relational tables, whether or not the resource is currently referenced
+  by another resource. It is the composite-FK target that keeps reference binding columns consistent
+  under cascades ([key-unification.md](key-unification.md)) and the uniform identity-first probe
+  shape used by natural-key resolution, `/deletes` recreated-row probes, and AOT mapping-pack
+  metadata. Conditional emission for never-referenced resources would fork query planning and pack
+  validation around a storage fact unrelated to the resource's identity. Because identity flattening
+  is recursive, a reference-bearing identity (e.g., a Section, whose identity contains a
+  CourseOffering reference, whose identity contains Course and Session references) collapses to
+  **one flat list of scalars** — resolvable in a single index seek, no multi-pass dependency
+  layering.
 - **`UX_<R>_NK`** — the natural-key unique constraint with reference-sourced parts as
   `..._DocumentId` columns — exists as the identity-uniqueness enforcement and the source of
   create-race unique violations (the 409/retry path).
@@ -355,8 +360,9 @@ drop.
 1. *Baseline:* the inline-subselect capture predicate above — zero schema change, uniform for all
    resources.
 2. *If its benchmark case lags:* capture via the resource's **own `UX_<R>_RefKey`** using flattened
-   payload scalars — a flat single seek, no subselects, still zero schema change. Cost: a second
-   capture shape, because never-referenced resources have no RefKey and keep shape 1.
+   payload scalars — a flat single seek, no subselects, still zero schema change and still available
+   for every concrete relational resource. Cost: a second capture shape and a wider identity-copy
+   predicate, so keep it behind measurement.
 3. *Only if both measurably fail:* re-shape `UX_<R>_NK` onto flattened scalars. Uniqueness-preserving
    but rejected as a default — it makes the per-resource index pair wide+wide, doubles cascade churn
    (today's NK is cascade-stable via `..._DocumentId` columns), and re-litigates the key-unification

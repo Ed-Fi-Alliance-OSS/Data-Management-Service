@@ -798,7 +798,8 @@ Typical structure:
 - Natural key columns (from `identityJsonPaths`) → **API-semantic** unique constraint over the identity **binding/path** columns.
   - For identity elements that come from a document reference object, the unique constraint uses the corresponding `..._DocumentId` FK column (stable) plus the per-site identity-part binding columns.
   - Under key unification, per-site identity-part binding columns may be generated/persisted aliases of canonical storage columns; the natural-key unique constraint remains defined over binding columns to preserve API path/presence semantics.
-- Reference key columns → **FK-supporting** unique constraint over `(<StorageIdentityParts...>, DocumentId)` (the referenced key used by composite reference FKs and natural-key probes).
+- Reference key columns → **FK- and probe-supporting** unique constraint over `(<StorageIdentityParts...>, DocumentId)` (the referenced key used by composite reference FKs and natural-key probes).
+  - Emit `UX_<R>_RefKey` for every concrete resource root stored in relational tables, even when no current reference targets that resource. The uniform identity-first probe shape is required by generated natural-key probe metadata and by Change Query `/deletes` recreated-row detection.
   - Under key unification, `<StorageIdentityParts...>` uses canonical storage columns (never per-site `UnifiedAlias` binding columns); see `key-unification.md`.
 - Scalar columns for top-level non-collection properties
 - Reference columns (document references):
@@ -1203,7 +1204,7 @@ Object names are deterministic and derived from the owning table plus purpose to
 - Primary key constraints: `PK_{TableName}`
 - Unique constraints:
   - Natural key (API semantics; binding/path columns from `identityJsonPaths`): `UX_{TableName}_NK`
-  - Reference key (FK target; storage identity columns + `DocumentId`, using canonical columns under key unification): `UX_{TableName}_RefKey`
+  - Reference key (FK/probe target; storage identity columns + `DocumentId`, using canonical columns under key unification): `UX_{TableName}_RefKey`
   - Array uniqueness: `UX_{TableName}_{Tokens}` where tokens are the constrained column names with shared
     prefixes collapsed (e.g., `Assessment_DocumentId_AssessmentIdentifier_Namespace`)
 - Foreign keys: `FK_{TableName}_{Token}`, where `Token` is:
