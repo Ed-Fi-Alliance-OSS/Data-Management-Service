@@ -587,7 +587,12 @@ For a write request targeting resource `R`:
    - The compiled `InsertSql` for the table is emitted such that its parameter placeholders correspond to `ColumnBindings[0..N)` in that same order and use `WriteColumnBinding.ParameterName`.
    - Runtime binds parameters from `WriteColumnBinding.ParameterName` (not by “guessing” from SQL text), so it always knows which extracted value goes in which SQL parameter position.
 
-6. **Whole-document no-op detection for existing documents**
+6. **Post-resolution collection duplicate validation**
+   - For every collection table with a `CollectionMergePlan`, group incoming row buffers by stable parent scope instance and compare the semantic identity tuple from `CollectionMergePlan.SemanticIdentityBindings` after reference and descriptor values have been resolved.
+   - Reference and descriptor semantic-identity members compare by resolved `DocumentId`/`DescriptorId`; local string semantic-identity members compare with the backend schema equality contract (`OrdinalIgnoreCase` for SQL Server identity string columns, `Ordinal` for PostgreSQL).
+   - Duplicate candidates return the same path-attributed 400 duplicate-item validation error Core returns for request-local `arrayUniquenessConstraints` failures. The collection-table unique constraint remains a race/integrity backstop, not the routine duplicate-validator boundary.
+
+7. **Whole-document no-op detection for existing documents**
    - Applies to `PUT` and to `POST` requests that resolved to an existing `DocumentId`.
    - Use the current-document rows already materialized earlier in the request (for auth/reconstitution) and project
      them into comparable rowsets using the same table ordering and stored/writable column ordering as
@@ -599,7 +604,7 @@ For a write request targeting resource `R`:
      - ordered stored/writable values (resolved FK ids, canonical storage columns, synthetic presence flags, etc.).
    - If all comparable rowsets are equal, mark the request as a **no-op candidate** and proceed to guarded execution.
 
-7. **Execute (single transaction, merge semantics for scoped child data)**
+8. **Execute (single transaction, merge semantics for scoped child data)**
    - If the request is a no-op candidate, the write batch must first verify that the observed `ContentVersion` is still
      current for that `DocumentId`. If it is still current, commit without issuing DML for the resource tables or
      `dms.Document`.
@@ -615,7 +620,7 @@ For a write request targeting resource `R`:
      - load the current sibling sets for the document,
      - determine the visible stored rows for each scope instance from `ProfileAppliedWriteContext.VisibleStoredCollectionRows` (or treat all rows as visible when no profile filtering applies),
      - match incoming rows by the compiled semantic identity,
-     - assume at most one incoming row per `(scope instance, compiled semantic identity)`; duplicate request candidates are upstream data-validation failures and must not be left to database unique-constraint handling,
+     - consume only candidate sets that have passed both Core's request-local duplicate check and backend's storage-resolved duplicate validator; duplicate request candidates are validation failures and must not be left to database unique-constraint handling,
      - reserve new `CollectionItemId` values in batch using `CollectionKeyPreallocationPlan` when unmatched inserts are needed,
      - update matched rows in place via `CollectionMergePlan.UpdateByStableRowIdentitySql`, preserving bindings governed by `HiddenMemberPaths`,
      - delete omitted visible rows via `CollectionMergePlan.DeleteByStableRowIdentitySql`, and

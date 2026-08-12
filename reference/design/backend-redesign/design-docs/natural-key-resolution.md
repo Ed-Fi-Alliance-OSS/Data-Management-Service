@@ -808,6 +808,12 @@ validation — and on SQL Server they will then resolve to the *same* target `Do
 explicit DMS identity collation and collide in the collection's sibling unique constraint, which the
 constraint resolver does not classify: an unmapped 5xx for what is really a client input error.
 
+That gap is architectural, not just a constraint-mapping defect. Any write-path contract that treats
+Core's request-local duplicate check as the final duplicate boundary is incomplete after this design.
+Core will still own the pre-resolution ordinal/profile-shaped check, but backend must own the second,
+storage-resolved check because only backend has the resolved `DocumentId`/`DescriptorId` values and
+the selected schema equality contract for local string identity columns.
+
 The fix will run after reference resolution and before DML, comparing each collection item's
 flattened identity tuple per scope, in two tiers governed by one principle: *never invent an
 equality definition where the database has issued a verdict; approximate its verdict only where it
