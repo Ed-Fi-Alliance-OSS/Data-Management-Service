@@ -683,12 +683,17 @@ Server's string-padding rules; other string columns could also vary with the dat
 PostgreSQL needs no cast because `IS DISTINCT FROM` under its case-sensitive deterministic collation
 is already byte-accurate — the cast is what gives both engines the same trigger semantics.
 
-| Trigger family (all will be kept) | What the binary diff gates | Why it must stay byte-level |
+The surviving trigger inventory deliberately excludes SQL Server identity-value fan-out. That old
+`MssqlIdentityPropagationTrigger` fallback is retired by
+[`sql-server-pruning.md`](sql-server-pruning.md): retained native cascades propagate eligible identity
+updates, and pruned full-composite `NO ACTION` edges have no trigger fallback. Reintroducing an
+identity-propagation trigger row here would contradict that pruning contract.
+
+| Surviving trigger family | What the binary diff gates | Why it must stay byte-level |
 |---|---|---|
 | Document stamping — content stamp (resource roots, child scopes, and `dms.Descriptor`) | `ContentVersion` / `ContentLastModifiedAt` bumps | Non-identity fields stay request-wins under this contract: a case-only or trailing-space-only edit changes the served bytes, so the ETag must change and change queries must resurface the document. A collation diff would leave the ETag stale while the body changed. |
 | Document stamping — identity stamp + key-change workset | `IdentityVersion` bump + the key-change tracked-change row | The fail-closed comparer residue: a byte-different-but-collation-equal key change (e.g. `Straße` → `Strasse`) is deliberately allowed through as a real key change, and its cascade rewrites referrer bytes; only a byte-level diff records any of it. |
 | Abstract identity maintenance | Whether concrete identity changes propagate into the `<Abstract>Identity` tables | These tables will become the *only* resolution path for abstract references, and PostgreSQL matches them case-sensitively — byte drift between a concrete root and its abstract copy would become user-visible. |
-| Identity propagation (pruned-cascade replacement triggers) | Whether identity changes propagate where SQL Server's cascade restrictions forced FK pruning | PostgreSQL propagates byte changes through native cascades; a collation diff here would make SQL Server skip what PostgreSQL propagates — cross-engine drift in referrer copies. |
 
 (Non-string columns are never cast — the byte comparison exists only where collation equality and
 byte equality can disagree.)
