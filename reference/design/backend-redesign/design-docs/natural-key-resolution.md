@@ -214,6 +214,15 @@ member. On SQL Server, case-variant spellings of one reference may remain separa
 produce redundant probe rows; the database will still resolve both to the same `DocumentId`, and the
 structural comparer will never mis-merge two distinct identities.
 
+This comparer requirement is an enforceable contract, not a comment on a caller-owned dictionary.
+The resolver result must expose a dedicated document-reference map/factory contract instead of a raw
+`IReadOnlyDictionary<ReferenceLookupKey, long>`. A plain dictionary can silently use
+`ReferenceLookupKey`'s default record-struct equality, which inherits array reference equality from
+`DocumentIdentity` and can miss semantically identical identities backed by different arrays. The
+only construction path for the resolved document-reference map must install the structural comparer,
+and consumers must look up by `(target resource, DocumentIdentity)` through that map rather than by
+direct dictionary indexing.
+
 The Core cleanup is part of this design, not a follow-up. `ReferentialId`,
 `ReferentialIdFactory`, `ReferentialIdCalculator`, `No.ReferentialId`, and every
 `ReferentialId` member on `DocumentReference`, `DescriptorReference`, `SuperclassIdentity`, and
@@ -912,6 +921,10 @@ can cascade.
   serialized into mapping packs for AOT reconstruction but omitted from DDL manifests (zero manifest
   churn).
 - `NaturalKeyReferenceResolver` + per-engine natural-key lookup command builders.
+- A resolved document-reference map/factory contract that owns the structural
+  `(target resource, DocumentIdentity)` comparer. The map may use a dictionary internally, but no
+  public write-pipeline contract may require callers to provide or index an
+  `IReadOnlyDictionary<ReferenceLookupKey, long>` with default equality.
 
 ### To be changed
 
@@ -929,9 +942,11 @@ can cascade.
     identity/probe metadata; no write request will carry a UUIDv5 referential id.
   - `ReferenceLookupRequest`, `ReferenceLookupRequestEntry`, `ReferenceLookupResult`,
     `ReferenceLookupSnapshot`, and `ResolvedReferenceSet` will be keyed by structural lookup
-    ordinals / natural-key identities, not referential ids. `ReferenceLookupResult` will also lose
-    `VerificationIdentityKey` (canary-only) and `ReferentialIdentityResourceKeyId`; `ResourceKeyId`
-    remains the resolved concrete target key, including abstract matches.
+    ordinals / natural-key identities, not referential ids. `ResolvedReferenceSet` exposes the
+    dedicated resolved document-reference map rather than a raw dictionary keyed by
+    `ReferenceLookupKey`. `ReferenceLookupResult` will also lose `VerificationIdentityKey`
+    (canary-only) and `ReferentialIdentityResourceKeyId`; `ResourceKeyId` remains the resolved
+    concrete target key, including abstract matches.
   - `Add{Postgresql,Mssql}ReferenceResolver()` DI extensions will compose the natural-key resolver —
     a behavioral change for hosts that resolve references through the old registration.
 - Abstract identity tables and their union views will add a concrete `ResourceKeyId smallint NOT
@@ -1037,12 +1052,13 @@ after T8, no production contract may still carry a `ReferentialId` member.**
   AC: SQL-shape pins (batch-size-independent text on PG, leftmost OPENJSON input, explicit DMS
   identity collation on every textual OPENJSON key operand, and one statement-level `FORCE ORDER` on
   MSSQL, budget-guard throw, abstract probes projecting concrete `ResourceKeyId` with no
-  discriminator-to-key map); resolver unit suites green; the existing
-  reference-resolution-dependent integration estate green on both engines, now exercising the new
-  resolver. Correctness on this branch is carried by the behavior pins, the integration estate, and
-  E2E (see ["Test strategy"](#test-strategy)). If production-shaped workloads later disagree on
-  performance, the capture-predicate contingency ladder applies, with reverting the composite
-  write-path batching (DMS-1332) accepted as the last resort.
+  discriminator-to-key map); resolver unit suites green, including a resolved document-reference map
+  pin proving separate `DocumentIdentity` arrays with identical ordered elements resolve to the same
+  `DocumentId`; the existing reference-resolution-dependent integration estate green on both
+  engines, now exercising the new resolver. Correctness on this branch is carried by the behavior
+  pins, the integration estate, and E2E (see ["Test strategy"](#test-strategy)). If
+  production-shaped workloads later disagree on performance, the capture-predicate contingency ladder
+  applies, with reverting the composite write-path batching (DMS-1332) accepted as the last resort.
 - **T5 — Upsert-detection cutover in the composite write path.** Replace the capture predicate's
   hash subselect with the natural-key predicate (inline RefKey/lowered-descriptor subselects) and
   the standalone fallback with the `UX_<R>_NK` probe. The target resolver binds from

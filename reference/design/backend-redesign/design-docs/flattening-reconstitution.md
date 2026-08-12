@@ -1751,9 +1751,11 @@ public interface IResourceFlattener
 /// <summary>
 /// Per-request resolved lookups used during flattening to populate FK columns without per-row DB queries.
 /// </summary>
-/// <param name="DocumentIdByReferenceKey">
-/// Maps a referenced resource's structural natural-key lookup key to its DocumentId.
-/// Produced by the ApiSchema-derived natural-key resolver and used for document references.
+/// <param name="DocumentReferences">
+/// Resolves a referenced resource's structural natural-key lookup key to its DocumentId.
+/// Produced by the ApiSchema-derived natural-key resolver and used for document references. The map owns
+/// the memberwise comparer required for DocumentIdentity; callers must not provide a raw dictionary keyed
+/// by ReferenceLookupKey.
 /// </param>
 /// <param name="DescriptorIdByKey">
 /// Maps (validated, lowered ASCII URI, descriptor resource type) to a descriptor DocumentId.
@@ -1761,14 +1763,42 @@ public interface IResourceFlattener
 /// Used to populate descriptor FK columns without per-row database work.
 /// </param>
 public sealed record ResolvedReferenceSet(
-    IReadOnlyDictionary<ReferenceLookupKey, long> DocumentIdByReferenceKey,
+    IResolvedDocumentReferenceMap DocumentReferences,
     IReadOnlyDictionary<DescriptorKey, long> DescriptorIdByKey);
 
 /// <summary>
-/// Structural document-reference lookup key used only within one request.
-/// The dictionary for this key must use the same memberwise comparer as the natural-key resolver because DocumentIdentity wraps arrays.
+/// Per-request document-reference lookup map.
+/// Implementations own the same memberwise comparer as the natural-key resolver because DocumentIdentity wraps arrays.
 /// </summary>
-public readonly record struct ReferenceLookupKey(QualifiedResourceName TargetResource, DocumentIdentity DocumentIdentity);
+public interface IResolvedDocumentReferenceMap
+{
+    bool TryGetDocumentId(
+        QualifiedResourceName targetResource,
+        DocumentIdentity documentIdentity,
+        out long documentId);
+}
+
+/// <summary>
+/// Factory for the resolved document-reference map. This is the only allowed construction path and installs
+/// the same structural ReferenceLookupKey comparer used by the natural-key resolver.
+/// </summary>
+public interface IResolvedDocumentReferenceMapFactory
+{
+    IResolvedDocumentReferenceMap Create(IEnumerable<ResolvedDocumentReference> references);
+}
+
+public sealed record ResolvedDocumentReference(
+    QualifiedResourceName TargetResource,
+    DocumentIdentity DocumentIdentity,
+    long DocumentId);
+
+/// <summary>
+/// Internal structural document-reference lookup key used only by IResolvedDocumentReferenceMap implementations.
+/// Default equality for this record struct is not authoritative; the backing dictionary must install the resolver's comparer.
+/// </summary>
+internal readonly record struct ReferenceLookupKey(
+    QualifiedResourceName TargetResource,
+    DocumentIdentity DocumentIdentity);
 
 /// <summary>
 /// Key used for resolving descriptor URI strings to descriptor DocumentIds without per-row database work.
@@ -1843,7 +1873,7 @@ public sealed class DocumentReferenceInstanceIndex : IDocumentReferenceInstanceI
     public static DocumentReferenceInstanceIndex Build(
         IReadOnlyList<DocumentReferenceBinding> bindings,
         EdFi.DataManagementService.Core.External.Model.DocumentReferenceArray[] extractedReferenceArrays,
-        IReadOnlyDictionary<ReferenceLookupKey, long> documentIdByReferenceKey)
+        IResolvedDocumentReferenceMap resolvedDocumentReferences)
     {
         // Map wildcard reference-object path → binding for fast association.
         // The wildcard path is the DocumentReferenceBinding.ReferenceObjectPath (e.g. "$.addresses[*].periods[*].calendarReference").
@@ -1870,8 +1900,18 @@ public sealed class DocumentReferenceInstanceIndex : IDocumentReferenceInstanceI
             foreach (var reference in array.DocumentReferences)
             {
                 var ordinalPath = OrdinalPathParser.Parse(reference.Path.Value);
-                var lookupKey = new ReferenceLookupKey(binding.TargetResource, reference.DocumentIdentity);
-                var documentId = documentIdByReferenceKey[lookupKey];
+                if (
+                    !resolvedDocumentReferences.TryGetDocumentId(
+                        binding.TargetResource,
+                        reference.DocumentIdentity,
+                        out var documentId
+                    )
+                )
+                {
+                    throw new InvalidOperationException(
+                        $"Document reference at '{reference.Path.Value}' was not resolved."
+                    );
+                }
                 map.Add(ordinalPath, documentId);
             }
         }
@@ -2097,7 +2137,7 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
     var documentReferences = DocumentReferenceInstanceIndex.Build(
         writePlan.Model.DocumentReferenceBindings,
         request.DocumentInfo.DocumentReferenceArrays,
-        resolved.DocumentIdByReferenceKey);
+        resolved.DocumentReferences);
 
     // 4) Load the current persisted rows needed for auth/reconstitution/merge on update flows.
     var currentState = await _currentDocumentLoader.LoadForWriteAsync(

@@ -548,7 +548,7 @@ For a write request targeting resource `R`:
      - `MappingSet.NaturalKeyProbeTargets` for concrete and abstract document references, and
      - `MappingSet.DescriptorProbeTarget` for descriptor references.
    - Split the resolved rows into the request-scoped maps needed by the flattener:
-     - a structural natural-key lookup map for document references, and
+     - `ResolvedReferenceSet.DocumentReferences`, a dedicated document-reference map whose construction installs the structural natural-key comparer, and
      - `ResolvedReferenceSet.DescriptorIdByKey` for descriptor references (keyed by `(loweredUri, descriptorResource)`).
    - Materialize `ResolvedReferenceSet` for this request.
    - Note: under key unification, this same `ResolvedReferenceSet.DescriptorIdByKey` map is also consumed by `KeyUnificationWritePlan`
@@ -558,7 +558,7 @@ For a write request targeting resource `R`:
    - Build an `IDocumentReferenceInstanceIndex` for this request using:
      - `ResourceWritePlan.Model.DocumentReferenceBindings` (the “reference sites”: wildcard reference-object path + FK column + target resource), and
      - Core’s extracted `DocumentReferenceArrays` (reference instances with concrete JSON locations that include array indices), and
-     - the structural natural-key lookup map from `ResolvedReferenceSet` (to convert each instance’s target resource + `DocumentIdentity` → referenced `DocumentId`).
+     - `ResolvedReferenceSet.DocumentReferences` (to convert each instance’s target resource + `DocumentIdentity` → referenced `DocumentId` without exposing a raw dictionary keyed by default equality).
    - The index answers: “for this `DocumentReferenceBinding` and this row’s `ordinalPath` (array indices along the wildcard reference path), what referenced `DocumentId` should be written to the FK column?”
      - `ordinalPath` examples: root reference `[]`; `$.students[*].studentReference` → `[studentOrdinal]`; `$.addresses[*].periods[*].calendarReference` → `[addressOrdinal, periodOrdinal]`.
    - This is what allows the flattener to populate FK columns for nested arrays in O(1) without per-row DB calls.
