@@ -1046,7 +1046,7 @@ public sealed class RelationalDocumentStoreRepository(
                 !planner.TryPlan(
                     readPlan.Model.Root,
                     preprocessingResult,
-                    traditionalPaging.Parameters,
+                    traditionalPaging,
                     out plannedQuery,
                     out _,
                     authorization: pageQueryAuthorization,

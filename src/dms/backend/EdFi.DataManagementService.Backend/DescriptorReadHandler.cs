@@ -1621,24 +1621,6 @@ internal sealed class DescriptorReadHandler(
     private static string SelectedDocumentIdsJsonParameterName =>
         $"@{HydrationSqlConventions.SelectedPageDocumentIdsJsonParameterName}";
 
-    private static string EnsureTrailingSemicolon(string sql)
-    {
-        var trimmed = sql.AsSpan().TrimEnd();
-        return trimmed.Length > 0 && trimmed[^1] == ';' ? sql : $"{trimmed};";
-    }
-
-    private static string StripTrailingSemicolon(string sql)
-    {
-        var trimmed = sql.AsSpan().TrimEnd();
-
-        if (trimmed.Length > 0 && trimmed[^1] == ';')
-        {
-            trimmed = trimmed[..^1].TrimEnd();
-        }
-
-        return trimmed.ToString();
-    }
-
     /// <summary>
     /// Plans descriptor GET / query namespace authorization through the relational authorization
     /// orchestrator before any SQL is built. Strategies other than <c>NamespaceBased</c> /

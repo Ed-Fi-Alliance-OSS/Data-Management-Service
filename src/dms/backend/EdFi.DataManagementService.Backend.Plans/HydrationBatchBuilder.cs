@@ -126,7 +126,7 @@ public static class HydrationBatchBuilder
 
         if (keyset.Plan.TotalCountSql is not null)
         {
-            writer.AppendLine(EnsureTrailingSemicolon(keyset.Plan.TotalCountSql));
+            writer.AppendLine(PlanSqlStatementText.AsTerminatedStatement(keyset.Plan.TotalCountSql));
             writer.AppendLine();
         }
 
@@ -694,32 +694,5 @@ public static class HydrationBatchBuilder
         parameter.ParameterName = $"@{bareName}";
         parameter.Value = value ?? DBNull.Value;
         command.Parameters.Add(parameter);
-    }
-
-    /// <summary>
-    /// Ensures a SQL statement ends with a semicolon so it is properly terminated
-    /// when embedded in a multi-statement batch.
-    /// </summary>
-    private static string EnsureTrailingSemicolon(string sql)
-    {
-        var trimmed = sql.AsSpan().TrimEnd();
-        return trimmed.Length > 0 && trimmed[^1] == ';' ? sql : $"{trimmed};";
-    }
-
-    /// <summary>
-    /// Strips a trailing semicolon (and surrounding whitespace) from compiled SQL so it can
-    /// be safely embedded inside a CTE body. Compiled plan SQL (e.g. from
-    /// <see cref="PageDocumentIdSqlCompiler"/>) includes a trailing semicolon as a statement
-    /// terminator, which is invalid inside <c>WITH ... AS (...)</c>.
-    /// </summary>
-    private static string StripTrailingSemicolon(string sql)
-    {
-        var trimmed = sql.AsSpan().TrimEnd();
-        if (trimmed.Length > 0 && trimmed[^1] == ';')
-        {
-            trimmed = trimmed[..^1].TrimEnd();
-        }
-
-        return trimmed.ToString();
     }
 }
