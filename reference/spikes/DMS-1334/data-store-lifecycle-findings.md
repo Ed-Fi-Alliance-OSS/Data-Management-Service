@@ -13,7 +13,9 @@ The recommended design keeps every Management API runtime capability in CMS whil
 - CMS runtime provisioning should restore allowlisted DMS Minimal/Populated template packages. `databaseTemplate: "Sample"` is the v3 wire value for the DMS `Populated` package kind.
 - CMS should query the four Management API core education-organization types directly through its provider adapters, using an explicitly versioned DMS database contract. It should neither reuse the DMS token-info pipeline nor call back into the DMS HTTP API.
 
-Five candidate stories are required. This is the minimum cohesive decomposition because durable jobs, privileged template operations, and target-database reads have independently substantial risks, while lifecycle orchestration and education-organization synchronization have different API, persistence, and failure semantics. Open `DMS-1271` is a formal delivery blocker for S2's trusted package execution, not an unresolved ownership decision.
+Five candidate stories are required. This is the minimum cohesive decomposition because durable jobs, privileged template operations, and target-database reads have independently substantial risks, while lifecycle orchestration and education-organization synchronization have different API, persistence, and failure semantics. Open `DMS-1271` (and its DMS-1270 prerequisite) is a formal delivery blocker for S2's trusted package execution. Publication of the versioned DMS education-organization database contract is a blocking deliverable within S4, not a sixth runtime story.
+
+The stories are refinement-ready only after the explicitly identified contract gates are resolved. In particular, the checked-in OpenAPI still describes refresh as `201 Created`, while the selected target behavior is `202 Accepted`; and the ticket key cited for removal of the per-data-store read could not be independently reconciled with the available public evidence. The stories preserve the spike's chosen behavior but prohibit implementation/conformance sign-off against an unpinned or contradictory contract.
 
 No production code was changed, and no implementation, build, or test work was performed during this spike.
 
@@ -63,7 +65,7 @@ Current implementation was preferred over historical design prose whenever they 
 - [DMS-1334](https://edfi.atlassian.net/browse/DMS-1334) — this spike
 - [ADMINAPI-1344](https://edfi.atlassian.net/browse/ADMINAPI-1344) — completed Admin API instance management reference
 - [ADMINAPI-1424](https://edfi.atlassian.net/browse/ADMINAPI-1424) — completed refresh job ID and polling work
-- [ADMINAPI-1488](https://edfi.atlassian.net/browse/ADMINAPI-1488) — removal of per-instance/per-data-store education-organization reads
+- [ADMINAPI-1488](https://edfi.atlassian.net/browse/ADMINAPI-1488) — reported removal of per-instance/per-data-store education-organization reads; ticket key/provenance must be confirmed during refinement
 - [ADMINAPI-1489](https://edfi.atlassian.net/browse/ADMINAPI-1489) — data-store management feature flag
 - [ADMINAPI-1496](https://edfi.atlassian.net/browse/ADMINAPI-1496) — refresh endpoints return `202 Accepted` rather than `201 Created`
 - [DMS-951](https://edfi.atlassian.net/browse/DMS-951) — completed create-only `ddl provision`
@@ -75,7 +77,7 @@ Current implementation was preferred over historical design prose whenever they 
 
 ## Relevant Admin API v3 contract
 
-The contract below comes from the local OpenAPI file, with the guide's explicit corrections applied.
+The contract below distinguishes the checked-in OpenAPI from spike-selected corrections. A correction is not an updated contract until the owning Admin API ticket is complete and a revision is pinned in the implementation story.
 
 | Operation | Contract |
 | --- | --- |
@@ -84,11 +86,11 @@ The contract below comes from the local OpenAPI file, with the guide's explicit 
 | `GET /v3/dataStores/manage/{id}` | Returns one `dataStoreManageModel` or `404`. |
 | `DELETE /v3/dataStores/manage/{id}` | Returns `204` when deletion is accepted or `404` when absent. Current behavior also returns `400` for invalid lifecycle states. |
 | `GET /v3/jobs/{jobId}` | Returns `jobId`, `status`, `createdAt`, nullable `finishedAt`, and nullable `errorMessage`; returns `404` when unknown. |
-| `POST /v3/dataStores/edOrgs/refresh` | Returns `202 Accepted`, a job-status `Location`, and `jobQueuedResult`. |
-| `POST /v3/dataStores/{dataStoreId}/edOrgs/refresh` | Same result for one data store; also returns `404` when the data store is absent. |
+| `POST /v3/dataStores/edOrgs/refresh` | Checked-in OpenAPI/current source: `201 Created`. Selected target per `ADMINAPI-1496`: `202 Accepted`, a job-status `Location`, and `jobQueuedResult`. Implementation is contract-blocked until an updated revision is pinned. |
+| `POST /v3/dataStores/{dataStoreId}/edOrgs/refresh` | Same `201`/selected-`202` delta for one data store; also returns `404` when the data store is absent. |
 | `GET /v3/tenants/{tenantName}/dataStores/edOrgs` | Returns tenant identity plus data stores, management metadata, and education organizations. |
 | `GET /v3/dataStores/edOrgs` | Appears only in the original story. It is absent from the authoritative local v3 OpenAPI and is superseded by the tenant aggregate; it must not be implemented. |
-| `GET /v3/dataStores/{dataStoreId}/edOrgs` | Present in the local OpenAPI but superseded by the guide and `ADMINAPI-1488`; it must not be implemented. |
+| `GET /v3/dataStores/{dataStoreId}/edOrgs` | Present in the checked-in OpenAPI/current source. The spike selects its removal and therefore does not implement it, but the owning ticket key and an updated pinned contract must be confirmed before Jira refinement is complete. |
 
 `dataStoreManageModel` contains nullable management and linked-catalog fields: `id`, `name`, `dataStoreId`, `dataStoreName`, `status`, `databaseTemplate`, `databaseName`, `lastRefreshed`, and `lastModifiedDate`. Education-organization items contain an `int64` identifier, institution name, nullable short name, discriminator, and nullable `int64` parent ID.
 
@@ -97,7 +99,7 @@ The OpenAPI description incorrectly calls managed POST an upsert. Current Admin 
 The two asynchronous response patterns are intentionally different:
 
 - managed create returns `202` and a `Location` for the management resource; the caller polls its lifecycle `status`;
-- education-organization refresh returns `202`, a job body, and a `Location` for `/v3/jobs/{jobId}`.
+- education-organization refresh is selected to return `202`, a job body, and a `Location` for `/v3/jobs/{jobId}` after the `ADMINAPI-1496` contract delta is delivered and pinned.
 
 ## Admin API behavior observed in the cited external source
 
@@ -133,7 +135,7 @@ The observations below were derived from the linked current Admin API source and
 
 ### Confirmed missing capabilities
 
-- durable tenant-scoped job records, lease/recovery semantics, handler dispatch, and the v3 job-status endpoint;
+- durable tenant-scoped job records, renewable fenced leases/recovery semantics, handler dispatch, and the v3 job-status endpoint;
 - a safe typed runtime provisioner that restores the existing DMS template artifacts and deletes only databases proven to belong to the lifecycle record;
 - separate managed data-store lifecycle persistence and `/v3/dataStores/manage` routes;
 - a CMS-owned, provider-neutral target-database education-organization snapshot reader;
@@ -147,18 +149,18 @@ The observations below were derived from the linked current Admin API source and
 | G02 | Managed resource persistence | Separate management state survives asynchronous create/delete. | `dmscs.DataStore` has no template, database name, link, or lifecycle status. | Implementation gap. | CMS | S3 |
 | G03 | `POST /v3/dataStores/manage` | Create-only request, `202`, management-resource `Location`. | No route or lifecycle aggregate. | Implementation gap. | CMS | S3 |
 | G04 | Managed reads | Collection/by-ID return management and linked data-store state. | Ordinary data-store reads only. | Implementation gap. | CMS | S3 |
-| G05 | Managed physical delete | `DELETE` queues physical drop and catalog cleanup. | Ordinary CMS delete removes metadata only. | Implementation gap; ordinary delete must not bypass managed ownership. | CMS | S3, using S2 |
+| G05 | Managed physical delete and catalog mutation guards | Managed `DELETE` queues physical drop and catalog cleanup; ordinary PUT/DELETE cannot mutate a linked managed row. | Ordinary CMS PUT changes name/type/connection and ordinary DELETE removes metadata only. | Implementation gap; both mutations need an atomic provider-repository guard and managed operations need one CMS transaction. | CMS | S3, using S2 |
 | G06 | Template meaning | `Minimal` or `Sample` selects a golden database. | DMS Minimal/Populated artifacts exist; CLI DDL and obsolete descriptor seeding are not equivalent. | Partial; add a CMS runtime primitive and map `Sample` to `Populated`. | CMS, consuming DMS artifacts | S2 |
 | G07 | Provider-neutral physical provisioning | PostgreSQL and SQL Server create/delete behind one contract. | DMS CLI/PowerShell tooling is not a CMS service-safe reusable layer; CMS provider projects already have the correct runtime boundary. | Implementation gap. | CMS | S2 |
 | G08 | Durable job execution | Long operations survive restart and retry safely. | CMS has a hosted-service pattern but no job persistence, leases, or dispatch. | Implementation gap. | CMS | S1 |
 | G09 | `GET /v3/jobs/{jobId}` | Tenant-scoped status, timestamps, error, and `404`. | No job resource. | Implementation gap. | CMS | S1 |
-| G10 | Multi-instance concurrency/crash recovery | One active execution per target and recoverable interrupted work. | No CMS mechanism; Admin API has a documented stuck-in-progress limitation. | Implementation gap. | CMS | S1 |
+| G10 | Multi-instance concurrency/crash recovery | One active execution per target, renewable leases, stale-worker fencing, and recoverable interrupted work. | No CMS mechanism; Admin API has a documented stuck-in-progress limitation. | Implementation gap. | CMS | S1 |
 | G11 | DMS discovery after create | Newly registered stores become routable. | Existing CMS provider and TTL refresh already perform this. | Already supported; document eventual visibility. | DMS | None |
-| G12 | Full education-organization extraction | Return ID, names, discriminator, and parent from each target database. | DMS token-info lookup is evidence but is not reusable by CMS; CMS has no target-domain reader. | Implementation gap for a CMS direct database reader over the four core types. | CMS | S4 |
+| G12 | Versioned education-organization database contract and extraction | Publish supported provider objects/columns/types/joins/version rules, then return ID, names, discriminator, and parent from each target database. | DMS token-info lookup is evidence but is not a published CMS contract; CMS has no target-domain reader. | DMS contract publication is a blocking S4 deliverable; CMS implements the direct reader only against that pinned contract and fixtures. | DMS contract owner + CMS | S4 |
 | G13 | Education-organization projection | Persist tenant/data-store snapshots for management reads. | CMS stores only application assignment IDs. | Implementation gap. | CMS | S5 |
-| G14 | Refresh all/one | `202`, job body/location, async refresh, and single-store `404`. | No routes or handlers. | Implementation gap, built on S1 and S4. | CMS | S5 |
+| G14 | Refresh all/one | Selected target is `202`, job body/location, async refresh, and single-store `404`; checked-in contract remains `201`. | No routes or handlers. | Implementation gap built on S1/S4; endpoint conformance is blocked on ADMINAPI-1496 and a pinned corrected contract. | CMS | S5 |
 | G15 | Tenant aggregate read | Tenant data stores plus management metadata and snapshots. | Tenant CRUD exists; aggregate response does not. | Implementation gap. | CMS | S5 |
-| G16 | Per-data-store education-organization read | Route is being removed by `ADMINAPI-1488`. | Not present. | Out of scope by explicit correction; absence is correct. | None | None |
+| G16 | Per-data-store education-organization read | Spike decision: route is removed; ticket key and updated contract are not yet verified. | Not present in CMS; present in checked-in Admin API OpenAPI/source. | Intentionally absent, with refinement blocked on confirming removal provenance and pinning the corrected contract. | Contract owner | None |
 | G17 | Authorization | Mutations require administrative authority; reads allow read-only/admin. | Existing secured endpoint conventions already encode this split. | Already supported as a policy mechanism; apply it in S1/S3/S5. | CMS | No separate story |
 | G18 | Multi-tenancy | Records and jobs cannot cross tenants; workers and tenant-path endpoints establish explicit tenant context. | Tenant-scoped repositories and request-scoped context exist, but background propagation is absent and current middleware deliberately bypasses `/v3/tenants...`. | Partial implementation gap; S5 must resolve the path tenant and install scoped context before repository access. | CMS | S1, consumed by S3/S5 |
 | G19 | Feature disablement | Managed capability can be disabled without disabling refresh. | No managed feature exists or flag exists. | Implementation gap folded into lifecycle, not a separate capability. | CMS | S3 |
@@ -188,9 +190,11 @@ DMS already has active schema mappings, so this can look attractive for educatio
 
 ### Durable CMS jobs
 
-Use a CMS-owned database table and provider-specific repository operations with an in-process `BackgroundService`. Persist an opaque job ID, tenant, type, target/payload identifiers, status, timestamps, sanitized error, attempt count, next-attempt time, and lease owner/expiry. Payloads must reference CMS IDs and must not contain connection strings or secrets.
+Use a CMS-owned database table and provider-specific repository operations with an in-process `BackgroundService`. Persist an opaque unique job ID compatible with the pinned API representation, tenant, supported type, versioned target/payload identifiers, status, timestamps, bounded sanitized error, attempt count, next-attempt time, lease owner/expiry, and a monotonically increasing fencing token. Payloads are versioned and size-bounded, reference CMS IDs only, and accept only explicitly registered job types; unknown/invalid type or version values fail terminally before handler dispatch. Payloads must not contain connection strings or secrets.
 
-The worker uses at-least-once execution with idempotent handlers. A database claim operation ensures one active worker owns a job; an expired lease is reclaimable after process failure. Bounded retries with backoff end in `Error`. Enqueue and the originating CMS control-plane state change occur in one CMS transaction so an accepted request never loses its work record.
+The worker uses at-least-once execution with idempotent, cancellation-aware handlers. A database claim/reclaim increments the lease version. Lease renewal and every retry/terminal transition compare job ID, owner, and lease version using database UTC; a late worker that lost ownership cannot persist state or overwrite a newer result. Losing a lease cancels local execution. A transient failure increments attempts, returns the job to `Pending`, records `nextAttemptAt`, clears lease fields, and leaves `finishedAt` null; only terminal `Completed`/`Error` records `finishedAt`. Enqueue and the originating CMS control-plane state change occur in one CMS transaction so an accepted request never loses its work record.
+
+Polling, lease/renewal, attempts, backoff, payload/error bounds, retention, and cleanup require documented startup-validated defaults selected during implementation refinement and operational review. Renewal must occur comfortably before lease expiry, and invalid combinations fail startup. Shutdown stops new claims, cancels active handlers, and either safely returns owned jobs to `Pending` or leaves them for expiry; fencing protects against any late completion.
 
 This design intentionally improves on two Admin API behaviors: the job exists before a refresh response is returned, preventing immediate-poll `404`, and expired in-progress work is automatically reclaimable.
 
@@ -204,7 +208,9 @@ This design intentionally improves on two Admin API behaviors: the job exists be
 - the PostgreSQL SQL dump and SQL Server backup are restored using implementations in the existing CMS provider projects behind a CMS backend contract;
 - open `DMS-1271` owns the package manifest/trust contract. S2 is formally blocked by DMS-1271 for trusted package execution and must consume its delivered artifact contract without duplicating bootstrap orchestration.
 
-CMS configuration must identify the DMS target provider independently of CMS's own catalog provider. The two current deployment settings can differ, and ordinary `DataStoreType` is an environment classification rather than a database engine. S2 and S4 therefore use one validated CMS `DmsDataStoreSettings.Provider` value (`postgresql` or `mssql`) for all target stores in that CMS deployment. Mixed target providers require future ordinary-data-store provider metadata and are out of scope.
+The deployable restore mechanisms are explicit without prescribing incidental C# APIs. PostgreSQL uses a supported `psql` executable available in the CMS runtime; authentication/invocation cannot expose credentials in arguments or logs, cancellation terminates the restore, and temporary resources are protected and cleaned up. SQL Server uses provider-supported administrative restore commands against a verified backup staged in a private location visible to the SQL Server host; logical files and safe destinations are validated before restore. A deployment without server-visible SQL Server staging is unsupported in this story, and a generic remote-upload protocol is out of scope. Process APIs, credential handoff, SQL client selection, and restore-command sequencing remain implementation decisions as long as they satisfy the same security, validation, cancellation, redaction, and cleanup outcomes.
+
+CMS configuration must identify the DMS target provider independently of CMS's own catalog provider. The two current deployment settings can differ, and ordinary `DataStoreType` is an environment classification rather than a database engine. S2 and S4 therefore use one validated target-provider setting (`postgresql` or `mssql`) for all target stores in that CMS deployment. `DmsDataStoreSettings.Provider` is a working implementation name, not a contractually required property name. Mixed target providers require future ordinary-data-store provider metadata and are out of scope.
 
 Physical operations require administrative database credentials that are distinct from the encrypted ordinary data-store connection string.
 
@@ -214,9 +220,11 @@ Deletion and retry require more than database-name matching. The lifecycle recor
 
 Store lifecycle records separately from `dmscs.DataStore`. The management record is the durable desired/observed state; the ordinary row remains the DMS routing catalog. It contains tenant, name, template, generated physical database name, expected source identity, nullable ordinary data-store link, lifecycle status, and timestamps.
 
-Create and delete handlers are idempotent reconciliation steps because physical database changes and CMS persistence cannot share a transaction. The create handler restores the database, constructs and encrypts its runtime connection string using existing CMS facilities, inserts the ordinary data store, links it, and marks `Created`. The delete handler verifies ownership, drops the database, removes the ordinary row, and leaves a `Deleted` management tombstone.
+Create and delete handlers are idempotent reconciliation steps because physical database changes and CMS persistence cannot share a transaction. Within CMS, each consistency boundary is atomic: enqueue create with `PendingCreate`; link the ordinary row and mark `Created`; enqueue delete with `PendingDelete`; and delete snapshot/ordinary row while retaining and marking the management tombstone `Deleted`. Existing repository calls with independent transaction scopes cannot be composed to claim atomicity. The physical restore/drop remains an external reconciliation boundary.
 
-The existing ordinary `DELETE /v3/dataStores/{id}` must reject a managed data store and direct callers to `/v3/dataStores/manage/{manageId}`. Otherwise metadata-only deletion can orphan a physical managed database.
+The existing ordinary `PUT /v3/dataStores/{id}` and `DELETE /v3/dataStores/{id}` must atomically reject a linked managed data store with `409 Conflict` and stable problem details containing the managed-resource location. Enforcing the guard in the provider repository/transaction, not only at the endpoint, prevents update/delete races from renaming a managed catalog row, changing its encrypted connection, or orphaning its physical database.
+
+Managed names are trimmed, limited to 100 characters, and matched against `^[A-Za-z0-9 _]+$`; normalized uniqueness is evaluated on the trimmed value. Database names follow the pinned Admin API formatter: start with `EdFi_Ods`, convert spaces to underscores, trim underscores, strip repeated leading `edfi_ods` variants, append the case-sensitive template, and remain within the portable 63-character limit.
 
 DMS will discover the new ordinary record using its existing tenant cache. The API should document that routability is eventually visible according to DMS cache configuration; no new callback is justified.
 
@@ -224,7 +232,7 @@ DMS will discover the new ordinary record using its existing tenant cache. The A
 
 Add a CMS-owned target-database reader behind a provider-neutral CMS backend contract, with implementations in the existing CMS PostgreSQL and SQL Server projects. The reader returns only the four current Management API core types: State Education Agency, Education Service Center, Local Education Agency, and School. For these types the discriminator is `edfi.<ResourceName>`, not DMS's internal `Ed-Fi:<ResourceName>` form, and direct-parent precedence is exactly school LEA, LEA parent LEA, LEA ESC, LEA SEA, then ESC SEA. Extension-defined education-organization types are out of scope because the Management API contract does not define their discriminator or parent behavior.
 
-Before executing projection SQL, the reader validates the configured target provider, the `dms.EffectiveSchema` contract/version, and the required four core tables and columns. Missing or incompatible shapes produce a typed non-transient failure. This is a versioned database integration contract: CMS does not load DMS schema packages, reference DMS mapping/compiler projects, or reuse token-info types.
+Before provider SQL is implemented or executed, DMS must publish and pin the relational integration contract. It defines a contract version, supported Data Standard/effective-schema versions, `dms.EffectiveSchema` compatibility fields, exact PostgreSQL and SQL Server objects/columns/types/nullability, joins, hierarchy precedence, deterministic ordering, and representative provider fixtures for the four core types. S4 owns coordinating and consuming this prerequisite deliverable; provider SQL is blocked until it exists. Missing or incompatible shapes produce a typed non-transient failure. CMS does not load DMS schema packages, reference DMS mapping/compiler projects, or reuse token-info types.
 
 Generating a new fixed database view was considered but not selected. It would leave already-registered create-only DMS databases without the view until DDL reprovisioning. A CMS provider adapter over the stable core database contract supports managed and existing ordinary data stores without changing DMS or adding a runtime service dependency.
 
@@ -239,9 +247,9 @@ The tenant endpoint merges:
 - default `Created`/null-management fields for unmanaged ordinary stores;
 - pending or orphaned management records that do not yet have an ordinary data-store ID, with an empty education-organization list.
 
-Current `TenantResolutionMiddleware` deliberately bypasses every `/v3/tenants...` route, leaving the scoped provider in `NotMultitenant`. The S5 tenant endpoint must therefore resolve `{tenantName}` through the tenant repository, validate any request-tenant/header relationship, install `TenantContext.Multitenant` before resolving tenant-scoped repositories, and clear/dispose that scope after the request. An unknown path tenant returns `404`; a path/header mismatch returns the existing CMS `400` tenant-validation problem without confirming whether another tenant exists.
+Current `TenantResolutionMiddleware` deliberately bypasses every `/v3/tenants...` route, leaving the scoped provider in `NotMultitenant`. In multi-tenant mode, the S5 endpoint first requires the `Tenant` header, returns the existing `400` for a missing or path-mismatched header without performing a tenant lookup, then resolves a matching path/header through the non-tenant-scoped tenant repository. Unknown matching tenants return `404`. Only after success does it install `TenantContext.Multitenant` and lazily resolve tenant-scoped aggregate dependencies; the exact DI technique is replaceable as long as tenant isolation and disposal are correct. In single-tenant mode, no header is required and context remains `NotMultitenant`; the canonical path value must be confirmed during contract/product refinement because CMS currently has no equivalent named setting, and the story must not invent one.
 
-Configurable scheduled refresh is required behavioral parity even though it is not a distinct OpenAPI operation. Admin API stores job status in `JobStatuses` but recreates recurring Quartz triggers at startup; CMS preserves the same job/schedule separation with durable CMS `Jobs` and `Schedules` persistence instead of introducing Quartz. One stable schedule per tenant uses `EdOrgsRefreshIntervalInMins` and enqueues the same S1 refresh-all job/handler as the manual endpoint. Schedule claiming, occurrence insertion, and next-run advancement are atomic, restart-safe, and safe across multiple CMS replicas. A unique schedule-occurrence identity prevents duplicate enqueue. Missed intervals are coalesced into at most one immediately due run, matching Admin API's start-now behavior without a catch-up burst. Scheduled refresh remains active when `EnableDataStoreManagement=false`, and at most one refresh may run for the same tenant/data-store target at a time.
+Configurable scheduled refresh is required behavioral parity even though it is not a distinct OpenAPI operation. Admin API stores job status in `JobStatuses` but recreates recurring Quartz triggers at startup; CMS preserves the same job/schedule separation with durable CMS `Jobs` and `Schedules` persistence instead of introducing Quartz. Multi-tenant mode maintains one stable schedule for each current tenant repository record and disables schedules when tenants are removed without deleting history. Single-tenant mode maintains one schedule for its canonical context; whether persistence uses a null/sentinel tenant key is an internal choice. Each uses `EdOrgsRefreshIntervalInMins` and enqueues the same S1 refresh-all job/handler as the manual endpoint. Schedule claiming, occurrence insertion, and next-run advancement are atomic, restart-safe, fenced, and safe across multiple CMS replicas. A unique schedule-occurrence identity prevents duplicate enqueue. Missed intervals are coalesced into at most one immediately due run, matching Admin API's start-now behavior without a catch-up burst. Scheduled refresh remains active when `EnableDataStoreManagement=false`, and at most one refresh may run for the same tenant/data-store target at a time.
 
 ### Authorization, configuration, and observability
 
@@ -261,7 +269,7 @@ Implement the five stories in [candidate-implementation-stories.md](candidate-im
 4. CMS target-database education-organization snapshot reader.
 5. CMS education-organization refresh, projection, and tenant aggregation.
 
-S1, S2, and the core S4 reader work are separable CMS prerequisite stories. S2 is formally blocked by the trusted artifact contract owned by open DMS-1271. S4 can implement its provider-neutral reader and provider adapters independently, but its final shared `DmsDataStoreSettings.Provider` wiring depends on S2. S3 depends on S1 and S2. S5 depends on S1 and S4; its complete v3 aggregate also depends on S3 for managed and pending records, although refresh persistence for existing unmanaged stores can be developed before S3 lands.
+S1, S2, and S4's provider-neutral contract work are separable prerequisites. S2 is formally blocked by the trusted artifact contract owned by open DMS-1271, transitively dependent on DMS-1270. S4's interface/model work can begin, but provider SQL and contract tests are blocked until the DMS-owned relational contract and provider fixtures are published and pinned; final shared target-provider-setting wiring depends on S2. S3 depends on S1 and S2. S5 depends on S1 and S4; its complete v3 aggregate also depends on S3 for managed and pending records, although refresh persistence for existing unmanaged stores can be developed before S3 lands.
 
 ```mermaid
 graph TD
@@ -281,10 +289,18 @@ graph TD
  S4 --> S5
  S3 --> S5
 
- %% Blocker
+ %% Blockers
+ DMS1270[["DMS-1270 (artifact prerequisite)"]]
  DMS1271[["DMS-1271 (trusted artifact contract)"]]
+ DMSCONTRACT[["DMS relational ed-org contract + fixtures"]]
+ DMS1270 --> DMS1271
  DMS1271 --> S2
+ DMSCONTRACT --> S4
 ```
+
+### Delivery-team refinement
+
+Story sizing and delivery estimates are intentionally outside this spike. The delivery team owns estimation after dependencies, external blockers, provider scope, and acceptance criteria are confirmed.
 
 ## Relevant existing and related tickets
 
@@ -292,11 +308,12 @@ graph TD
 | --- | --- |
 | `ADMINAPI-1344` | Behavioral reference for physical lifecycle, separate manage state, templates, and asynchronous execution. Does not require CMS to adopt Quartz. |
 | `ADMINAPI-1424` | Establishes the refresh job response and polling behavior required by S1/S5. |
-| `ADMINAPI-1488` | Removes only per-data-store education-organization GET. S5 retains tenant aggregate and refresh routes and must not add the removed route. |
+| `ADMINAPI-1488` | Reported as removing only the per-data-store education-organization GET. S5 follows that selected boundary, but refinement must verify the ticket key/provenance and pin the corrected contract because checked-in OpenAPI/source still expose the route. |
 | `ADMINAPI-1489` | Current reference for a default-true management feature flag. Folded into S3. |
 | `DMS-951` | Supplies create-only DDL behavior and some provider primitives, but not golden-template semantics. No duplicate story is proposed. |
 | `DMS-955` | Obsolete; descriptor seeding is explicitly not a lifecycle dependency. |
 | `DMS-1255` | Completed producer of Minimal/Populated PostgreSQL and SQL Server packages. S2 consumes rather than rebuilds these assets. |
+| `DMS-1270` | Upstream prerequisite identified by the DMS-1271 restore design; track transitively so S2 is not scheduled on DMS-1271 alone. |
 | `DMS-1271` | Formal blocker for S2 trusted package execution. S2 consumes the delivered artifact manifest/authentication contract but does not reference DMS runtime code or duplicate bootstrap sequencing. |
 | `DMS-1207` | Evidence for DMS education-organization schema and hierarchy behavior. Its token-info implementation is not a CMS dependency or extension point. |
 | `DMS-1354` | Demonstrates the current CMS hosted-service pattern reused by S1. |
@@ -305,45 +322,53 @@ graph TD
 
 - Runtime create/drop requires highly privileged database credentials. Feature enablement, secret handling, target allowlists, reserved-name checks, and ownership verification are release blockers, not optional hardening.
 - `DMS-1271` is open and formally blocks S2 trusted package execution. S2 cannot safely consume PostgreSQL SQL or SQL Server backups until its manifest and producer-authentication contract is delivered.
+- DMS-1271 depends on DMS-1270; failure to track the transitive blocker can produce a false-ready S2 story.
+- The selected refresh `202` response conflicts with the checked-in OpenAPI/current source `201`. S5 cannot enter contract/conformance implementation until ADMINAPI-1496 is delivered and the exact OpenAPI revision is pinned.
+- The removal-ticket key for per-data-store education-organization GET is not independently verified. The selected exclusion remains, but Jira refinement must correct the reference and pin the updated contract.
 - Package configuration can drift from the DMS effective schema. S2 must fail before target mutation when provider, Data Standard, extension inventory, or effective-schema metadata differs.
 - Physical changes and CMS transactions are not atomic. Idempotent reconciliation and identity verification are required for every retry boundary.
 - A new ordinary data store can take up to the configured DMS cache TTL to become routable; the current default is ten minutes.
 - Snapshot data is intentionally eventually consistent. Failed refreshes must preserve prior data and clearly expose an error rather than erase a valid snapshot or report false success.
 - CMS and DMS database-contract versions can drift. S4 must validate the target provider, effective-schema contract/version, and required core shape before projection SQL. No CMS-to-DMS code/package reference is allowed.
+- SQL Server restore requires a server-visible staging path, while PostgreSQL requires `psql` in the CMS runtime image. Unsupported deployment topologies must fail startup validation rather than failing after an accepted lifecycle request.
 
 ## Resolved decisions and implementation refinements
 
-All previously open architecture and product items are resolved:
+Architecture ownership and decomposition are resolved. The following delivery gates remain explicit rather than being treated as implementation discretion:
 
-- `DMS-1271` is a formal Jira blocker for S2 trusted package execution. It is not an ownership choice or a CMS-to-DMS code dependency.
+- `DMS-1271`, transitively dependent on DMS-1270, is a formal Jira blocker for S2 trusted package execution. It is not an ownership choice or a CMS-to-DMS code dependency.
 - S2 and S4 are CMS-owned and fit the existing CMS backend/provider projects. No DMS project/package reference, shared-library publication, or Docker build-context change is required.
 - Scheduled refresh is required Admin API behavioral parity. CMS uses durable `Jobs` and `Schedules` persistence, one schedule per tenant, and the same refresh-all job/handler as the manual endpoint; it does not adopt Admin API's in-memory Quartz runtime.
+- S4 must first obtain a DMS-owned, versioned relational contract and provider fixtures; provider SQL is blocked until that artifact is pinned.
+- S5 targets `202` and excludes the per-store read, but both decisions require a pinned corrected Admin API contract and verified Jira provenance before implementation/conformance sign-off.
 
-The exact job retention period, retry intervals, lease duration, package feed credentials, and operator-facing configuration names should be finalized during implementation refinement. They do not change ownership, API scope, or decomposition and are therefore acceptance-level configuration decisions rather than spike blockers.
+S1 requires operationally reviewed defaults and bounds before coding, without treating spike examples as product constants. S2 fixes the restore topology and safety outcomes while leaving replaceable invocation/credential APIs as non-binding implementation guidance. Neither distinction changes ownership, API scope, or decomposition.
 
 ## Explicit decisions and assumptions
 
 1. `/v3/dataStores/manage` is the only managed route family; `/v3/dbDataStores` is obsolete.
 2. Managed POST is create-only and rejects duplicates with `400`.
 3. Managed POST returns `202` and an absolute management-resource `Location` with no required response body.
-4. Refresh POST returns `202`, an absolute job-resource `Location`, and `jobQueuedResult`.
+4. Refresh POST targets `202`, an absolute job-resource `Location`, and `jobQueuedResult`; this is a contract delta from checked-in `201` and is blocked on ADMINAPI-1496 plus a pinned updated OpenAPI revision.
 5. `databaseTemplate` accepts `Minimal` and `Sample`; `Sample` maps to DMS `Populated` artifacts.
 6. Successful managed delete physically deletes the owned database and removes its ordinary catalog row.
-7. The removed per-data-store education-organization GET is not implemented.
+7. The per-data-store education-organization GET is not implemented by spike decision; its reported removal ticket key/provenance and the corrected contract must be verified during refinement.
 8. CMS owns all Management API runtime behavior, including template restoration/deletion and direct education-organization database reads. DMS owns Resources/Descriptors/Discovery API behavior, template production, and versioned database/artifact contracts.
 9. A database-backed CMS worker is selected over Quartz, a broker, or a new service.
 10. A refresh-all job is `Error` if any target fails, even though successful target snapshots may be retained.
 11. Mutations require admin scope; reads use the existing read-only-or-admin policy and remain tenant-scoped.
 12. Current PostgreSQL and SQL Server support is required throughout.
 13. Core education-organization discriminators use `edfi.<ResourceName>` and core direct-parent precedence matches current Admin API behavior; DMS's internal `Ed-Fi:<ResourceName>` value is not the Management API wire value.
-14. Scheduled refresh is required Admin API behavioral parity, not a separate OpenAPI operation. CMS persists one durable schedule per tenant using `EdOrgsRefreshIntervalInMins`, enqueues the same S1 refresh-all job as manual refresh, coalesces missed intervals to one immediately due run, and remains independent of `EnableDataStoreManagement`.
+14. Scheduled refresh is required Admin API behavioral parity, not a separate OpenAPI operation. CMS persists one durable schedule per repository tenant in multi-tenant mode or one schedule for the canonical context in single-tenant mode, uses `EdOrgsRefreshIntervalInMins`, enqueues the same S1 refresh-all job as manual refresh, coalesces missed intervals to one immediately due run, and remains independent of `EnableDataStoreManagement`.
 15. Deleting an ordinary data store removes its CMS education-organization snapshot; managed deletion reaches the same cleanup through its ordinary catalog link.
 16. The story's unscoped `GET /v3/dataStores/edOrgs` is superseded by the tenant aggregate and is not implemented.
 17. CMS adds no project/package reference to DMS. S2/S4 use existing CMS backend/provider projects and consume DMS artifacts/database contracts as data.
 18. CMS configures the DMS target provider independently of its own catalog provider; mixed target providers are out of scope until ordinary data stores carry provider metadata.
+19. In single-tenant mode, tenant aggregate routes require a canonical `{tenantName}` confirmed during contract/product refinement; CMS must not invent a setting/default. In multi-tenant mode, header/path validation precedes tenant lookup and tenant-scoped repository resolution.
+20. Linked managed ordinary data stores cannot be changed through ordinary PUT or DELETE; both fail atomically with `409` and a managed-resource location.
 
 ## Conclusion
 
 The spike confirms real gaps, but it also identifies substantial reusable infrastructure. CMS does not need a new service, broker, reverse DMS API dependency, replacement data-store catalog, DMS code/package reference, or one story per endpoint. DMS does not need a new template-production pipeline, Management API runtime component, or second education-organization endpoint.
 
-The minimum correct solution is five cohesive CMS-owned runtime stories consuming DMS templates and database contracts as versioned data. DMS-1271 formally blocks S2 package execution. Scheduled refresh is resolved as required parity implemented through durable CMS job/schedule persistence. This design preserves CMS/DMS product ownership while improving crash recovery, immediate job visibility, schedule durability, deletion safety, and partial-failure reporting over the reference implementation.
+The minimum correct solution is five cohesive runtime stories consuming DMS templates and database contracts as versioned data. DMS-1270/DMS-1271 block S2 package execution; the DMS-owned relational contract blocks S4 provider SQL; and corrected pinned Admin API contract evidence blocks S5 endpoint conformance. Once those gates are resolved, the specified acceptance criteria and task sequences are sufficient for direct developer or AI-agent implementation. Scheduled refresh is resolved as required parity through durable CMS job/schedule persistence. This design preserves CMS/DMS product ownership while improving crash recovery, immediate job visibility, schedule durability, mutation/deletion safety, and partial-failure reporting over the reference implementation.
