@@ -328,10 +328,16 @@ Key properties:
 
 - The capture statement runs **before** the reference-lookup statement in the same command, so
   reference-sourced natural-key parts cannot bind resolved `DocumentId`s. They will resolve inline:
-  each reference-sourced part will be a subselect seeking the target root's `RefKey` (0-or-1 rows by
-  RefKey uniqueness); descriptor-valued parts will use a `dms.Descriptor` lowered-URI +
-  `ResourceKeyId` subselect. All parts will bind from the payload's flattened `DocumentIdentity` —
-  scalars directly.
+  each reference-sourced part will be a scalar subselect over the target root's flattened `RefKey`
+  columns to return its `DocumentId`; descriptor-valued parts will use a `dms.Descriptor`
+  lowered-URI + `ResourceKeyId` subselect. The 0-or-1 cardinality guarantee does **not** come from
+  `UX_<Target>_RefKey` alone: because `DocumentId` trails that key, its uniqueness is vacuous while
+  `DocumentId` is the value being discovered. Cardinality is instead the consequence of the target's
+  `UX_<Target>_NK` identity constraint plus the composite-FK/cascade invariants that keep flattened
+  `RefKey` copies in parity with the natural key. Generated capture probes must therefore treat
+  multiple matches as invariant drift and fail loudly; they must never use `LIMIT 1`, `TOP 1`, or
+  equivalent row picking to mask duplicate candidates. All parts will bind from the payload's
+  flattened `DocumentIdentity` — scalars directly.
 - **Miss semantics will be correct by construction:** a missing referenced document will make its
   subselect yield NULL, the predicate false, and nothing captured; the write will proceed down the
   create path, and the later reference-lookup statement will report the missing reference through
@@ -775,13 +781,15 @@ removal:
 | Descriptor identity uniqueness | `UX_Descriptor_UriLowered_ResourceKeyId` (CI over ASCII URI, both engines) |
 | Create-race detection (409/retry) | `UX_<R>_NK` unique violations, classified exactly as today |
 | Reference targets exist and stay consistent | Composite FKs onto `RefKey` targets, unchanged |
+| Reference-resolution cardinality | `UX_<R>_NK` plus FK/cascade parity between natural-key columns and flattened `RefKey` copies; `UX_<R>_RefKey` is the access/FK shape, not scalar identity uniqueness while `DocumentId` is unbound |
 
 Deliberately lost will be: the `dms.ReferentialIdentity` corruption canary (the RI hash row drifting
 from the root row it summarizes), and a redundant second uniqueness net (the RI PK). Mitigations for
 the redundancy loss: the probe compiler will carry an empty-identity guard (a resource whose
 compiled identity has zero parts will fail compilation loudly), a compile-time parity guard will
 prove the compiled probes reproduce the legacy trigger derivation resource-by-resource for as long
-as both exist, and golden DDL fixtures will continue to pin the schema.
+as both exist, generated natural-key probes will fail on duplicate candidates instead of silently
+choosing one, and golden DDL fixtures will continue to pin the schema.
 
 This is not a claim that every derived-state risk disappears. `<Abstract>Identity` tables remain
 trigger-maintained derived state, and after the cutover they serve the only resolution path for
