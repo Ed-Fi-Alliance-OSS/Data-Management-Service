@@ -101,8 +101,12 @@ identity update fires a generated trigger that recomputes UUIDv5 hashes and writ
 amplification on the hottest path in the system. Because the table *can* drift from the row state it
 is derived from, the resolver carries corruption-verification CTEs (a canary comparing request
 identity against re-projected root state) — complexity that exists only to detect the failure mode
-the derived state itself introduces. Natural-key lookups will read the rows directly; the disease
-class and its canary will both disappear.
+the `dms.ReferentialIdentity` state itself introduces. Natural-key lookups for concrete resources,
+descriptors, and POST upsert detection will read authoritative rows/indexes directly; the
+`dms.ReferentialIdentity` drift class and its resolver canary will disappear. Abstract reference
+resolution is the exception: it will continue to rely on trigger-maintained `<Abstract>Identity`
+rows, so this design must keep explicit abstract-identity parity/corruption coverage rather than
+treating derived state as globally abolished.
 
 **3. The hash disagrees with the database about equality.** `ReferentialId` is computed over the
 identity's exact bytes — ordinal, case-sensitive. Today's generated SQL Server identity columns
@@ -158,7 +162,7 @@ Runtime readers (each will become an implementation ticket):
 | Consumer | Today | After this change |
 |---|---|---|
 | Reference resolution | `ReferenceResolver` → per-engine lookup builders joining `dms.ReferentialIdentity` | `NaturalKeyReferenceResolver` probing `RefKey`/abstract-identity/descriptor indexes |
-| Corruption-canary verification | CTEs comparing request identity vs re-projected root state | Deleted — nothing derived left to verify |
+| Corruption-canary verification | CTEs comparing request identity vs re-projected root state | RI canary deleted; abstract identity drift covered by dedicated parity/corruption pins |
 | POST upsert detection | The composite write path's capture predicate (a `ReferentialId` subselect) plus a standalone fallback lookup | Natural-key capture predicate + `UX_<R>_NK` fallback probe |
 | Descriptor upsert detection | `ReferentialId` probe in the descriptor write handler | Lowered-URI + `ResourceKeyId` probe |
 | Descriptor-valued query filters | Query preprocessor lowercases + hashes the URI | Core query validation first rejects non-ASCII URI values; the same preprocessor lowercases the validated value and the resolver probes the descriptor lower-URI index instead |
@@ -726,13 +730,18 @@ removal:
 | Create-race detection (409/retry) | `UX_<R>_NK` unique violations, classified exactly as today |
 | Reference targets exist and stay consistent | Composite FKs onto `RefKey` targets, unchanged |
 
-Deliberately lost will be: the corruption canary (its entire disease class — derived state drifting
-from row state — will be abolished with the derived state), and a redundant second uniqueness net
-(the RI PK). Mitigations for the redundancy loss: the probe compiler will carry an empty-identity
-guard (a resource whose compiled identity has zero parts will fail compilation loudly), a
-compile-time parity guard will prove the compiled probes reproduce the legacy trigger derivation
-resource-by-resource for as long as both exist, and golden DDL fixtures will continue to pin the
-schema.
+Deliberately lost will be: the `dms.ReferentialIdentity` corruption canary (the RI hash row drifting
+from the root row it summarizes), and a redundant second uniqueness net (the RI PK). Mitigations for
+the redundancy loss: the probe compiler will carry an empty-identity guard (a resource whose
+compiled identity has zero parts will fail compilation loudly), a compile-time parity guard will
+prove the compiled probes reproduce the legacy trigger derivation resource-by-resource for as long
+as both exist, and golden DDL fixtures will continue to pin the schema.
+
+This is not a claim that every derived-state risk disappears. `<Abstract>Identity` tables remain
+trigger-maintained derived state, and after the cutover they serve the only resolution path for
+abstract references. Their integrity coverage is therefore mandatory: trigger and integration tests
+must prove table rows and diagnostic union views stay in parity with concrete root rows across
+insert, delete, identity rename, and concrete `ResourceKeyId` population.
 
 Cascades will need no new application-side revalidation: unified identity values are stored once
 (aliases are generated columns; FKs bind canonical columns), collection sibling uniques bind
@@ -1023,6 +1032,10 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
 - **Probe-compilation unit tests**, including an every-resource parity guard that will prove the
   compiled probes reproduce the legacy trigger derivation for as long as both exist, and abstract
   target pins proving the probe projects concrete `ResourceKeyId` without a discriminator-to-key map.
+- **Abstract identity parity/corruption pins** proving trigger-maintained `<Abstract>Identity` rows
+  and diagnostic union views stay in parity with concrete root rows across insert, delete, identity
+  rename, SQL Server identity collation behavior, PostgreSQL byte-sensitive behavior, and concrete
+  `ResourceKeyId` population from compile-time member metadata.
 - **Mapping-pack round-trip tests** prove target probes, own-key probes, and the shared descriptor
   probe survive PackFormatVersion 1 encode/decode with storage-resolved columns and semantic
   key-column order unchanged; malformed presence, resource-kind, column, and dialect combinations
@@ -1090,8 +1103,10 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
 5. **Descriptor case-variant duplicates** will be rejected by a table-level CI unique index over
    lowered ASCII URI + `ResourceKeyId` (they are same-document by hash semantics today) — accepted;
    identical effective semantics, newly enforced by the engine.
-6. **Lost corruption canary** — accepted by construction: the derived state it guarded will no
-   longer exist.
+6. **Lost `dms.ReferentialIdentity` corruption canary** — accepted by construction for RI: the hash
+   rows it guarded will no longer exist. This does not remove every derived-state risk; abstract
+   identity tables remain trigger-maintained and are covered by the explicit parity/corruption pins
+   above.
 7. **Casing comparer approximation** — the runtime provider derives `OrdinalIgnoreCase` from the
    fixed SQL Server identity contract, but it still does not emulate every
    `SQL_Latin1_General_CP1_CI_AS` equality; divergences will fail closed (documented above), never
