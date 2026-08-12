@@ -61,7 +61,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         }
 
         var mode = spec.Mode ?? new PageCandidateMode.Traditional();
-        var modeParameters = BuildModeParameterNames(mode);
+        var modeParameters = PageCandidateModeParameters.For(mode);
 
         ValidateModeParameterNames(modeParameters);
 
@@ -229,90 +229,14 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Builds the mode-owned parameter inventory: the bare name, its plan role, the mode property
-    /// that supplied it, and whether compiled SQL binds it.
-    /// </summary>
-    /// <remarks>
-    /// The unpaged candidate mode's partition names are reserved rather than bound. They take part in
-    /// distinctness and filter-collision validation so a resource filter cannot shadow the partition
-    /// window's parameters, but they are excluded from the plan's parameter inventory because no
-    /// emitted SQL binds them yet.
-    /// </remarks>
-    private static IReadOnlyList<ModeParameterName> BuildModeParameterNames(PageCandidateMode mode)
-    {
-        return mode switch
-        {
-            PageCandidateMode.Traditional traditional =>
-            [
-                new ModeParameterName(
-                    nameof(PageCandidateMode.Traditional.OffsetParameterName),
-                    traditional.OffsetParameterName,
-                    QuerySqlParameterRole.Offset,
-                    IsBound: true
-                ),
-                new ModeParameterName(
-                    nameof(PageCandidateMode.Traditional.LimitParameterName),
-                    traditional.LimitParameterName,
-                    QuerySqlParameterRole.Limit,
-                    IsBound: true
-                ),
-            ],
-            PageCandidateMode.Cursor cursor =>
-            [
-                new ModeParameterName(
-                    nameof(PageCandidateMode.Cursor.InclusiveMinimumParameterName),
-                    cursor.InclusiveMinimumParameterName,
-                    QuerySqlParameterRole.CursorInclusiveMinimum,
-                    IsBound: true
-                ),
-                new ModeParameterName(
-                    nameof(PageCandidateMode.Cursor.InclusiveMaximumParameterName),
-                    cursor.InclusiveMaximumParameterName,
-                    QuerySqlParameterRole.CursorInclusiveMaximum,
-                    IsBound: true
-                ),
-                new ModeParameterName(
-                    nameof(PageCandidateMode.Cursor.PageSizeParameterName),
-                    cursor.PageSizeParameterName,
-                    QuerySqlParameterRole.PageSize,
-                    IsBound: true
-                ),
-            ],
-            PageCandidateMode.UnpagedCandidates unpaged =>
-            [
-                new ModeParameterName(
-                    nameof(PageCandidateMode.UnpagedCandidates.PartitionCountParameterName),
-                    unpaged.PartitionCountParameterName,
-                    QuerySqlParameterRole.PartitionCount,
-                    IsBound: false
-                ),
-                new ModeParameterName(
-                    nameof(PageCandidateMode.UnpagedCandidates.MinimumPartitionSizeParameterName),
-                    unpaged.MinimumPartitionSizeParameterName,
-                    QuerySqlParameterRole.MinimumPartitionSize,
-                    IsBound: false
-                ),
-            ],
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(mode),
-                mode.GetType().Name,
-                "Unsupported page candidate mode."
-            ),
-        };
-    }
-
-    /// <summary>
     /// Ensures every mode-owned parameter name is a valid bare name and that the names are mutually
     /// distinct (case-insensitive).
     /// </summary>
-    private static void ValidateModeParameterNames(IReadOnlyList<ModeParameterName> modeParameters)
+    private static void ValidateModeParameterNames(IReadOnlyList<PageCandidateModeParameter> modeParameters)
     {
         foreach (var modeParameter in modeParameters)
         {
-            PlanSqlWriterExtensions.ValidateBareParameterName(
-                modeParameter.Value,
-                modeParameter.PropertyName
-            );
+            PlanSqlWriterExtensions.ValidateBareParameterName(modeParameter.Name, modeParameter.PropertyName);
         }
 
         for (var index = 0; index < modeParameters.Count; index++)
@@ -321,8 +245,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             {
                 if (
                     string.Equals(
-                        modeParameters[index].Value,
-                        modeParameters[otherIndex].Value,
+                        modeParameters[index].Name,
+                        modeParameters[otherIndex].Name,
                         StringComparison.OrdinalIgnoreCase
                     )
                 )
@@ -337,31 +261,30 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Ensures filter-parameter names do not collide with mode-owned parameter names.
+    /// Ensures no filter-parameter name equals a mode-owned parameter name (case-insensitive).
     /// </summary>
+    /// <remarks>
+    /// Keying the mode names requires them to be mutually distinct, which
+    /// <see cref="ValidateModeParameterNames" /> has already established by the time this runs.
+    /// </remarks>
     private static void ValidateFilterParameterNamesDoNotCollideWithModeParameters(
         IReadOnlyList<string> filterParameterNames,
-        IReadOnlyList<ModeParameterName> modeParameters
+        IReadOnlyList<PageCandidateModeParameter> modeParameters
     )
     {
-        var collision = filterParameterNames
-            .SelectMany(
-                _ => modeParameters,
-                (filterParameterName, modeParameter) => new { filterParameterName, modeParameter }
-            )
-            .FirstOrDefault(pair =>
-                string.Equals(
-                    pair.filterParameterName,
-                    pair.modeParameter.Value,
-                    StringComparison.OrdinalIgnoreCase
-                )
-            );
+        var modeParametersByName = modeParameters.ToDictionary(
+            static modeParameter => modeParameter.Name,
+            StringComparer.OrdinalIgnoreCase
+        );
+        var collidingFilterParameterName = filterParameterNames.FirstOrDefault(
+            modeParametersByName.ContainsKey
+        );
 
-        if (collision is not null)
+        if (collidingFilterParameterName is not null)
         {
             throw CreateFilterModeParameterCollisionException(
-                collision.filterParameterName,
-                collision.modeParameter,
+                collidingFilterParameterName,
+                modeParametersByName[collidingFilterParameterName],
                 nameof(PageDocumentIdQuerySpec.Predicates)
             );
         }
@@ -435,7 +358,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// </summary>
     private static IReadOnlyList<QuerySqlParameter> BuildPageParametersInOrder(
         IReadOnlyList<QuerySqlParameter> filterParametersInOrder,
-        IReadOnlyList<ModeParameterName> modeParameters
+        IReadOnlyList<PageCandidateModeParameter> modeParameters
     )
     {
         var boundModeParameters = modeParameters
@@ -449,7 +372,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         pageParametersInOrder.AddRange(
             boundModeParameters.Select(static modeParameter => new QuerySqlParameter(
                 modeParameter.Role,
-                modeParameter.Value
+                modeParameter.Name
             ))
         );
 
@@ -1645,13 +1568,13 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// </summary>
     private static ArgumentException CreateFilterModeParameterCollisionException(
         string filterParameterName,
-        ModeParameterName modeParameter,
+        PageCandidateModeParameter modeParameter,
         string paramName
     )
     {
         return new ArgumentException(
             $"Filter parameter name '{filterParameterName}' collides with candidate mode parameter name "
-                + $"'{modeParameter.Value}' (case-insensitive). "
+                + $"'{modeParameter.Name}' (case-insensitive). "
                 + $"Rename the filter parameter or change {modeParameter.PropertyName}.",
             paramName
         );
@@ -1661,13 +1584,13 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// Creates a deterministic exception describing a collision between two mode-owned parameter names.
     /// </summary>
     private static ArgumentException CreateModeParameterCollisionException(
-        ModeParameterName first,
-        ModeParameterName second
+        PageCandidateModeParameter first,
+        PageCandidateModeParameter second
     )
     {
         return BuildArgumentException(
             "Candidate mode parameter names must be distinct (case-insensitive). "
-                + $"{first.PropertyName}='{first.Value}', {second.PropertyName}='{second.Value}'. "
+                + $"{first.PropertyName}='{first.Name}', {second.PropertyName}='{second.Name}'. "
                 + $"Rename either {first.PropertyName} or {second.PropertyName}.",
             nameof(PageDocumentIdQuerySpec.Mode)
         );
@@ -1746,22 +1669,5 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         QueryComparisonOperator Operator,
         string ParameterName,
         ScalarKind? ScalarKind
-    );
-
-    /// <summary>
-    /// One parameter name owned by the active candidate mode.
-    /// </summary>
-    /// <param name="PropertyName">The mode property that supplied the name, used in diagnostics.</param>
-    /// <param name="Value">The bare SQL parameter name.</param>
-    /// <param name="Role">The plan role this name carries when compiled SQL binds it.</param>
-    /// <param name="IsBound">
-    /// Whether compiled SQL binds this name. Reserved names are validated but excluded from the plan's
-    /// parameter inventory, because an inventory entry with no placeholder would fail runtime binding.
-    /// </param>
-    private readonly record struct ModeParameterName(
-        string PropertyName,
-        string Value,
-        QuerySqlParameterRole Role,
-        bool IsBound
     );
 }

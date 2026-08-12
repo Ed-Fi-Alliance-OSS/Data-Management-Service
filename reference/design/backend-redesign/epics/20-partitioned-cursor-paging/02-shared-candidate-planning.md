@@ -49,7 +49,14 @@ a dialect compiler emits them.
 - Share resource-filter and live change-version planning between the GET-many and `/partitions`
   consumers in the backend: both page keyset planners expose one candidate entry point, so any
   consumer supplying the same preprocessed filters, change-version window, and authorization receives
-  identical predicates, parameter names, and bound values.
+  the same predicates over the same columns, the same authorization spec, and the same bound values.
+- That parity is semantic, not textual. Each mode reserves only the parameter names it actually emits,
+  so a resource filter whose sanitized name collides with a name another mode owns (`pageSize`,
+  `cursorMin`, `cursorMax`, `number`, `minimumPartitionSize`) keeps its plain name in every mode that
+  does not emit that parameter, and is suffixed only in the mode that does. Reserving every mode's names
+  in all modes is the rejected alternative: it renames traditional filter parameters over a collision
+  traditional paging does not have, which moves the traditional page SQL this story must leave
+  textually unchanged.
 - Core-side request validation is not shared here. There is no `/partitions` request pipeline to share
   with until DMS-1387 builds one, and `PartitionRequestValidator` deliberately leaves resource-property
   filters and change-version parameters to that caller. Change-version parameters are already parsed by
@@ -72,7 +79,9 @@ a dialect compiler emits them.
 
 - Planner unit tests prove both existing planners construct the extended shared spec and that
   traditional, cursor, and partition consumers receive identical predicates, authorization specs,
-  and filter parameter values for the same request.
+  and filter parameter values for the same request. Parity coverage includes a filter whose name
+  collides with a name another mode owns, so the reserve-only-what-this-mode-emits rule is asserted
+  rather than avoided by choosing non-colliding filter names.
 - Tests cover resource filters, id filters, min/max change version, unified aliases, empty
   candidates, and descriptors.
 - Authorization planner tests cover no-further, relationship, ownership, namespace, and view-based

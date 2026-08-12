@@ -484,7 +484,7 @@ public class Given_A_Postgresql_Compiled_Candidate_Relation
         // so the wrapped form is executed on both providers.
         var plan = Compile(new PageCandidateMode.UnpagedCandidates(), authorization: null);
         var wrappedSql =
-            $"WITH candidates AS (\n{plan.PageDocumentIdSql.TrimEnd().TrimEnd(';')}\n)\n"
+            $"WITH candidates AS (\n{PlanSqlStatementText.AsEmbeddableBody(plan.PageDocumentIdSql)}\n)\n"
             + "SELECT \"DocumentId\", ROW_NUMBER() OVER (ORDER BY \"DocumentId\") AS row_number, "
             + "COUNT(*) OVER () AS candidate_count FROM candidates ORDER BY \"DocumentId\";";
 

@@ -27,10 +27,12 @@ internal sealed record CandidateQueryPlan(
 /// <param name="Mode">The candidate selection mode passed to the shared SQL compiler.</param>
 /// <param name="ParameterValues">Values for the mode-owned parameters, in canonical order.</param>
 /// <param name="OwnedParameterNames">
-/// The parameter names this mode owns, reserved by filter-name allocation. Only the active mode's own
-/// names are reserved: reserving another mode's names would suffix a filter parameter that does not
-/// actually collide with anything this query emits, which would change the SQL of a mode that has no
-/// stake in the name.
+/// The parameter names this mode owns, reserved by filter-name allocation. Derived from the mode
+/// itself through <see cref="PageCandidateModeParameters.OwnedNames" />, which is the same derivation
+/// the SQL compiler validates and emits against, so the reserved set cannot drift from the emitted
+/// set. Only the active mode's own names are reserved: reserving another mode's names would suffix a
+/// filter parameter that does not actually collide with anything this query emits, which would change
+/// the SQL of a mode that has no stake in the name.
 /// </param>
 internal readonly record struct PlannedCandidateMode(
     PageCandidateMode Mode,
@@ -45,25 +47,6 @@ internal readonly record struct PlannedCandidateMode(
 /// </summary>
 internal static class PageCandidateModePlanning
 {
-    private static readonly string[] _traditionalOwnedParameterNames =
-    [
-        PageCandidateParameterNames.Offset,
-        PageCandidateParameterNames.Limit,
-    ];
-
-    private static readonly string[] _cursorOwnedParameterNames =
-    [
-        PageCandidateParameterNames.CursorInclusiveMinimum,
-        PageCandidateParameterNames.CursorInclusiveMaximum,
-        PageCandidateParameterNames.PageSize,
-    ];
-
-    private static readonly string[] _unpagedCandidatesOwnedParameterNames =
-    [
-        PageCandidateParameterNames.PartitionCount,
-        PageCandidateParameterNames.MinimumPartitionSize,
-    ];
-
     /// <summary>
     /// Builds the candidate mode and bound values for a live collection paging choice.
     /// </summary>
@@ -78,43 +61,8 @@ internal static class PageCandidateModePlanning
 
         return paging switch
         {
-            CollectionPaging.Traditional traditional => new PlannedCandidateMode(
-                new PageCandidateMode.Traditional(
-                    PageCandidateParameterNames.Offset,
-                    PageCandidateParameterNames.Limit,
-                    traditional.Parameters.TotalCount,
-                    orderingMode
-                ),
-                [
-                    new KeyValuePair<string, object?>(
-                        PageCandidateParameterNames.Offset,
-                        (long)(traditional.Parameters.Offset ?? 0)
-                    ),
-                    new KeyValuePair<string, object?>(
-                        PageCandidateParameterNames.Limit,
-                        (long)(traditional.Parameters.Limit ?? traditional.Parameters.MaximumPageSize)
-                    ),
-                ],
-                _traditionalOwnedParameterNames
-            ),
-            CollectionPaging.Cursor cursor => new PlannedCandidateMode(
-                new PageCandidateMode.Cursor(),
-                [
-                    new KeyValuePair<string, object?>(
-                        PageCandidateParameterNames.CursorInclusiveMinimum,
-                        cursor.Range.InclusiveMinimum
-                    ),
-                    new KeyValuePair<string, object?>(
-                        PageCandidateParameterNames.CursorInclusiveMaximum,
-                        cursor.Range.InclusiveMaximum
-                    ),
-                    new KeyValuePair<string, object?>(
-                        PageCandidateParameterNames.PageSize,
-                        (long)cursor.PageSize.Value
-                    ),
-                ],
-                _cursorOwnedParameterNames
-            ),
+            CollectionPaging.Traditional traditional => ForTraditional(traditional, orderingMode),
+            CollectionPaging.Cursor cursor => ForCursor(cursor),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(paging),
                 paging.GetType().Name,
@@ -129,10 +77,55 @@ internal static class PageCandidateModePlanning
     /// </summary>
     public static PlannedCandidateMode ForUnpagedCandidates()
     {
-        return new PlannedCandidateMode(
-            new PageCandidateMode.UnpagedCandidates(),
-            [],
-            _unpagedCandidatesOwnedParameterNames
+        return Plan(new PageCandidateMode.UnpagedCandidates(), []);
+    }
+
+    private static PlannedCandidateMode ForTraditional(
+        CollectionPaging.Traditional traditional,
+        PageOrderingMode orderingMode
+    )
+    {
+        var mode = new PageCandidateMode.Traditional(
+            IncludeTotalCountSql: traditional.Parameters.TotalCount,
+            OrderingMode: orderingMode
         );
+
+        return Plan(
+            mode,
+            [
+                new(mode.OffsetParameterName, (long)(traditional.Parameters.Offset ?? 0)),
+                new(
+                    mode.LimitParameterName,
+                    (long)(traditional.Parameters.Limit ?? traditional.Parameters.MaximumPageSize)
+                ),
+            ]
+        );
+    }
+
+    private static PlannedCandidateMode ForCursor(CollectionPaging.Cursor cursor)
+    {
+        var mode = new PageCandidateMode.Cursor();
+
+        return Plan(
+            mode,
+            [
+                new(mode.InclusiveMinimumParameterName, cursor.Range.InclusiveMinimum),
+                new(mode.InclusiveMaximumParameterName, cursor.Range.InclusiveMaximum),
+                new(mode.PageSizeParameterName, (long)cursor.PageSize.Value),
+            ]
+        );
+    }
+
+    /// <summary>
+    /// Pairs a candidate mode with its bound values and the names it reserves. Both the value keys and
+    /// the reserved names come from the mode instance, so neither can name a parameter the compiled SQL
+    /// will not emit.
+    /// </summary>
+    private static PlannedCandidateMode Plan(
+        PageCandidateMode mode,
+        IReadOnlyList<KeyValuePair<string, object?>> parameterValues
+    )
+    {
+        return new PlannedCandidateMode(mode, parameterValues, PageCandidateModeParameters.OwnedNames(mode));
     }
 }

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
@@ -262,6 +263,117 @@ public abstract record PageCandidateMode
         string PartitionCountParameterName = PageCandidateParameterNames.PartitionCount,
         string MinimumPartitionSizeParameterName = PageCandidateParameterNames.MinimumPartitionSize
     ) : PageCandidateMode;
+}
+
+/// <summary>
+/// One parameter name owned by a candidate mode.
+/// </summary>
+/// <param name="PropertyName">The mode property that supplied the name, used in diagnostics.</param>
+/// <param name="Name">The bare SQL parameter name.</param>
+/// <param name="Role">The plan role this name carries when compiled SQL binds it.</param>
+/// <param name="IsBound">
+/// Whether compiled SQL binds this name. Reserved-but-unbound names are validated and reserved
+/// against filter collisions but excluded from a plan's parameter inventory, because an inventory
+/// entry with no placeholder would fail runtime binding.
+/// </param>
+public readonly record struct PageCandidateModeParameter(
+    string PropertyName,
+    string Name,
+    QuerySqlParameterRole Role,
+    bool IsBound
+);
+
+/// <summary>
+/// The single derivation of which parameter names a candidate mode owns, what plan role each name
+/// carries, and whether compiled SQL binds it. Filter-parameter name allocation in the page keyset
+/// planners and parameter validation plus inventory emission in <see cref="PageDocumentIdSqlCompiler" />
+/// both read this, so the set of names a mode reserves cannot drift from the set it emits.
+/// </summary>
+/// <remarks>
+/// Names come from the mode instance rather than from <see cref="PageCandidateParameterNames" />, so a
+/// mode constructed with non-default names reserves the names it will actually emit.
+/// </remarks>
+public static class PageCandidateModeParameters
+{
+    /// <summary>
+    /// Returns the parameter inventory the supplied mode owns, in canonical order.
+    /// </summary>
+    /// <param name="mode">The candidate selection mode.</param>
+    public static IReadOnlyList<PageCandidateModeParameter> For(PageCandidateMode mode)
+    {
+        ArgumentNullException.ThrowIfNull(mode);
+
+        return mode switch
+        {
+            PageCandidateMode.Traditional traditional =>
+            [
+                new PageCandidateModeParameter(
+                    nameof(PageCandidateMode.Traditional.OffsetParameterName),
+                    traditional.OffsetParameterName,
+                    QuerySqlParameterRole.Offset,
+                    IsBound: true
+                ),
+                new PageCandidateModeParameter(
+                    nameof(PageCandidateMode.Traditional.LimitParameterName),
+                    traditional.LimitParameterName,
+                    QuerySqlParameterRole.Limit,
+                    IsBound: true
+                ),
+            ],
+            PageCandidateMode.Cursor cursor =>
+            [
+                new PageCandidateModeParameter(
+                    nameof(PageCandidateMode.Cursor.InclusiveMinimumParameterName),
+                    cursor.InclusiveMinimumParameterName,
+                    QuerySqlParameterRole.CursorInclusiveMinimum,
+                    IsBound: true
+                ),
+                new PageCandidateModeParameter(
+                    nameof(PageCandidateMode.Cursor.InclusiveMaximumParameterName),
+                    cursor.InclusiveMaximumParameterName,
+                    QuerySqlParameterRole.CursorInclusiveMaximum,
+                    IsBound: true
+                ),
+                new PageCandidateModeParameter(
+                    nameof(PageCandidateMode.Cursor.PageSizeParameterName),
+                    cursor.PageSizeParameterName,
+                    QuerySqlParameterRole.PageSize,
+                    IsBound: true
+                ),
+            ],
+            PageCandidateMode.UnpagedCandidates unpaged =>
+            [
+                new PageCandidateModeParameter(
+                    nameof(PageCandidateMode.UnpagedCandidates.PartitionCountParameterName),
+                    unpaged.PartitionCountParameterName,
+                    QuerySqlParameterRole.PartitionCount,
+                    IsBound: false
+                ),
+                new PageCandidateModeParameter(
+                    nameof(PageCandidateMode.UnpagedCandidates.MinimumPartitionSizeParameterName),
+                    unpaged.MinimumPartitionSizeParameterName,
+                    QuerySqlParameterRole.MinimumPartitionSize,
+                    IsBound: false
+                ),
+            ],
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(mode),
+                mode.GetType().Name,
+                "Unsupported page candidate mode."
+            ),
+        };
+    }
+
+    /// <summary>
+    /// Returns the bare parameter names the supplied mode owns. Filter-name allocation reserves these
+    /// and only these: reserving another mode's names would suffix a filter parameter over a collision
+    /// this query does not have, which would move the SQL of a mode with no stake in the name.
+    /// </summary>
+    /// <param name="mode">The candidate selection mode.</param>
+    public static IReadOnlyList<string> OwnedNames(PageCandidateMode mode)
+    {
+        return [.. For(mode).Select(static parameter => parameter.Name)];
+    }
 }
 
 /// <summary>

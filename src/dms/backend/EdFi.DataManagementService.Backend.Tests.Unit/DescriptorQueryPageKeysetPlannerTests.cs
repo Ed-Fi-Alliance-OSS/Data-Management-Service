@@ -1008,16 +1008,76 @@ public class Given_DescriptorQueryPageKeysetPlanner
 
         // The descriptor filter is renamed out of the way; the plain name stays with the cursor
         // parameter that actually owns it in this mode.
-        var namespaceFilterName = cursor
-            .Plan.PageParametersInOrder.Single(parameter =>
-                parameter.Role is QuerySqlParameterRole.Filter
-                && !string.Equals(parameter.ParameterName, "resourceKeyId", StringComparison.Ordinal)
-            )
-            .ParameterName;
+        var namespaceFilterName = NamespaceFilterParameterName(cursor.Plan);
 
         namespaceFilterName.Should().NotBe(queryFieldName);
         cursor.Plan.PageDocumentIdSql.Should().Contain($"r.\"Namespace\" = @{namespaceFilterName}");
         cursor.ParameterValues.Should().ContainKeys("cursorMin", "cursorMax", "pageSize");
+    }
+
+    [Test]
+    public void It_should_keep_cross_mode_descriptor_filter_parity_semantic_when_a_filter_name_collides()
+    {
+        // Cross-mode parity is the same predicate over the same column bound to the same value, not the
+        // same parameter token. A descriptor filter sanitized to a name only cursor selection emits keeps
+        // its plain name in every mode that does not emit it.
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+        var preprocessingResult = CreateNamedFieldPreprocessingResult("pageSize");
+
+        var traditional = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            preprocessingResult,
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 75, TotalCount: false, MaximumPageSize: 500)
+            )
+        );
+        var cursor = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            preprocessingResult,
+            new CollectionPaging.Cursor(new CursorRange(10L, 90L), new PageSize(25))
+        );
+        var unpaged = planner.PlanCandidates(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            preprocessingResult
+        );
+
+        var traditionalFilterName = NamespaceFilterParameterName(traditional.Plan);
+        var cursorFilterName = NamespaceFilterParameterName(cursor.Plan);
+        var unpagedFilterName = NamespaceFilterParameterName(unpaged.Plan);
+
+        // Only cursor selection emits pageSize, so only cursor selection moves the filter off that name.
+        traditionalFilterName.Should().Be("pageSize");
+        unpagedFilterName.Should().Be("pageSize");
+        cursorFilterName.Should().NotBe("pageSize");
+        cursor.ParameterValues["pageSize"].Should().Be(25L);
+
+        // Same column, same operator, same bound value under whichever name each mode allocated.
+        var expectedFilterValue = traditional.ParameterValues[traditionalFilterName];
+
+        expectedFilterValue.Should().Be("uri://ed-fi.org/descriptor#Alternative");
+        cursor.ParameterValues[cursorFilterName].Should().Be(expectedFilterValue);
+        unpaged.ParameterValues[unpagedFilterName].Should().Be(expectedFilterValue);
+
+        traditional.Plan.PageDocumentIdSql.Should().Contain($"r.\"Namespace\" = @{traditionalFilterName}");
+        cursor.Plan.PageDocumentIdSql.Should().Contain($"r.\"Namespace\" = @{cursorFilterName}");
+        unpaged.Plan.PageDocumentIdSql.Should().Contain($"r.\"Namespace\" = @{unpagedFilterName}");
+    }
+
+    /// <summary>
+    /// Returns the name allocated to the descriptor field filter, which is every filter parameter other
+    /// than the mandatory <c>ResourceKeyId</c> discriminator the descriptor planner always emits.
+    /// </summary>
+    private static string NamespaceFilterParameterName(PageDocumentIdSqlPlan plan)
+    {
+        return plan
+            .PageParametersInOrder.Single(parameter =>
+                parameter.Role is QuerySqlParameterRole.Filter
+                && !string.Equals(parameter.ParameterName, "resourceKeyId", StringComparison.Ordinal)
+            )
+            .ParameterName;
     }
 
     private static DescriptorQueryPreprocessingResult CreateNamedFieldPreprocessingResult(

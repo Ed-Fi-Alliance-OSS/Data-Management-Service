@@ -814,6 +814,54 @@ public class Given_RelationalQueryPageKeysetPlanner
         FilterParameterNames(unpaged!.Plan).Should().NotContain(queryFieldName);
     }
 
+    [Test]
+    public void It_should_keep_cross_mode_filter_parity_semantic_when_a_filter_name_collides()
+    {
+        // Cross-mode parity is the same predicate over the same column bound to the same value, not the
+        // same parameter token. A filter sanitized to a name only cursor selection emits keeps its plain
+        // name in every mode that does not emit it, so the token differs across modes while the
+        // predicate and the value do not.
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+        var preprocessingResult = CreateNamedFieldPreprocessingResult("pageSize");
+
+        var traditional = planner.Plan(
+            CreateRootTable(),
+            preprocessingResult,
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 75, TotalCount: false, MaximumPageSize: 500)
+            )
+        );
+        var cursor = planner.Plan(
+            CreateRootTable(),
+            preprocessingResult,
+            new CollectionPaging.Cursor(new CursorRange(10L, 90L), new PageSize(25))
+        );
+
+        planner
+            .TryPlanCandidates(CreateRootTable(), preprocessingResult, out var unpaged, out _)
+            .Should()
+            .BeTrue();
+
+        var traditionalFilterName = FilterParameterNames(traditional.Plan).Single();
+        var cursorFilterName = FilterParameterNames(cursor.Plan).Single();
+        var unpagedFilterName = FilterParameterNames(unpaged!.Plan).Single();
+
+        // Only cursor selection emits pageSize, so only cursor selection moves the filter off that name.
+        traditionalFilterName.Should().Be("pageSize");
+        unpagedFilterName.Should().Be("pageSize");
+        cursorFilterName.Should().NotBe("pageSize");
+        cursor.ParameterValues["pageSize"].Should().Be(25L);
+
+        // Same column, same operator, same bound value under whichever name each mode allocated.
+        traditional.ParameterValues[traditionalFilterName].Should().Be(456);
+        cursor.ParameterValues[cursorFilterName].Should().Be(456);
+        unpaged.ParameterValues[unpagedFilterName].Should().Be(456);
+
+        traditional.Plan.PageDocumentIdSql.Should().Contain($"r.\"SchoolId\" = @{traditionalFilterName}");
+        cursor.Plan.PageDocumentIdSql.Should().Contain($"r.\"SchoolId\" = @{cursorFilterName}");
+        unpaged.Plan.PageDocumentIdSql.Should().Contain($"r.\"SchoolId\" = @{unpagedFilterName}");
+    }
+
     private static RelationalQueryPreprocessingResult CreateNamedFieldPreprocessingResult(
         string queryFieldName
     )

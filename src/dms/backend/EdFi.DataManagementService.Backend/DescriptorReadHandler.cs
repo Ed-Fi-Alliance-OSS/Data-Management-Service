@@ -621,7 +621,7 @@ internal sealed class DescriptorReadHandler(
         var pageRowsSql = BuildPageRowsSql(dialect, plannedQuery.Plan.PageDocumentIdSql);
         var commandText = plannedQuery.Plan.TotalCountSql is null
             ? pageRowsSql
-            : $"{EnsureTrailingSemicolon(plannedQuery.Plan.TotalCountSql)}{Environment.NewLine}{Environment.NewLine}{pageRowsSql}";
+            : $"{PlanSqlStatementText.AsTerminatedStatement(plannedQuery.Plan.TotalCountSql)}{Environment.NewLine}{Environment.NewLine}{pageRowsSql}";
 
         return new RelationalCommand(commandText, BuildQueryParameters(plannedQuery));
     }
@@ -747,7 +747,7 @@ internal sealed class DescriptorReadHandler(
 
     private static string BuildPageRowsSql(SqlDialect dialect, string pageDocumentIdSql)
     {
-        var pageDocumentIdSqlBody = StripTrailingSemicolon(pageDocumentIdSql);
+        var pageDocumentIdSqlBody = PlanSqlStatementText.AsEmbeddableBody(pageDocumentIdSql);
 
         // The shared page compiler intentionally returns only a DocumentId keyset. Descriptor queries
         // root on dms.Descriptor, so this performs a page-sized PK lookup instead of widening that contract.
@@ -803,24 +803,6 @@ internal sealed class DescriptorReadHandler(
                 $"Relational descriptor GET-many row retrieval does not support SQL dialect '{dialect}'."
             ),
         };
-    }
-
-    private static string EnsureTrailingSemicolon(string sql)
-    {
-        var trimmed = sql.AsSpan().TrimEnd();
-        return trimmed.Length > 0 && trimmed[^1] == ';' ? sql : $"{trimmed};";
-    }
-
-    private static string StripTrailingSemicolon(string sql)
-    {
-        var trimmed = sql.AsSpan().TrimEnd();
-
-        if (trimmed.Length > 0 && trimmed[^1] == ';')
-        {
-            trimmed = trimmed[..^1].TrimEnd();
-        }
-
-        return trimmed.ToString();
     }
 
     /// <summary>
