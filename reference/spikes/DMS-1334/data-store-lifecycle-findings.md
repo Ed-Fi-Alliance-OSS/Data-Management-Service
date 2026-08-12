@@ -38,11 +38,8 @@ The spike does not design Admin API changes, implement CMS/DMS code, run tests, 
 ### Governing sources
 
 - [DMS-1334 story](https://edfi.atlassian.net/browse/DMS-1334)
-- Authoritative DMS-1334 documentation-spike instructions
-- Local `admin-api-v3-latest.yaml` OpenAPI specification
+- Artifact `admin-api-v3-latest.yaml` OpenAPI specification from [ODS-Admin-API](https://github.com/Ed-Fi-Alliance-OSS/ODS-Admin-API)
 - Current CMS/DMS repository source and tests
-
-Pre-existing draft findings, additional notes, the handoff, and modified Superpowers plan/spec files were treated as leads only. Their conclusions were rechecked against current source and were not used as authoritative evidence.
 
 ### Current Admin API v3 reference
 
@@ -75,14 +72,12 @@ Current implementation was preferred over historical design prose whenever they 
 - [Management API v3 POST semantics decision](https://edfi.atlassian.net/wiki/spaces/BD/pages/2639396868/Management+API+v3.0.0+Additional+Differences+-+Architectural+decision)
 - [Admin API 2.3 and CMS gap analysis](https://edfi.atlassian.net/wiki/spaces/BD/pages/1789526018/Admin+API+2.3+and+CMS+Gap+Analysis)
 
-The spike guide names `ADMINAPI-1448` as the education-organization removal ticket. Jira shows that `ADMINAPI-1448` is unrelated unit-test planning; the matching removal ticket is `ADMINAPI-1488`. The explicit removal instruction remains authoritative, and `ADMINAPI-1488` supplies the current Jira evidence.
-
 ## Relevant Admin API v3 contract
 
 The contract below comes from the local OpenAPI file, with the guide's explicit corrections applied.
 
 | Operation | Contract |
-|---|---|
+| --- | --- |
 | `GET /v3/dataStores/manage` | Returns `dataStoreManageModel[]`; supports paging, sorting, `id`, and `name` filters. |
 | `POST /v3/dataStores/manage` | Accepts `addDataStoreManageRequest` with `name` and `databaseTemplate`; returns `202 Accepted`. |
 | `GET /v3/dataStores/manage/{id}` | Returns one `dataStoreManageModel` or `404`. |
@@ -144,7 +139,7 @@ Admin API is a behavioral reference, not an architecture template.
 ## Gap matrix
 
 | ID | Capability / API | Admin API v3 expectation | Existing CMS/DMS capability | Disposition | Owner | Story |
-|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- |
 | G01 | Ordinary `DataStore` registration | A created managed database becomes an ordinary routable data store. | CMS CRUD, encryption, tenancy, and DMS discovery already exist. | Already supported; reuse after physical provisioning. | CMS/DMS | None |
 | G02 | Managed resource persistence | Separate management state survives asynchronous create/delete. | `dmscs.DataStore` has no template, database name, link, or lifecycle status. | Implementation gap. | CMS | S3 |
 | G03 | `POST /v3/dataStores/manage` | Create-only request, `202`, management-resource `Location`. | No route or lifecycle aggregate. | Implementation gap. | CMS | S3 |
@@ -255,7 +250,7 @@ Configurable scheduled refresh is required behavioral parity even though it is n
 
 ## Recommended approach
 
-Implement the five stories in [DMS-1334-candidate-stories.md](DMS-1334-candidate-stories.md):
+Implement the five stories in [candidate-implementation-stories.md](candidate-implementation-stories.md):
 
 1. CMS durable jobs and v3 job polling.
 2. CMS runtime-safe DMS-template provisioning.
@@ -265,10 +260,32 @@ Implement the five stories in [DMS-1334-candidate-stories.md](DMS-1334-candidate
 
 S1, S2, and S4 are separable CMS prerequisite stories. S2 is formally blocked by the trusted artifact contract owned by open DMS-1271. S3 depends on S1 and S2. S5 depends on S1 and S4; its complete v3 aggregate also depends on S3 for managed and pending records, although refresh persistence for existing unmanaged stores can be developed before S3 lands.
 
+```mermaid
+graph TD
+ subgraph Stories
+  S1["S1: Durable Jobs & Job Polling"]
+  S2["S2: Runtime-safe Template Provisioner"]
+  S3["S3: Managed Data-Store Lifecycle"]
+  S4["S4: Target DB Reader"]
+  S5["S5: Refresh, Projection & Tenant Aggregate"]
+ end
+
+ %% Dependencies
+ S1 --> S3
+ S2 --> S3
+ S1 --> S5
+ S4 --> S5
+ S3 --> S5
+
+ %% Blocker
+ DMS1271[["DMS-1271 (trusted artifact contract)"]]
+ DMS1271 --> S2
+```
+
 ## Relevant existing and related tickets
 
 | Ticket | Relevance and scope effect |
-|---|---|
+| --- | --- |
 | `ADMINAPI-1344` | Behavioral reference for physical lifecycle, separate manage state, templates, and asynchronous execution. Does not require CMS to adopt Quartz. |
 | `ADMINAPI-1424` | Establishes the refresh job response and polling behavior required by S1/S5. |
 | `ADMINAPI-1488` | Removes only per-data-store education-organization GET. S5 retains tenant aggregate and refresh routes and must not add the removed route. |

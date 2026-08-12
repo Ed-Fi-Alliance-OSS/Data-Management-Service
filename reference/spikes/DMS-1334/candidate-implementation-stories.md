@@ -2,10 +2,10 @@
 
 ## Recommended story decomposition
 
-The confirmed gaps in [the spike findings](DMS-1334-spike-findings.md) resolve into five stories:
+The confirmed gaps in [the spike findings](data-store-lifecycle-findings.md) resolve into five stories:
 
 | ID | Candidate story | Primary owner |
-|---|---|---|
+| --- | --- | --- |
 | S1 | Add durable CMS background jobs, schedules, and Management API v3 job polling | CMS |
 | S2 | Add a runtime-safe CMS DMS-template provisioner | CMS |
 | S3 | Add managed data-store lifecycle endpoints and reconciliation to CMS | CMS, consuming CMS S2 |
@@ -20,6 +20,29 @@ No estimates are included so refinement teams can estimate independently without
 - S3 requires S1 and S2.
 - S5 requires S1 and S4. Its complete v3 tenant aggregate also requires S3, although refresh persistence for ordinary unmanaged stores can be developed before S3 lands.
 - S2 must carry a Jira blocker link to open [DMS-1271](https://edfi.atlassian.net/browse/DMS-1271). It consumes DMS-1271's delivered trusted manifest/artifact contract but does not take ownership of DMS-1271's operator/bootstrap sequencing.
+
+```mermaid
+graph TD
+ subgraph Stories
+  S1["S1: Durable Jobs & Job Polling"]
+  S2["S2: Runtime-safe Template Provisioner"]
+  S3["S3: Managed Data-Store Lifecycle"]
+  S4["S4: Target DB Reader"]
+  S5["S5: Refresh, Projection & Tenant Aggregate"]
+ end
+
+ %% Dependencies
+ S1 --> S3
+ S2 --> S3
+ S1 --> S5
+ S4 --> S5
+ S3 --> S5
+
+ %% Blocker
+ DMS1271[["DMS-1271 (trusted artifact contract)"]]
+ DMS1271 --> S2
+```
+
 - S2 and S4 are implemented inside the existing CMS backend and provider-specific projects. They consume versioned DMS artifacts and database-shape contracts as data and add no CMS-to-DMS project/package reference, DMS runtime dependency, or Docker build-context change.
 
 <a id="s1"></a>
@@ -464,7 +487,7 @@ More stories would split endpoints, provider adapters, tables, workers, feature 
 ## Coverage mapping
 
 | Findings gap | Resolution |
-|---|---|
+| --- | --- |
 | G01 ordinary registration | Existing capability; reused by S3. |
 | G02 managed persistence | S3 |
 | G03 managed POST | S3 |
