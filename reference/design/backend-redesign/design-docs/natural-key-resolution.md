@@ -39,10 +39,11 @@ On SQL Server, those lookups will not inherit identity equality from the databas
 The DDL generator will explicitly apply DMS's default case-insensitive collation,
 `SQL_Latin1_General_CP1_CI_AS`, to every string column that stores or copies an identity value. This
 includes canonical natural-key columns, flattened RefKey copies, abstract-identity columns, and
-string members of collection identity constraints. A case-sensitive database default will remain
-supported and unchanged; it simply will not govern DMS identity columns. Runtime identity comparers
-will be selected from this same schema contract (`OrdinalIgnoreCase` for the SQL Server contract and
-`Ordinal` for PostgreSQL), not from a general assumption about the database engine.
+tracked-change old/new identity copies, and string members of collection identity constraints. A
+case-sensitive database default will remain supported and unchanged; it simply will not govern DMS
+identity columns. Runtime identity comparers will be selected from this same schema contract
+(`OrdinalIgnoreCase` for the SQL Server contract and `Ordinal` for PostgreSQL), not from a general
+assumption about the database engine.
 
 With the reads gone, the maintenance surface will go with them: every generated
 `TR_<R>_ReferentialIdentity` trigger, the `dms.uuidv5()` function on both engines, the PostgreSQL
@@ -528,12 +529,25 @@ database default. For example:
 ```
 
 The rule covers canonical natural-key string columns on resource roots, every flattened RefKey copy,
-string identity columns in abstract-identity tables, and local string identity members used by child
-or extension collection uniqueness. Both sides of any string-bearing identity FK therefore have the
-same explicit collation. Descriptor identity keeps its lowered-ASCII lookup contract described above;
-its SQL Server source and computed identity columns will also be emitted under the DMS default CI
-collation. Columns with a purpose-specific stronger contract, such as the existing
-`Latin1_General_100_BIN2` lifecycle token, retain that explicit collation.
+string identity columns in abstract-identity tables, tracked-change old/new string copies of identity
+values, and local string identity members used by child or extension collection uniqueness. Both
+sides of any string-bearing identity FK therefore have the same explicit collation. Descriptor
+identity keeps its lowered-ASCII lookup contract described above; its SQL Server source and computed
+identity columns will also be emitted under the DMS default CI collation. Columns with a
+purpose-specific stronger contract, such as the existing `Latin1_General_100_BIN2` lifecycle token,
+retain that explicit collation.
+
+Tracked-change identity copies are part of this contract because Change Queries compare historical
+`Old*`/`New*` values back to live identity and descriptor columns. `/deletes` uses those comparisons
+to suppress tombstones for rows recreated under a new `DocumentId`, and `/keyChanges` exposes the
+same stored identity values. On a supported case-sensitive SQL Server database default, allowing
+tracked-change identity copies to inherit the database collation could either produce collation
+conflicts or make recreated-row detection depend on the database default instead of DMS identity
+semantics. Therefore every SQL Server `TrackedChangeColumnInfo` string column whose origin includes
+identity, including descriptor `OldNamespace`/`OldCodeValue` and `NewNamespace`/`NewCodeValue`, will
+be emitted with `COLLATE SQL_Latin1_General_CP1_CI_AS`. Routing-only columns such as the shared
+descriptor `Discriminator`, and non-identity tracked scalar payloads, are outside this identity
+collation rule unless another explicit contract applies.
 
 This is a column contract, not a database provisioning constraint. SchemaTools will continue to
 preserve an operator-selected case-sensitive database collation; generated DMS identity columns will
@@ -820,8 +834,9 @@ can cascade.
 ### To be changed
 
 - The SQL Server DDL generator will emit `COLLATE SQL_Latin1_General_CP1_CI_AS` on every string
-  column that stores or copies an identity value. The database default collation is neither changed
-  nor treated as the identity contract. Purpose-specific explicit collations remain authoritative.
+  column that stores or copies an identity value, including tracked-change old/new identity copies.
+  The database default collation is neither changed nor treated as the identity contract.
+  Purpose-specific explicit collations remain authoritative.
 - **Published-contract trims:**
   - `DocumentReference`, `DescriptorReference`, `SuperclassIdentity`, and `DocumentInfo` will retain
     their non-hash identity, path, and reference payloads; no Core external model record will expose
@@ -876,14 +891,14 @@ after T8, no production contract may still carry a `ReferentialId` member.**
 - **T1 — Pin the SQL Server identity collation and runtime equality contract.** Emit
   `COLLATE SQL_Latin1_General_CP1_CI_AS` on every generated SQL Server string column that stores or
   copies an identity value, including root natural keys, RefKey copies, abstract identities,
-  descriptor identity, and local collection identity members. Preserve purpose-specific explicit
-  collations. Introduce the backend identity-equality contract consumed by both DDL/runtime
-  composition, selecting `OrdinalIgnoreCase` for this SQL Server contract and `Ordinal` for
-  PostgreSQL. AC: golden DDL proves full identity-column coverage with no inherited-collation gaps;
-  provisioning against `Latin1_General_100_CS_AS_SC_UTF8` preserves that database default while
-  `sys.columns` reports the pinned CI collation for representative canonical, copied, abstract, and
-  descriptor identity columns; comparer-provider tests pin each schema contract; PostgreSQL DDL and
-  comparer behavior are unchanged.
+  descriptor identity, tracked-change old/new identity copies, and local collection identity members.
+  Preserve purpose-specific explicit collations. Introduce the backend identity-equality contract
+  consumed by both DDL/runtime composition, selecting `OrdinalIgnoreCase` for this SQL Server
+  contract and `Ordinal` for PostgreSQL. AC: golden DDL proves full identity-column coverage with no
+  inherited-collation gaps; provisioning against `Latin1_General_100_CS_AS_SC_UTF8` preserves that
+  database default while `sys.columns` reports the pinned CI collation for representative canonical,
+  copied, abstract, descriptor, and tracked-change identity columns; comparer-provider tests pin each
+  schema contract; PostgreSQL DDL and comparer behavior are unchanged.
 - **T2 — Add abstract `ResourceKeyId`, compile natural-key probe metadata, and re-source the 409
   duplicate-identity messages.** Add `ResourceKeyId smallint NOT NULL` to each abstract identity
   table and union view, then populate the table column from the existing abstract-identity
@@ -1049,13 +1064,17 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
   schema-affecting step and proven to be a fixed point after every regeneration. SQL Server fixtures
   will additionally prove that every string identity role carries
   `COLLATE SQL_Latin1_General_CP1_CI_AS`, including canonical, RefKey-copy, abstract, descriptor, and
-  local collection identity columns, while purpose-specific binary columns retain their collation.
+  tracked-change old/new identity columns, and local collection identity columns, while
+  purpose-specific binary columns retain their collation.
 - **SQL Server collation-contract integration tests** will provision against the supported
   `Latin1_General_100_CS_AS_SC_UTF8` database default, assert that SchemaTools preserves that default,
   query `sys.columns` to prove representative identity columns use
   `SQL_Latin1_General_CP1_CI_AS`, and run the case-variant natural-key lookup/uniqueness behavior pins
-  with the same expectations as the standard default-collation fixture. Runtime unit tests will pin
-  `OrdinalIgnoreCase` to this declared SQL Server schema contract and `Ordinal` to PostgreSQL's.
+  with the same expectations as the standard default-collation fixture. That coverage must include a
+  descriptor and a regular resource delete/recreate case where only identity casing changes, proving
+  `/deletes` suppresses the tombstone without collation-conflict errors under the case-sensitive
+  database default. Runtime unit tests will pin `OrdinalIgnoreCase` to this declared SQL Server
+  schema contract and `Ordinal` to PostgreSQL's.
 - **Descriptor ASCII validation pins**: descriptor writes, descriptor references, and
   descriptor-valued query filters containing non-ASCII URI values return a path-attributed 400
   before any relational lookup.
@@ -1134,8 +1153,9 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
    lookup swap, no structural change) and by keeping the DMS-1332 pinning suites green throughout.
 4. **The DMS identity collation overrides a case-sensitive SQL Server database default** — accepted
    and asserted deliberately. SchemaTools preserves the database default, but generated identity
-   columns explicitly use `SQL_Latin1_General_CP1_CI_AS`; this removes deployment-dependent identity
-   behavior and moves DMS toward ODS behavior.
+   columns, including tracked-change old/new identity copies, explicitly use
+   `SQL_Latin1_General_CP1_CI_AS`; this removes deployment-dependent identity behavior and moves DMS
+   toward ODS behavior.
 5. **Descriptor case-variant duplicates** will be rejected by a table-level CI unique index over
    lowered ASCII URI + `ResourceKeyId` (they are same-document by hash semantics today) — accepted;
    identical effective semantics, newly enforced by the engine.

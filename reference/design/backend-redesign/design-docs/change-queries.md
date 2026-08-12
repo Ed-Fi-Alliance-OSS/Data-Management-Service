@@ -1166,6 +1166,15 @@ Tracked-change system columns are fixed by role, not by ApiSchema value metadata
 
 The `TrackedChangeColumnInfo` value-column list should include the corresponding columns that result from combining the `IdentityJsonPaths` and `SecurableElements` paths from the resource's ApiSchema.json. They should be included twice, with `Old` and `New` prefixes applied directly to the source column name, for example `OldSchoolId_Unified` and `NewStudent_DocumentId`.
 
+On SQL Server, every string `TrackedChangeColumnInfo` whose origin includes identity is a copied
+identity value and must be emitted with the DMS identity collation,
+`COLLATE SQL_Latin1_General_CP1_CI_AS`. This includes descriptor `Namespace`/`CodeValue`
+projections. Change Query `/deletes` anti-joins compare these historical `Old*` values to live
+identity columns and descriptor lowered-URI expressions to detect recreated rows; letting them
+inherit a case-sensitive database default would make those probes default-dependent or
+collation-conflicted. Routing-only values such as the shared descriptor `Discriminator` do not carry
+this identity collation unless another explicit contract applies.
+
 Each `TrackedChangeColumnInfo` carries `IsOldColumnNullable` and `IsNewColumnNullable` separately because tombstones populate only old values. `IsOldColumnNullable` follows the tracked source value's nullability. `IsNewColumnNullable` is normally `true` because delete tombstones leave `New*` columns null; key-change rows populate the new values when present.
 
 If a path is a descriptor reference, the inventory will include two columns: the descriptor's `Namespace` and `CodeValue`. The corresponding `TrackedChangeDescriptorJoinInfo` describes the join to `dms.Descriptor` that trigger emitters use for old and new row images and identifies the qualified descriptor resource. The two `TrackedChangeColumnInfo` entries reference that table-level join by `DescriptorJoinName`; they do not duplicate the join definition. When runtime Change Query planning must resolve those stored values back to a live descriptor, it gets the descriptor's compile-time `ResourceKeyId` from `MappingSet.ResourceKeyIdByResource`; it never maps `Discriminator` to a resource key.
@@ -1188,31 +1197,31 @@ MSSQL table definition example for the Grade resource:
 CREATE TABLE [tracked_changes_edfi].[Grade]
 (
     [OldStudentSectionAssociation_BeginDate] date NOT NULL,
-    [OldGradeTypeDescriptor_Namespace] nvarchar(255) NOT NULL,
-    [OldGradeTypeDescriptor_CodeValue] nvarchar(50) NOT NULL,
-    [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] nvarchar(255) NOT NULL,
-    [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue] nvarchar(50) NOT NULL,
-    [OldGradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) NOT NULL,
+    [OldGradeTypeDescriptor_Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [OldGradeTypeDescriptor_CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [OldGradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
     [OldSchoolYear_Unified] integer NOT NULL,
-    [OldStudentSectionAssociation_LocalCourseCode] nvarchar(60) NOT NULL,
+    [OldStudentSectionAssociation_LocalCourseCode] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
     [OldSchoolId_Unified] bigint NOT NULL,
-    [OldStudentSectionAssociation_SectionIdentifier] nvarchar(255) NOT NULL,
-    [OldStudentSectionAssociation_SessionName] nvarchar(60) NOT NULL,
-    [OldStudentSectionAssociation_StudentUniqueId] nvarchar(32) NOT NULL,
+    [OldStudentSectionAssociation_SectionIdentifier] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [OldStudentSectionAssociation_SessionName] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [OldStudentSectionAssociation_StudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
     [OldStudentSectionAssociation_Student_DocumentId] bigint NOT NULL,
     
     [NewStudentSectionAssociation_BeginDate] date NULL,
-    [NewGradeTypeDescriptor_Namespace] nvarchar(255) NULL,
-    [NewGradeTypeDescriptor_CodeValue] nvarchar(50) NULL,
-    [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] nvarchar(255) NULL,
-    [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue] nvarchar(50) NULL,
-    [NewGradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) NULL,
+    [NewGradeTypeDescriptor_Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [NewGradeTypeDescriptor_CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [NewGradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [NewSchoolYear_Unified] integer NULL,
-    [NewStudentSectionAssociation_LocalCourseCode] nvarchar(60) NULL,
+    [NewStudentSectionAssociation_LocalCourseCode] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [NewSchoolId_Unified] bigint NULL,
-    [NewStudentSectionAssociation_SectionIdentifier] nvarchar(255) NULL,
-    [NewStudentSectionAssociation_SessionName] nvarchar(60) NULL,
-    [NewStudentSectionAssociation_StudentUniqueId] nvarchar(32) NULL,
+    [NewStudentSectionAssociation_SectionIdentifier] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [NewStudentSectionAssociation_SessionName] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [NewStudentSectionAssociation_StudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [NewStudentSectionAssociation_Student_DocumentId] bigint NULL,
 
     [Id] uniqueidentifier NOT NULL,
@@ -1231,11 +1240,11 @@ CREATE TABLE [tracked_changes_edfi].[Descriptor]
 (
   	[Discriminator] nvarchar(128) NOT NULL,
 
-    [OldNamespace] nvarchar(255) NOT NULL,
-    [OldCodeValue] nvarchar(50) NOT NULL,
+    [OldNamespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [OldCodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
 
-    [NewNamespace] nvarchar(255) NULL,
-    [NewCodeValue] nvarchar(50) NULL,
+    [NewNamespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [NewCodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
 
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
@@ -2063,6 +2072,9 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
 
 - `TrackedChangeTableInfo` creation for regular resources, concrete abstract resources, and the shared descriptor table.
 - `TrackedChangeColumnInfo` old/new column pairs and separate old/new nullability for identity paths, securable element paths, canonical key-unification storage columns, descriptor `Namespace`/`CodeValue` projections, and person `DocumentId` projections.
+- SQL Server emitted DDL applies `COLLATE SQL_Latin1_General_CP1_CI_AS` to every string
+  tracked-change old/new identity column, including descriptor `Namespace`/`CodeValue` projections,
+  while routing-only columns such as `Discriminator` do not inherit that identity rule.
 - `TrackedChangeDescriptorJoinInfo` and `TrackedChangePersonJoinInfo` paths used by trigger emitters, with value columns referencing them by join name rather than duplicating join definitions.
 - `DocumentStamping.ChangeTracking` attachment to the correct `TriggerKindParameters.DocumentStamping` trigger entries.
 - ChangeTracking key-change rows using the owning `DbTriggerInfo.IdentityProjectionColumns` workset, including key-unification cases where canonical storage columns change without direct alias-column updates, and presence-only alias changes do not emit key-change rows when the canonical identity storage values are unchanged.
@@ -2082,6 +2094,10 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
   resource `/deletes` recreation detection to resolve descriptor-valued identity parts to the
   recreated descriptor. Reusing the same URI for a different descriptor `ResourceKeyId` does not
   suppress the tombstone.
+- DB-behavior on SQL Server under a `Latin1_General_100_CS_AS_SC_UTF8` database default:
+  deleting and recreating a regular resource with only string identity casing differences suppresses
+  the old tombstone, proving tracked-change identity copies use the DMS CI identity collation rather
+  than the database default.
 - Every `DbTriggerInfo` with `Kind = DocumentStamping` has a non-null `MirrorStampTargetTable` matching the per-trigger rule (same table for root, resource's root for child / `_ext`, `dms.Descriptor` for the descriptor trigger).
 - DB-behavior: mirror equals source (`<root>.ContentVersion = dms.Document.ContentVersion` and `<root>.ContentLastModifiedAt = dms.Document.ContentLastModifiedAt`) after every write path — insert, update, no-op update, identity change, child-collection write, `_ext` write, FK-cascade update, descriptor write. Run on at least a root-only resource (`edfi.Student`), a child-bearing resource (`edfi.School` with `SchoolAddress` writes), an `_ext`-bearing resource, an extension-project resource (e.g. `tpdm.Candidate`), and a descriptor.
 - DB-behavior: stamp-only updates (`UPDATE <root> SET ContentVersion = ContentVersion + 1 …`) do not allocate a new sequence value, do not fire additional mirror UPDATEs, and do not insert `tracked_changes_*` rows; multi-row UPDATEs that stamp N documents allocate N distinct `ContentVersion` values, and each document's mirror equals its `dms.Document` stamp.
