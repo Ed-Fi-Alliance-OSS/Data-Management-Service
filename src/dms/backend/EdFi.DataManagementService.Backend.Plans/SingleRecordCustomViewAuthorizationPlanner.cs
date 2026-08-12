@@ -355,8 +355,10 @@ public static class SingleRecordCustomViewAuthorizationPlanner
             subjectResource,
             strategy.ConfiguredStrategy,
             strategy.AuthorizationLocalOrder,
+            // Both taken from the terminal step so the pair names a column on the table it lives on; mixing
+            // steps would point diagnostics at a table.column combination that does not exist for 3+ hop paths.
             Location: new RelationshipAuthorizationFailureLocation(
-                Table: resolvedPath.Steps[0].TargetTable,
+                Table: resolvedPath.Steps[^1].SourceTable,
                 Column: resolvedPath.Steps[^1].SourceColumnName,
                 AuthorizationObjectName: $"auth.{strategy.ConfiguredStrategy.StrategyName}"
             ),

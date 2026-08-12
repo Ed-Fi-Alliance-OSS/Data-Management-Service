@@ -245,7 +245,8 @@ public static class ReferenceResolverServiceCollectionExtensions
                     serviceProvider.GetService<IRelationshipAuthorizationProviderFailureExtractor>(),
                     // The same executor validates the run's views: it opens a connection per command, so it is
                     // never the write session's, which is what the validation probe must avoid.
-                    serviceProvider.GetRequiredService<IRelationalCommandExecutor>()
+                    serviceProvider.GetRequiredService<IRelationalCommandExecutor>(),
+                    serviceProvider.GetService<IRelationalWriteExceptionClassifier>()
                 )
             )
         );

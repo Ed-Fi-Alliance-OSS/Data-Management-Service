@@ -1691,7 +1691,8 @@ internal sealed class DescriptorWriteHandler(
         new CustomViewAuthorizationExecutor(
             sessionCommandExecutor,
             _relationshipAuthorizationProviderFailureExtractor,
-            _customViewValidationCommandExecutor
+            _customViewValidationCommandExecutor,
+            _writeExceptionClassifier
         ).ExecuteAsync(
             new CustomViewAuthorizationExecutionRequest(mappingSet, documentId, runChecks, plannedChecks),
             cancellationToken

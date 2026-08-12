@@ -168,7 +168,8 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         null,
     ILogger? logger = null,
     RelationalCommandBudget? commandBudget = null,
-    IRelationalCommandExecutor? customViewValidationCommandExecutor = null
+    IRelationalCommandExecutor? customViewValidationCommandExecutor = null,
+    IRelationalWriteExceptionClassifier? writeExceptionClassifier = null
 ) : IRelationalWriteFirstPhase
 {
     private const string ReferenceResolutionLabel = "reference-resolution";
@@ -196,6 +197,13 @@ internal sealed class CompositeRelationalWriteFirstPhase(
     /// </summary>
     private readonly IRelationalCommandExecutor? _customViewValidationCommandExecutor =
         customViewValidationCommandExecutor;
+
+    /// <summary>
+    /// Keeps transient provider failures (deadlock victim, lock timeout) out of the custom-view attribution:
+    /// they say nothing about the view's contract and must keep their retryable write-conflict classification.
+    /// </summary>
+    private readonly IRelationalWriteExceptionClassifier _writeExceptionClassifier =
+        writeExceptionClassifier ?? new NoOpRelationalWriteExceptionClassifier();
 
     private sealed record CompositeFirstPhasePlan(
         RelationalCompositeCommand Command,
@@ -665,7 +673,8 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         var executionResult = await new CustomViewAuthorizationExecutor(
             writeSession.CreateCommandExecutor(),
             _providerFailureExtractor,
-            _customViewValidationCommandExecutor
+            _customViewValidationCommandExecutor,
+            _writeExceptionClassifier
         )
             .ExecuteAsync(
                 new CustomViewAuthorizationExecutionRequest(
@@ -1000,10 +1009,32 @@ internal sealed class CompositeRelationalWriteFirstPhase(
             // attributed to the configured view, so a dropped or revoked auth.{StrategyName} keeps the
             // documented urn:ed-fi:api:system 500 rather than escaping as an unhandled provider error. The
             // statement label alone cannot decide it: PostgreSQL prepares the whole batch before executing
-            // any of it, so a missing view surfaces at reader-open nominally against statement 0.
+            // any of it, so a missing view surfaces at reader-open nominally against statement 0. A transient
+            // provider failure (deadlock victim, lock timeout) proves nothing about the view's contract, so it
+            // maps to the same retryable write-conflict result the executor's failure mapper would produce.
             _ when IsAttributableToCustomView(customViewPlan, failureContext) =>
-                throw new CustomViewAuthorizationValidationException(exception),
+                _writeExceptionClassifier.IsTransientFailure(exception)
+                    ? BuildTransientWriteConflictResult(input.OperationKind)
+                    : throw new CustomViewAuthorizationValidationException(exception),
             _ => null,
+        };
+
+    /// <summary>
+    /// The transient-failure result for the operation, mirroring the write executor's database failure
+    /// mapping so a deadlock in the opening command answers the same retryable 409 as one in the DML.
+    /// </summary>
+    private static RelationalWriteExecutorResult BuildTransientWriteConflictResult(
+        RelationalWriteOperationKind operationKind
+    ) =>
+        operationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureWriteConflict()
+            ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureWriteConflict()
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
         };
 
     private static bool IsAttributableToCustomView(

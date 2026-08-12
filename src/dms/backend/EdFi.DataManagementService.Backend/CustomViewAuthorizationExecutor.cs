@@ -93,10 +93,16 @@ public interface ICustomViewAuthorizationExecutor
 /// connection: a write session's executor runs inside the transaction holding the target lock and would consume
 /// that command stream's results.
 /// </param>
+/// <param name="writeExceptionClassifier">
+/// Keeps transient provider failures (deadlock victim, lock timeout) out of the custom-view attribution: they
+/// say nothing about the view's contract, so they propagate to the caller's existing transient handling
+/// instead of being wrapped as a validation failure.
+/// </param>
 internal sealed class CustomViewAuthorizationExecutor(
     IRelationalCommandExecutor commandExecutor,
     IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null,
-    IRelationalCommandExecutor? validationCommandExecutor = null
+    IRelationalCommandExecutor? validationCommandExecutor = null,
+    IRelationalWriteExceptionClassifier? writeExceptionClassifier = null
 ) : ICustomViewAuthorizationExecutor
 {
     private readonly IRelationalCommandExecutor _commandExecutor =
@@ -104,6 +110,8 @@ internal sealed class CustomViewAuthorizationExecutor(
     private readonly IRelationshipAuthorizationProviderFailureExtractor _providerFailureExtractor =
         providerFailureExtractor ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance;
     private readonly IRelationalCommandExecutor? _validationCommandExecutor = validationCommandExecutor;
+    private readonly IRelationalWriteExceptionClassifier _writeExceptionClassifier =
+        writeExceptionClassifier ?? new NoOpRelationalWriteExceptionClassifier();
 
     public async Task<CustomViewAuthorizationExecutionResult> ExecuteAsync(
         CustomViewAuthorizationExecutionRequest request,
@@ -206,7 +214,8 @@ internal sealed class CustomViewAuthorizationExecutor(
             );
         }
         catch (DbException ex)
-            when (CustomViewAuthorizationProviderFailureMapper.IsUnrecognizedProviderFailure(
+            when (!_writeExceptionClassifier.IsTransientFailure(ex)
+                && CustomViewAuthorizationProviderFailureMapper.IsUnrecognizedProviderFailure(
                     dialect,
                     ex,
                     _providerFailureExtractor
@@ -215,6 +224,8 @@ internal sealed class CustomViewAuthorizationExecutor(
         {
             // Attributed to the configured view, so the documented urn:ed-fi:api:system 500 is preserved
             // instead of an unhandled provider error. Mirrors how DMS-1062 guards the GET-many page query.
+            // Transient failures are excluded above: they prove nothing about the view and must reach the
+            // caller's retryable-failure handling instead.
             throw new CustomViewAuthorizationValidationException(ex);
         }
     }

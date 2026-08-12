@@ -651,6 +651,31 @@ public class Given_The_Composite_Relational_Delete_Command
     }
 
     [Test]
+    public async Task It_maps_a_transient_failure_in_a_custom_view_command_to_a_write_conflict()
+    {
+        // A deadlock on the opening command carries no AUTH1 payload either, but it proves nothing about
+        // the configured view: it must keep the retryable 409 write-conflict classification instead of
+        // being relabelled as a custom-view validation 500.
+        var session = CreateSession(SqlDialect.Pgsql, new FakeDbException("deadlock detected", "40P01"));
+        var request = CreateRequest(SqlDialect.Pgsql) with
+        {
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+        };
+        var classifier = new ConfigurableRelationalWriteExceptionClassifier
+        {
+            IsTransientFailureToReturn = true,
+        };
+
+        var result = await CreateSut(
+                new StubProviderFailureExtractor("40P01", "deadlock detected"),
+                classifier: classifier
+            )
+            .ExecuteAsync(request, session);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureWriteConflict>();
+    }
+
+    [Test]
     public async Task It_maps_a_namespace_auth1_failure_to_the_namespace_denial()
     {
         var session = CreateSession(SqlDialect.Pgsql, new FakeDbException("AUTH1", "AUTH1"));

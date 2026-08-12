@@ -66,7 +66,8 @@ internal sealed class DefaultRelationalWriteExecutor(
             relationshipAuthorizationProviderFailureExtractor,
             logger,
             commandBudget: null,
-            customViewValidationCommandExecutor
+            customViewValidationCommandExecutor,
+            writeExceptionClassifier
         );
 
     private readonly RelationalWriteExecutionStateResolver _executionStateResolver = new(

@@ -8962,6 +8962,31 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_returns_post_security_configuration_failure_for_a_child_collection_custom_view_basis()
+    {
+        // The basis is reachable, but only through a child collection table, so a POST's proposed check has
+        // no root-table value to bind: the designed security-configuration failure, not an unhandled
+        // ArgumentOutOfRangeException from the message builder.
+        var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet)
+            .Returns(CreateWriteAwareMappingSetWithChildCollectionStudentBasis(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Post child collection basis"));
+        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
+            .Returns([CreateAuthorizationStrategyEvaluator("StudentWithCTECourseEnrollments")]);
+        A.CallTo(() => upsertRequest.AuthorizationContext).Returns(new RelationalAuthorizationContext([]));
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        var failure = result.Should().BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>().Subject;
+        failure.Errors.Should().ContainSingle();
+        failure.Errors[0].Should().Contain("StudentWithCTECourseEnrollments");
+        failure.Errors[0].Should().Contain("child collection table");
+    }
+
+    [Test]
     public async Task It_returns_post_security_configuration_failure_before_known_but_not_enabled_result()
     {
         var upsertRequest = A.Fake<IUpsertRequest>();
@@ -13829,6 +13854,102 @@ public class Given_RelationalDocumentStoreRepositoryTests
             resourceInfo,
             CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(resourceInfo)
         );
+
+    /// <summary>
+    /// A write-aware mapping set whose only route from the subject to the Student basis crosses a child
+    /// collection table, which makes the single-record planner fail a POST/PUT proposed check closed with
+    /// <see cref="RelationshipAuthorizationFailureKind.MissingProposedCustomViewRootBinding"/>.
+    /// </summary>
+    private static MappingSet CreateWriteAwareMappingSetWithChildCollectionStudentBasis(
+        ResourceInfo resourceInfo
+    )
+    {
+        var mappingSet = WithUnreachableStudentBasis(
+            resourceInfo,
+            CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(resourceInfo)
+        );
+        var resource = new QualifiedResourceName(
+            resourceInfo.ProjectName.Value,
+            resourceInfo.ResourceName.Value
+        );
+        var childTable = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "SchoolStudent"),
+            new JsonPathExpression("$.students[*]", []),
+            new TableKey(
+                "PK_SchoolStudent",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.Scalar)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Student_DocumentId"),
+                    ColumnKind.DocumentFk,
+                    null,
+                    false,
+                    null,
+                    new QualifiedResourceName("Ed-Fi", "Student")
+                ),
+            ],
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Unspecified,
+                [new DbColumnName("CollectionItemId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+        var childBinding = new DocumentReferenceBinding(
+            true,
+            new JsonPathExpression("$.students[*].studentReference", []),
+            childTable.Table,
+            new DbColumnName("Student_DocumentId"),
+            new QualifiedResourceName("Ed-Fi", "Student"),
+            [
+                new ReferenceIdentityBinding(
+                    new JsonPathExpression("$.studentUniqueId", []),
+                    new JsonPathExpression("$.students[*].studentReference.studentUniqueId", []),
+                    new DbColumnName("Student_StudentUniqueId")
+                ),
+            ],
+            IsRequired: true
+        );
+
+        return mappingSet with
+        {
+            Model = mappingSet.Model with
+            {
+                ConcreteResourcesInNameOrder =
+                [
+                    .. mappingSet.Model.ConcreteResourcesInNameOrder.Select(concreteResource =>
+                        concreteResource.ResourceKey.Resource == resource
+                            ? concreteResource with
+                            {
+                                RelationalModel = concreteResource.RelationalModel with
+                                {
+                                    TablesInDependencyOrder =
+                                    [
+                                        concreteResource.RelationalModel.Root,
+                                        childTable,
+                                    ],
+                                    DocumentReferenceBindings = [childBinding],
+                                },
+                            }
+                            : concreteResource
+                    ),
+                ],
+            },
+        };
+    }
 
     /// <summary>
     /// Adds a minimal Student concrete resource so a <c>StudentWith…</c> basis resolves but has no DocumentId

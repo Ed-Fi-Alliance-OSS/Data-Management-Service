@@ -511,7 +511,8 @@ internal sealed class CompositeRelationalDeleteCommand(
         var executionResult = await new CustomViewAuthorizationExecutor(
             writeSession.CreateCommandExecutor(),
             _providerFailureExtractor,
-            _customViewValidationCommandExecutor
+            _customViewValidationCommandExecutor,
+            _exceptionClassifier
         )
             .ExecuteAsync(
                 new CustomViewAuthorizationExecutionRequest(
@@ -839,8 +840,10 @@ internal sealed class CompositeRelationalDeleteCommand(
             // outside the generated schema is auth.{StrategyName}, which can be dropped, replaced, or revoked
             // between requests, and auth.md requires that to surface as the urn:ed-fi:api:system 500 rather
             // than as a generic delete failure. Authorization payloads are classified above, so a denial is
-            // never relabelled.
-            _ when IsAttributableToCustomView(customViewPlan, failureContext) =>
+            // never relabelled — and a transient provider failure (deadlock victim, lock timeout) proves
+            // nothing about the view's contract, so it keeps the retryable write-conflict mapping below.
+            _ when IsAttributableToCustomView(customViewPlan, failureContext)
+                    && !_exceptionClassifier.IsTransientFailure(exception) =>
                 throw new CustomViewAuthorizationValidationException(exception),
             _ => RelationalDeleteExecution.MapFailure(
                 exception,

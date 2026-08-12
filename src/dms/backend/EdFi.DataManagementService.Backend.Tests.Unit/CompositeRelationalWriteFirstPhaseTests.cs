@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Unit.Composite;
+using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
@@ -497,13 +498,15 @@ public class Given_The_Composite_Relational_Write_First_Phase
         TestReferenceResolverAdapterFactory? adapterFactory = null,
         IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null,
         RelationalCommandBudget? commandBudget = null,
-        IRelationalCommandExecutor? customViewValidationCommandExecutor = null
+        IRelationalCommandExecutor? customViewValidationCommandExecutor = null,
+        IRelationalWriteExceptionClassifier? writeExceptionClassifier = null
     ) =>
         new(
             adapterFactory ?? new TestReferenceResolverAdapterFactory(),
             relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor,
             commandBudget: commandBudget,
-            customViewValidationCommandExecutor: customViewValidationCommandExecutor
+            customViewValidationCommandExecutor: customViewValidationCommandExecutor,
+            writeExceptionClassifier: writeExceptionClassifier
         );
 
     private static RelationalWriteLockedTarget CreateLockProof(
@@ -669,6 +672,35 @@ public class Given_The_Composite_Relational_Write_First_Phase
                 .ResolveAsync(input, session);
 
         await act.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+    }
+
+    [Test]
+    public async Task It_maps_a_transient_failure_in_a_custom_view_command_to_a_write_conflict()
+    {
+        // A deadlock at reader-open carries no AUTH1 payload either, but it proves nothing about the
+        // configured view: it must keep the retryable 409 write-conflict classification instead of being
+        // relabelled as a custom-view validation 500.
+        var input = CreateInput(RelationalWriteOperationKind.Put, includeReadPlan: false) with
+        {
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+        };
+        var session = new ScriptedWriteSession(new FakeDbException("deadlock detected"));
+        var classifier = new ConfigurableRelationalWriteExceptionClassifier
+        {
+            IsTransientFailureToReturn = true,
+        };
+
+        var resolution = await CreateSut(
+                providerFailureExtractor: new TestProviderFailureExtractor("40P01", "deadlock detected"),
+                writeExceptionClassifier: classifier
+            )
+            .ResolveAsync(input, session);
+
+        resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureWriteConflict>();
     }
 
     [Test]
