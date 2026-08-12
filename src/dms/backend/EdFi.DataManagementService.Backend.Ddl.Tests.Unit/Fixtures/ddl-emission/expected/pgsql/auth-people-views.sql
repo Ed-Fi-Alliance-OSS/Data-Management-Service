@@ -112,7 +112,7 @@ CREATE TABLE IF NOT EXISTS "tracked_changes_edfi"."StudentSchoolAssociation"
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationIdToEducationOrganizationId_Target" ON "auth"."EducationOrganizationIdToEducationOrganizationId" ("TargetEducationOrganizationId") INCLUDE ("SourceEducationOrganizationId");
 
 CREATE OR REPLACE VIEW "auth"."EducationOrganizationIdToContactDocumentId" AS
-SELECT DISTINCT
+SELECT
     edOrg."SourceEducationOrganizationId",
     sca."Contact_DocumentId"
 FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
@@ -126,7 +126,7 @@ SELECT
     seoaa."Staff_DocumentId"
 FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
 INNER JOIN "edfi"."StaffEducationOrganizationAssignmentAssociation" seoaa ON edOrg."TargetEducationOrganizationId" = seoaa."EducationOrganization_EducationOrganizationId"
-UNION
+UNION ALL
 SELECT
     edOrg."SourceEducationOrganizationId",
     seoea."Staff_DocumentId"
@@ -135,7 +135,7 @@ INNER JOIN "edfi"."StaffEducationOrganizationEmploymentAssociation" seoea ON edO
 ;
 
 CREATE OR REPLACE VIEW "auth"."EducationOrganizationIdToStudentDocumentId" AS
-SELECT DISTINCT
+SELECT
     edOrg."SourceEducationOrganizationId",
     ssa."Student_DocumentId"
 FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
@@ -143,7 +143,7 @@ INNER JOIN "edfi"."StudentSchoolAssociation" ssa ON edOrg."TargetEducationOrgani
 ;
 
 CREATE OR REPLACE VIEW "auth"."EducationOrganizationIdToStudentDocumentIdThroughResponsibility" AS
-SELECT DISTINCT
+SELECT
     edOrg."SourceEducationOrganizationId",
     seora."Student_DocumentId"
 FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg

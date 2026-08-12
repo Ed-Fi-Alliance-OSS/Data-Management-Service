@@ -672,6 +672,21 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
+    public async Task<UpsertResult> CreateStaffEducationOrganizationEmploymentAssociationAsync(
+        StaffEducationOrganizationEmploymentAssociationSeed seed
+    )
+    {
+        return await UpsertAsync(
+            "ed-fi",
+            "StaffEducationOrganizationEmploymentAssociation",
+            RelationalQueryAuthorizationRequestBodies.CreateStaffEducationOrganizationEmploymentAssociationRequestBody(
+                seed
+            ),
+            seed.DocumentUuid,
+            $"seed-staff-employment-{seed.StaffUniqueId}-{seed.EducationOrganizationId}"
+        );
+    }
+
     public async Task<UpsertResult> CreateStudentEducationOrganizationResponsibilityAssociationAsync(
         StudentEducationOrganizationResponsibilityAssociationSeed seed
     )
@@ -708,6 +723,19 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             "Ed-Fi:StaffClassificationDescriptor",
             descriptor,
             "uri://ed-fi.org/StaffClassificationDescriptor",
+            descriptor[(descriptor.LastIndexOf('#') + 1)..],
+            descriptor[(descriptor.LastIndexOf('#') + 1)..]
+        );
+    }
+
+    public async Task SeedEmploymentStatusDescriptorAsync(Guid documentUuid, string descriptor)
+    {
+        await SeedDescriptorAsync(
+            documentUuid,
+            "EmploymentStatusDescriptor",
+            "Ed-Fi:EmploymentStatusDescriptor",
+            descriptor,
+            "uri://ed-fi.org/EmploymentStatusDescriptor",
             descriptor[(descriptor.LastIndexOf('#') + 1)..],
             descriptor[(descriptor.LastIndexOf('#') + 1)..]
         );
@@ -975,6 +1003,71 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             new NpgsqlParameter("targetEducationOrganizationId", targetEducationOrganizationId)
         );
     }
+
+    /// <summary>
+    /// Asserts the people auth view for <paramref name="viewKind"/> yields exactly
+    /// <paramref name="expectedPairCount"/> rows for the (claim EducationOrganizationId, person) pair.
+    /// Duplicate-pair scenarios (DMS-1329) assert a count above one before exercising consumers so their
+    /// single-result assertions cannot pass vacuously against a fixture that accidentally produced only
+    /// one authorization pair. Each view reaches duplicate cardinality by its own route: Student and
+    /// Contact through multiple claim-reachable enrollments, Staff across its two <c>UNION ALL</c> arms,
+    /// and StudentThroughResponsibility through multiple responsibilities at one EducationOrganization.
+    /// The view name and columns are read from <see cref="AuthObjectDefinitions"/> so a rename moves this
+    /// probe with the definition.
+    /// </summary>
+    public async Task AssertPeopleAuthViewPairCountAsync(
+        AuthPeopleViewKind viewKind,
+        string personUniqueId,
+        long claimEducationOrganizationId,
+        long expectedPairCount
+    )
+    {
+        var definition = AuthObjectDefinitions.GetPeopleAuthViewDefinition(viewKind);
+        var (personTable, personUniqueIdColumn) = PeopleAuthViewPersonIdentity(viewKind);
+
+        var pairCount = await Database.ExecuteScalarAsync<long>(
+            $"""
+            SELECT COUNT(*)::bigint
+            FROM "{definition.View.Schema.Value}"."{definition.View.Name}" v
+            INNER JOIN "edfi"."{personTable}" p
+              ON p."DocumentId" = v."{definition.PersonDocumentIdOutputColumn.Value}"
+            WHERE v."{definition.ClaimEducationOrganizationIdColumn.Value}" = @claimEducationOrganizationId
+              AND p."{personUniqueIdColumn}" = @personUniqueId;
+            """,
+            new NpgsqlParameter("claimEducationOrganizationId", claimEducationOrganizationId),
+            new NpgsqlParameter("personUniqueId", personUniqueId)
+        );
+
+        pairCount
+            .Should()
+            .Be(
+                expectedPairCount,
+                $"the {definition.View.Name} view should yield exactly {expectedPairCount} row(s) for "
+                    + $"'{personUniqueId}' under claim {claimEducationOrganizationId}"
+            );
+    }
+
+    /// <summary>
+    /// The <c>edfi</c> person table and unique-id column that each people auth view's person DocumentId
+    /// output resolves to. Both student views land on <c>edfi.Student</c>.
+    /// </summary>
+    private static (string PersonTable, string PersonUniqueIdColumn) PeopleAuthViewPersonIdentity(
+        AuthPeopleViewKind viewKind
+    ) =>
+        viewKind switch
+        {
+            AuthPeopleViewKind.Student or AuthPeopleViewKind.StudentThroughResponsibility => (
+                "Student",
+                "StudentUniqueId"
+            ),
+            AuthPeopleViewKind.Contact => ("Contact", "ContactUniqueId"),
+            AuthPeopleViewKind.Staff => ("Staff", "StaffUniqueId"),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(viewKind),
+                viewKind,
+                "Unsupported people auth view kind."
+            ),
+        };
 
     /// <summary>
     /// Creates (or replaces) the "auth"."{strategyName}" custom authorization view, authorizing only the
@@ -2875,5 +2968,555 @@ public class Given_A_Postgresql_Relational_Query_Authorization_With_A_Synthetic_
         failure.Errors.Should().ContainSingle();
         failure.Errors[0].Should().Contain("$.classPeriods[*].classPeriodReference.schoolId");
         failure.Errors[0].Should().Contain("SchoolId");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Duplicate people-auth-pair scenarios (DMS-1329)
+//
+// Every route by which the change admits duplicates is covered, and
+// all four people views participate:
+//   1. Multiple closure paths — the views no longer SELECT DISTINCT, so
+//      a student enrolled at two schools reachable from the same claim
+//      EdOrg yields the (claim, student) pair once per closure path.
+//   2. Cross-arm — the staff view combines its assignment and
+//      employment arms with UNION ALL rather than UNION, so a staff
+//      member both assigned and employed at one claim-reachable EdOrg
+//      yields the (claim, staff) pair once per arm.
+//   3. Multiple association rows on ONE closure edge — two
+//      responsibilities at a single EdOrg (BeginDate is an identity
+//      field) duplicate the pair in the through-responsibility view
+//      without a second closure path or a second arm.
+//   4. Duplicates carried across joins — the contact view reaches the
+//      person through two joins, so scenario 1's enrollments duplicate
+//      the (claim, contact) pair from one association row.
+// Each test first proves that duplicate cardinality at the view level
+// (non-vacuity), then proves the IN/EXISTS consumers still return each
+// authorized document exactly once with unchanged authorization
+// outcomes.
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+[NonParallelizable]
+[Category("Authorization")]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+public class Given_A_Postgresql_Relational_Query_Authorization_With_A_Duplicate_People_Auth_Pair
+{
+    private const long ClaimEducationOrganizationId =
+        RelationshipAuthorizationCrudTestSupport.ClaimEducationOrganizationId;
+    private const string TermDescriptor = "uri://ed-fi.org/TermDescriptor#Fall Semester";
+    private const string EntryGradeLevelDescriptor = "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade";
+    private const string StaffClassificationDescriptor =
+        "uri://ed-fi.org/StaffClassificationDescriptor#Teacher";
+    private const string EmploymentStatusDescriptor =
+        "uri://ed-fi.org/EmploymentStatusDescriptor#Substitute/temporary";
+    private const string ResponsibilityDescriptor = "uri://ed-fi.org/ResponsibilityDescriptor#Accountability";
+
+    private static readonly QuerySchoolSeed[] _schoolSeeds =
+    [
+        new(new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000001")), 100, "North School"),
+        new(new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000002")), 200, "East School"),
+        new(new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000003")), 300, "West School"),
+    ];
+
+    private static readonly SchoolYearTypeSeed _schoolYearSeed = new(
+        new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000011")),
+        2026,
+        true,
+        "2026"
+    );
+
+    private static readonly StudentSeed _dualEnrolledStudentSeed = new(
+        new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000021")),
+        "20001",
+        "Dana",
+        "Dual"
+    );
+
+    private static readonly StudentSeed _unauthorizedStudentSeed = new(
+        new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000022")),
+        "20002",
+        "Uri",
+        "Unreachable"
+    );
+
+    // The dual-enrolled student's two associations are both reachable from the claim EdOrg, so the
+    // student auth view yields the (claim, student) pair once per closure path.
+    private static readonly StudentSchoolAssociationSeed[] _studentSchoolAssociationSeeds =
+    [
+        new(
+            new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000031")),
+            "20001",
+            100,
+            2026,
+            EntryGradeLevelDescriptor,
+            new DateOnly(2026, 8, 15)
+        ),
+        new(
+            new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000032")),
+            "20001",
+            200,
+            2026,
+            EntryGradeLevelDescriptor,
+            new DateOnly(2026, 8, 15)
+        ),
+        new(
+            new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000033")),
+            "20002",
+            300,
+            2026,
+            EntryGradeLevelDescriptor,
+            new DateOnly(2026, 8, 15)
+        ),
+    ];
+
+    private static readonly StudentAcademicRecordSeed _dualEnrolledStudentAcademicRecordSeed = new(
+        new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000041")),
+        100,
+        2026,
+        "20001",
+        TermDescriptor
+    );
+
+    private static readonly StudentAcademicRecordSeed _unauthorizedStudentAcademicRecordSeed = new(
+        new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000042")),
+        300,
+        2026,
+        "20002",
+        TermDescriptor
+    );
+
+    private static readonly AuthorizationStudentAcademicRecordSeed _dualEnrolledAuthorizationSeed = new(
+        new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000051")),
+        9101,
+        "duplicate-pair-authorized",
+        100,
+        2026,
+        "20001",
+        TermDescriptor
+    );
+
+    private static readonly AuthorizationStudentAcademicRecordSeed _unauthorizedAuthorizationSeed = new(
+        new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000052")),
+        9102,
+        "duplicate-pair-unauthorized",
+        300,
+        2026,
+        "20002",
+        TermDescriptor
+    );
+
+    // Assigned AND employed at School 100, so the staff view's two UNION ALL arms each contribute the
+    // (claim, staff) pair — the cross-arm duplicate that per-arm enrollment duplicates cannot produce.
+    private static readonly StaffSeed _dualPathwayStaffSeed = new(
+        new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000071")),
+        "20071",
+        "Dana",
+        "Dualpathway"
+    );
+
+    private static readonly StaffSeed _unauthorizedStaffSeed = new(
+        new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000072")),
+        "20072",
+        "Uri",
+        "Unreachablestaff"
+    );
+
+    private static readonly StaffEducationOrganizationAssignmentAssociationSeed[] _staffAssignmentSeeds =
+    [
+        new(
+            new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000081")),
+            "20071",
+            100,
+            StaffClassificationDescriptor,
+            new DateOnly(2025, 8, 1)
+        ),
+        new(
+            new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000082")),
+            "20072",
+            300,
+            StaffClassificationDescriptor,
+            new DateOnly(2025, 8, 1)
+        ),
+    ];
+
+    private static readonly StaffEducationOrganizationEmploymentAssociationSeed _staffEmploymentSeed = new(
+        new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000091")),
+        "20071",
+        100,
+        EmploymentStatusDescriptor,
+        new DateOnly(2025, 8, 1)
+    );
+
+    // Contacts reach the claim only through their student. The contact view is the deepest people view
+    // (closure -> StudentSchoolAssociation -> StudentContactAssociation), so the dual-enrolled student's
+    // two claim-reachable enrollments duplicate the (claim, contact) pair from a single association row.
+    private static readonly ContactSeed _duplicateReachableContactSeed = new(
+        new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000101")),
+        "20101",
+        "Dana",
+        "Dualcontact"
+    );
+
+    private static readonly ContactSeed _unauthorizedContactSeed = new(
+        new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000102")),
+        "20102",
+        "Uri",
+        "Unreachablecontact"
+    );
+
+    private static readonly StudentContactAssociationSeed[] _studentContactAssociationSeeds =
+    [
+        new(new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000111")), "20001", "20101", true),
+        new(new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000112")), "20002", "20102", true),
+    ];
+
+    // BeginDate is part of this association's identity, so two responsibilities at the SAME
+    // EducationOrganization are two distinct documents. That makes the through-responsibility view the
+    // one people view reaching duplicate cardinality from a single closure edge — no second enrollment
+    // and no second view arm are involved.
+    private static readonly StudentEducationOrganizationResponsibilityAssociationSeed[] _studentResponsibilitySeeds =
+    [
+        new(
+            new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000121")),
+            "20001",
+            100,
+            ResponsibilityDescriptor,
+            new DateOnly(2025, 8, 1)
+        ),
+        new(
+            new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000122")),
+            "20001",
+            100,
+            ResponsibilityDescriptor,
+            new DateOnly(2026, 1, 12)
+        ),
+        new(
+            new DocumentUuid(Guid.Parse("12121212-0000-0000-0000-000000000123")),
+            "20002",
+            300,
+            ResponsibilityDescriptor,
+            new DateOnly(2025, 8, 1)
+        ),
+    ];
+
+    private PostgresqlRelationalQueryAuthorizationTestContext _context = null!;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        _context = new PostgresqlRelationalQueryAuthorizationTestContext();
+        // replaceReadTargetLookup: false — this fixture exercises GET-by-id as well as GET-many, so
+        // the real read-target lookup must stay wired in.
+        await _context.InitializeAsync(
+            RelationshipAuthorizationCrudTestSupport.FixtureRelativePath,
+            strict: false,
+            replaceReadTargetLookup: false
+        );
+        await _context.SeedSchoolDescriptorDataAsync();
+        await _context.SeedTermDescriptorAsync(
+            Guid.Parse("12121212-0000-0000-0000-000000000061"),
+            TermDescriptor
+        );
+
+        foreach (var schoolSeed in _schoolSeeds)
+        {
+            RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+                await _context.CreateSchoolAsync(schoolSeed)
+            );
+        }
+
+        await _context.SeedSchoolYearTypeAsync(_schoolYearSeed);
+        await _context.SeedStudentAsync(_dualEnrolledStudentSeed);
+        await _context.SeedStudentAsync(_unauthorizedStudentSeed);
+
+        foreach (var associationSeed in _studentSchoolAssociationSeeds)
+        {
+            await _context.SeedStudentSchoolAssociationAsync(associationSeed);
+        }
+
+        await _context.SeedStudentAcademicRecordAsync(_dualEnrolledStudentAcademicRecordSeed);
+        await _context.SeedStudentAcademicRecordAsync(_unauthorizedStudentAcademicRecordSeed);
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationStudentAcademicRecordAsync(_dualEnrolledAuthorizationSeed)
+        );
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateAuthorizationStudentAcademicRecordAsync(_unauthorizedAuthorizationSeed)
+        );
+
+        await _context.SeedStaffClassificationDescriptorAsync(
+            Guid.Parse("12121212-0000-0000-0000-000000000062"),
+            StaffClassificationDescriptor
+        );
+        await _context.SeedEmploymentStatusDescriptorAsync(
+            Guid.Parse("12121212-0000-0000-0000-000000000063"),
+            EmploymentStatusDescriptor
+        );
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateStaffAsync(_dualPathwayStaffSeed)
+        );
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateStaffAsync(_unauthorizedStaffSeed)
+        );
+
+        foreach (var assignmentSeed in _staffAssignmentSeeds)
+        {
+            RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+                await _context.CreateStaffEducationOrganizationAssignmentAssociationAsync(assignmentSeed)
+            );
+        }
+
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateStaffEducationOrganizationEmploymentAssociationAsync(_staffEmploymentSeed)
+        );
+
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateContactAsync(_duplicateReachableContactSeed)
+        );
+        RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+            await _context.CreateContactAsync(_unauthorizedContactSeed)
+        );
+
+        foreach (var studentContactAssociationSeed in _studentContactAssociationSeeds)
+        {
+            RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+                await _context.CreateStudentContactAssociationAsync(studentContactAssociationSeed)
+            );
+        }
+
+        await _context.SeedResponsibilityDescriptorAsync(
+            Guid.Parse("12121212-0000-0000-0000-000000000064"),
+            ResponsibilityDescriptor
+        );
+
+        foreach (var responsibilitySeed in _studentResponsibilitySeeds)
+        {
+            RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+                await _context.CreateStudentEducationOrganizationResponsibilityAssociationAsync(
+                    responsibilitySeed
+                )
+            );
+        }
+
+        await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 100);
+        await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 200);
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_context is not null)
+        {
+            await _context.DisposeAsync();
+        }
+    }
+
+    [SetUp]
+    public void SetUp()
+    {
+        _context.ResetRecorder();
+    }
+
+    [Test]
+    public async Task It_returns_each_authorized_document_exactly_once_under_duplicate_auth_pairs()
+    {
+        // Non-vacuity precondition: the (claim, student) pair genuinely occurs twice in the view,
+        // and the control student never appears under the claim.
+        await _context.AssertPeopleAuthViewPairCountAsync(
+            AuthPeopleViewKind.Student,
+            _dualEnrolledStudentSeed.StudentUniqueId,
+            ClaimEducationOrganizationId,
+            expectedPairCount: 2
+        );
+        await _context.AssertPeopleAuthViewPairCountAsync(
+            AuthPeopleViewKind.Student,
+            _unauthorizedStudentSeed.StudentUniqueId,
+            ClaimEducationOrganizationId,
+            expectedPairCount: 0
+        );
+
+        var result = await _context.QueryAsync(
+            "authz",
+            RelationshipAuthorizationCrudTestSupport.StudentAcademicRecordResourceName,
+            [ClaimEducationOrganizationId],
+            RelationshipAuthorizationCrudTestSupport.StudentsOnlyStrategyNames
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+
+        success.TotalCount.Should().Be(1);
+        success
+            .EdfiDocs.Select(static document => document!["id"]!.GetValue<string>())
+            .Should()
+            .Equal(_dualEnrolledAuthorizationSeed.DocumentUuid.Value.ToString());
+    }
+
+    [Test]
+    public async Task It_authorizes_single_record_reads_under_duplicate_auth_pairs()
+    {
+        await _context.AssertPeopleAuthViewPairCountAsync(
+            AuthPeopleViewKind.Student,
+            _dualEnrolledStudentSeed.StudentUniqueId,
+            ClaimEducationOrganizationId,
+            expectedPairCount: 2
+        );
+
+        var authorizedResult = await _context.GetByIdAsync(
+            "authz",
+            RelationshipAuthorizationCrudTestSupport.StudentAcademicRecordResourceName,
+            _dualEnrolledAuthorizationSeed.DocumentUuid,
+            [ClaimEducationOrganizationId],
+            RelationshipAuthorizationCrudTestSupport.StudentsOnlyStrategyNames
+        );
+        var unauthorizedResult = await _context.GetByIdAsync(
+            "authz",
+            RelationshipAuthorizationCrudTestSupport.StudentAcademicRecordResourceName,
+            _unauthorizedAuthorizationSeed.DocumentUuid,
+            [ClaimEducationOrganizationId],
+            RelationshipAuthorizationCrudTestSupport.StudentsOnlyStrategyNames
+        );
+
+        var success = authorizedResult.Should().BeOfType<GetResult.GetSuccess>().Subject;
+        success.DocumentUuid.Should().Be(_dualEnrolledAuthorizationSeed.DocumentUuid);
+        unauthorizedResult.Should().BeOfType<GetResult.GetFailureRelationshipNotAuthorized>();
+    }
+
+    [Test]
+    public async Task It_returns_each_authorized_staff_exactly_once_under_cross_arm_duplicate_auth_pairs()
+    {
+        // The staff view is the only multi-arm people auth view, and DMS-1329 combines its arms with
+        // UNION ALL instead of UNION. A staff member both assigned and employed at the same
+        // claim-reachable EdOrg is therefore the one duplicate class the set-operator alone produces —
+        // the per-arm enrollment duplicates the student scenarios cover cannot reach it.
+        await _context.AssertPeopleAuthViewPairCountAsync(
+            AuthPeopleViewKind.Staff,
+            _dualPathwayStaffSeed.StaffUniqueId,
+            ClaimEducationOrganizationId,
+            expectedPairCount: 2
+        );
+        await _context.AssertPeopleAuthViewPairCountAsync(
+            AuthPeopleViewKind.Staff,
+            _unauthorizedStaffSeed.StaffUniqueId,
+            ClaimEducationOrganizationId,
+            expectedPairCount: 0
+        );
+
+        var result = await _context.QueryAsync(
+            "ed-fi",
+            "Staff",
+            [ClaimEducationOrganizationId],
+            RelationshipAuthorizationCrudTestSupport.PeopleOnlyStrategyNames
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+
+        success.TotalCount.Should().Be(1);
+        success
+            .EdfiDocs.Select(static document => document!["id"]!.GetValue<string>())
+            .Should()
+            .Equal(_dualPathwayStaffSeed.DocumentUuid.Value.ToString());
+    }
+
+    [Test]
+    public async Task It_authorizes_single_record_staff_reads_under_cross_arm_duplicate_auth_pairs()
+    {
+        await _context.AssertPeopleAuthViewPairCountAsync(
+            AuthPeopleViewKind.Staff,
+            _dualPathwayStaffSeed.StaffUniqueId,
+            ClaimEducationOrganizationId,
+            expectedPairCount: 2
+        );
+
+        var authorizedResult = await _context.GetByIdAsync(
+            "ed-fi",
+            "Staff",
+            _dualPathwayStaffSeed.DocumentUuid,
+            [ClaimEducationOrganizationId],
+            RelationshipAuthorizationCrudTestSupport.PeopleOnlyStrategyNames
+        );
+        var unauthorizedResult = await _context.GetByIdAsync(
+            "ed-fi",
+            "Staff",
+            _unauthorizedStaffSeed.DocumentUuid,
+            [ClaimEducationOrganizationId],
+            RelationshipAuthorizationCrudTestSupport.PeopleOnlyStrategyNames
+        );
+
+        var success = authorizedResult.Should().BeOfType<GetResult.GetSuccess>().Subject;
+        success.DocumentUuid.Should().Be(_dualPathwayStaffSeed.DocumentUuid);
+        unauthorizedResult.Should().BeOfType<GetResult.GetFailureRelationshipNotAuthorized>();
+    }
+
+    [Test]
+    public async Task It_returns_each_authorized_contact_exactly_once_under_duplicate_auth_pairs()
+    {
+        // The contact view carries the duplicate through two joins (closure -> StudentSchoolAssociation
+        // -> StudentContactAssociation): one association row, but the dual-enrolled student reaches the
+        // claim twice. GET-many is the shape ODS needed its dedup for — per auth.md, "to ensure that
+        // multiple entries in the auth views don't result in duplicate rows during GET-many".
+        await _context.AssertPeopleAuthViewPairCountAsync(
+            AuthPeopleViewKind.Contact,
+            _duplicateReachableContactSeed.ContactUniqueId,
+            ClaimEducationOrganizationId,
+            expectedPairCount: 2
+        );
+        await _context.AssertPeopleAuthViewPairCountAsync(
+            AuthPeopleViewKind.Contact,
+            _unauthorizedContactSeed.ContactUniqueId,
+            ClaimEducationOrganizationId,
+            expectedPairCount: 0
+        );
+
+        var result = await _context.QueryAsync(
+            "ed-fi",
+            "Contact",
+            [ClaimEducationOrganizationId],
+            RelationshipAuthorizationCrudTestSupport.PeopleOnlyStrategyNames
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+
+        success.TotalCount.Should().Be(1);
+        success
+            .EdfiDocs.Select(static document => document!["id"]!.GetValue<string>())
+            .Should()
+            .Equal(_duplicateReachableContactSeed.DocumentUuid.Value.ToString());
+    }
+
+    [Test]
+    public async Task It_returns_each_authorized_student_exactly_once_under_duplicate_responsibility_pairs()
+    {
+        // Two responsibilities at School 100 differing only in BeginDate (an identity field) duplicate
+        // the (claim, student) pair from a SINGLE closure edge — no second enrollment and no second view
+        // arm, which is a duplicate route neither the student nor the staff scenario reaches.
+        // RelationshipsWithStudentsOnlyThroughResponsibility is also a distinct consumer strategy.
+        await _context.AssertPeopleAuthViewPairCountAsync(
+            AuthPeopleViewKind.StudentThroughResponsibility,
+            _dualEnrolledStudentSeed.StudentUniqueId,
+            ClaimEducationOrganizationId,
+            expectedPairCount: 2
+        );
+        await _context.AssertPeopleAuthViewPairCountAsync(
+            AuthPeopleViewKind.StudentThroughResponsibility,
+            _unauthorizedStudentSeed.StudentUniqueId,
+            ClaimEducationOrganizationId,
+            expectedPairCount: 0
+        );
+
+        var result = await _context.QueryAsync(
+            "ed-fi",
+            "Student",
+            [ClaimEducationOrganizationId],
+            RelationshipAuthorizationCrudTestSupport.StudentsOnlyThroughResponsibilityStrategyNames
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+
+        success.TotalCount.Should().Be(1);
+        success
+            .EdfiDocs.Select(static document => document!["id"]!.GetValue<string>())
+            .Should()
+            .Equal(_dualEnrolledStudentSeed.DocumentUuid.Value.ToString());
     }
 }

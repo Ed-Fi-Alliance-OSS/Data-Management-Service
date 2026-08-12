@@ -67805,7 +67805,7 @@
         "arms_set_operator": "NONE",
         "arms": [
           {
-            "select_distinct": true,
+            "select_distinct": false,
             "source": {
               "alias": "edOrg",
               "table": {
@@ -67863,7 +67863,7 @@
           "schema": "auth",
           "name": "EducationOrganizationIdToStaffDocumentId"
         },
-        "arms_set_operator": "UNION",
+        "arms_set_operator": "UNION_ALL",
         "arms": [
           {
             "select_distinct": false,
@@ -67949,7 +67949,7 @@
         "arms_set_operator": "NONE",
         "arms": [
           {
-            "select_distinct": true,
+            "select_distinct": false,
             "source": {
               "alias": "edOrg",
               "table": {
@@ -67995,7 +67995,7 @@
         "arms_set_operator": "NONE",
         "arms": [
           {
-            "select_distinct": true,
+            "select_distinct": false,
             "source": {
               "alias": "edOrg",
               "table": {

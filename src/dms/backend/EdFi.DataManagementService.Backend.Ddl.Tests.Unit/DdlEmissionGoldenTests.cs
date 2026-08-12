@@ -905,9 +905,13 @@ public class Given_DdlEmitter_With_AuthPeopleViews_For_Pgsql : DdlEmissionGolden
     }
 
     [Test]
-    public void It_should_use_select_distinct()
+    public void It_should_not_use_select_distinct()
     {
-        _ddlContent.Should().Contain("SELECT DISTINCT", "People auth views should use SELECT DISTINCT");
+        // DMS-1329: consumers probe the views with IN/EXISTS, so dedup is unnecessary and
+        // SELECT DISTINCT blocks PostgreSQL from flattening the view into the probing query.
+        _ddlContent
+            .Should()
+            .NotContain("SELECT DISTINCT", "People auth views must not use SELECT DISTINCT");
     }
 }
 
@@ -982,6 +986,16 @@ public class Given_DdlEmitter_With_AuthPeopleViews_For_Mssql : DdlEmissionGolden
     public void It_should_emit_go_batch_separators()
     {
         _ddlContent.Should().Contain("GO\n", "MSSQL should emit GO batch separators before views");
+    }
+
+    [Test]
+    public void It_should_not_use_select_distinct()
+    {
+        // DMS-1329: consumers probe the views with IN/EXISTS, so dedup is unnecessary; the
+        // definitions are shared with PostgreSQL, so both dialects must drop it together.
+        _ddlContent
+            .Should()
+            .NotContain("SELECT DISTINCT", "People auth views must not use SELECT DISTINCT");
     }
 }
 

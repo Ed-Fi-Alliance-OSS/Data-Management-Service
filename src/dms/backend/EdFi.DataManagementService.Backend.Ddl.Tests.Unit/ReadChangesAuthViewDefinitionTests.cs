@@ -16,6 +16,13 @@ namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;
 // current/tracked column references each arm joins and projects.
 // Arms are located by their join-table composition (never array
 // position) per project convention.
+//
+// One test here deliberately reaches beyond ReadChanges:
+// It_should_not_use_select_distinct_in_any_people_or_readchanges_arm
+// is the only structural guard on AuthObjectDefinitions.PeopleAuthViews
+// having dropped SELECT DISTINCT (DMS-1329), because the two view
+// families share the AuthViewArm shape and the invariant is identical
+// for both. Keep that coverage if this fixture is ever restructured.
 // ═══════════════════════════════════════════════════════════════════
 
 internal static class ReadChangesAuthViewTestHelpers
@@ -114,10 +121,14 @@ public class Given_ReadChanges_Auth_View_Definitions
     }
 
     [Test]
-    public void It_should_not_use_select_distinct_in_any_arm()
+    public void It_should_not_use_select_distinct_in_any_people_or_readchanges_arm()
     {
+        // DMS-1329: no auth view arm — people or ReadChanges — deduplicates with SELECT DISTINCT.
+        // Consumers probe the views with IN/EXISTS, where duplicate pairs cannot affect results,
+        // and DISTINCT prevents PostgreSQL from flattening the view into the probing query.
         AuthObjectDefinitions
-            .ReadChangesAuthViews.SelectMany(view => view.Arms)
+            .PeopleAuthViews.Concat(AuthObjectDefinitions.ReadChangesAuthViews)
+            .SelectMany(view => view.Arms)
             .Should()
             .OnlyContain(arm => !arm.SelectDistinct);
     }

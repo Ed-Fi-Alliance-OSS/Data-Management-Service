@@ -203,7 +203,7 @@ For example, suppose we want to return only CourseTranscripts whose student is e
 
 ```sql
 CREATE OR REPLACE VIEW auth.StudentWithCTECourseEnrollments AS
-SELECT DISTINCT
+SELECT
     ssa.StudentUSI
 FROM
     edfi.StudentSectionAssociation ssa
@@ -220,7 +220,9 @@ WHERE
 
 The view must follow this naming convention: `{BasisResource}With{SomeDescription}`.
 
-When a GET request for CourseTranscript arrives, if the configured authorization strategy name is unknown, we fall back to the custom view-based strategy and extract from the strategy name the *basis resource*. In this case, `auth.StudentWithCTECourseEnrollments` maps to `Student`. Then, we validate that all the primary key columns from `Student` appear in `CourseTranscript`. These columns will be used to join with the custom view and authorize the request.
+Note that the view above does not deduplicate, even though the equivalent ODS artifact would use `SELECT DISTINCT` (a student enrolled in two CTE sections appears twice). The reason is the one given in "Sub-queries instead of joins" above: DMS authorizes against custom views with an `IN` membership predicate rather than a join, so duplicate rows cannot affect results, and on PostgreSQL a `DISTINCT` makes the view unflattenable — the planner must materialize and deduplicate the entire view instead of driving the membership check into its joins. Custom views are authored outside DMS, so this is guidance for whoever writes one rather than something the emitter can enforce.
+
+When a GET request for CourseTranscript arrives, if the configured authorization strategy name is unknown, we fall back to the custom view-based strategy and extract from the strategy name the *basis resource*. In this case, `auth.StudentWithCTECourseEnrollments` maps to `Student`. Then, we validate that all the primary key columns from `Student` appear in `CourseTranscript`. These columns will be used to match against the custom view and authorize the request.
 
 Non-primary-key and role-named columns are allowed for the target resource ([more info here](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/511cf65e71b1f3d96a7e3801a3ed71dc84239e20/Application/EdFi.Ods.Common/Security/Authorization/CustomViewBasedAuthorizationStrategy.cs#L69)). For example, assume that `StudentUniqueId` is nullable in `CourseTranscript`; the strategy will allow it. However, for GET-many requests it will only return non-null values that match the result from the view, and for GET-by-ID it will return an unauthorized error if the entry has a null `StudentUniqueId`. Change query endpoints cannot be authorized with this strategy if it maps to non-PK columns in the target resource ([more info here](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/511cf65e71b1f3d96a7e3801a3ed71dc84239e20/Application/EdFi.Ods.Api/Security/AuthorizationStrategies/CustomViewBased/CustomViewBasedAuthorizationFilterDefinitionsFactory.cs#L147)).
 
@@ -1239,6 +1241,8 @@ We have to bring the following people auth views from ODS:
 - [EducationOrganizationIdToStudentDocumentIdThroughResponsibility](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/main/Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/PgSql/Structure/Ods/1306-AuthViewEducationOrganizationIdToStudentUSIThroughResponsibility.sql)
 
 In DMS, these views should output the DocumentId instead of the USI (for example, `Student_DocumentId` instead of `StudentUSI`). For clarity, we should add the person type name as a prefix to the `DocumentId` column.
+
+DMS also emits these views without the deduplication the ODS artifacts apply: no arm uses `SELECT DISTINCT`, and the staff view combines its assignment and employment arms with `UNION ALL` rather than `UNION`. ODS needs the dedup because it joins the auth views; every DMS consumer instead probes them with the `IN`/`EXISTS` membership predicates described in "Sub-queries instead of joins" above, where duplicate `(EducationOrganizationId, person)` pairs cannot affect results. Deduplication is not merely unnecessary here but harmful: a `DISTINCT` arm or a deduplicating set-operator makes the view unflattenable on PostgreSQL, so join qualifications cannot be pushed into it and every probe materializes the caller's entire EdOrg-to-person set before the person filter applies. This applies to both PostgreSQL and SQL Server emitted DDL, so the shared definitions drop the dedup for both. The `ReadChanges` `*IncludingDeletes` views are a separate case and *do* deduplicate across their arms, for the reason given in the `Authorization` section of [change-queries.md](change-queries.md).
 
 Given that people types are rarely added or modified (in the DS or extensions) and their definitions are not easily generalizable (Staff joins against two association tables; Contact goes through Student), the view definitions should be *hard-coded*.
 
