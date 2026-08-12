@@ -148,7 +148,9 @@ public class Given_MssqlDatabaseLifecycleCoordinator
         }
         finally
         {
+#pragma warning disable S3966 // Outer cleanup covers failures before the inner lock-release finally runs.
             await competingSession.DisposeAsync();
+#pragma warning restore S3966
 
             if (createDatabaseTask is not null)
             {
