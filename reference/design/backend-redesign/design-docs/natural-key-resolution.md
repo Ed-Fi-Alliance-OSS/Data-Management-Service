@@ -170,8 +170,10 @@ Runtime readers (each will become an implementation ticket):
 
 Verified non-consumers (these will be untouched by this design): row locking (`dms.Document` by `DocumentId`),
 DELETE (captures by `DocumentUuid`; the only interaction was the ON DELETE CASCADE), GET-by-id,
-`?id=` queries, link injection, ownership authorization, stamping and tracked-change triggers, change
-queries, and the entire DocumentCache path.
+`?id=` queries, link injection, ownership authorization, stamping and tracked-change triggers, Change
+Query routing/response contracts/authorization/`/keyChanges`, and the entire DocumentCache path.
+Change Query `/deletes` recreated-row detection is a consumer of the natural-key and descriptor
+identity contracts below, so it is updated by this design.
 
 ## The replacement design
 
@@ -476,8 +478,10 @@ whose compiled target is `RelationalQueryFieldTarget.DescriptorIdColumn`, reject
 with the existing path-attributed 400 response, and only then pass query elements to
 `RelationalQueryRequestPreprocessor`. The preprocessor replaces its unchecked
 `ToLowerInvariant()` call with the shared validated-ASCII lowercase helper as an invariant check.
-GET-by-id, `?id=`, link injection, ownership authorization, change queries, and descriptor paging
-will be untouched.
+GET-by-id, `?id=`, link injection, ownership authorization, and descriptor paging will not get
+result-contract changes. Change Query route/response/authorization contracts remain
+unchanged, but `/deletes` recreated-row detection follows the lowered-URI + `ResourceKeyId`
+descriptor identity contract described above.
 
 ## Casing and identity semantics
 
