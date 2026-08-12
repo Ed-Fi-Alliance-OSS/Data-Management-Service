@@ -407,20 +407,17 @@ UPDATE dmscs.OpenIddictApplication
                 VALUES
                 (@Id, @ApplicationId, @Subject, @Type, @CreationDate, @ExpirationDate, @Status, @ReferenceId)";
 
-            await connection.ExecuteAsync(
-                insertSql,
-                new
-                {
-                    Id = tokenId,
-                    ApplicationId = applicationId,
-                    Subject = subject,
-                    Type = "access_token",
-                    CreationDate = DateTime.UtcNow,
-                    ExpirationDate = expiration.UtcDateTime,
-                    Status = "valid",
-                    ReferenceId = tokenId.ToString("N"),
-                }
-            );
+            DynamicParameters parameters = new();
+            parameters.Add("Id", tokenId);
+            parameters.Add("ApplicationId", applicationId);
+            parameters.Add("Subject", subject);
+            parameters.Add("Type", "access_token");
+            parameters.Add("CreationDate", DateTime.UtcNow, DbType.DateTime2);
+            parameters.Add("ExpirationDate", expiration.UtcDateTime, DbType.DateTime2);
+            parameters.Add("Status", "valid");
+            parameters.Add("ReferenceId", tokenId.ToString("N"));
+
+            await connection.ExecuteAsync(insertSql, parameters);
         }
 
         public async Task<string?> GetTokenStatusAsync(Guid tokenId)
@@ -449,7 +446,9 @@ UPDATE dmscs.OpenIddictApplication
             await using var connection = new SqlConnection(_connectionString);
             await connection.OpenAsync();
             const string sql = "DELETE FROM dmscs.OpenIddictToken WHERE ExpirationDate <= @ExpiredBefore";
-            return await connection.ExecuteAsync(sql, new { ExpiredBefore = expiredBefore.UtcDateTime });
+            DynamicParameters parameters = new();
+            parameters.Add("ExpiredBefore", expiredBefore.UtcDateTime, DbType.DateTime2);
+            return await connection.ExecuteAsync(sql, parameters);
         }
 
         public async Task<(string PrivateKey, string KeyId)?> GetActivePrivateKeyInternalAsync(

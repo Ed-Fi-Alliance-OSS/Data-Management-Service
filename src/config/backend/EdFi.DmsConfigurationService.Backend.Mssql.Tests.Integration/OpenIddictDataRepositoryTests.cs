@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using Dapper;
 using EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories;
 using FluentAssertions;
 
@@ -183,9 +184,23 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             );
 
             _tokenId = Guid.NewGuid();
-            _boundary = DateTimeOffset.UtcNow;
+
+            // Exercise precision that legacy SQL DATETIME cannot represent exactly.
+            _boundary = new DateTimeOffset(2026, 8, 11, 22, 11, 3, TimeSpan.Zero).AddTicks(12_345);
 
             await _repository.StoreTokenAsync(_tokenId, applicationId, "subject-boundary", _boundary);
+        }
+
+        [Test]
+        public async Task It_preserves_the_full_datetime2_precision()
+        {
+            await using var connection = await OpenConnectionAsync();
+            DateTime storedExpiration = await connection.QuerySingleAsync<DateTime>(
+                "SELECT ExpirationDate FROM dmscs.OpenIddictToken WHERE Id = @Id",
+                new { Id = _tokenId }
+            );
+
+            storedExpiration.Should().Be(_boundary.UtcDateTime);
         }
 
         [Test]
