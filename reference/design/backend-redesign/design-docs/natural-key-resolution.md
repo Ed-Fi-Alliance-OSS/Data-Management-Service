@@ -363,6 +363,14 @@ Key properties:
   `..._DocumentId` key column being compared. AOT consumers must receive this binding from the
   `.mpack` payload; they must not recover the reference site by parsing the key column name or by
   re-reading `ApiSchema.json`.
+- `UX_<R>_NK`, `OwnNaturalKeyProbe`, POST capture, create-race classification, and duplicate-identity
+  diagnostics must all share the same root natural-key column contract. Scalar identity parts bind to
+  scalar path/binding columns, descriptor identity parts bind to resolved `..._DescriptorId` columns,
+  and document-reference-sourced identity parts bind to the resolved reference `..._DocumentId`
+  column only. The propagated reference identity-part binding columns still exist for FK/cascade
+  consistency, query binding, and reconstitution, but they are not extra `UX_<R>_NK` members. Adding
+  them would split the DDL uniqueness contract from the resolver/upsert contract, which always reasons
+  about reference identity through the resolved target `DocumentId`.
 - A document-reference capture binding resolves the referenced `DocumentId` by target kind:
   - **Concrete target:** emit a scalar subselect over the concrete target root table's flattened
     `RefKey` columns and return its `DocumentId`.

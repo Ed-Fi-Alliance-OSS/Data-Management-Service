@@ -802,9 +802,11 @@ Typical structure:
 
 - `DocumentId BIGINT` **PK/FK** → `dms.Document(DocumentId)` ON DELETE CASCADE
   - The `ON DELETE CASCADE` action is a referential-integrity safety net, not the primary deletion path. The DMS write path deletes the concrete resource row before deleting the corresponding `dms.Document` row (within the same transaction) so that the resource's `_Stamp` trigger can read `DocumentUuid` and `ContentVersion` from `dms.Document` before the parent row is removed. See [change-queries.md](change-queries.md) §"Cascade-ordering requirement for deletes" for the trigger-side rationale.
-- Natural key columns (from `identityJsonPaths`) → **API-semantic** unique constraint over the identity **binding/path** columns.
-  - For identity elements that come from a document reference object, the unique constraint uses the corresponding `..._DocumentId` FK column (stable) plus the per-site identity-part binding columns.
-  - Under key unification, per-site identity-part binding columns may be generated/persisted aliases of canonical storage columns; the natural-key unique constraint remains defined over binding columns to preserve API path/presence semantics.
+- Natural key columns (from `identityJsonPaths`) → **API-semantic** unique constraint derived from the identity endpoint bindings.
+  - Scalar identity elements map to scalar path/binding columns.
+  - Descriptor identity elements map to resolved `..._DescriptorId` FK columns.
+  - Identity elements that come from document reference objects map to the corresponding resolved `..._DocumentId` FK columns only; propagated per-site identity-part binding columns do not participate in `UX_<R>_NK`.
+  - Under key unification, per-site identity-part binding columns may be generated/persisted aliases of canonical storage columns. Those columns preserve path semantics for FK/cascade consistency, query binding, and reconstitution, but root natural-key uniqueness for a reference-sourced part is by resolved `..._DocumentId`.
 - Reference key columns → **FK- and probe-supporting** unique constraint over `(<StorageIdentityParts...>, DocumentId)` (the referenced key used by composite reference FKs and natural-key probes).
   - Emit `UX_<R>_RefKey` for every concrete resource root stored in relational tables, even when no current reference targets that resource. The uniform identity-first probe shape is required by generated natural-key probe metadata and by Change Query `/deletes` recreated-row detection.
   - Under key unification, `<StorageIdentityParts...>` uses canonical storage columns (never per-site `UnifiedAlias` binding columns); see `key-unification.md`.
