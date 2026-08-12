@@ -114,31 +114,27 @@ public class Given_MssqlDatabaseLifecycleCoordinator
         SqlConnectionStringBuilder builder = new(Configuration.MssqlAdminConnectionString!)
         {
             InitialCatalog = "master",
+            Pooling = false,
         };
-        SqlConnection competingSession = new(builder.ConnectionString);
 
         var databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
         Task? createDatabaseTask = null;
 
         try
         {
-            await competingSession.OpenAsync();
-            await ExecuteApplicationLockCommandAsync(
-                competingSession,
-                MssqlDatabaseLifecycleCoordinator.AcquireApplicationLockSql
-            );
             bool lifecycleOperationWaited;
-            try
+            await using (SqlConnection competingSession = new(builder.ConnectionString))
             {
+                await competingSession.OpenAsync();
+                await ExecuteApplicationLockCommandAsync(
+                    competingSession,
+                    MssqlDatabaseLifecycleCoordinator.AcquireApplicationLockSql
+                );
                 createDatabaseTask = MssqlTestDatabaseHelper.CreateDatabaseUnderLifecycleGateAsync(
                     databaseName
                 );
                 await Task.Delay(TimeSpan.FromMilliseconds(250));
                 lifecycleOperationWaited = !createDatabaseTask.IsCompleted;
-            }
-            finally
-            {
-                await competingSession.DisposeAsync();
             }
 
             await createDatabaseTask.WaitAsync(TimeSpan.FromSeconds(10));
@@ -148,10 +144,6 @@ public class Given_MssqlDatabaseLifecycleCoordinator
         }
         finally
         {
-#pragma warning disable S3966 // Outer cleanup covers failures before the inner lock-release finally runs.
-            await competingSession.DisposeAsync();
-#pragma warning restore S3966
-
             if (createDatabaseTask is not null)
             {
                 try
