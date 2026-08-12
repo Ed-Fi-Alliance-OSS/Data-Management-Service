@@ -34,8 +34,11 @@ cannot widen it.
 
 - Add the regular-resource authorization matrix for cursor page requests and `/partitions` requests
   across no-further, relationship, ownership, namespace, and view-based strategies where supported.
-- Add the descriptor authorization matrix for the no-further and namespace strategies that
-  descriptor query execution supports, without promising unsupported strategies.
+- Add the descriptor authorization matrix for the no-further, namespace, and custom-view strategies
+  that descriptor query execution supports, without promising unsupported strategies. Custom views
+  are supported: `DescriptorReadHandler` plans descriptor custom-view checks and compiles them into
+  the candidate relation, which DMS-1385 certifies for candidate uniqueness on both providers.
+  Relationship and ownership strategies remain unsupported for descriptors.
 - Prove that for the same principal, filters, and fixture, a full cursor walk and the union of the
   partition ranges cover exactly the accessible candidate set.
 - Add negative cases in which a forged or widened `pageToken` range, an inverted range, and an
@@ -51,7 +54,8 @@ cannot widen it.
 - Partition starting ids are always actual accessible candidate ids under the tested strategy.
 - Duplicate-producing authorization plans are detected rather than concealed, upholding the
   one-row-per-`DocumentId` candidate invariant for every strategy in the matrix.
-- Descriptor coverage is limited to the supported strategies and records the exclusion explicitly.
+- Descriptor coverage spans the supported no-further, namespace, and custom-view strategies and
+  records the relationship/ownership exclusion explicitly.
 
 ## Cross-Provider and Authorization Responsibilities
 

@@ -1738,6 +1738,16 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// <param name="Operator">The comparison operator.</param>
     /// <param name="ParameterName">The bare SQL parameter name that supplies the value.</param>
     /// <param name="ScalarKind">Optional scalar-kind metadata for provider-specific comparison behavior.</param>
+    private readonly record struct RewrittenPredicate(
+        QueryPredicateTarget Target,
+        DbColumnName OriginalColumn,
+        DbColumnName CanonicalColumn,
+        DbColumnName? PresenceColumn,
+        QueryComparisonOperator Operator,
+        string ParameterName,
+        ScalarKind? ScalarKind
+    );
+
     /// <summary>
     /// One parameter name owned by the active candidate mode.
     /// </summary>
@@ -1753,15 +1763,5 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         string Value,
         QuerySqlParameterRole Role,
         bool IsBound
-    );
-
-    private readonly record struct RewrittenPredicate(
-        QueryPredicateTarget Target,
-        DbColumnName OriginalColumn,
-        DbColumnName CanonicalColumn,
-        DbColumnName? PresenceColumn,
-        QueryComparisonOperator Operator,
-        string ParameterName,
-        ScalarKind? ScalarKind
     );
 }

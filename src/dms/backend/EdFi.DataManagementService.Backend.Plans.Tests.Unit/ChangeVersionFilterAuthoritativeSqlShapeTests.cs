@@ -13,11 +13,10 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
 /// <summary>
-/// Asserts the change-version page-selection SQL shape (DMS-1182) against real authoritative
-/// mapping sets: regular resources filter the concrete root table's mirrored
-/// <c>ContentVersion</c> with no <c>dms.Document</c> join, and descriptor resources filter
-/// <c>dms.Document.ContentVersion</c> scoped by the project-qualified <c>ResourceKeyId</c>
-/// predicate.
+/// Asserts the change-version page-selection SQL shape against real authoritative mapping sets:
+/// regular resources filter the concrete root table's mirrored <c>ContentVersion</c> with no
+/// <c>dms.Document</c> join, and descriptor resources filter the <c>dms.Descriptor</c> root's
+/// mirrored <c>ContentVersion</c> scoped by the project-qualified <c>ResourceKeyId</c> predicate.
 /// </summary>
 [TestFixture]
 public class Given_ChangeVersionFilters_Over_Authoritative_MappingSets

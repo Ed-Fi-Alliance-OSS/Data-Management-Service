@@ -46,8 +46,16 @@ a dialect compiler emits them.
 - Extend `PageDocumentIdQuerySpec` and `PageDocumentIdSqlCompiler`, already shared by the existing
   regular-resource and descriptor page planners, with explicit cursor-bound/page-size and
   partition-count/minimum-size parameter roles and an unpaged partition candidate form.
-- Share resource-filter and live change-version validation/planning between GET-many and
-  `/partitions`.
+- Share resource-filter and live change-version planning between the GET-many and `/partitions`
+  consumers in the backend: both page keyset planners expose one candidate entry point, so any
+  consumer supplying the same preprocessed filters, change-version window, and authorization receives
+  identical predicates, parameter names, and bound values.
+- Core-side request validation is not shared here. There is no `/partitions` request pipeline to share
+  with until DMS-1387 builds one, and `PartitionRequestValidator` deliberately leaves resource-property
+  filters and change-version parameters to that caller. Change-version parameters are already parsed by
+  the standalone `ChangeVersionParameterValidator` that the partitions pipeline can call directly;
+  resource-filter parsing still lives inside `ValidateQueryMiddleware` and must be extracted rather
+  than duplicated when that pipeline arrives. That extraction is assigned to DMS-1387.
 - Preserve regular-resource root-table behavior and descriptor `dms.Descriptor` plus
   `ResourceKeyId` behavior.
 - Add explicit test assertions that every consumer and every supported authorization strategy
