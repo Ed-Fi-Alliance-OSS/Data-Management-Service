@@ -22,6 +22,24 @@
     ./provision-e2e-database.ps1 -EnvironmentFile <selected env file> -DatabaseEngine <engine> -DatabaseName <E2E_DATABASE_NAME>
     ./start-local-dms.ps1 -DmsOnly -EnableConfig -EnvironmentFile <selected env file> -DatabaseEngine <engine> -AddExtensionSecurityMetadata
 
+    Each Docker phase above runs inside the shared schema-settings guard from
+    eng/docker-compose/dms-schema-environment.psm1, which removes USE_API_SCHEMA_PATH,
+    API_SCHEMA_PATH, and SCHEMA_PACKAGES from this process for the duration of that phase and then
+    restores the caller's exact prior state, including the absent, empty, whitespace, and valued
+    distinctions, and on failure paths. The selected environment file is therefore the sole authority
+    for the schema package surface of every phase. Each phase is guarded on its own rather than the
+    sequence as a whole, so a phase that re-creates one of the three names in this process cannot
+    leave it set for a later phase. That module explains why an ambient value would otherwise win
+    over the environment file.
+
+    After DMS starts, the script compares the started container's schema SETTINGS against the
+    selected environment file and fails the setup when they diverge, so that divergence is reported
+    here rather than as an HTTP 503 EffectiveSchemaHash failure in every scenario of the suite. This
+    is a settings-level check, not a schema-hash comparison: build-dms.ps1 E2ETest is the path that
+    compares the provisioned and runtime schema hashes, so a hash divergence whose settings agree is
+    caught there and not here. Both sides of this comparison are read from the environment file,
+    never with Docker Compose precedence.
+
     On completion the script prints a copyable teardown command carrying the same -DatabaseEngine and
     the resolved -EnvironmentFile, so a custom or MSSQL run is torn down against its own compose
     definition/environment rather than the teardown wrapper's postgresql/.env.e2e defaults:
@@ -97,6 +115,17 @@ try {
     # Shared Compose-equivalent resolver so this wrapper selects the same E2E target database the
     # provision phase resets (an ambient E2E_DATABASE_NAME override wins over the env file).
     Import-Module ./database-safety.psm1 -Force
+    # The schema-settings guard and the post-start container schema verification, both shared with the
+    # Instance Management E2E wrapper so the two flows guard and verify the same thing the same way
+    # rather than carrying their own copies. The verification reads the environment file through the
+    # same file-only package reader the provision phase uses, so the container is compared against
+    # exactly the package surface the database was provisioned for.
+    #
+    # Without -Force, the same rule this module applies to its own nested imports: -Force removes a
+    # module session-wide before re-importing it, while a plain import reuses an already-loaded
+    # instance. build-dms.ps1 loads this same module for its own guarded call sites before invoking a
+    # setup wrapper in-process, so reusing that instance keeps one module serving both.
+    Import-Module ./dms-schema-environment.psm1
 
     $baseEnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path $EnvironmentFile -DockerComposeRoot $dockerComposeDir
     # Compose the data-standard overlay first, then the database-engine overlay (same order as
@@ -141,9 +170,18 @@ try {
 
     Write-Output "Using file-based schema packages from $resolvedEnvironmentFile for E2E (non-bootstrap compatibility path)."
 
+    # Each phase is guarded INDIVIDUALLY rather than the sequence as a whole. The guard removes the
+    # three schema names for the phase it wraps and restores the caller's prior state when that phase
+    # returns, so wrapping the whole sequence would remove them exactly once, before phase 1: a phase
+    # script runs in this same process, and one that re-creates any of the three - start-local-dms.ps1
+    # does exactly that for bootstrap mode - would then still be setting it for every later phase.
+    # Guarding per phase re-applies the removal immediately before each Compose call.
+
     # Start only the infrastructure and Configuration Service first. DMS starts after the
     # E2E data store exists and the relational schema has been provisioned.
-    ./start-local-dms.ps1 -InfraOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -r -AddExtensionSecurityMetadata
+    Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
+        ./start-local-dms.ps1 -InfraOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -r -AddExtensionSecurityMetadata
+    }
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to start DMS infrastructure. Exit code: $LASTEXITCODE"
@@ -154,7 +192,9 @@ try {
     # creates a data store automatically; instance creation is owned by configure-local-data-store.ps1.
     # Config Service is already healthy at this point because the -InfraOnly phase waits for
     # CMS readiness before returning.
-    ./configure-local-data-store.ps1 -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -DataStoreDatabaseName $e2eDatabaseName
+    Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
+        ./configure-local-data-store.ps1 -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -DataStoreDatabaseName $e2eDatabaseName
+    }
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to configure local data store. Exit code: $LASTEXITCODE"
@@ -162,7 +202,9 @@ try {
     }
 
     Write-Host "`nProvisioning E2E database '$e2eDatabaseName'..." -ForegroundColor Cyan
-    ./provision-e2e-database.ps1 -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -DatabaseName $e2eDatabaseName
+    Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
+        ./provision-e2e-database.ps1 -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -DatabaseName $e2eDatabaseName
+    }
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to provision E2E database '$e2eDatabaseName'. Exit code: $LASTEXITCODE"
@@ -170,11 +212,23 @@ try {
     }
 
     Write-Host "`nStarting DMS after E2E database provisioning..." -ForegroundColor Cyan
-    ./start-local-dms.ps1 -DmsOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -AddExtensionSecurityMetadata
+    Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
+        ./start-local-dms.ps1 -DmsOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -AddExtensionSecurityMetadata
+    }
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to start DMS service after E2E database provisioning. Exit code: $LASTEXITCODE"
         exit $LASTEXITCODE
+    }
+
+    # Prove DMS actually came up on the environment file's schema package surface before any scenario
+    # runs. In its own guard, after the DMS-only start: the check reads a RUNNING container, and the
+    # guard keeps the file-only expectation from being contaminated by an ambient override even if a
+    # future edit reaches for a Compose-precedence reader.
+    Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
+        Assert-DmsContainerSchemaEnvironment `
+            -EnvironmentFilePath $resolvedEnvironmentFile `
+            -ContainerName "ed-fi-api"
     }
 
     # Pass the fully resolved environment file (data-standard then engine overlay) so teardown uses the

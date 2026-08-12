@@ -1973,24 +1973,68 @@ exit 0
             # earlier compose helper left empty schema env vars in the process.
             $buildScript = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "build-dms.ps1") -Raw
 
-            $buildScript | Should -Match "function Invoke-WithEnvironmentFileSchemaSettings"
-            $buildScript | Should -Match '"USE_API_SCHEMA_PATH"'
-            $buildScript | Should -Match '"API_SCHEMA_PATH"'
-            $buildScript | Should -Match '"SCHEMA_PACKAGES"'
-            $buildScript | Should -Match 'Remove-Item "Env:\$name"'
-            $buildScript | Should -Match '\[System\.Environment\]::SetEnvironmentVariable\(\$name, \$previousValues\[\$name\]\)'
+            # The guard is the shared module's, imported and called by name. This script used to define
+            # a same-purpose helper of its own whose only remaining job was the -Enabled gate, and that
+            # gate is now a parameter of the guard: one implementation, and no name defined here for the
+            # setup wrappers this script invokes in-process to bind instead of the module's export.
+            #
+            # Imported without -Force, because -Force removes a module session-wide before re-importing
+            # it. The removal-and-restore spelling is asserted against the module, in the sibling test
+            # below, and must not come back here in either form.
+            $buildScript | Should -Not -Match 'function Invoke-WithEnvironmentFileSchemaSettings' -Because "the gating wrapper is a parameter of the shared guard now"
+            $buildScript | Should -Not -Match 'function Invoke-WithDmsEnvironmentFileSchemaAuthority' -Because "redefining the guard here would shadow the module's export for a setup wrapper invoked in-process"
+            $buildScript | Should -Match 'Import-Module -Name "\$PSScriptRoot/eng/docker-compose/dms-schema-environment\.psm1"(?! -Force)'
+            $buildScript | Should -Not -Match 'Remove-Item "Env:\$name"'
+            $buildScript | Should -Not -Match '\[System\.Environment\]::SetEnvironmentVariable\(\$name, \$previousValues\[\$name\]\)'
             # Five compose calls are gated on the caller's -UseEnvironmentFileSchemaSettings: the two
             # teardown paths and the three Start-DockerEnvironment startup shapes (deferred InfraOnly,
             # published full start, local full start). The deferred -DmsOnly start after provisioning
             # runs inside Initialize-E2EDatabase and is gated on the E2E settings object instead.
-            ([regex]::Matches($buildScript, 'Invoke-WithEnvironmentFileSchemaSettings -Enabled:\$UseEnvironmentFileSchemaSettings -Action')).Count | Should -Be 5
-            ([regex]::Matches($buildScript, 'Invoke-WithEnvironmentFileSchemaSettings -Enabled:\$E2ETestSettings\.ShouldProvisionE2EDatabase -Action')).Count | Should -Be 1
+            ([regex]::Matches($buildScript, 'Invoke-WithDmsEnvironmentFileSchemaAuthority -Enabled:\$UseEnvironmentFileSchemaSettings -Action')).Count | Should -Be 5
+            ([regex]::Matches($buildScript, 'Invoke-WithDmsEnvironmentFileSchemaAuthority -Enabled:\$E2ETestSettings\.ShouldProvisionE2EDatabase -Action')).Count | Should -Be 1
+            # The bootstrap StartEnvironment phase is the one always-on call site, so it passes no
+            # -Enabled at all and takes the guard's default. Counted, so a gated call site cannot lose
+            # its gate expression and land here silently.
+            ([regex]::Matches($buildScript, 'Invoke-WithDmsEnvironmentFileSchemaAuthority -Action')).Count | Should -Be 1
             # Literal start-script references: one per teardown path, plus the two image-mode
             # selection lines (Start-DockerEnvironment and Initialize-E2EDatabase) naming both scripts.
             ([regex]::Matches($buildScript, '\./start-(local|published)-dms\.ps1')).Count | Should -Be 6
-            $buildScript | Should -Match '(?s)Invoke-WithEnvironmentFileSchemaSettings[^{]+-Action\s+\{[^}]+start-local-dms\.ps1[^\n]+-d[^\n]+-v[^\n]+-RemoveBootstrap:\$false'
-            $buildScript | Should -Match '(?s)Invoke-WithEnvironmentFileSchemaSettings[^{]+-Action\s+\{[^}]+start-published-dms\.ps1[^\n]+-d[^\n]+-v[^\n]+-RemoveBootstrap:\$RemoveBootstrap'
+            $buildScript | Should -Match '(?s)Invoke-WithDmsEnvironmentFileSchemaAuthority[^{]+-Action\s+\{[^}]+start-local-dms\.ps1[^\n]+-d[^\n]+-v[^\n]+-RemoveBootstrap:\$false'
+            $buildScript | Should -Match '(?s)Invoke-WithDmsEnvironmentFileSchemaAuthority[^{]+-Action\s+\{[^}]+start-published-dms\.ps1[^\n]+-d[^\n]+-v[^\n]+-RemoveBootstrap:\$RemoveBootstrap'
             $buildScript | Should -Match '-UseEnvironmentFileSchemaSettings:\$e2eTestSettings\.ShouldProvisionE2EDatabase'
+        }
+
+        It "build-dms.ps1 reads the container environment through the shared module's exported reader" {
+            # DMS-1300. This script and dms-schema-environment.psm1 each had their own function that ran
+            # 'docker inspect --format {{json .Config.Env}}', parsed the entries the same way, and threw
+            # on a non-zero exit. Two copies of one reader means the next fix lands in only one of them,
+            # so the module's is now the single implementation and this script calls it - which is why
+            # the module exports it: build-dms.ps1's runtime effective-schema-hash gate is a real
+            # external caller, not a test.
+            $buildScript = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "build-dms.ps1") -Raw
+            $guardModule = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "dms-schema-environment.psm1") -Raw
+
+            $buildScript | Should -Not -Match 'function Get-DockerContainerEnvironmentMap' -Because "the second copy of the container-environment reader must not come back"
+            $buildScript | Should -Not -Match 'Get-DockerContainerEnvironmentMap -ContainerName' -Because "no call site may reach for the deleted copy"
+            $buildScript | Should -Match 'Get-DmsContainerEnvironment -ContainerName \$ContainerName' -Because "the runtime hash gate reads the container environment through the module's reader"
+            $buildScript | Should -Not -Match 'function Get-DmsContainerEnvironment' -Because "this script must call the module's reader rather than redefine the name, which would shadow the export"
+
+            # Exactly the three commands with a caller outside the module: the pre-phase guard, the
+            # post-start verification, and this reader. The other five functions stay unexported - their
+            # tests reach them by extracting the function text through the AST - so a wider surface would
+            # only add names exposed to the in-process shadowing the guard's own name avoids.
+            #
+            # Read as a SET of names rather than as a pattern over the statement's line wrapping, so the
+            # assertion is about what the module exports and not about how the continuation happens to be
+            # formatted.
+            $exportStatement = [regex]::Match($guardModule, '(?s)Export-ModuleMember\s+-Function\s*`?\s*(?<names>[A-Za-z][\w-]*(\s*,\s*`?\s*[A-Za-z][\w-]*)*)')
+
+            $exportStatement.Success | Should -BeTrue -Because "the module must declare its export surface explicitly"
+            @($exportStatement.Groups["names"].Value -split '[,`\s]+' | Where-Object { $_ }) | Should -Be @(
+                "Invoke-WithDmsEnvironmentFileSchemaAuthority",
+                "Assert-DmsContainerSchemaEnvironment",
+                "Get-DmsContainerEnvironment"
+            )
         }
 
         It "build-dms.ps1 StartEnvironment uses the bootstrap phase contract" {
@@ -2010,6 +2054,65 @@ exit 0
 
             $buildScript | Should -Match "DMS container '\`$ContainerName' did not become ready within the timeout period"
             $buildScript | Should -Not -Match "DMS did not become ready, but continuing anyway"
+        }
+
+        It "both E2E setup wrappers let the selected environment file provide the schema package settings" {
+            # DMS-1300. Docker Compose gives process env vars precedence over --env-file entries, and
+            # local-dms.yml resolves all three names with a ${VAR:-default} fallback that treats a
+            # present-but-blank value as unset. Both setup flows must therefore REMOVE the three names
+            # around their Docker phases, never blank them: an assignment-based clear is
+            # platform- and PowerShell-version-dependent and can leave a present-but-blank value,
+            # which satisfies the fallback and silently starts DMS on the image-baked schemas while
+            # provisioning already stamped the environment file's full package surface.
+            #
+            # The guard is defined once, in the module both wrappers import, so the removal-and-restore
+            # spelling is asserted against that module and each wrapper is asserted to reach it rather
+            # than to carry a copy. The pair is still asserted together so the two flows cannot drift
+            # apart: the direct DMS wrapper had no guard at all, and the Instance Management wrapper had
+            # one built on the unreliable assignment form.
+            $guardModule = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "dms-schema-environment.psm1") -Raw
+
+            $guardModule | Should -Match "function Invoke-WithDmsEnvironmentFileSchemaAuthority" -Because "the shared module must own the guard both wrappers run their Docker phases inside"
+            $guardModule | Should -Match '"USE_API_SCHEMA_PATH"' -Because "the guard must name USE_API_SCHEMA_PATH"
+            $guardModule | Should -Match '"API_SCHEMA_PATH"' -Because "the guard must name API_SCHEMA_PATH"
+            $guardModule | Should -Match '"SCHEMA_PACKAGES"' -Because "the guard must name SCHEMA_PACKAGES"
+            $guardModule | Should -Match 'Remove-Item -LiteralPath "Env:\$name"' -Because "the guard must clear by removal, not by assignment"
+            $guardModule | Should -Match '\[System\.Environment\]::SetEnvironmentVariable\(\$name, \$previousValues\[\$name\]\)' -Because "the guard must restore a present prior value verbatim"
+            $guardModule | Should -Match 'if \(\$null -eq \$previousValues\[\$name\]\)' -Because "the guard must distinguish an absent prior state from a present-but-empty one"
+
+            foreach ($path in @(
+                (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1"),
+                (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1")
+            )) {
+                $content = Get-Content -LiteralPath $path -Raw
+                $wrapperName = [System.IO.Path]::GetFileName([System.IO.Path]::GetDirectoryName($path))
+
+                # Without -Force: removal is session-wide, while a plain import reuses the instance
+                # build-dms.ps1 has already loaded for its own guarded call sites.
+                $content | Should -Match "Import-Module \./dms-schema-environment\.psm1(?! -Force)" -Because "$wrapperName must import the module that owns the guard"
+                $content | Should -Not -Match "Import-Module \./dms-schema-environment\.psm1 -Force" -Because "$wrapperName must not force a session-wide removal of the shared module"
+                $content | Should -Match "Invoke-WithDmsEnvironmentFileSchemaAuthority -Action" -Because "$wrapperName must guard its Docker phases"
+                $content | Should -Not -Match "function Invoke-WithDmsEnvironmentFileSchemaAuthority" -Because "$wrapperName must use the shared guard rather than its own copy, which would take the next fix in only one place"
+
+                # The unreliable primitive, in either spelling, must not come back.
+                $content | Should -Not -Match '\$env:USE_API_SCHEMA_PATH\s*=' -Because "$wrapperName must not assign USE_API_SCHEMA_PATH"
+                $content | Should -Not -Match '\$env:API_SCHEMA_PATH\s*=' -Because "$wrapperName must not assign API_SCHEMA_PATH"
+                $content | Should -Not -Match '\$env:SCHEMA_PACKAGES\s*=' -Because "$wrapperName must not assign SCHEMA_PACKAGES"
+            }
+        }
+
+        It "start-local-dms.ps1 still owns the bootstrap schema activation the E2E guards must not clear" {
+            # DMS-1300 guards at the caller, deliberately. start-local-dms.ps1 must keep setting these
+            # in-process for bootstrap mode, because process precedence is what makes the staged
+            # .bootstrap/ApiSchema workspace authoritative over the environment file. A guard pushed
+            # down into the start script would strip its own activation values before the compose call.
+            $startScript = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1") -Raw
+            $manifestModule = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-manifest.psm1") -Raw
+
+            $startScript | Should -Not -Match "function Invoke-WithDmsEnvironmentFileSchemaAuthority"
+            $startScript | Should -Not -Match 'Remove-Item -LiteralPath "Env:USE_API_SCHEMA_PATH"'
+            $manifestModule | Should -Match '\$env:USE_API_SCHEMA_PATH = "true"'
+            $manifestModule | Should -Match '\$env:API_SCHEMA_PATH = "/app/ApiSchema"'
         }
 
         It "E2E setup wrappers contain defensive .bootstrap removal step before non-bootstrap startup" {

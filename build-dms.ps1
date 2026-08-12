@@ -181,6 +181,16 @@ $maintainers = "Ed-Fi Alliance, LLC and contributors"
 Import-Module -Name "$PSScriptRoot/eng/build-helpers.psm1" -Force
 Import-Module -Name "$PSScriptRoot/eng/docker-compose/effective-schema-hash.psm1" -Force
 Import-Module -Name "$PSScriptRoot/package-helpers.psm1" -Force
+# The E2E setup wrappers' schema-settings guard and container-environment reader. This script calls
+# both directly rather than through helpers of its own: its gated call sites pass the guard's -Enabled
+# parameter, so there is one implementation, one name, and nothing defined here for a setup wrapper's
+# own call to bind instead of the module's export.
+#
+# Without -Force, the same rule this module applies to its own nested imports: -Force removes a module
+# before re-importing it and removal is session-wide, so an already-loaded instance is reused instead.
+# This import can therefore only ADD command resolution, never take it away from a setup wrapper this
+# script invokes in-process.
+Import-Module -Name "$PSScriptRoot/eng/docker-compose/dms-schema-environment.psm1"
 
 function DotNetClean {
     Invoke-Execute { dotnet clean $defaultSolution -c $Configuration --nologo -v minimal }
@@ -491,51 +501,6 @@ function Invoke-WithE2ETestProcessContext {
     }
 }
 
-function Invoke-WithEnvironmentFileSchemaSettings {
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Existing build-script helper name describes schema settings from an environment file.')]
-    param(
-        [switch]
-        $Enabled,
-
-        [scriptblock]
-        $Action
-    )
-
-    if (-not $Enabled) {
-        & $Action
-        return
-    }
-
-    $schemaEnvironmentVariableNames = @(
-        "USE_API_SCHEMA_PATH",
-        "API_SCHEMA_PATH",
-        "SCHEMA_PACKAGES"
-    )
-    $previousValues = @{}
-
-    foreach ($name in $schemaEnvironmentVariableNames) {
-        $previousValues[$name] = [System.Environment]::GetEnvironmentVariable($name)
-    }
-
-    try {
-        foreach ($name in $schemaEnvironmentVariableNames) {
-            Remove-Item "Env:$name" -ErrorAction SilentlyContinue
-        }
-
-        & $Action
-    }
-    finally {
-        foreach ($name in $schemaEnvironmentVariableNames) {
-            if ($null -eq $previousValues[$name]) {
-                Remove-Item "Env:$name" -ErrorAction SilentlyContinue
-            }
-            else {
-                [System.Environment]::SetEnvironmentVariable($name, $previousValues[$name])
-            }
-        }
-    }
-}
-
 function Stop-DockerEnvironment {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal build orchestration helper; build-dms.ps1 does not expose -WhatIf end to end, so partial ShouldProcess support would create misleading no-op behavior.')]
     param(
@@ -565,10 +530,10 @@ function Stop-DockerEnvironment {
             # failing published down leaves a stopped-but-not-torn-down stack with no workspace to retry
             # against. The published down below still performs the removal on the success path, because an
             # absent project's down exits 0.
-            Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+            Invoke-WithDmsEnvironmentFileSchemaAuthority -Enabled:$UseEnvironmentFileSchemaSettings -Action {
                 ./start-local-dms.ps1 -EnvironmentFile $EnvironmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $DatabaseEngine -d -v -RemoveBootstrap:$false
             }
-            Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+            Invoke-WithDmsEnvironmentFileSchemaAuthority -Enabled:$UseEnvironmentFileSchemaSettings -Action {
                 ./start-published-dms.ps1 -EnvironmentFile $EnvironmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $DatabaseEngine -d -v -RemoveBootstrap:$RemoveBootstrap
             }
         }
@@ -749,37 +714,6 @@ function Invoke-E2EDatabaseProvisioning {
     }
 }
 
-function Get-DockerContainerEnvironmentMap {
-    param(
-        [string]
-        $ContainerName
-    )
-
-    $environmentJson = docker inspect $ContainerName --format '{{json .Config.Env}}'
-
-    if ($LASTEXITCODE -ne 0) {
-        throw "Unable to inspect Docker container '$ContainerName'."
-    }
-
-    $environmentEntries = @($environmentJson | ConvertFrom-Json)
-    $environmentValues = @{}
-
-    foreach ($entry in $environmentEntries) {
-        $entryText = [string]$entry
-        $separatorIndex = $entryText.IndexOf("=")
-
-        if ($separatorIndex -lt 0) {
-            continue
-        }
-
-        $key = $entryText.Substring(0, $separatorIndex)
-        $value = $entryText.Substring($separatorIndex + 1)
-        $environmentValues[$key] = $value
-    }
-
-    return $environmentValues
-}
-
 function Write-DmsSchemaContainerEnvironment {
     param(
         [hashtable]
@@ -841,7 +775,11 @@ function Assert-DmsRuntimeSchemaMatchesProvisionedDatabase {
 
     Write-Output "Validating DMS runtime effective schema before E2E tests..."
 
-    $environmentValues = Get-DockerContainerEnvironmentMap -ContainerName $ContainerName
+    # The single container-environment reader, exported by the module imported at the top of this
+    # script. This function used to carry its own copy under a different name; the two parsed the
+    # same 'docker inspect --format {{json .Config.Env}}' output the same way and both failed closed,
+    # so the copy only gave the next fix somewhere to land unnoticed.
+    $environmentValues = Get-DmsContainerEnvironment -ContainerName $ContainerName
     Write-DmsSchemaContainerEnvironment -EnvironmentValues $environmentValues
 
     $dmsRuntimeEffectiveSchemaHash = Get-DmsRuntimeEffectiveSchemaHash `
@@ -943,7 +881,7 @@ function Start-DockerEnvironment {
                 # only infrastructure + Configuration Service now, then create the data store. DMS is
                 # started after provisioning by Initialize-E2EDatabase -StartDmsAfterProvisioning
                 # (mirrors setup-local-dms.ps1's InfraOnly -> configure -> provision -> DmsOnly sequence).
-                Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+                Invoke-WithDmsEnvironmentFileSchemaAuthority -Enabled:$UseEnvironmentFileSchemaSettings -Action {
                     & $startupScriptPath -InfraOnly -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $resolvedDatabaseEngine -AddExtensionSecurityMetadata
                 }
                 # Neither start-published-dms.ps1 -InfraOnly nor start-local-dms.ps1 -InfraOnly creates a
@@ -954,7 +892,7 @@ function Start-DockerEnvironment {
             elseif ($UsePublishedImage) {
                 # Published image, PostgreSQL: full start. start-published-dms.ps1 creates the data store
                 # internally from -DataStoreDatabaseName.
-                Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+                Invoke-WithDmsEnvironmentFileSchemaAuthority -Enabled:$UseEnvironmentFileSchemaSettings -Action {
                     & $startupScriptPath -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $resolvedDatabaseEngine -AddExtensionSecurityMetadata -DataStoreDatabaseName $DataStoreDatabaseName
                 }
             }
@@ -966,7 +904,7 @@ function Start-DockerEnvironment {
                 # -RemoveBootstrap teardown above guarantees no manifest is staged, so the claims-ready
                 # gate is skipped. The DMS container restarts until the configure step below lands the
                 # data store (restart: unless-stopped).
-                Invoke-WithEnvironmentFileSchemaSettings -Enabled:$UseEnvironmentFileSchemaSettings -Action {
+                Invoke-WithDmsEnvironmentFileSchemaAuthority -Enabled:$UseEnvironmentFileSchemaSettings -Action {
                     & $startupScriptPath -EnvironmentFile $environmentFilePath -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $resolvedDatabaseEngine -AddExtensionSecurityMetadata
                 }
 
@@ -1062,7 +1000,7 @@ function Start-BootstrapDockerEnvironment {
                 $bootstrapArgs.DataStandardVersion = $DataStandardVersion
             }
 
-            Invoke-WithEnvironmentFileSchemaSettings -Enabled -Action {
+            Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
                 if ($UsePublishedImage) {
                     ./bootstrap-published-dms.ps1 @bootstrapArgs
                 }
@@ -1116,7 +1054,7 @@ function Initialize-E2EDatabase {
         Invoke-Execute {
             try {
                 Push-Location "$PSScriptRoot/eng/docker-compose"
-                Invoke-WithEnvironmentFileSchemaSettings -Enabled:$E2ETestSettings.ShouldProvisionE2EDatabase -Action {
+                Invoke-WithDmsEnvironmentFileSchemaAuthority -Enabled:$E2ETestSettings.ShouldProvisionE2EDatabase -Action {
                     & $startupScriptPath -DmsOnly -EnvironmentFile $E2ETestSettings.EnvironmentFile -EnableConfig -IdentityProvider $IdentityProvider -DatabaseEngine $E2ETestSettings.DatabaseEngine -AddExtensionSecurityMetadata
                 }
             }

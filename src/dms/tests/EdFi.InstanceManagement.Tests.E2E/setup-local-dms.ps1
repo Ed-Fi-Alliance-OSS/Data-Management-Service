@@ -17,6 +17,20 @@
     DMS is not started until all three schemas are provisioned and verified. Unhealthy infrastructure
     or failed verification fails the setup (never skips).
 
+    Each Docker phase above runs inside the shared schema-settings guard from
+    eng/docker-compose/dms-schema-environment.psm1 - individually, not as one sequence - so
+    USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES are absent for every Compose call, the
+    selected environment file is the sole authority for the schema package surface, and a phase that
+    re-creates one of the three names in this process cannot leave it set for a later phase. The
+    caller's original environment is restored exactly, including the absent, empty, whitespace, and
+    valued distinctions, and on failure paths. That module explains why an ambient value would
+    otherwise win over the environment file.
+
+    After DMS starts, the container's schema settings are verified against the environment file with
+    the shared Assert-DmsContainerSchemaEnvironment, the same settings-level check the direct DMS E2E
+    wrapper runs, so a settings divergence is reported here rather than as opaque routed-request 503s
+    across all three route contexts.
+
     Suite-owned fixture registration (tenants, vendor, data stores, route contexts, applications) and
     the single post-registration DMS restart are performed by build-dms.ps1 InstanceE2ETest, not here.
 .PARAMETER SkipDockerBuild
@@ -237,6 +251,14 @@ try {
     Set-Location $dockerComposeDir
     Import-Module ./env-utility.psm1 -Force
     Import-Module ./database-safety.psm1 -Force
+    # The schema-settings guard and the post-start container schema verification, both shared with the
+    # direct DMS E2E wrapper rather than copied into each.
+    #
+    # Without -Force, the same rule this module applies to its own nested imports: -Force removes a
+    # module session-wide before re-importing it, while a plain import reuses an already-loaded
+    # instance. build-dms.ps1 loads this same module for its own guarded call sites before invoking
+    # THIS script in-process, so reusing that instance keeps one module serving both.
+    Import-Module ./dms-schema-environment.psm1
 
     # Single environment resolution. The build path (build-dms.ps1 InstanceE2ETest) already composed
     # the data-standard and engine overlays exactly once in Get-InstanceE2ETestEnvironmentContext and
@@ -315,73 +337,90 @@ try {
 
     Write-Output "Using file-based schema packages from $resolvedEnvironmentFile for E2E (non-bootstrap compatibility path)."
 
-    $previousUseApiSchemaPath = [System.Environment]::GetEnvironmentVariable("USE_API_SCHEMA_PATH")
-    $previousApiSchemaPath = [System.Environment]::GetEnvironmentVariable("API_SCHEMA_PATH")
-    $previousSchemaPackages = [System.Environment]::GetEnvironmentVariable("SCHEMA_PACKAGES")
-    try {
-        # The resolved environment file carries the file-based ApiSchema package settings. Process env
-        # values win over docker compose --env-file entries, so clear stale overrides left by teardown
-        # or earlier bootstrap runs and let the env file provide
-        # USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES.
-        $env:USE_API_SCHEMA_PATH = $null
-        $env:API_SCHEMA_PATH = $null
-        $env:SCHEMA_PACKAGES = $null
+    # The resolved environment file carries the file-based ApiSchema package settings, and process env
+    # values win over docker compose --env-file entries, so each phase below runs inside the shared
+    # guard that removes USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES for its duration.
+    #
+    # Guarded per phase, not once around the sequence. The guard restores the caller's prior state when
+    # the phase it wraps returns, so a single guard would remove the three names exactly once, before
+    # the first phase - and a phase script runs in this same process, so one that re-creates any of
+    # them (start-local-dms.ps1 does exactly that for bootstrap mode) would still be setting it for
+    # every later phase.
 
-        # 1. Start only infrastructure and the Configuration Service. DMS starts after all three
-        #    route-context schemas are provisioned and verified.
-        Write-Host "`nStarting infrastructure and Configuration Service (DMS not yet started)..." -ForegroundColor Cyan
-        if ($SkipDockerBuild) {
+    # 1. Start only infrastructure and the Configuration Service. DMS starts after all three
+    #    route-context schemas are provisioned and verified.
+    Write-Host "`nStarting infrastructure and Configuration Service (DMS not yet started)..." -ForegroundColor Cyan
+    # The guard is inside each branch rather than around the if/else: exactly one of these runs, and
+    # one guard per phase invocation keeps the shape uniform across the wrapper.
+    if ($SkipDockerBuild) {
+        Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
             ./start-local-dms.ps1 -InfraOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -IdentityProvider self-contained -AddExtensionSecurityMetadata
         }
-        else {
+    }
+    else {
+        Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
             ./start-local-dms.ps1 -InfraOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -r -IdentityProvider self-contained -AddExtensionSecurityMetadata
         }
+    }
 
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "Failed to start DMS infrastructure. Exit code: $LASTEXITCODE"
-            exit $LASTEXITCODE
-        }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to start DMS infrastructure. Exit code: $LASTEXITCODE"
+        exit $LASTEXITCODE
+    }
 
-        # 2. Provision the three route-context databases once with generated engine-correct DDL, then
-        #    verify each with the engine-dispatched schema check.
-        Write-Host "`nProvisioning and verifying route-context test databases..." -ForegroundColor Cyan
-        $provisionE2EDatabaseScript = Join-Path $dockerComposeDir "provision-e2e-database.ps1"
-        # PostgreSQL verification connects as the resolved role, not a hardcoded superuser, so a stack
-        # started with a non-default POSTGRES_USER still verifies. Resolved with Compose precedence
-        # (ambient wins) because Compose interpolates POSTGRES_USER into the container the same way
-        # and provisioning/registration already resolve it ambient-first. MSSQL verification reads its
-        # password inside dms-mssql from the container-resident MSSQL_SA_PASSWORD, so no SA password
-        # is resolved or passed on the host here.
-        $postgresUser = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
+    # 2. Provision the three route-context databases once with generated engine-correct DDL, then
+    #    verify each with the engine-dispatched schema check.
+    Write-Host "`nProvisioning and verifying route-context test databases..." -ForegroundColor Cyan
+    $provisionE2EDatabaseScript = Join-Path $dockerComposeDir "provision-e2e-database.ps1"
+    # PostgreSQL verification connects as the resolved role, not a hardcoded superuser, so a stack
+    # started with a non-default POSTGRES_USER still verifies. Resolved with Compose precedence
+    # (ambient wins) because Compose interpolates POSTGRES_USER into the container the same way
+    # and provisioning/registration already resolve it ambient-first. MSSQL verification reads its
+    # password inside dms-mssql from the container-resident MSSQL_SA_PASSWORD, so no SA password
+    # is resolved or passed on the host here.
+    $postgresUser = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
 
-        foreach ($db in $databases) {
+    foreach ($db in $databases) {
+        # Each provision call is its own guarded phase, for the same reason the starts are.
+        Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
             & $provisionE2EDatabaseScript `
                 -EnvironmentFile $resolvedEnvironmentFile `
                 -DatabaseEngine $DatabaseEngine `
                 -DatabaseName $db `
                 -Configuration Release
-
-            if ($LASTEXITCODE -ne 0) {
-                throw "Failed to provision route-context database '$db' (exit code $LASTEXITCODE)."
-            }
-
-            Assert-RouteContextSchemaProvisioned -Database $db -DatabaseEngine $DatabaseEngine -PostgresUser $postgresUser
-            Write-Host "  Provisioned and verified relational schema: $db" -ForegroundColor Green
         }
-
-        # 3. Start DMS now that all schemas exist, and wait for DMS health.
-        Write-Host "`nStarting DMS after route-context database provisioning..." -ForegroundColor Cyan
-        ./start-local-dms.ps1 -DmsOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -IdentityProvider self-contained -AddExtensionSecurityMetadata
 
         if ($LASTEXITCODE -ne 0) {
-            Write-Error "Failed to start DMS service after route-context database provisioning. Exit code: $LASTEXITCODE"
-            exit $LASTEXITCODE
+            throw "Failed to provision route-context database '$db' (exit code $LASTEXITCODE)."
         }
+
+        # Outside the guard: this reads the provisioned database with docker exec and never resolves
+        # the three schema names.
+        Assert-RouteContextSchemaProvisioned -Database $db -DatabaseEngine $DatabaseEngine -PostgresUser $postgresUser
+        Write-Host "  Provisioned and verified relational schema: $db" -ForegroundColor Green
     }
-    finally {
-        if ($null -eq $previousUseApiSchemaPath) { $env:USE_API_SCHEMA_PATH = $null } else { $env:USE_API_SCHEMA_PATH = $previousUseApiSchemaPath }
-        if ($null -eq $previousApiSchemaPath) { $env:API_SCHEMA_PATH = $null } else { $env:API_SCHEMA_PATH = $previousApiSchemaPath }
-        if ($null -eq $previousSchemaPackages) { $env:SCHEMA_PACKAGES = $null } else { $env:SCHEMA_PACKAGES = $previousSchemaPackages }
+
+    # 3. Start DMS now that all schemas exist, and wait for DMS health.
+    Write-Host "`nStarting DMS after route-context database provisioning..." -ForegroundColor Cyan
+    Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
+        ./start-local-dms.ps1 -DmsOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -IdentityProvider self-contained -AddExtensionSecurityMetadata
+    }
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to start DMS service after route-context database provisioning. Exit code: $LASTEXITCODE"
+        exit $LASTEXITCODE
+    }
+
+    # Prove DMS actually came up on the environment file's schema package surface before the suite
+    # registers any route context. In its own guard, after the DMS-only start: the check reads a
+    # RUNNING container, and the guard keeps the file-only expectation from being contaminated by an
+    # ambient override even if a future edit reaches for a Compose-precedence reader.
+    # Assert-RouteContextSchemaProvisioned above checks that each database HAS the tables; this checks
+    # that the runtime is loading the packages those tables were generated from.
+    Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
+        Assert-DmsContainerSchemaEnvironment `
+            -EnvironmentFilePath $resolvedEnvironmentFile `
+            -ContainerName "ed-fi-api"
     }
 
     Write-Host "`n========================================" -ForegroundColor Green
