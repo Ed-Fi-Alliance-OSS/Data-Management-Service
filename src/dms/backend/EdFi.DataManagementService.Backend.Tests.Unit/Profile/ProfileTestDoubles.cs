@@ -1752,7 +1752,8 @@ internal static class ProfileTestDoubles
                 ContentVersion: 1L,
                 IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero)
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero),
+                ResourceKeyId: 1
             ),
             [new HydratedTableRows(writePlan.TablePlansInDependencyOrder[0].TableModel, [columnValues])],
             []
@@ -1788,7 +1789,8 @@ internal static class ProfileTestDoubles
                 ContentVersion: 1L,
                 IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero)
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero),
+                ResourceKeyId: 1
             ),
             [new HydratedTableRows(hydrationRootModel, [hydrationColumnValues])],
             []
@@ -1818,7 +1820,8 @@ internal static class ProfileTestDoubles
                 ContentVersion: 1L,
                 IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero)
+                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero),
+                ResourceKeyId: 1
             ),
             [
                 new HydratedTableRows(rootTableModel, [rootRowValues]),

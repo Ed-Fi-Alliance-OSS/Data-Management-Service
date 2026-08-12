@@ -22,7 +22,6 @@ internal sealed class DocumentCacheMaterializer(
     private const string IdPropertyName = "id";
     private const string EtagPropertyName = "_etag";
     private const string LastModifiedDatePropertyName = "_lastModifiedDate";
-    private const string LastModifiedDateFormat = "yyyy-MM-ddTHH:mm:ss'Z'";
 
     private readonly IDocumentCacheSourceMetadataReader _sourceMetadataReader =
         sourceMetadataReader ?? throw new ArgumentNullException(nameof(sourceMetadataReader));
@@ -329,7 +328,8 @@ internal sealed class DocumentCacheMaterializer(
             source.ContentVersion,
             source.ContentVersion,
             source.ContentLastModifiedAt,
-            source.ContentLastModifiedAt
+            source.ContentLastModifiedAt,
+            source.ResourceKeyId
         );
 
     private static DocumentCacheMaterializationResult.Success CreateSuccess(
@@ -434,7 +434,7 @@ internal sealed class DocumentCacheMaterializer(
     }
 
     private static string FormatLastModifiedDate(DateTimeOffset lastModifiedAt) =>
-        lastModifiedAt.UtcDateTime.ToString(LastModifiedDateFormat, CultureInfo.InvariantCulture);
+        LastModifiedDateFormatter.Format(lastModifiedAt);
 
     private static DocumentCacheProjectionProcessingException BuildProjectionProcessingException(
         DocumentCacheMaterializationRequest request,

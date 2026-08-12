@@ -35,6 +35,11 @@ public abstract class MssqlApiIntegrationTestBase : ApiIntegrationTestBase
     {
         IMssqlGeneratedDdlBaselineDatabase baseline = await MssqlBaselineCache.CreateOrGetAsync(fixture);
         _lease = await baseline.AcquireRestoredDatabaseAsync();
+        if (EnableDocumentCacheReadAcceleration)
+        {
+            await SetReadCommittedSnapshotAsync(_lease.Database.DatabaseName);
+        }
+
         return _lease.Database.ConnectionString;
     }
 
@@ -52,5 +57,13 @@ public abstract class MssqlApiIntegrationTestBase : ApiIntegrationTestBase
             await _lease.DisposeAsync();
             _lease = null;
         }
+    }
+
+    private static Task SetReadCommittedSnapshotAsync(string databaseName)
+    {
+        string quotedDatabaseName = MssqlTestDatabaseHelper.QuoteIdentifier(databaseName);
+        return MssqlTestDatabaseHelper.ExecuteAdminNonQueryAsync(
+            $"ALTER DATABASE {quotedDatabaseName} SET READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE;"
+        );
     }
 }

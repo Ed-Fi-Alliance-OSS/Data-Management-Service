@@ -117,7 +117,10 @@ internal static class RelationalDocumentUuidLookupSupport
                     reader.GetRequiredFieldValue<short>("ResourceKeyId"),
                     reader.IsDBNull(reader.GetOrdinal("ContentVersion"))
                         ? null
-                        : reader.GetRequiredFieldValue<long>("ContentVersion")
+                        : reader.GetRequiredFieldValue<long>("ContentVersion"),
+                    reader.IsDBNull(reader.GetOrdinal("ContentLastModifiedAt"))
+                        ? null
+                        : ReadDateTimeOffsetField(reader, "ContentLastModifiedAt")
                 );
 
                 if (await reader.ReadAsync(ct).ConfigureAwait(false))
@@ -144,7 +147,8 @@ internal static class RelationalDocumentUuidLookupSupport
                     document."DocumentId" AS "DocumentId",
                     document."DocumentUuid" AS "DocumentUuid",
                     document."ResourceKeyId" AS "ResourceKeyId",
-                    document."ContentVersion" AS "ContentVersion"
+                    document."ContentVersion" AS "ContentVersion",
+                    document."ContentLastModifiedAt" AS "ContentLastModifiedAt"
                 FROM dms."Document" document
                 WHERE document."DocumentUuid" = @documentUuid
                 """
@@ -174,7 +178,8 @@ internal static class RelationalDocumentUuidLookupSupport
                     document.[DocumentId] AS [DocumentId],
                     document.[DocumentUuid] AS [DocumentUuid],
                     document.[ResourceKeyId] AS [ResourceKeyId],
-                    document.[ContentVersion] AS [ContentVersion]
+                    document.[ContentVersion] AS [ContentVersion],
+                    document.[ContentLastModifiedAt] AS [ContentLastModifiedAt]
                 FROM [dms].[Document] document
                 WHERE document.[DocumentUuid] = @documentUuid
                 """
@@ -195,8 +200,29 @@ internal static class RelationalDocumentUuidLookupSupport
         long DocumentId,
         DocumentUuid DocumentUuid,
         short ResourceKeyId,
-        long? ContentVersion
+        long? ContentVersion,
+        DateTimeOffset? ContentLastModifiedAt
     );
 
     internal sealed record ResolvedDeleteTarget(long DocumentId);
+
+    private static DateTimeOffset ReadDateTimeOffsetField(IRelationalCommandReader reader, string columnName)
+    {
+        var value = reader.GetFieldValue<object>(reader.GetOrdinal(columnName));
+
+        return value switch
+        {
+            DateTimeOffset dateTimeOffset => dateTimeOffset,
+            DateTime dateTime => new DateTimeOffset(
+                dateTime.Kind == DateTimeKind.Unspecified
+                    ? DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)
+                    : dateTime
+            ),
+            string text => DateTimeOffset.Parse(text, System.Globalization.CultureInfo.InvariantCulture),
+            _ => throw new InvalidOperationException(
+                $"Relational document UUID lookup expected a DateTimeOffset-compatible value for dms.Document.{columnName}, "
+                    + $"but received '{value.GetType().Name}'."
+            ),
+        };
+    }
 }

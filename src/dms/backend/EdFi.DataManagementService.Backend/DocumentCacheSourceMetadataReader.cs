@@ -452,7 +452,12 @@ internal sealed class DocumentCacheSourceMetadataReader(
 
         for (var index = 0; index < tableReadPlans.Count; index++)
         {
-            if (!TableShapeMatches(tableReadPlans[index].TableModel, concreteModelTables[index]))
+            if (
+                !TableShapeMatches(
+                    tableReadPlans[index].TableModel,
+                    ToHydrationProjectionTableModel(concreteModelTables[index])
+                )
+            )
             {
                 return false;
             }
@@ -460,6 +465,22 @@ internal sealed class DocumentCacheSourceMetadataReader(
 
         return true;
     }
+
+    private static DbTableModel ToHydrationProjectionTableModel(DbTableModel tableModel)
+    {
+        if (tableModel.Columns.All(IsHydrationProjectionColumn))
+        {
+            return tableModel;
+        }
+
+        return tableModel with
+        {
+            Columns = [.. tableModel.Columns.Where(IsHydrationProjectionColumn)],
+        };
+    }
+
+    private static bool IsHydrationProjectionColumn(DbColumnModel column) =>
+        column.Kind is not (ColumnKind.MirroredContentVersion or ColumnKind.MirroredContentLastModifiedAt);
 
     private static bool TableShapeMatches(DbTableModel readPlanTable, DbTableModel concreteModelTable) =>
         readPlanTable.Table == concreteModelTable.Table

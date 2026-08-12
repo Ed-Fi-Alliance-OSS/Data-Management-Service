@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
@@ -66,6 +67,138 @@ public class Given_DescriptorReadHandler
             .Parameters.Select(parameter => parameter.Value)
             .Should()
             .Equal(documentUuid.Value, (short)13);
+    }
+
+    [Test]
+    public async Task It_exposes_an_authorized_descriptor_get_candidate_to_read_acceleration()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-111111111111"));
+        var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(CreateDescriptorRow(documentUuid.Value, documentId: 205L)),
+            ]),
+        ]);
+        DocumentCacheReadAccelerationGetByIdRequest capturedRequest = null!;
+        DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate capturedSelection = null!;
+
+        A.CallTo(() =>
+                readAccelerationCoordinator.GetByIdAsync(
+                    A<DocumentCacheReadAccelerationGetByIdRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(async call =>
+            {
+                var request = call.GetArgument<DocumentCacheReadAccelerationGetByIdRequest>(0)!;
+                var cancellationToken = call.GetArgument<CancellationToken>(1);
+                capturedRequest = request;
+                var selectionResult = await request
+                    .SelectAuthorizedCandidate(cancellationToken)
+                    .ConfigureAwait(false);
+                capturedSelection = selectionResult
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate>()
+                    .Subject;
+
+                return new GetResult.GetSuccess(documentUuid, new JsonObject(), DateTime.UnixEpoch, null);
+            });
+
+        var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
+
+        var result = await sut.HandleGetByIdAsync(CreateRequest(SqlDialect.Pgsql, documentUuid));
+
+        result.Should().BeOfType<GetResult.GetSuccess>();
+        capturedRequest.ResourceKind.Should().Be(DocumentCacheReadAccelerationResourceKind.Descriptor);
+        capturedRequest.SelectAuthorizedCandidate.Should().NotBeNull();
+        capturedSelection
+            .AuthorizedCandidate.Should()
+            .Be(
+                new DocumentCacheReadAccelerationCandidate(
+                    205L,
+                    documentUuid,
+                    13,
+                    42L,
+                    new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero)
+                )
+            );
+        commandExecutor.Commands.Should().ContainSingle();
+        AssertDescriptorCandidateCommandOmitsBodyColumns(commandExecutor.Commands[0]);
+        A.CallTo(() =>
+                readAccelerationCoordinator.GetByIdAsync(
+                    A<DocumentCacheReadAccelerationGetByIdRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_reexecutes_descriptor_get_relational_fallback_after_cache_lookup_miss(
+        SqlDialect dialect
+    )
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-121212121212"));
+        var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(
+                        documentUuid.Value,
+                        documentId: 205L,
+                        shortDescription: "Before fallback",
+                        contentVersion: 42L
+                    )
+                ),
+            ]),
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(
+                        documentUuid.Value,
+                        documentId: 205L,
+                        shortDescription: "After fallback",
+                        contentVersion: 84L
+                    )
+                ),
+            ]),
+        ]);
+        A.CallTo(() =>
+                readAccelerationCoordinator.GetByIdAsync(
+                    A<DocumentCacheReadAccelerationGetByIdRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(async call =>
+            {
+                var request = call.GetArgument<DocumentCacheReadAccelerationGetByIdRequest>(0)!;
+                var cancellationToken = call.GetArgument<CancellationToken>(1);
+                var selectionResult = await request
+                    .SelectAuthorizedCandidate(cancellationToken)
+                    .ConfigureAwait(false);
+                var candidateSelection = selectionResult
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate>()
+                    .Subject;
+
+                return await candidateSelection.RelationalFallback(cancellationToken).ConfigureAwait(false);
+            });
+
+        var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
+
+        var result = await sut.HandleGetByIdAsync(CreateRequest(dialect, documentUuid));
+
+        var success = result.Should().BeOfType<GetResult.GetSuccess>().Subject;
+        success.EdfiDoc["shortDescription"]!.GetValue<string>().Should().Be("After fallback");
+        success.EdfiDoc["_etag"]!.GetValue<string>().Should().Be(ExpectedComposedDescriptorEtag(84L));
+        commandExecutor.Commands.Should().HaveCount(2);
+        AssertDescriptorCandidateCommandOmitsBodyColumns(commandExecutor.Commands[0]);
+        AssertDescriptorMaterializationCommandSelectsBodyColumns(commandExecutor.Commands[1]);
+        AssertDescriptorReadCommandsShareScaffolding(
+            commandExecutor.Commands[0],
+            commandExecutor.Commands[1],
+            "document"
+        );
     }
 
     [Test]
@@ -989,24 +1122,115 @@ public class Given_DescriptorReadHandler
         commandExecutor.Commands.Should().BeEmpty();
     }
 
-    [Test]
-    public async Task It_short_circuits_invalid_descriptor_query_ids_to_an_empty_page_without_executing_sql()
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task It_short_circuits_invalid_descriptor_query_ids_to_an_empty_page_without_executing_sql(
+        bool totalCount
+    )
     {
         var commandExecutor = new InMemoryRelationalCommandExecutor([]);
-        var sut = CreateHandler(commandExecutor);
+        var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        DocumentCacheReadAccelerationQuerySelectionResult selectionResult = null!;
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(async call =>
+            {
+                var request = call.GetArgument<DocumentCacheReadAccelerationQueryRequest>(0)!;
+                var cancellationToken = call.GetArgument<CancellationToken>(1);
+                selectionResult = await request
+                    .SelectAuthorizedCandidatePage(cancellationToken)
+                    .ConfigureAwait(false);
+                return selectionResult
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.Complete>()
+                    .Subject.Result;
+            });
+        var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
 
         var result = await sut.HandleQueryAsync(
             CreateQueryRequest(
                 SqlDialect.Pgsql,
                 queryElements: [CreateQueryElement("id", "$.id", "not-a-guid", "string")],
-                totalCount: true
+                totalCount: totalCount
             )
         );
 
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
         success.EdfiDocs.Should().BeEmpty();
-        success.TotalCount.Should().Be(0);
+        success.TotalCount.Should().Be(totalCount ? 0 : null);
+        selectionResult.Should().BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.Complete>();
         commandExecutor.Commands.Should().BeEmpty();
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task It_returns_zero_size_descriptor_query_pages_before_exposing_cache_candidate_pages(
+        bool totalCount
+    )
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution(
+                totalCount
+                    ?
+                    [
+                        InMemoryRelationalResultSet.Create(
+                            RelationalAccessTestData.CreateRow(("TotalCount", 7L))
+                        ),
+                        InMemoryRelationalResultSet.Create(),
+                    ]
+                    : [InMemoryRelationalResultSet.Create()]
+            ),
+        ]);
+        var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        DocumentCacheReadAccelerationQuerySelectionResult selectionResult = null!;
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(async call =>
+            {
+                var request = call.GetArgument<DocumentCacheReadAccelerationQueryRequest>(0)!;
+                var cancellationToken = call.GetArgument<CancellationToken>(1);
+                selectionResult = await request
+                    .SelectAuthorizedCandidatePage(cancellationToken)
+                    .ConfigureAwait(false);
+                return selectionResult
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.Complete>()
+                    .Subject.Result;
+            });
+        var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
+
+        var result = await sut.HandleQueryAsync(
+            CreateQueryRequest(SqlDialect.Pgsql, totalCount: totalCount, limit: 0)
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.EdfiDocs.Should().BeEmpty();
+        success.TotalCount.Should().Be(totalCount ? 7 : null);
+        selectionResult.Should().BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.Complete>();
+        RelationalCommand command = commandExecutor.Commands.Should().ContainSingle().Subject;
+        AssertDescriptorCandidateCommandOmitsBodyColumns(command);
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
     }
 
     [Test]
@@ -1170,6 +1394,83 @@ public class Given_DescriptorReadHandler
         commandExecutor.Commands[0].CommandText.Should().Contain(expectedOrderByFragment);
     }
 
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_uses_the_same_descriptor_query_scaffolding_for_candidate_and_full_row_projections(
+        SqlDialect dialect
+    )
+    {
+        var documentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-292929292929");
+        var fullRowCommandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 1))),
+                InMemoryRelationalResultSet.Create(CreateDescriptorRow(documentUuid)),
+            ]),
+        ]);
+        var candidateCommandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 1))),
+                InMemoryRelationalResultSet.Create(CreateDescriptorRow(documentUuid)),
+            ]),
+        ]);
+        var request = CreateQueryRequest(
+            dialect,
+            queryElements:
+            [
+                CreateQueryElement(
+                    "namespace",
+                    "$.namespace",
+                    "uri://ed-fi.org/SchoolTypeDescriptor",
+                    "string"
+                ),
+            ],
+            totalCount: true
+        );
+        var fullRowHandler = CreateHandler(fullRowCommandExecutor);
+
+        QueryResult fullRowResult = await fullRowHandler.HandleQueryAsync(request);
+
+        var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(async call =>
+            {
+                var readAccelerationRequest = call.GetArgument<DocumentCacheReadAccelerationQueryRequest>(0)!;
+                var cancellationToken = call.GetArgument<CancellationToken>(1);
+                var selectionResult = await readAccelerationRequest
+                    .SelectAuthorizedCandidatePage(cancellationToken)
+                    .ConfigureAwait(false);
+                selectionResult
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage>();
+
+                return new QueryResult.QuerySuccess([], TotalCount: null);
+            });
+        var candidateHandler = CreateHandler(
+            candidateCommandExecutor,
+            readAccelerationCoordinator: readAccelerationCoordinator
+        );
+
+        QueryResult candidateResult = await candidateHandler.HandleQueryAsync(request);
+
+        fullRowResult.Should().BeOfType<QueryResult.QuerySuccess>();
+        candidateResult.Should().BeOfType<QueryResult.QuerySuccess>();
+        RelationalCommand fullRowCommand = fullRowCommandExecutor.Commands.Should().ContainSingle().Subject;
+        RelationalCommand candidateCommand = candidateCommandExecutor
+            .Commands.Should()
+            .ContainSingle()
+            .Subject;
+        candidateCommand.CommandText.Should().Contain("COUNT(1)");
+        fullRowCommand.CommandText.Should().Contain("COUNT(1)");
+        AssertDescriptorCandidateCommandOmitsBodyColumns(candidateCommand);
+        AssertDescriptorMaterializationCommandSelectsBodyColumns(fullRowCommand);
+        AssertDescriptorReadCommandsShareScaffolding(candidateCommand, fullRowCommand, "page_document_ids");
+    }
+
     [Test]
     public async Task It_does_not_fail_when_total_count_is_requested_and_a_corrupt_descriptor_document_is_outside_the_selected_page()
     {
@@ -1327,6 +1628,489 @@ public class Given_DescriptorReadHandler
     }
 
     [Test]
+    public async Task It_exposes_an_authorized_descriptor_query_candidate_page_to_read_acceleration()
+    {
+        var firstDocumentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-999999999991");
+        var secondDocumentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-999999999992");
+        var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 7))),
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(firstDocumentUuid, documentId: 101L, codeValue: "Alternative"),
+                    CreateDescriptorRow(secondDocumentUuid, documentId: 205L, codeValue: "Charter")
+                ),
+            ]),
+        ]);
+        DocumentCacheReadAccelerationQueryRequest capturedRequest = null!;
+        DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage capturedSelection = null!;
+
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(async call =>
+            {
+                var request = call.GetArgument<DocumentCacheReadAccelerationQueryRequest>(0)!;
+                var cancellationToken = call.GetArgument<CancellationToken>(1);
+                capturedRequest = request;
+                var selectionResult = await request
+                    .SelectAuthorizedCandidatePage(cancellationToken)
+                    .ConfigureAwait(false);
+                capturedSelection = selectionResult
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage>()
+                    .Subject;
+
+                return new QueryResult.QuerySuccess([], TotalCount: null);
+            });
+
+        var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
+
+        var result = await sut.HandleQueryAsync(CreateQueryRequest(SqlDialect.Pgsql, totalCount: true));
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
+        capturedRequest.ResourceKind.Should().Be(DocumentCacheReadAccelerationResourceKind.Descriptor);
+        capturedRequest.SelectAuthorizedCandidatePage.Should().NotBeNull();
+        capturedSelection
+            .AuthorizedCandidatePage.Should()
+            .BeEquivalentTo(
+                new DocumentCacheReadAccelerationCandidatePage(
+                    [
+                        new DocumentCacheReadAccelerationCandidate(
+                            101L,
+                            new DocumentUuid(firstDocumentUuid),
+                            13,
+                            42L,
+                            new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero)
+                        ),
+                        new DocumentCacheReadAccelerationCandidate(
+                            205L,
+                            new DocumentUuid(secondDocumentUuid),
+                            13,
+                            42L,
+                            new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero)
+                        ),
+                    ],
+                    TotalCount: 7,
+                    HighestSelectedDocumentId: null,
+                    IncludesTotalCount: true
+                )
+            );
+        commandExecutor.Commands.Should().ContainSingle();
+        AssertDescriptorCandidateCommandOmitsBodyColumns(commandExecutor.Commands[0]);
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_wraps_a_provider_error_raised_by_descriptor_custom_view_selected_page_fallback()
+    {
+        var documentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-999999999993");
+        var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        var commandExecutor = A.Fake<IRelationalCommandExecutor>();
+        var databaseException = new StubDbException("custom view does not exist during fallback");
+
+        A.CallTo(() =>
+                commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(Task.FromResult(true));
+        A.CallTo(() =>
+                commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<
+                        Func<IRelationalCommandReader, CancellationToken, Task<DescriptorQueryCandidatePage>>
+                    >._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(
+                (
+                    RelationalCommand _,
+                    Func<
+                        IRelationalCommandReader,
+                        CancellationToken,
+                        Task<DescriptorQueryCandidatePage>
+                    > readAsync,
+                    CancellationToken cancellationToken
+                ) =>
+                    readAsync(
+                        new InMemoryRelationalCommandReader([
+                            InMemoryRelationalResultSet.Create(
+                                CreateDescriptorRow(documentUuid, documentId: 101L)
+                            ),
+                        ]),
+                        cancellationToken
+                    )
+            );
+        A.CallTo(() =>
+                commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<
+                        Func<
+                            IRelationalCommandReader,
+                            CancellationToken,
+                            Task<IReadOnlyList<DescriptorReadRow>>
+                        >
+                    >._,
+                    A<CancellationToken>._
+                )
+            )
+            .Throws(databaseException);
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(async call =>
+            {
+                var request = call.GetArgument<DocumentCacheReadAccelerationQueryRequest>(0)!;
+                var cancellationToken = call.GetArgument<CancellationToken>(1);
+                var selectionResult = await request
+                    .SelectAuthorizedCandidatePage(cancellationToken)
+                    .ConfigureAwait(false);
+                var candidateSelection = selectionResult
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage>()
+                    .Subject;
+
+                return await candidateSelection.RelationalFallback(cancellationToken).ConfigureAwait(false);
+            });
+        var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
+        var request = CreateQueryRequest(
+            SqlDialect.Pgsql,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("SchoolTypeDescriptorWithCustomViewProviderTest"),
+            ]
+        );
+
+        var action = () => sut.HandleQueryAsync(request);
+
+        var assertion = await action.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+
+        assertion.Which.InnerException.Should().BeSameAs(databaseException);
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() =>
+                commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<DescriptorQueryRowsPage>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [TestCase(SqlDialect.Pgsql, """ORDER BY selected_document_ids."Ordinal" ASC""")]
+    [TestCase(SqlDialect.Mssql, "ORDER BY selected_document_ids.[Ordinal] ASC")]
+    public async Task It_preserves_selected_descriptor_query_order_when_fallback_hydration_returns_rows_out_of_order(
+        SqlDialect dialect,
+        string expectedOrderByFragment
+    )
+    {
+        var firstDocumentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-343434343434");
+        var secondDocumentUuid = Guid.Parse("bbbbbbbb-1111-2222-3333-343434343434");
+        var newlyMatchingDocumentUuid = Guid.Parse("cccccccc-1111-2222-3333-343434343434");
+        var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 7))),
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(
+                        firstDocumentUuid,
+                        documentId: 101L,
+                        shortDescription: "First before fallback",
+                        contentVersion: 42L
+                    ),
+                    CreateDescriptorRow(
+                        secondDocumentUuid,
+                        documentId: 205L,
+                        shortDescription: "Second before fallback",
+                        contentVersion: 43L
+                    )
+                ),
+            ]),
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(
+                        secondDocumentUuid,
+                        documentId: 205L,
+                        shortDescription: "Second after fallback",
+                        contentVersion: 43L
+                    ),
+                    CreateDescriptorRow(
+                        newlyMatchingDocumentUuid,
+                        documentId: 999L,
+                        shortDescription: "Newly matching row",
+                        contentVersion: 999L
+                    ),
+                    CreateDescriptorRow(
+                        firstDocumentUuid,
+                        documentId: 101L,
+                        shortDescription: "First after fallback",
+                        contentVersion: 42L
+                    )
+                ),
+            ]),
+        ]);
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(async call =>
+            {
+                var request = call.GetArgument<DocumentCacheReadAccelerationQueryRequest>(0)!;
+                var cancellationToken = call.GetArgument<CancellationToken>(1);
+                var selectionResult = await request
+                    .SelectAuthorizedCandidatePage(cancellationToken)
+                    .ConfigureAwait(false);
+                var candidateSelection = selectionResult
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage>()
+                    .Subject;
+                candidateSelection.AuthorizedCandidatePage.IncludesTotalCount.Should().BeTrue();
+                candidateSelection.AuthorizedCandidatePage.TotalCount.Should().Be(7);
+
+                return await candidateSelection.RelationalFallback(cancellationToken).ConfigureAwait(false);
+            });
+
+        var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
+
+        var result = await sut.HandleQueryAsync(CreateQueryRequest(dialect, totalCount: true));
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.TotalCount.Should().Be(7);
+        success.EdfiDocs.Should().HaveCount(2);
+        success
+            .EdfiDocs.Select(document => document!["id"]!.GetValue<string>())
+            .Should()
+            .Equal(firstDocumentUuid.ToString(), secondDocumentUuid.ToString());
+        success
+            .EdfiDocs.Select(document => document!["shortDescription"]!.GetValue<string>())
+            .Should()
+            .Equal("First after fallback", "Second after fallback");
+        success.EdfiDocs[0]!["_etag"]!.GetValue<string>().Should().Be(ExpectedComposedDescriptorEtag(42L));
+        success.EdfiDocs[1]!["_etag"]!.GetValue<string>().Should().Be(ExpectedComposedDescriptorEtag(43L));
+        commandExecutor.Commands.Should().HaveCount(2);
+        AssertDescriptorCandidateCommandOmitsBodyColumns(commandExecutor.Commands[0]);
+        AssertDescriptorMaterializationCommandSelectsBodyColumns(commandExecutor.Commands[1]);
+        commandExecutor.Commands[1].CommandText.Should().Contain(expectedOrderByFragment);
+        commandExecutor.Commands[1].CommandText.Should().NotContain("COUNT(1)");
+
+        if (dialect is SqlDialect.Pgsql)
+        {
+            commandExecutor.Commands[1].CommandText.Should().Contain("VALUES");
+            commandExecutor.Commands[1].CommandText.Should().Contain("@selectedDocumentId0");
+            commandExecutor.Commands[1].CommandText.Should().Contain("@selectedDocumentId1");
+            commandExecutor
+                .Commands[1]
+                .Parameters.Select(parameter => parameter.Value)
+                .Should()
+                .Equal(101L, 205L);
+        }
+        else
+        {
+            commandExecutor.Commands[1].CommandText.Should().Contain("OPENJSON(@selectedDocumentIdsJson)");
+            commandExecutor.Commands[1].CommandText.Should().Contain("[DocumentId] bigint '$.DocumentId'");
+            commandExecutor.Commands[1].CommandText.Should().Contain("[Ordinal] int '$.Ordinal'");
+            commandExecutor.Commands[1].CommandText.Should().NotContain("VALUES");
+            commandExecutor.Commands[1].CommandText.Should().NotContain("@selectedDocumentId0");
+
+            RelationalParameter parameter = commandExecutor
+                .Commands[1]
+                .Parameters.Should()
+                .ContainSingle()
+                .Subject;
+            parameter.Name.Should().Be("@selectedDocumentIdsJson");
+            parameter.Value.Should().BeOfType<string>();
+            parameter.ConfigureParameter.Should().NotBeNull();
+
+            using var jsonDocument = JsonDocument.Parse((string)parameter.Value!);
+            jsonDocument.RootElement.GetArrayLength().Should().Be(2);
+            jsonDocument.RootElement[0].GetProperty("DocumentId").GetInt64().Should().Be(101L);
+            jsonDocument.RootElement[0].GetProperty("Ordinal").GetInt32().Should().Be(0);
+            jsonDocument.RootElement[1].GetProperty("DocumentId").GetInt64().Should().Be(205L);
+            jsonDocument.RootElement[1].GetProperty("Ordinal").GetInt32().Should().Be(1);
+        }
+    }
+
+    [Test]
+    public async Task It_reruns_descriptor_query_when_selected_page_fallback_metadata_drifts()
+    {
+        var selectedDocumentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-343434343434");
+        var rerunDocumentUuid = Guid.Parse("bbbbbbbb-1111-2222-3333-343434343434");
+        var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 7))),
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(
+                        selectedDocumentUuid,
+                        documentId: 101L,
+                        shortDescription: "Before fallback",
+                        contentVersion: 42L
+                    )
+                ),
+            ]),
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(
+                        selectedDocumentUuid,
+                        documentId: 101L,
+                        shortDescription: "Drifted selected row",
+                        contentVersion: 84L
+                    )
+                ),
+            ]),
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 8))),
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(
+                        rerunDocumentUuid,
+                        documentId: 205L,
+                        shortDescription: "No-cache rerun row",
+                        contentVersion: 95L
+                    )
+                ),
+            ]),
+        ]);
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(async call =>
+            {
+                var request = call.GetArgument<DocumentCacheReadAccelerationQueryRequest>(0)!;
+                var cancellationToken = call.GetArgument<CancellationToken>(1);
+                var selectionResult = await request
+                    .SelectAuthorizedCandidatePage(cancellationToken)
+                    .ConfigureAwait(false);
+                var candidateSelection = selectionResult
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage>()
+                    .Subject;
+
+                return await candidateSelection.RelationalFallback(cancellationToken).ConfigureAwait(false);
+            });
+
+        var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
+
+        var result = await sut.HandleQueryAsync(CreateQueryRequest(SqlDialect.Pgsql, totalCount: true));
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.TotalCount.Should().Be(8);
+        success.EdfiDocs.Should().ContainSingle();
+        success.EdfiDocs[0]!["id"]!.GetValue<string>().Should().Be(rerunDocumentUuid.ToString());
+        success.EdfiDocs[0]!["shortDescription"]!.GetValue<string>().Should().Be("No-cache rerun row");
+        commandExecutor.Commands.Should().HaveCount(3);
+        commandExecutor.Commands[1].CommandText.Should().Contain("VALUES");
+        commandExecutor.Commands[2].CommandText.Should().Contain("COUNT(1)");
+    }
+
+    [Test]
+    public async Task It_reruns_descriptor_query_when_selected_page_fallback_returns_duplicate_document_ids()
+    {
+        var selectedDocumentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-454545454545");
+        var rerunDocumentUuid = Guid.Parse("bbbbbbbb-1111-2222-3333-454545454545");
+        var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 7))),
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(
+                        selectedDocumentUuid,
+                        documentId: 101L,
+                        shortDescription: "Before fallback",
+                        contentVersion: 42L
+                    )
+                ),
+            ]),
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(
+                        selectedDocumentUuid,
+                        documentId: 101L,
+                        shortDescription: "Duplicate fallback row",
+                        contentVersion: 42L
+                    ),
+                    CreateDescriptorRow(
+                        selectedDocumentUuid,
+                        documentId: 101L,
+                        shortDescription: "Duplicate fallback row again",
+                        contentVersion: 42L
+                    )
+                ),
+            ]),
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 8))),
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(
+                        rerunDocumentUuid,
+                        documentId: 205L,
+                        shortDescription: "No-cache rerun row",
+                        contentVersion: 95L
+                    )
+                ),
+            ]),
+        ]);
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(async call =>
+            {
+                var request = call.GetArgument<DocumentCacheReadAccelerationQueryRequest>(0)!;
+                var cancellationToken = call.GetArgument<CancellationToken>(1);
+                var selectionResult = await request
+                    .SelectAuthorizedCandidatePage(cancellationToken)
+                    .ConfigureAwait(false);
+                var candidateSelection = selectionResult
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage>()
+                    .Subject;
+
+                return await candidateSelection.RelationalFallback(cancellationToken).ConfigureAwait(false);
+            });
+
+        var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
+
+        var result = await sut.HandleQueryAsync(CreateQueryRequest(SqlDialect.Pgsql, totalCount: true));
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.TotalCount.Should().Be(8);
+        success.EdfiDocs.Should().ContainSingle();
+        success.EdfiDocs[0]!["id"]!.GetValue<string>().Should().Be(rerunDocumentUuid.ToString());
+        success.EdfiDocs[0]!["shortDescription"]!.GetValue<string>().Should().Be("No-cache rerun row");
+        commandExecutor.Commands.Should().HaveCount(3);
+        commandExecutor.Commands[1].CommandText.Should().Contain("VALUES");
+        commandExecutor.Commands[2].CommandText.Should().Contain("COUNT(1)");
+    }
+
+    [Test]
     public async Task It_applies_readable_profile_projection_and_varies_the_etag_by_profile_for_query_items()
     {
         var documentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-888888888888");
@@ -1478,13 +2262,25 @@ public class Given_DescriptorReadHandler
     private static DescriptorReadHandler CreateHandler(
         IRelationalCommandExecutor commandExecutor,
         IReadableProfileProjector? readableProfileProjector = null
+    ) =>
+        CreateHandler(
+            commandExecutor,
+            PassthroughDocumentCacheReadAccelerationCoordinator.Instance,
+            readableProfileProjector
+        );
+
+    private static DescriptorReadHandler CreateHandler(
+        IRelationalCommandExecutor commandExecutor,
+        IDocumentCacheReadAccelerationCoordinator readAccelerationCoordinator,
+        IReadableProfileProjector? readableProfileProjector = null
     )
     {
         return new DescriptorReadHandler(
             commandExecutor,
             readableProfileProjector ?? A.Fake<IReadableProfileProjector>(),
             _servedEtagComposer,
-            NullLogger<DescriptorReadHandler>.Instance
+            NullLogger<DescriptorReadHandler>.Instance,
+            readAccelerationCoordinator
         );
     }
 
@@ -1634,6 +2430,8 @@ public class Given_DescriptorReadHandler
     private static IReadOnlyDictionary<string, object?> CreateDescriptorRow(
         Guid documentUuid,
         long documentId = 101L,
+        long contentVersion = 42L,
+        DateTimeOffset? contentLastModifiedAt = null,
         string? ns = "uri://ed-fi.org/SchoolTypeDescriptor",
         string? codeValue = "Alternative",
         string? shortDescription = "Alternative",
@@ -1646,8 +2444,11 @@ public class Given_DescriptorReadHandler
         return RelationalAccessTestData.CreateRow(
             ("DocumentId", documentId),
             ("DocumentUuid", documentUuid),
-            ("ContentVersion", 42L),
-            ("ContentLastModifiedAt", new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero)),
+            ("ContentVersion", contentVersion),
+            (
+                "ContentLastModifiedAt",
+                contentLastModifiedAt ?? new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero)
+            ),
             ("ResourceKeyId", (short)13),
             ("Namespace", ns),
             ("CodeValue", codeValue),
@@ -1666,6 +2467,118 @@ public class Given_DescriptorReadHandler
                 CreateMappingSet(SqlDialect.Pgsql).Key.EffectiveSchemaHash
             )
         );
+
+    private static void AssertDescriptorCandidateCommandOmitsBodyColumns(RelationalCommand command)
+    {
+        AssertDescriptorProjectionSelectsColumns(
+            command,
+            [
+                "DocumentId",
+                "DocumentUuid",
+                "ContentVersion",
+                "ContentLastModifiedAt",
+                "ResourceKeyId",
+                "Namespace",
+                "CodeValue",
+                "Discriminator",
+            ]
+        );
+        command.CommandText.Should().NotContain("\"ShortDescription\"");
+        command.CommandText.Should().NotContain("[ShortDescription]");
+        command.CommandText.Should().NotContain("descriptor.\"Description\"");
+        command.CommandText.Should().NotContain("descriptor.[Description]");
+        command.CommandText.Should().NotContain("\"EffectiveBeginDate\"");
+        command.CommandText.Should().NotContain("[EffectiveBeginDate]");
+        command.CommandText.Should().NotContain("\"EffectiveEndDate\"");
+        command.CommandText.Should().NotContain("[EffectiveEndDate]");
+    }
+
+    private static void AssertDescriptorMaterializationCommandSelectsBodyColumns(RelationalCommand command)
+    {
+        AssertDescriptorProjectionSelectsColumns(
+            command,
+            [
+                "DocumentId",
+                "DocumentUuid",
+                "ContentVersion",
+                "ContentLastModifiedAt",
+                "ResourceKeyId",
+                "Namespace",
+                "CodeValue",
+                "ShortDescription",
+                "Description",
+                "EffectiveBeginDate",
+                "EffectiveEndDate",
+                "Discriminator",
+            ]
+        );
+    }
+
+    private static void AssertDescriptorProjectionSelectsColumns(
+        RelationalCommand command,
+        IReadOnlyList<string> columnNames
+    )
+    {
+        foreach (string columnName in columnNames)
+        {
+            bool selectsColumn =
+                command.CommandText.Contains($"AS \"{columnName}\"", StringComparison.Ordinal)
+                || command.CommandText.Contains($"AS [{columnName}]", StringComparison.Ordinal);
+
+            selectsColumn.Should().BeTrue($"the descriptor projection should select {columnName}");
+        }
+    }
+
+    private static void AssertDescriptorReadCommandsShareScaffolding(
+        RelationalCommand candidateCommand,
+        RelationalCommand fullRowCommand,
+        string documentIdSourceAlias
+    )
+    {
+        RemoveDescriptorProjection(candidateCommand.CommandText, documentIdSourceAlias)
+            .Should()
+            .Be(RemoveDescriptorProjection(fullRowCommand.CommandText, documentIdSourceAlias));
+        candidateCommand
+            .Parameters.Select(parameter =>
+                (parameter.Name, parameter.Value, HasConfiguration: parameter.ConfigureParameter is not null)
+            )
+            .Should()
+            .Equal(
+                fullRowCommand.Parameters.Select(parameter =>
+                    (
+                        parameter.Name,
+                        parameter.Value,
+                        HasConfiguration: parameter.ConfigureParameter is not null
+                    )
+                )
+            );
+    }
+
+    private static string RemoveDescriptorProjection(string commandText, string documentIdSourceAlias)
+    {
+        string documentIdProjection = commandText.Contains(
+            $"{documentIdSourceAlias}.\"DocumentId\" AS \"DocumentId\"",
+            StringComparison.Ordinal
+        )
+            ? $"{documentIdSourceAlias}.\"DocumentId\" AS \"DocumentId\""
+            : $"{documentIdSourceAlias}.[DocumentId] AS [DocumentId]";
+        int documentIdProjectionIndex = commandText.IndexOf(documentIdProjection, StringComparison.Ordinal);
+        documentIdProjectionIndex.Should().BeGreaterThanOrEqualTo(0);
+        int selectIndex = commandText.LastIndexOf(
+            "SELECT",
+            documentIdProjectionIndex,
+            StringComparison.Ordinal
+        );
+        selectIndex.Should().BeGreaterThanOrEqualTo(0);
+        int fromIndex = commandText.IndexOf(
+            $"{Environment.NewLine}FROM ",
+            documentIdProjectionIndex,
+            StringComparison.Ordinal
+        );
+        fromIndex.Should().BeGreaterThan(documentIdProjectionIndex);
+
+        return commandText[..(selectIndex + "SELECT".Length)] + commandText[fromIndex..];
+    }
 
     private static QueryElement CreateQueryElement(
         string queryFieldName,

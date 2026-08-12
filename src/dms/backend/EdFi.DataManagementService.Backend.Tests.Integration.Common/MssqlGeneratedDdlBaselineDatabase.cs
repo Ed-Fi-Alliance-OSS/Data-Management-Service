@@ -13,6 +13,16 @@ namespace EdFi.DataManagementService.Backend.Tests.Integration.Common;
 public sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
 {
     private const int DefaultCommandTimeoutSeconds = 300;
+    private const int SnapshotDropMaxAttempts = 6;
+    private static readonly TimeSpan[] SnapshotDropRetryDelays =
+    [
+        TimeSpan.FromMilliseconds(250),
+        TimeSpan.FromMilliseconds(500),
+        TimeSpan.FromSeconds(1),
+        TimeSpan.FromSeconds(2),
+        TimeSpan.FromSeconds(4),
+    ];
+
     private static readonly object _sync = new();
     private static readonly Dictionary<string, SharedBaselineEntry> _sharedBaselines = new(
         StringComparer.Ordinal
@@ -304,11 +314,7 @@ public sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
         {
             await MssqlDatabaseLifecycleCoordinator.ExecuteAsync(async connection =>
             {
-                await MssqlTestDatabaseHelper.DropSnapshotIfExistsAsync(
-                    connection,
-                    snapshotName,
-                    commandTimeoutSeconds
-                );
+                await DropSnapshotIfExistsWithRetryAsync(connection, snapshotName, commandTimeoutSeconds);
 
                 IReadOnlyList<MssqlSnapshotSourceFile> snapshotFiles = await GetSnapshotFilesAsync(
                     connection,
@@ -421,6 +427,73 @@ public sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
                 context.CallerLineNumber
             );
         }
+    }
+
+    private static async Task DropSnapshotIfExistsWithRetryAsync(
+        SqlConnection connection,
+        string snapshotName,
+        int commandTimeoutSeconds
+    )
+    {
+        Exception? lastException = null;
+
+        for (var attempt = 1; attempt <= SnapshotDropMaxAttempts; attempt++)
+        {
+            try
+            {
+                await MssqlTestDatabaseHelper.DropSnapshotIfExistsAsync(
+                    connection,
+                    snapshotName,
+                    commandTimeoutSeconds
+                );
+
+                if (!await SnapshotExistsAsync(connection, snapshotName, commandTimeoutSeconds))
+                {
+                    return;
+                }
+            }
+            catch (Exception exception)
+            {
+                lastException = exception;
+            }
+
+            if (attempt <= SnapshotDropRetryDelays.Length)
+            {
+                await Task.Delay(SnapshotDropRetryDelays[attempt - 1]);
+            }
+        }
+
+        var message =
+            $"SQL Server snapshot '{snapshotName}' still exists after {SnapshotDropMaxAttempts} drop attempts; "
+            + "the source database was not dropped so the snapshot cleanup failure is preserved.";
+
+        throw lastException is null
+            ? new InvalidOperationException(message)
+            : new InvalidOperationException(message, lastException);
+    }
+
+    private static async Task<bool> SnapshotExistsAsync(
+        SqlConnection connection,
+        string snapshotName,
+        int commandTimeoutSeconds
+    )
+    {
+        const string sql = """
+            SELECT CAST(
+                CASE
+                    WHEN EXISTS (SELECT 1 FROM sys.databases WHERE [name] = @snapshotName) THEN 1
+                    ELSE 0
+                END
+                AS int
+            );
+            """;
+
+        await using SqlCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.CommandTimeout = commandTimeoutSeconds;
+        command.Parameters.Add(new SqlParameter("@snapshotName", snapshotName));
+
+        return (int)(await command.ExecuteScalarAsync() ?? 0) == 1;
     }
 
     private static async Task<IReadOnlyList<MssqlSnapshotSourceFile>> GetSnapshotFilesAsync(
@@ -567,6 +640,9 @@ public sealed class MssqlGeneratedDdlBaselineDatabase : IAsyncDisposable
 
         public async ValueTask DisposeAsync()
         {
+            await MssqlDatabaseLifecycleCoordinator.ExecuteAsync(connection =>
+                DropSnapshotIfExistsWithRetryAsync(connection, SnapshotName, DefaultCommandTimeoutSeconds)
+            );
             await MssqlTestDatabaseHelper.DropDatabaseUnderLifecycleGateAsync(
                 Database.DatabaseName,
                 DefaultCommandTimeoutSeconds

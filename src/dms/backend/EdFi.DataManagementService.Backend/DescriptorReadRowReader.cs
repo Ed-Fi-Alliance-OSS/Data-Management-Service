@@ -7,6 +7,25 @@ using System.Globalization;
 
 namespace EdFi.DataManagementService.Backend;
 
+internal interface IDescriptorReadCandidateMetadata
+{
+    long DocumentId { get; }
+
+    Guid DocumentUuid { get; }
+
+    long ContentVersion { get; }
+
+    DateTimeOffset ContentLastModifiedAt { get; }
+
+    short ResourceKeyId { get; }
+
+    string? Namespace { get; }
+
+    string CodeValue { get; }
+
+    string? Discriminator { get; }
+}
+
 internal sealed record DescriptorReadRow(
     long DocumentId,
     Guid DocumentUuid,
@@ -20,7 +39,18 @@ internal sealed record DescriptorReadRow(
     DateOnly? EffectiveBeginDate,
     DateOnly? EffectiveEndDate,
     string? Discriminator
-);
+) : IDescriptorReadCandidateMetadata;
+
+internal sealed record DescriptorReadCandidateRow(
+    long DocumentId,
+    Guid DocumentUuid,
+    long ContentVersion,
+    DateTimeOffset ContentLastModifiedAt,
+    short ResourceKeyId,
+    string? Namespace,
+    string CodeValue,
+    string? Discriminator
+) : IDescriptorReadCandidateMetadata;
 
 internal sealed class DescriptorReadInvariantException(string message) : InvalidOperationException(message);
 
@@ -122,6 +152,76 @@ internal static class DescriptorReadRowReader
             Description: reader.GetNullableFieldValue<string>(DescriptionColumnName),
             EffectiveBeginDate: reader.GetNullableDateFieldValue(EffectiveBeginDateColumnName),
             EffectiveEndDate: reader.GetNullableDateFieldValue(EffectiveEndDateColumnName),
+            Discriminator: ReadOptionalStringField(reader, DiscriminatorColumnName)
+        );
+    }
+
+    public static async Task<DescriptorReadCandidateRow?> ReadSingleCandidateOrDefaultAsync(
+        IRelationalCommandReader reader,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        var row = ReadCurrentCandidateRow(reader);
+
+        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("Descriptor single-row read returned multiple rows.");
+        }
+
+        return row;
+    }
+
+    public static async Task<IReadOnlyList<DescriptorReadCandidateRow>> ReadAllCandidatesAsync(
+        IRelationalCommandReader reader,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+
+        List<DescriptorReadCandidateRow> rows = [];
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            rows.Add(ReadCurrentCandidateRow(reader));
+        }
+
+        return rows;
+    }
+
+    private static DescriptorReadCandidateRow ReadCurrentCandidateRow(IRelationalCommandReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+
+        var documentId = reader.GetRequiredFieldValue<long>(DocumentIdColumnName);
+        var documentUuid = reader.GetRequiredFieldValue<Guid>(DocumentUuidColumnName);
+        var contentVersion = reader.GetRequiredFieldValue<long>(ContentVersionColumnName);
+        var resourceKeyId = reader.GetRequiredFieldValue<short>(ResourceKeyIdColumnName);
+
+        return new DescriptorReadCandidateRow(
+            DocumentId: documentId,
+            DocumentUuid: documentUuid,
+            ContentVersion: contentVersion,
+            ContentLastModifiedAt: ReadRequiredDateTimeOffsetFieldValue(
+                reader,
+                ContentLastModifiedAtColumnName,
+                documentId,
+                resourceKeyId
+            ),
+            ResourceKeyId: resourceKeyId,
+            Namespace: reader.GetNullableFieldValue<string>(NamespaceColumnName),
+            CodeValue: ReadRequiredDescriptorStringField(
+                reader,
+                CodeValueColumnName,
+                documentId,
+                resourceKeyId
+            ),
             Discriminator: ReadOptionalStringField(reader, DiscriminatorColumnName)
         );
     }

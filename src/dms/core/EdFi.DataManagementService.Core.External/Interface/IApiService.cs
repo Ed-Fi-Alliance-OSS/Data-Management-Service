@@ -25,7 +25,10 @@ public interface IApiService
     /// <summary>
     /// DMS entry point for all API GET by id requests
     /// </summary>
-    Task<IFrontendResponse> Get(FrontendRequest frontendRequest);
+    Task<IFrontendResponse> Get(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// DMS entry point for all API PUT requests, which are "by id"

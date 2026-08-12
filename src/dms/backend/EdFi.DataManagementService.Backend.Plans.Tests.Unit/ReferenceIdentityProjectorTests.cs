@@ -876,7 +876,8 @@ public class Given_ProjectPage_With_Root_Table_Projections
                     1,
                     1,
                     DateTimeOffset.UtcNow,
-                    DateTimeOffset.UtcNow
+                    DateTimeOffset.UtcNow,
+                    1
                 ),
                 new DocumentMetadataRow(
                     2L,
@@ -884,7 +885,8 @@ public class Given_ProjectPage_With_Root_Table_Projections
                     1,
                     1,
                     DateTimeOffset.UtcNow,
-                    DateTimeOffset.UtcNow
+                    DateTimeOffset.UtcNow,
+                    1
                 ),
                 new DocumentMetadataRow(
                     3L,
@@ -892,7 +894,8 @@ public class Given_ProjectPage_With_Root_Table_Projections
                     1,
                     1,
                     DateTimeOffset.UtcNow,
-                    DateTimeOffset.UtcNow
+                    DateTimeOffset.UtcNow,
+                    1
                 ),
             ],
             TableRowsInDependencyOrder: [hydratedRows],
@@ -1020,7 +1023,8 @@ public class Given_ProjectPage_With_No_Projection_Plans
                     1,
                     1,
                     DateTimeOffset.UtcNow,
-                    DateTimeOffset.UtcNow
+                    DateTimeOffset.UtcNow,
+                    1
                 ),
             ],
             TableRowsInDependencyOrder: [new HydratedTableRows(rootTableModel, [new object?[] { 1L }])],
@@ -1211,7 +1215,8 @@ public class Given_ProjectPage_With_Mixed_Root_And_Collection_Plans
                     1,
                     1,
                     DateTimeOffset.UtcNow,
-                    DateTimeOffset.UtcNow
+                    DateTimeOffset.UtcNow,
+                    1
                 ),
             ],
             TableRowsInDependencyOrder: [rootHydratedRows, collectionHydratedRows],

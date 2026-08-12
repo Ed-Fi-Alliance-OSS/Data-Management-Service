@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.Configuration;
@@ -24,11 +25,9 @@ public class Given_DocumentCacheServiceRegistration
     {
         IServiceCollection services = new ServiceCollection();
 
-        services.AddPostgresqlReferenceResolver();
+        AddSharedReferenceResolverForTest(services);
 
-        AssertSingleton<DocumentCacheProjectionObservationStore, DocumentCacheProjectionObservationStore>(
-            services
-        );
+        AssertSingletonFactory<DocumentCacheProjectionObservationStore>(services);
         AssertSingleton<IDocumentCacheProjectionTelemetry, DocumentCacheProjectionTelemetry>(services);
         AssertSingleton<
             IDocumentCacheDownstreamPublicationHistoryProvider,
@@ -71,7 +70,35 @@ public class Given_DocumentCacheServiceRegistration
         AssertSingleton<IDocumentCacheBaselineSeeder, DocumentCacheBaselineSeeder>(services);
         AssertSingleton<IDocumentCacheAdministrativeDrainer, DocumentCacheAdministrativeDrainer>(services);
         AssertScoped<IDocumentCacheWriterRetryAdapter, DocumentCacheWriterRetryAdapter>(services);
+        AssertSingletonFactory<IDocumentCacheProjectionTargetDiagnosticSink>(services);
+        AssertScoped<IDocumentCacheReadResponseShaper, DocumentCacheReadResponseShaper>(services);
+        AssertScopedFactory<IDocumentCacheReadAccelerationCoordinator>(services);
+        services
+            .Should()
+            .NotContain(descriptor => descriptor.ServiceType == typeof(IDocumentCacheReadLookupAdapter));
         services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IHostedService));
+    }
+
+    [Test]
+    public void It_resolves_the_projection_observation_store_from_configured_document_cache_options()
+    {
+        IServiceCollection services = new ServiceCollection();
+        services.Configure<DocumentCacheOptions>(options => options.Projector.PageSize = 3);
+
+        AddSharedReferenceResolverForTest(services);
+
+        using ServiceProvider serviceProvider = services.BuildServiceProvider();
+        DocumentCacheProjectionObservationStore store =
+            serviceProvider.GetRequiredService<DocumentCacheProjectionObservationStore>();
+
+        serviceProvider
+            .GetRequiredService<IDocumentCacheProjectionObservationProvider>()
+            .Should()
+            .BeSameAs(store);
+        serviceProvider
+            .GetRequiredService<IDocumentCacheProjectionObservationSink>()
+            .Should()
+            .BeSameAs(store);
     }
 
     [Test]
@@ -109,11 +136,15 @@ public class Given_DocumentCacheServiceRegistration
             IDocumentCacheProviderCommandTimeoutClassifier,
             PostgresqlDocumentCacheProviderCommandTimeoutClassifier
         >(services);
+        AssertSingleton<IServedEtagComposer, ServedEtagComposer>(services);
         AssertSingletonFactory<IDocumentCacheAdministrativePrimitives>(services);
         AssertSingleton<
             IDocumentCacheProjectionDrainPageProcessor,
             DocumentCacheProjectionDrainPageProcessor
         >(services);
+        AssertScoped<IDocumentCacheReadLookupAdapter, PostgresqlDocumentCacheReadLookupAdapter>(services);
+        AssertScoped<IDocumentCacheReadResponseShaper, DocumentCacheReadResponseShaper>(services);
+        AssertScopedFactory<IDocumentCacheReadAccelerationCoordinator>(services);
     }
 
     [Test]
@@ -132,10 +163,25 @@ public class Given_DocumentCacheServiceRegistration
             IDocumentCacheProviderCommandTimeoutClassifier,
             MssqlDocumentCacheProviderCommandTimeoutClassifier
         >(services);
+        AssertSingleton<IServedEtagComposer, ServedEtagComposer>(services);
         AssertSingletonFactory<IDocumentCacheAdministrativePrimitives>(services);
         AssertSingleton<
             IDocumentCacheProjectionDrainPageProcessor,
             DocumentCacheProjectionDrainPageProcessor
+        >(services);
+        AssertScoped<IDocumentCacheReadLookupAdapter, MssqlDocumentCacheReadLookupAdapter>(services);
+        AssertScoped<IDocumentCacheReadResponseShaper, DocumentCacheReadResponseShaper>(services);
+        AssertScopedFactory<IDocumentCacheReadAccelerationCoordinator>(services);
+    }
+
+    private static void AddSharedReferenceResolverForTest(IServiceCollection services)
+    {
+        ReferenceResolverServiceCollectionExtensions.AddReferenceResolver<
+            PostgresqlReferenceResolverAdapterFactory,
+            PostgresqlRelationalCommandExecutor,
+            PostgresqlRelationalWriteSessionFactory,
+            PostgresqlDocumentHydrator,
+            PostgresqlSessionDocumentHydrator
         >(services);
     }
 

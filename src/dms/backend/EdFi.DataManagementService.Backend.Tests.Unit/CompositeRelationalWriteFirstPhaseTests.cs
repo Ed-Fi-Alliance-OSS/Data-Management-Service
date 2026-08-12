@@ -669,6 +669,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
         table.Columns.Add("IdentityVersion", typeof(long));
         table.Columns.Add("ContentLastModifiedAt", typeof(DateTimeOffset));
         table.Columns.Add("IdentityLastModifiedAt", typeof(DateTimeOffset));
+        table.Columns.Add("ResourceKeyId", typeof(short));
 
         if (target is not null)
         {
@@ -678,7 +679,8 @@ public class Given_The_Composite_Relational_Write_First_Phase
                 hydratedContentVersion,
                 9L,
                 DateTimeOffset.UnixEpoch,
-                DateTimeOffset.UnixEpoch
+                DateTimeOffset.UnixEpoch,
+                (short)1
             );
         }
 

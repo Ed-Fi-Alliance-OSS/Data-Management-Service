@@ -26,6 +26,7 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// </param>
 /// <param name="Paging">The paging mode and its inputs for this query.</param>
 /// <param name="TraceId">The request TraceId.</param>
+/// <param name="TenantKey">The normalized request tenant key.</param>
 /// <param name="ReadableProfileProjectionContext">
 /// Optional readable-profile projection inputs when a readable profile applies to the request.
 /// </param>
@@ -43,7 +44,8 @@ internal sealed record RelationalQueryRequest(
     TraceId TraceId,
     ReadableProfileProjectionContext? ReadableProfileProjectionContext = null,
     ChangeVersionRange? ChangeVersionRange = null,
-    ResponseContentCoding ResponseContentCoding = ResponseContentCoding.Identity
+    ResponseContentCoding ResponseContentCoding = ResponseContentCoding.Identity,
+    string TenantKey = ""
 ) : IQueryRequest
 {
     ChangeVersionRange IQueryRequest.ChangeVersionRange =>

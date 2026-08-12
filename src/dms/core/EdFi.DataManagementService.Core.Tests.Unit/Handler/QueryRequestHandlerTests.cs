@@ -58,7 +58,10 @@ public class QueryRequestHandlerTests
         {
             public IQueryRequest? CapturedRequest { get; private set; }
 
-            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+            public override Task<QueryResult> QueryDocuments(
+                IQueryRequest queryRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 CapturedRequest = queryRequest;
 
@@ -114,7 +117,10 @@ public class QueryRequestHandlerTests
             public static readonly JsonArray ResponseBody = [];
             public IQueryRequest? CapturedRequest { get; private set; }
 
-            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+            public override Task<QueryResult> QueryDocuments(
+                IQueryRequest queryRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 CapturedRequest = queryRequest;
                 return Task.FromResult<QueryResult>(new QueryResult.QuerySuccess([], 0));
@@ -166,7 +172,10 @@ public class QueryRequestHandlerTests
         {
             public IQueryRequest? CapturedRequest { get; private set; }
 
-            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+            public override Task<QueryResult> QueryDocuments(
+                IQueryRequest queryRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 CapturedRequest = queryRequest;
                 return Task.FromResult<QueryResult>(new QueryResult.QuerySuccess([], 0));
@@ -213,7 +222,10 @@ public class QueryRequestHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+            public override Task<QueryResult> QueryDocuments(
+                IQueryRequest queryRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 return Task.FromResult<QueryResult>(new QueryResult.QueryFailureKnownError("Error"));
             }
@@ -245,7 +257,10 @@ public class QueryRequestHandlerTests
         {
             public static readonly string ResponseBody = "FailureMessage";
 
-            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+            public override Task<QueryResult> QueryDocuments(
+                IQueryRequest queryRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 return Task.FromResult<QueryResult>(new QueryResult.UnknownFailure(ResponseBody));
             }
@@ -296,7 +311,10 @@ public class QueryRequestHandlerTests
                     + "does not match the {BasisResource}With... custom-view convention.",
             ];
 
-            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+            public override Task<QueryResult> QueryDocuments(
+                IQueryRequest queryRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 return Task.FromResult<QueryResult>(
                     new QueryResult.QueryFailureSecurityConfiguration(
@@ -415,7 +433,10 @@ public class QueryRequestHandlerTests
                 "Change query authorization metadata is invalid for resource 'Ed-Fi.School'.",
             ];
 
-            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+            public override Task<QueryResult> QueryDocuments(
+                IQueryRequest queryRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 return Task.FromResult<QueryResult>(
                     new QueryResult.QueryFailureSecurityConfiguration(
@@ -483,7 +504,10 @@ public class QueryRequestHandlerTests
 
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+            public override Task<QueryResult> QueryDocuments(
+                IQueryRequest queryRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 return Task.FromResult<QueryResult>(
                     new QueryResult.QueryFailureNamespaceNotAuthorized(Failure)
@@ -532,7 +556,10 @@ public class QueryRequestHandlerTests
         {
             public static readonly string ResponseBody = "FailureMessage";
 
-            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+            public override Task<QueryResult> QueryDocuments(
+                IQueryRequest queryRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 return Task.FromResult<QueryResult>(new QueryResult.QueryFailureNotImplemented(ResponseBody));
             }
@@ -584,7 +611,10 @@ public class QueryRequestHandlerTests
                 + "with no authorization strategies or with 'NamespaceBased' and/or "
                 + "'NoFurtherAuthorizationRequired' are currently supported.";
 
-            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+            public override Task<QueryResult> QueryDocuments(
+                IQueryRequest queryRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 return Task.FromResult<QueryResult>(new QueryResult.QueryFailureNotImplemented(ResponseBody));
             }
@@ -662,7 +692,10 @@ public class QueryRequestHandlerTests
                 "Descriptor query capability for resource 'Ed-Fi.SchoolTypeDescriptor' was intentionally "
                 + "omitted: descriptor query support was intentionally omitted for the test fixture.";
 
-            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+            public override Task<QueryResult> QueryDocuments(
+                IQueryRequest queryRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 return Task.FromResult<QueryResult>(new QueryResult.QueryFailureNotImplemented(ResponseBody));
             }
@@ -748,7 +781,10 @@ public class QueryRequestHandlerTests
         {
             public IQueryRequest? CapturedRequest { get; private set; }
 
-            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+            public override Task<QueryResult> QueryDocuments(
+                IQueryRequest queryRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 CapturedRequest = queryRequest;
 
@@ -967,6 +1003,41 @@ public class QueryRequestHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Request_Cancellation_Token : QueryRequestHandlerTests
+    {
+        private sealed class Repository : NotImplementedDocumentStoreRepository
+        {
+            public CancellationToken CapturedCancellationToken { get; private set; }
+
+            public override Task<QueryResult> QueryDocuments(
+                IQueryRequest queryRequest,
+                CancellationToken cancellationToken = default
+            )
+            {
+                CapturedCancellationToken = cancellationToken;
+                return Task.FromResult<QueryResult>(new QueryResult.QuerySuccess([], 0));
+            }
+        }
+
+        [Test]
+        public async Task It_passes_the_request_token_to_the_query_repository()
+        {
+            using var cancellationSource = new CancellationTokenSource();
+            var repository = new Repository();
+            var requestInfo = RequestInfoWithRelationalMappingSet();
+            requestInfo.RequestCancellationToken = cancellationSource.Token;
+
+            var (queryHandler, serviceProvider) = Handler(repository);
+            requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await queryHandler.Execute(requestInfo, NullNext);
+
+            repository.CapturedCancellationToken.Should().Be(cancellationSource.Token);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Descriptor_Request_With_Relational_Query_Metadata : QueryRequestHandlerTests
     {
         private static ResourceInfo CreateResourceInfo(
@@ -988,7 +1059,10 @@ public class QueryRequestHandlerTests
         {
             public IQueryRequest? CapturedRequest { get; private set; }
 
-            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+            public override Task<QueryResult> QueryDocuments(
+                IQueryRequest queryRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 CapturedRequest = queryRequest;
 
@@ -1065,7 +1139,10 @@ public class QueryRequestHandlerTests
         {
             public IQueryRequest? CapturedRequest { get; private set; }
 
-            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+            public override Task<QueryResult> QueryDocuments(
+                IQueryRequest queryRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 CapturedRequest = queryRequest;
 

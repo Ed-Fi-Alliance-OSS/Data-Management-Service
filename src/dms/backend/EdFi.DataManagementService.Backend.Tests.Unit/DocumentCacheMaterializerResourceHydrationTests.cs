@@ -100,7 +100,8 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
                     ContentVersion,
                     ContentVersion,
                     LastModifiedAt,
-                    LastModifiedAt
+                    LastModifiedAt,
+                    ResourceKeyId
                 )
             );
         servedEtagComposer
@@ -421,7 +422,8 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
                     source.ContentVersion,
                     source.ContentVersion,
                     source.ContentLastModifiedAt,
-                    source.ContentLastModifiedAt
+                    source.ContentLastModifiedAt,
+                    source.ResourceKeyId
                 ),
             ],
             TableRowsInDependencyOrder:

@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
@@ -122,7 +121,6 @@ internal sealed class RelationalReadMaterializer(
     private const string IdPropertyName = "id";
     private const string EtagPropertyName = "_etag";
     private const string LastModifiedDatePropertyName = "_lastModifiedDate";
-    private const string LastModifiedDateFormat = "yyyy-MM-ddTHH:mm:ss'Z'";
 
     private readonly IDocumentLinkSlugResolver _slugResolver =
         slugResolver ?? throw new ArgumentNullException(nameof(slugResolver));
@@ -314,9 +312,7 @@ internal sealed class RelationalReadMaterializer(
     }
 
     private static string FormatLastModifiedDate(DocumentMetadataRow documentMetadata) =>
-        documentMetadata
-            .ContentLastModifiedAt.ToUniversalTime()
-            .ToString(LastModifiedDateFormat, CultureInfo.InvariantCulture);
+        LastModifiedDateFormatter.Format(documentMetadata.ContentLastModifiedAt);
 
     // Every ExternalResponse read call site supplies representation inputs and a mapping set, so the
     // served _etag is always composed as "{ContentVersion}-{variantKey}" (no hashing). Absence of

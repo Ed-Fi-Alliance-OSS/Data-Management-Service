@@ -165,6 +165,54 @@ public class Given_DocumentCacheProjectionTelemetry
     }
 
     [Test]
+    public void It_records_target_diagnostic_category_for_target_observations()
+    {
+        using MetricCollector collector = new();
+        DocumentCacheProjectionTelemetry telemetry = collector.CreateTelemetry();
+        DocumentCacheProjectionTargetHealthSnapshot snapshot = new(
+            TargetKey,
+            Generation,
+            effectiveProjectorPageSize: 2,
+            ObservedAt,
+            RelationalProviderToken.Postgresql,
+            Fingerprint,
+            lifecycleFence: DocumentCacheProjectionLifecycleFenceSnapshotFactory.FromLifecycle(
+                new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false),
+                ObservedAt
+            ),
+            targetDiagnostics:
+            [
+                new DocumentCacheTargetDiagnostic(
+                    TargetKey,
+                    DocumentCacheTargetResolutionState.Resolved,
+                    RelationalProviderToken.Postgresql,
+                    Generation,
+                    physicalSourceFingerprint: null,
+                    lifecycle: null,
+                    inventory: null,
+                    enqueueTrigger: null,
+                    sqlServerPrerequisites: null,
+                    retryState: null,
+                    DocumentCacheTargetDiagnosticCategory.DeterministicInvariantFailure,
+                    "DocumentCache read invariant failure."
+                ),
+            ]
+        );
+
+        telemetry.RecordTargetObservation(snapshot);
+
+        MetricMeasurement targetState = collector
+            .MeasurementsFor(DocumentCacheProjectionTelemetry.TargetStateCounterName)
+            .Should()
+            .ContainSingle()
+            .Which;
+        targetState
+            .Tags["category"]
+            .Should()
+            .Be(nameof(DocumentCacheTargetDiagnosticCategory.DeterministicInvariantFailure));
+    }
+
+    [Test]
     public void It_records_administrative_phase_mutation_mutex_and_result_metrics()
     {
         using MetricCollector collector = new();

@@ -211,7 +211,8 @@ public class Given_Mssql_DocumentCacheMaterializer_Coherence
                         ContentVersion,
                         ContentVersion,
                         LastModifiedAt,
-                        LastModifiedAt
+                        LastModifiedAt,
+                        11
                     ),
                 ],
                 TableRowsInDependencyOrder:

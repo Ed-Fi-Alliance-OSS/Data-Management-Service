@@ -5,6 +5,8 @@
 
 using System.Data.Common;
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Tests.Integration.Doubles;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
@@ -32,6 +34,9 @@ public abstract class ApiIntegrationTestBase
     private string? _startupStatusFilePath;
     private ApiIntegrationQueryRecorder? _queryRecorder;
     private ApiIntegrationProviderFailureRecorder? _providerFailureRecorder;
+    private DocumentCacheReadAcquisitionFailureRecorder? _documentCacheReadAcquisitionFailureRecorder;
+    private DocumentCacheDirectFillTimeoutRecorder? _documentCacheDirectFillTimeoutRecorder;
+    private DocumentCacheReadTelemetryRecorder? _documentCacheReadTelemetryRecorder;
 
     protected ApiIntegrationHarness Harness { get; private set; } = null!;
 
@@ -79,6 +84,24 @@ public abstract class ApiIntegrationTestBase
     /// <summary>Enables ASP.NET Core response compression for scenarios that exercise coding variants.</summary>
     protected virtual bool EnableAspNetCompression => false;
 
+    /// <summary>Enables the DMS DocumentCache read-acceleration path for cache-backed read scenarios.</summary>
+    protected virtual bool EnableDocumentCacheReadAcceleration => false;
+
+    /// <summary>Forces cache read lookup to report an expected adapter acquisition failure.</summary>
+    protected virtual bool ForceDocumentCacheReadLookupAdapterAcquisitionFailure => false;
+
+    /// <summary>Forces direct-fill materialization to wait until the direct-fill timeout cancels it.</summary>
+    protected virtual bool ForceDocumentCacheDirectFillTimeout => false;
+
+    /// <summary>Records cache read telemetry without replacing production cache lookup or direct-fill services.</summary>
+    protected virtual bool RecordDocumentCacheReadTelemetry => false;
+
+    /// <summary>Direct-fill timeout used by cache-backed API integration scenarios.</summary>
+    protected virtual string DocumentCacheReadAccelerationDirectFillTimeout => "00:00:00.250";
+
+    /// <summary>Controls the public ResourceLinks response flag for scenarios that exercise link stripping.</summary>
+    protected virtual bool ResourceLinksEnabled => true;
+
     /// <summary>
     /// Builds the claim set provider used by the in-process host.
     /// </summary>
@@ -105,6 +128,15 @@ public abstract class ApiIntegrationTestBase
         _leasedConnectionString = await LeaseDatabaseAsync(_fixtureContext);
         _startupStatusFilePath = Path.Combine(Path.GetTempPath(), $"api-int-startup-{Guid.NewGuid():N}.json");
         _queryRecorder = CaptureQueryPlans ? new ApiIntegrationQueryRecorder() : null;
+        _documentCacheReadAcquisitionFailureRecorder = ForceDocumentCacheReadLookupAdapterAcquisitionFailure
+            ? new DocumentCacheReadAcquisitionFailureRecorder()
+            : null;
+        _documentCacheDirectFillTimeoutRecorder = ForceDocumentCacheDirectFillTimeout
+            ? new DocumentCacheDirectFillTimeoutRecorder()
+            : null;
+        _documentCacheReadTelemetryRecorder = RecordDocumentCacheReadTelemetry
+            ? new DocumentCacheReadTelemetryRecorder()
+            : null;
         var providerFailureTransform = ProviderFailureTransform;
         _providerFailureRecorder = providerFailureTransform is null
             ? null
@@ -114,6 +146,9 @@ public abstract class ApiIntegrationTestBase
         var leasedConnectionString = _leasedConnectionString;
         var startupStatusFilePath = _startupStatusFilePath;
         var queryRecorder = _queryRecorder;
+        var documentCacheReadAcquisitionFailureRecorder = _documentCacheReadAcquisitionFailureRecorder;
+        var documentCacheDirectFillTimeoutRecorder = _documentCacheDirectFillTimeoutRecorder;
+        var documentCacheReadTelemetryRecorder = _documentCacheReadTelemetryRecorder;
         var providerFailureRecorder = _providerFailureRecorder;
         var clientNamespacePrefixes = ClientNamespacePrefixes;
 
@@ -133,6 +168,27 @@ public abstract class ApiIntegrationTestBase
                 "AppSettings:EnableAspNetCompression",
                 EnableAspNetCompression ? "true" : "false"
             );
+            builder.UseSetting(
+                "DataManagement:ResourceLinks:Enabled",
+                ResourceLinksEnabled ? "true" : "false"
+            );
+            builder.UseSetting(
+                "DataManagement:DocumentCache:ReadAcceleration:Enabled",
+                EnableDocumentCacheReadAcceleration ? "true" : "false"
+            );
+            if (EnableDocumentCacheReadAcceleration)
+            {
+                builder.UseSetting("DataManagement:DocumentCache:Targets:0:TenantKey", "");
+                builder.UseSetting(
+                    "DataManagement:DocumentCache:Targets:0:DataStoreId",
+                    ExternalDoublesConstants.StableDataStoreId.ToString()
+                );
+                builder.UseSetting(
+                    "DataManagement:DocumentCache:ReadAcceleration:DirectFillTimeout",
+                    DocumentCacheReadAccelerationDirectFillTimeout
+                );
+                builder.UseSetting("DataManagement:DocumentCache:Projector:PollInterval", "01:00:00");
+            }
             builder.UseSetting("ConfigurationServiceSettings:BaseUrl", "http://localhost/test-cms");
             builder.UseSetting("ConfigurationServiceSettings:ClientId", "test-cms-client");
             builder.UseSetting("ConfigurationServiceSettings:ClientSecret", "test-cms-secret");
@@ -148,7 +204,11 @@ public abstract class ApiIntegrationTestBase
                     ClientEducationOrganizationIds,
                     clientNamespacePrefixes,
                     providerFailureTransform,
-                    providerFailureRecorder
+                    providerFailureRecorder,
+                    EnableDocumentCacheReadAcceleration ? GetRelationalProviderToken() : null,
+                    documentCacheReadAcquisitionFailureRecorder,
+                    documentCacheDirectFillTimeoutRecorder,
+                    documentCacheReadTelemetryRecorder
                 );
 
                 if (queryRecorder is not null)
@@ -161,12 +221,22 @@ public abstract class ApiIntegrationTestBase
 
         _assertionConnection = await OpenAssertionConnectionAsync(_leasedConnectionString);
         var httpClient = _factory.CreateClient();
+        if (EnableDocumentCacheReadAcceleration)
+        {
+            await _factory
+                .Services.GetRequiredService<IDocumentCacheProjectionSupervisor>()
+                .RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+        }
+
         Harness = new ApiIntegrationHarness(
             httpClient,
             _assertionConnection,
             _fixtureContext,
             _queryRecorder,
-            _providerFailureRecorder
+            _providerFailureRecorder,
+            _documentCacheReadAcquisitionFailureRecorder,
+            _documentCacheDirectFillTimeoutRecorder,
+            _documentCacheReadTelemetryRecorder
         );
     }
 
@@ -202,6 +272,9 @@ public abstract class ApiIntegrationTestBase
         _fixtureContext = null;
         _queryRecorder = null;
         _providerFailureRecorder = null;
+        _documentCacheReadAcquisitionFailureRecorder = null;
+        _documentCacheDirectFillTimeoutRecorder = null;
+        _documentCacheReadTelemetryRecorder = null;
 
         if (_startupStatusFilePath is not null && File.Exists(_startupStatusFilePath))
         {
@@ -216,4 +289,9 @@ public abstract class ApiIntegrationTestBase
             _startupStatusFilePath = null;
         }
     }
+
+    private RelationalProviderToken GetRelationalProviderToken() =>
+        string.Equals(Datastore, "postgresql", StringComparison.OrdinalIgnoreCase)
+            ? RelationalProviderToken.Postgresql
+            : RelationalProviderToken.SqlServer;
 }

@@ -1038,7 +1038,8 @@ public class Given_Default_Relational_Write_Executor
                 44L,
                 44L,
                 new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
-                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero)
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                1
             ),
             [
                 new HydratedTableRows(
@@ -1356,7 +1357,8 @@ public class Given_Default_Relational_Write_Executor
                 44L,
                 44L,
                 new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
-                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero)
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                1
             ),
             [
                 new HydratedTableRows(
@@ -1879,7 +1881,8 @@ public class Given_Default_Relational_Write_Executor
                     45L,
                     45L,
                     new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
-                    new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero)
+                    new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                    1
                 ),
                 [
                     new HydratedTableRows(
@@ -3107,7 +3110,8 @@ public class Given_Default_Relational_Write_Executor
                 44L,
                 44L,
                 new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
-                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero)
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                1
             ),
             [
                 new HydratedTableRows(
@@ -8472,7 +8476,8 @@ public class Given_Default_Relational_Write_Executor
                             request.TargetContext.ObservedContentVersion,
                             request.TargetContext.ObservedContentVersion,
                             DateTimeOffset.UnixEpoch,
-                            DateTimeOffset.UnixEpoch
+                            DateTimeOffset.UnixEpoch,
+                            1
                         ),
                         [
                             new HydratedTableRows(
@@ -8684,7 +8689,8 @@ public class Given_Default_Relational_Write_Executor
                 contentVersion,
                 contentVersion,
                 new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
-                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero)
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                1
             ),
             [
                 new HydratedTableRows(

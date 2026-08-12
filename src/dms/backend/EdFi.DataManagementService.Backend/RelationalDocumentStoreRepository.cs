@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Globalization;
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -36,6 +37,7 @@ public sealed class RelationalDocumentStoreRepository(
     ISingleRecordRelationshipAuthorizationExecutor singleRecordRelationshipAuthorizationExecutor,
     INamespaceAuthorizationExecutor namespaceAuthorizationExecutor,
     IRelationalCommandExecutor commandExecutor,
+    IDocumentCacheReadAccelerationCoordinator readAccelerationCoordinator,
     IRelationalParameterConfigurator? relationalParameterConfigurator = null,
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
         null,
@@ -93,9 +95,28 @@ public sealed class RelationalDocumentStoreRepository(
         ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance;
     private readonly ChangeQueryPageOrderingPolicy _orderingPolicy =
         orderingPolicy ?? ChangeQueryPageOrderingPolicy.Default;
+    private readonly IDocumentCacheReadAccelerationCoordinator _readAccelerationCoordinator =
+        readAccelerationCoordinator ?? throw new ArgumentNullException(nameof(readAccelerationCoordinator));
     private readonly RelationshipAuthorizationPlanner _relationshipAuthorizationPlanner = new(
         edOrgAuthorizationSubjectSelector
     );
+
+    private sealed record RelationalQueryPreparation(
+        QualifiedResourceName Resource,
+        ResourceReadPlan ReadPlan,
+        PageKeysetSpec.Query PlannedQuery,
+        PageDocumentIdAuthorizationSpec? Authorization
+    );
+
+    private abstract record RelationalQueryPreparationResult
+    {
+        private RelationalQueryPreparationResult() { }
+
+        public sealed record Complete(QueryResult Result) : RelationalQueryPreparationResult;
+
+        public sealed record Prepared(RelationalQueryPreparation Preparation)
+            : RelationalQueryPreparationResult;
+    }
 
     public async Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
     {
@@ -187,9 +208,54 @@ public sealed class RelationalDocumentStoreRepository(
         return result;
     }
 
-    public Task<GetResult> GetDocumentById(IGetRequest getRequest)
+    public Task<GetResult> GetDocumentById(
+        IGetRequest getRequest,
+        CancellationToken cancellationToken = default
+    )
     {
         ArgumentNullException.ThrowIfNull(getRequest);
+
+        if (getRequest.ReadMode != RelationalGetRequestReadMode.ExternalResponse)
+        {
+            return GetDocumentByIdRelationalAsync(getRequest, cancellationToken);
+        }
+
+        var resource = RelationalWriteSupport.ToQualifiedResourceName(getRequest.ResourceInfo);
+
+        if (getRequest.MappingSet.TryGetDescriptorResourceModel(resource, out _))
+        {
+            return GetDocumentByIdRelationalAsync(getRequest, cancellationToken);
+        }
+
+        return _readAccelerationCoordinator.GetByIdAsync(
+            new DocumentCacheReadAccelerationGetByIdRequest(
+                getRequest.TenantKey,
+                getRequest.MappingSet,
+                resource,
+                getRequest.DocumentUuid,
+                DocumentCacheReadAccelerationResourceKind.Resource,
+                fallbackCancellationToken =>
+                    GetDocumentByIdRelationalAsync(getRequest, fallbackCancellationToken),
+                selectionCancellationToken =>
+                    SelectGetByIdReadAccelerationCandidateAsync(
+                        getRequest,
+                        resource,
+                        selectionCancellationToken
+                    )
+            )
+            {
+                ReadableProfileProjectionContext = getRequest.ReadableProfileProjectionContext,
+                ResponseContentCoding = getRequest.ResponseContentCoding,
+            },
+            cancellationToken
+        );
+    }
+
+    private Task<GetResult> GetDocumentByIdRelationalAsync(
+        IGetRequest getRequest,
+        CancellationToken cancellationToken = default
+    )
+    {
         var mappingSet = getRequest.MappingSet;
         var resource = RelationalWriteSupport.ToQualifiedResourceName(getRequest.ResourceInfo);
 
@@ -210,8 +276,10 @@ public sealed class RelationalDocumentStoreRepository(
                     getRequest.ReadableProfileProjectionContext,
                     getRequest.TraceId,
                     getRequest.AuthorizationContext,
-                    getRequest.ResponseContentCoding
-                )
+                    getRequest.ResponseContentCoding,
+                    getRequest.TenantKey
+                ),
+                cancellationToken
             );
         }
 
@@ -230,7 +298,7 @@ public sealed class RelationalDocumentStoreRepository(
             return Task.FromResult<GetResult>(new GetResult.UnknownFailure(ex.Message));
         }
 
-        return GetDocumentByIdAsync(getRequest, mappingSet, resource, readPlan);
+        return GetDocumentByIdAsync(getRequest, mappingSet, resource, readPlan, cancellationToken);
     }
 
     public async Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
@@ -724,7 +792,10 @@ public sealed class RelationalDocumentStoreRepository(
         ) : DeleteAuthorizationPreflightResult;
     }
 
-    public async Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+    public async Task<QueryResult> QueryDocuments(
+        IQueryRequest queryRequest,
+        CancellationToken cancellationToken = default
+    )
     {
         ArgumentNullException.ThrowIfNull(queryRequest);
 
@@ -736,6 +807,49 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
+        var resource = RelationalWriteSupport.ToQualifiedResourceName(queryRequest.ResourceInfo);
+
+        if (queryRequest.MappingSet.TryGetDescriptorResourceModel(resource, out _))
+        {
+            return await QueryDocumentsRelationalAsync(queryRequest, traditionalPaging, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return await _readAccelerationCoordinator
+            .QueryAsync(
+                new DocumentCacheReadAccelerationQueryRequest(
+                    queryRequest.TenantKey,
+                    queryRequest.MappingSet,
+                    resource,
+                    DocumentCacheReadAccelerationResourceKind.Resource,
+                    fallbackCancellationToken =>
+                        QueryDocumentsRelationalAsync(
+                            queryRequest,
+                            traditionalPaging,
+                            fallbackCancellationToken
+                        ),
+                    selectionCancellationToken =>
+                        SelectQueryReadAccelerationCandidatePageAsync(
+                            queryRequest,
+                            traditionalPaging,
+                            selectionCancellationToken
+                        )
+                )
+                {
+                    ReadableProfileProjectionContext = queryRequest.ReadableProfileProjectionContext,
+                    ResponseContentCoding = queryRequest.ResponseContentCoding,
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private async Task<QueryResult> QueryDocumentsRelationalAsync(
+        IQueryRequest queryRequest,
+        CollectionPaging.Traditional traditionalPaging,
+        CancellationToken cancellationToken = default
+    )
+    {
         var mappingSet = queryRequest.MappingSet;
         var resource = RelationalWriteSupport.ToQualifiedResourceName(queryRequest.ResourceInfo);
 
@@ -758,11 +872,62 @@ public sealed class RelationalDocumentStoreRepository(
                         queryRequest.TraceId,
                         queryRequest.AuthorizationContext,
                         queryRequest.ChangeVersionRange,
-                        queryRequest.ResponseContentCoding
-                    )
+                        queryRequest.ResponseContentCoding,
+                        queryRequest.TenantKey
+                    ),
+                    cancellationToken
                 )
                 .ConfigureAwait(false);
         }
+
+        RelationalQueryPreparationResult preparationResult = await PrepareQueryReadAsync(
+                queryRequest,
+                traditionalPaging,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (preparationResult is RelationalQueryPreparationResult.Complete complete)
+        {
+            return complete.Result;
+        }
+
+        var preparation = ((RelationalQueryPreparationResult.Prepared)preparationResult).Preparation;
+
+        HydratedPage hydratedPage;
+
+        try
+        {
+            hydratedPage = await _documentHydrator
+                .HydrateAsync(
+                    preparation.ReadPlan,
+                    preparation.PlannedQuery,
+                    new HydrationExecutionOptions(),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        // Trade-off: a provider error raised while executing a custom-view page query is intentionally
+        // relabeled as a custom-view validation failure, even though not every such error originates in
+        // the view. Validation above already proved the views resolve, so the alternative is letting the
+        // DbException escape into the non-ProblemDetails unhandled path and lose the public
+        // urn:ed-fi:api:system contract this failure is documented to carry.
+        catch (DbException ex) when (preparation.Authorization?.CustomViewChecks is { Count: > 0 })
+        {
+            throw new CustomViewAuthorizationValidationException(ex);
+        }
+
+        return BuildQuerySuccess(queryRequest, preparation.Resource, preparation.ReadPlan, hydratedPage);
+    }
+
+    private async Task<RelationalQueryPreparationResult> PrepareQueryReadAsync(
+        IQueryRequest queryRequest,
+        CollectionPaging.Traditional traditionalPaging,
+        CancellationToken cancellationToken
+    )
+    {
+        var mappingSet = queryRequest.MappingSet;
+        var resource = RelationalWriteSupport.ToQualifiedResourceName(queryRequest.ResourceInfo);
 
         RelationalQueryCapability queryCapability;
 
@@ -772,19 +937,21 @@ public sealed class RelationalDocumentStoreRepository(
         }
         catch (NotSupportedException ex)
         {
-            return new QueryResult.QueryFailureNotImplemented(ex.Message);
+            return new RelationalQueryPreparationResult.Complete(
+                new QueryResult.QueryFailureNotImplemented(ex.Message)
+            );
         }
         catch (MissingQueryCapabilityLookupGuardRailException ex)
         {
-            return new QueryResult.UnknownFailure(ex.Message);
+            return new RelationalQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
         }
         catch (InvalidOperationException ex)
         {
-            return new QueryResult.UnknownFailure(ex.Message);
+            return new RelationalQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
         }
         catch (KeyNotFoundException ex)
         {
-            return new QueryResult.UnknownFailure(ex.Message);
+            return new RelationalQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
         }
 
         var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
@@ -795,7 +962,8 @@ public sealed class RelationalDocumentStoreRepository(
             resource,
             configuredAuthorizationStrategies,
             queryRequest.AuthorizationContext,
-            queryRequest.Paging.IncludesTotalCount
+            queryRequest.Paging.IncludesTotalCount,
+            cancellationToken
         );
 
         PageDocumentIdAuthorizationSpec? pageQueryAuthorization;
@@ -803,7 +971,7 @@ public sealed class RelationalDocumentStoreRepository(
         switch (authorizationResolution)
         {
             case QueryAuthorizationResolution.Complete complete:
-                return complete.Result;
+                return new RelationalQueryPreparationResult.Complete(complete.Result);
 
             case QueryAuthorizationResolution.Proceed proceed:
                 pageQueryAuthorization = proceed.Authorization;
@@ -825,21 +993,28 @@ public sealed class RelationalDocumentStoreRepository(
                     resource,
                     queryRequest.QueryElements,
                     queryCapability,
-                    _referenceResolver
+                    _referenceResolver,
+                    cancellationToken
                 )
                 .ConfigureAwait(false);
         }
         catch (InvalidOperationException ex)
         {
-            return new QueryResult.UnknownFailure(ex.Message);
+            return new RelationalQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
         }
 
         if (preprocessingResult.Outcome is RelationalQueryPreprocessingOutcome.EmptyPage)
         {
-            await ValidateAdaptedCustomViewsAsync(mappingSet, pageQueryAuthorization?.CustomViewChecks)
+            await ValidateAdaptedCustomViewsAsync(
+                    mappingSet,
+                    pageQueryAuthorization?.CustomViewChecks,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
-            return new QueryResult.QuerySuccess([], queryRequest.Paging.IncludesTotalCount ? 0 : null);
+            return new RelationalQueryPreparationResult.Complete(
+                new QueryResult.QuerySuccess([], queryRequest.Paging.IncludesTotalCount ? 0 : null)
+            );
         }
 
         ResourceReadPlan readPlan;
@@ -850,15 +1025,15 @@ public sealed class RelationalDocumentStoreRepository(
         }
         catch (NotSupportedException ex)
         {
-            return new QueryResult.UnknownFailure(ex.Message);
+            return new RelationalQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
         }
         catch (InvalidOperationException ex)
         {
-            return new QueryResult.UnknownFailure(ex.Message);
+            return new RelationalQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
         }
         catch (KeyNotFoundException ex)
         {
-            return new QueryResult.UnknownFailure(ex.Message);
+            return new RelationalQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
         }
 
         PageKeysetSpec.Query? plannedQuery;
@@ -880,32 +1055,34 @@ public sealed class RelationalDocumentStoreRepository(
                 ) || plannedQuery is null
             )
             {
-                await ValidateAdaptedCustomViewsAsync(mappingSet, pageQueryAuthorization?.CustomViewChecks)
+                await ValidateAdaptedCustomViewsAsync(
+                        mappingSet,
+                        pageQueryAuthorization?.CustomViewChecks,
+                        cancellationToken
+                    )
                     .ConfigureAwait(false);
 
-                return new QueryResult.QuerySuccess([], queryRequest.Paging.IncludesTotalCount ? 0 : null);
+                return new RelationalQueryPreparationResult.Complete(
+                    new QueryResult.QuerySuccess([], queryRequest.Paging.IncludesTotalCount ? 0 : null)
+                );
             }
         }
         catch (NotSupportedException ex)
         {
-            return new QueryResult.UnknownFailure(ex.Message);
+            return new RelationalQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
         }
         catch (InvalidOperationException ex)
         {
-            return new QueryResult.UnknownFailure(ex.Message);
+            return new RelationalQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
         }
         catch (ArgumentException ex)
         {
-            return new QueryResult.UnknownFailure(ex.Message);
+            return new RelationalQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
         }
 
         // Fail closed when the planned page query would bind more parameters than SQL Server allows. Keyed
-        // off the final planned parameter count so it covers every empty-page short-circuit — both
-        // preprocessing (e.g. an invalid-UUID filter) and planning (e.g. an invalid scalar root-column
-        // filter), which both return an empty page above before reaching here — and reflects the exact
-        // command rather than an estimate. The non-authorization count (filter + paging parameters) is the
-        // planned total minus the authorization lists, which the message reports alongside the prefix and
-        // education-organization counts.
+        // off the final planned parameter count so it covers every empty-page short-circuit and reflects
+        // the exact command rather than an estimate.
         var nonAuthorizationParameterCount =
             plannedQuery.ParameterValues.Count
             - AuthorizationParameterBudget.CountAuthorizationParameters(
@@ -913,7 +1090,11 @@ public sealed class RelationalDocumentStoreRepository(
                 pageQueryAuthorization?.ClaimEducationOrganizationIdParameterization
             );
 
-        await ValidateAdaptedCustomViewsAsync(mappingSet, pageQueryAuthorization?.CustomViewChecks)
+        await ValidateAdaptedCustomViewsAsync(
+                mappingSet,
+                pageQueryAuthorization?.CustomViewChecks,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         if (
@@ -927,28 +1108,334 @@ public sealed class RelationalDocumentStoreRepository(
             { } parameterBudgetFailure
         )
         {
-            return parameterBudgetFailure;
+            return new RelationalQueryPreparationResult.Complete(parameterBudgetFailure);
         }
+
+        return new RelationalQueryPreparationResult.Prepared(
+            new RelationalQueryPreparation(resource, readPlan, plannedQuery, pageQueryAuthorization)
+        );
+    }
+
+    private async Task<DocumentCacheReadAccelerationQuerySelectionResult> SelectQueryReadAccelerationCandidatePageAsync(
+        IQueryRequest queryRequest,
+        CollectionPaging.Traditional traditionalPaging,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var mappingSet = queryRequest.MappingSet;
+        RelationalQueryPreparationResult preparationResult = await PrepareQueryReadAsync(
+                queryRequest,
+                traditionalPaging,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (preparationResult is RelationalQueryPreparationResult.Complete complete)
+        {
+            return new DocumentCacheReadAccelerationQuerySelectionResult.Complete(complete.Result);
+        }
+
+        var preparation = ((RelationalQueryPreparationResult.Prepared)preparationResult).Preparation;
+
+        DocumentCacheReadAccelerationCandidatePage candidatePage;
+
+        try
+        {
+            candidatePage = await SelectDocumentCandidatePageAsync(
+                    mappingSet,
+                    preparation.Resource,
+                    preparation.ReadPlan,
+                    preparation.PlannedQuery,
+                    queryRequest.Paging.IncludesTotalCount,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (DbException ex) when (preparation.Authorization?.CustomViewChecks is { Count: > 0 })
+        {
+            throw new CustomViewAuthorizationValidationException(ex);
+        }
+
+        if (candidatePage.IsEmpty)
+        {
+            return new DocumentCacheReadAccelerationQuerySelectionResult.Complete(
+                new QueryResult.QuerySuccess(
+                    [],
+                    queryRequest.Paging.IncludesTotalCount
+                        ? RelationalReadGuardrails.ConvertTotalCountOrThrow(
+                            preparation.Resource,
+                            candidatePage.TotalCount,
+                            "query candidate selection"
+                        )
+                        : null,
+                    candidatePage.HighestSelectedDocumentId
+                )
+            );
+        }
+
+        return new DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage(
+            candidatePage,
+            fallbackCancellationToken =>
+                HydrateSelectedQueryCandidatePageAsync(
+                    queryRequest,
+                    traditionalPaging,
+                    preparation.Resource,
+                    preparation.ReadPlan,
+                    preparation.Authorization?.CustomViewChecks,
+                    candidatePage,
+                    fallbackCancellationToken
+                )
+        );
+    }
+
+    private async Task<QueryResult> HydrateSelectedQueryCandidatePageAsync(
+        IQueryRequest queryRequest,
+        CollectionPaging.Traditional traditionalPaging,
+        QualifiedResourceName resource,
+        ResourceReadPlan readPlan,
+        IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck>? customViewChecks,
+        DocumentCacheReadAccelerationCandidatePage candidatePage,
+        CancellationToken cancellationToken
+    )
+    {
+        var selectedDocumentIds = candidatePage
+            .Candidates.Select(static candidate => candidate.DocumentId)
+            .ToArray();
 
         HydratedPage hydratedPage;
 
         try
         {
             hydratedPage = await _documentHydrator
-                .HydrateAsync(readPlan, plannedQuery, new HydrationExecutionOptions(), default)
+                .HydrateAsync(
+                    readPlan,
+                    new PageKeysetSpec.SelectedPage(selectedDocumentIds),
+                    new HydrationExecutionOptions(),
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
         }
-        // Trade-off: a provider error raised while executing a custom-view page query is intentionally
-        // relabeled as a custom-view validation failure, even though not every such error originates in
-        // the view. Validation above already proved the views resolve, so the alternative is letting the
-        // DbException escape into the non-ProblemDetails unhandled path and lose the public
-        // urn:ed-fi:api:system contract this failure is documented to carry.
-        catch (DbException ex) when (pageQueryAuthorization?.CustomViewChecks is { Count: > 0 })
+        catch (DbException ex) when (customViewChecks is { Count: > 0 })
         {
             throw new CustomViewAuthorizationValidationException(ex);
         }
 
+        hydratedPage = hydratedPage with
+        {
+            TotalCount = candidatePage.TotalCount,
+            HighestSelectedDocumentId = candidatePage.HighestSelectedDocumentId,
+        };
+
+        if (!SelectedQueryCandidatePageStillMatches(candidatePage, hydratedPage.DocumentMetadata))
+        {
+            return await QueryDocumentsRelationalAsync(queryRequest, traditionalPaging, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         return BuildQuerySuccess(queryRequest, resource, readPlan, hydratedPage);
+    }
+
+    private static bool SelectedQueryCandidatePageStillMatches(
+        DocumentCacheReadAccelerationCandidatePage candidatePage,
+        IReadOnlyList<DocumentMetadataRow> hydratedMetadata
+    )
+    {
+        if (candidatePage.Candidates.Count != hydratedMetadata.Count)
+        {
+            return false;
+        }
+
+        Dictionary<long, DocumentMetadataRow> hydratedMetadataByDocumentId = [];
+
+        foreach (DocumentMetadataRow metadata in hydratedMetadata)
+        {
+            if (!hydratedMetadataByDocumentId.TryAdd(metadata.DocumentId, metadata))
+            {
+                return false;
+            }
+        }
+
+        foreach (DocumentCacheReadAccelerationCandidate candidate in candidatePage.Candidates)
+        {
+            if (!hydratedMetadataByDocumentId.TryGetValue(candidate.DocumentId, out var metadata))
+            {
+                return false;
+            }
+
+            if (
+                metadata.DocumentUuid != candidate.DocumentUuid.Value
+                || metadata.ResourceKeyId != candidate.ResourceKeyId
+                || metadata.ContentVersion != candidate.ContentVersion
+                || metadata.ContentLastModifiedAt != candidate.ContentLastModifiedAt
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private async Task<DocumentCacheReadAccelerationCandidatePage> SelectDocumentCandidatePageAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        ResourceReadPlan readPlan,
+        PageKeysetSpec.Query plannedQuery,
+        bool includesTotalCount,
+        CancellationToken cancellationToken
+    )
+    {
+        var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
+        var command = BuildQueryCandidateSelectionCommand(mappingSet, readPlan, plannedQuery);
+
+        return await _commandExecutor
+            .ExecuteReaderAsync(
+                command,
+                (reader, ct) =>
+                    ReadDocumentCandidatePageAsync(
+                        reader,
+                        plannedQuery.Plan.TotalCountSql is not null,
+                        includesTotalCount,
+                        resourceKeyId,
+                        ct
+                    ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private static RelationalCommand BuildQueryCandidateSelectionCommand(
+        MappingSet mappingSet,
+        ResourceReadPlan readPlan,
+        PageKeysetSpec.Query plannedQuery
+    )
+    {
+        var commandText = HydrationBatchBuilder.BuildCandidateMetadataBatch(
+            readPlan,
+            plannedQuery,
+            mappingSet.Key.Dialect
+        );
+
+        return new RelationalCommand(commandText, BuildQueryCandidateSelectionParameters(plannedQuery));
+    }
+
+    private static IReadOnlyList<RelationalParameter> BuildQueryCandidateSelectionParameters(
+        PageKeysetSpec.Query plannedQuery
+    )
+    {
+        return
+        [
+            .. PlannedQueryParameterBinder
+                .BindParameters(
+                    plannedQuery.Plan,
+                    plannedQuery.ParameterValues,
+                    "Query candidate selection keyset",
+                    "Query candidate selection parameter",
+                    "Unsupported query candidate selection parameter binding kind."
+                )
+                .Select(static binding => new RelationalParameter(
+                    binding.Name,
+                    binding.Value,
+                    binding.ConfigureParameter
+                )),
+        ];
+    }
+
+    private static async Task<DocumentCacheReadAccelerationCandidatePage> ReadDocumentCandidatePageAsync(
+        IRelationalCommandReader reader,
+        bool hasTotalCount,
+        bool includesTotalCount,
+        short resourceKeyId,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+
+        long? totalCount = null;
+
+        if (hasTotalCount)
+        {
+            totalCount = await ReadCandidatePageTotalCountAsync(reader, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!await reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException(
+                    "Expected query candidate metadata result set after total count but no more result sets were available."
+                );
+            }
+        }
+
+        var candidates = new List<DocumentCacheReadAccelerationCandidate>();
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            candidates.Add(
+                new DocumentCacheReadAccelerationCandidate(
+                    reader.GetRequiredFieldValue<long>("DocumentId"),
+                    new DocumentUuid(reader.GetRequiredFieldValue<Guid>("DocumentUuid")),
+                    resourceKeyId,
+                    reader.GetRequiredFieldValue<long>("ContentVersion"),
+                    ReadCandidatePageDateTimeOffsetField(reader, "ContentLastModifiedAt")
+                )
+            );
+        }
+
+        // This candidate reader is used only by traditional paging. A cursor boundary must come from
+        // cursor page selection itself rather than being inferred from the selected document ids.
+        return new DocumentCacheReadAccelerationCandidatePage(
+            candidates,
+            totalCount,
+            HighestSelectedDocumentId: null,
+            IncludesTotalCount: includesTotalCount
+        );
+    }
+
+    private static async Task<long> ReadCandidatePageTotalCountAsync(
+        IRelationalCommandReader reader,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException(
+                "Expected a query candidate total count row but none was returned."
+            );
+        }
+
+        var totalCountValue = reader.GetFieldValue<object>(0);
+
+        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException(
+                "Query candidate total count result set returned multiple rows."
+            );
+        }
+
+        return Convert.ToInt64(totalCountValue, CultureInfo.InvariantCulture);
+    }
+
+    private static DateTimeOffset ReadCandidatePageDateTimeOffsetField(
+        IRelationalCommandReader reader,
+        string columnName
+    )
+    {
+        var value = reader.GetFieldValue<object>(reader.GetOrdinal(columnName));
+
+        return value switch
+        {
+            DateTimeOffset dateTimeOffset => dateTimeOffset,
+            DateTime dateTime => new DateTimeOffset(
+                dateTime.Kind == DateTimeKind.Unspecified
+                    ? DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)
+                    : dateTime
+            ),
+            string text => DateTimeOffset.Parse(text, CultureInfo.InvariantCulture),
+            _ => throw new InvalidOperationException(
+                $"Query candidate selection expected a DateTimeOffset-compatible value for dms.Document.{columnName}, "
+                    + $"but received '{value.GetType().Name}'."
+            ),
+        };
     }
 
     private async Task<QueryAuthorizationResolution> ResolveQueryAuthorization(
@@ -956,7 +1443,8 @@ public sealed class RelationalDocumentStoreRepository(
         QualifiedResourceName resource,
         IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies,
         RelationalAuthorizationContext authorizationContext,
-        bool totalCount
+        bool totalCount,
+        CancellationToken cancellationToken
     )
     {
         var orchestratorOutcome = RelationalAuthorizationPlanner.Plan(
@@ -976,7 +1464,12 @@ public sealed class RelationalDocumentStoreRepository(
                         noUsableRoot.RawConfiguredIndex
                     )
                         is { Count: > 0 } customViewsBeforeNoUsableRoot
-                    && await ValidateCustomViewsAsync(customViewsBeforeNoUsableRoot, mappingSet, resource)
+                    && await ValidateCustomViewsAsync(
+                        customViewsBeforeNoUsableRoot,
+                        mappingSet,
+                        resource,
+                        cancellationToken
+                    )
                         is { } customViewFailureBeforeNoUsableRoot
                 )
                 {
@@ -1001,7 +1494,12 @@ public sealed class RelationalDocumentStoreRepository(
                         noPrefixes.RawConfiguredIndex
                     )
                         is { Count: > 0 } customViewsBeforeNoPrefixes
-                    && await ValidateCustomViewsAsync(customViewsBeforeNoPrefixes, mappingSet, resource)
+                    && await ValidateCustomViewsAsync(
+                        customViewsBeforeNoPrefixes,
+                        mappingSet,
+                        resource,
+                        cancellationToken
+                    )
                         is { } customViewFailureBeforeNoPrefixes
                 )
                 {
@@ -1021,7 +1519,8 @@ public sealed class RelationalDocumentStoreRepository(
                     securityConfigurationError.NonNamespaceConfiguredStrategies,
                     securityConfigurationError.RelationshipClassification,
                     authorizationContext,
-                    totalCount
+                    totalCount,
+                    cancellationToken
                 );
 
             case RelationalAuthorizationPlanOutcome.StillUnsupported stillUnsupported:
@@ -1031,7 +1530,8 @@ public sealed class RelationalDocumentStoreRepository(
                     stillUnsupported.NonNamespaceConfiguredStrategies,
                     stillUnsupported.RelationshipClassification,
                     authorizationContext,
-                    totalCount
+                    totalCount,
+                    cancellationToken
                 );
 
             case RelationalAuthorizationPlanOutcome.Plan plan:
@@ -1040,7 +1540,8 @@ public sealed class RelationalDocumentStoreRepository(
                     resource,
                     plan,
                     authorizationContext,
-                    totalCount
+                    totalCount,
+                    cancellationToken
                 );
 
             default:
@@ -1056,7 +1557,8 @@ public sealed class RelationalDocumentStoreRepository(
         IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies,
         RelationshipAuthorizationClassification relationshipClassification,
         RelationalAuthorizationContext authorizationContext,
-        bool totalCount
+        bool totalCount,
+        CancellationToken cancellationToken
     )
     {
         // Every resolved custom view is excluded from the relationship bucket regardless of configured
@@ -1097,7 +1599,8 @@ public sealed class RelationalDocumentStoreRepository(
             totalCount,
             [],
             null,
-            customViewStrategiesToValidate
+            customViewStrategiesToValidate,
+            cancellationToken
         );
     }
 
@@ -1106,7 +1609,8 @@ public sealed class RelationalDocumentStoreRepository(
         QualifiedResourceName resource,
         RelationalAuthorizationPlanOutcome.Plan plan,
         RelationalAuthorizationContext authorizationContext,
-        bool totalCount
+        bool totalCount,
+        CancellationToken cancellationToken
     )
     {
         if (plan.NamespaceChecks.Count == 0)
@@ -1119,7 +1623,8 @@ public sealed class RelationalDocumentStoreRepository(
                 totalCount,
                 [],
                 null,
-                plan.CustomViewStrategies
+                plan.CustomViewStrategies,
+                cancellationToken
             );
         }
 
@@ -1139,7 +1644,12 @@ public sealed class RelationalDocumentStoreRepository(
                     plan.NamespaceChecks[0].RawConfiguredIndex
                 )
                     is { Count: > 0 } customViewStrategiesToValidate
-                && await ValidateCustomViewsAsync(customViewStrategiesToValidate, mappingSet, resource)
+                && await ValidateCustomViewsAsync(
+                    customViewStrategiesToValidate,
+                    mappingSet,
+                    resource,
+                    cancellationToken
+                )
                     is { } customViewFailureBeforeNamespaceTerminal
             )
             {
@@ -1162,7 +1672,8 @@ public sealed class RelationalDocumentStoreRepository(
             totalCount,
             plan.NamespaceChecks,
             namespacePrefixParameterization,
-            plan.CustomViewStrategies
+            plan.CustomViewStrategies,
+            cancellationToken
         );
     }
 
@@ -1174,7 +1685,8 @@ public sealed class RelationalDocumentStoreRepository(
         bool totalCount,
         IReadOnlyList<NamespaceAuthorizationCheckSpec> namespaceChecks,
         NamespacePrefixParameterization? namespacePrefixParameterization,
-        IReadOnlyList<SupportedCustomViewAuthorizationStrategy> customViewStrategies
+        IReadOnlyList<SupportedCustomViewAuthorizationStrategy> customViewStrategies,
+        CancellationToken cancellationToken
     )
     {
         IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck>? adaptedCustomViewChecks = null;
@@ -1192,7 +1704,8 @@ public sealed class RelationalDocumentStoreRepository(
                 // Validate the custom views that planned successfully and are configured ahead of the
                 // earliest planning failure first: an earlier missing or non-conforming auth view must
                 // surface its own error rather than being hidden by this later planning failure.
-                await ValidatePlannedCustomViewsBeforeFailureAsync(mappingSet, sc).ConfigureAwait(false);
+                await ValidatePlannedCustomViewsBeforeFailureAsync(mappingSet, sc, cancellationToken)
+                    .ConfigureAwait(false);
 
                 return new QueryAuthorizationResolution.Complete(
                     BuildQueryAuthorizationSecurityConfigurationFailure(mappingSet, resource, sc.Failures)
@@ -1239,7 +1752,8 @@ public sealed class RelationalDocumentStoreRepository(
                     adaptedCustomViewChecks,
                     new QueryAuthorizationResolution.Complete(
                         new QueryResult.QuerySuccess([], totalCount ? 0 : null)
-                    )
+                    ),
+                    cancellationToken
                 );
 
             case RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled:
@@ -1253,7 +1767,8 @@ public sealed class RelationalDocumentStoreRepository(
                                 knownButNotEnabled.Failures
                             )
                         )
-                    )
+                    ),
+                    cancellationToken
                 );
 
             case RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError:
@@ -1266,7 +1781,8 @@ public sealed class RelationalDocumentStoreRepository(
                             resource,
                             securityConfigurationError.Failures
                         )
-                    )
+                    ),
+                    cancellationToken
                 );
 
             default:
@@ -1279,16 +1795,19 @@ public sealed class RelationalDocumentStoreRepository(
     private async Task<QueryAuthorizationResolution> ResolveRelationshipTerminalAfterCustomViewValidation(
         MappingSet mappingSet,
         IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck>? customViewChecks,
-        QueryAuthorizationResolution terminalResolution
+        QueryAuthorizationResolution terminalResolution,
+        CancellationToken cancellationToken
     )
     {
-        await ValidateAdaptedCustomViewsAsync(mappingSet, customViewChecks).ConfigureAwait(false);
+        await ValidateAdaptedCustomViewsAsync(mappingSet, customViewChecks, cancellationToken)
+            .ConfigureAwait(false);
         return terminalResolution;
     }
 
     private async Task ValidateAdaptedCustomViewsAsync(
         MappingSet mappingSet,
-        IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck>? customViewChecks
+        IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck>? customViewChecks,
+        CancellationToken cancellationToken
     )
     {
         if (customViewChecks is null || customViewChecks.Count == 0)
@@ -1297,7 +1816,7 @@ public sealed class RelationalDocumentStoreRepository(
         }
 
         await CustomViewAuthorizationValidator
-            .ValidateAsync(_commandExecutor, mappingSet.Key.Dialect, customViewChecks)
+            .ValidateAsync(_commandExecutor, mappingSet.Key.Dialect, customViewChecks, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -1309,7 +1828,8 @@ public sealed class RelationalDocumentStoreRepository(
     /// </summary>
     private async Task ValidatePlannedCustomViewsBeforeFailureAsync(
         MappingSet mappingSet,
-        CustomViewAuthorizationPlanOutcome.SecurityConfiguration securityConfiguration
+        CustomViewAuthorizationPlanOutcome.SecurityConfiguration securityConfiguration,
+        CancellationToken cancellationToken
     )
     {
         var checksBeforeFailure = CustomViewAuthorizationTerminalOrdering.ChecksBeforeTerminal(
@@ -1321,7 +1841,8 @@ public sealed class RelationalDocumentStoreRepository(
 
         await ValidateAdaptedCustomViewsAsync(
                 mappingSet,
-                PageDocumentIdCustomViewAdapter.AdaptFromChecks(checksBeforeFailure)
+                PageDocumentIdCustomViewAdapter.AdaptFromChecks(checksBeforeFailure),
+                cancellationToken
             )
             .ConfigureAwait(false);
     }
@@ -1334,7 +1855,8 @@ public sealed class RelationalDocumentStoreRepository(
     private async Task<QueryResult?> ValidateCustomViewsAsync(
         IReadOnlyList<SupportedCustomViewAuthorizationStrategy> customViewStrategies,
         MappingSet mappingSet,
-        QualifiedResourceName resource
+        QualifiedResourceName resource,
+        CancellationToken cancellationToken
     )
     {
         CustomViewAuthorizationPlanOutcome customViewOutcome = CustomViewAuthorizationPlanner.Plan(
@@ -1345,7 +1867,11 @@ public sealed class RelationalDocumentStoreRepository(
 
         if (customViewOutcome is CustomViewAuthorizationPlanOutcome.SecurityConfiguration customViewSecurity)
         {
-            await ValidatePlannedCustomViewsBeforeFailureAsync(mappingSet, customViewSecurity)
+            await ValidatePlannedCustomViewsBeforeFailureAsync(
+                    mappingSet,
+                    customViewSecurity,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
             return BuildQueryAuthorizationSecurityConfigurationFailure(
@@ -1359,7 +1885,8 @@ public sealed class RelationalDocumentStoreRepository(
                 mappingSet,
                 PageDocumentIdCustomViewAdapter.AdaptFromChecks(
                     ((CustomViewAuthorizationPlanOutcome.Plan)customViewOutcome).Checks
-                )
+                ),
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -2288,7 +2815,8 @@ public sealed class RelationalDocumentStoreRepository(
         IGetRequest relationalGetRequest,
         MappingSet mappingSet,
         QualifiedResourceName resource,
-        ResourceReadPlan readPlan
+        ResourceReadPlan readPlan,
+        CancellationToken cancellationToken = default
     )
     {
         // Planner terminals (namespace setup failures, relationship security-configuration failures,
@@ -2306,7 +2834,12 @@ public sealed class RelationalDocumentStoreRepository(
         for (var attemptIndex = 0; attemptIndex < GetByIdReadBoundaryAttemptCount; attemptIndex++)
         {
             var targetLookupResult = await _readTargetLookupService
-                .ResolveForGetByIdAsync(mappingSet, resource, relationalGetRequest.DocumentUuid)
+                .ResolveForGetByIdAsync(
+                    mappingSet,
+                    resource,
+                    relationalGetRequest.DocumentUuid,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
             if (
@@ -2336,7 +2869,8 @@ public sealed class RelationalDocumentStoreRepository(
                             proceed.StoredNamespaceAuthorization,
                             proceed.StoredRelationshipAuthorization,
                             existingDocument.DocumentId,
-                            existingDocument.ContentVersion
+                            existingDocument.ContentVersion,
+                            cancellationToken
                         )
                         .ConfigureAwait(false),
                 _ => throw new InvalidOperationException(
@@ -2354,20 +2888,12 @@ public sealed class RelationalDocumentStoreRepository(
                 continue;
             }
 
-            // StoredDocument-mode reads do not emit `link`, so the auxiliary document-reference
-            // lookup is wasted work — opt out via IncludeDocumentReferenceLookup: false. Descriptor
-            // URIs are still needed for both read modes.
-            var hydrationExecutionOptions = new HydrationExecutionOptions(
-                IncludeDocumentReferenceLookup: relationalGetRequest.ReadMode
-                    == RelationalGetRequestReadMode.ExternalResponse,
-                UseSingleDocumentFastPath: true
-            );
             var hydratedPage = await _documentHydrator
                 .HydrateAsync(
                     readPlan,
                     new PageKeysetSpec.Single(existingDocument.DocumentId),
-                    hydrationExecutionOptions,
-                    default
+                    CreateGetHydrationExecutionOptions(relationalGetRequest),
+                    cancellationToken
                 )
                 .ConfigureAwait(false);
 
@@ -2419,7 +2945,8 @@ public sealed class RelationalDocumentStoreRepository(
                     mappingSet,
                     resource,
                     existingDocument,
-                    authorizationOutcome.ObservedContentVersion
+                    authorizationOutcome.ObservedContentVersion,
+                    cancellationToken
                 )
                 .ConfigureAwait(false);
 
@@ -2428,51 +2955,12 @@ public sealed class RelationalDocumentStoreRepository(
                 continue;
             }
 
-            var appliesReadableProfileProjection = ShouldApplyReadableProfileProjection(relationalGetRequest);
-            var readProfileName = appliesReadableProfileProjection
-                ? relationalGetRequest.ReadableProfileProjectionContext!.ProfileName
-                : null;
-
-            var edfiDoc = _readMaterializer.Materialize(
-                new RelationalReadMaterializationRequest(
-                    readPlan,
-                    documentMetadata,
-                    hydratedPage.TableRowsInDependencyOrder,
-                    hydratedPage.DescriptorRowsInPlanOrder,
-                    relationalGetRequest.ReadMode.ToMaterializationMode()
-                )
-                {
-                    MappingSet = mappingSet,
-                    DocumentReferenceLookup = hydratedPage.DocumentReferenceLookup,
-                    EtagVariant = new EtagVariantInputs(
-                        readProfileName,
-                        ResponseFormat.Json,
-                        relationalGetRequest.ResponseContentCoding
-                    ),
-                }
-            );
-
-            if (appliesReadableProfileProjection)
-            {
-                var projectionContext = relationalGetRequest.ReadableProfileProjectionContext!;
-                edfiDoc = _readableProfileProjector.Project(
-                    edfiDoc,
-                    projectionContext.ContentTypeDefinition,
-                    projectionContext.IdentityPropertyNames
-                );
-            }
-
-            // Final response-shaping pass — strips `link` subtrees when ResourceLinksOptions.Enabled
-            // is false. Runs after readable-profile projection so the flag governs the served body,
-            // not the cached intermediate. No-op when Enabled is true. See
-            // design-docs/link-injection.md §Feature Flag and §Cache and Etag.
-            _readMaterializer.StripReferenceLinks(edfiDoc, readPlan);
-
-            return new GetResult.GetSuccess(
-                new DocumentUuid(documentMetadata.DocumentUuid),
-                edfiDoc,
-                documentMetadata.ContentLastModifiedAt.UtcDateTime,
-                null
+            return BuildGetSuccess(
+                relationalGetRequest,
+                mappingSet,
+                readPlan,
+                hydratedPage,
+                documentMetadata
             );
         }
 
@@ -2481,11 +2969,276 @@ public sealed class RelationalDocumentStoreRepository(
         );
     }
 
+    private static HydrationExecutionOptions CreateGetHydrationExecutionOptions(
+        IGetRequest relationalGetRequest
+    )
+    {
+        // StoredDocument-mode reads do not emit `link`, so the auxiliary document-reference lookup is
+        // wasted work. Descriptor URIs are still needed for both read modes.
+        return new HydrationExecutionOptions(
+            IncludeDocumentReferenceLookup: relationalGetRequest.ReadMode
+                == RelationalGetRequestReadMode.ExternalResponse,
+            UseSingleDocumentFastPath: true
+        );
+    }
+
+    private GetResult.GetSuccess BuildGetSuccess(
+        IGetRequest relationalGetRequest,
+        MappingSet mappingSet,
+        ResourceReadPlan readPlan,
+        HydratedPage hydratedPage,
+        DocumentMetadataRow documentMetadata
+    )
+    {
+        var appliesReadableProfileProjection = ShouldApplyReadableProfileProjection(relationalGetRequest);
+        var readProfileName = appliesReadableProfileProjection
+            ? relationalGetRequest.ReadableProfileProjectionContext!.ProfileName
+            : null;
+
+        var edfiDoc = _readMaterializer.Materialize(
+            new RelationalReadMaterializationRequest(
+                readPlan,
+                documentMetadata,
+                hydratedPage.TableRowsInDependencyOrder,
+                hydratedPage.DescriptorRowsInPlanOrder,
+                relationalGetRequest.ReadMode.ToMaterializationMode()
+            )
+            {
+                MappingSet = mappingSet,
+                DocumentReferenceLookup = hydratedPage.DocumentReferenceLookup,
+                EtagVariant = new EtagVariantInputs(
+                    readProfileName,
+                    ResponseFormat.Json,
+                    relationalGetRequest.ResponseContentCoding
+                ),
+            }
+        );
+
+        if (appliesReadableProfileProjection)
+        {
+            var projectionContext = relationalGetRequest.ReadableProfileProjectionContext!;
+            edfiDoc = _readableProfileProjector.Project(
+                edfiDoc,
+                projectionContext.ContentTypeDefinition,
+                projectionContext.IdentityPropertyNames
+            );
+        }
+
+        // Final response-shaping pass — strips `link` subtrees when ResourceLinksOptions.Enabled
+        // is false. Runs after readable-profile projection so the flag governs the served body,
+        // not the cached intermediate. No-op when Enabled is true. See
+        // design-docs/link-injection.md §Feature Flag and §Cache and Etag.
+        _readMaterializer.StripReferenceLinks(edfiDoc, readPlan);
+
+        return new GetResult.GetSuccess(
+            new DocumentUuid(documentMetadata.DocumentUuid),
+            edfiDoc,
+            documentMetadata.ContentLastModifiedAt.UtcDateTime,
+            null
+        );
+    }
+
+    private async Task<DocumentCacheReadAccelerationGetByIdSelectionResult> SelectGetByIdReadAccelerationCandidateAsync(
+        IGetRequest relationalGetRequest,
+        QualifiedResourceName resource,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var mappingSet = relationalGetRequest.MappingSet;
+
+        ResourceReadPlan readPlan;
+
+        try
+        {
+            readPlan = mappingSet.GetReadPlanOrThrow(resource);
+        }
+        catch (NotSupportedException ex)
+        {
+            return new DocumentCacheReadAccelerationGetByIdSelectionResult.Complete(
+                new GetResult.UnknownFailure(ex.Message)
+            );
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new DocumentCacheReadAccelerationGetByIdSelectionResult.Complete(
+                new GetResult.UnknownFailure(ex.Message)
+            );
+        }
+
+        var authorizationPreflight = AuthorizeGetByIdPreflight(relationalGetRequest, mappingSet, resource);
+
+        if (authorizationPreflight is GetByIdAuthorizationPreflightResult.Stop preflightStop)
+        {
+            return new DocumentCacheReadAccelerationGetByIdSelectionResult.Complete(preflightStop.Result);
+        }
+
+        short resourceKeyId;
+
+        try
+        {
+            resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new DocumentCacheReadAccelerationGetByIdSelectionResult.Complete(
+                new GetResult.UnknownFailure(ex.Message)
+            );
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return new DocumentCacheReadAccelerationGetByIdSelectionResult.Complete(
+                new GetResult.UnknownFailure(ex.Message)
+            );
+        }
+
+        for (var attemptIndex = 0; attemptIndex < GetByIdReadBoundaryAttemptCount; attemptIndex++)
+        {
+            var targetLookupResult = await _readTargetLookupService
+                .ResolveForGetByIdAsync(
+                    mappingSet,
+                    resource,
+                    relationalGetRequest.DocumentUuid,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            if (
+                targetLookupResult
+                is RelationalReadTargetLookupResult.NotFound
+                    or RelationalReadTargetLookupResult.WrongResource
+            )
+            {
+                return new DocumentCacheReadAccelerationGetByIdSelectionResult.Complete(
+                    new GetResult.GetFailureNotExists()
+                );
+            }
+
+            if (targetLookupResult is not RelationalReadTargetLookupResult.ExistingDocument existingDocument)
+            {
+                throw new InvalidOperationException(
+                    $"Relational repository GET target lookup returned unsupported result type '{targetLookupResult.GetType().Name}'."
+                );
+            }
+
+            var authorizationOutcome = authorizationPreflight switch
+            {
+                GetByIdAuthorizationPreflightResult.AuthorizationNotRequired =>
+                    GetAuthorizationOutcome.NotRequired,
+                GetByIdAuthorizationPreflightResult.Proceed proceed =>
+                    await AuthorizeGetByIdAgainstTargetAsync(
+                            relationalGetRequest,
+                            mappingSet,
+                            proceed.StoredNamespaceAuthorization,
+                            proceed.StoredRelationshipAuthorization,
+                            existingDocument.DocumentId,
+                            existingDocument.ContentVersion,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false),
+                _ => throw new InvalidOperationException(
+                    $"Unsupported GET-by-id authorization preflight result '{authorizationPreflight.GetType().Name}'."
+                ),
+            };
+
+            if (authorizationOutcome.FailureResult is not null)
+            {
+                return new DocumentCacheReadAccelerationGetByIdSelectionResult.Complete(
+                    authorizationOutcome.FailureResult
+                );
+            }
+
+            if (
+                authorizationOutcome.RetryTargetResolution
+                || (
+                    authorizationOutcome.ObservedContentVersion is { } observedContentVersion
+                    && existingDocument.ContentVersion != observedContentVersion
+                )
+            )
+            {
+                continue;
+            }
+
+            var candidate = new DocumentCacheReadAccelerationCandidate(
+                existingDocument.DocumentId,
+                existingDocument.DocumentUuid,
+                resourceKeyId,
+                existingDocument.ContentVersion,
+                existingDocument.ContentLastModifiedAt
+            );
+
+            return new DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate(
+                candidate,
+                fallbackCancellationToken =>
+                    HydrateSelectedGetByIdCandidateAsync(
+                        relationalGetRequest,
+                        mappingSet,
+                        readPlan,
+                        candidate,
+                        fallbackCancellationToken
+                    )
+            );
+        }
+
+        return new DocumentCacheReadAccelerationGetByIdSelectionResult.Complete(
+            new GetResult.UnknownFailure(
+                "Relational GET could not select a stable authorized candidate for the requested document."
+            )
+        );
+    }
+
+    private async Task<GetResult> HydrateSelectedGetByIdCandidateAsync(
+        IGetRequest relationalGetRequest,
+        MappingSet mappingSet,
+        ResourceReadPlan readPlan,
+        DocumentCacheReadAccelerationCandidate candidate,
+        CancellationToken cancellationToken
+    )
+    {
+        var hydratedPage = await _documentHydrator
+            .HydrateAsync(
+                readPlan,
+                new PageKeysetSpec.Single(candidate.DocumentId),
+                CreateGetHydrationExecutionOptions(relationalGetRequest),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (!SelectedGetByIdCandidateStillMatches(candidate, hydratedPage.DocumentMetadata))
+        {
+            return await GetDocumentByIdRelationalAsync(relationalGetRequest, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        DocumentMetadataRow documentMetadata = hydratedPage.DocumentMetadata[0];
+
+        return BuildGetSuccess(relationalGetRequest, mappingSet, readPlan, hydratedPage, documentMetadata);
+    }
+
+    private static bool SelectedGetByIdCandidateStillMatches(
+        DocumentCacheReadAccelerationCandidate candidate,
+        IReadOnlyList<DocumentMetadataRow> hydratedMetadata
+    )
+    {
+        if (hydratedMetadata.Count != 1)
+        {
+            return false;
+        }
+
+        DocumentMetadataRow metadata = hydratedMetadata[0];
+
+        return metadata.DocumentId == candidate.DocumentId
+            && metadata.DocumentUuid == candidate.DocumentUuid.Value
+            && metadata.ResourceKeyId == candidate.ResourceKeyId
+            && metadata.ContentVersion == candidate.ContentVersion
+            && metadata.ContentLastModifiedAt == candidate.ContentLastModifiedAt;
+    }
+
     private async Task<bool> ShouldRetryPostHydrationReadBoundaryAsync(
         MappingSet mappingSet,
         QualifiedResourceName resource,
         RelationalReadTargetLookupResult.ExistingDocument expectedDocument,
-        long? observedContentVersion
+        long? observedContentVersion,
+        CancellationToken cancellationToken = default
     )
     {
         if (observedContentVersion is null)
@@ -2494,7 +3247,7 @@ public sealed class RelationalDocumentStoreRepository(
         }
 
         var targetLookupResult = await _readTargetLookupService
-            .ResolveForGetByIdAsync(mappingSet, resource, expectedDocument.DocumentUuid)
+            .ResolveForGetByIdAsync(mappingSet, resource, expectedDocument.DocumentUuid, cancellationToken)
             .ConfigureAwait(false);
 
         if (targetLookupResult is not RelationalReadTargetLookupResult.ExistingDocument currentDocument)
@@ -2681,7 +3434,8 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
         RelationshipAuthorizationResult storedRelationshipAuthorization,
         long documentId,
-        long storedContentVersion
+        long storedContentVersion,
+        CancellationToken cancellationToken = default
     )
     {
         var authorizationContext = relationalGetRequest.AuthorizationContext;
@@ -2691,7 +3445,8 @@ public sealed class RelationalDocumentStoreRepository(
             var namespaceOutcome = await ExecuteGetNamespaceAuthorizationAsync(
                     mappingSet,
                     documentId,
-                    storedNamespaceAuthorization
+                    storedNamespaceAuthorization,
+                    cancellationToken
                 )
                 .ConfigureAwait(false);
 
@@ -2704,7 +3459,8 @@ public sealed class RelationalDocumentStoreRepository(
                     mappingSet,
                     storedRelationshipAuthorization,
                     authorizationContext,
-                    documentId
+                    documentId,
+                    cancellationToken
                 )
                 .ConfigureAwait(false);
 
@@ -2721,7 +3477,8 @@ public sealed class RelationalDocumentStoreRepository(
                 mappingSet,
                 storedRelationshipAuthorization,
                 authorizationContext,
-                documentId
+                documentId,
+                cancellationToken
             )
             .ConfigureAwait(false);
     }
@@ -2730,7 +3487,8 @@ public sealed class RelationalDocumentStoreRepository(
         MappingSet mappingSet,
         RelationshipAuthorizationResult storedRelationshipAuthorization,
         RelationalAuthorizationContext authorizationContext,
-        long documentId
+        long documentId,
+        CancellationToken cancellationToken = default
     )
     {
         switch (storedRelationshipAuthorization)
@@ -2765,7 +3523,12 @@ public sealed class RelationalDocumentStoreRepository(
                 );
 
             case RelationshipAuthorizationResult.Authorized authorized:
-                return await ExecuteGetRelationshipAuthorizationAsync(mappingSet, documentId, authorized)
+                return await ExecuteGetRelationshipAuthorizationAsync(
+                        mappingSet,
+                        documentId,
+                        authorized,
+                        cancellationToken
+                    )
                     .ConfigureAwait(false);
 
             default:
@@ -2813,7 +3576,8 @@ public sealed class RelationalDocumentStoreRepository(
     private async Task<GetAuthorizationOutcome?> ExecuteGetNamespaceAuthorizationAsync(
         MappingSet mappingSet,
         long documentId,
-        RelationalWriteNamespaceAuthorization storedNamespaceAuthorization
+        RelationalWriteNamespaceAuthorization storedNamespaceAuthorization,
+        CancellationToken cancellationToken = default
     )
     {
         var executionResult = await _namespaceAuthorizationExecutor
@@ -2824,7 +3588,8 @@ public sealed class RelationalDocumentStoreRepository(
                     ProposedNamespace: null,
                     storedNamespaceAuthorization.Checks,
                     storedNamespaceAuthorization.NamespacePrefixParameterization
-                )
+                ),
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -2862,7 +3627,8 @@ public sealed class RelationalDocumentStoreRepository(
     private async Task<GetAuthorizationOutcome> ExecuteGetRelationshipAuthorizationAsync(
         MappingSet mappingSet,
         long documentId,
-        RelationshipAuthorizationResult.Authorized authorized
+        RelationshipAuthorizationResult.Authorized authorized,
+        CancellationToken cancellationToken = default
     )
     {
         if (authorized.ClaimEducationOrganizationIdParameterization is null)
@@ -2885,7 +3651,8 @@ public sealed class RelationalDocumentStoreRepository(
                     authorized.ClaimEducationOrganizationIdParameterization,
                     GetByIdRelationshipAuthorizationAuth1Index,
                     authorized.ExecutableShape
-                )
+                ),
+                cancellationToken
             )
             .ConfigureAwait(false);
 

@@ -70,7 +70,7 @@ internal class JwtRoleAuthenticationMiddleware(
         // Validate token (we only need the principal, not ClientAuthorizations)
         var (principal, _) = await jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
             token,
-            CancellationToken.None
+            requestInfo.RequestCancellationToken
         );
 
         if (principal == null)

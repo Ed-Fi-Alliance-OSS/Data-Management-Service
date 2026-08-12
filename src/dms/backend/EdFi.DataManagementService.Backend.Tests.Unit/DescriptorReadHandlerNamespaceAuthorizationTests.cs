@@ -771,7 +771,8 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
             commandExecutor,
             A.Fake<Core.Profile.IReadableProfileProjector>(),
             new EdFi.DataManagementService.Backend.Etag.ServedEtagComposer(),
-            NullLogger<DescriptorReadHandler>.Instance
+            NullLogger<DescriptorReadHandler>.Instance,
+            PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
 
     private static IReadOnlyDictionary<string, object?> CreateDescriptorRow(

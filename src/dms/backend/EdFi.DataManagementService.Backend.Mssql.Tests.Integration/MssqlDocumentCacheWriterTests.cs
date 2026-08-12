@@ -339,6 +339,30 @@ public class Given_A_Mssql_DocumentCacheWriter
     }
 
     [Test]
+    public async Task It_reports_missing_work_without_cache_dml_for_direct_fill_when_work_is_absent()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        await DeleteWorkAsync(source.DocumentId);
+        DocumentCacheMaterializationCandidate candidate = CreateCandidate(source, "direct-fill-missing-work");
+
+        DocumentCacheWriterResult result = await WriteAsync(
+            source,
+            candidate,
+            DocumentCacheWriterPurpose.DirectFill
+        );
+
+        result
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.WorkAnomaly>()
+            .Which.Kind.Should()
+            .Be(DocumentCacheWriterWorkAnomalyKind.MissingWork);
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadCacheCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadCacheAheadLatchAsync()).Should().BeFalse();
+    }
+
+    [Test]
     public async Task It_reports_needs_materialization_without_candidate_for_current_pending_work()
     {
         await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);

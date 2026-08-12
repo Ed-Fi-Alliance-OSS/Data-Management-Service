@@ -5,12 +5,15 @@
 
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 
@@ -47,9 +50,23 @@ internal static class ExternalDoublesRegistration
             RelationshipAuthorizationProviderFailure,
             RelationshipAuthorizationProviderFailure
         >? providerFailureTransform = null,
-        ApiIntegrationProviderFailureRecorder? providerFailureRecorder = null
+        ApiIntegrationProviderFailureRecorder? providerFailureRecorder = null,
+        RelationalProviderToken? relationalProviderToken = null,
+        DocumentCacheReadAcquisitionFailureRecorder? documentCacheReadAcquisitionFailureRecorder = null,
+        DocumentCacheDirectFillTimeoutRecorder? documentCacheDirectFillTimeoutRecorder = null,
+        DocumentCacheReadTelemetryRecorder? documentCacheReadTelemetryRecorder = null
     )
     {
+        if (
+            documentCacheReadAcquisitionFailureRecorder is not null
+            && documentCacheDirectFillTimeoutRecorder is not null
+        )
+        {
+            throw new InvalidOperationException(
+                "Cache read acquisition failure and direct-fill timeout doubles cannot be active together."
+            );
+        }
+
         services.RemoveAll<IJwtValidationService>();
         services.RemoveAll<IConfigurationManager<OpenIdConnectConfiguration>>();
         services.RemoveAll<IClaimSetProvider>();
@@ -87,9 +104,51 @@ internal static class ExternalDoublesRegistration
         services.AddSingleton<IDataStoreProvider>(
             FakeDataStoreProvider.WithSingleInstance(
                 id: ExternalDoublesConstants.StableDataStoreId,
-                connectionString: leasedConnectionString
+                connectionString: leasedConnectionString,
+                relationalProviderToken
             )
         );
+        if (relationalProviderToken is not null)
+        {
+            services.RemoveAll<IDocumentCacheTargetRegistry>();
+            services.AddSingleton<IDocumentCacheTargetRegistry>(
+                serviceProvider => new DocumentCacheTargetRegistry(
+                    serviceProvider.GetRequiredService<IDataStoreProvider>(),
+                    serviceProvider.GetRequiredService<IDocumentCacheTargetContextBuilder>(),
+                    serviceProvider.GetRequiredService<IOptions<DocumentCacheOptions>>(),
+                    serviceProvider.GetRequiredService<TimeProvider>(),
+                    serviceProvider.GetRequiredService<ILogger<DocumentCacheTargetRegistry>>()
+                )
+            );
+        }
+        if (documentCacheReadAcquisitionFailureRecorder is not null)
+        {
+            services.RemoveAll<IDocumentCacheReadLookupAdapter>();
+            services.RemoveAll<IDocumentCacheReadTelemetry>();
+            services.AddSingleton(documentCacheReadAcquisitionFailureRecorder);
+            services.AddScoped<
+                IDocumentCacheReadLookupAdapter,
+                AcquisitionFailureDocumentCacheReadLookupAdapter
+            >();
+            services.AddSingleton<IDocumentCacheReadTelemetry, RecordingDocumentCacheReadTelemetry>();
+        }
+        if (documentCacheDirectFillTimeoutRecorder is not null)
+        {
+            services.RemoveAll<IDocumentCacheMaterializer>();
+            services.RemoveAll<IDocumentCacheReadTelemetry>();
+            services.AddSingleton(documentCacheDirectFillTimeoutRecorder);
+            services.AddScoped<IDocumentCacheMaterializer, TimingOutDocumentCacheMaterializer>();
+            services.AddSingleton<
+                IDocumentCacheReadTelemetry,
+                DirectFillTimeoutRecordingDocumentCacheReadTelemetry
+            >();
+        }
+        if (documentCacheReadTelemetryRecorder is not null)
+        {
+            services.RemoveAll<IDocumentCacheReadTelemetry>();
+            services.AddSingleton(documentCacheReadTelemetryRecorder);
+            services.AddSingleton<IDocumentCacheReadTelemetry, TelemetryOnlyDocumentCacheReadTelemetry>();
+        }
         services.AddSingleton<IProfileCmsProvider>(FakeProfileCmsProvider.FromFixture(fixture));
         services.AddSingleton<IStartupProcessExit, NonExitingStartupProcessExit>();
     }

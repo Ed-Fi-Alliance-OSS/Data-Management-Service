@@ -16,13 +16,15 @@ namespace EdFi.DataManagementService.Backend.External;
 /// <param name="IdentityVersion">Stored identity-change version stamp.</param>
 /// <param name="ContentLastModifiedAt">Timestamp of the last content change.</param>
 /// <param name="IdentityLastModifiedAt">Timestamp of the last identity change.</param>
+/// <param name="ResourceKeyId">Stored resource identity.</param>
 public sealed record DocumentMetadataRow(
     long DocumentId,
     Guid DocumentUuid,
     long ContentVersion,
     long IdentityVersion,
     DateTimeOffset ContentLastModifiedAt,
-    DateTimeOffset IdentityLastModifiedAt
+    DateTimeOffset IdentityLastModifiedAt,
+    short ResourceKeyId
 );
 
 /// <summary>
@@ -76,7 +78,8 @@ public sealed record HydratedDocumentReferenceLookup(IReadOnlyList<DocumentRefer
 /// Optional total row count when requested by the caller (e.g., <c>totalCount=true</c>).
 /// </param>
 /// <param name="DocumentMetadata">
-/// Document metadata rows from <c>dms.Document</c> for the page, ordered by <c>DocumentId</c>.
+/// Document metadata rows from <c>dms.Document</c> for the page, ordered by selected-page
+/// ordinal when supplied by the keyset, otherwise by <c>DocumentId</c>.
 /// </param>
 /// <param name="TableRowsInDependencyOrder">
 /// Per-table hydrated rows in deterministic dependency order (root table first, then children).
@@ -125,6 +128,17 @@ public abstract record PageKeysetSpec
     /// </summary>
     /// <param name="DocumentId">The document to hydrate.</param>
     public sealed record Single(long DocumentId) : PageKeysetSpec;
+
+    /// <summary>
+    /// GET by already-selected page: the keyset is the authorized page of <c>DocumentId</c>s selected
+    /// before response-body hydration.
+    /// </summary>
+    /// <param name="DocumentIds">The selected document ids to hydrate.</param>
+    public sealed record SelectedPage(IReadOnlyList<long> DocumentIds) : PageKeysetSpec
+    {
+        public IReadOnlyList<long> DocumentIds { get; init; } =
+            DocumentIds ?? throw new ArgumentNullException(nameof(DocumentIds));
+    }
 
     /// <summary>
     /// GET by query: the keyset comes from a compiled page-selection SQL plan.

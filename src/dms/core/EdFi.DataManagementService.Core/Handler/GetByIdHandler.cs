@@ -45,7 +45,7 @@ internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePip
             requestInfo.FrontendRequest.TraceId,
             r => IsRetryableResult(r),
             r => r is GetSuccess,
-            async ct => await documentStoreRepository.GetDocumentById(CreateGetRequest(requestInfo)),
+            async ct => await documentStoreRepository.GetDocumentById(CreateGetRequest(requestInfo), ct),
             requestInfo
         );
         _logger.LogDebug(
@@ -228,6 +228,7 @@ internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePip
             AuthorizationContext: RelationalAuthorizationContext.Create(requestInfo.ClientAuthorizations),
             AuthorizationStrategyEvaluators: requestInfo.AuthorizationStrategyEvaluators,
             TraceId: requestInfo.FrontendRequest.TraceId,
+            TenantKey: requestInfo.FrontendRequest.Tenant ?? string.Empty,
             ReadableProfileProjectionContext: CreateReadableProfileProjectionContext(requestInfo),
             ResponseContentCoding: GetServedEtagContentCoding(requestInfo)
         );

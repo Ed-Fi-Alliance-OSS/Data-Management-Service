@@ -23,6 +23,10 @@ using DocumentCacheNoncurrentTargetHealthSnapshots = System.Collections.Immutabl
     EdFi.DataManagementService.Backend.DocumentCacheProjectionTargetContextKey,
     EdFi.DataManagementService.Backend.DocumentCacheProjectionTargetHealthSnapshot
 >;
+using DocumentCachePendingTargetDiagnostics = System.Collections.Immutable.ImmutableDictionary<
+    EdFi.DataManagementService.Backend.DocumentCacheProjectionTargetContextKey,
+    System.Collections.Immutable.ImmutableArray<EdFi.DataManagementService.Core.DocumentCache.DocumentCacheTargetDiagnostic>
+>;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -399,7 +403,8 @@ public sealed record DocumentCacheProjectionTargetHealthSnapshot
         DocumentCacheProjectionFailureDiagnostics? failureDiagnostics = null,
         DocumentCacheAdministrativeCommandExecutionId? activeCommandExecutionId = null,
         DocumentCacheAdministrativeCommand? activeAdministrativeCommand = null,
-        DocumentCacheAdministrativeCommandPhase? activeAdministrativePhase = null
+        DocumentCacheAdministrativeCommandPhase? activeAdministrativePhase = null,
+        IEnumerable<DocumentCacheTargetDiagnostic>? targetDiagnostics = null
     )
     {
         EffectiveProjectorPageSize = DocumentCacheProjectionObservationGuard.RequirePositive(
@@ -446,6 +451,10 @@ public sealed record DocumentCacheProjectionTargetHealthSnapshot
         ActiveCommandExecutionId = activeCommandExecutionId;
         ActiveAdministrativeCommand = activeAdministrativeCommand;
         ActiveAdministrativePhase = activeAdministrativePhase;
+        TargetDiagnostics = DocumentCacheProjectionObservationBounds.CapLatest(
+            targetDiagnostics,
+            EffectiveProjectorPageSize
+        );
     }
 
     public DocumentCacheProjectionTargetContextKey ContextKey { get; }
@@ -481,6 +490,32 @@ public sealed record DocumentCacheProjectionTargetHealthSnapshot
     public DocumentCacheAdministrativeCommand? ActiveAdministrativeCommand { get; }
 
     public DocumentCacheAdministrativeCommandPhase? ActiveAdministrativePhase { get; }
+
+    public ImmutableArray<DocumentCacheTargetDiagnostic> TargetDiagnostics { get; }
+
+    internal DocumentCacheProjectionTargetHealthSnapshot WithTargetDiagnostics(
+        IEnumerable<DocumentCacheTargetDiagnostic> targetDiagnostics,
+        DateTimeOffset observedAt
+    ) =>
+        new(
+            TargetKey,
+            Generation,
+            EffectiveProjectorPageSize,
+            observedAt,
+            providerToken: ProviderToken,
+            physicalSourceFingerprint: PhysicalSourceFingerprint,
+            executionState: ExecutionState,
+            lastSuccess: LastSuccess,
+            pageThroughput: PageThroughput,
+            drainThroughput: DrainThroughput,
+            lifecycleFence: LifecycleFence,
+            poisonTraversal: PoisonTraversal,
+            failureDiagnostics: FailureDiagnostics,
+            activeCommandExecutionId: ActiveCommandExecutionId,
+            activeAdministrativeCommand: ActiveAdministrativeCommand,
+            activeAdministrativePhase: ActiveAdministrativePhase,
+            targetDiagnostics: targetDiagnostics
+        );
 
     private static DocumentCacheProjectionPoisonTraversalSnapshot EnsureMatchingPageSize(
         DocumentCacheProjectionPoisonTraversalSnapshot snapshot,
@@ -783,14 +818,25 @@ internal interface IDocumentCacheProjectionCurrentTargetHealthSink
     );
 }
 
+internal interface IDocumentCacheProjectionTargetDiagnosticSink
+{
+    void AppendTargetDiagnostic(
+        DocumentCacheProjectionTargetContextKey contextKey,
+        DocumentCacheTargetDiagnostic diagnostic,
+        DateTimeOffset? observedAt = null
+    );
+}
+
 public sealed class DocumentCacheProjectionObservationStore
     : IDocumentCacheProjectionObservationProvider,
         IDocumentCacheProjectionObservationSink,
-        IDocumentCacheProjectionCurrentTargetHealthSink
+        IDocumentCacheProjectionCurrentTargetHealthSink,
+        IDocumentCacheProjectionTargetDiagnosticSink
 {
     private readonly object _sync = new();
     private readonly TimeProvider _timeProvider;
     private readonly IDocumentCacheProjectionTelemetry _telemetry;
+    private readonly int _pendingTargetDiagnosticLimit;
 
     private ImmutableDictionary<
         DocumentCacheTargetKey,
@@ -811,6 +857,9 @@ public sealed class DocumentCacheProjectionObservationStore
     private DocumentCacheNoncurrentTargetHealthSnapshots _noncurrentTargets =
         DocumentCacheNoncurrentTargetHealthSnapshots.Empty;
 
+    private DocumentCachePendingTargetDiagnostics _pendingTargetDiagnostics =
+        DocumentCachePendingTargetDiagnostics.Empty;
+
     private DocumentCacheActiveAdministrativeCommandSnapshots _activeCommands =
         DocumentCacheActiveAdministrativeCommandSnapshots.Empty;
 
@@ -821,8 +870,19 @@ public sealed class DocumentCacheProjectionObservationStore
         TimeProvider timeProvider,
         IDocumentCacheProjectionTelemetry? telemetry = null
     )
+        : this(timeProvider, DocumentCacheProjectorOptions.DefaultPageSize, telemetry) { }
+
+    public DocumentCacheProjectionObservationStore(
+        TimeProvider timeProvider,
+        int pendingTargetDiagnosticLimit,
+        IDocumentCacheProjectionTelemetry? telemetry = null
+    )
     {
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+        _pendingTargetDiagnosticLimit = DocumentCacheProjectionObservationGuard.RequirePositive(
+            pendingTargetDiagnosticLimit,
+            nameof(pendingTargetDiagnosticLimit)
+        );
         _telemetry = telemetry ?? NoOpDocumentCacheProjectionTelemetry.Instance;
     }
 
@@ -850,13 +910,24 @@ public sealed class DocumentCacheProjectionObservationStore
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
+        DocumentCacheProjectionTargetHealthSnapshot snapshotToRecord;
         lock (_sync)
         {
-            if (_noncurrentTargets.ContainsKey(snapshot.ContextKey))
+            if (
+                _noncurrentTargets.TryGetValue(
+                    snapshot.ContextKey,
+                    out DocumentCacheProjectionTargetHealthSnapshot? noncurrentSnapshot
+                )
+            )
             {
-                _noncurrentTargets = _noncurrentTargets.SetItem(snapshot.ContextKey, snapshot);
+                snapshot = MergePendingTargetDiagnostics(snapshot);
+                snapshotToRecord = MergeTargetDiagnostics(noncurrentSnapshot, snapshot);
+                _noncurrentTargets = _noncurrentTargets.SetItem(snapshot.ContextKey, snapshotToRecord);
                 return;
             }
+
+            snapshot = MergePendingTargetDiagnostics(snapshot);
+            RemovePendingTargetDiagnosticsForReplacedGenerations(snapshot.ContextKey);
 
             if (
                 _currentTargets.TryGetValue(
@@ -875,11 +946,88 @@ public sealed class DocumentCacheProjectionObservationStore
                     )
                 );
             }
+            else if (currentSnapshot is not null)
+            {
+                snapshot = MergeTargetDiagnostics(currentSnapshot, snapshot);
+            }
 
-            _currentTargets = _currentTargets.SetItem(snapshot.TargetKey, snapshot);
+            snapshotToRecord = snapshot;
+            _currentTargets = _currentTargets.SetItem(snapshot.TargetKey, snapshotToRecord);
         }
 
-        _telemetry.RecordTargetObservation(snapshot);
+        _telemetry.RecordTargetObservation(snapshotToRecord);
+    }
+
+    public void AppendTargetDiagnostic(
+        DocumentCacheProjectionTargetContextKey contextKey,
+        DocumentCacheTargetDiagnostic diagnostic,
+        DateTimeOffset? observedAt = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(contextKey);
+        ArgumentNullException.ThrowIfNull(diagnostic);
+
+        if (diagnostic.TargetKey is null || !diagnostic.TargetKey.Equals(contextKey.TargetKey))
+        {
+            throw new ArgumentException(
+                "Target diagnostic must match the target context key.",
+                nameof(diagnostic)
+            );
+        }
+
+        if (diagnostic.Generation is not null && !diagnostic.Generation.Equals(contextKey.Generation))
+        {
+            throw new ArgumentException(
+                "Target diagnostic generation must match the target context key when supplied.",
+                nameof(diagnostic)
+            );
+        }
+
+        DocumentCacheProjectionTargetHealthSnapshot? snapshotToRecord = null;
+        DateTimeOffset diagnosticObservedAt = observedAt ?? _timeProvider.GetUtcNow();
+
+        lock (_sync)
+        {
+            bool hasCurrentTarget = _currentTargets.TryGetValue(
+                contextKey.TargetKey,
+                out DocumentCacheProjectionTargetHealthSnapshot? currentSnapshot
+            );
+
+            if (currentSnapshot is not null && currentSnapshot.Generation == contextKey.Generation)
+            {
+                snapshotToRecord = AppendTargetDiagnostic(currentSnapshot, diagnostic, diagnosticObservedAt);
+                _currentTargets = _currentTargets.SetItem(contextKey.TargetKey, snapshotToRecord);
+            }
+            else if (
+                _noncurrentTargets.TryGetValue(
+                    contextKey,
+                    out DocumentCacheProjectionTargetHealthSnapshot? noncurrentSnapshot
+                )
+            )
+            {
+                _noncurrentTargets = _noncurrentTargets.SetItem(
+                    contextKey,
+                    AppendTargetDiagnostic(noncurrentSnapshot, diagnostic, diagnosticObservedAt)
+                );
+            }
+            else if (!hasCurrentTarget)
+            {
+                ImmutableArray<DocumentCacheTargetDiagnostic> pendingDiagnostics =
+                    _pendingTargetDiagnostics.TryGetValue(contextKey, out var existingDiagnostics)
+                        ? DocumentCacheProjectionObservationBounds.CapLatest(
+                            existingDiagnostics.Add(diagnostic),
+                            _pendingTargetDiagnosticLimit
+                        )
+                        : [diagnostic];
+
+                _pendingTargetDiagnostics = _pendingTargetDiagnostics.SetItem(contextKey, pendingDiagnostics);
+            }
+        }
+
+        if (snapshotToRecord is not null)
+        {
+            _telemetry.RecordTargetObservation(snapshotToRecord);
+        }
     }
 
     public void MarkTargetContextNoncurrent(
@@ -917,6 +1065,8 @@ public sealed class DocumentCacheProjectionObservationStore
 
         lock (_sync)
         {
+            _pendingTargetDiagnostics = _pendingTargetDiagnostics.Remove(contextKey);
+
             if (
                 _currentTargets.TryGetValue(
                     contextKey.TargetKey,
@@ -990,12 +1140,85 @@ public sealed class DocumentCacheProjectionObservationStore
 
         return commandSnapshot.WithGenerationCurrency(isCurrentGeneration, currentGeneration);
     }
+
+    private DocumentCacheProjectionTargetHealthSnapshot MergePendingTargetDiagnostics(
+        DocumentCacheProjectionTargetHealthSnapshot snapshot
+    )
+    {
+        if (
+            !_pendingTargetDiagnostics.TryGetValue(
+                snapshot.ContextKey,
+                out ImmutableArray<DocumentCacheTargetDiagnostic> pendingDiagnostics
+            )
+        )
+        {
+            return snapshot;
+        }
+
+        _pendingTargetDiagnostics = _pendingTargetDiagnostics.Remove(snapshot.ContextKey);
+
+        return snapshot.TargetDiagnostics.IsEmpty
+            ? snapshot.WithTargetDiagnostics(pendingDiagnostics, snapshot.ObservedAt)
+            : snapshot.WithTargetDiagnostics(
+                [.. pendingDiagnostics, .. snapshot.TargetDiagnostics],
+                snapshot.ObservedAt
+            );
+    }
+
+    private void RemovePendingTargetDiagnosticsForReplacedGenerations(
+        DocumentCacheProjectionTargetContextKey contextKey
+    )
+    {
+        foreach (
+            DocumentCacheProjectionTargetContextKey pendingContextKey in _pendingTargetDiagnostics.Keys.Where(
+                pendingContextKey =>
+                    pendingContextKey.TargetKey.Equals(contextKey.TargetKey)
+                    && pendingContextKey != contextKey
+            )
+        )
+        {
+            _pendingTargetDiagnostics = _pendingTargetDiagnostics.Remove(pendingContextKey);
+        }
+    }
+
+    private static DocumentCacheProjectionTargetHealthSnapshot MergeTargetDiagnostics(
+        DocumentCacheProjectionTargetHealthSnapshot existingSnapshot,
+        DocumentCacheProjectionTargetHealthSnapshot incomingSnapshot
+    )
+    {
+        if (existingSnapshot.TargetDiagnostics.IsEmpty)
+        {
+            return incomingSnapshot;
+        }
+
+        if (incomingSnapshot.TargetDiagnostics.IsEmpty)
+        {
+            return incomingSnapshot.WithTargetDiagnostics(
+                existingSnapshot.TargetDiagnostics,
+                incomingSnapshot.ObservedAt
+            );
+        }
+
+        return incomingSnapshot.WithTargetDiagnostics(
+            [.. existingSnapshot.TargetDiagnostics, .. incomingSnapshot.TargetDiagnostics],
+            incomingSnapshot.ObservedAt
+        );
+    }
+
+    private static DocumentCacheProjectionTargetHealthSnapshot AppendTargetDiagnostic(
+        DocumentCacheProjectionTargetHealthSnapshot snapshot,
+        DocumentCacheTargetDiagnostic diagnostic,
+        DateTimeOffset observedAt
+    ) => snapshot.WithTargetDiagnostics([.. snapshot.TargetDiagnostics, diagnostic], observedAt);
 }
 
 internal static class DocumentCacheProjectionObservationBounds
 {
     public static ImmutableArray<T> Cap<T>(IEnumerable<T>? values, int maximumCount) =>
         (values ?? []).Take(maximumCount).ToImmutableArray();
+
+    public static ImmutableArray<T> CapLatest<T>(IEnumerable<T>? values, int maximumCount) =>
+        (values ?? []).TakeLast(maximumCount).ToImmutableArray();
 
     public static ImmutableArray<long> CapPositiveIds(
         IEnumerable<long>? values,

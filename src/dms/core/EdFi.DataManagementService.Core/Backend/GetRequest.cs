@@ -19,6 +19,7 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// The resolved runtime mapping set for the active relational request.
 /// </param>
 /// <param name="TraceId">The request TraceId.</param>
+/// <param name="TenantKey">The normalized request tenant key.</param>
 /// <param name="ReadMode">The local relational read mode for response materialization.</param>
 /// <param name="ReadableProfileProjectionContext">
 /// Optional readable-profile projection inputs when a readable profile applies to the request.
@@ -32,7 +33,8 @@ internal sealed record RelationalGetRequest(
     TraceId TraceId,
     RelationalGetRequestReadMode ReadMode = RelationalGetRequestReadMode.ExternalResponse,
     ReadableProfileProjectionContext? ReadableProfileProjectionContext = null,
-    ResponseContentCoding ResponseContentCoding = ResponseContentCoding.Identity
+    ResponseContentCoding ResponseContentCoding = ResponseContentCoding.Identity,
+    string TenantKey = ""
 ) : IGetRequest
 {
     public ResourceName ResourceName => ResourceInfo.ResourceName;

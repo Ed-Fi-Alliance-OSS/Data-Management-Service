@@ -17,6 +17,7 @@ using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
@@ -231,6 +232,95 @@ public class ResolveMappingSetMiddlewareTests
         public void It_attaches_mapping_set_to_request_info()
         {
             _requestInfo.MappingSet.Should().BeSameAs(_expectedMappingSet);
+        }
+    }
+
+    [Test]
+    public async Task It_passes_the_request_cancellation_token_to_mapping_set_resolution()
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        var compiler = CreateFakeCompiler();
+        var mappingSetProvider = A.Fake<IMappingSetProvider>();
+        var (middleware, _) = CreateMiddleware(compiler: compiler, mappingSetProvider: mappingSetProvider);
+        var requestInfo = CreateRequestInfo(fingerprint: CreateFingerprint());
+        requestInfo.RequestCancellationToken = cancellationSource.Token;
+        CancellationToken capturedCancellationToken = default;
+
+        A.CallTo(() =>
+                mappingSetProvider.GetOrCreateAsync(A<MappingSetKey>.Ignored, A<CancellationToken>.Ignored)
+            )
+            .Invokes((MappingSetKey _, CancellationToken token) => capturedCancellationToken = token)
+            .Returns(CreateTestMappingSet());
+
+        await middleware.Execute(requestInfo, NullNext);
+
+        capturedCancellationToken.Should().Be(cancellationSource.Token);
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Request_Cancels_During_Mapping_Set_Resolution : ResolveMappingSetMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private Func<Task> _act = null!;
+        private bool _nextCalled;
+        private CancellationTokenSource _cancellationSource = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var compiler = CreateFakeCompiler();
+            var (middleware, mappingSetProvider) = CreateMiddleware(compiler: compiler);
+            _requestInfo = CreateRequestInfo(fingerprint: CreateFingerprint());
+            _cancellationSource = new CancellationTokenSource();
+            _cancellationSource.Cancel();
+            _requestInfo.RequestCancellationToken = _cancellationSource.Token;
+
+            A.CallTo(() =>
+                    mappingSetProvider.GetOrCreateAsync(
+                        A<MappingSetKey>.Ignored,
+                        A<CancellationToken>.Ignored
+                    )
+                )
+                .Returns(Task.FromCanceled<MappingSet>(_cancellationSource.Token));
+
+            _act = () =>
+                middleware.Execute(
+                    _requestInfo,
+                    () =>
+                    {
+                        _nextCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _cancellationSource.Dispose();
+        }
+
+        [Test]
+        public async Task It_propagates_OperationCanceledException()
+        {
+            await _act.Should().ThrowAsync<OperationCanceledException>();
+        }
+
+        [Test]
+        public async Task It_does_not_call_next()
+        {
+            await _act.Should().ThrowAsync<OperationCanceledException>();
+
+            _nextCalled.Should().BeFalse();
+        }
+
+        [Test]
+        public async Task It_does_not_translate_cancellation_to_a_503()
+        {
+            await _act.Should().ThrowAsync<OperationCanceledException>();
+
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 

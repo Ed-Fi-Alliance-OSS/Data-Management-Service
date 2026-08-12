@@ -202,7 +202,8 @@ public class Given_Postgresql_DocumentCacheMaterializer_Coherence
                         ContentVersion,
                         ContentVersion,
                         LastModifiedAt,
-                        LastModifiedAt
+                        LastModifiedAt,
+                        11
                     ),
                 ],
                 TableRowsInDependencyOrder:

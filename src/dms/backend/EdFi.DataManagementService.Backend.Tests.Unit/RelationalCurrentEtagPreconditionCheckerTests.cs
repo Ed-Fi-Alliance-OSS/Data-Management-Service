@@ -328,7 +328,8 @@ public class Given_RelationalCurrentEtagPreconditionChecker
                 contentVersion,
                 contentVersion,
                 new DateTimeOffset(2026, 4, 11, 17, 30, 45, TimeSpan.Zero),
-                new DateTimeOffset(2026, 4, 11, 17, 30, 45, TimeSpan.Zero)
+                new DateTimeOffset(2026, 4, 11, 17, 30, 45, TimeSpan.Zero),
+                1
             ),
             [],
             []

@@ -263,7 +263,8 @@ public class Given_DocumentCacheMaterializer_InvariantValidation
                     source.ContentVersion,
                     source.ContentVersion,
                     source.ContentLastModifiedAt,
-                    source.ContentLastModifiedAt
+                    source.ContentLastModifiedAt,
+                    source.ResourceKeyId
                 ),
             ],
             TableRowsInDependencyOrder:

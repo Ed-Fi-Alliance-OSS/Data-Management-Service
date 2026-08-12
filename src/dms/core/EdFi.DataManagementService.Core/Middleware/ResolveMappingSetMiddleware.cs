@@ -94,11 +94,14 @@ internal class ResolveMappingSetMiddleware(
 
         try
         {
-            // CancellationToken.None: the pipeline does not surface a per-request token.
-            // MappingSetCache supports cancelling the wait (not compilation itself), so a
-            // future per-request token could be threaded here to let disconnected clients
-            // stop waiting for an in-flight compilation.
-            requestInfo.MappingSet = await mappingSetProvider.GetOrCreateAsync(key, CancellationToken.None);
+            requestInfo.MappingSet = await mappingSetProvider.GetOrCreateAsync(
+                key,
+                requestInfo.RequestCancellationToken
+            );
+        }
+        catch (OperationCanceledException) when (requestInfo.RequestCancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (MappingSetUnavailableException ex)
         {

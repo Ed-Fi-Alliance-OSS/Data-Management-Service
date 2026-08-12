@@ -1,0 +1,1185 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Data;
+using System.Globalization;
+using System.Text.Json;
+using EdFi.DataManagementService.Backend.Etag;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.External.Backend;
+
+namespace EdFi.DataManagementService.Backend;
+
+internal enum DocumentCacheReadLookupOutcome
+{
+    FreshHit = 1,
+    LifecycleDisabled = 2,
+    LifecycleResetting = 3,
+    LifecycleRebuilding = 4,
+    CacheAheadRecoveryRequired = 5,
+    MissingCacheRow = 6,
+    MissingSourceRow = 7,
+    SourceDrift = 8,
+    StaleCacheRow = 9,
+    MissingLifecycleState = 10,
+    InvalidLifecycleState = 11,
+    ProjectionTargetIneligible = 12,
+    ProviderPrerequisiteIneligible = 13,
+    CacheUnavailable = 14,
+    DeterministicInvariantFailure = 15,
+}
+
+internal sealed record DocumentCacheReadDocumentLookupRequest(
+    MappingSet MappingSet,
+    DocumentCacheReadAccelerationCandidate Candidate
+);
+
+internal sealed record DocumentCacheReadBatchLookupRequest(
+    MappingSet MappingSet,
+    IReadOnlyList<DocumentCacheReadAccelerationCandidate> Candidates
+)
+{
+    public bool IsEmpty => Candidates.Count == 0;
+}
+
+internal abstract record DocumentCacheReadDocumentLookupResult
+{
+    private DocumentCacheReadDocumentLookupResult(
+        DocumentCacheReadLookupOutcome outcome,
+        DocumentCacheReadAccelerationCandidate candidate,
+        bool isAdapterAcquisitionFailure = false
+    )
+    {
+        Outcome = DocumentCacheMaterializerGuards.RequireDefined(
+            outcome,
+            nameof(outcome),
+            "Unsupported DocumentCache read lookup outcome."
+        );
+        Candidate = candidate ?? throw new ArgumentNullException(nameof(candidate));
+        IsAdapterAcquisitionFailure = isAdapterAcquisitionFailure;
+
+        if (IsAdapterAcquisitionFailure && Outcome != DocumentCacheReadLookupOutcome.CacheUnavailable)
+        {
+            throw new ArgumentException(
+                "Adapter acquisition failures must be reported as cache-unavailable lookup outcomes.",
+                nameof(isAdapterAcquisitionFailure)
+            );
+        }
+    }
+
+    public DocumentCacheReadLookupOutcome Outcome { get; }
+
+    public DocumentCacheReadAccelerationCandidate Candidate { get; }
+
+    public bool IsAdapterAcquisitionFailure { get; }
+
+    public bool IsFreshHit => Outcome == DocumentCacheReadLookupOutcome.FreshHit;
+
+    public sealed record FreshHit : DocumentCacheReadDocumentLookupResult
+    {
+        public FreshHit(DocumentCacheReadAccelerationCandidate candidate, string documentJson)
+            : base(DocumentCacheReadLookupOutcome.FreshHit, candidate)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(documentJson);
+
+            DocumentJson = documentJson;
+        }
+
+        public string DocumentJson { get; }
+    }
+
+    public sealed record Fallback : DocumentCacheReadDocumentLookupResult
+    {
+        public Fallback(
+            DocumentCacheReadLookupOutcome outcome,
+            DocumentCacheReadAccelerationCandidate candidate,
+            string? invariantDiagnosticMessage = null,
+            bool isAdapterAcquisitionFailure = false
+        )
+            : base(outcome, candidate, isAdapterAcquisitionFailure)
+        {
+            if (outcome == DocumentCacheReadLookupOutcome.FreshHit)
+            {
+                throw new ArgumentException(
+                    "Fresh cache hits must use the FreshHit result.",
+                    nameof(outcome)
+                );
+            }
+
+            InvariantDiagnosticMessage =
+                outcome == DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
+                    ? DocumentCacheReadLookupDiagnosticText.Sanitize(invariantDiagnosticMessage)
+                    : null;
+        }
+
+        public string? InvariantDiagnosticMessage { get; }
+    }
+}
+
+internal sealed record DocumentCacheReadBatchLookupResult
+{
+    public DocumentCacheReadBatchLookupResult(
+        DocumentCacheReadLookupOutcome outcome,
+        IReadOnlyList<DocumentCacheReadDocumentLookupResult> Documents,
+        string? invariantDiagnosticMessage = null,
+        bool isAdapterAcquisitionFailure = false
+    )
+    {
+        Outcome = DocumentCacheMaterializerGuards.RequireDefined(
+            outcome,
+            nameof(outcome),
+            "Unsupported DocumentCache read lookup outcome."
+        );
+        this.Documents = Documents ?? throw new ArgumentNullException(nameof(Documents));
+        InvariantDiagnosticMessage =
+            outcome == DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
+                ? DocumentCacheReadLookupDiagnosticText.Sanitize(invariantDiagnosticMessage)
+                : null;
+        IsAdapterAcquisitionFailure = isAdapterAcquisitionFailure;
+
+        if (outcome == DocumentCacheReadLookupOutcome.FreshHit && !AllDocumentsFresh(this.Documents))
+        {
+            throw new ArgumentException("Fresh batch lookup results require all documents to be fresh.");
+        }
+
+        if (IsAdapterAcquisitionFailure && Outcome != DocumentCacheReadLookupOutcome.CacheUnavailable)
+        {
+            throw new ArgumentException(
+                "Adapter acquisition failures must be reported as cache-unavailable lookup outcomes.",
+                nameof(isAdapterAcquisitionFailure)
+            );
+        }
+    }
+
+    public DocumentCacheReadLookupOutcome Outcome { get; }
+
+    public IReadOnlyList<DocumentCacheReadDocumentLookupResult> Documents { get; }
+
+    public string? InvariantDiagnosticMessage { get; }
+
+    public bool IsAdapterAcquisitionFailure { get; }
+
+    public bool IsFreshHit => Outcome == DocumentCacheReadLookupOutcome.FreshHit;
+
+    public static DocumentCacheReadBatchLookupResult EmptyFresh() =>
+        new(DocumentCacheReadLookupOutcome.FreshHit, []);
+
+    public static DocumentCacheReadBatchLookupResult FromDocuments(
+        IReadOnlyList<DocumentCacheReadDocumentLookupResult> documents
+    )
+    {
+        ArgumentNullException.ThrowIfNull(documents);
+
+        if (documents.Count == 0)
+        {
+            return EmptyFresh();
+        }
+
+        DocumentCacheReadDocumentLookupResult? firstFallback =
+            documents.FirstOrDefault(static document =>
+                document.Outcome == DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
+            ) ?? documents.FirstOrDefault(static document => !document.IsFreshHit);
+
+        string? invariantDiagnosticMessage = null;
+        if (
+            firstFallback is DocumentCacheReadDocumentLookupResult.Fallback fallback
+            && fallback.Outcome == DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
+        )
+        {
+            invariantDiagnosticMessage = fallback.InvariantDiagnosticMessage;
+        }
+
+        return firstFallback is null
+            ? new(DocumentCacheReadLookupOutcome.FreshHit, documents)
+            : new(
+                firstFallback.Outcome,
+                documents,
+                invariantDiagnosticMessage,
+                firstFallback.IsAdapterAcquisitionFailure
+            );
+    }
+
+    public static DocumentCacheReadBatchLookupResult PageFallback(
+        DocumentCacheReadLookupOutcome outcome,
+        IReadOnlyList<DocumentCacheReadAccelerationCandidate> candidates,
+        string message,
+        bool isAdapterAcquisitionFailure = false
+    )
+    {
+        ArgumentNullException.ThrowIfNull(candidates);
+
+        return new(
+            outcome,
+            candidates
+                .Select(candidate => new DocumentCacheReadDocumentLookupResult.Fallback(
+                    outcome,
+                    candidate,
+                    message,
+                    isAdapterAcquisitionFailure
+                ))
+                .ToArray(),
+            message,
+            isAdapterAcquisitionFailure
+        );
+    }
+
+    private static bool AllDocumentsFresh(IReadOnlyList<DocumentCacheReadDocumentLookupResult> documents) =>
+        documents.All(static document => document.IsFreshHit);
+}
+
+internal interface IDocumentCacheReadResponseShaper
+{
+    DocumentCacheReadLookupResult<GetResult> ShapeGetById(
+        DocumentCacheReadAccelerationGetByIdRequest request,
+        DocumentCacheReadDocumentLookupResult.FreshHit hit
+    );
+
+    DocumentCacheReadLookupResult<QueryResult> ShapeQuery(
+        DocumentCacheReadAccelerationQueryRequest request,
+        DocumentCacheReadAccelerationCandidatePage authorizedCandidatePage,
+        DocumentCacheReadBatchLookupResult hitPage
+    );
+}
+
+internal abstract class DocumentCacheReadLookupAdapterBase : IDocumentCacheReadLookupAdapter
+{
+    private readonly IServedEtagComposer _servedEtagComposer;
+    private readonly IDocumentCacheReadResponseShaper _responseShaper;
+
+    protected DocumentCacheReadLookupAdapterBase(
+        IServedEtagComposer servedEtagComposer,
+        IDocumentCacheReadResponseShaper responseShaper
+    )
+    {
+        _servedEtagComposer =
+            servedEtagComposer ?? throw new ArgumentNullException(nameof(servedEtagComposer));
+        _responseShaper = responseShaper ?? throw new ArgumentNullException(nameof(responseShaper));
+    }
+
+    protected abstract SqlDialect Dialect { get; }
+
+    protected abstract RelationalProviderToken ProviderToken { get; }
+
+    public async Task<DocumentCacheReadLookupResult<GetResult>> TryGetByIdAsync(
+        DocumentCacheReadAccelerationGetByIdRequest request,
+        DocumentCacheReadAccelerationGetByIdSelectionResult.Candidate candidateSelection,
+        DocumentCacheTargetExecutionContext targetContext,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        ArgumentNullException.ThrowIfNull(candidateSelection);
+
+        DocumentCacheReadDocumentLookupResult lookupResult = await LookupDocumentAsync(
+                new DocumentCacheReadDocumentLookupRequest(
+                    request.MappingSet,
+                    candidateSelection.AuthorizedCandidate
+                ),
+                targetContext,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return lookupResult is DocumentCacheReadDocumentLookupResult.FreshHit freshHit
+            ? _responseShaper.ShapeGetById(request, freshHit)
+            : DocumentCacheReadLookupResult<GetResult>.FallbackFromLookupOutcome(
+                lookupResult.Outcome,
+                SelectDirectFillCandidates([lookupResult]),
+                CreateInvariantDiagnostic(lookupResult),
+                isAdapterAcquisitionFailure: lookupResult.IsAdapterAcquisitionFailure
+            );
+    }
+
+    public async Task<DocumentCacheReadLookupResult<QueryResult>> TryQueryAsync(
+        DocumentCacheReadAccelerationQueryRequest request,
+        DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage candidateSelection,
+        DocumentCacheTargetExecutionContext targetContext,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        ArgumentNullException.ThrowIfNull(candidateSelection);
+
+        DocumentCacheReadBatchLookupResult lookupResult = await LookupBatchAsync(
+                new DocumentCacheReadBatchLookupRequest(
+                    request.MappingSet,
+                    candidateSelection.AuthorizedCandidatePage.Candidates
+                ),
+                targetContext,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return lookupResult.IsFreshHit
+            ? _responseShaper.ShapeQuery(request, candidateSelection.AuthorizedCandidatePage, lookupResult)
+            : DocumentCacheReadLookupResult<QueryResult>.FallbackFromLookupOutcome(
+                lookupResult.Outcome,
+                SelectQueryDirectFillCandidates(lookupResult),
+                CreateInvariantDiagnostic(lookupResult),
+                isAdapterAcquisitionFailure: lookupResult.IsAdapterAcquisitionFailure
+            );
+    }
+
+    public async Task<DocumentCacheReadDocumentLookupResult> LookupDocumentAsync(
+        DocumentCacheReadDocumentLookupRequest request,
+        DocumentCacheTargetExecutionContext targetContext,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        DocumentCacheReadBatchLookupResult batchResult = await LookupBatchAsync(
+                new DocumentCacheReadBatchLookupRequest(request.MappingSet, [request.Candidate]),
+                targetContext,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return batchResult.Documents.Count == 1
+            ? batchResult.Documents[0]
+            : new DocumentCacheReadDocumentLookupResult.Fallback(
+                DocumentCacheReadLookupOutcome.DeterministicInvariantFailure,
+                request.Candidate,
+                "DocumentCache read lookup returned an invalid single-document result shape."
+            );
+    }
+
+    public async Task<DocumentCacheReadBatchLookupResult> LookupBatchAsync(
+        DocumentCacheReadBatchLookupRequest request,
+        DocumentCacheTargetExecutionContext targetContext,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(targetContext);
+
+        RequireTargetBinding(targetContext);
+
+        if (request.IsEmpty)
+        {
+            return DocumentCacheReadBatchLookupResult.EmptyFresh();
+        }
+
+        DocumentCacheReadBatchLookupResult? targetEligibilityResult = TryClassifyTargetEligibility(
+            targetContext,
+            request.Candidates
+        );
+
+        if (targetEligibilityResult is not null)
+        {
+            return targetEligibilityResult;
+        }
+
+        try
+        {
+            RelationalCommand command = DocumentCacheReadLookupSql.BuildCommand(Dialect, request.Candidates);
+            IReadOnlyList<DocumentCacheReadLookupObservation> observations = await ExecuteReaderAsync(
+                    targetContext,
+                    command,
+                    DocumentCacheReadLookupSql.ReadObservationsAsync,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            return DocumentCacheReadLookupClassifier.Classify(request, observations, _servedEtagComposer);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (ObjectDisposedException)
+        {
+            throw;
+        }
+        catch (DocumentCacheReadLookupInvariantException exception)
+        {
+            return DocumentCacheReadBatchLookupResult.PageFallback(
+                DocumentCacheReadLookupOutcome.DeterministicInvariantFailure,
+                request.Candidates,
+                exception.Message
+            );
+        }
+        catch (DocumentCacheReadAcquisitionUnavailableException)
+        {
+            return DocumentCacheReadBatchLookupResult.PageFallback(
+                DocumentCacheReadLookupOutcome.CacheUnavailable,
+                request.Candidates,
+                "DocumentCache read lookup provider availability failure.",
+                isAdapterAcquisitionFailure: true
+            );
+        }
+        catch (Exception exception) when (IsCacheUnavailable(exception))
+        {
+            return DocumentCacheReadBatchLookupResult.PageFallback(
+                DocumentCacheReadLookupOutcome.CacheUnavailable,
+                request.Candidates,
+                "DocumentCache read lookup provider availability failure."
+            );
+        }
+    }
+
+    protected abstract Task<TResult> ExecuteReaderAsync<TResult>(
+        DocumentCacheTargetExecutionContext targetContext,
+        RelationalCommand command,
+        Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,
+        CancellationToken cancellationToken = default
+    );
+
+    protected abstract bool IsCacheUnavailable(Exception exception);
+
+    private void RequireTargetBinding(DocumentCacheTargetExecutionContext targetContext)
+    {
+        if (targetContext.ProviderToken != ProviderToken)
+        {
+            throw new InvalidOperationException(
+                $"DocumentCache read lookup adapter provider '{ProviderToken}' cannot bind target provider '{targetContext.ProviderToken}'."
+            );
+        }
+    }
+
+    private static DocumentCacheReadBatchLookupResult? TryClassifyTargetEligibility(
+        DocumentCacheTargetExecutionContext targetContext,
+        IReadOnlyList<DocumentCacheReadAccelerationCandidate> candidates
+    )
+    {
+        if (targetContext.Inventory.Status != DocumentCacheInventoryStatus.Satisfied)
+        {
+            return DocumentCacheReadBatchLookupResult.PageFallback(
+                DocumentCacheReadLookupOutcome.ProjectionTargetIneligible,
+                candidates,
+                "DocumentCache target inventory is not eligible for cache reads."
+            );
+        }
+
+        if (targetContext.SqlServerPrerequisites?.HasFailure == true)
+        {
+            return DocumentCacheReadBatchLookupResult.PageFallback(
+                DocumentCacheReadLookupOutcome.ProviderPrerequisiteIneligible,
+                candidates,
+                "DocumentCache provider prerequisites are not eligible for cache reads."
+            );
+        }
+
+        return null;
+    }
+
+    private static IReadOnlyList<DocumentCacheReadAccelerationCandidate> SelectDirectFillCandidates(
+        IReadOnlyList<DocumentCacheReadDocumentLookupResult> lookupResults
+    ) =>
+        lookupResults
+            .Where(lookupResult =>
+                lookupResult.Outcome
+                    is DocumentCacheReadLookupOutcome.MissingCacheRow
+                        or DocumentCacheReadLookupOutcome.StaleCacheRow
+                        or DocumentCacheReadLookupOutcome.SourceDrift
+            )
+            .Select(lookupResult => lookupResult.Candidate)
+            .ToArray();
+
+    private static IReadOnlyList<DocumentCacheReadAccelerationCandidate> SelectQueryDirectFillCandidates(
+        DocumentCacheReadBatchLookupResult lookupResult
+    ) =>
+        lookupResult.Outcome == DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
+            ? []
+            : SelectDirectFillCandidates(lookupResult.Documents);
+
+    private static DocumentCacheReadInvariantDiagnostic? CreateInvariantDiagnostic(
+        DocumentCacheReadDocumentLookupResult lookupResult
+    )
+    {
+        if (
+            lookupResult is not DocumentCacheReadDocumentLookupResult.Fallback fallback
+            || fallback.Outcome != DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
+        )
+        {
+            return null;
+        }
+
+        return DocumentCacheReadInvariantDiagnostic.CacheLookupInvariant(
+            fallback.InvariantDiagnosticMessage
+                ?? DocumentCacheReadLookupDiagnosticText.GenericInvariantDiagnosticMessage
+        );
+    }
+
+    private static DocumentCacheReadInvariantDiagnostic? CreateInvariantDiagnostic(
+        DocumentCacheReadBatchLookupResult lookupResult
+    ) =>
+        lookupResult.Outcome == DocumentCacheReadLookupOutcome.DeterministicInvariantFailure
+            ? DocumentCacheReadInvariantDiagnostic.CacheLookupInvariant(
+                lookupResult.InvariantDiagnosticMessage
+                    ?? DocumentCacheReadLookupDiagnosticText.GenericInvariantDiagnosticMessage
+            )
+            : null;
+}
+
+internal static class DocumentCacheReadLookupOutcomeMapper
+{
+    public static DocumentCacheReadAccelerationFallbackReason MapFallbackReason(
+        DocumentCacheReadLookupOutcome outcome
+    ) =>
+        outcome switch
+        {
+            DocumentCacheReadLookupOutcome.FreshHit => throw new ArgumentOutOfRangeException(
+                nameof(outcome),
+                outcome,
+                "Fresh cache hits are not fallback outcomes."
+            ),
+            DocumentCacheReadLookupOutcome.CacheUnavailable =>
+                DocumentCacheReadAccelerationFallbackReason.CacheLookupUnavailable,
+            DocumentCacheReadLookupOutcome.DeterministicInvariantFailure =>
+                DocumentCacheReadAccelerationFallbackReason.CacheLookupInvariantFailure,
+            DocumentCacheReadLookupOutcome.LifecycleDisabled
+            or DocumentCacheReadLookupOutcome.LifecycleResetting
+            or DocumentCacheReadLookupOutcome.LifecycleRebuilding
+            or DocumentCacheReadLookupOutcome.CacheAheadRecoveryRequired
+            or DocumentCacheReadLookupOutcome.MissingLifecycleState
+            or DocumentCacheReadLookupOutcome.InvalidLifecycleState
+            or DocumentCacheReadLookupOutcome.ProjectionTargetIneligible
+            or DocumentCacheReadLookupOutcome.ProviderPrerequisiteIneligible =>
+                DocumentCacheReadAccelerationFallbackReason.CacheLookupFenced,
+            DocumentCacheReadLookupOutcome.SourceDrift =>
+                DocumentCacheReadAccelerationFallbackReason.CacheLookupSourceDrift,
+            DocumentCacheReadLookupOutcome.StaleCacheRow =>
+                DocumentCacheReadAccelerationFallbackReason.CacheLookupStale,
+            _ => DocumentCacheReadAccelerationFallbackReason.CacheLookupMiss,
+        };
+}
+
+public sealed class DocumentCacheReadLookupInvariantException : Exception
+{
+    public DocumentCacheReadLookupInvariantException(string message)
+        : base(message) { }
+}
+
+public sealed class DocumentCacheReadAcquisitionUnavailableException : Exception
+{
+    public DocumentCacheReadAcquisitionUnavailableException(string message, Exception innerException)
+        : base(message, innerException) { }
+}
+
+internal static class DocumentCacheReadLookupDiagnosticText
+{
+    private const int MaximumLength = 512;
+    public const string GenericInvariantDiagnosticMessage =
+        "DocumentCache read lookup observed a deterministic cache invariant failure.";
+
+    public static string Sanitize(string? message)
+    {
+        string sanitized = LogSanitizer.SanitizeForLog(
+            string.IsNullOrWhiteSpace(message) ? GenericInvariantDiagnosticMessage : message
+        );
+        return sanitized.Length <= MaximumLength ? sanitized : sanitized[..MaximumLength];
+    }
+}
+
+internal sealed record DocumentCacheReadLookupObservation(
+    int Ordinal,
+    long RequestedDocumentId,
+    Guid ExpectedDocumentUuid,
+    short ExpectedResourceKeyId,
+    long ExpectedContentVersion,
+    int LifecycleRowCount,
+    string? LifecycleState,
+    bool? CacheAheadRecoveryRequired,
+    long? SourceDocumentId,
+    Guid? SourceDocumentUuid,
+    short? SourceResourceKeyId,
+    long? SourceContentVersion,
+    long? CacheDocumentId,
+    Guid? CacheDocumentUuid,
+    string? CacheProjectName,
+    string? CacheResourceName,
+    string? CacheResourceVersion,
+    long? CacheContentVersion,
+    string? StreamEtag,
+    DateTimeOffset? CacheLastModifiedAt,
+    string? DocumentJson
+);
+
+internal static class DocumentCacheReadLookupClassifier
+{
+    public static DocumentCacheReadBatchLookupResult Classify(
+        DocumentCacheReadBatchLookupRequest request,
+        IReadOnlyList<DocumentCacheReadLookupObservation> observations,
+        IServedEtagComposer servedEtagComposer
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(observations);
+        ArgumentNullException.ThrowIfNull(servedEtagComposer);
+
+        if (observations.Count != request.Candidates.Count)
+        {
+            throw new DocumentCacheReadLookupInvariantException(
+                "DocumentCache read lookup returned an unexpected row count."
+            );
+        }
+
+        List<DocumentCacheReadDocumentLookupResult> results = new(observations.Count);
+
+        for (var index = 0; index < observations.Count; index++)
+        {
+            DocumentCacheReadAccelerationCandidate candidate = request.Candidates[index];
+            DocumentCacheReadLookupObservation observation = observations[index];
+
+            if (
+                observation.Ordinal != index
+                || observation.RequestedDocumentId != candidate.DocumentId
+                || observation.ExpectedDocumentUuid != candidate.DocumentUuid.Value
+                || observation.ExpectedResourceKeyId != candidate.ResourceKeyId
+                || observation.ExpectedContentVersion != candidate.ContentVersion
+            )
+            {
+                throw new DocumentCacheReadLookupInvariantException(
+                    "DocumentCache read lookup returned rows that do not match the requested candidates."
+                );
+            }
+
+            results.Add(ClassifyDocument(request.MappingSet, candidate, observation, servedEtagComposer));
+        }
+
+        return DocumentCacheReadBatchLookupResult.FromDocuments(results);
+    }
+
+    private static DocumentCacheReadDocumentLookupResult ClassifyDocument(
+        MappingSet mappingSet,
+        DocumentCacheReadAccelerationCandidate candidate,
+        DocumentCacheReadLookupObservation observation,
+        IServedEtagComposer servedEtagComposer
+    )
+    {
+        DocumentCacheReadDocumentLookupResult.Fallback Fallback(
+            DocumentCacheReadLookupOutcome outcome,
+            string message
+        ) => new(outcome, candidate, message);
+
+        if (observation.LifecycleRowCount == 0)
+        {
+            return Fallback(
+                DocumentCacheReadLookupOutcome.MissingLifecycleState,
+                "DocumentCache lifecycle state row is missing."
+            );
+        }
+
+        if (
+            observation.LifecycleRowCount != 1
+            || string.IsNullOrWhiteSpace(observation.LifecycleState)
+            || observation.CacheAheadRecoveryRequired is null
+            || !DocumentCacheLifecycleTokenParser.TryParse(
+                observation.LifecycleState,
+                out DocumentCacheLifecycleState lifecycle
+            )
+        )
+        {
+            return Fallback(
+                DocumentCacheReadLookupOutcome.InvalidLifecycleState,
+                "DocumentCache lifecycle state row is invalid."
+            );
+        }
+
+        if (
+            lifecycle == DocumentCacheLifecycleState.Rebuilding
+            && observation.CacheAheadRecoveryRequired.Value
+        )
+        {
+            return Fallback(
+                DocumentCacheReadLookupOutcome.CacheAheadRecoveryRequired,
+                "DocumentCache cache-ahead recovery latch is set."
+            );
+        }
+
+        if (lifecycle != DocumentCacheLifecycleState.Tracking)
+        {
+            return Fallback(
+                lifecycle switch
+                {
+                    DocumentCacheLifecycleState.Disabled => DocumentCacheReadLookupOutcome.LifecycleDisabled,
+                    DocumentCacheLifecycleState.Resetting =>
+                        DocumentCacheReadLookupOutcome.LifecycleResetting,
+                    DocumentCacheLifecycleState.Rebuilding =>
+                        DocumentCacheReadLookupOutcome.LifecycleRebuilding,
+                    _ => DocumentCacheReadLookupOutcome.InvalidLifecycleState,
+                },
+                "DocumentCache lifecycle state is not eligible for cache reads."
+            );
+        }
+
+        if (observation.CacheAheadRecoveryRequired.Value)
+        {
+            return Fallback(
+                DocumentCacheReadLookupOutcome.CacheAheadRecoveryRequired,
+                "DocumentCache cache-ahead recovery latch is set."
+            );
+        }
+
+        if (observation.SourceDocumentId is null)
+        {
+            return Fallback(
+                DocumentCacheReadLookupOutcome.MissingSourceRow,
+                "DocumentCache source row is missing after candidate selection."
+            );
+        }
+
+        if (observation.SourceDocumentId != candidate.DocumentId)
+        {
+            return Fallback(
+                DocumentCacheReadLookupOutcome.DeterministicInvariantFailure,
+                "DocumentCache source row identity does not match the authorized candidate."
+            );
+        }
+
+        if (
+            observation.SourceDocumentUuid != candidate.DocumentUuid.Value
+            || observation.SourceResourceKeyId != candidate.ResourceKeyId
+            || observation.SourceContentVersion != candidate.ContentVersion
+        )
+        {
+            return Fallback(
+                DocumentCacheReadLookupOutcome.SourceDrift,
+                "DocumentCache source row drifted after candidate selection."
+            );
+        }
+
+        if (
+            !mappingSet.ResourceKeyById.TryGetValue(
+                candidate.ResourceKeyId,
+                out ResourceKeyEntry? resourceKey
+            )
+        )
+        {
+            return Fallback(
+                DocumentCacheReadLookupOutcome.DeterministicInvariantFailure,
+                "DocumentCache read lookup candidate resource key is missing from the mapping set."
+            );
+        }
+
+        if (!mappingSet.TryGetConcreteResourceModel(resourceKey.Resource, out ConcreteResourceModel? model))
+        {
+            return Fallback(
+                DocumentCacheReadLookupOutcome.DeterministicInvariantFailure,
+                "DocumentCache read lookup candidate resource model is missing from the mapping set."
+            );
+        }
+
+        if (observation.CacheDocumentId is null)
+        {
+            return Fallback(DocumentCacheReadLookupOutcome.MissingCacheRow, "DocumentCache row is missing.");
+        }
+
+        if (observation.CacheDocumentId != candidate.DocumentId)
+        {
+            return Fallback(
+                DocumentCacheReadLookupOutcome.DeterministicInvariantFailure,
+                "DocumentCache row document identity does not match the authorized candidate."
+            );
+        }
+
+        if (
+            observation.CacheDocumentUuid != candidate.DocumentUuid.Value
+            || !string.Equals(
+                observation.CacheProjectName,
+                resourceKey.Resource.ProjectName,
+                StringComparison.Ordinal
+            )
+            || !string.Equals(
+                observation.CacheResourceName,
+                resourceKey.Resource.ResourceName,
+                StringComparison.Ordinal
+            )
+            || !string.Equals(
+                observation.CacheResourceVersion,
+                resourceKey.ResourceVersion,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return Fallback(
+                DocumentCacheReadLookupOutcome.DeterministicInvariantFailure,
+                "DocumentCache row identity metadata does not match the authorized candidate."
+            );
+        }
+
+        if (observation.CacheContentVersion < candidate.ContentVersion)
+        {
+            return Fallback(DocumentCacheReadLookupOutcome.StaleCacheRow, "DocumentCache row is stale.");
+        }
+
+        if (
+            observation.CacheContentVersion != candidate.ContentVersion
+            || observation.CacheLastModifiedAt != candidate.ContentLastModifiedAt
+            || string.IsNullOrWhiteSpace(observation.StreamEtag)
+            || string.IsNullOrWhiteSpace(observation.DocumentJson)
+        )
+        {
+            return Fallback(
+                DocumentCacheReadLookupOutcome.DeterministicInvariantFailure,
+                "DocumentCache row has invalid matching-version metadata."
+            );
+        }
+
+        string expectedStreamEtag = ComposeExpectedFixedStreamEtag(
+            servedEtagComposer,
+            mappingSet,
+            model,
+            candidate.ContentVersion
+        );
+
+        if (!string.Equals(observation.StreamEtag, expectedStreamEtag, StringComparison.Ordinal))
+        {
+            return Fallback(
+                DocumentCacheReadLookupOutcome.DeterministicInvariantFailure,
+                DocumentCacheReadInvariantDiagnostic
+                    .CacheHitResponseShaping(DocumentCacheReadResponseShapingFailureReason.StreamEtagMismatch)
+                    .Message
+            );
+        }
+
+        return new DocumentCacheReadDocumentLookupResult.FreshHit(candidate, observation.DocumentJson);
+    }
+
+    private static string ComposeExpectedFixedStreamEtag(
+        IServedEtagComposer servedEtagComposer,
+        MappingSet mappingSet,
+        ConcreteResourceModel model,
+        long contentVersion
+    )
+    {
+        return model.StorageKind == ResourceStorageKind.SharedDescriptorTable
+            ? DocumentCacheMaterializerStreamEtagComposer.ComposeForDescriptor(
+                servedEtagComposer,
+                mappingSet,
+                contentVersion
+            )
+            : DocumentCacheMaterializerStreamEtagComposer.ComposeForResource(
+                servedEtagComposer,
+                mappingSet,
+                contentVersion
+            );
+    }
+}
+
+internal static class DocumentCacheReadLookupSql
+{
+    private const string CandidatePageJsonParameterName = "@candidatePageJson";
+
+    public static RelationalCommand BuildCommand(
+        SqlDialect dialect,
+        IReadOnlyList<DocumentCacheReadAccelerationCandidate> candidates
+    )
+    {
+        ArgumentNullException.ThrowIfNull(candidates);
+
+        if (candidates.Count == 0)
+        {
+            throw new ArgumentException("DocumentCache read lookup requires at least one candidate.");
+        }
+
+        return dialect switch
+        {
+            SqlDialect.Pgsql => BuildPostgresqlCommand(candidates),
+            SqlDialect.Mssql => BuildMssqlCommand(candidates),
+            _ => throw new NotSupportedException(
+                $"DocumentCache read lookup does not support SQL dialect '{dialect}'."
+            ),
+        };
+    }
+
+    public static async Task<IReadOnlyList<DocumentCacheReadLookupObservation>> ReadObservationsAsync(
+        IRelationalCommandReader reader,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+
+        try
+        {
+            List<DocumentCacheReadLookupObservation> rows = [];
+
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                rows.Add(ReadObservation(reader));
+            }
+
+            return rows;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (IsResultShapeFailure(exception))
+        {
+            throw new DocumentCacheReadLookupInvariantException(
+                $"DocumentCache read lookup returned an invalid result shape: {exception.Message}"
+            );
+        }
+    }
+
+    private static RelationalCommand BuildPostgresqlCommand(
+        IReadOnlyList<DocumentCacheReadAccelerationCandidate> candidates
+    ) =>
+        new(
+            $$"""
+            WITH requested AS (
+                SELECT
+                    candidate."Ordinal",
+                    candidate."DocumentId",
+                    candidate."ExpectedDocumentUuid",
+                    candidate."ExpectedResourceKeyId",
+                    candidate."ExpectedContentVersion"
+                FROM jsonb_to_recordset(CAST({{CandidatePageJsonParameterName}} AS jsonb)) AS candidate(
+                    "Ordinal" integer,
+                    "DocumentId" bigint,
+                    "ExpectedDocumentUuid" uuid,
+                    "ExpectedResourceKeyId" smallint,
+                    "ExpectedContentVersion" bigint
+                )
+            ),
+            state_rows AS (
+                SELECT
+                    state."ProjectionLifecycleState",
+                    state."CacheAheadRecoveryRequired"
+                FROM "dms"."DocumentCacheState" state
+                WHERE state."StateId" = 1
+            ),
+            state_count AS (
+                SELECT COUNT(*)::integer AS "LifecycleRowCount"
+                FROM state_rows
+            ),
+            state_row AS (
+                SELECT
+                    state_rows."ProjectionLifecycleState",
+                    state_rows."CacheAheadRecoveryRequired"
+                FROM state_rows
+                LIMIT 1
+            )
+            SELECT
+                requested."Ordinal" AS "Ordinal",
+                requested."DocumentId" AS "RequestedDocumentId",
+                requested."ExpectedDocumentUuid" AS "ExpectedDocumentUuid",
+                requested."ExpectedResourceKeyId" AS "ExpectedResourceKeyId",
+                requested."ExpectedContentVersion" AS "ExpectedContentVersion",
+                state_count."LifecycleRowCount" AS "LifecycleRowCount",
+                state_row."ProjectionLifecycleState" AS "LifecycleState",
+                state_row."CacheAheadRecoveryRequired" AS "CacheAheadRecoveryRequired",
+                document."DocumentId" AS "SourceDocumentId",
+                document."DocumentUuid" AS "SourceDocumentUuid",
+                document."ResourceKeyId" AS "SourceResourceKeyId",
+                document."ContentVersion" AS "SourceContentVersion",
+                cache."DocumentId" AS "CacheDocumentId",
+                cache."DocumentUuid" AS "CacheDocumentUuid",
+                cache."ProjectName" AS "CacheProjectName",
+                cache."ResourceName" AS "CacheResourceName",
+                cache."ResourceVersion" AS "CacheResourceVersion",
+                cache."ContentVersion" AS "CacheContentVersion",
+                cache."StreamEtag" AS "StreamEtag",
+                cache."LastModifiedAt" AS "CacheLastModifiedAt",
+                cache."DocumentJson"::text AS "DocumentJson"
+            FROM requested
+            CROSS JOIN state_count
+            LEFT JOIN state_row ON TRUE
+            LEFT JOIN "dms"."Document" document
+                ON document."DocumentId" = requested."DocumentId"
+            LEFT JOIN "dms"."DocumentCache" cache
+                ON cache."DocumentId" = requested."DocumentId"
+            ORDER BY requested."Ordinal";
+            """,
+            BuildCandidatePageJsonParameter(candidates)
+        );
+
+    private static RelationalCommand BuildMssqlCommand(
+        IReadOnlyList<DocumentCacheReadAccelerationCandidate> candidates
+    ) =>
+        new(
+            $$"""
+            WITH [requested] AS (
+                SELECT
+                    [candidate].[Ordinal],
+                    [candidate].[DocumentId],
+                    [candidate].[ExpectedDocumentUuid],
+                    [candidate].[ExpectedResourceKeyId],
+                    [candidate].[ExpectedContentVersion]
+                FROM OPENJSON({{CandidatePageJsonParameterName}})
+                WITH (
+                    [Ordinal] int '$.Ordinal',
+                    [DocumentId] bigint '$.DocumentId',
+                    [ExpectedDocumentUuid] uniqueidentifier '$.ExpectedDocumentUuid',
+                    [ExpectedResourceKeyId] smallint '$.ExpectedResourceKeyId',
+                    [ExpectedContentVersion] bigint '$.ExpectedContentVersion'
+                ) AS [candidate]
+            ),
+            [state_rows] AS (
+                SELECT
+                    [state].[ProjectionLifecycleState],
+                    [state].[CacheAheadRecoveryRequired]
+                FROM [dms].[DocumentCacheState] AS [state]
+                WHERE [state].[StateId] = 1
+            ),
+            [state_count] AS (
+                SELECT CAST(COUNT(*) AS int) AS [LifecycleRowCount]
+                FROM [state_rows]
+            ),
+            [state_row] AS (
+                SELECT TOP (1)
+                    [state_rows].[ProjectionLifecycleState],
+                    [state_rows].[CacheAheadRecoveryRequired]
+                FROM [state_rows]
+            )
+            SELECT
+                [requested].[Ordinal] AS [Ordinal],
+                [requested].[DocumentId] AS [RequestedDocumentId],
+                [requested].[ExpectedDocumentUuid] AS [ExpectedDocumentUuid],
+                [requested].[ExpectedResourceKeyId] AS [ExpectedResourceKeyId],
+                [requested].[ExpectedContentVersion] AS [ExpectedContentVersion],
+                [state_count].[LifecycleRowCount] AS [LifecycleRowCount],
+                [state_row].[ProjectionLifecycleState] AS [LifecycleState],
+                [state_row].[CacheAheadRecoveryRequired] AS [CacheAheadRecoveryRequired],
+                [document].[DocumentId] AS [SourceDocumentId],
+                [document].[DocumentUuid] AS [SourceDocumentUuid],
+                [document].[ResourceKeyId] AS [SourceResourceKeyId],
+                [document].[ContentVersion] AS [SourceContentVersion],
+                [cache].[DocumentId] AS [CacheDocumentId],
+                [cache].[DocumentUuid] AS [CacheDocumentUuid],
+                [cache].[ProjectName] AS [CacheProjectName],
+                [cache].[ResourceName] AS [CacheResourceName],
+                [cache].[ResourceVersion] AS [CacheResourceVersion],
+                [cache].[ContentVersion] AS [CacheContentVersion],
+                [cache].[StreamEtag] AS [StreamEtag],
+                [cache].[LastModifiedAt] AS [CacheLastModifiedAt],
+                [cache].[DocumentJson] AS [DocumentJson]
+            FROM [requested]
+            CROSS JOIN [state_count]
+            LEFT JOIN [state_row] ON 1 = 1
+            LEFT JOIN [dms].[Document] AS [document]
+                ON [document].[DocumentId] = [requested].[DocumentId]
+            LEFT JOIN [dms].[DocumentCache] AS [cache]
+                ON [cache].[DocumentId] = [requested].[DocumentId]
+            ORDER BY [requested].[Ordinal];
+            """,
+            BuildCandidatePageJsonParameter(candidates)
+        );
+
+    private static IReadOnlyList<RelationalParameter> BuildCandidatePageJsonParameter(
+        IReadOnlyList<DocumentCacheReadAccelerationCandidate> candidates
+    )
+    {
+        List<CandidatePageJsonEntry> candidateEntries = new(candidates.Count);
+
+        for (var index = 0; index < candidates.Count; index++)
+        {
+            DocumentCacheReadAccelerationCandidate candidate = candidates[index];
+            candidateEntries.Add(
+                new CandidatePageJsonEntry(
+                    index,
+                    candidate.DocumentId,
+                    candidate.DocumentUuid.Value,
+                    candidate.ResourceKeyId,
+                    candidate.ContentVersion
+                )
+            );
+        }
+
+        return
+        [
+            new RelationalParameter(
+                CandidatePageJsonParameterName,
+                JsonSerializer.Serialize(candidateEntries),
+                static dbParameter =>
+                {
+                    dbParameter.DbType = DbType.String;
+                    dbParameter.Size = -1;
+                }
+            ),
+        ];
+    }
+
+    private static DocumentCacheReadLookupObservation ReadObservation(IRelationalCommandReader reader) =>
+        new(
+            reader.GetRequiredFieldValue<int>("Ordinal"),
+            reader.GetRequiredFieldValue<long>("RequestedDocumentId"),
+            reader.GetRequiredFieldValue<Guid>("ExpectedDocumentUuid"),
+            reader.GetRequiredFieldValue<short>("ExpectedResourceKeyId"),
+            reader.GetRequiredFieldValue<long>("ExpectedContentVersion"),
+            reader.GetRequiredFieldValue<int>("LifecycleRowCount"),
+            GetNullableString(reader, "LifecycleState"),
+            GetNullableStructValue<bool>(reader, "CacheAheadRecoveryRequired"),
+            GetNullableStructValue<long>(reader, "SourceDocumentId"),
+            GetNullableStructValue<Guid>(reader, "SourceDocumentUuid"),
+            GetNullableStructValue<short>(reader, "SourceResourceKeyId"),
+            GetNullableStructValue<long>(reader, "SourceContentVersion"),
+            GetNullableStructValue<long>(reader, "CacheDocumentId"),
+            GetNullableStructValue<Guid>(reader, "CacheDocumentUuid"),
+            GetNullableString(reader, "CacheProjectName"),
+            GetNullableString(reader, "CacheResourceName"),
+            GetNullableString(reader, "CacheResourceVersion"),
+            GetNullableStructValue<long>(reader, "CacheContentVersion"),
+            GetNullableString(reader, "StreamEtag"),
+            GetNullableDateTimeOffset(reader, "CacheLastModifiedAt"),
+            GetNullableString(reader, "DocumentJson")
+        );
+
+    private static T? GetNullableStructValue<T>(IRelationalCommandReader reader, string columnName)
+        where T : struct
+    {
+        int ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<T>(ordinal);
+    }
+
+    private static string? GetNullableString(IRelationalCommandReader reader, string columnName)
+    {
+        int ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<string>(ordinal);
+    }
+
+    private static DateTimeOffset? GetNullableDateTimeOffset(
+        IRelationalCommandReader reader,
+        string columnName
+    )
+    {
+        int ordinal = reader.GetOrdinal(columnName);
+        if (reader.IsDBNull(ordinal))
+        {
+            return null;
+        }
+
+        object value = reader.GetFieldValue<object>(ordinal);
+
+        return value switch
+        {
+            DateTimeOffset dateTimeOffset => dateTimeOffset,
+            DateTime dateTime => new DateTimeOffset(
+                dateTime.Kind == DateTimeKind.Unspecified
+                    ? DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)
+                    : dateTime
+            ),
+            string text => DateTimeOffset.Parse(text, CultureInfo.InvariantCulture),
+            _ => throw new InvalidOperationException(
+                $"DocumentCache read lookup expected a DateTimeOffset-compatible value for {columnName}, "
+                    + $"but received '{value.GetType().Name}'."
+            ),
+        };
+    }
+
+    private static bool IsResultShapeFailure(Exception exception) =>
+        exception is not ObjectDisposedException
+        && exception
+            is InvalidOperationException
+                or InvalidCastException
+                or IndexOutOfRangeException
+                or ArgumentException
+                or FormatException;
+
+    private sealed record CandidatePageJsonEntry(
+        int Ordinal,
+        long DocumentId,
+        Guid ExpectedDocumentUuid,
+        short ExpectedResourceKeyId,
+        long ExpectedContentVersion
+    );
+}

@@ -798,7 +798,8 @@ public static class AspNetCoreFrontend
                     appSettings,
                     includeBody: false,
                     includeForm: false
-                )
+                ),
+                httpContext.RequestAborted
             ),
             httpContext,
             dmsPath

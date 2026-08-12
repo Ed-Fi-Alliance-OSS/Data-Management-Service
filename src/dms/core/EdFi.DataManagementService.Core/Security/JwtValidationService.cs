@@ -137,6 +137,10 @@ internal class JwtValidationService(
 
             return (principal, clientAuthorizations);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (SecurityTokenExpiredException ex)
         {
             logger.LogWarning(ex, "Token validation failed: Token expired");

@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
+
 namespace EdFi.DataManagementService.Backend.Plans;
 
 /// <summary>
@@ -11,4 +13,21 @@ namespace EdFi.DataManagementService.Backend.Plans;
 internal static class HydrationSqlConventions
 {
     public const string SingleDocumentIdParameterName = "DocumentId";
+
+    public const string SelectedPageDocumentIdsJsonParameterName = "selectedDocumentIdsJson";
+
+    public const string SelectedPageOrdinalColumnName = "Ordinal";
+
+    public static string SerializeSelectedPageDocumentIds(IReadOnlyList<long> documentIds)
+    {
+        ArgumentNullException.ThrowIfNull(documentIds);
+
+        return JsonSerializer.Serialize(
+            documentIds.Select(
+                static (documentId, ordinal) => new SelectedPageDocumentId(documentId, ordinal)
+            )
+        );
+    }
+
+    private sealed record SelectedPageDocumentId(long DocumentId, int Ordinal);
 }

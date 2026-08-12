@@ -34,6 +34,59 @@ public class JwtAuthenticationMiddlewareTests
         return (middleware, jwtValidationService);
     }
 
+    [Test]
+    public async Task It_passes_the_request_cancellation_token_to_token_validation()
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        var frontendRequest = new FrontendRequest(
+            Path: "/ed-fi/students",
+            Body: null,
+            Form: null,
+            Headers: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Authorization"] = "Bearer valid-token",
+            },
+            QueryParameters: [],
+            TraceId: new TraceId("123"),
+            RouteQualifiers: []
+        );
+        var requestInfo = new RequestInfo(
+            frontendRequest,
+            RequestMethod.GET,
+            No.ServiceProvider,
+            cancellationSource.Token
+        );
+        var (middleware, jwtValidationService) = CreateMiddleware();
+        CancellationToken capturedCancellationToken = default;
+
+        A.CallTo(() =>
+                jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
+                    "valid-token",
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes((string _, CancellationToken token) => capturedCancellationToken = token)
+            .Returns(
+                Task.FromResult<(ClaimsPrincipal?, ClientAuthorizations?)>(
+                    (
+                        new ClaimsPrincipal(),
+                        new ClientAuthorizations(
+                            ClientId: "",
+                            TokenId: "token-123",
+                            ClaimSetName: "edfi-admin",
+                            EducationOrganizationIds: [],
+                            NamespacePrefixes: [],
+                            DataStoreIds: []
+                        )
+                    )
+                )
+            );
+
+        await middleware.Execute(requestInfo, NullNext);
+
+        capturedCancellationToken.Should().Be(cancellationSource.Token);
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_A_Request_With_Valid_Bearer_Token : JwtAuthenticationMiddlewareTests

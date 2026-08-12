@@ -125,6 +125,10 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
                 }
 #pragma warning restore S6667
             }
+            catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 stopwatch.Stop();

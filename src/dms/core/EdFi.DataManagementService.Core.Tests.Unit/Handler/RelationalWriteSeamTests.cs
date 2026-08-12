@@ -719,7 +719,8 @@ actual: {requestInfo.FrontendResponse.Body}
                 ),
                 A.Fake<ISingleRecordRelationshipAuthorizationExecutor>(),
                 A.Fake<INamespaceAuthorizationExecutor>(),
-                A.Fake<IRelationalCommandExecutor>()
+                A.Fake<IRelationalCommandExecutor>(),
+                A.Fake<IDocumentCacheReadAccelerationCoordinator>()
             );
 
             return new RelationalWriteSeamHarness(resourceInfo, repository, writeExecutor);

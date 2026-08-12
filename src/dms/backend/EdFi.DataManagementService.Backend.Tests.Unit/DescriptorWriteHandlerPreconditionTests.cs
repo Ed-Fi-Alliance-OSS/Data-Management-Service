@@ -1378,6 +1378,7 @@ public class Given_Descriptor_Write_Preconditions
                 ["DocumentUuid"] = documentUuid.Value,
                 ["ResourceKeyId"] = 1,
                 ["ContentVersion"] = 44L,
+                ["ContentLastModifiedAt"] = new DateTimeOffset(2026, 4, 11, 12, 30, 45, TimeSpan.Zero),
             }
         );
     }

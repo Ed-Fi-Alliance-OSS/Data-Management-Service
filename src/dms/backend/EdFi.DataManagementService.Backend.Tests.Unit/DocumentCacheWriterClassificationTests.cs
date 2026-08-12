@@ -87,6 +87,32 @@ public class Given_DocumentCacheWriterClassification
     }
 
     [Test]
+    public void It_reports_missing_work_when_cache_is_missing_and_work_is_absent_even_with_candidate()
+    {
+        DocumentCacheMaterializationCandidate candidate = CreateCandidate(contentVersion: 11);
+
+        DocumentCacheWriterClassificationSelection selection = Select(
+            sourceContentVersion: 11,
+            cacheContentVersion: null,
+            workRequiredContentVersion: null,
+            candidateObservation: CandidateMatches(candidate)
+        );
+
+        selection.Action.Should().Be(DocumentCacheWriterSelectedAction.ReturnWorkAnomaly);
+        selection.Outcome.Should().Be(DocumentCacheWriterOutcome.WorkAnomaly);
+        selection.WritesCache.Should().BeFalse();
+        selection.AcknowledgesWork.Should().BeFalse();
+        selection.RequestsCacheAheadLatchFlow.Should().BeFalse();
+        selection.ExpectedContentVersion.Should().BeNull();
+        selection.Candidate.Should().BeNull();
+        selection
+            .TerminalResult.Should()
+            .BeOfType<DocumentCacheWriterResult.WorkAnomaly>()
+            .Which.Kind.Should()
+            .Be(DocumentCacheWriterWorkAnomalyKind.MissingWork);
+    }
+
+    [Test]
     public void It_requests_cache_ahead_latch_flow_only_for_current_cache_ahead_relationship()
     {
         DocumentCacheWriterClassificationSelection cacheAhead = Select(

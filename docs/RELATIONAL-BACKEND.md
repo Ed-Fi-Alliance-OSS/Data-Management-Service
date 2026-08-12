@@ -112,8 +112,9 @@ DocumentCache and CDC design:
 
 These objects are physical schema and durable state. Runtime projection, projection
 administration, projection health/readiness, cache-backed reads, and complete target
-eligibility validation are owned by later DocumentCache/CDC work. This guide links to the
-design owners instead of restating their contracts: the
+eligibility validation are configured and operated explicitly; the authoritative behavior
+lives in the DocumentCache/CDC design. This guide links to the design owners instead of
+restating their contracts: the
 [`data-model.md`](../reference/design/backend-redesign/design-docs/data-model.md) table
 sections define the physical shape; the
 [`Cached Document Contract`](../reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cached-document-contract)
@@ -123,8 +124,31 @@ sections define cache and work semantics; DDL behavior is in
 [`ddl-generation.md`](../reference/design/backend-redesign/design-docs/ddl-generation.md#provision-semantics-create-only-no-migrations);
 schema/query integration is in
 [`cdc-streaming.md`](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#schema-and-query-integration);
+cache-backed read behavior is in
+[`05-cache-backed-read-path.md`](../reference/design/backend-redesign/epics/18-document-cache/05-cache-backed-read-path.md);
+runtime configuration is summarized in
+[`docs/CONFIGURATION.md`](./CONFIGURATION.md#datamanagementdocumentcache);
 and the `CDC-INV-02` / `CDC-INV-03` traceability rows live under
 [`Contract-to-Evidence Traceability`](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-to-evidence-traceability).
+
+### Cache-backed read acceleration
+
+Cache-backed reads are optional. DMS considers `dms.DocumentCache` only for external
+resource and descriptor GET-by-id and GET-many response-body assembly when
+`DataManagement:DocumentCache:ReadAcceleration:Enabled` is `true` and the selected
+tenant/data-store pair matches an explicit `DocumentCache:Targets` entry. Other endpoints,
+internal stored-document reads, mutations, change-query endpoints, discovery, OpenAPI, and
+administrative commands continue on their existing paths.
+
+The relational read path remains the correctness path. Fresh cache rows may supply only the
+body for candidates that the relational flow already selected and authorized; misses,
+stale rows, lifecycle fences, target ineligibility, expected cache-read availability
+failures, invalid cached JSON, and direct-fill failures fall back to relational reads
+without exposing whether cache was used. Optional direct fill after fallback is
+best-effort, bounded by `ReadAcceleration:DirectFillTimeout`, and uses the shared
+DocumentCache materializer/writer rather than the shaped API response. Snapshot and
+read-replica requests skip direct fill when derivative routing is available because those
+requests remain read-only.
 
 ### Create-only guardrails and reruns
 

@@ -190,11 +190,9 @@ internal static class TrackedChangeQueryRowReader
             DateOnly dateOnly => JsonValue.Create(
                 dateOnly.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
             ),
-            DateTime dateTime => JsonValue.Create(
-                NormalizeUtcDateTime(dateTime).ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)
-            ),
+            DateTime dateTime => JsonValue.Create(LastModifiedDateFormatter.Format(dateTime)),
             DateTimeOffset dateTimeOffset => JsonValue.Create(
-                dateTimeOffset.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)
+                LastModifiedDateFormatter.Format(dateTimeOffset)
             ),
             TimeOnly timeOnly => JsonValue.Create(
                 timeOnly.ToString("HH:mm:ss", CultureInfo.InvariantCulture)
@@ -229,12 +227,9 @@ internal static class TrackedChangeQueryRowReader
             },
             ScalarKind.DateTime => value switch
             {
-                DateTime dateTime => JsonValue.Create(
-                    NormalizeUtcDateTime(dateTime)
-                        .ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)
-                ),
+                DateTime dateTime => JsonValue.Create(LastModifiedDateFormatter.Format(dateTime)),
                 DateTimeOffset dateTimeOffset => JsonValue.Create(
-                    dateTimeOffset.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)
+                    LastModifiedDateFormatter.Format(dateTimeOffset)
                 ),
                 _ => null,
             },
@@ -257,14 +252,6 @@ internal static class TrackedChangeQueryRowReader
                 _ => null,
             },
             _ => null,
-        };
-
-    private static DateTime NormalizeUtcDateTime(DateTime dateTime) =>
-        dateTime.Kind switch
-        {
-            DateTimeKind.Unspecified => DateTime.SpecifyKind(dateTime, DateTimeKind.Utc),
-            DateTimeKind.Utc => dateTime,
-            _ => dateTime.ToUniversalTime(),
         };
 
     private static object ReadRequiredValue(IRelationalCommandReader reader, string alias)

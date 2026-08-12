@@ -15,7 +15,10 @@ internal abstract class NotImplementedDocumentStoreRepository : IDocumentStoreRe
         throw new NotImplementedException();
     }
 
-    public virtual Task<GetResult> GetDocumentById(IGetRequest getRequest)
+    public virtual Task<GetResult> GetDocumentById(
+        IGetRequest getRequest,
+        CancellationToken cancellationToken = default
+    )
     {
         throw new NotImplementedException();
     }
@@ -30,7 +33,10 @@ internal abstract class NotImplementedDocumentStoreRepository : IDocumentStoreRe
         throw new NotImplementedException();
     }
 
-    public virtual Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
+    public virtual Task<QueryResult> QueryDocuments(
+        IQueryRequest queryRequest,
+        CancellationToken cancellationToken = default
+    )
     {
         throw new NotImplementedException();
     }

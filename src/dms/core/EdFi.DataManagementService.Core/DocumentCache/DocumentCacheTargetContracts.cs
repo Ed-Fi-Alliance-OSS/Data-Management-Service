@@ -88,6 +88,7 @@ public enum DocumentCacheTargetDiagnosticCategory
     EffectiveSchemaCompatibilityFailure,
     ResourceKeyCompatibilityFailure,
     ExpectedSourceMismatch,
+    DeterministicInvariantFailure,
     UnexpectedProviderFailure,
 }
 

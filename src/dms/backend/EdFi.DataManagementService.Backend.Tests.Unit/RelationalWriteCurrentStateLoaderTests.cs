@@ -494,6 +494,7 @@ public class Given_Relational_Write_Current_State_Loader
         table.Columns.Add("IdentityVersion", typeof(long));
         table.Columns.Add("ContentLastModifiedAt", typeof(DateTimeOffset));
         table.Columns.Add("IdentityLastModifiedAt", typeof(DateTimeOffset));
+        table.Columns.Add("ResourceKeyId", typeof(short));
 
         foreach (var row in rows)
         {
@@ -503,7 +504,8 @@ public class Given_Relational_Write_Current_State_Loader
                 row.ContentVersion,
                 row.IdentityVersion,
                 row.ContentLastModifiedAt,
-                row.IdentityLastModifiedAt
+                row.IdentityLastModifiedAt,
+                (short)1
             );
         }
 

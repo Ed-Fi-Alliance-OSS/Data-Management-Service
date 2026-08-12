@@ -49,6 +49,10 @@ internal class CoreExceptionLoggingMiddleware(ILogger _logger) : IPipelineStep
             requestInfo.CaughtException = ex;
             requestInfo.FrontendResponse = CreateSystemErrorResponse(requestInfo.FrontendRequest.TraceId);
         }
+        catch (OperationCanceledException) when (requestInfo.RequestCancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             requestInfo.CaughtException = ex;

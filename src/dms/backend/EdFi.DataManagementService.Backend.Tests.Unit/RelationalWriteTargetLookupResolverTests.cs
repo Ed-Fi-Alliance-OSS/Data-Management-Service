@@ -158,10 +158,17 @@ public class Given_RelationalWrite_Target_Lookup_Surfaces
         table.Columns.Add("DocumentUuid", typeof(Guid));
         table.Columns.Add("ResourceKeyId", typeof(short));
         table.Columns.Add("ContentVersion", typeof(long));
+        table.Columns.Add("ContentLastModifiedAt", typeof(DateTimeOffset));
 
         foreach (var row in rows)
         {
-            table.Rows.Add(row.DocumentId, row.DocumentUuid, (short)1, row.ContentVersion);
+            table.Rows.Add(
+                row.DocumentId,
+                row.DocumentUuid,
+                (short)1,
+                row.ContentVersion,
+                new DateTimeOffset(2026, 8, 1, 12, 0, 0, TimeSpan.Zero)
+            );
         }
 
         return table.CreateDataReader();

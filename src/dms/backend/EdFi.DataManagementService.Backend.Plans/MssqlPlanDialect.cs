@@ -94,7 +94,9 @@ internal sealed class MssqlPlanDialect : IPlanSqlDialect
             .AppendRelation(keyset.Table)
             .Append(" (")
             .AppendQuoted(keyset.DocumentIdColumnName.Value)
-            .AppendLine(" bigint PRIMARY KEY);");
+            .Append(" bigint PRIMARY KEY, ")
+            .AppendQuoted(HydrationSqlConventions.SelectedPageOrdinalColumnName)
+            .AppendLine(" int NULL);");
     }
 
     /// <inheritdoc />
@@ -103,7 +105,12 @@ internal sealed class MssqlPlanDialect : IPlanSqlDialect
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(keyset);
 
-        DocumentMetadataColumns.AppendDocumentMetadataSelectBody(writer, keyset, DocumentTable);
+        DocumentMetadataColumns.AppendDocumentMetadataSelectBody(
+            writer,
+            keyset,
+            DocumentTable,
+            HydrationSqlConventions.SelectedPageOrdinalColumnName
+        );
     }
 
     /// <inheritdoc />

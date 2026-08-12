@@ -352,7 +352,8 @@ public class OdsParityContractTests
             ContentVersion: 1L,
             IdentityVersion: 1L,
             ContentLastModifiedAt: DateTimeOffset.UnixEpoch,
-            IdentityLastModifiedAt: DateTimeOffset.UnixEpoch
+            IdentityLastModifiedAt: DateTimeOffset.UnixEpoch,
+            ResourceKeyId: 1
         );
 
         return new HydratedPage(

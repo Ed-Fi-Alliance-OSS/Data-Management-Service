@@ -20,7 +20,8 @@ namespace EdFi.DataManagementService.Core.Pipeline;
 internal class RequestInfo(
     FrontendRequest _frontendRequest,
     RequestMethod _method,
-    IServiceProvider _scopedServiceProvider
+    IServiceProvider _scopedServiceProvider,
+    CancellationToken _requestCancellationToken = default
 )
 {
     /// <summary>
@@ -198,5 +199,14 @@ internal class RequestInfo(
     {
         get => _scopedServiceProvider;
         set => _scopedServiceProvider = value;
+    }
+
+    /// <summary>
+    /// Cancellation token supplied by the frontend for aborting request-scoped work.
+    /// </summary>
+    public CancellationToken RequestCancellationToken
+    {
+        get => _requestCancellationToken;
+        set => _requestCancellationToken = value;
     }
 }

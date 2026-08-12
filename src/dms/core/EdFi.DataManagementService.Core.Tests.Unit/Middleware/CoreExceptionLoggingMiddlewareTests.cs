@@ -18,6 +18,26 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [Parallelizable]
 public class CoreExceptionLoggingMiddlewareTests
 {
+    [Test]
+    public async Task It_propagates_request_cancellation()
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        await cancellationSource.CancelAsync();
+        var requestInfo = No.RequestInfo("traceId");
+        requestInfo.RequestCancellationToken = cancellationSource.Token;
+        var middleware = new CoreExceptionLoggingMiddleware(NullLogger.Instance);
+
+        Func<Task> act = async () =>
+            await middleware.Execute(
+                requestInfo,
+                () => throw new OperationCanceledException(cancellationSource.Token)
+            );
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        requestInfo.CaughtException.Should().BeNull();
+        requestInfo.FrontendResponse.Should().BeSameAs(No.FrontendResponse);
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_Unhandled_Exception : CoreExceptionLoggingMiddlewareTests

@@ -219,7 +219,7 @@ internal sealed record DocumentCacheWriterClassificationSelection
 
     public DocumentCacheWriterResult? TerminalResult { get; }
 
-    public bool WritesCache => Action == DocumentCacheWriterSelectedAction.WriteCandidateThenAcknowledgeWork;
+    public bool WritesCache => Action is DocumentCacheWriterSelectedAction.WriteCandidateThenAcknowledgeWork;
 
     public bool AcknowledgesWork =>
         Action

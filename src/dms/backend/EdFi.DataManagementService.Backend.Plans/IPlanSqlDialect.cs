@@ -72,7 +72,8 @@ internal interface IPlanSqlDialect
     /// <summary>
     /// Appends a <c>SELECT</c> statement that joins <c>dms.Document</c> metadata to the
     /// materialized keyset table, returning document metadata columns for the page,
-    /// ordered deterministically by <c>DocumentId</c>.
+    /// ordered by selected-page ordinal when available, otherwise deterministically by
+    /// <c>DocumentId</c>.
     /// </summary>
     /// <param name="writer">The SQL writer to append to.</param>
     /// <param name="keyset">The keyset table contract specifying table and column names.</param>
@@ -122,6 +123,7 @@ internal static class DocumentMetadataColumns
     public const string IdentityVersion = "IdentityVersion";
     public const string ContentLastModifiedAt = "ContentLastModifiedAt";
     public const string IdentityLastModifiedAt = "IdentityLastModifiedAt";
+    public const string ResourceKeyId = "ResourceKeyId";
 
     /// <summary>
     /// Metadata column names in reader ordinal order.
@@ -134,16 +136,19 @@ internal static class DocumentMetadataColumns
         IdentityVersion,
         ContentLastModifiedAt,
         IdentityLastModifiedAt,
+        ResourceKeyId,
     ];
 
     /// <summary>
-    /// Appends the shared document metadata SELECT body using dialect-neutral quoting,
-    /// including a deterministic <c>ORDER BY DocumentId</c>.
+    /// Appends the shared document metadata SELECT body using dialect-neutral quoting. When an
+    /// ordinal column is available on the keyset table, selected pages retain that order; otherwise
+    /// rows are ordered deterministically by <c>DocumentId</c>.
     /// </summary>
     internal static void AppendDocumentMetadataSelectBody(
         SqlWriter writer,
         KeysetTableContract keyset,
-        DbTableName documentTable
+        DbTableName documentTable,
+        string? keysetOrdinalColumnName = null
     )
     {
         var quotedDocumentIdColumn = writer.Dialect.QuoteIdentifier(DocumentId);
@@ -162,9 +167,23 @@ internal static class DocumentMetadataColumns
             .Append(" = k.")
             .Append(quotedKeysetDocumentIdColumn)
             .AppendLine()
-            .Append("ORDER BY d.")
-            .Append(quotedDocumentIdColumn)
-            .AppendLine(";");
+            .Append("ORDER BY ");
+
+        if (keysetOrdinalColumnName is not null)
+        {
+            writer
+                .Append("COALESCE(k.")
+                .Append(writer.Dialect.QuoteIdentifier(keysetOrdinalColumnName))
+                .Append(", d.")
+                .Append(quotedDocumentIdColumn)
+                .Append("), d.");
+        }
+        else
+        {
+            writer.Append("d.");
+        }
+
+        writer.Append(quotedDocumentIdColumn).AppendLine(";");
     }
 
     /// <summary>
