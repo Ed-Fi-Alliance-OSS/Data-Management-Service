@@ -243,7 +243,11 @@ Descriptor update semantics:
 - For descriptor POST/PUT, derive `Uri` from the canonicalized `Namespace` + `#` + `CodeValue`.
   Validate the two client-supplied components as ASCII before lowercasing, upsert detection, or
   persistence; attribute a validation failure to `$.namespace` and/or `$.codeValue` as applicable.
-- Descriptor identity is immutable after creation: `Namespace`, `CodeValue`, and the derived `Uri` must not change on PUT.
+- Descriptor identity is immutable after creation: a PUT whose derived `Uri` is not equal to the
+  persisted descriptor `Uri` under the descriptor identity contract is rejected as a real identity
+  change. Case-only differences in `Namespace`, `CodeValue`, or the derived `Uri` are not real
+  identity changes; the descriptor write path accepts them, rebinds identity fields to the persisted
+  casing before persistence/no-op detection, and updates only mutable representation fields.
 - `ResourceKeyId` and `Discriminator` are set at insert and never updated (a document's resource type is immutable).
 - Descriptor representation fields can be updated: `ShortDescription`, `Description`, `EffectiveBeginDate`, and `EffectiveEndDate`.
 - Descriptor endpoint query fields map to shared descriptor columns with root-table-only semantics, including `namespace`, `codeValue`, `shortDescription`, `description`, `effectiveBeginDate`, and `effectiveEndDate`.

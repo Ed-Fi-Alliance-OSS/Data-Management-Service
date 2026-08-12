@@ -649,6 +649,12 @@ fields case-insensitively and descriptive fields ordinally, and the PUT identity
 the URI case-insensitively with the same rebind. Descriptors have no cascade or key-change
 machinery, so this path carries no side-effect risk.
 
+Because [`data-model.md`](data-model.md#2-dmsdescriptor-unified) also owns descriptor update
+semantics, it must express descriptor immutability in these equality-contract terms. The invariant is
+that PUT cannot persist a move to a different descriptor identity; it is not a byte-for-byte request
+matching rule. Without that distinction, the data-model rule reads as rejecting the case-only
+descriptor PUT that this design requires to return 200/no-op with stored casing intact.
+
 **Fail-closed residue (documented):** `OrdinalIgnoreCase` approximates but does not equal the fixed
 DMS SQL Server collation (linguistic equalities such as `ß`/`ss` or culture-specific case foldings
 that the collation may fold but invariant case mapping does not). Where the two diverge, the guard
