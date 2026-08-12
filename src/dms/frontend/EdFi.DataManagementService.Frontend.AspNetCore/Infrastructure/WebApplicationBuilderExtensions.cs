@@ -3,7 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Net;
+using System.Text.Json;
 using System.Threading.RateLimiting;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
@@ -15,10 +17,12 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.OAuth;
+using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Serilog;
@@ -344,6 +348,7 @@ public static class WebApplicationBuilderExtensions
         webAppBuilder.Services.AddRateLimiter(limiterOptions =>
         {
             limiterOptions.RejectionStatusCode = (int)HttpStatusCode.TooManyRequests;
+            limiterOptions.OnRejected = WriteRateLimitRejectionAsync;
             limiterOptions.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
                 RateLimitPartition.GetFixedWindowLimiter(
                     partitionKey: httpContext.Request.Headers.Host.ToString(),
@@ -356,6 +361,43 @@ public static class WebApplicationBuilderExtensions
                 )
             );
         });
+    }
+
+    /// <summary>
+    /// Serves the rejection produced by the rate limiter middleware, which applies
+    /// RejectionStatusCode before invoking this callback. Rejected requests never reach the DMS
+    /// core pipeline, so the Retry-After header and the problem-details body are written at this
+    /// boundary. The Retry-After value rounds up to whole seconds so a client never retries
+    /// before the window resets, and the body stays constant whether or not the limiter
+    /// supplies retry-after metadata.
+    /// </summary>
+    internal static async ValueTask WriteRateLimitRejectionAsync(
+        OnRejectedContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        HttpContext httpContext = context.HttpContext;
+
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out TimeSpan retryAfter))
+        {
+            httpContext.Response.Headers.RetryAfter = ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(
+                CultureInfo.InvariantCulture
+            );
+        }
+
+        var appSettings = httpContext.RequestServices.GetRequiredService<
+            IOptions<Frontend.AspNetCore.Configuration.AppSettings>
+        >();
+        var traceId = AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, appSettings);
+
+        httpContext.Response.ContentType = "application/problem+json; charset=utf-8";
+        await httpContext.Response.WriteAsync(
+            JsonSerializer.Serialize(
+                FailureResponse.ForTooManyRequests(traceId),
+                AspNetCoreFrontend.SharedSerializerOptions
+            ),
+            cancellationToken
+        );
     }
 
     private static void AddMssqlRelationalRuntimeServices(
