@@ -50,6 +50,17 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
     /// <c>dms.Descriptor</c> root, <c>ResourceKeyId</c> discriminator, filters, change-version window,
     /// and authorization the paged modes use.
     /// </summary>
+    /// <remarks>
+    /// Callers must short-circuit an empty page themselves before planning: this throws when
+    /// <paramref name="preprocessingResult" /> is not in the continue state. Unlike the relational
+    /// planner, there is no <c>Try</c> overload, because descriptor preprocessing converts every value up
+    /// front and reports its own <c>EmptyPage</c> outcome, so planning has no way to discover that a
+    /// request matches nothing. A descriptor <c>TryPlanCandidates</c> could therefore never return
+    /// <see langword="false" />. <c>DescriptorReadHandler</c> is the model for the required caller shape.
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="preprocessingResult" /> is not in the continue state.
+    /// </exception>
     public CandidateQueryPlan PlanCandidates(
         MappingSet mappingSet,
         QualifiedResourceName requestResource,

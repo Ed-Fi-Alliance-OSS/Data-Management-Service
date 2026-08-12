@@ -533,6 +533,32 @@ public class Given_DescriptorQueryPageKeysetPlanner
     }
 
     [Test]
+    public void It_should_reject_non_continue_preprocessing_outcomes_for_the_candidate_entry_point()
+    {
+        // The candidate entry point carries the same caller contract as the paged one: a consumer that
+        // reaches an empty preprocessing outcome must short-circuit the page itself rather than ask for a
+        // candidate relation. There is no Try overload to fall back on, so the contract is asserted here.
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var act = () =>
+            planner.PlanCandidates(
+                RelationalAccessTestData.CreateMappingSet(_requestResource),
+                _descriptorResource,
+                new DescriptorQueryPreprocessingResult(
+                    new RelationalQueryPreprocessingOutcome.EmptyPage("no matches"),
+                    []
+                )
+            );
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("preprocessingResult")
+            .WithMessage(
+                "Descriptor query page planning requires preprocessing results in the continue state.*"
+            );
+    }
+
+    [Test]
     public void It_should_emit_pgsql_descriptor_namespace_filter_in_page_and_total_count_sql_when_authorization_is_supplied()
     {
         var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
