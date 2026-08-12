@@ -111,7 +111,8 @@ public sealed record HydratedPage(
     /// Deliberately independent of the hydrated body: every selected row may be deleted before
     /// hydration completes, so this can be non-null while the body is empty. A body-derived boundary
     /// would stall a cursor walk on the last surviving document, or stop it entirely on an empty body.
-    /// Populated by hydration execution in a later story.
+    /// Populated from the ids the query keyset materialization returned; always null for a
+    /// <see cref="PageKeysetSpec.Single"/> keyset, which selects nothing.
     /// </remarks>
     public long? HighestSelectedDocumentId { get; init; }
 }

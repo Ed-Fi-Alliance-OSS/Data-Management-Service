@@ -87,6 +87,30 @@ internal sealed class PgsqlPlanDialect : IPlanSqlDialect
             .AppendLine(" int NULL) ON COMMIT DROP;");
     }
 
+    /// <summary>
+    /// Emits nothing: PostgreSQL returns inserted keyset ids from a trailing <c>RETURNING</c> clause.
+    /// </summary>
+    /// <param name="writer">The SQL writer to append to.</param>
+    /// <param name="keyset">The keyset table contract specifying table and column names.</param>
+    public void AppendKeysetSelectedIdOutputClause(SqlWriter writer, KeysetTableContract keyset)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        ArgumentNullException.ThrowIfNull(keyset);
+    }
+
+    /// <summary>
+    /// Appends a PostgreSQL <c>RETURNING</c> clause naming the keyset document-id column.
+    /// </summary>
+    /// <param name="writer">The SQL writer to append to.</param>
+    /// <param name="keyset">The keyset table contract specifying table and column names.</param>
+    public void AppendKeysetSelectedIdReturningClause(SqlWriter writer, KeysetTableContract keyset)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        ArgumentNullException.ThrowIfNull(keyset);
+
+        writer.Append(" RETURNING ").AppendQuoted(keyset.DocumentIdColumnName.Value);
+    }
+
     /// <inheritdoc />
     public void AppendDocumentMetadataSelect(SqlWriter writer, KeysetTableContract keyset)
     {
