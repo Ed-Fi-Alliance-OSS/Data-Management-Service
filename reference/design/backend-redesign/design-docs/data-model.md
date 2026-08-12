@@ -876,7 +876,7 @@ This redesign provisions an **identity table per abstract resource**:
 - Columns:
   - `DocumentId` (PK; FK to `dms.Document(DocumentId)` ON DELETE CASCADE)
   - abstract identity fields in `abstractResources[A].identityJsonPaths` order
-  - `ResourceKeyId` (NOT NULL; concrete member resource key projected for abstract reference compatibility checks)
+  - `ResourceKeyId` (NOT NULL; FK to `dms.ResourceKey(ResourceKeyId)`; concrete member resource key projected for abstract reference compatibility checks)
   - `Discriminator` (NOT NULL; concrete member discriminator literal in `ProjectName:ResourceName` format; useful for diagnostics)
 - Unique constraints:
   - `UX_<AbstractResource>Identity_NK UNIQUE (<AbstractIdentityFields...>)`
@@ -887,6 +887,9 @@ This redesign provisions an **identity table per abstract resource**:
     - uses the same abstract identity-field order with `DocumentId` last
     - excludes `ResourceKeyId` and `Discriminator`; the resolver may project `ResourceKeyId` from the matched row, but it is not part of the key
     - serves as the composite FK target and natural-key probe target for abstract reference sites
+- Resource-key FK:
+  - `FK_<AbstractResource>Identity_ResourceKey FOREIGN KEY (ResourceKeyId) REFERENCES dms.ResourceKey(ResourceKeyId)`.
+  - This constrains the authoritative abstract-reference compatibility key to the seeded effective-schema resource-key mapping while keeping `ResourceKeyId` out of abstract identity equality.
 - Maintenance:
   - triggers on each concrete member root table upsert the corresponding `{AbstractResource}Identity` row on insert/update of the concrete identity fields (including identity renames), populating `ResourceKeyId` from compile-time concrete-member metadata.
 - FKs for abstract reference sites:

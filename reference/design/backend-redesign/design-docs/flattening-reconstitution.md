@@ -261,7 +261,7 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
    - For each abstract resource `A`, create a physical identity table `{schema}.{A}Identity` with:
      - `DocumentId` (PK; FK → `dms.Document(DocumentId)` ON DELETE CASCADE),
      - abstract identity fields (from `abstractResources[A].identityJsonPaths` order),
-     - `ResourceKeyId` (NOT NULL; concrete member resource key projected for abstract reference compatibility checks),
+     - `ResourceKeyId` (NOT NULL; FK -> `dms.ResourceKey(ResourceKeyId)`; concrete member resource key projected for abstract reference compatibility checks),
      - `Discriminator` (NOT NULL; concrete member discriminator literal; last).
    - Maintain `{schema}.{A}Identity` via triggers on each participating concrete root table (upsert
      on insert/update of identity columns), populating `ResourceKeyId` from the trigger's typed
