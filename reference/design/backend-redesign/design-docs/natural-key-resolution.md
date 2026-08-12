@@ -47,9 +47,13 @@ assumption about the database engine.
 
 With the reads gone, the maintenance surface will go with them: every generated
 `TR_<R>_ReferentialIdentity` trigger, the `dms.uuidv5()` function on both engines, the PostgreSQL
-`pgcrypto` extension (uuidv5 is its only consumer in the DMS database), the SQL Server
-`dms.UniqueIdentifierTable` table-valued parameter type, and the Core/backend C# surfaces that
-produce, carry, accept, return, compare, or test UUIDv5 referential ids.
+DMS relational DDL dependency on `pgcrypto` (uuidv5's `digest()` call is its only DMS relational
+consumer), the SQL Server `dms.UniqueIdentifierTable` table-valued parameter type, and the
+Core/backend C# surfaces that produce, carry, accept, return, compare, or test UUIDv5 referential
+ids. This is scoped to DMS relational provisioning. PostgreSQL `pgcrypto` remains owned by
+CMS/OpenIddict when encrypted signing keys require it, including self-contained local deployments
+where the Configuration Service objects share the same physical database as DMS, as described in
+[bootstrap command boundaries](bootstrap/command-boundaries.md).
 
 The migration will be **code-only and re-provision-only**; no in-place upgrade scripts will be
 provided. This is a prerelease schema-shape change within the unreleased `v2` mapping line, so it
@@ -801,7 +805,10 @@ can cascade.
   trigger-kind serialization.
 - `dms.uuidv5()` on both engines — `ISqlDialect.CreateUuidv5Function` will be removed (breaking for
   Managed-API implementers).
-- The PostgreSQL `pgcrypto` extension (uuidv5's `digest()` call is its only DMS-database consumer).
+- DMS relational DDL's PostgreSQL `CREATE EXTENSION pgcrypto` preamble and every DMS dependency on
+  `digest()`. This is not a global database-drop contract: CMS/OpenIddict PostgreSQL deployment still
+  owns `pgcrypto` when encrypted signing keys are stored in the Configuration Service database, which
+  may be the same physical database in self-contained shared-database local setups.
 - `dms.UniqueIdentifierTable` TVP type (sole consumer: the SQL Server bulk RI lookup strategy).
   `dms.BigIntTable` will stay — it serves authorization.
 - Core's UUIDv5 referential-id surface: `ReferentialId`, `ReferentialIdFactory`,
@@ -865,8 +872,10 @@ can cascade.
   remains for diagnostics/readability only; resolver compatibility will not parse it. Consumers that
   enumerate abstract identity scalar columns must continue to exclude both payload columns
   (`ResourceKeyId` and `Discriminator`) from identity-equality logic.
-- Ops: the seed-clone script's TRUNCATE list will lose `dms."ReferentialIdentity"`; template
-  management will drop its pgcrypto preamble.
+- Ops: the seed-clone script's TRUNCATE list will lose `dms."ReferentialIdentity"`; DMS template
+  management will drop its DMS relational `pgcrypto` preamble only. It must not issue
+  `DROP EXTENSION pgcrypto`; shared databases may still need the extension for CMS/OpenIddict key
+  encryption.
 
 ### To remain unchanged
 
@@ -1010,11 +1019,16 @@ after T8, no production contract may still carry a `ReferentialId` member.**
   2. Drop the `TR_<R>_ReferentialIdentity` triggers, scope-guarded — the DocumentCache enqueue,
      stamping, and abstract-identity trigger families are kept — with the shared cross-engine
      parity-contract tests updated once for both engines.
-  3. Drop the table, `uuidv5`, pgcrypto, and the TVP, and collapse descriptor uniqueness onto the
-     new `ResourceKeyId`-authoritative case-insensitive index.
+  3. Drop the table, `uuidv5`, DMS-generated `CREATE EXTENSION pgcrypto` / `digest()` usage, and the
+     TVP, and collapse descriptor uniqueness onto the new `ResourceKeyId`-authoritative
+     case-insensitive index. Do not drop the `pgcrypto` extension from an existing database; it may be
+     owned by CMS/OpenIddict in shared-database deployments.
 
   AC per stage; the final golden diff shows exactly the predicted removals and **no version-string
   or hash churn** because this remains within the unreleased `v2` aggregate mapping shape.
+  PostgreSQL DMS-generated DDL contains no `dms.uuidv5()`, `digest(`, or DMS-owned
+  `CREATE EXTENSION pgcrypto`; the gate must not assert the extension is absent from a running
+  database because CMS/OpenIddict may still create it.
 
 **Release compatibility note:** this branch assumes the upcoming release continues to publish mapping
 version `v2` as the aggregate prerelease shape. Before `v2` is published, no `v2 → v3` bump is
