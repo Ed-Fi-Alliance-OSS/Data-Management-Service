@@ -1778,7 +1778,7 @@ ORDER BY
   c.ChangeVersion OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
 ```
 
-In the SQL Server example above, we join with the live table using identifying values instead of surrogate keys so that we can hide entries that were recreated. Descriptor-valued identity parts use the same descriptor identity as write-time resolution: the computed `UriLowered` plus the descriptor resource's compile-time `ResourceKeyId`. The PostgreSQL renderer emits the equivalent `lower(descriptor."Uri") = lower(old_namespace || '#' || old_code_value)` expression so `UX_Descriptor_UriLowered_ResourceKeyId` serves the join on both engines. The `ResourceKeyId` parameters come from `MappingSet.ResourceKeyIdByResource` through each `TrackedChangeDescriptorJoinInfo.DescriptorResource`.
+In the SQL Server example above, we join with the live table using identifying values instead of surrogate keys so that we can hide entries that were recreated. Descriptor-valued identity parts use the same descriptor identity as write-time resolution: the computed `UriLowered` plus the descriptor resource's compile-time `ResourceKeyId`. The PostgreSQL renderer emits the equivalent `lower(descriptor."Uri" COLLATE "C") = lower((old_namespace || '#' || old_code_value) COLLATE "C")` expression so `UX_Descriptor_UriLowered_ResourceKeyId` serves the join on both engines without inheriting the database default collation. The `ResourceKeyId` parameters come from `MappingSet.ResourceKeyIdByResource` through each `TrackedChangeDescriptorJoinInfo.DescriptorResource`.
 
 #### `*_RefKey` index ordering for `/deletes`
 
@@ -1819,9 +1819,11 @@ ORDER BY
   c.ChangeVersion OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
 ```
 
-PostgreSQL emits `lower(src."Uri") = lower(c."OldNamespace" || '#' || c."OldCodeValue")` for the
-URI predicate and uses the same compile-time `ResourceKeyId` predicate. It does not depend on the
-database's default collation.
+PostgreSQL emits
+`lower(src."Uri" COLLATE "C") = lower((c."OldNamespace" || '#' || c."OldCodeValue") COLLATE "C")`
+for the URI predicate and uses the same compile-time `ResourceKeyId` predicate. The explicit `"C"`
+collation is required; an unqualified `lower(...)` would inherit the database default and is not part
+of the Change Query SQL contract.
 
 ### /keyChanges endpoints
 

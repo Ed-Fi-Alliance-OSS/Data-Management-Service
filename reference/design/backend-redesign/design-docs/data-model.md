@@ -211,7 +211,7 @@ CREATE TABLE dms.Descriptor (
 );
 
 CREATE UNIQUE INDEX UX_Descriptor_UriLowered_ResourceKeyId
-    ON dms.Descriptor (lower(Uri), ResourceKeyId);
+    ON dms.Descriptor (lower(Uri COLLATE "C"), ResourceKeyId);
 
 CREATE INDEX IX_Descriptor_ResourceKeyId_DocumentId
     ON dms.Descriptor (ResourceKeyId, DocumentId);
@@ -221,7 +221,7 @@ CREATE INDEX IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId
     ON dms.Descriptor (ResourceKeyId, ContentVersion, DocumentId);
 ```
 
-Descriptor identity lookups are served by `UX_Descriptor_UriLowered_ResourceKeyId`. PostgreSQL emits the expression index shown above. SQL Server emits the same logical unique index over a non-persisted computed column, `UriLowered AS LOWER([Uri])`, plus `ResourceKeyId`.
+Descriptor identity lookups are served by `UX_Descriptor_UriLowered_ResourceKeyId`. PostgreSQL emits the expression index shown above and uses the same `lower(<uri> COLLATE "C")` expression in descriptor probes so lowering is deterministic rather than inherited from the database default collation. SQL Server emits the same logical unique index over a non-persisted computed column, `UriLowered AS LOWER([Uri])`, plus `ResourceKeyId`.
 
 `ResourceKeyId` is denormalized from `dms.Document` at insert time (same transaction, same value) and is immutable thereafter, mirroring the immutability of a document's resource type. It exists so descriptor GET-all/GET-by-query paging and totalCount can root entirely on `dms.Descriptor` through `IX_Descriptor_ResourceKeyId_DocumentId` — an index over only the descriptor rows — instead of maintaining a `(ResourceKeyId, DocumentId)` index across every row of `dms.Document`. The stamping trigger's no-op diff deliberately excludes it, so a migration backfill of the column does not bump change versions.
 

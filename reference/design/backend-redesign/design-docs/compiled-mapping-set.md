@@ -455,7 +455,7 @@ public sealed record OwnNaturalKeyProbe(
 public sealed record DescriptorProbeTarget(
     DbTableName DescriptorTable,
     DbColumnName UriColumn,
-    // SQL Server binds the computed column; PostgreSQL emits lower(UriColumn) against the expression index.
+    // SQL Server binds the computed column; PostgreSQL emits lower(UriColumn COLLATE "C") against the expression index.
     DbColumnName? UriLoweredColumn,
     DbColumnName ResourceKeyIdColumn,
     DbColumnName DocumentIdColumn

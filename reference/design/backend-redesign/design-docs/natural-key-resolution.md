@@ -396,7 +396,14 @@ One schema addition will make descriptors resolvable case-insensitively on both 
 duplicating the lowered URI in the base table. Descriptor URI identity will be **ASCII-only**:
 descriptor writes, descriptor references, and descriptor-valued query filters will reject non-ASCII
 URI values before normalization. Within that supported input space, C# `ToLowerInvariant()`,
-PostgreSQL `lower(...)`, and SQL Server `LOWER(...)` produce the same lowered value.
+PostgreSQL `lower(... COLLATE "C")`, and SQL Server `LOWER(...)` produce the same lowered value.
+
+The PostgreSQL collation is part of the descriptor identity contract. ASCII validation removes
+Unicode case-folding ambiguity, but it does not by itself make PostgreSQL `lower(...)` independent of
+the database's locale/collation. Every PostgreSQL descriptor identity index, lookup predicate, and
+Change Query recreated-row probe must therefore lower values under the deterministic `"C"` collation,
+for example `lower("Uri" COLLATE "C")`. The implementation must not emit an unqualified
+`lower("Uri")` or `lower(<namespace-codeValue expression>)` and rely on the database default.
 
 **This is an implementation change, not only a storage or documentation constraint.** The current
 write extraction and query preprocessing implementations lowercase arbitrary Unicode descriptor
@@ -428,7 +435,7 @@ write and query algorithms are updated in [flattening-reconstitution.md](flatten
 
 | Object | Definition |
 |---|---|
-| PostgreSQL `UX_Descriptor_UriLowered_ResourceKeyId` | Unique expression index: `CREATE UNIQUE INDEX "UX_Descriptor_UriLowered_ResourceKeyId" ON dms."Descriptor" (lower("Uri"), "ResourceKeyId");` |
+| PostgreSQL `UX_Descriptor_UriLowered_ResourceKeyId` | Unique expression index: `CREATE UNIQUE INDEX "UX_Descriptor_UriLowered_ResourceKeyId" ON dms."Descriptor" (lower("Uri" COLLATE "C"), "ResourceKeyId");` |
 | SQL Server `dms.Descriptor.UriLowered` | Non-persisted computed column: `[UriLowered] AS LOWER([Uri])` |
 | SQL Server `UX_Descriptor_UriLowered_ResourceKeyId` | Unique index on `[UriLowered], [ResourceKeyId]` |
 
@@ -458,7 +465,7 @@ lowered-URI + `ResourceKeyId` probe. PostgreSQL will probe the expression index:
 SELECT descriptor."DocumentId", d."DocumentUuid", d."ContentVersion"
 FROM dms."Descriptor" descriptor
 INNER JOIN dms."Document" d ON d."DocumentId" = descriptor."DocumentId"
-WHERE lower(descriptor."Uri") = @uriLowered
+WHERE lower(descriptor."Uri" COLLATE "C") = @uriLowered
   AND descriptor."ResourceKeyId" = @resourceKeyId
 ```
 
@@ -802,7 +809,8 @@ can cascade.
   `SQL_Latin1_General_CP1_CI_AS` column collation with the runtime `OrdinalIgnoreCase` comparer;
   PostgreSQL's corresponding contract pairs its existing case-sensitive storage with `Ordinal`.
 - Descriptor URI ASCII validation.
-- PostgreSQL `UX_Descriptor_UriLowered_ResourceKeyId` expression index, plus SQL Server
+- PostgreSQL `UX_Descriptor_UriLowered_ResourceKeyId` expression index with the lowered URI pinned to
+  `COLLATE "C"`, plus SQL Server
   non-persisted `dms.Descriptor.UriLowered` computed column and
   `UX_Descriptor_UriLowered_ResourceKeyId` index (definitions above).
 - Compiled natural-key probe metadata on the mapping set, serialized into mapping packs for AOT
@@ -903,13 +911,15 @@ after T8, no production contract may still carry a `ReferentialId` member.**
   validation identifies descriptor-id query targets and rejects them before backend preprocessing,
   and downstream normalization sites replace unchecked `ToLowerInvariant()` calls with the shared
   validated-ASCII helper. Emit the final lower-storage index shape on both engines:
-  PostgreSQL gets the unique expression index on `lower("Uri"), "ResourceKeyId"` with no new
-  column; SQL Server gets the non-persisted `UriLowered AS LOWER([Uri])` computed column and a
+  PostgreSQL gets the unique expression index on `lower("Uri" COLLATE "C"), "ResourceKeyId"` with no
+  new column; SQL Server gets the non-persisted `UriLowered AS LOWER([Uri])` computed column and a
   unique index on `UriLowered, ResourceKeyId`. The legacy Discriminator-authoritative index stays
   through the transition. AC: golden DDL diff shows exactly the new index shape (and SQL Server
-  computed column); write failures identify the concrete descriptor-reference path or the offending
-  descriptor `namespace`/`codeValue` field; query failures use the existing query-validation 400;
-  validation pins prove no descriptor resolver call occurs for non-ASCII input.
+  computed column); PostgreSQL descriptor lookup SQL proves every lowered descriptor URI expression
+  uses `COLLATE "C"` rather than the database default; write failures identify the concrete
+  descriptor-reference path or the offending descriptor `namespace`/`codeValue` field; query failures
+  use the existing query-validation 400; validation pins prove no descriptor resolver call occurs for
+  non-ASCII input.
 - **T4 — The natural-key resolver replaces the hash resolver arm.** The dialect command builders
   (PostgreSQL `unnest` and SQL Server OPENJSON +
   `FORCE ORDER` group statements, the union-projection single-statement form, the parameter-budget
@@ -1049,6 +1059,10 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
 - **Descriptor ASCII validation pins**: descriptor writes, descriptor references, and
   descriptor-valued query filters containing non-ASCII URI values return a path-attributed 400
   before any relational lookup.
+- **PostgreSQL descriptor-lowering pins**: golden DDL and generated SQL fixtures prove every
+  descriptor lowered-URI index/probe expression uses `COLLATE "C"`; a locale-sensitive fixture covers
+  ASCII `I`/`i` descriptor identity under a non-default database collation so PostgreSQL cannot drift
+  from C# `ToLowerInvariant()` or Change Query recreated-row detection.
 - **Probe-compilation unit tests**, including an every-resource parity guard that will prove the
   compiled probes reproduce the legacy trigger derivation for as long as both exist, and abstract
   target pins proving the probe projects concrete `ResourceKeyId` without a discriminator-to-key map.
@@ -1097,7 +1111,8 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
     suppresses its old tombstone; descriptor-valued resource identity joins resolve the recreated
     descriptor; the same URI under a different descriptor `ResourceKeyId` does not suppress the
     tombstone; generated live-descriptor probes use lowered URI plus compile-time `ResourceKeyId`
-    and never `Discriminator`.
+    and never `Discriminator`; PostgreSQL probes lower both the live URI and any tombstoned
+    namespace/codeValue expression under `COLLATE "C"`.
 - **E2E** will gate the merge in CI on both engines. HTTP-visible contract points are pinned at the
   E2E level where possible; in particular, the case-variant duplicate descriptor-item scenario will
   be a dedicated E2E test (`EdFi.DataManagementService.Tests.E2E`): POST a resource whose collection
