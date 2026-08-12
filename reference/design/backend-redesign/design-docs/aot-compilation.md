@@ -327,11 +327,16 @@ message ResourcePack {
   bool is_abstract_resource = 3;
   ResourceStorageKind storage_kind = 4; // unspecified for abstract; required for concrete
 
-  // Plan packs always include dialect-specific compiled plans.
+  // Concrete resources only; abstract resources do not serialize relational plans.
   RelationalResourceModel relational_model = 20;
   ResourceWritePlan write_plan = 21;
   ResourceReadPlan read_plan = 22;
+
+  // Required for abstract resources and concrete resources stored in relational tables.
+  // Omitted for resources stored in the shared descriptor table.
   NaturalKeyProbeTarget natural_key_probe_target = 23;
+
+  // Required only for concrete resources stored in relational tables.
   OwnNaturalKeyProbe own_natural_key_probe = 24;
 }
 

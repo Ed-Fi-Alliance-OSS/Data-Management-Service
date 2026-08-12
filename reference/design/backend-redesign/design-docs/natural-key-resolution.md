@@ -316,7 +316,10 @@ serialize each concrete resource's `ResourceStorageKind`. Pack consumers validat
 against that field and must not infer storage kind from `ApiSchema.json`, descriptor naming
 conventions, or probe absence; otherwise a malformed relational resource pack could be accepted as
 though it were a descriptor resource. The metadata will not be serialized into DDL manifests, so it
-will cause zero golden-manifest churn.
+will cause zero golden-manifest churn. Non-normative AOT schema sketches must preserve those
+conditional presence rules rather than implying every `ResourcePack` carries every plan and probe
+record; abstract packs do not carry relational plans, and shared-descriptor packs intentionally use
+only the payload-level descriptor probe.
 
 ### POST upsert detection
 
