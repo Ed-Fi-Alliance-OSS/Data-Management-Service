@@ -967,13 +967,16 @@ can cascade.
 `dms.Document` in every respect (columns including `CreatedByOwnershipTokenId`, identity
 `DocumentId`, the DocumentCache enqueue triggers, all FKs into it); `dms.Descriptor` except for the
 descriptor unique-index swap, SQL Server's non-persisted `UriLowered` computed column, and the
-explicit SQL Server identity collation (including `ResourceKeyId NOT NULL` and `Discriminator`
-storage/read compatibility); the logical shapes of `UX_<R>_RefKey` / `UX_<R>_NK`; the abstract
-identity table family, its uniqueness/FK constraints, and its trigger topology except for concrete
-`ResourceKeyId` column population and explicit SQL Server identity collation; the DocumentCache table
-family; tracked-change tables and triggers; `auth.*`; `dms.ResourceKey` / `dms.EffectiveSchema` /
-`dms.SchemaComponent`; the read/reconstitution pipeline; `RelationalMappingVersion` remains `v2` for
-this unreleased aggregate mapping shape.
+explicit SQL Server identity collation. The retained descriptor table contract includes
+`ResourceKeyId NOT NULL`, `Discriminator` storage/read compatibility, and the mirrored
+`ContentVersion` / `ContentLastModifiedAt` columns required by descriptor change-version page
+selection on `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId`; the natural-key change must not
+move that live descriptor path back to a `dms.Document` join. The logical shapes of
+`UX_<R>_RefKey` / `UX_<R>_NK`; the abstract identity table family, its uniqueness/FK constraints, and
+its trigger topology except for concrete `ResourceKeyId` column population and explicit SQL Server
+identity collation; the DocumentCache table family; tracked-change tables and triggers; `auth.*`;
+`dms.ResourceKey` / `dms.EffectiveSchema` / `dms.SchemaComponent`; the read/reconstitution pipeline;
+`RelationalMappingVersion` remains `v2` for this unreleased aggregate mapping shape.
 
 ## Migration and rollout: proposed tickets
 

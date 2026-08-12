@@ -203,6 +203,8 @@ CREATE TABLE dms.Descriptor (
     EffectiveEndDate date NULL,
     Discriminator varchar(128) NOT NULL,
     Uri varchar(306) NOT NULL,
+    ContentVersion bigint NOT NULL DEFAULT 0,
+    ContentLastModifiedAt timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT PK_Descriptor PRIMARY KEY (DocumentId),
     CONSTRAINT FK_Descriptor_Document FOREIGN KEY (DocumentId)
         REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
