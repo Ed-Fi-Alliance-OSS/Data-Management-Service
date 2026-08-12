@@ -42,6 +42,8 @@ internal static class MssqlDatabaseLifecycleCoordinator
         SELECT @result;
         """;
 
+    internal const string SetLowDeadlockPrioritySql = "SET DEADLOCK_PRIORITY LOW;";
+
     private const int MaxAttempts = 3;
     private const int DeadlockVictimErrorNumber = 1205;
     private static readonly TimeSpan[] _retryDelays =
@@ -108,6 +110,7 @@ internal static class MssqlDatabaseLifecycleCoordinator
         try
         {
             await connection.OpenAsync(cancellationToken);
+            await SetLowDeadlockPriorityAsync(connection, cancellationToken);
             await AcquireApplicationLockAsync(connection, cancellationToken);
             applicationLockAcquired = true;
             await operation(connection);
@@ -176,6 +179,17 @@ internal static class MssqlDatabaseLifecycleCoordinator
                 $"SQL Server test database lifecycle lock acquisition failed with sp_getapplock result {result}."
             );
         }
+    }
+
+    private static async Task SetLowDeadlockPriorityAsync(
+        SqlConnection connection,
+        CancellationToken cancellationToken
+    )
+    {
+        await using SqlCommand command = connection.CreateCommand();
+        command.CommandText = SetLowDeadlockPrioritySql;
+        command.CommandTimeout = 30;
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task ReleaseApplicationLockAsync(
