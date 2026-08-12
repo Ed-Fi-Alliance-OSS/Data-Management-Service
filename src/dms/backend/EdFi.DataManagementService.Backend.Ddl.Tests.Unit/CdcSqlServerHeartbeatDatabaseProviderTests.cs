@@ -131,6 +131,36 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
     }
 
     [Test]
+    public async Task It_should_preserve_safe_provider_error_identity_without_leaking_exception_message()
+    {
+        const string sentinelSecret = "sentinel-secret";
+        var executor = new RecordingSqlServerCdcExecutor(
+            failExecuteSqlMarker: "cdc:sqlserver:enable-database-cdc",
+            executeFailure: new InvalidOperationException(sentinelSecret),
+            executeFailureIdentity: new CdcProviderErrorIdentity("51000", "7")
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        var diagnostic = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic => diagnostic.Code == "CDC_SQLSERVER_SETUP_PRINCIPAL_FAILURE")
+            .Which;
+
+        diagnostic.ProviderErrorCode.Should().Be("51000");
+        diagnostic.ProviderErrorState.Should().Be("7");
+        diagnostic.ToString().Should().NotContain(sentinelSecret);
+
+        result.ManifestPayload!.Json.Should().Contain("\"provider_error_code\": \"51000\"");
+        result.ManifestPayload.Json.Should().Contain("\"provider_error_state\": \"7\"");
+        result.ManifestPayload.Json.Should().NotContain(sentinelSecret);
+    }
+
+    [Test]
     public void It_should_create_the_opt_in_heartbeat_table_and_singleton()
     {
         _result
@@ -759,11 +789,15 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
     [Test]
     public async Task It_should_replace_provider_history_artifact_when_final_metadata_refresh_is_unavailable()
     {
+        const string sentinelSecret = "metadata-refresh-secret";
+        var finalProviderMetadataRefreshFailure = new InvalidOperationException(sentinelSecret);
         var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
             captureJobPresent: true,
             cleanupJobPresent: true,
             captureInstances: SqlServerCaptureInstanceTestData.Expected(),
-            failFinalProviderMetadataRefresh: true
+            failFinalProviderMetadataRefresh: true,
+            finalProviderMetadataRefreshFailure: finalProviderMetadataRefreshFailure,
+            finalProviderMetadataRefreshFailureIdentity: new CdcProviderErrorIdentity("1205", "13")
         );
         var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
 
@@ -775,13 +809,18 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
         );
 
         result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
-        result
+        var diagnostic = result
             .Diagnostics.Should()
             .ContainSingle(diagnostic =>
                 diagnostic.Code == "CDC_SQLSERVER_PROVIDER_METADATA_UNAVAILABLE"
                 && diagnostic.Category == CdcProviderDiagnosticCategory.ProviderHistoryUnavailable
                 && diagnostic.ProviderErrorClass == nameof(InvalidOperationException)
-            );
+            )
+            .Which;
+        diagnostic.ProviderErrorCode.Should().Be("1205");
+        diagnostic.ProviderErrorState.Should().Be("13");
+        diagnostic.ToString().Should().NotContain(sentinelSecret);
+
         result
             .ArtifactInventory.Should()
             .ContainSingle(observation =>
@@ -810,6 +849,9 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
                 && artifact.GetProperty("state").GetString() == "unavailable"
                 && artifact.GetProperty("observed_values").GetProperty("history").GetString() == "unavailable"
             );
+        result.ManifestPayload.Json.Should().Contain("\"provider_error_code\": \"1205\"");
+        result.ManifestPayload.Json.Should().Contain("\"provider_error_state\": \"13\"");
+        result.ManifestPayload.Json.Should().NotContain(sentinelSecret);
     }
 
     [Test]
@@ -2621,7 +2663,9 @@ internal sealed class RecordingSqlServerConnectorAccess
         };
 }
 
-internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecutor
+internal sealed class RecordingSqlServerCdcExecutor
+    : ICdcProviderDatabaseExecutor,
+        ICdcProviderErrorIdentityMapper
 {
     private const string ExpectedHeartbeatSingletonCheckDefinition = "([HeartbeatId]=(1))";
     private const string ExpectedHeartbeatSequenceCheckDefinition = "([HeartbeatSequence]>=(0))";
@@ -2643,6 +2687,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
     private readonly string _cleanupJobRunning;
     private readonly string _cleanupJobLastRunStatus;
     private readonly bool _failFinalProviderMetadataRefresh;
+    private readonly Exception? _finalProviderMetadataRefreshFailure;
+    private readonly CdcProviderErrorIdentity? _finalProviderMetadataRefreshFailureIdentity;
     private readonly bool _dropJobsDuringFinalProviderMetadataRefresh;
     private readonly Dictionary<string, RecordingSqlServerCaptureInstance> _captureInstances;
     private readonly RecordingSqlServerConnectorAccess _connectorAccess;
@@ -2651,6 +2697,9 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
     private readonly CdcSourceTableKind? _omittedSourceInventoryTableKind;
     private readonly string _omittedSourceInventoryColumnName;
     private readonly CdcSourceTableKind? _postCreateMismatchedCaptureInstanceKind;
+    private readonly string _failExecuteSqlMarker;
+    private readonly Exception? _executeFailure;
+    private readonly CdcProviderErrorIdentity? _executeFailureIdentity;
     private int _databaseCdcStateQueryCount;
 
     public RecordingSqlServerCdcExecutor(
@@ -2671,6 +2720,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         string cleanupJobRunning = "False",
         string cleanupJobLastRunStatus = "",
         bool failFinalProviderMetadataRefresh = false,
+        Exception? finalProviderMetadataRefreshFailure = null,
+        CdcProviderErrorIdentity? finalProviderMetadataRefreshFailureIdentity = null,
         bool dropJobsDuringFinalProviderMetadataRefresh = false,
         IReadOnlyList<RecordingSqlServerCaptureInstance>? captureInstances = null,
         RecordingSqlServerConnectorAccess? connectorAccess = null,
@@ -2678,7 +2729,10 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         IReadOnlyList<CdcSourceTableInventory>? sourceInventory = null,
         CdcSourceTableKind? omittedSourceInventoryTableKind = null,
         string omittedSourceInventoryColumnName = "",
-        CdcSourceTableKind? postCreateMismatchedCaptureInstanceKind = null
+        CdcSourceTableKind? postCreateMismatchedCaptureInstanceKind = null,
+        string failExecuteSqlMarker = "",
+        Exception? executeFailure = null,
+        CdcProviderErrorIdentity? executeFailureIdentity = null
     )
     {
         _databaseCdcEnabled = databaseCdcEnabled;
@@ -2702,6 +2756,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         _cleanupJobRunning = cleanupJobRunning;
         _cleanupJobLastRunStatus = cleanupJobLastRunStatus;
         _failFinalProviderMetadataRefresh = failFinalProviderMetadataRefresh;
+        _finalProviderMetadataRefreshFailure = finalProviderMetadataRefreshFailure;
+        _finalProviderMetadataRefreshFailureIdentity = finalProviderMetadataRefreshFailureIdentity;
         _dropJobsDuringFinalProviderMetadataRefresh = dropJobsDuringFinalProviderMetadataRefresh;
         _connectorAccess = connectorAccess ?? RecordingSqlServerConnectorAccess.MissingGrants();
         _sourceIdentity = sourceIdentity;
@@ -2709,6 +2765,9 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         _omittedSourceInventoryTableKind = omittedSourceInventoryTableKind;
         _omittedSourceInventoryColumnName = omittedSourceInventoryColumnName;
         _postCreateMismatchedCaptureInstanceKind = postCreateMismatchedCaptureInstanceKind;
+        _failExecuteSqlMarker = failExecuteSqlMarker;
+        _executeFailure = executeFailure;
+        _executeFailureIdentity = executeFailureIdentity;
     }
 
     public List<string> ExecutedSql { get; } = [];
@@ -2728,6 +2787,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         string cleanupJobRunning = "False",
         string cleanupJobLastRunStatus = "",
         bool failFinalProviderMetadataRefresh = false,
+        Exception? finalProviderMetadataRefreshFailure = null,
+        CdcProviderErrorIdentity? finalProviderMetadataRefreshFailureIdentity = null,
         bool dropJobsDuringFinalProviderMetadataRefresh = false,
         IReadOnlyList<RecordingSqlServerCaptureInstance>? captureInstances = null,
         RecordingSqlServerConnectorAccess? connectorAccess = null,
@@ -2754,6 +2815,8 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
             cleanupJobRunning: cleanupJobRunning,
             cleanupJobLastRunStatus: cleanupJobLastRunStatus,
             failFinalProviderMetadataRefresh: failFinalProviderMetadataRefresh,
+            finalProviderMetadataRefreshFailure: finalProviderMetadataRefreshFailure,
+            finalProviderMetadataRefreshFailureIdentity: finalProviderMetadataRefreshFailureIdentity,
             dropJobsDuringFinalProviderMetadataRefresh: dropJobsDuringFinalProviderMetadataRefresh,
             captureInstances: captureInstances,
             connectorAccess: connectorAccess ?? RecordingSqlServerConnectorAccess.Exact(),
@@ -2764,6 +2827,17 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
     public Task ExecuteNonQueryAsync(string sql, CancellationToken cancellationToken)
     {
         ExecutedSql.Add(sql);
+
+        if (
+            _executeFailure is not null
+            && (
+                string.IsNullOrEmpty(_failExecuteSqlMarker)
+                || sql.Contains(_failExecuteSqlMarker, StringComparison.Ordinal)
+            )
+        )
+        {
+            throw _executeFailure;
+        }
 
         if (sql.Contains("cdc:sqlserver:enable-database-cdc"))
         {
@@ -2900,13 +2974,29 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         return Task.FromResult(rows);
     }
 
+    public CdcProviderErrorIdentity? MapProviderErrorIdentity(Exception exception)
+    {
+        if (ReferenceEquals(exception, _executeFailure))
+        {
+            return _executeFailureIdentity;
+        }
+
+        if (ReferenceEquals(exception, _finalProviderMetadataRefreshFailure))
+        {
+            return _finalProviderMetadataRefreshFailureIdentity;
+        }
+
+        return null;
+    }
+
     private IReadOnlyList<IReadOnlyDictionary<string, string?>> DatabaseCdcStateRows()
     {
         _databaseCdcStateQueryCount++;
 
         if (_failFinalProviderMetadataRefresh && IsFinalProviderMetadataRefresh)
         {
-            throw new InvalidOperationException("Final SQL Server CDC provider metadata refresh failed.");
+            throw _finalProviderMetadataRefreshFailure
+                ?? new InvalidOperationException("Final SQL Server CDC provider metadata refresh failed.");
         }
 
         return

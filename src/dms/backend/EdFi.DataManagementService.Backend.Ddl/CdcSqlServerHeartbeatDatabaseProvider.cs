@@ -165,6 +165,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         catch (DbException exception)
         {
             return SetupPrincipalFailure(
+                executor,
                 CdcProviderArtifactKind.ProviderHistory,
                 _databaseCdcSafeName,
                 exception
@@ -173,6 +174,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         catch (InvalidOperationException exception)
         {
             return SetupPrincipalFailure(
+                executor,
                 CdcProviderArtifactKind.ProviderHistory,
                 _databaseCdcSafeName,
                 exception
@@ -207,11 +209,11 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         }
         catch (DbException exception)
         {
-            return ProviderMetadataUnavailableResult(exception);
+            return ProviderMetadataUnavailableResult(executor, exception);
         }
         catch (InvalidOperationException exception)
         {
-            return ProviderMetadataUnavailableResult(exception);
+            return ProviderMetadataUnavailableResult(executor, exception);
         }
     }
 
@@ -319,6 +321,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         catch (DbException exception)
         {
             return SetupPrincipalFailure(
+                executor,
                 CdcProviderArtifactKind.HeartbeatTable,
                 SafeName(SourceTable(context.Request, CdcSourceTableKind.CdcHeartbeat).TableName),
                 exception
@@ -327,6 +330,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         catch (InvalidOperationException exception)
         {
             return SetupPrincipalFailure(
+                executor,
                 CdcProviderArtifactKind.HeartbeatTable,
                 SafeName(SourceTable(context.Request, CdcSourceTableKind.CdcHeartbeat).TableName),
                 exception
@@ -361,6 +365,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         catch (DbException exception)
         {
             return SetupPrincipalFailure(
+                executor,
                 CdcProviderArtifactKind.SourceTable,
                 new CdcSafeName("sqlserver_cdc_source_inventory"),
                 exception
@@ -369,6 +374,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         catch (InvalidOperationException exception)
         {
             return SetupPrincipalFailure(
+                executor,
                 CdcProviderArtifactKind.SourceTable,
                 new CdcSafeName("sqlserver_cdc_source_inventory"),
                 exception
@@ -459,6 +465,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         catch (DbException exception)
         {
             return SetupPrincipalFailure(
+                executor,
                 CdcProviderArtifactKind.SqlServerCaptureInstance,
                 _captureInstancesSafeName,
                 exception
@@ -467,6 +474,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         catch (InvalidOperationException exception)
         {
             return SetupPrincipalFailure(
+                executor,
                 CdcProviderArtifactKind.SqlServerCaptureInstance,
                 _captureInstancesSafeName,
                 exception
@@ -668,11 +676,21 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         }
         catch (DbException exception)
         {
-            return SetupPrincipalFailure(CdcProviderArtifactKind.Grant, connectorPrincipal, exception);
+            return SetupPrincipalFailure(
+                executor,
+                CdcProviderArtifactKind.Grant,
+                connectorPrincipal,
+                exception
+            );
         }
         catch (InvalidOperationException exception)
         {
-            return SetupPrincipalFailure(CdcProviderArtifactKind.Grant, connectorPrincipal, exception);
+            return SetupPrincipalFailure(
+                executor,
+                CdcProviderArtifactKind.Grant,
+                connectorPrincipal,
+                exception
+            );
         }
     }
 
@@ -4129,8 +4147,14 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         );
     }
 
-    private static CdcProviderSetupStepResult ProviderMetadataUnavailableResult(Exception exception) =>
-        new(
+    private static CdcProviderSetupStepResult ProviderMetadataUnavailableResult(
+        ICdcProviderDatabaseExecutor executor,
+        Exception exception
+    )
+    {
+        var providerErrorIdentity = executor.TryMapProviderErrorIdentity(exception);
+
+        return new CdcProviderSetupStepResult(
             artifactInventory:
             [
                 new CdcProviderArtifactObservation(
@@ -4170,9 +4194,14 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     ObservedValue: "unavailable",
                     ProviderErrorClass: exception.GetType().Name,
                     Classification: CdcProviderRetryContinuityClassification.SourceHistoryUnknown
-                ),
+                )
+                {
+                    ProviderErrorCode = providerErrorIdentity?.ProviderErrorCode,
+                    ProviderErrorState = providerErrorIdentity?.ProviderErrorState,
+                },
             ]
         );
+    }
 
     private static IReadOnlyDictionary<string, string> DatabaseCdcObservedValues(
         DatabaseCdcInspection inspection,
@@ -4470,11 +4499,15 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
     }
 
     private static CdcProviderSetupStepResult SetupPrincipalFailure(
+        ICdcProviderDatabaseExecutor executor,
         CdcProviderArtifactKind artifactKind,
         CdcSafeName safeName,
         Exception exception
-    ) =>
-        new(
+    )
+    {
+        var providerErrorIdentity = executor.TryMapProviderErrorIdentity(exception);
+
+        return new CdcProviderSetupStepResult(
             diagnostics:
             [
                 new CdcProviderDiagnostic(
@@ -4488,9 +4521,14 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     ObservedValue: "provider-error",
                     ProviderErrorClass: exception.GetType().Name,
                     Classification: CdcProviderRetryContinuityClassification.FailClosed
-                ),
+                )
+                {
+                    ProviderErrorCode = providerErrorIdentity?.ProviderErrorCode,
+                    ProviderErrorState = providerErrorIdentity?.ProviderErrorState,
+                },
             ]
         );
+    }
 
     private static CdcSourceTableInventory SourceTable(
         CdcProviderSetupRequest request,

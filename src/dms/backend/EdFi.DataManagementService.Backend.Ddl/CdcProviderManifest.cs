@@ -271,6 +271,8 @@ internal static class CdcProviderManifestEmitter
             WriteNullableString(writer, "expected_value", diagnostic.ExpectedValue);
             WriteNullableString(writer, "observed_value", diagnostic.ObservedValue);
             WriteNullableString(writer, "provider_error_class", diagnostic.ProviderErrorClass);
+            WriteOptionalString(writer, "provider_error_code", diagnostic.ProviderErrorCode);
+            WriteOptionalString(writer, "provider_error_state", diagnostic.ProviderErrorState);
             writer.WriteString("classification", ClassificationToken(diagnostic.Classification));
             writer.WriteEndObject();
         }
@@ -315,6 +317,14 @@ internal static class CdcProviderManifestEmitter
         }
 
         writer.WriteString(propertyName, value);
+    }
+
+    private static void WriteOptionalString(Utf8JsonWriter writer, string propertyName, string? value)
+    {
+        if (value is not null)
+        {
+            writer.WriteString(propertyName, value);
+        }
     }
 
     private static IReadOnlyList<CdcSourceTableInventory> SortSourceTables(

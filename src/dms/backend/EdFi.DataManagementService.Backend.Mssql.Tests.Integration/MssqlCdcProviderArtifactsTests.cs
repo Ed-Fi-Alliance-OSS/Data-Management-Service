@@ -104,6 +104,36 @@ public class Given_MssqlCdcProviderArtifacts
     }
 
     [Test]
+    public async Task It_should_preserve_sqlserver_provider_error_identity_without_leaking_provider_message()
+    {
+        const string sentinelSecret = "sentinel-secret";
+
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+
+        var result = await RunSetupAsync(
+            connection,
+            new CdcProviderArtifactOutputRequest(IncludeManifestPayload: true),
+            databaseExecutor: new ThrowingSqlServerCdcProviderDatabaseExecutor(connection, sentinelSecret)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        var diagnostic = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic => diagnostic.Code == "CDC_SQLSERVER_SETUP_PRINCIPAL_FAILURE")
+            .Which;
+
+        diagnostic.ProviderErrorClass.Should().Be(nameof(SqlException));
+        diagnostic.ProviderErrorCode.Should().Be("51000");
+        diagnostic.ProviderErrorState.Should().Be("7");
+        diagnostic.ToString().Should().NotContain(sentinelSecret);
+
+        result.ManifestPayload!.Json.Should().Contain("\"provider_error_code\": \"51000\"");
+        result.ManifestPayload.Json.Should().Contain("\"provider_error_state\": \"7\"");
+        result.ManifestPayload.Json.Should().NotContain(sentinelSecret);
+    }
+
+    [Test]
     public async Task It_should_fail_closed_when_extra_dms_owned_capture_instances_exist()
     {
         await using var connection = new SqlConnection(_database.ConnectionString);
@@ -227,11 +257,12 @@ public class Given_MssqlCdcProviderArtifacts
     private async Task<CdcProviderSetupResult> RunSetupAsync(
         SqlConnection connection,
         CdcProviderArtifactOutputRequest artifactOutput,
-        CdcProviderSetupMode mode = CdcProviderSetupMode.InitialCreateOrExactMatch
+        CdcProviderSetupMode mode = CdcProviderSetupMode.InitialCreateOrExactMatch,
+        ICdcProviderDatabaseExecutor? databaseExecutor = null
     )
     {
         var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
-        var executor = new DbConnectionCdcProviderDatabaseExecutor(connection);
+        var executor = databaseExecutor ?? CreateSqlServerExecutor(connection);
 
         return await service.SetupAsync(
             new CdcProviderSetupRequest(
@@ -259,6 +290,14 @@ public class Given_MssqlCdcProviderArtifacts
             )
         );
     }
+
+    private static DbConnectionCdcProviderDatabaseExecutor CreateSqlServerExecutor(
+        SqlConnection connection
+    ) =>
+        new(
+            connection,
+            providerErrorIdentityMapper: MssqlCdcProviderErrorIdentityMapper.MapProviderErrorIdentity
+        );
 
     private static async Task EnableUnexpectedDescriptorCaptureAsync(SqlConnection connection)
     {
@@ -1013,7 +1052,7 @@ public class Given_MssqlCdcProviderArtifacts
         string.Join(
             "; ",
             diagnostics.Select(diagnostic =>
-                $"{diagnostic.Code}:{diagnostic.ArtifactKind}:{diagnostic.SafeName.Value}:{diagnostic.ExpectedValue}->{diagnostic.ObservedValue}:{diagnostic.ProviderErrorClass}"
+                $"{diagnostic.Code}:{diagnostic.ArtifactKind}:{diagnostic.SafeName.Value}:{diagnostic.ExpectedValue}->{diagnostic.ObservedValue}:error_class={diagnostic.ProviderErrorClass ?? "none"}:error_code={diagnostic.ProviderErrorCode ?? "none"}:error_state={diagnostic.ProviderErrorState ?? "none"}"
             )
         );
 
@@ -1039,4 +1078,34 @@ public class Given_MssqlCdcProviderArtifacts
         string ColumnName,
         int ColumnOrdinal
     );
+}
+
+internal sealed class ThrowingSqlServerCdcProviderDatabaseExecutor(
+    SqlConnection connection,
+    string sentinelSecret
+) : ICdcProviderDatabaseExecutor, ICdcProviderErrorIdentityMapper
+{
+    private readonly DbConnectionCdcProviderDatabaseExecutor _inner = new(
+        connection,
+        providerErrorIdentityMapper: MssqlCdcProviderErrorIdentityMapper.MapProviderErrorIdentity
+    );
+
+    public Task ExecuteNonQueryAsync(string sql, CancellationToken cancellationToken) =>
+        sql.Contains("cdc:sqlserver:enable-database-cdc", StringComparison.Ordinal)
+            ? _inner.ExecuteNonQueryAsync(
+                $"THROW 51000, N'{EscapeSqlLiteral(sentinelSecret)}', 7;",
+                cancellationToken
+            )
+            : _inner.ExecuteNonQueryAsync(sql, cancellationToken);
+
+    public Task<IReadOnlyList<IReadOnlyDictionary<string, string?>>> QueryAsync(
+        string sql,
+        CancellationToken cancellationToken
+    ) => _inner.QueryAsync(sql, cancellationToken);
+
+    public CdcProviderErrorIdentity? MapProviderErrorIdentity(Exception exception) =>
+        _inner.MapProviderErrorIdentity(exception);
+
+    private static string EscapeSqlLiteral(string value) =>
+        value.Replace("'", "''", StringComparison.Ordinal);
 }

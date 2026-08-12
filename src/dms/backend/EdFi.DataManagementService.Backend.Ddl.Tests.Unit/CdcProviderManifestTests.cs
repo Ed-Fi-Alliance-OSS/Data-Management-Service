@@ -73,6 +73,32 @@ public class Given_CdcProviderManifest_Emitter
     }
 
     [Test]
+    public void It_should_emit_provider_error_identity_only_when_present()
+    {
+        var payloadWithoutIdentity = CdcProviderManifestEmitter.CreatePayload(BuildManifestResult());
+        var diagnosticWithIdentity = BuildManifestResult().Diagnostics.Single() with
+        {
+            ProviderErrorCode = "51000",
+            ProviderErrorState = "7",
+        };
+        var payloadWithIdentity = CdcProviderManifestEmitter.CreatePayload(
+            BuildManifestResult() with
+            {
+                Diagnostics = [diagnosticWithIdentity],
+            }
+        );
+
+        payloadWithoutIdentity.Json.Should().NotContain("provider_error_code");
+        payloadWithoutIdentity.Json.Should().NotContain("provider_error_state");
+
+        using var document = JsonDocument.Parse(payloadWithIdentity.Json);
+        var diagnostic = document.RootElement.GetProperty("validation_diagnostics").EnumerateArray().Single();
+
+        diagnostic.GetProperty("provider_error_code").GetString().Should().Be("51000");
+        diagnostic.GetProperty("provider_error_state").GetString().Should().Be("7");
+    }
+
+    [Test]
     public void It_should_use_deterministic_ordering()
     {
         var result = BuildManifestResult();
