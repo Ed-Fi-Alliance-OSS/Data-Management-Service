@@ -297,15 +297,20 @@ keys at runtime. It will be storage-resolved, so key-unified identity parts will
 stored columns and abstract probes will bind the stored concrete `ResourceKeyId`. Each probe key entry
 will also carry its command-binding metadata: scalar keys carry `RelationalScalarType`; descriptor-valued
 identity parts carry the descriptor resource whose compile-time `ResourceKeyId` drives the inline
-descriptor join. Pack producers will serialize that storage-resolved, typed metadata into `.mpack`
-payloads so AOT consumers can reconstruct the same `MappingSet` without running the probe compiler or
-re-deriving abstract identity key types from `ApiSchema.json`. Because shared-descriptor resources
-intentionally omit per-resource natural-key probes while relational-table resources require them,
-`.mpack` payloads must also serialize each concrete resource's `ResourceStorageKind`. Pack consumers
-validate probe presence against that field and must not infer storage kind from `ApiSchema.json`,
-descriptor naming conventions, or probe absence; otherwise a malformed relational resource pack could
-be accepted as though it were a descriptor resource. The metadata will not be serialized into DDL
-manifests, so it will cause zero golden-manifest churn.
+descriptor join; own-natural-key document-reference parts carry the
+`ResourceWritePlan.Model.DocumentReferenceBindings` index for the reference site that supplies the
+stored `..._DocumentId` key value. That document-reference binding is valid only for
+`OwnNaturalKeyProbe.KeyColumns`; normal target probes still consume a fully flattened
+`DocumentIdentity` and therefore need only scalar/descriptor binding metadata. Pack producers will
+serialize that storage-resolved, typed metadata into `.mpack` payloads so AOT consumers can
+reconstruct the same `MappingSet` without running the probe compiler or re-deriving abstract identity
+key types from `ApiSchema.json`. Because shared-descriptor resources intentionally omit per-resource
+natural-key probes while relational-table resources require them, `.mpack` payloads must also
+serialize each concrete resource's `ResourceStorageKind`. Pack consumers validate probe presence
+against that field and must not infer storage kind from `ApiSchema.json`, descriptor naming
+conventions, or probe absence; otherwise a malformed relational resource pack could be accepted as
+though it were a descriptor resource. The metadata will not be serialized into DDL manifests, so it
+will cause zero golden-manifest churn.
 
 ### POST upsert detection
 
@@ -334,16 +339,33 @@ Key properties:
 
 - The capture statement runs **before** the reference-lookup statement in the same command, so
   reference-sourced natural-key parts cannot bind resolved `DocumentId`s. They will resolve inline:
-  each reference-sourced part will be a scalar subselect over the target root's flattened `RefKey`
-  columns to return its `DocumentId`; descriptor-valued parts will use a `dms.Descriptor`
-  lowered-URI + `ResourceKeyId` subselect. The 0-or-1 cardinality guarantee does **not** come from
-  `UX_<Target>_RefKey` alone: because `DocumentId` trails that key, its uniqueness is vacuous while
-  `DocumentId` is the value being discovered. Cardinality is instead the consequence of the target's
+  each reference-sourced part is represented in `OwnNaturalKeyProbe.KeyColumns` as a
+  `DocumentReference` binding to the owning resource's `DocumentReferenceBinding`. That binding
+  supplies the reference-object path, target resource, target identity order, and local
+  `..._DocumentId` key column being compared. AOT consumers must receive this binding from the
+  `.mpack` payload; they must not recover the reference site by parsing the key column name or by
+  re-reading `ApiSchema.json`.
+- A document-reference capture binding resolves the referenced `DocumentId` by target kind:
+  - **Concrete target:** emit a scalar subselect over the concrete target root table's flattened
+    `RefKey` columns and return its `DocumentId`.
+  - **Abstract target:** emit the same scalar subselect shape against the compiled
+    `{AbstractResource}Identity` table, ordered by the abstract identity fields, and return its
+    `DocumentId`. There is no abstract root table to probe. `ResourceKeyId` remains payload for the
+    later compatibility check; the capture predicate only needs the referenced `DocumentId`.
+  - **Descriptor-valued identity part inside the referenced target identity:** use the existing
+    `dms.Descriptor` lowered-URI + descriptor `ResourceKeyId` subselect to produce the descriptor
+    `DocumentId` key value before comparing the target key column.
+  The 0-or-1 cardinality guarantee does **not** come from `UX_<Target>_RefKey` alone: because
+  `DocumentId` trails that key, its uniqueness is vacuous while `DocumentId` is the value being
+  discovered. For concrete targets, cardinality is instead the consequence of the target's
   `UX_<Target>_NK` identity constraint plus the composite-FK/cascade invariants that keep flattened
-  `RefKey` copies in parity with the natural key. Generated capture probes must therefore treat
-  multiple matches as invariant drift and fail loudly; they must never use `LIMIT 1`, `TOP 1`, or
-  equivalent row picking to mask duplicate candidates. All parts will bind from the payload's
-  flattened `DocumentIdentity` — scalars directly.
+  `RefKey` copies in parity with the natural key. For abstract targets, cardinality is the
+  consequence of `UX_<Abstract>Identity_NK` plus the same abstract-identity maintenance invariants.
+  Generated capture probes must therefore treat multiple matches as invariant drift and fail loudly;
+  they must never use `LIMIT 1`, `TOP 1`, or equivalent row picking to mask duplicate candidates.
+  All parts will bind from the payload's flattened `DocumentIdentity` — scalar identity parts
+  directly, descriptor parts through the descriptor probe, and document-reference parts through the
+  compiled reference-site capture binding.
 - **Miss semantics will be correct by construction:** a missing referenced document will make its
   subselect yield NULL, the predicate false, and nothing captured; the write will proceed down the
   create path, and the later reference-lookup statement will report the missing reference through

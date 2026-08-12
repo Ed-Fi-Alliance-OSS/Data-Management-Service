@@ -135,8 +135,8 @@ All collections are `repeated` and MUST be emitted in stable deterministic order
     MUST NOT be sorted; each entry carries the storage-resolved column plus its scalar/descriptor
     binding metadata
   - `own_natural_key_probe.key_columns` preserves compiler-produced natural-key order and MUST NOT
-    be sorted; each entry carries the storage-resolved column plus its scalar/descriptor binding
-    metadata
+    be sorted; each entry carries the storage-resolved column plus its scalar/descriptor/document-reference
+    binding metadata
 - Within each `RelationalResourceModel`:
   - `tables_in_dependency_order`: root-first, then depth-first; stable within sibling set by `(json_scope, table_name)` using ordinal string ordering
     - This canonical order MUST match in-memory `RelationalResourceModel.TablesInDependencyOrder` and is used by both read hydration and write flattening.
@@ -284,14 +284,21 @@ Given `(expectedEffectiveSchemaHash, expectedDialect, expectedRelationalMappingV
      - every natural-key probe has a non-empty, duplicate-free `key_columns` list in authoritative
        semantic identity order; `document_id_column` is not a key column
      - every probe key-column entry has exactly one binding shape:
-       - scalar keys carry `scalar_type` and omit `descriptor_resource`
-       - descriptor-valued keys carry `descriptor_resource` and omit `scalar_type`
-       - `scalar_type.kind` is supported for typed SQL parameter binding, and `descriptor_resource`
-         resolves to a concrete descriptor resource represented by the payload-level
-         `descriptor_probe_target`
+       - scalar keys carry `scalar_type`
+       - descriptor-valued keys carry `descriptor_resource`
+       - document-reference keys carry `document_reference_binding_index` and are valid only in
+         `own_natural_key_probe.key_columns`; consumers must reject this binding shape in
+         `natural_key_probe_target.key_columns`
+       - for scalar keys, `scalar_type.kind` is supported for typed SQL parameter binding
+       - for descriptor-valued keys, `descriptor_resource` resolves to a concrete descriptor
+         resource represented by the payload-level `descriptor_probe_target`
+       - for document-reference keys, `document_reference_binding_index` is a zero-based index in
+         range for `relational_model.document_reference_bindings` and points to a binding whose
+         `is_identity_component` is true
        Consumers use this serialized metadata to build typed PostgreSQL `unnest` / SQL Server
-       `OPENJSON WITH` bindings and descriptor inline joins; they must not rederive abstract probe
-       key types or concrete resource storage kind from `ApiSchema.json` at pack-load time.
+       `OPENJSON WITH` bindings, descriptor inline joins, and POST-capture document-reference
+       subselects; they must not rederive abstract probe key types, concrete resource storage kind,
+       or own-key reference sites from `ApiSchema.json` at pack-load time.
      - an abstract natural-key probe has `resource_key_id_column`, which is not a key column; a
        concrete natural-key probe omits `resource_key_id_column`
      - every own-natural-key probe has a non-empty, duplicate-free `key_columns` list in authoritative
@@ -300,7 +307,8 @@ Given `(expectedEffectiveSchemaHash, expectedDialect, expectedRelationalMappingV
      - all concrete target-probe and own-probe table/column references exist in the resource model;
        key columns are already storage-resolved and therefore name stored canonical columns rather
        than `UnifiedAlias` columns, and each key entry's binding metadata matches the resolved model
-       column (`scalar_type` for scalar columns, `descriptor_resource` for descriptor FK columns)
+       column (`scalar_type` for scalar columns, `descriptor_resource` for descriptor FK columns,
+       `document_reference_binding_index` for document-reference FK columns in own-natural-key probes)
      - abstract target-probe key entries are self-contained because abstract resources do not carry a
        `relational_model` in the pack; their table/column identifiers and typed binding metadata are
        authoritative for AOT command construction
@@ -507,9 +515,13 @@ message NaturalKeyProbeKeyColumn {
   // Exactly one binding shape is required. Scalar keys bind the request value directly with
   // scalar_type. Descriptor-valued keys bind a descriptor URI and join through descriptor_resource's
   // compile-time ResourceKeyId to produce the stored descriptor DocumentId key value.
+  // document_reference_binding_index is valid only in OwnNaturalKeyProbe.key_columns and identifies
+  // the zero-based owning RelationalResourceModel.document_reference_bindings entry whose referenced
+  // DocumentId is resolved inline for POST capture.
   oneof binding {
     RelationalScalarType scalar_type = 10;
     QualifiedResourceName descriptor_resource = 11;
+    uint32 document_reference_binding_index = 12;
   }
 }
 

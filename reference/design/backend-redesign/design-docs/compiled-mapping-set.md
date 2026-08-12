@@ -425,6 +425,14 @@ public abstract record NaturalKeyProbeKeyBinding
     // descriptor probe using DescriptorResource's compile-time ResourceKeyId, then compares the
     // resulting descriptor DocumentId to Column.
     public sealed record Descriptor(QualifiedResourceName DescriptorResource) : NaturalKeyProbeKeyBinding;
+
+    // Valid only in OwnNaturalKeyProbe.KeyColumns; MappingSet validation rejects this binding in
+    // NaturalKeyProbeTarget.KeyColumns. The request-side key value is a document reference identity
+    // that participates in the owning resource's identity. The command builder resolves it inline
+    // before the normal reference-resolution statement, using the indexed DocumentReferenceBinding
+    // to select the reference target and identity bindings, then compares the resulting referenced
+    // DocumentId to Column.
+    public sealed record DocumentReference(int DocumentReferenceBindingIndex) : NaturalKeyProbeKeyBinding;
 }
 
 public sealed record NaturalKeyProbeKeyColumn(
@@ -447,7 +455,8 @@ public sealed record NaturalKeyProbeTarget(
 public sealed record OwnNaturalKeyProbe(
     QualifiedResourceName Resource,
     DbTableName RootTable,
-    // Storage-resolved semantic natural-key order.
+    // Storage-resolved semantic natural-key order. DocumentReference bindings are valid here
+    // because POST capture runs before the normal bulk reference resolver.
     IReadOnlyList<NaturalKeyProbeKeyColumn> KeyColumns,
     DbColumnName DocumentIdColumn
 );
