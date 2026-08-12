@@ -806,19 +806,24 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
             ],
         };
 
-        var reorderedQueryPlan = _queryPlan with
+        // Permuted on the encoded form rather than the compiled plan, matching how the duplicate-name
+        // permutation assertions below build their inputs. The property under test is that canonical
+        // JSON is order-sensitive, and a compiled plan whose paging roles are out of order is not a
+        // plan any mode can declare.
+        var encodedQueryPlan = NormalizedPlanContractCodec.Encode(_queryPlan);
+        var reorderedQueryPlan = encodedQueryPlan with
         {
             PageParametersInOrder =
             [
-                _queryPlan.PageParametersInOrder[0],
-                _queryPlan.PageParametersInOrder[2],
-                _queryPlan.PageParametersInOrder[1],
+                encodedQueryPlan.PageParametersInOrder[0],
+                encodedQueryPlan.PageParametersInOrder[2],
+                encodedQueryPlan.PageParametersInOrder[1],
             ],
         };
 
         ComputeCanonicalWritePlanHash(reorderedColumnBindingsPlan).Should().NotBe(baselineWriteHash);
         ComputeCanonicalWritePlanHash(reorderedKeyUnificationMembersPlan).Should().NotBe(baselineWriteHash);
-        ComputeCanonicalQueryPlanHash(reorderedQueryPlan).Should().NotBe(baselineQueryHash);
+        NormalizedPlanDtoJson.ComputeCanonicalSha256(reorderedQueryPlan).Should().NotBe(baselineQueryHash);
     }
 
     [Test]

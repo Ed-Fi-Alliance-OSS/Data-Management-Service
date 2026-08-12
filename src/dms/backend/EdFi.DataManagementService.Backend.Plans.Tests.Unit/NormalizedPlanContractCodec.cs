@@ -144,7 +144,9 @@ internal static class NormalizedPlanContractCodec
     /// The mode the plan was compiled in, supplied by the caller that compiled it. Null declares
     /// traditional paging. The mode is not inferred from the role inventory: inferring it would let a
     /// traditional plan that lost its paging roles encode as a valid unpaged candidate plan, which is
-    /// the defect the discriminator exists to catch.
+    /// the defect the discriminator exists to catch. The declaration is validated against the plan's
+    /// roles here rather than only on decode, because canonical-JSON and hash callers never decode:
+    /// a plan declared as a mode it was not compiled in would otherwise be hashed into a golden.
     /// </param>
     public static PageDocumentIdSqlPlanDto Encode(
         ExternalPlans.PageDocumentIdSqlPlan plan,
@@ -152,6 +154,13 @@ internal static class NormalizedPlanContractCodec
     )
     {
         ArgumentNullException.ThrowIfNull(plan);
+
+        ValidateCandidateModeRoleInventory(
+            plan.PageParametersInOrder,
+            candidateMode,
+            nameof(PageDocumentIdSqlPlanDto.PageParametersInOrder)
+        );
+        ValidateTotalCountMatchesCandidateMode(plan.TotalCountSql, candidateMode, nameof(plan));
 
         return new PageDocumentIdSqlPlanDto(
             CandidateMode: candidateMode,
@@ -455,6 +464,7 @@ internal static class NormalizedPlanContractCodec
             dto.CandidateMode,
             nameof(PageDocumentIdSqlPlanDto.PageParametersInOrder)
         );
+        ValidateTotalCountMatchesCandidateMode(dto.TotalCountSql, dto.CandidateMode, nameof(dto));
 
         ExternalPlans.QuerySqlParameter[]? decodedTotalCountParameters;
 
@@ -1911,6 +1921,33 @@ internal static class NormalizedPlanContractCodec
             $"Query plan parameters for candidate mode '{candidateMode?.ToString() ?? "Traditional"}' "
                 + $"must be {expectedDescription}. "
                 + $"Observed roles in order: [{string.Join(", ", observedRoles)}].",
+            argumentName
+        );
+    }
+
+    /// <summary>
+    /// Validates that total-count SQL appears only on a traditional plan.
+    /// </summary>
+    /// <remarks>
+    /// The count inventory's own validation is role-based and therefore mode-blind, so without this a
+    /// cursor or unpaged candidate plan carrying count SQL would satisfy every other rule. Only
+    /// traditional paging computes a count: a cursor page must add no count query, and the unpaged
+    /// candidate relation is counted by the partition consumer that wraps it, not by the plan.
+    /// </remarks>
+    private static void ValidateTotalCountMatchesCandidateMode(
+        string? totalCountSql,
+        PageCandidateModeDto? candidateMode,
+        string argumentName
+    )
+    {
+        if (candidateMode is not { } nontraditionalMode || totalCountSql is null)
+        {
+            return;
+        }
+
+        throw new ArgumentException(
+            $"{nameof(PageDocumentIdSqlPlanDto.TotalCountSql)} is only valid for traditional paging, "
+                + $"but candidate mode '{nontraditionalMode}' was declared.",
             argumentName
         );
     }

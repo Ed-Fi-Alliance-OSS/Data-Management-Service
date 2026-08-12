@@ -14,8 +14,13 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 [TestFixture]
 public class Given_The_Normalized_Plan_Contract_Codec_And_Candidate_Modes
 {
+    /// <remarks>
+    /// Encode-then-decode, not encode-decode-encode. The candidate mode is a compile input that the
+    /// compiled plan does not carry, so the declaration is supplied by the caller on the way out and
+    /// validated on the way back in; a decoded plan cannot re-declare it.
+    /// </remarks>
     [Test]
-    public void It_should_round_trip_a_cursor_plan()
+    public void It_should_preserve_page_parameters_through_a_declared_cursor_encoding()
     {
         var plan = Compile(new PageCandidateMode.Cursor());
 
@@ -30,7 +35,7 @@ public class Given_The_Normalized_Plan_Contract_Codec_And_Candidate_Modes
     }
 
     [Test]
-    public void It_should_round_trip_an_unpaged_candidate_plan()
+    public void It_should_preserve_filter_only_parameters_through_a_declared_unpaged_encoding()
     {
         var plan = Compile(new PageCandidateMode.UnpagedCandidates());
 
@@ -85,15 +90,67 @@ public class Given_The_Normalized_Plan_Contract_Codec_And_Candidate_Modes
     [Test]
     public void It_should_reject_a_cursor_plan_declared_as_traditional()
     {
-        var act = () =>
-            NormalizedPlanContractCodec.Decode(
-                NormalizedPlanContractCodec.Encode(Compile(new PageCandidateMode.Cursor()))
-            );
+        // Rejected by Encode, before any DTO exists. Canonical-JSON and hash callers never decode, so a
+        // plan declared as a mode it was not compiled in must not survive long enough to be hashed.
+        var act = () => NormalizedPlanContractCodec.Encode(Compile(new PageCandidateMode.Cursor()));
 
         act.Should()
             .Throw<ArgumentException>()
             .WithParameterName("PageParametersInOrder")
             .WithMessage("*candidate mode 'Traditional'*");
+    }
+
+    [Test]
+    public void It_should_reject_total_count_sql_declared_with_a_cursor_mode()
+    {
+        var act = () =>
+            NormalizedPlanContractCodec.Decode(
+                new PageDocumentIdSqlPlanDto(
+                    PageDocumentIdSql: "SELECT r.\"DocumentId\" FROM \"edfi\".\"School\" r",
+                    TotalCountSql: "SELECT COUNT(1) FROM \"edfi\".\"School\" r",
+                    PageParametersInOrder:
+                    [
+                        new QuerySqlParameterDto(
+                            QuerySqlParameterRoleDto.CursorInclusiveMinimum,
+                            "cursorInclusiveMinimum"
+                        ),
+                        new QuerySqlParameterDto(
+                            QuerySqlParameterRoleDto.CursorInclusiveMaximum,
+                            "cursorInclusiveMaximum"
+                        ),
+                        new QuerySqlParameterDto(QuerySqlParameterRoleDto.PageSize, "pageSize"),
+                    ],
+                    TotalCountParametersInOrder: [],
+                    CandidateMode: PageCandidateModeDto.Cursor
+                )
+            );
+
+        act.Should().Throw<ArgumentException>().WithMessage("*only valid for traditional paging*");
+    }
+
+    [Test]
+    public void It_should_reject_total_count_sql_declared_with_an_unpaged_candidates_mode()
+    {
+        // The partition consumer counts the candidate relation it wraps; a count query on the candidate
+        // plan itself would be a second, separately-filtered count of the same rows.
+        var act = () =>
+            NormalizedPlanContractCodec.Decode(
+                new PageDocumentIdSqlPlanDto(
+                    PageDocumentIdSql: "SELECT r.\"DocumentId\" FROM \"edfi\".\"School\" r",
+                    TotalCountSql: "SELECT COUNT(1) FROM \"edfi\".\"School\" r",
+                    PageParametersInOrder:
+                    [
+                        new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
+                    ],
+                    TotalCountParametersInOrder:
+                    [
+                        new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
+                    ],
+                    CandidateMode: PageCandidateModeDto.UnpagedCandidates
+                )
+            );
+
+        act.Should().Throw<ArgumentException>().WithMessage("*only valid for traditional paging*");
     }
 
     [Test]
