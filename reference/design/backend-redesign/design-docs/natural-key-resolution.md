@@ -35,6 +35,12 @@ existing abstract identity rows but does not add another index:
 | Descriptor references and filters | Probe of `UX_Descriptor_UriLowered_ResourceKeyId` (new lower-expression/computed-column index) |
 | POST upsert detection | The document's own `UX_<R>_NK` |
 
+For abstract targets, the replacement depends on the data-model contract explicitly pinning both
+`UX_<Abstract>Identity_NK` and `UX_<Abstract>Identity_RefKey`. The former takes over the
+cross-subclass identity uniqueness that the legacy alias/hash path made redundant; the latter is the
+stable FK/probe target with `DocumentId` last. `ResourceKeyId` and `Discriminator` are projected
+payload only and must be excluded from both abstract identity key shapes.
+
 On SQL Server, those lookups will not inherit identity equality from the database default collation.
 The DDL generator will explicitly apply DMS's default case-insensitive collation,
 `SQL_Latin1_General_CP1_CI_AS`, to every string column that stores or copies an identity value. This
@@ -783,6 +789,13 @@ removal:
 | Reference targets exist and stay consistent | Composite FKs onto `RefKey` targets, unchanged |
 | Reference-resolution cardinality | `UX_<R>_NK` plus FK/cascade parity between natural-key columns and flattened `RefKey` copies; `UX_<R>_RefKey` is the access/FK shape, not scalar identity uniqueness while `DocumentId` is unbound |
 
+The abstract rows are the critical transfer point for the removed central index. `UX_<Abstract>Identity_NK`
+must enforce cross-subclass equality over only the abstract identity fields, while
+`UX_<Abstract>Identity_RefKey` must expose those same fields plus trailing `DocumentId` for abstract
+FKs and probes. Golden DDL must pin both constraints' column order and prove that `ResourceKeyId`
+and `Discriminator` remain payload only; otherwise `dms.ReferentialIdentity` would be removed before
+its abstract-resource invariants had an explicit relational owner.
+
 Deliberately lost will be: the `dms.ReferentialIdentity` corruption canary (the RI hash row drifting
 from the root row it summarizes), and a redundant second uniqueness net (the RI PK). Mitigations for
 the redundancy loss: the probe compiler will carry an empty-identity guard (a resource whose
@@ -1094,6 +1107,11 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
   `COLLATE SQL_Latin1_General_CP1_CI_AS`, including canonical, RefKey-copy, abstract, descriptor, and
   tracked-change old/new identity columns, and local collection identity columns, while
   purpose-specific binary columns retain their collation.
+- **Abstract identity DDL pins** prove every abstract identity table emits
+  `UX_<Abstract>Identity_NK` over exactly the abstract identity fields in
+  `abstractResources[A].identityJsonPaths` order, plus `UX_<Abstract>Identity_RefKey` over those same
+  fields with trailing `DocumentId`. The fixtures must prove `ResourceKeyId` and `Discriminator` are
+  payload columns only and are absent from both key definitions.
 - **SQL Server collation-contract integration tests** will provision against the supported
   `Latin1_General_100_CS_AS_SC_UTF8` database default, assert that SchemaTools preserves that default,
   query `sys.columns` to prove representative identity columns use

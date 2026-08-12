@@ -874,10 +874,19 @@ This redesign provisions an **identity table per abstract resource**:
   - abstract identity fields in `abstractResources[A].identityJsonPaths` order
   - `ResourceKeyId` (NOT NULL; concrete member resource key projected for abstract reference compatibility checks)
   - `Discriminator` (NOT NULL; concrete member discriminator literal in `ProjectName:ResourceName` format; useful for diagnostics)
+- Unique constraints:
+  - `UX_<AbstractResource>Identity_NK UNIQUE (<AbstractIdentityFields...>)`
+    - columns are exactly the abstract identity fields in `abstractResources[A].identityJsonPaths` order
+    - excludes `DocumentId`, `ResourceKeyId`, and `Discriminator`; these columns are payload or row identity, not abstract identity equality
+    - enforces cross-subclass abstract identity uniqueness after `dms.ReferentialIdentity` is removed
+  - `UX_<AbstractResource>Identity_RefKey UNIQUE (<AbstractIdentityFields...>, DocumentId)`
+    - uses the same abstract identity-field order with `DocumentId` last
+    - excludes `ResourceKeyId` and `Discriminator`; the resolver may project `ResourceKeyId` from the matched row, but it is not part of the key
+    - serves as the composite FK target and natural-key probe target for abstract reference sites
 - Maintenance:
   - triggers on each concrete member root table upsert the corresponding `{AbstractResource}Identity` row on insert/update of the concrete identity fields (including identity renames), populating `ResourceKeyId` from compile-time concrete-member metadata.
 - FKs for abstract reference sites:
-  - referencing tables use composite FKs to `{schema}.{AbstractResource}Identity(<AbstractIdentityFields...>, DocumentId)`.
+  - referencing tables use composite FKs to `{schema}.{AbstractResource}Identity(<AbstractIdentityFields...>, DocumentId)`, backed by `UX_<AbstractResource>Identity_RefKey`.
     - PostgreSQL: `ON UPDATE CASCADE`.
     - SQL Server: native full-composite `ON UPDATE CASCADE` where retained by
       [SQL Server foreign-key pruning](sql-server-pruning.md), otherwise a safe `ON UPDATE NO ACTION` cut.
@@ -892,7 +901,7 @@ Also provision a union view per abstract resource for diagnostics/ad-hoc queryin
 
 Usage:
 
-- Required for abstract write-time reference resolution: the natural-key resolver probes `{AbstractResource}Identity` by its `RefKey` shape and projects `DocumentId` plus concrete `ResourceKeyId`.
+- Required for abstract write-time reference resolution: the natural-key resolver probes `{AbstractResource}Identity` by `UX_<AbstractResource>Identity_RefKey` and projects `DocumentId` plus concrete `ResourceKeyId`.
 - Not required for read-time reference identity projection (reference identity fields are stored locally on the referrer and
   kept consistent via database propagation: PostgreSQL cascades and SQL Server native cascades/cuts governed by
   [SQL Server foreign-key pruning](sql-server-pruning.md)).
