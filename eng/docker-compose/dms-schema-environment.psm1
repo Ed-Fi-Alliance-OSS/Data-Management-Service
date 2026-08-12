@@ -578,6 +578,25 @@ function Assert-DmsContainerSchemaEnvironment {
     $sequentialEnvironmentFile = Resolve-DotenvFileSequentially `
         -Path (Resolve-Path -LiteralPath $EnvironmentFilePath).ProviderPath
 
+    # A gate key declared twice is legal Compose but makes the two sides of this check read DIFFERENT
+    # declarations, so it is reported against the file before any container value is compared.
+    # Get-SchemaPackagesFromEnvironmentFile above - the file-only reader the provision phase also uses -
+    # takes the FIRST SCHEMA_PACKAGES declaration, while Compose delivers the LAST one to the container:
+    # a file carrying two different values fails the package comparison below deterministically, and the
+    # container-side remediation would then send the developer to tear down and re-run a stack that
+    # reproduces it. The scalars are read last-declaration below and so agree with Compose today, but a
+    # duplicate leaves that agreement resting on which declaration each reader happens to take.
+    #
+    # Case-sensitive, matching the Ordinal keys the sequential resolver records: a lowercase decoy
+    # declaration is a different name to Compose and is not one of these keys.
+    $duplicateGateKey = @(
+        $sequentialEnvironmentFile.DuplicateKeys |
+            Where-Object { @("SCHEMA_PACKAGES", "USE_API_SCHEMA_PATH", "API_SCHEMA_PATH") -ccontains $_ }
+    )
+    if ($duplicateGateKey.Count -gt 0) {
+        throw "DMS E2E setup mismatch: the environment file '$EnvironmentFilePath' declares $($duplicateGateKey -join ', ') more than once. The file-only reader takes the first SCHEMA_PACKAGES declaration while Docker Compose delivers the last one to the container, so the two sides of this check would compare different values. Remove the duplicate declaration(s) from the environment file."
+    }
+
     # Ordinal against lowercase 'true', matching run.sh's byte-exact gate. Compose passes the resolved
     # value through verbatim, so a file declaring USE_API_SCHEMA_PATH=TRUE yields a container that
     # skips the package download while provisioning still stamps the file's packages; reporting that
@@ -605,7 +624,12 @@ function Assert-DmsContainerSchemaEnvironment {
         -EnvironmentFileApiSchemaPath $environmentFileApiSchemaPath
 
     if ($verdict.ShouldFail) {
-        throw "DMS E2E setup mismatch: $($verdict.Reason) $($verdict.Remediation)"
+        # The capture command is a FIXED string, so the sanitization invariant holds: nothing
+        # container-supplied reaches the message and the raw SCHEMA_PACKAGES is still never logged. It
+        # earns its place because the reason names WHICH setting disagrees without ever echoing the
+        # value, and both remediation actions are ones the developer has already performed by the time
+        # they see this - so this is the one thing here that shows them what the container received.
+        throw "DMS E2E setup mismatch: $($verdict.Reason) $($verdict.Remediation) Capture the container's actual settings with: docker inspect $ContainerName --format '{{json .Config.Env}}'"
     }
 
     Write-Host "Verified DMS container schema environment matches the environment file ($($declaredPackages.Count) ApiSchema package(s))." -ForegroundColor Green

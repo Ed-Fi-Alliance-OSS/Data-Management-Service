@@ -550,7 +550,12 @@ Describe "Both E2E setup wrappers run every Docker phase inside the schema-setti
             the chance to re-create one of the three names in this process.
             #>
             param(
-                [Parameter(Mandatory)] [string] $ScriptPath
+                [Parameter(Mandatory)] [string] $ScriptPath,
+
+                # For a script whose phases all live inside functions, which is build-dms.ps1's shape.
+                # Off by default, because for the wrappers a command inside a function belongs to a
+                # helper rather than to the phase sequence.
+                [switch] $IncludeFunctionBody
             )
 
             $actionExtent = @(Get-SchemaGuardActionExtent -ScriptPath $ScriptPath)
@@ -575,6 +580,15 @@ Describe "Both E2E setup wrappers run every Docker phase inside the schema-setti
                 # '& $Action' (in the shared module for the wrappers, inline in the fixture below),
                 # which is variable-dispatched and by construction sits outside the -Action block it
                 # invokes, so including it would report the guard as a phase escaping itself.
+                #
+                # -IncludeFunctionBody lifts that exclusion for a script that dispatches its phases from
+                # inside functions, where this filter would otherwise remove every phase AND every guard
+                # call and return an empty set. A caller using it has to scope the result by name, since a
+                # script's other functions invoke commands that are not phases at all.
+                if ($IncludeFunctionBody) {
+                    return $true
+                }
+
                 $ancestor = $_.Parent
                 $insideFunction = $false
                 while ($null -ne $ancestor) {
@@ -844,6 +858,43 @@ Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
 
         @($invocations | ForEach-Object { $_.Name }) | Should -Be @("./provision-e2e-database.ps1")
         @($invocations | Where-Object { -not $_.InsideGuard }) | Should -BeNullOrEmpty
+    }
+
+    It "runs every DMS start and bootstrap phase in build-dms.ps1 inside the schema guard" {
+        # build-dms.ps1 was structurally EXEMPT from this invariant while being the caller CI actually
+        # invokes for both E2ETest and InstanceE2ETest: every one of its guard call sites and guarded
+        # phases sits inside a function, and the wrapper-shaped detector excludes function bodies, so
+        # pointing it at this script returned an empty set and passed vacuously. -IncludeFunctionBody is
+        # what makes the same question answerable here.
+        #
+        # Scoped to the phases that CREATE the DMS container from an --env-file: the two start scripts,
+        # the two bootstrap scripts, and the image-mode-selected '& $startupScriptPath'. Those are the
+        # invocations whose Compose resolution the guard governs, and the scoping is what keeps the
+        # assertion about them rather than about every command the script's other functions run - the
+        # ad-hoc 'docker run' of DockerRun, or the data-store and provision phases, none of which create
+        # a DMS container from these three names.
+        #
+        # '& $instanceSetupScript' is allowlisted for a different reason: it hands off to the Instance
+        # Management setup wrapper, which guards each of its own phases - asserted for that wrapper
+        # elsewhere in this block - so it is guarded internally rather than at the hand-off.
+        $buildScriptPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../build-dms.ps1"))
+        $dmsStartPhaseName = @(
+            "./start-local-dms.ps1"
+            "./start-published-dms.ps1"
+            "./bootstrap-local-dms.ps1"
+            "./bootstrap-published-dms.ps1"
+            '$startupScriptPath'
+        )
+
+        $invocations = @(
+            Get-GuardedPhaseInvocation -ScriptPath $buildScriptPath -IncludeFunctionBody |
+                Where-Object { $dmsStartPhaseName -contains $_.Name }
+        )
+
+        $invocations.Count |
+            Should -BeGreaterThan 0 -Because "build-dms.ps1 starts the DMS container for both E2E lanes, so finding none of those phases would mean this assertion measures nothing"
+        @($invocations | Where-Object { -not $_.InsideGuard } | ForEach-Object { "$($_.Name) (line $($_.Line))" }) |
+            Should -BeNullOrEmpty -Because "a DMS start phase outside the guard resolves the schema variables from the ambient process again, and build-dms.ps1 is the caller CI runs"
     }
 
     It "defines no function in build-dms.ps1 that shadows one of the module's exports" {
@@ -1519,6 +1570,23 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
                 -ContainerName "ed-fi-api" } | Should -Throw -ExpectedMessage "DMS E2E setup mismatch: *"
     }
 
+    It "carries the fixed docker inspect capture command, without echoing any container value" {
+        # The reason names WHICH setting disagrees but deliberately never echoes the container's value,
+        # and both remediation actions are things the developer has already done by the time they see this
+        # - so without a capture command the failure names nothing they can escalate. Appended as a FIXED
+        # string carrying only the container name the CALLER passed, which is why the sanitization
+        # invariant is unchanged: the sentinel on the container side must still not appear.
+        $script:stubContainerEnvironment["SCHEMA_PACKAGES"] = '[{"name":"SENTINEL-DO-NOT-ECHO"}]'
+
+        $failure = { Assert-DmsContainerSchemaEnvironment `
+                -EnvironmentFilePath (New-EnvironmentFileFixture) `
+                -ContainerName "ed-fi-api" } | Should -Throw -PassThru
+
+        $failure.Exception.Message |
+            Should -BeLike "*Capture the container's actual settings with: docker inspect ed-fi-api --format '{{json .Config.Env}}'"
+        $failure.Exception.Message | Should -Not -BeLike "*SENTINEL-DO-NOT-ECHO*"
+    }
+
     It "throws when the environment file declares packages without enabling the ApiSchema path" {
         $script:environmentFileLines = @(
             "USE_API_SCHEMA_PATH=false"
@@ -1733,16 +1801,65 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
     It 'uses the last declaration of a repeated key, which is what the compose file itself sees' {
         # Declaration order decides a referencing line's value, but for the key being read it is the
         # LAST declaration that Compose hands to the compose file. Both rules have to hold at once.
+        #
+        # Asserted on the file reader directly rather than through the whole gate, because a repeated GATE
+        # key is now rejected before anything is compared (the case below). The last-wins rule still
+        # decides what this reader takes - that rejection exists precisely BECAUSE the package reader
+        # takes the first declaration while this one takes the last.
         $script:environmentFileLines = @(
             "USE_API_SCHEMA_PATH=true"
             "API_SCHEMA_PATH=/first/ApiSchema"
             "API_SCHEMA_PATH=/last/ApiSchema"
         )
-        $script:stubContainerEnvironment["AppSettings__ApiSchemaPath"] = "/last/ApiSchema"
+        $sequential = Resolve-DotenvFileSequentially -Path (New-EnvironmentFileFixture)
+
+        Get-DmsEnvironmentFileDeclaredValue `
+            -ResolvedEnvironmentFile $sequential `
+            -Name "API_SCHEMA_PATH" `
+            -DefaultValue "" |
+            Should -BeExactly "/last/ApiSchema"
+    }
+
+    It "reports the file-side failure when the environment file declares <Label> more than once" -ForEach @(
+        @{ Label = "SCHEMA_PACKAGES"; Lines = @(
+                "USE_API_SCHEMA_PATH=true"
+                "API_SCHEMA_PATH=/app/ApiSchema"
+                "SCHEMA_PACKAGES='[{""name"":""EdFi.ApiSchema.Package1""}]'"
+                "SCHEMA_PACKAGES='[{""name"":""EdFi.ApiSchema.Package1""},{""name"":""EdFi.ApiSchema.Package2""}]'"
+            )
+        }
+        @{ Label = "API_SCHEMA_PATH"; Lines = @(
+                "USE_API_SCHEMA_PATH=true"
+                "API_SCHEMA_PATH=/first/ApiSchema"
+                "API_SCHEMA_PATH=/app/ApiSchema"
+            )
+        }
+        @{ Label = "USE_API_SCHEMA_PATH"; Lines = @(
+                "USE_API_SCHEMA_PATH=false"
+                "USE_API_SCHEMA_PATH=true"
+                "API_SCHEMA_PATH=/app/ApiSchema"
+            )
+        }
+    ) {
+        # A duplicated gate key is legal Compose, but the two sides of this gate then read the same file
+        # with two parsers that disagree on which declaration wins: Get-QuotedEnvJson - behind
+        # Get-SchemaPackagesFromEnvironmentFile, which is both the expected side and the provisioner's own
+        # reader - matches the FIRST SCHEMA_PACKAGES declaration, while Compose delivers the LAST one to
+        # the container. That produced a real but misattributed abort: "the container received N
+        # package(s)" with a remediation asking for a teardown and re-run that reproduces it every time,
+        # over a file the developer can simply fix. A supplied -EnvironmentFile is a documented input, so
+        # this has to be reported against the file rather than pinned for tracked files alone.
+        #
+        # Each fixture's container AGREES with the last declaration, so a check placed after the
+        # comparisons would let all three pass. The two scalars are held to the same rule as
+        # SCHEMA_PACKAGES because their agreement with Compose otherwise rests on which declaration each
+        # reader happens to take.
+        $script:environmentFileLines = $Lines
 
         { Assert-DmsContainerSchemaEnvironment `
                 -EnvironmentFilePath (New-EnvironmentFileFixture) `
-                -ContainerName "ed-fi-api" } | Should -Not -Throw
+                -ContainerName "ed-fi-api" } |
+            Should -Throw -ExpectedMessage "DMS E2E setup mismatch: the environment file *declares $Label more than once.*Remove the duplicate declaration(s) from the environment file."
     }
 
     It "throws when the environment file spells USE_API_SCHEMA_PATH as <Label>" -ForEach @(
@@ -1833,6 +1950,25 @@ Describe "Get-DmsContainerEnvironment reads the container environment and fails 
             Should -Be "Host=dms-postgresql;Database=edfi_e2e;Username=postgres"
         $containerEnvironment["SCHEMA_PACKAGES"] |
             Should -Be '[{"name":"EdFi.ApiSchema.Package1","version":"1.0.0"}]'
+    }
+
+    It "keeps the literal newlines inside a multi-line SCHEMA_PACKAGES entry" {
+        # The shape production actually hands this reader: .env.e2e declares SCHEMA_PACKAGES='[ across
+        # several lines, so the container's .Config.Env entry carries literal newlines. The reader splits
+        # on the FIRST '=' and keeps the remainder verbatim, which is what makes the value parseable by
+        # Get-DmsContainerSchemaPackage - a move to line-splitting, or a trim, would truncate exactly the
+        # value the gate compares, and every other case here is single-line.
+        $multiLineValue = @'
+[
+  {"name":"EdFi.ApiSchema.Package1","version":"1.0.0"},
+  {"name":"EdFi.ApiSchema.Package2","version":"1.0.0"}
+]
+'@
+        $script:stubDockerOutput = ConvertTo-Json -Compress -InputObject @("SCHEMA_PACKAGES=$multiLineValue")
+
+        $containerEnvironment = Get-DmsContainerEnvironment -ContainerName "ed-fi-api"
+
+        $containerEnvironment["SCHEMA_PACKAGES"] | Should -BeExactly $multiLineValue
     }
 
     It "keeps an entry whose value is empty, so a blank container value stays distinguishable from an absent one" {
