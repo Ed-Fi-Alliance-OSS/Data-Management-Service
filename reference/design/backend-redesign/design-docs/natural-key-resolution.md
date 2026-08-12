@@ -185,7 +185,7 @@ Runtime readers (each will become an implementation ticket):
 | Corruption-canary verification | CTEs comparing request identity vs re-projected root state | RI canary deleted; abstract identity drift covered by dedicated parity/corruption pins |
 | POST upsert detection | The composite write path's capture predicate (a `ReferentialId` subselect) plus a standalone fallback lookup | Natural-key capture predicate + `UX_<R>_NK` fallback probe |
 | Descriptor upsert detection | `ReferentialId` probe in the descriptor write handler | Lowered-URI + `ResourceKeyId` probe |
-| Descriptor-valued query filters | Query preprocessor lowercases + hashes the URI | Core query validation first rejects non-ASCII or NUL URI values; the same preprocessor lowercases the validated value and the resolver probes the descriptor lower-URI index instead |
+| Descriptor-valued query filters | Query preprocessor lowercases + hashes the URI | Backend relational query preprocessing identifies descriptor-id targets from compiled query metadata, rejects non-ASCII or NUL URI values as 400 validation failures, then lowercases the validated value and probes the descriptor lower-URI index |
 | 409 duplicate-identity messages | Rebuilds NK column lists from `ReferentialIdentityMaintenance` trigger metadata | Re-sourced from compiled natural-key probe metadata (severed *before* the triggers drop) |
 
 Verified non-consumers (these will be untouched by this design): row locking (`dms.Document` by `DocumentId`),
@@ -480,12 +480,17 @@ values directly. They must change as follows:
 - For a descriptor reference in a resource body, Core's descriptor extraction validates the raw URI
   at its concrete request JSON path before constructing the normalized descriptor identity. A
   failure stops the write before the reference resolver is invoked.
-- For a query field compiled to a descriptor-id target, Core query validation uses that compiled
-  target metadata to validate the query value before backend preprocessing. A failure uses the
-  existing query-validation response shape and returns 400. `RelationalQueryRequestPreprocessor`
-  must consume only the validated value and assert the ASCII-without-NUL invariant before
-  lowercasing; it must not treat non-ASCII or NUL input as an unresolved descriptor that produces an
-  empty page.
+- For a query field compiled to a descriptor-id target, the relational backend performs the
+  descriptor ASCII validation during query preprocessing. Core query validation remains responsible
+  for generic query-field recognition, scalar type validation, and query-element construction, but it
+  does not own `RelationalQueryFieldTarget.DescriptorIdColumn`; that target is backend compiled
+  metadata. `RelationalQueryRequestPreprocessor` therefore uses the selected
+  `RelationalQueryCapability` to identify descriptor-id targets, validates the query value before it
+  creates a descriptor reference or calls the resolver, and surfaces a failure with the existing
+  path-attributed 400 query-validation response shape. The failure must not be represented as
+  `RelationalQueryPreprocessingOutcome.EmptyPage`, because malformed input is not a lookup miss.
+  Only after validation may the preprocessor lowercase the value with the shared
+  validated-ASCII-without-NUL helper.
 
 Here, "before normalization" means before descriptor-specific case normalization. Ordinary request
 parsing, schema validation, coercion, profile shaping, and the existing trimming rules may already
@@ -549,14 +554,20 @@ will all keep their current shape.
 
 ### Query-time descriptor filters
 
-The resolver-facing query preprocessor will need no result-contract change: it already consumes
-`IReferenceResolver`, and its lowercase value will feed the descriptor lower-URI probe instead of a
-hash. The implementation does change before that point: Core query validation must identify fields
-whose compiled target is `RelationalQueryFieldTarget.DescriptorIdColumn`, reject non-ASCII or NUL
-values with the existing path-attributed 400 response, and only then pass query elements to
-`RelationalQueryRequestPreprocessor`. The preprocessor replaces its unchecked
-`ToLowerInvariant()` call with the shared validated-ASCII-without-NUL lowercase helper as an
-invariant check.
+The resolver-facing query preprocessor still consumes `IReferenceResolver`, and its lowercase value
+will feed the descriptor lower-URI probe instead of a hash. The validation boundary moves into that
+preprocessor because descriptor-id query targets are backend compiled relational metadata, not Core
+validation metadata. Core continues to parse and validate generic query fields/types, then passes
+query elements downstream. `RelationalQueryRequestPreprocessor` inspects the selected
+`RelationalQueryCapability`, identifies fields whose compiled target is
+`RelationalQueryFieldTarget.DescriptorIdColumn`, rejects non-ASCII or NUL values with the existing
+path-attributed 400 response, and only then creates a descriptor reference or invokes
+`IReferenceResolver`. This requires a validation-failure preprocessing path (or equivalent typed
+exception translated by the repository/frontend) rather than reusing
+`RelationalQueryPreprocessingOutcome.EmptyPage`: a valid descriptor URI that does not resolve still
+returns an empty page, but malformed URI input is a client validation error. The preprocessor
+replaces its unchecked `ToLowerInvariant()` call with the shared validated-ASCII-without-NUL
+lowercase helper.
 GET-by-id, `?id=`, link injection, ownership authorization, and descriptor paging will not get
 result-contract changes. Change Query route/response/authorization contracts remain
 unchanged, but `/deletes` recreated-row detection follows the lowered-URI + `ResourceKeyId`
@@ -1026,9 +1037,10 @@ after T8, no production contract may still carry a `ReferentialId` member.**
 - **T3 — Add descriptor ASCII validation + `UX_Descriptor_UriLowered_ResourceKeyId`.** Reject
   non-ASCII or NUL descriptor URI values on descriptor writes, descriptor references, and
   descriptor-valued query filters. This changes the current implementations: Core descriptor
-  identity/reference extraction validates before constructing lowercased identities, Core query
-  validation identifies descriptor-id query targets and rejects them before backend preprocessing,
-  and downstream normalization sites replace unchecked `ToLowerInvariant()` calls with the shared
+  identity/reference extraction validates before constructing lowercased identities, relational
+  query preprocessing identifies backend-compiled descriptor-id query targets and rejects malformed
+  query values before descriptor-reference creation or resolver lookup, and downstream
+  normalization sites replace unchecked `ToLowerInvariant()` calls with the shared
   validated-ASCII-without-NUL helper. Emit the final lower-storage index shape on both engines:
   PostgreSQL gets the unique expression index on `lower("Uri" COLLATE "C"), "ResourceKeyId"` with no
   new column; SQL Server gets the non-persisted `UriLowered AS LOWER([Uri])` computed column and a

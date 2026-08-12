@@ -80,20 +80,21 @@ It is used for:
 
 Descriptor URI validation is request validation, not lookup miss handling. After ordinary request
 canonicalization but before descriptor-specific lowercasing, every client-supplied descriptor URI
-must contain only characters in U+0000 through U+007F. The validation boundary depends on the entry
-point:
+must contain only characters in U+0001 through U+007F; U+0000 NUL is invalid. The validation
+boundary depends on the entry point:
 
 - During write identity/reference extraction, Core validates each descriptor reference at its
   concrete request JSON path before constructing its normalized `DocumentIdentity`. For a descriptor
   resource POST/PUT, Core first derives the identity URI from the canonicalized `$.namespace` + `#` +
   `$.codeValue`; it validates the two client-supplied components and attributes failures to
   `$.namespace` and/or `$.codeValue` before lowercasing the derived URI.
-- During Core query validation, every query element whose compiled target is
-  `RelationalQueryFieldTarget.DescriptorIdColumn` is validated before backend preprocessing.
-  `RelationalQueryRequestPreprocessor` receives only validated values and asserts the ASCII
-  invariant before it creates a descriptor reference or calls `IReferenceResolver.ResolveAsync`. A
-  non-ASCII value produces the existing path-attributed query-validation 400, not an empty result
-  page.
+- During relational query preprocessing, `RelationalQueryRequestPreprocessor` uses the selected
+  `RelationalQueryCapability` to identify query elements whose backend-compiled target is
+  `RelationalQueryFieldTarget.DescriptorIdColumn`, validates those values, and rejects non-ASCII or
+  NUL input before it creates a descriptor reference or calls `IReferenceResolver.ResolveAsync`.
+  Core query validation remains responsible for generic field/type validation and does not own
+  backend compiled target metadata. Invalid descriptor query input produces the existing
+  path-attributed query-validation 400, not an empty result page.
 
 Any validation failure terminates the operation before a descriptor natural-key resolver or
 descriptor target lookup is issued. Resolver batching, request-local memoization, the write
