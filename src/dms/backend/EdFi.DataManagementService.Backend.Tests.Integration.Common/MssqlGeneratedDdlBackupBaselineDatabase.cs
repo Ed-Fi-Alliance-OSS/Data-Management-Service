@@ -126,15 +126,24 @@ public sealed class MssqlGeneratedDdlBackupBaselineDatabase : IAsyncDisposable
 
             return new(restoredDatabase, () => ReturnLeaseAsync(restoredDatabase));
         }
-        catch
+        catch (Exception primaryException)
         {
+            List<Exception> cleanupExceptions = [];
             if (!string.IsNullOrWhiteSpace(databaseName))
             {
-                MssqlTestDatabaseHelper.DropDatabaseIfExists(databaseName);
+                try
+                {
+                    await MssqlTestDatabaseHelper.DropDatabaseUnderLifecycleGateAsync(databaseName);
+                }
+                catch (Exception cleanupException)
+                {
+                    cleanupExceptions.Add(cleanupException);
+                }
             }
 
             ReleaseActiveLease();
-            throw;
+            MssqlLifecycleExceptionAggregator.Throw(primaryException, cleanupExceptions);
+            throw new UnreachableException();
         }
     }
 
@@ -276,12 +285,42 @@ public sealed class MssqlGeneratedDdlBackupBaselineDatabase : IAsyncDisposable
             restoreOptions.Add("REPLACE");
 
             var sql = $"""
-                RESTORE DATABASE {MssqlTestDatabaseHelper.QuoteIdentifier(databaseName)}
-                FROM DISK = N'{MssqlTestDatabaseHelper.EscapeSqlLiteral(backupPath)}'
-                WITH {string.Join("," + Environment.NewLine + "    ", restoreOptions)};
+                BEGIN TRY
+                    IF DB_ID(N'{MssqlTestDatabaseHelper.EscapeSqlLiteral(databaseName)}') IS NOT NULL
+                    BEGIN
+                        ALTER DATABASE {MssqlTestDatabaseHelper.QuoteIdentifier(databaseName)}
+                            SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+                    END;
+
+                    RESTORE DATABASE {MssqlTestDatabaseHelper.QuoteIdentifier(databaseName)}
+                    FROM DISK = N'{MssqlTestDatabaseHelper.EscapeSqlLiteral(backupPath)}'
+                    WITH {string.Join("," + Environment.NewLine + "    ", restoreOptions)};
+
+                    ALTER DATABASE {MssqlTestDatabaseHelper.QuoteIdentifier(databaseName)} SET MULTI_USER;
+                END TRY
+                BEGIN CATCH
+                    BEGIN TRY
+                        IF DB_ID(N'{MssqlTestDatabaseHelper.EscapeSqlLiteral(databaseName)}') IS NOT NULL
+                        BEGIN
+                            ALTER DATABASE {MssqlTestDatabaseHelper.QuoteIdentifier(
+                    databaseName
+                )} SET MULTI_USER;
+                        END;
+                    END TRY
+                    BEGIN CATCH
+                    END CATCH;
+
+                    THROW;
+                END CATCH;
                 """;
 
-            await MssqlTestDatabaseHelper.ExecuteAdminNonQueryAsync(sql, commandTimeoutSeconds);
+            await MssqlDatabaseLifecycleCoordinator.ExecuteAsync(async connection =>
+            {
+                await using SqlCommand command = connection.CreateCommand();
+                command.CommandText = sql;
+                command.CommandTimeout = commandTimeoutSeconds;
+                await command.ExecuteNonQueryAsync();
+            });
         }
         catch
         {
@@ -375,10 +414,26 @@ public sealed class MssqlGeneratedDdlBackupBaselineDatabase : IAsyncDisposable
 
                 backupBaselineState = new(backupPath, backupFiles, baselineDatabase.ResetPlan);
             }
-            catch
+            catch (Exception primaryException)
             {
                 outcome = "Failed";
-                throw;
+                List<Exception> cleanupExceptions = [];
+                if (baselineDatabase is not null)
+                {
+                    MssqlGeneratedDdlTestDatabase cleanupDatabase = baselineDatabase;
+                    baselineDatabase = null;
+                    try
+                    {
+                        await cleanupDatabase.DisposeAsync();
+                    }
+                    catch (Exception cleanupException)
+                    {
+                        cleanupExceptions.Add(cleanupException);
+                    }
+                }
+
+                MssqlLifecycleExceptionAggregator.Throw(primaryException, cleanupExceptions);
+                throw new UnreachableException();
             }
             finally
             {

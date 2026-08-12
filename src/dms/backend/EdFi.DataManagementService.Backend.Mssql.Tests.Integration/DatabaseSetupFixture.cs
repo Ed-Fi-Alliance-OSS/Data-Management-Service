@@ -29,7 +29,7 @@ public class DatabaseSetupFixture
         );
 
         _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
-        MssqlTestDatabaseHelper.CreateDatabase(_databaseName);
+        await MssqlTestDatabaseHelper.CreateDatabaseUnderLifecycleGateAsync(_databaseName);
 
         var connectionString = MssqlTestDatabaseHelper.BuildConnectionString(_databaseName);
 
@@ -73,12 +73,58 @@ public class DatabaseSetupFixture
     [OneTimeTearDown]
     public async Task OneTimeTearDown()
     {
-        await MssqlBackendBaselineCache.DisposeAllAsync();
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            return;
+        }
+
+        List<Exception> teardownExceptions = [];
+
+        try
+        {
+            await MssqlBackendBaselineCache.DisposeAllAsync();
+        }
+        catch (Exception exception)
+        {
+            teardownExceptions.Add(exception);
+        }
 
         if (_databaseName is not null)
         {
-            MssqlTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+            try
+            {
+                await MssqlTestDatabaseHelper.DropDatabaseUnderLifecycleGateAsync(_databaseName);
+            }
+            catch (Exception exception)
+            {
+                teardownExceptions.Add(exception);
+            }
+
             _databaseName = null;
+        }
+
+        try
+        {
+            IReadOnlyList<MssqlRunOwnedDatabase> leakedDatabases =
+                await MssqlTestDatabaseHelper.CleanupRunOwnedDatabasesAsync();
+
+            if (leakedDatabases.Count != 0)
+            {
+                teardownExceptions.Add(
+                    new InvalidOperationException(
+                        $"The SQL Server integration test run leaked databases or snapshots: {string.Join(", ", leakedDatabases.Select(database => database.Name))}. The audit removed the leaked resources."
+                    )
+                );
+            }
+        }
+        catch (Exception exception)
+        {
+            teardownExceptions.Add(exception);
+        }
+
+        if (teardownExceptions.Count != 0)
+        {
+            MssqlLifecycleExceptionAggregator.Throw(teardownExceptions);
         }
     }
 }
