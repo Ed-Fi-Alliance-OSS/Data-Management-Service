@@ -33,8 +33,8 @@ In the baseline redesign, DMS:
 In AOT mode, a separate build/CLI step produces a **Mapping Pack**:
 
 - a single binary blob (protobuf payload compressed with zstd),
-- containing the compiled relational mapping artifacts, including natural-key probe metadata, for a
-  specific `(EffectiveSchemaHash, Dialect, RelationalMappingVersion)`,
+- containing the compiled relational mapping artifacts, including typed natural-key probe metadata,
+  for a specific `(EffectiveSchemaHash, Dialect, RelationalMappingVersion)`,
 - distributed as a file (primary option) and loaded by DMS on demand.
 
 At runtime, after a request is routed to a database instance and DMS reads that database’s recorded `EffectiveSchemaHash`, DMS:
@@ -351,7 +351,7 @@ A CLI utility (can be a new executable or a mode of the DDL generator) that:
 - loads the effective `ApiSchema.json` set,
 - computes `EffectiveSchemaHash` (same algorithm as `data-model.md`),
 - derives `RelationalResourceModel` per resource,
-- compiles dialect-specific plans and storage-resolved natural-key probes into a `MappingSet`,
+- compiles dialect-specific plans and storage-resolved, typed natural-key probes into a `MappingSet`,
 - serializes to protobuf payload,
 - zstd-compresses it,
 - writes the `.mpack` file.

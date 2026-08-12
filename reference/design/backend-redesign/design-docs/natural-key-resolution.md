@@ -276,10 +276,13 @@ The probe metadata (`NaturalKeyProbeTargets`, `OwnNaturalKeyProbesByResource`,
 itself — never from trigger metadata, never by parsing constraint names (dialect identifier
 shortening hash-truncates names), and never by converting abstract discriminator strings to resource
 keys at runtime. It will be storage-resolved, so key-unified identity parts will bind their canonical
-stored columns and abstract probes will bind the stored concrete `ResourceKeyId`. Pack producers will
-serialize that storage-resolved metadata into `.mpack` payloads so AOT consumers can reconstruct the
-same `MappingSet` without running the probe compiler. The metadata will not be serialized into DDL
-manifests, so it will cause zero golden-manifest churn.
+stored columns and abstract probes will bind the stored concrete `ResourceKeyId`. Each probe key entry
+will also carry its command-binding metadata: scalar keys carry `RelationalScalarType`; descriptor-valued
+identity parts carry the descriptor resource whose compile-time `ResourceKeyId` drives the inline
+descriptor join. Pack producers will serialize that storage-resolved, typed metadata into `.mpack`
+payloads so AOT consumers can reconstruct the same `MappingSet` without running the probe compiler or
+re-deriving abstract identity key types from `ApiSchema.json`. The metadata will not be serialized into
+DDL manifests, so it will cause zero golden-manifest churn.
 
 ### POST upsert detection
 
@@ -871,16 +874,18 @@ after T8, no production contract may still carry a `ReferentialId` member.**
   (reference targets, own-key probes, the descriptor probe) from the relational model —
   never from trigger metadata, constraint names, or discriminator string parsing — with an
   empty-identity compile guard and an every-resource parity guard against the live trigger derivation.
-  Serialize the storage-resolved probe records into PackFormatVersion 1 mapping packs: target and
-  own-key records live with their resource packs, and the shared descriptor probe lives at payload
-  scope. AOT decode reconstructs the mapping-set dictionaries from those authoritative records and
-  does not rerun the probe compiler.
+  Serialize the storage-resolved, typed probe records into PackFormatVersion 1 mapping packs: target
+  and own-key records live with their resource packs, and the shared descriptor probe lives at payload
+  scope. Each serialized key entry includes the physical column plus scalar type or descriptor-resource
+  binding metadata, so abstract probes are AOT-self-contained even though abstract resources do not
+  serialize a `RelationalResourceModel`. AOT decode reconstructs the mapping-set dictionaries from
+  those authoritative records and does not rerun the probe compiler.
   Re-source the 409 `duplicateIdentityValues` machinery from the compiled probes, severing its
   trigger-metadata dependency before the triggers drop. AC: golden DDL/manifest diffs show only the
   abstract `ResourceKeyId` column/view/trigger-value change for this part; abstract identity-column
   consumers exclude `ResourceKeyId` and `Discriminator` from identity equality; parity guard green for
-  every resource; mapping-pack round trips reproduce all three mapping-set probe contracts with
-  semantic key-column order intact; 409 responses unchanged.
+  every resource; mapping-pack round trips reproduce all three mapping-set probe contracts with typed
+  key binding metadata and semantic key-column order intact; 409 responses unchanged.
 - **T3 — Add descriptor ASCII validation + `UX_Descriptor_UriLowered_ResourceKeyId`.** Reject
   non-ASCII descriptor URI values on descriptor writes, descriptor references, and
   descriptor-valued query filters. This changes the current implementations: Core descriptor
@@ -1042,9 +1047,10 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
   rename, SQL Server identity collation behavior, PostgreSQL byte-sensitive behavior, and concrete
   `ResourceKeyId` population from compile-time member metadata.
 - **Mapping-pack round-trip tests** prove target probes, own-key probes, and the shared descriptor
-  probe survive PackFormatVersion 1 encode/decode with storage-resolved columns and semantic
-  key-column order unchanged; malformed presence, resource-kind, column, and dialect combinations
-  fail fast.
+  probe survive PackFormatVersion 1 encode/decode with storage-resolved columns, typed key binding
+  metadata, and semantic key-column order unchanged; malformed presence, resource-kind, column,
+  binding, and dialect combinations fail fast. Abstract target fixtures must prove no `ApiSchema`
+  re-derivation is needed to build typed probe commands.
 - **Dialect SQL unit tests**: statement shape independent of batch size (PostgreSQL), OPENJSON +
   FORCE ORDER + leftmost-input pins, explicit DMS identity collation on every textual OPENJSON key
   operand, and the parameter-budget guard (SQL Server), plus the union-projection single-statement

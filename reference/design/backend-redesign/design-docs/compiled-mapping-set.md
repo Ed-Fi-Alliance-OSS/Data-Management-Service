@@ -417,11 +417,28 @@ public enum NaturalKeyProbeTargetKind
     Abstract
 }
 
+public abstract record NaturalKeyProbeKeyBinding
+{
+    public sealed record Scalar(RelationalScalarType ScalarType) : NaturalKeyProbeKeyBinding;
+
+    // The request-side key value is a descriptor URI. The command builder resolves it through the
+    // descriptor probe using DescriptorResource's compile-time ResourceKeyId, then compares the
+    // resulting descriptor DocumentId to Column.
+    public sealed record Descriptor(QualifiedResourceName DescriptorResource) : NaturalKeyProbeKeyBinding;
+}
+
+public sealed record NaturalKeyProbeKeyColumn(
+    DbColumnName Column,
+    NaturalKeyProbeKeyBinding Binding
+);
+
 public sealed record NaturalKeyProbeTarget(
     QualifiedResourceName Resource,
     NaturalKeyProbeTargetKind Kind,
     DbTableName Table,
-    IReadOnlyList<DbColumnName> KeyColumns,
+    // Storage-resolved semantic identity order. Entries are self-contained for command builders,
+    // including abstract probes whose identity-table model is not serialized into mapping packs.
+    IReadOnlyList<NaturalKeyProbeKeyColumn> KeyColumns,
     DbColumnName DocumentIdColumn,
     // Present for abstract probes so the resolver can return the concrete member key for compatibility checks.
     DbColumnName? ResourceKeyIdColumn = null
@@ -430,7 +447,8 @@ public sealed record NaturalKeyProbeTarget(
 public sealed record OwnNaturalKeyProbe(
     QualifiedResourceName Resource,
     DbTableName RootTable,
-    IReadOnlyList<DbColumnName> KeyColumns,
+    // Storage-resolved semantic natural-key order.
+    IReadOnlyList<NaturalKeyProbeKeyColumn> KeyColumns,
     DbColumnName DocumentIdColumn
 );
 
