@@ -7,7 +7,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Model;
 
-namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
+namespace EdFi.DataManagementService.Backend.Tests.Common;
 
 /// <summary>
 /// Builds the inputs the real regular-resource and descriptor page keyset planners need, so the

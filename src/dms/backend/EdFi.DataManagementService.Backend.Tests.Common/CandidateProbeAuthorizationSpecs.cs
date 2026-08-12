@@ -6,7 +6,7 @@
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
 
-namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
+namespace EdFi.DataManagementService.Backend.Tests.Common;
 
 /// <summary>
 /// Builds one authorization specification per shape the page candidate compiler emits, for the

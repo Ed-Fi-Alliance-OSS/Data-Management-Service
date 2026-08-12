@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
@@ -149,8 +150,17 @@ public class Given_A_Postgresql_Compiled_Candidate_Relation
     [OneTimeTearDown]
     public async Task OneTimeTearDown()
     {
-        await _dataSource.DisposeAsync();
-        await _database.DisposeAsync();
+        // Both fields are guarded because one-time setup can fail between the two assignments. An
+        // unguarded dispose would then throw over the real setup failure and hide it.
+        if (_dataSource is not null)
+        {
+            await _dataSource.DisposeAsync();
+        }
+
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
     }
 
     [Test]
