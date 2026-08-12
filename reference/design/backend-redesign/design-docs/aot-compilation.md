@@ -285,6 +285,12 @@ enum SqlDialect {
   SQL_DIALECT_MSSQL = 2;
 }
 
+enum ResourceStorageKind {
+  RESOURCE_STORAGE_KIND_UNSPECIFIED = 0;
+  RESOURCE_STORAGE_KIND_RELATIONAL_TABLES = 1;
+  RESOURCE_STORAGE_KIND_SHARED_DESCRIPTOR_TABLE = 2;
+}
+
 message MappingPackEnvelope {
   // Self-identifying header
   string effective_schema_hash = 1;
@@ -319,6 +325,7 @@ message ResourcePack {
   string project_name = 1;
   string resource_name = 2;
   bool is_abstract_resource = 3;
+  ResourceStorageKind storage_kind = 4; // unspecified for abstract; required for concrete
 
   // Plan packs always include dialect-specific compiled plans.
   RelationalResourceModel relational_model = 20;

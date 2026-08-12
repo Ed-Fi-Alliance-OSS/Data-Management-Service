@@ -87,6 +87,7 @@ Stored in payload (authoritative):
 - SQL text and deterministic parameter/binding metadata
 - deterministic indices/ordinals and ordering-sensitive lists
 - deterministic batching metadata
+- concrete resource storage kind (`RelationalTables` vs `SharedDescriptorTable`)
 - storage-resolved natural-key probe table/column identifiers, semantic key-column order, and
   per-key binding metadata needed to build typed lookup commands
 
@@ -95,7 +96,7 @@ Derived at pack load/reconstruction time:
 - `JsonPathExpression` runtime objects (`Segments`) by compiling canonical JsonPath strings
 - table/column object references by lookup (`(schema, name)` for tables, `DbColumnName.value` within table for columns)
 - `NaturalKeyProbeTarget.Resource` / `Kind` and `OwnNaturalKeyProbe.Resource` from the enclosing
-  `ResourcePack`
+  `ResourcePack` metadata (`is_abstract_resource` and `storage_kind`)
 
 Consumers MUST reconstruct executor-facing contracts from these normalized payload values and MUST NOT infer bindings from SQL text parsing.
 
@@ -264,16 +265,22 @@ Given `(expectedEffectiveSchemaHash, expectedDialect, expectedRelationalMappingV
    - `resources` are unique by `(project_name, resource_name)` and sorted
    - every `ResourcePack` matches exactly one `resource_keys` entry by `(project_name, resource_name)`,
      and their `is_abstract_resource` values agree
+   - every abstract `ResourcePack` has `storage_kind == RESOURCE_STORAGE_KIND_UNSPECIFIED`; every
+     concrete `ResourcePack` has `storage_kind` set to either
+     `RESOURCE_STORAGE_KIND_RELATIONAL_TABLES` or
+     `RESOURCE_STORAGE_KIND_SHARED_DESCRIPTOR_TABLE`
    - `descriptor_probe_target` is present; its table identifier and all required column identifiers
      are present, and its column identifiers are distinct; `uri_lowered_column` is omitted for
      PostgreSQL and is required for SQL Server
    - For each `ResourcePack`:
      - if `is_abstract_resource=false`, has `relational_model`, `write_plan`, and `read_plan`
-     - natural-key probe presence matches resource storage:
-       - an abstract resource has `natural_key_probe_target` and does not have `own_natural_key_probe`
-       - a concrete resource with `ResourceStorageKind.RelationalTables` has both probe records
-       - a concrete resource with `ResourceStorageKind.SharedDescriptorTable` has neither record and
-         uses the payload-level `descriptor_probe_target`
+     - natural-key probe presence matches serialized resource storage:
+       - an abstract resource has `natural_key_probe_target`, does not have
+         `own_natural_key_probe`, and leaves `storage_kind` unspecified
+       - a concrete resource with `storage_kind=RESOURCE_STORAGE_KIND_RELATIONAL_TABLES` has both
+         probe records
+       - a concrete resource with `storage_kind=RESOURCE_STORAGE_KIND_SHARED_DESCRIPTOR_TABLE` has
+         neither record and uses the payload-level `descriptor_probe_target`
      - every natural-key probe has a non-empty, duplicate-free `key_columns` list in authoritative
        semantic identity order; `document_id_column` is not a key column
      - every probe key-column entry has exactly one binding shape:
@@ -284,7 +291,7 @@ Given `(expectedEffectiveSchemaHash, expectedDialect, expectedRelationalMappingV
          `descriptor_probe_target`
        Consumers use this serialized metadata to build typed PostgreSQL `unnest` / SQL Server
        `OPENJSON WITH` bindings and descriptor inline joins; they must not rederive abstract probe
-       key types from `ApiSchema.json` at pack-load time.
+       key types or concrete resource storage kind from `ApiSchema.json` at pack-load time.
      - an abstract natural-key probe has `resource_key_id_column`, which is not a key column; a
        concrete natural-key probe omits `resource_key_id_column`
      - every own-natural-key probe has a non-empty, duplicate-free `key_columns` list in authoritative
@@ -326,11 +333,12 @@ Given `(expectedEffectiveSchemaHash, expectedDialect, expectedRelationalMappingV
    - preserve authoritative payload order for all ordering-sensitive collections (no runtime resorting)
    - bind parameters by explicit metadata (`column_bindings`, query parameter inventories), never by SQL-text parsing
    - construct `NaturalKeyProbeTargets` and `OwnNaturalKeyProbesByResource` from the per-resource
-     probe records, deriving `Resource` and `Kind` from the enclosing `ResourcePack`, and construct
-     `DescriptorProbeTarget` from the payload-level record
+     probe records, deriving `Resource` and `Kind` from the enclosing `ResourcePack` metadata, and
+     construct `DescriptorProbeTarget` from the payload-level record
    - treat serialized probe table/column identifiers, key-column order, and key binding metadata as
      authoritative; never rederive probes from trigger metadata, constraint names, discriminator
-     strings, SQL text, or `ApiSchema.json` during pack load
+     strings, SQL text, or `ApiSchema.json` during pack load; never infer concrete storage kind from
+     probe absence
 8. Validate `dms.ResourceKey` mapping in the target database (fast path if available; otherwise full diff) and cache:
    - `(ProjectName, ResourceName) -> ResourceKeyId`
    - `ResourceKeyId -> (ProjectName, ResourceName, ResourceVersion)`
@@ -348,7 +356,8 @@ During step 7, consumers MUST fail fast with deterministic errors when any recon
 - duplicate `document_reference_bindings[*].identity_bindings[*].reference_json_path` values that are not confined to one same-site flattened reference group
 - duplicate/ambiguous parameter names where uniqueness is required
 - unsupported dialect values when deriving keyset table constants
-- a `ResourcePack` with no matching resource-key entry or a conflicting `is_abstract_resource` value
+- a `ResourcePack` with no matching resource-key entry, a conflicting `is_abstract_resource` value,
+  or a missing/unexpected concrete `storage_kind`
 - missing or unexpected natural-key probe records for a resource's storage kind
 - empty or duplicate probe key-column lists, malformed/missing probe key binding metadata, or probe
   projection columns included in key equality
@@ -388,6 +397,12 @@ enum SqlDialect {
 enum CompressionAlgorithm {
   COMPRESSION_ALGORITHM_UNSPECIFIED = 0;
   COMPRESSION_ALGORITHM_ZSTD = 1;
+}
+
+enum ResourceStorageKind {
+  RESOURCE_STORAGE_KIND_UNSPECIFIED = 0;
+  RESOURCE_STORAGE_KIND_RELATIONAL_TABLES = 1;
+  RESOURCE_STORAGE_KIND_SHARED_DESCRIPTOR_TABLE = 2;
 }
 
 message MappingPackEnvelope {
@@ -452,6 +467,9 @@ message ResourcePack {
   string project_name = 1;
   string resource_name = 2;
   bool is_abstract_resource = 3;
+  // Unspecified for abstract resources; required for concrete resources so consumers can validate
+  // probe presence without rederiving storage kind from ApiSchema.json or probe absence.
+  ResourceStorageKind storage_kind = 4;
 
   reserved 10; // formerly identity_projection_plan (now represented by read_plan.reference_identity_projection_table_plans)
 

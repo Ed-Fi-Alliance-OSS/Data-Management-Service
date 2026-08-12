@@ -289,8 +289,13 @@ will also carry its command-binding metadata: scalar keys carry `RelationalScala
 identity parts carry the descriptor resource whose compile-time `ResourceKeyId` drives the inline
 descriptor join. Pack producers will serialize that storage-resolved, typed metadata into `.mpack`
 payloads so AOT consumers can reconstruct the same `MappingSet` without running the probe compiler or
-re-deriving abstract identity key types from `ApiSchema.json`. The metadata will not be serialized into
-DDL manifests, so it will cause zero golden-manifest churn.
+re-deriving abstract identity key types from `ApiSchema.json`. Because shared-descriptor resources
+intentionally omit per-resource natural-key probes while relational-table resources require them,
+`.mpack` payloads must also serialize each concrete resource's `ResourceStorageKind`. Pack consumers
+validate probe presence against that field and must not infer storage kind from `ApiSchema.json`,
+descriptor naming conventions, or probe absence; otherwise a malformed relational resource pack could
+be accepted as though it were a descriptor resource. The metadata will not be serialized into DDL
+manifests, so it will cause zero golden-manifest churn.
 
 ### POST upsert detection
 
@@ -827,8 +832,9 @@ can cascade.
   `COLLATE "C"`, plus SQL Server
   non-persisted `dms.Descriptor.UriLowered` computed column and
   `UX_Descriptor_UriLowered_ResourceKeyId` index (definitions above).
-- Compiled natural-key probe metadata on the mapping set, serialized into mapping packs for AOT
-  reconstruction but omitted from DDL manifests (zero manifest churn).
+- Compiled natural-key probe metadata and concrete `ResourceStorageKind` on the mapping set,
+  serialized into mapping packs for AOT reconstruction but omitted from DDL manifests (zero manifest
+  churn).
 - `NaturalKeyReferenceResolver` + per-engine natural-key lookup command builders.
 
 ### To be changed
@@ -1089,11 +1095,12 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
   and diagnostic union views stay in parity with concrete root rows across insert, delete, identity
   rename, SQL Server identity collation behavior, PostgreSQL byte-sensitive behavior, and concrete
   `ResourceKeyId` population from compile-time member metadata.
-- **Mapping-pack round-trip tests** prove target probes, own-key probes, and the shared descriptor
-  probe survive PackFormatVersion 1 encode/decode with storage-resolved columns, typed key binding
-  metadata, and semantic key-column order unchanged; malformed presence, resource-kind, column,
-  binding, and dialect combinations fail fast. Abstract target fixtures must prove no `ApiSchema`
-  re-derivation is needed to build typed probe commands.
+- **Mapping-pack round-trip tests** prove target probes, own-key probes, serialized concrete
+  `ResourceStorageKind`, and the shared descriptor probe survive PackFormatVersion 1 encode/decode
+  with storage-resolved columns, typed key binding metadata, and semantic key-column order unchanged;
+  malformed presence, resource-kind, column, binding, and dialect combinations fail fast. Fixtures
+  must prove no `ApiSchema` re-derivation is needed to build typed probe commands or distinguish
+  relational-table resources from shared-descriptor resources.
 - **Dialect SQL unit tests**: statement shape independent of batch size (PostgreSQL), OPENJSON +
   FORCE ORDER + leftmost-input pins, explicit DMS identity collation on every textual OPENJSON key
   operand, and the parameter-budget guard (SQL Server), plus the union-projection single-statement
