@@ -1797,7 +1797,7 @@ This makes the physical order of the `UX_<Table>_RefKey` key columns important. 
 
 For DMS, emit `*_RefKey` with `DocumentId` last: `(<identity storage columns...>, DocumentId)`. The composite reference FKs that target `*_RefKey` must use the same target-column ordering. This preserves the uniqueness contract while giving `/deletes` a useful seek path for the anti-join against the live table.
 
-Descriptor `/deletes` uses the same conceptual anti-join and the same identity contract as descriptor writes, references, and filters: `(UriLowered, ResourceKeyId)`. The planner resolves the requested descriptor endpoint to its compile-time `ResourceKeyId` and compares the live descriptor URI with the lowered tombstoned `<namespace>#<codeValue>` value. The existing `UX_Descriptor_UriLowered_ResourceKeyId` serves this probe, so no separate descriptor identity index is needed. Because both sides use the ASCII-only lowered URI contract, a case-only descriptor recreation suppresses the old tombstone on both engines.
+Descriptor `/deletes` uses the same conceptual anti-join and the same identity contract as descriptor writes, references, and filters: `(UriLowered, ResourceKeyId)`. The planner resolves the requested descriptor endpoint to its compile-time `ResourceKeyId` and compares the live descriptor URI with the lowered tombstoned `<namespace>#<codeValue>` value. The existing `UX_Descriptor_UriLowered_ResourceKeyId` serves this probe, so no separate descriptor identity index is needed. Because both sides use the ASCII-without-NUL lowered URI contract, a case-only descriptor recreation suppresses the old tombstone on both engines.
 
 The shared `tracked_changes_edfi.Descriptor.Discriminator` remains only as a routing value for selecting historical rows belonging to the requested endpoint. The planner obtains that value from the resolved endpoint metadata independently of `ResourceKeyId`; it must not parse the discriminator or use it to probe or type-check `dms.Descriptor`.
 
@@ -2090,7 +2090,7 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
   `dms.Descriptor`; `Discriminator` appears only in the predicate that routes shared historical
   descriptor rows.
 - DB-behavior on PostgreSQL and SQL Server: deleting a descriptor and recreating it with the same
-  URI under ASCII-only casing differences suppresses the old descriptor tombstone, and also allows
+  URI under ASCII-without-NUL casing differences suppresses the old descriptor tombstone, and also allows
   resource `/deletes` recreation detection to resolve descriptor-valued identity parts to the
   recreated descriptor. Reusing the same URI for a different descriptor `ResourceKeyId` does not
   suppress the tombstone.

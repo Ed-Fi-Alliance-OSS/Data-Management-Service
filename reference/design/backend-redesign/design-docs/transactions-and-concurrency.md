@@ -73,7 +73,8 @@ It is used for:
 3. Group by target resource and resolve in one batched command:
    - concrete targets probe the target root's `UX_<R>_RefKey`;
    - abstract targets probe `{AbstractResource}Identity` by its `RefKey` shape and project concrete `ResourceKeyId`;
-   - descriptor targets probe `dms.Descriptor` by validated, lowered ASCII URI + `ResourceKeyId`.
+   - descriptor targets probe `dms.Descriptor` by validated, lowered ASCII-without-NUL URI +
+     `ResourceKeyId`.
 4. Map results back by explicit request ordinal so not-found failures preserve request JSON locations.
 
 ##### Descriptor URI ASCII validation boundary
@@ -98,9 +99,9 @@ boundary depends on the entry point:
 
 Any validation failure terminates the operation before a descriptor natural-key resolver or
 descriptor target lookup is issued. Resolver batching, request-local memoization, the write
-flattener, and key-unification logic therefore consume validated ASCII descriptor keys. Their
-normalization helpers must still assert the ASCII precondition rather than silently accepting
-arbitrary Unicode.
+flattener, and key-unification logic therefore consume validated ASCII-without-NUL descriptor keys.
+Their normalization helpers must still assert the ASCII-without-NUL precondition rather than
+silently accepting arbitrary Unicode.
 
 ##### Caching
 
@@ -236,9 +237,10 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
    - `DocumentIdentity`
    - document references with target resource, fully-flattened identity values, and request paths
    - descriptor references with target resource, concrete request paths, and URI values validated as
-     ASCII before normalization
+     ASCII without NUL before normalization
    - for descriptor resource writes, the URI derived from canonicalized `namespace` + `#` +
-     `codeValue`, validated before normalization with any failures attributed to the source fields
+     `codeValue`, validated as ASCII without NUL before normalization with any failures attributed to
+     the source fields
 2. Backend resolves references in bulk:
    - Use an ApiSchema-derived resolver to turn references into `DocumentId`s via generated natural-key probes, including:
      - self-contained identities
@@ -512,10 +514,10 @@ Ordering/paging contract:
 
 Query compilation patterns:
 - **Scalar query fields**: `queryFieldMapping` JSON path → derived root-table column → `r.Column = @value`
-- **Descriptor query fields**: validate the URI as ASCII → on failure return a path-attributed 400
-  before lookup → lowercase the validated URI → resolve `DescriptorId` via the descriptor lowered-URI
-  + `ResourceKeyId` index → `r.DescriptorIdColumn = @descriptorId`. A valid URI that does not resolve
-  still has the existing empty-match behavior.
+- **Descriptor query fields**: validate the URI as ASCII without NUL → on failure return a
+  path-attributed 400 before lookup → lowercase the validated URI → resolve `DescriptorId` via the
+  descriptor lowered-URI + `ResourceKeyId` index → `r.DescriptorIdColumn = @descriptorId`. A valid
+  URI that does not resolve still has the existing empty-match behavior.
 - **Document reference identity query fields**: compile to predicates on local per-site identity binding columns (stored
   or alias), e.g.:
   - `r.Student_StudentUniqueId = @StudentUniqueId`

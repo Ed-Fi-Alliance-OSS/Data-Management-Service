@@ -591,15 +591,15 @@ For each table row being materialized, and for each `KeyUnificationClass` on tha
      used for normal scalar columns (coercions are Core-owned; backend should treat incoming values as already
      canonicalized).
    - For `DescriptorFk` members: resolve the JSON descriptor URI string to the descriptor `DocumentId` (BIGINT) using:
-     - the shared descriptor normalization operation, which requires a previously validated ASCII
-       URI and only then applies `ToLowerInvariant()`, and
+     - the shared descriptor normalization operation, which requires a previously validated
+       ASCII-without-NUL URI and only then applies `ToLowerInvariant()`, and
      - the member’s `DbColumnModel.TargetResource` as part of the lookup key.
      - recommended key shape: `DescriptorKey(NormalizedUri, DescriptorResource)` as defined in
        `flattening-reconstitution.md` (`ResolvedReferenceSet.DescriptorIdByKey`).
-     Core descriptor extraction MUST reject a non-ASCII URI at its concrete request JSON path before
-     the resolver or this coalescing step runs. It is a path-attributed 400 validation failure, not an
-     unresolved-reference failure. This step MUST assert the ASCII invariant rather than lowercase
-     unchecked Unicode input.
+     Core descriptor extraction MUST reject a non-ASCII or NUL URI at its concrete request JSON path
+     before the resolver or this coalescing step runs. It is a path-attributed 400 validation failure,
+     not an unresolved-reference failure. This step MUST assert the ASCII-without-NUL invariant rather
+     than lowercase unchecked Unicode input.
      If a descriptor URI is present but cannot be resolved to a `DocumentId`, the write MUST fail closed (descriptor
      reference validation failure).
 3. Apply conflict detection:

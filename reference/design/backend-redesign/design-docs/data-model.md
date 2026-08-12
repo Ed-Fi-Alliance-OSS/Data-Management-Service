@@ -232,19 +232,20 @@ The effective date columns are part of the descriptor field contract. This match
 Descriptor references (recommended base design):
 
 - Use an FK directly to `dms.Descriptor(DocumentId)` to guarantee “this is a descriptor” at the DB level.
-- Resolve descriptor URI strings only after request validation has rejected non-ASCII input at its
-  source path. Lowercase the validated ASCII URI and probe `dms.Descriptor` by
+- Resolve descriptor URI strings only after request validation has rejected non-ASCII or NUL input at
+  its source path. Lowercase the validated ASCII-without-NUL URI and probe `dms.Descriptor` by
   `(UriLowered, ResourceKeyId)`; `ResourceKeyId`, not `Discriminator`, is the descriptor-type
-  authority for lookup and uniqueness. A non-ASCII value is a 400 validation failure before the
-  descriptor probe, not a lookup miss.
+  authority for lookup and uniqueness. A non-ASCII or NUL value is a 400 validation failure before
+  the descriptor probe, not a lookup miss.
 
 If DB-level enforcement of “descriptor must be of type X” becomes necessary later, it must compare the referenced `dms.Descriptor.ResourceKeyId` with the expected compile-time resource key derived from `ApiSchema`. `Discriminator` must not become a second descriptor-type authority.
 
 Descriptor update semantics:
 
 - For descriptor POST/PUT, derive `Uri` from the canonicalized `Namespace` + `#` + `CodeValue`.
-  Validate the two client-supplied components as ASCII before lowercasing, upsert detection, or
-  persistence; attribute a validation failure to `$.namespace` and/or `$.codeValue` as applicable.
+  Validate the two client-supplied components as ASCII without NUL before lowercasing, upsert
+  detection, or persistence; attribute a validation failure to `$.namespace` and/or `$.codeValue` as
+  applicable.
 - Descriptor identity is immutable after creation: a PUT whose derived `Uri` is not equal to the
   persisted descriptor `Uri` under the descriptor identity contract is rejected as a real identity
   change. Case-only differences in `Namespace`, `CodeValue`, or the derived `Uri` are not real

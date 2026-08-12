@@ -474,9 +474,9 @@ values directly. They must change as follows:
 
 - For a descriptor resource POST/PUT, Core's descriptor identity extraction derives the URI from the
   canonicalized `$.namespace` + `#` + `$.codeValue`, validates the two client-supplied components as
-  ASCII, and only then lowercases the derived URI. A failure is attributed to each offending source
-  path (`$.namespace` and/or `$.codeValue`) and stops the write before descriptor target lookup or a
-  descriptor write command.
+  ASCII without NUL, and only then lowercases the derived URI. A failure is attributed to each
+  offending source path (`$.namespace` and/or `$.codeValue`) and stops the write before descriptor
+  target lookup or a descriptor write command.
 - For a descriptor reference in a resource body, Core's descriptor extraction validates the raw URI
   at its concrete request JSON path before constructing the normalized descriptor identity. A
   failure stops the write before the reference resolver is invoked.
@@ -499,7 +499,11 @@ U+007F; U+0000 NUL is invalid even though it is inside the formal ASCII range be
 `text`/`varchar` cannot store NUL. Downstream write flattening, key unification, descriptor upsert
 detection, and query lookup must consume only values that have passed this validation; their
 lowercase helpers must preserve or assert that invariant rather than calling `ToLowerInvariant()` on
-unchecked input. The corresponding write and query algorithms are updated in
+unchecked input. Because NUL is formally ASCII, dependent write/query contracts and helper wording
+must not shorten this boundary to "reject non-ASCII" or "validated ASCII" in a way that can be read
+as allowing U+0000; they must state "non-ASCII or NUL" and "validated ASCII without NUL" wherever the
+validation boundary or lowered descriptor key is described. The corresponding write and query
+algorithms are updated in
 [flattening-reconstitution.md](flattening-reconstitution.md), [key-unification.md](key-unification.md),
 and [transactions-and-concurrency.md](transactions-and-concurrency.md).
 
@@ -660,7 +664,7 @@ The rows below state the target behavior once this design ships:
 | Regular natural-key matching (reference resolution and upsert detection) | Case-insensitive under the explicitly emitted `SQL_Latin1_General_CP1_CI_AS` identity-column collation, independent of the database default. Matches ODS. | Case-sensitive. Matches ODS. |
 | Case-variant natural-key POST of an existing document | **200** — silent update; stored casing preserved; if the payload is otherwise identical, a true no-op (no `ContentVersion` bump, no change event). Matches ODS. | Creates a second document (a case variant is a different value). Matches ODS. |
 | Case-variant (casing-only) key change via PUT | Not a key change: stored key casing is **immutable** on SQL Server, exactly as it is structurally in ODS. Real key changes on cascade-enabled resources behave as today. | A real key change (allowed on cascade-enabled resources, as today). |
-| Descriptor matching + uniqueness | Case-insensitive via lowered ASCII URI + `ResourceKeyId`. | Same — uniform across engines, a first (ODS *intended* CI descriptors but its PostgreSQL implementation stored CS and could accumulate case-variant duplicates). |
+| Descriptor matching + uniqueness | Case-insensitive via lowered ASCII-without-NUL URI + `ResourceKeyId`. | Same — uniform across engines, a first (ODS *intended* CI descriptors but its PostgreSQL implementation stored CS and could accumulate case-variant duplicates). |
 | Descriptor POST-as-update casing | Stored-wins: the update preserves stored `Namespace`/`CodeValue`/`Uri` casing; a casing-only re-POST is a true no-op. A case-only descriptor PUT is a 200 update/no-op, not an error. Matches `DescriptorCaseInsensitiveValidation.feature`. | Same. |
 | Core-side equality constraints and duplicate-item validation | Ordinal (stricter than the DMS identity collation; fails closed with 400). The gap this leaves for collections is closed below. | Ordinal (exact). |
 
@@ -850,7 +854,7 @@ removal:
 | Concrete identity uniqueness | `UX_<R>_NK` (always was the primary enforcement) |
 | Cross-subclass abstract identity uniqueness | `UX_<Abstract>Identity_NK` on the abstract identity tables (this is the alias row's real job, and the tables already enforce it) |
 | Abstract reference compatibility | The concrete `ResourceKeyId` stored on the matched abstract identity row, FK-constrained to `dms.ResourceKey`, then compared with the target's allowed concrete resource-key set |
-| Descriptor identity uniqueness | `UX_Descriptor_UriLowered_ResourceKeyId` (CI over ASCII URI, both engines) |
+| Descriptor identity uniqueness | `UX_Descriptor_UriLowered_ResourceKeyId` (CI over ASCII-without-NUL URI, both engines) |
 | Create-race detection (409/retry) | `UX_<R>_NK` unique violations, classified exactly as today |
 | Reference targets exist and stay consistent | Composite FKs onto `RefKey` targets, unchanged |
 | Reference-resolution cardinality | `UX_<R>_NK` plus FK/cascade parity between natural-key columns and flattened `RefKey` copies; `UX_<R>_RefKey` is the access/FK shape, not scalar identity uniqueness while `DocumentId` is unbound |
@@ -1286,7 +1290,7 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
    `SQL_Latin1_General_CP1_CI_AS`; this removes deployment-dependent identity behavior and moves DMS
    toward ODS behavior.
 5. **Descriptor case-variant duplicates** will be rejected by a table-level CI unique index over
-   lowered ASCII URI + `ResourceKeyId` (they are same-document by hash semantics today) — accepted;
+   lowered ASCII-without-NUL URI + `ResourceKeyId` (they are same-document by hash semantics today) — accepted;
    identical effective semantics, newly enforced by the engine.
 6. **Lost `dms.ReferentialIdentity` corruption canary** — accepted by construction for RI: the hash
    rows it guarded will no longer exist. This does not remove every derived-state risk; abstract
