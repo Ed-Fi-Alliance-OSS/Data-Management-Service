@@ -261,7 +261,10 @@ member metadata that supplies the diagnostic `Discriminator`. The resolver will 
 abstract `Discriminator`; `IncompatibleTargetType` will continue to compare the resolved concrete
 `ResourceKeyId` with the target's allowed concrete resource keys. The abstract `RefKey` and `NK`
 index key shapes will remain unchanged; `ResourceKeyId` is payload only, not part of abstract
-identity equality. One table, one seek, no per-subtype SQL.
+identity equality. Because this column is authoritative for abstract compatibility, the compiled
+abstract-identity trigger contract must carry a typed concrete-member `ResourceKeyId` literal
+alongside the diagnostic discriminator literal; dialect emitters must not recover the key by parsing
+`Discriminator` or re-deriving it from the source table. One table, one seek, no per-subtype SQL.
 
 Results will map by explicit ordinal (`Entries[ordinal-1]`, never row position); unmatched ordinals
 will flow into the unchanged reference-validation failure response, so error shapes and JSON-location
@@ -815,10 +818,11 @@ can cascade.
     a behavioral change for hosts that resolve references through the old registration.
 - Abstract identity tables and their union views will add a concrete `ResourceKeyId smallint NOT
   NULL` payload column. Existing abstract-identity maintenance triggers will populate it from
-  compile-time concrete-member metadata. The abstract identity `Discriminator` column remains for
-  diagnostics/readability only; resolver compatibility will not parse it. Consumers that enumerate
-  abstract identity scalar columns must continue to exclude both payload columns (`ResourceKeyId` and
-  `Discriminator`) from identity-equality logic.
+  a typed compile-time concrete-member key literal carried by `AbstractIdentityMaintenance`, not
+  from discriminator parsing or DDL-emitter inference. The abstract identity `Discriminator` column
+  remains for diagnostics/readability only; resolver compatibility will not parse it. Consumers that
+  enumerate abstract identity scalar columns must continue to exclude both payload columns
+  (`ResourceKeyId` and `Discriminator`) from identity-equality logic.
 - Ops: the seed-clone script's TRUNCATE list will lose `dms."ReferentialIdentity"`; template
   management will drop its pgcrypto preamble.
 
@@ -862,8 +866,9 @@ after T8, no production contract may still carry a `ReferentialId` member.**
 - **T2 — Add abstract `ResourceKeyId`, compile natural-key probe metadata, and re-source the 409
   duplicate-identity messages.** Add `ResourceKeyId smallint NOT NULL` to each abstract identity
   table and union view, then populate the table column from the existing abstract-identity
-  maintenance triggers using compile-time concrete-member metadata. Compile per-resource probe
-  metadata (reference targets, own-key probes, the descriptor probe) from the relational model —
+  maintenance triggers using a new typed `AbstractIdentityMaintenance.ResourceKeyIdValue` literal
+  paired with the existing diagnostic `DiscriminatorValue`. Compile per-resource probe metadata
+  (reference targets, own-key probes, the descriptor probe) from the relational model —
   never from trigger metadata, constraint names, or discriminator string parsing — with an
   empty-identity compile guard and an every-resource parity guard against the live trigger derivation.
   Serialize the storage-resolved probe records into PackFormatVersion 1 mapping packs: target and

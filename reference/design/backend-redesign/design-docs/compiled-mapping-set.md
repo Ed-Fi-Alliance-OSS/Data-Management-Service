@@ -325,6 +325,7 @@ public abstract record TriggerKindParameters
     public sealed record AbstractIdentityMaintenance(
         DbTableName TargetTable,
         IReadOnlyList<TriggerColumnMapping> TargetColumnMappings,
+        short ResourceKeyIdValue,
         string DiscriminatorValue
     ) : TriggerKindParameters;
 
@@ -368,6 +369,11 @@ Notes:
 - Index/trigger/tracked-change inventories are dialect-aware (“SQL-free DDL intent”), derived deterministically from the derived tables/constraints plus the policies in `ddl-generation.md` and `change-queries.md`.
   - `IdentityProjectionColumns` is a null-safe value-diff compare set, not an `UPDATE(column)` gate list.
   - Emitters must not use SQL Server `UPDATE(column)`, PostgreSQL `UPDATE OF`, or equivalent target-list checks to decide whether a Change Queries key-change row should be emitted.
+  - `AbstractIdentityMaintenance.TargetColumnMappings` carries only source-to-target abstract
+    identity field mappings. Dialect emitters must populate abstract identity payload columns from
+    the typed contract fields: `ResourceKeyId` from `ResourceKeyIdValue` and `Discriminator` from
+    `DiscriminatorValue`. They must not derive the concrete resource key from the discriminator
+    string or re-infer it from the source table.
   - `DocumentStamping.ChangeTracking` is valid only on `TriggerKindParameters.DocumentStamping` entries and is attached when Change Queries requires that trigger to also write key-change and tombstone rows. The tracked-change table metadata tells emitters where and how to write tracked-change rows; the owning `DbTriggerInfo.IdentityProjectionColumns` remains the single key-change predicate source.
   - `MirrorStampTargetTable` is required (non-null) for every `TriggerKindParameters.DocumentStamping` entry and null for all other trigger kinds. The derivation pass assigns it by rule: the same table as `Table` for root-table stamping triggers, the resource's root table for child / `_ext` stamping triggers, and `dms.Descriptor` for the descriptor stamping trigger. Dialect emitters render the mirror UPDATE (the second UPDATE in the trigger body, after the `dms.Document` stamp UPDATE) against `MirrorStampTargetTable` and MUST NOT re-derive the target from `Table`. See `change-queries.md` §"Concrete-resource ContentVersion / ContentLastModifiedAt mirror".
   - For key-change rows, dialect emitters use the same null-safe old/new value-diff workset already required for identity stamping. Under key unification, this includes the presence-gated canonical expressions defined in `key-unification.md`.
