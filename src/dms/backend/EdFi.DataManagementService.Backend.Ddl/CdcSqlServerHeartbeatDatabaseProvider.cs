@@ -209,11 +209,11 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         }
         catch (DbException exception)
         {
-            return ProviderMetadataUnavailableResult(exception);
+            return ProviderMetadataUnavailableResult(executor, exception);
         }
         catch (InvalidOperationException exception)
         {
-            return ProviderMetadataUnavailableResult(exception);
+            return ProviderMetadataUnavailableResult(executor, exception);
         }
     }
 
@@ -4147,8 +4147,14 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         );
     }
 
-    private static CdcProviderSetupStepResult ProviderMetadataUnavailableResult(Exception exception) =>
-        new(
+    private static CdcProviderSetupStepResult ProviderMetadataUnavailableResult(
+        ICdcProviderDatabaseExecutor executor,
+        Exception exception
+    )
+    {
+        var providerErrorIdentity = executor.TryMapProviderErrorIdentity(exception);
+
+        return new CdcProviderSetupStepResult(
             artifactInventory:
             [
                 new CdcProviderArtifactObservation(
@@ -4188,9 +4194,14 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     ObservedValue: "unavailable",
                     ProviderErrorClass: exception.GetType().Name,
                     Classification: CdcProviderRetryContinuityClassification.SourceHistoryUnknown
-                ),
+                )
+                {
+                    ProviderErrorCode = providerErrorIdentity?.ProviderErrorCode,
+                    ProviderErrorState = providerErrorIdentity?.ProviderErrorState,
+                },
             ]
         );
+    }
 
     private static IReadOnlyDictionary<string, string> DatabaseCdcObservedValues(
         DatabaseCdcInspection inspection,

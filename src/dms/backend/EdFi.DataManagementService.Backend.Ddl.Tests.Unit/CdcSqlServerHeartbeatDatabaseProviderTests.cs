@@ -789,11 +789,15 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
     [Test]
     public async Task It_should_replace_provider_history_artifact_when_final_metadata_refresh_is_unavailable()
     {
+        const string sentinelSecret = "metadata-refresh-secret";
+        var finalProviderMetadataRefreshFailure = new InvalidOperationException(sentinelSecret);
         var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
             captureJobPresent: true,
             cleanupJobPresent: true,
             captureInstances: SqlServerCaptureInstanceTestData.Expected(),
-            failFinalProviderMetadataRefresh: true
+            failFinalProviderMetadataRefresh: true,
+            finalProviderMetadataRefreshFailure: finalProviderMetadataRefreshFailure,
+            finalProviderMetadataRefreshFailureIdentity: new CdcProviderErrorIdentity("1205", "13")
         );
         var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
 
@@ -805,13 +809,18 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
         );
 
         result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
-        result
+        var diagnostic = result
             .Diagnostics.Should()
             .ContainSingle(diagnostic =>
                 diagnostic.Code == "CDC_SQLSERVER_PROVIDER_METADATA_UNAVAILABLE"
                 && diagnostic.Category == CdcProviderDiagnosticCategory.ProviderHistoryUnavailable
                 && diagnostic.ProviderErrorClass == nameof(InvalidOperationException)
-            );
+            )
+            .Which;
+        diagnostic.ProviderErrorCode.Should().Be("1205");
+        diagnostic.ProviderErrorState.Should().Be("13");
+        diagnostic.ToString().Should().NotContain(sentinelSecret);
+
         result
             .ArtifactInventory.Should()
             .ContainSingle(observation =>
@@ -840,6 +849,9 @@ public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
                 && artifact.GetProperty("state").GetString() == "unavailable"
                 && artifact.GetProperty("observed_values").GetProperty("history").GetString() == "unavailable"
             );
+        result.ManifestPayload.Json.Should().Contain("\"provider_error_code\": \"1205\"");
+        result.ManifestPayload.Json.Should().Contain("\"provider_error_state\": \"13\"");
+        result.ManifestPayload.Json.Should().NotContain(sentinelSecret);
     }
 
     [Test]
@@ -2675,6 +2687,8 @@ internal sealed class RecordingSqlServerCdcExecutor
     private readonly string _cleanupJobRunning;
     private readonly string _cleanupJobLastRunStatus;
     private readonly bool _failFinalProviderMetadataRefresh;
+    private readonly Exception? _finalProviderMetadataRefreshFailure;
+    private readonly CdcProviderErrorIdentity? _finalProviderMetadataRefreshFailureIdentity;
     private readonly bool _dropJobsDuringFinalProviderMetadataRefresh;
     private readonly Dictionary<string, RecordingSqlServerCaptureInstance> _captureInstances;
     private readonly RecordingSqlServerConnectorAccess _connectorAccess;
@@ -2706,6 +2720,8 @@ internal sealed class RecordingSqlServerCdcExecutor
         string cleanupJobRunning = "False",
         string cleanupJobLastRunStatus = "",
         bool failFinalProviderMetadataRefresh = false,
+        Exception? finalProviderMetadataRefreshFailure = null,
+        CdcProviderErrorIdentity? finalProviderMetadataRefreshFailureIdentity = null,
         bool dropJobsDuringFinalProviderMetadataRefresh = false,
         IReadOnlyList<RecordingSqlServerCaptureInstance>? captureInstances = null,
         RecordingSqlServerConnectorAccess? connectorAccess = null,
@@ -2740,6 +2756,8 @@ internal sealed class RecordingSqlServerCdcExecutor
         _cleanupJobRunning = cleanupJobRunning;
         _cleanupJobLastRunStatus = cleanupJobLastRunStatus;
         _failFinalProviderMetadataRefresh = failFinalProviderMetadataRefresh;
+        _finalProviderMetadataRefreshFailure = finalProviderMetadataRefreshFailure;
+        _finalProviderMetadataRefreshFailureIdentity = finalProviderMetadataRefreshFailureIdentity;
         _dropJobsDuringFinalProviderMetadataRefresh = dropJobsDuringFinalProviderMetadataRefresh;
         _connectorAccess = connectorAccess ?? RecordingSqlServerConnectorAccess.MissingGrants();
         _sourceIdentity = sourceIdentity;
@@ -2769,6 +2787,8 @@ internal sealed class RecordingSqlServerCdcExecutor
         string cleanupJobRunning = "False",
         string cleanupJobLastRunStatus = "",
         bool failFinalProviderMetadataRefresh = false,
+        Exception? finalProviderMetadataRefreshFailure = null,
+        CdcProviderErrorIdentity? finalProviderMetadataRefreshFailureIdentity = null,
         bool dropJobsDuringFinalProviderMetadataRefresh = false,
         IReadOnlyList<RecordingSqlServerCaptureInstance>? captureInstances = null,
         RecordingSqlServerConnectorAccess? connectorAccess = null,
@@ -2795,6 +2815,8 @@ internal sealed class RecordingSqlServerCdcExecutor
             cleanupJobRunning: cleanupJobRunning,
             cleanupJobLastRunStatus: cleanupJobLastRunStatus,
             failFinalProviderMetadataRefresh: failFinalProviderMetadataRefresh,
+            finalProviderMetadataRefreshFailure: finalProviderMetadataRefreshFailure,
+            finalProviderMetadataRefreshFailureIdentity: finalProviderMetadataRefreshFailureIdentity,
             dropJobsDuringFinalProviderMetadataRefresh: dropJobsDuringFinalProviderMetadataRefresh,
             captureInstances: captureInstances,
             connectorAccess: connectorAccess ?? RecordingSqlServerConnectorAccess.Exact(),
@@ -2952,8 +2974,20 @@ internal sealed class RecordingSqlServerCdcExecutor
         return Task.FromResult(rows);
     }
 
-    public CdcProviderErrorIdentity? MapProviderErrorIdentity(Exception exception) =>
-        ReferenceEquals(exception, _executeFailure) ? _executeFailureIdentity : null;
+    public CdcProviderErrorIdentity? MapProviderErrorIdentity(Exception exception)
+    {
+        if (ReferenceEquals(exception, _executeFailure))
+        {
+            return _executeFailureIdentity;
+        }
+
+        if (ReferenceEquals(exception, _finalProviderMetadataRefreshFailure))
+        {
+            return _finalProviderMetadataRefreshFailureIdentity;
+        }
+
+        return null;
+    }
 
     private IReadOnlyList<IReadOnlyDictionary<string, string?>> DatabaseCdcStateRows()
     {
@@ -2961,7 +2995,8 @@ internal sealed class RecordingSqlServerCdcExecutor
 
         if (_failFinalProviderMetadataRefresh && IsFinalProviderMetadataRefresh)
         {
-            throw new InvalidOperationException("Final SQL Server CDC provider metadata refresh failed.");
+            throw _finalProviderMetadataRefreshFailure
+                ?? new InvalidOperationException("Final SQL Server CDC provider metadata refresh failed.");
         }
 
         return
