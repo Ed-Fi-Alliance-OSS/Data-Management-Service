@@ -16,7 +16,7 @@ No estimates are included so refinement teams can estimate independently without
 
 ## Dependency and delivery order
 
-- S1 and S4 can begin independently. S2 design can begin, but S2 is formally blocked by DMS-1271 until its trusted artifact contract is delivered.
+- S1 and S4's provider-neutral reader and provider-adapter work can begin independently. S4's final shared `DmsDataStoreSettings.Provider` wiring depends on S2. S2 design can begin, but S2 is formally blocked by DMS-1271 until its trusted artifact contract is delivered.
 - S3 requires S1 and S2.
 - S5 requires S1 and S4. Its complete v3 tenant aggregate also requires S3, although refresh persistence for ordinary unmanaged stores can be developed before S3 lands.
 - S2 must carry a Jira blocker link to open [DMS-1271](https://edfi.atlassian.net/browse/DMS-1271). It consumes DMS-1271's delivered trusted manifest/artifact contract but does not take ownership of DMS-1271's operator/bootstrap sequencing.
@@ -34,6 +34,7 @@ graph TD
  %% Dependencies
  S1 --> S3
  S2 --> S3
+ S2 -.->|provider wiring only| S4
  S1 --> S5
  S4 --> S5
  S3 --> S5
@@ -120,7 +121,7 @@ None. S1 can start independently.
 ### Risks / implementation refinements
 
 - Lease duration, retry intervals, maximum attempts, and retention defaults need operational calibration. They are configuration decisions and do not block the architecture. The schedule misfire policy is fixed by AC 17.
-- Database clock should be used for lease comparisons where practical to avoid replica clock skew.
+- Provider-specific claim and reclaim statements must compare lease expiry using database UTC time rather than worker-process clocks (for example, PostgreSQL `now()` and SQL Server `SYSUTCDATETIME()`). Cross-provider integration tests must demonstrate equivalent observable claim, expiry, and reclaim behavior.
 
 ### Validation expectations
 
@@ -163,7 +164,7 @@ The request never supplies an artifact path, feed, package ID, database server, 
 
 - Completed [DMS-1255](https://edfi.atlassian.net/browse/DMS-1255) template packages for PostgreSQL and SQL Server.
 - Delivery of the trusted manifest, artifact authentication, DMS-only content-profile, and compatibility contract owned by open [DMS-1271](https://edfi.atlassian.net/browse/DMS-1271). S2 must be linked as blocked by DMS-1271 in Jira.
-- Existing [`Template-Management.psm1`](../../../eng/DatabaseTemplates/Template-Management.psm1) as verified provider behavior and `SourceIdentity` precedent, not as a runtime dependency.
+- Existing [`Template-Management.psm1`](../../../eng/DatabaseTemplates/Template-Management.psm1) as verified provider restore sequencing: it demonstrates that `SourceIdentity` is reseeded after restore, but generates a fresh UUID. Assigning the lifecycle record's caller-supplied expected UUID is new S2 behavior, not an existing capability or runtime dependency.
 - Existing CMS backend/provider project boundaries and database-provider registration conventions.
 - The versioned DMS template and target-database contracts, including `dms.DataStoreIdentity` and `dms.EffectiveSchema`.
 
@@ -432,7 +433,7 @@ Each successful target refresh replaces that target's snapshot in one CMS transa
 1. PostgreSQL and SQL Server CMS schemas persist tenant-scoped snapshot rows with data-store ID, the full v3 education-organization model, and internal refresh timestamps. Uniqueness prevents duplicate organization IDs within one tenant/data store.
 2. Refresh-all uses the current tenant's ordinary data stores, including unmanaged stores. It does not attempt to query pending management records that lack an ordinary data-store link.
 3. Refresh-one returns `404` when the ordinary data store is absent or belongs to another tenant.
-4. Both refresh routes require the existing admin policy, atomically enqueue a `Pending` S1 job, and return `201 Created`, an absolute `/v3/jobs/{jobId}` `Location`, and `jobQueuedResult` with the same job ID.
+4. Both refresh routes require the existing admin policy, atomically enqueue a `Pending` S1 job, and return `202 Accepted`, an absolute `/v3/jobs/{jobId}` `Location`, and `jobQueuedResult` with the same job ID.
 5. The returned job is immediately readable through S1 and no scheduling race can produce an initial `404`.
 6. CMS validates the configured target provider at startup. S4 validates each target's versioned DMS database contract and required core tables/columns before projection; failures produce actionable diagnostics.
 7. A refresh handler establishes the persisted tenant context, resolves/decrypts the existing data-store connection only inside the job scope, invokes S4, and never persists that connection in the job payload or snapshot.

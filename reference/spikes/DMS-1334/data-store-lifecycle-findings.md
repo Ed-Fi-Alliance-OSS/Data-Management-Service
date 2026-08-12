@@ -65,6 +65,7 @@ Current implementation was preferred over historical design prose whenever they 
 - [ADMINAPI-1424](https://edfi.atlassian.net/browse/ADMINAPI-1424) — completed refresh job ID and polling work
 - [ADMINAPI-1488](https://edfi.atlassian.net/browse/ADMINAPI-1488) — removal of per-instance/per-data-store education-organization reads
 - [ADMINAPI-1489](https://edfi.atlassian.net/browse/ADMINAPI-1489) — data-store management feature flag
+- [ADMINAPI-1496](https://edfi.atlassian.net/browse/ADMINAPI-1496) — refresh endpoints return `202 Accepted` rather than `201 Created`
 - [DMS-951](https://edfi.atlassian.net/browse/DMS-951) — completed create-only `ddl provision`
 - [DMS-955](https://edfi.atlassian.net/browse/DMS-955) — obsolete descriptor-seeding proposal
 - [DMS-1255](https://edfi.atlassian.net/browse/DMS-1255) — completed Minimal/Populated template-package parity
@@ -83,7 +84,7 @@ The contract below comes from the local OpenAPI file, with the guide's explicit 
 | `GET /v3/dataStores/manage/{id}` | Returns one `dataStoreManageModel` or `404`. |
 | `DELETE /v3/dataStores/manage/{id}` | Returns `204` when deletion is accepted or `404` when absent. Current behavior also returns `400` for invalid lifecycle states. |
 | `GET /v3/jobs/{jobId}` | Returns `jobId`, `status`, `createdAt`, nullable `finishedAt`, and nullable `errorMessage`; returns `404` when unknown. |
-| `POST /v3/dataStores/edOrgs/refresh` | Returns `201 Created`, a job-status `Location`, and `jobQueuedResult`. |
+| `POST /v3/dataStores/edOrgs/refresh` | Returns `202 Accepted`, a job-status `Location`, and `jobQueuedResult`. |
 | `POST /v3/dataStores/{dataStoreId}/edOrgs/refresh` | Same result for one data store; also returns `404` when the data store is absent. |
 | `GET /v3/tenants/{tenantName}/dataStores/edOrgs` | Returns tenant identity plus data stores, management metadata, and education organizations. |
 | `GET /v3/dataStores/edOrgs` | Appears only in the original story. It is absent from the authoritative local v3 OpenAPI and is superseded by the tenant aggregate; it must not be implemented. |
@@ -96,11 +97,13 @@ The OpenAPI description incorrectly calls managed POST an upsert. Current Admin 
 The two asynchronous response patterns are intentionally different:
 
 - managed create returns `202` and a `Location` for the management resource; the caller polls its lifecycle `status`;
-- education-organization refresh returns `201`, a job body, and a `Location` for `/v3/jobs/{jobId}`.
+- education-organization refresh returns `202`, a job body, and a `Location` for `/v3/jobs/{jobId}`.
 
-## Verified Admin API behavior
+## Admin API behavior observed in the cited external source
 
 Admin API is a behavioral reference, not an architecture template.
+
+The observations below were derived from the linked current Admin API source and design documents, which are not part of this repository. They should be reconfirmed against pinned Admin API revisions before parity behavior is converted into delivery acceptance criteria. Locally verified CMS/DMS facts are documented separately in the next section.
 
 - Managed create validates `name`, accepts only the case-sensitive `Minimal` and `Sample` template names, rejects active management-name and ordinary data-store-name duplicates, writes `PendingCreate`, queues a create job, and returns `202` with the management-resource location and no body.
 - The create job provisions a physical database before registering the ordinary data store and linking it to the management row. This proves that the managed resource and ordinary routing resource have separate lifecycles.
@@ -122,7 +125,7 @@ Admin API is a behavioral reference, not an architecture template.
 - DMS already reads `GET v3/dataStores/` through [`ConfigurationServiceDataStoreProvider`](../../../src/dms/core/EdFi.DataManagementService.Core/Configuration/ConfigurationServiceDataStoreProvider.cs), decrypts the connection strings, and refreshes its per-tenant cache after a configurable TTL. A successful lifecycle job can therefore register through the existing CMS resource; no new CMS-to-DMS notification is needed.
 - CMS now has an existing hosted-service precedent: [`TokenCleanupService`](../../../src/config/backend/EdFi.DmsConfigurationService.Backend.OpenIddict/Services/TokenCleanupService.cs) uses `BackgroundService` and `PeriodicTimer`. This disproves the premise that CMS has no background runtime, but it is not a durable, generalized job facility.
 - [`DdlProvisionCommand`](../../../src/dms/clis/EdFi.DataManagementService.SchemaTools/Commands/DdlProvisionCommand.cs) can optionally create an empty database and apply generated DDL for PostgreSQL and SQL Server. Its reusable-looking helper, [`DdlCommandHelpers`](../../../src/dms/clis/EdFi.DataManagementService.SchemaTools/Commands/DdlCommandHelpers.cs), is internal to the CLI project. The command is create-only schema provisioning, not template restoration.
-- [`eng/DatabaseTemplates`](../../../eng/DatabaseTemplates) builds and restores Minimal and Populated packages for both providers and supported Data Standard versions. [`Template-Management.psm1`](../../../eng/DatabaseTemplates/Template-Management.psm1) performs provider-specific restore and reseeds `dms.DataStoreIdentity.SourceIdentity`. This disproves the premise that DMS lacks a golden/template concept, but the current PowerShell/Docker helper is operator tooling rather than a safe in-process runtime service.
+- [`eng/DatabaseTemplates`](../../../eng/DatabaseTemplates) builds and restores Minimal and Populated packages for both providers and supported Data Standard versions. [`Template-Management.psm1`](../../../eng/DatabaseTemplates/Template-Management.psm1) performs provider-specific restore and then reseeds `dms.DataStoreIdentity.SourceIdentity` with a newly generated UUID. This establishes that identity reseeding is a required post-restore step and shows where it occurs in the restore sequence. It does not implement S2's caller-supplied expected identity; selecting and assigning that pre-persisted value is new CMS-side behavior. The tooling disproves the premise that DMS lacks a golden/template concept, but the current PowerShell/Docker helper is operator tooling rather than a safe in-process runtime service.
 - CMS already has the required project layering for both new target-database capabilities: provider-neutral contracts belong in [`EdFi.DmsConfigurationService.Backend`](../../../src/config/backend/EdFi.DmsConfigurationService.Backend/EdFi.DmsConfigurationService.Backend.csproj), while PostgreSQL and SQL Server implementations belong in the existing [`Backend.Postgresql`](../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/EdFi.DmsConfigurationService.Backend.Postgresql.csproj) and [`Backend.Mssql`](../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Mssql/EdFi.DmsConfigurationService.Backend.Mssql.csproj) projects. The CMS frontend already references both provider projects, so no project reference or Docker build-context change is required.
 - DMS has [`IRelationalTokenInfoEducationOrganizationLookup`](../../../src/dms/backend/EdFi.DataManagementService.Backend.External/IRelationalTokenInfoEducationOrganizationLookup.cs) and [`TokenInfoEducationOrganizationSqlCompiler`](../../../src/dms/backend/EdFi.DataManagementService.Backend.Plans/TokenInfoEducationOrganizationSqlCompiler.cs), but they are not an appropriate CMS reuse seam. They require DMS mapping/token inputs, return token-specific ancestry, and use internal discriminators such as `Ed-Fi:School`; the Management API requires a smaller core projection with values such as `edfi.School`.
 - DMS builds its effective schema through internal application startup types such as [`LoadAndBuildEffectiveSchemaTask`](../../../src/dms/core/EdFi.DataManagementService.Core/Startup/LoadAndBuildEffectiveSchemaTask.cs). Their internal status and dependency graph confirm that CMS must not reference or package them. CMS instead validates the target's stable DMS database contract and required core tables/columns before direct reads.
@@ -153,7 +156,7 @@ Admin API is a behavioral reference, not an architecture template.
 | G11 | DMS discovery after create | Newly registered stores become routable. | Existing CMS provider and TTL refresh already perform this. | Already supported; document eventual visibility. | DMS | None |
 | G12 | Full education-organization extraction | Return ID, names, discriminator, and parent from each target database. | DMS token-info lookup is evidence but is not reusable by CMS; CMS has no target-domain reader. | Implementation gap for a CMS direct database reader over the four core types. | CMS | S4 |
 | G13 | Education-organization projection | Persist tenant/data-store snapshots for management reads. | CMS stores only application assignment IDs. | Implementation gap. | CMS | S5 |
-| G14 | Refresh all/one | `201`, job body/location, async refresh, and single-store `404`. | No routes or handlers. | Implementation gap, built on S1 and S4. | CMS | S5 |
+| G14 | Refresh all/one | `202`, job body/location, async refresh, and single-store `404`. | No routes or handlers. | Implementation gap, built on S1 and S4. | CMS | S5 |
 | G15 | Tenant aggregate read | Tenant data stores plus management metadata and snapshots. | Tenant CRUD exists; aggregate response does not. | Implementation gap. | CMS | S5 |
 | G16 | Per-data-store education-organization read | Route is being removed by `ADMINAPI-1488`. | Not present. | Out of scope by explicit correction; absence is correct. | None | None |
 | G17 | Authorization | Mutations require administrative authority; reads allow read-only/admin. | Existing secured endpoint conventions already encode this split. | Already supported as a policy mechanism; apply it in S1/S3/S5. | CMS | No separate story |
@@ -205,7 +208,7 @@ CMS configuration must identify the DMS target provider independently of CMS's o
 
 Physical operations require administrative database credentials that are distinct from the encrypted ordinary data-store connection string.
 
-Deletion and retry require more than database-name matching. The lifecycle record generates and persists the expected `dms.DataStoreIdentity.SourceIdentity` before provisioning, and restore sets that value. A retry accepts and reconciles an existing target only when source identity, trusted artifact identity/hash, provider, engine compatibility, content profile, and effective schema all match and validation is complete; it never replaces a target merely because source identity matches. Deletion may drop a target only after the source-identity ownership check succeeds. An absent/different identity or partial, incompatible, or unverifiable target fails safely for operator inspection. Provider system databases and configured CMS databases are always denied targets.
+Deletion and retry require more than database-name matching. The lifecycle record generates and persists the expected `dms.DataStoreIdentity.SourceIdentity` before provisioning, and the new CMS provisioner must assign that exact value after restore. Existing template tooling assigns a fresh random value instead, so it is sequencing precedent rather than reusable value-selection behavior. A retry accepts and reconciles an existing target only when source identity, trusted artifact identity/hash, provider, engine compatibility, content profile, and effective schema all match and validation is complete; it never replaces a target merely because source identity matches. Deletion may drop a target only after the source-identity ownership check succeeds. An absent/different identity or partial, incompatible, or unverifiable target fails safely for operator inspection. Provider system databases and configured CMS databases are always denied targets.
 
 ### Managed lifecycle
 
@@ -258,7 +261,7 @@ Implement the five stories in [candidate-implementation-stories.md](candidate-im
 4. CMS target-database education-organization snapshot reader.
 5. CMS education-organization refresh, projection, and tenant aggregation.
 
-S1, S2, and S4 are separable CMS prerequisite stories. S2 is formally blocked by the trusted artifact contract owned by open DMS-1271. S3 depends on S1 and S2. S5 depends on S1 and S4; its complete v3 aggregate also depends on S3 for managed and pending records, although refresh persistence for existing unmanaged stores can be developed before S3 lands.
+S1, S2, and the core S4 reader work are separable CMS prerequisite stories. S2 is formally blocked by the trusted artifact contract owned by open DMS-1271. S4 can implement its provider-neutral reader and provider adapters independently, but its final shared `DmsDataStoreSettings.Provider` wiring depends on S2. S3 depends on S1 and S2. S5 depends on S1 and S4; its complete v3 aggregate also depends on S3 for managed and pending records, although refresh persistence for existing unmanaged stores can be developed before S3 lands.
 
 ```mermaid
 graph TD
@@ -273,6 +276,7 @@ graph TD
  %% Dependencies
  S1 --> S3
  S2 --> S3
+ S2 -.->|provider wiring only| S4
  S1 --> S5
  S4 --> S5
  S3 --> S5
@@ -322,7 +326,7 @@ The exact job retention period, retry intervals, lease duration, package feed cr
 1. `/v3/dataStores/manage` is the only managed route family; `/v3/dbDataStores` is obsolete.
 2. Managed POST is create-only and rejects duplicates with `400`.
 3. Managed POST returns `202` and an absolute management-resource `Location` with no required response body.
-4. Refresh POST returns `201`, an absolute job-resource `Location`, and `jobQueuedResult`.
+4. Refresh POST returns `202`, an absolute job-resource `Location`, and `jobQueuedResult`.
 5. `databaseTemplate` accepts `Minimal` and `Sample`; `Sample` maps to DMS `Populated` artifacts.
 6. Successful managed delete physically deletes the owned database and removes its ordinary catalog row.
 7. The removed per-data-store education-organization GET is not implemented.
