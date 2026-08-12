@@ -201,7 +201,7 @@ Recommended layout (one file per hash + dialect):
 
 Notes:
 - `effectiveSchemaHash` is lowercase hex (64 chars).
-- `relMappingVersion` is a short constant string (e.g., `v1`).
+- `relMappingVersion` is a short constant string (e.g., `v2`).
 - The file contains an embedded header with the same values; file naming is not trusted as the source of truth.
 
 ### 7.2 DMS configuration
@@ -375,7 +375,7 @@ api-schema-tools pack build \
   --dialect pgsql \
   --apiSchemaPath ./ApiSchema \
   --out ./mapping-packs/pgsql \
-  --relMappingVersion v1
+  --relMappingVersion v2
 ```
 
 Notes:

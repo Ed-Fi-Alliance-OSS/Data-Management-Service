@@ -417,7 +417,7 @@ message MappingPackEnvelope {
   // Selection key (authoritative; file name is not trusted).
   string effective_schema_hash = 1;          // lowercase hex (64 chars)
   SqlDialect dialect = 2;
-  string relational_mapping_version = 3;     // e.g. "v1"
+  string relational_mapping_version = 3;     // e.g. "v2"
   uint32 pack_format_version = 4;            // must be 1 for this schema
 
   // Payload envelope.
