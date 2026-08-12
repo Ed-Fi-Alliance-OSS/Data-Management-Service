@@ -112,7 +112,8 @@ standardized on that machinery for FK enforcement, identity lookup, Change Queri
 The descriptor-specific probe target missing was a case-insensitive descriptor lookup, which this
 design will add as a lower-storage unique index on the existing `dms.Descriptor` table: a PostgreSQL
 expression index, and a SQL Server non-persisted computed-column index. Descriptor URI identity will
-be ASCII-only so the lowercasing contract is deterministic across C#, PostgreSQL, and SQL Server.
+be ASCII-only, excluding NUL, so the lowercasing and storage contract is deterministic across C#,
+PostgreSQL, and SQL Server.
 
 **2. The hash is derived state, and derived state has carrying costs.** Every document insert and
 identity update fires a generated trigger that recomputes UUIDv5 hashes and writes one or two
@@ -184,7 +185,7 @@ Runtime readers (each will become an implementation ticket):
 | Corruption-canary verification | CTEs comparing request identity vs re-projected root state | RI canary deleted; abstract identity drift covered by dedicated parity/corruption pins |
 | POST upsert detection | The composite write path's capture predicate (a `ReferentialId` subselect) plus a standalone fallback lookup | Natural-key capture predicate + `UX_<R>_NK` fallback probe |
 | Descriptor upsert detection | `ReferentialId` probe in the descriptor write handler | Lowered-URI + `ResourceKeyId` probe |
-| Descriptor-valued query filters | Query preprocessor lowercases + hashes the URI | Core query validation first rejects non-ASCII URI values; the same preprocessor lowercases the validated value and the resolver probes the descriptor lower-URI index instead |
+| Descriptor-valued query filters | Query preprocessor lowercases + hashes the URI | Core query validation first rejects non-ASCII or NUL URI values; the same preprocessor lowercases the validated value and the resolver probes the descriptor lower-URI index instead |
 | 409 duplicate-identity messages | Rebuilds NK column lists from `ReferentialIdentityMaintenance` trigger metadata | Re-sourced from compiled natural-key probe metadata (severed *before* the triggers drop) |
 
 Verified non-consumers (these will be untouched by this design): row locking (`dms.Document` by `DocumentId`),
@@ -442,10 +443,11 @@ the prototype).
 ### Descriptors
 
 One schema addition will make descriptors resolvable case-insensitively on both engines without
-duplicating the lowered URI in the base table. Descriptor URI identity will be **ASCII-only**:
-descriptor writes, descriptor references, and descriptor-valued query filters will reject non-ASCII
-URI values before normalization. Within that supported input space, C# `ToLowerInvariant()`,
-PostgreSQL `lower(... COLLATE "C")`, and SQL Server `LOWER(...)` produce the same lowered value.
+duplicating the lowered URI in the base table. Descriptor URI identity will be **ASCII-only,
+excluding NUL**: descriptor writes, descriptor references, and descriptor-valued query filters will
+reject non-ASCII or NUL URI values before normalization. Within that supported input space, C#
+`ToLowerInvariant()`, PostgreSQL `lower(... COLLATE "C")`, and SQL Server `LOWER(...)` produce the
+same lowered value.
 
 The PostgreSQL collation is part of the descriptor identity contract. ASCII validation removes
 Unicode case-folding ambiguity, but it does not by itself make PostgreSQL `lower(...)` independent of
@@ -469,18 +471,20 @@ values directly. They must change as follows:
 - For a query field compiled to a descriptor-id target, Core query validation uses that compiled
   target metadata to validate the query value before backend preprocessing. A failure uses the
   existing query-validation response shape and returns 400. `RelationalQueryRequestPreprocessor`
-  must consume only the validated value and assert the ASCII invariant before lowercasing; it must
-  not treat non-ASCII input as an unresolved descriptor that produces an empty page.
+  must consume only the validated value and assert the ASCII-without-NUL invariant before
+  lowercasing; it must not treat non-ASCII or NUL input as an unresolved descriptor that produces an
+  empty page.
 
 Here, "before normalization" means before descriptor-specific case normalization. Ordinary request
 parsing, schema validation, coercion, profile shaping, and the existing trimming rules may already
-have run. ASCII means every character in the resulting client-supplied value is in U+0000 through
-U+007F. Downstream write flattening, key unification, descriptor upsert detection, and query lookup
-must consume only values that have passed this validation; their lowercase helpers must preserve or
-assert that invariant rather than calling `ToLowerInvariant()` on unchecked input. The corresponding
-write and query algorithms are updated in [flattening-reconstitution.md](flattening-reconstitution.md),
-[key-unification.md](key-unification.md), and
-[transactions-and-concurrency.md](transactions-and-concurrency.md).
+have run. ASCII means every character in the resulting client-supplied value is in U+0001 through
+U+007F; U+0000 NUL is invalid even though it is inside the formal ASCII range because PostgreSQL
+`text`/`varchar` cannot store NUL. Downstream write flattening, key unification, descriptor upsert
+detection, and query lookup must consume only values that have passed this validation; their
+lowercase helpers must preserve or assert that invariant rather than calling `ToLowerInvariant()` on
+unchecked input. The corresponding write and query algorithms are updated in
+[flattening-reconstitution.md](flattening-reconstitution.md), [key-unification.md](key-unification.md),
+and [transactions-and-concurrency.md](transactions-and-concurrency.md).
 
 | Object | Definition |
 |---|---|
@@ -536,10 +540,11 @@ will all keep their current shape.
 The resolver-facing query preprocessor will need no result-contract change: it already consumes
 `IReferenceResolver`, and its lowercase value will feed the descriptor lower-URI probe instead of a
 hash. The implementation does change before that point: Core query validation must identify fields
-whose compiled target is `RelationalQueryFieldTarget.DescriptorIdColumn`, reject non-ASCII values
-with the existing path-attributed 400 response, and only then pass query elements to
+whose compiled target is `RelationalQueryFieldTarget.DescriptorIdColumn`, reject non-ASCII or NUL
+values with the existing path-attributed 400 response, and only then pass query elements to
 `RelationalQueryRequestPreprocessor`. The preprocessor replaces its unchecked
-`ToLowerInvariant()` call with the shared validated-ASCII lowercase helper as an invariant check.
+`ToLowerInvariant()` call with the shared validated-ASCII-without-NUL lowercase helper as an
+invariant check.
 GET-by-id, `?id=`, link injection, ownership authorization, and descriptor paging will not get
 result-contract changes. Change Query route/response/authorization contracts remain
 unchanged, but `/deletes` recreated-row detection follows the lowered-URI + `ResourceKeyId`
@@ -759,10 +764,10 @@ Relative to current DMS behavior (the hash era), on SQL Server:
   preserve stored casing (first-created canonical form, per the official feature test). A case-only
   descriptor PUT is a 400 today; it will become a 200 update/no-op. These two descriptor deltas will
   apply on both engines.
-- Non-ASCII descriptor URI writes, descriptor references, and descriptor-valued query filters will
-  become 400 validation failures. Descriptor URI identity is intentionally ASCII-only so
-  case-insensitive descriptor matching is deterministic across engines without storing a second
-  normalized URI value in the base table.
+- Non-ASCII or NUL descriptor URI writes, descriptor references, and descriptor-valued query filters
+  will become 400 validation failures. Descriptor URI identity is intentionally ASCII-only without
+  NUL so case-insensitive descriptor matching is deterministic across engines without storing a
+  second normalized URI value in the base table.
 
 PostgreSQL regular-resource behavior will remain unchanged on every pin.
 
@@ -998,12 +1003,12 @@ after T8, no production contract may still carry a `ReferentialId` member.**
   every resource; mapping-pack round trips reproduce all three mapping-set probe contracts with typed
   key binding metadata and semantic key-column order intact; 409 responses unchanged.
 - **T3 — Add descriptor ASCII validation + `UX_Descriptor_UriLowered_ResourceKeyId`.** Reject
-  non-ASCII descriptor URI values on descriptor writes, descriptor references, and
+  non-ASCII or NUL descriptor URI values on descriptor writes, descriptor references, and
   descriptor-valued query filters. This changes the current implementations: Core descriptor
   identity/reference extraction validates before constructing lowercased identities, Core query
   validation identifies descriptor-id query targets and rejects them before backend preprocessing,
   and downstream normalization sites replace unchecked `ToLowerInvariant()` calls with the shared
-  validated-ASCII helper. Emit the final lower-storage index shape on both engines:
+  validated-ASCII-without-NUL helper. Emit the final lower-storage index shape on both engines:
   PostgreSQL gets the unique expression index on `lower("Uri" COLLATE "C"), "ResourceKeyId"` with no
   new column; SQL Server gets the non-persisted `UriLowered AS LOWER([Uri])` computed column and a
   unique index on `UriLowered, ResourceKeyId`. The legacy Discriminator-authoritative index stays
@@ -1012,7 +1017,7 @@ after T8, no production contract may still carry a `ReferentialId` member.**
   uses `COLLATE "C"` rather than the database default; write failures identify the concrete
   descriptor-reference path or the offending descriptor `namespace`/`codeValue` field; query failures
   use the existing query-validation 400; validation pins prove no descriptor resolver call occurs for
-  non-ASCII input.
+  non-ASCII or NUL input.
 - **T4 — The natural-key resolver replaces the hash resolver arm.** The dialect command builders
   (PostgreSQL `unnest` and SQL Server OPENJSON +
   `FORCE ORDER` group statements, the union-projection single-statement form, the parameter-budget
@@ -1165,8 +1170,8 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
   database default. Runtime unit tests will pin `OrdinalIgnoreCase` to this declared SQL Server
   schema contract and `Ordinal` to PostgreSQL's.
 - **Descriptor ASCII validation pins**: descriptor writes, descriptor references, and
-  descriptor-valued query filters containing non-ASCII URI values return a path-attributed 400
-  before any relational lookup.
+  descriptor-valued query filters containing non-ASCII or NUL URI values return a path-attributed
+  400 before any relational lookup.
 - **PostgreSQL descriptor-lowering pins**: golden DDL and generated SQL fixtures prove every
   descriptor lowered-URI index/probe expression uses `COLLATE "C"`; a locale-sensitive fixture covers
   ASCII `I`/`i` descriptor identity under a non-default database collation so PostgreSQL cannot drift
@@ -1258,8 +1263,9 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
    `SQL_Latin1_General_CP1_CI_AS` equality; divergences will fail closed (documented above), never
    silently redefine database identity.
 8. **ASCII-only descriptor URIs** — accepted to keep descriptor matching deterministic while
-   minimizing storage. Non-ASCII descriptor URI values will be rejected explicitly rather than
-   normalized differently by different engines.
+   minimizing storage. Non-ASCII and NUL descriptor URI values will be rejected explicitly rather
+   than normalized differently by different engines or allowed to fail later against PostgreSQL
+   `text`/`varchar` storage.
 
 ## Out of scope
 
@@ -1271,6 +1277,6 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
   from an earlier shape must be re-provisioned).
 - DocumentCache/CDC work (live, RI-free, orthogonal).
 - ApiSchema contract or resource JSON shapes, except for the new ASCII-only descriptor URI value
-  contract described above.
+  contract described above, including NUL rejection.
 - Rewriting the design-doc corpus beyond the targeted supersession banners and the batching-doc
   correction named under Migration.
