@@ -378,10 +378,17 @@ internal sealed class DescriptorReadHandler(
                     []
                 );
             case DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError configError:
-                await ValidateGetByIdCustomViewsAsync(request, configError.CustomViewChecks, cancellationToken)
+                await ValidateGetByIdCustomViewsAsync(
+                        request,
+                        configError.CustomViewChecks,
+                        cancellationToken
+                    )
                     .ConfigureAwait(false);
                 return new DescriptorGetByIdAuthorizationResult(
-                    new GetResult.GetFailureSecurityConfiguration(configError.Errors, configError.Diagnostics),
+                    new GetResult.GetFailureSecurityConfiguration(
+                        configError.Errors,
+                        configError.Diagnostics
+                    ),
                     null,
                     null,
                     []

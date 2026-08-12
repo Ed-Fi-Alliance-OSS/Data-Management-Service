@@ -231,6 +231,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
             CreateAuthorizationSubjectSelector(),
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
+            _customViewAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: readAccelerationCoordinator
         );
@@ -2064,7 +2065,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
         GivenCustomViewAuthorizationReturns(
             new CustomViewAuthorizationExecutionResult.NotAuthorized(customViewFailure)
         );
@@ -2100,7 +2108,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
         GivenCustomViewAuthorizationReturns(
             new CustomViewAuthorizationExecutionResult.InvalidAuthorizationFailure("bad payload", null)
         );
@@ -2138,7 +2153,12 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 )
             )
             .ReturnsNextFromSequence(
-                new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L),
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                ),
                 new RelationalReadTargetLookupResult.NotFound()
             );
         GivenCustomViewAuthorizationReturns(new CustomViewAuthorizationExecutionResult.StaleTarget());
@@ -2176,7 +2196,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
         GivenCustomViewAuthorizationReturns(
             new CustomViewAuthorizationExecutionResult.NotAuthorized(CreateCustomViewFailure())
         );
@@ -2225,7 +2252,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
         GivenNamespaceAuthorizationReturns(
             new NamespaceAuthorizationExecutionResult.NotAuthorized(namespaceFailure)
         );
@@ -2265,7 +2299,14 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     A<CancellationToken>._
                 )
             )
-            .Returns(new RelationalReadTargetLookupResult.ExistingDocument(345L, documentUuid, 91L));
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
         A.CallTo(() =>
                 _customViewAuthorizationExecutor.ExecuteAsync(
                     A<CustomViewAuthorizationExecutionRequest>._,

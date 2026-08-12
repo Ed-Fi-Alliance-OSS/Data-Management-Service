@@ -598,7 +598,10 @@ public class GetByIdHandlerTests
 
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            public override Task<GetResult> GetDocumentById(
+                IGetRequest getRequest,
+                CancellationToken cancellationToken = default
+            )
             {
                 return Task.FromResult<GetResult>(new GetFailureCustomViewNotAuthorized(CustomViewFailure));
             }
