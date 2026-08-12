@@ -115,14 +115,14 @@ public class Given_MssqlDatabaseLifecycleCoordinator
         {
             InitialCatalog = "master",
         };
-        await using SqlConnection competingSession = new(builder.ConnectionString);
-        await competingSession.OpenAsync();
+        SqlConnection competingSession = new(builder.ConnectionString);
 
         var databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
         Task? createDatabaseTask = null;
 
         try
         {
+            await competingSession.OpenAsync();
             await ExecuteApplicationLockCommandAsync(
                 competingSession,
                 MssqlDatabaseLifecycleCoordinator.AcquireApplicationLockSql
@@ -138,27 +138,27 @@ public class Given_MssqlDatabaseLifecycleCoordinator
             }
             finally
             {
-                await ExecuteApplicationLockCommandAsync(
-                    competingSession,
-                    MssqlDatabaseLifecycleCoordinator.ReleaseApplicationLockSql
-                );
+                await competingSession.DisposeAsync();
             }
 
-            await createDatabaseTask;
+            await createDatabaseTask.WaitAsync(TimeSpan.FromSeconds(10));
+            createDatabaseTask = null;
 
             lifecycleOperationWaited.Should().BeTrue();
         }
         finally
         {
+            await competingSession.DisposeAsync();
+
             if (createDatabaseTask is not null)
             {
                 try
                 {
-                    await createDatabaseTask;
+                    await createDatabaseTask.WaitAsync(TimeSpan.FromSeconds(10));
                 }
                 catch
                 {
-                    // The awaited test operation already carries the causal failure.
+                    // The test operation already carries the causal failure; this await only bounds cleanup.
                 }
             }
 
