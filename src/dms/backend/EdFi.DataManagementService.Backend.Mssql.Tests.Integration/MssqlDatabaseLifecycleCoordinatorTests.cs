@@ -5,6 +5,8 @@
 
 using System.Collections.Concurrent;
 using System.Data;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
@@ -109,6 +111,30 @@ public class Given_MssqlDatabaseLifecycleCoordinator
     }
 
     [Test]
+    public async Task It_retries_deadlock_victim_failures_from_lifecycle_operations()
+    {
+        var attemptCount = 0;
+        var retryCountBefore = MssqlDatabaseLifecycleCoordinator.TransientConnectionRetryCount;
+
+        await MssqlDatabaseLifecycleCoordinator.ExecuteAsync(_ =>
+        {
+            attemptCount++;
+            if (attemptCount == 1)
+            {
+                throw CreateSqlException(
+                    1205,
+                    "Transaction was deadlocked on lock resources and has been chosen as the deadlock victim."
+                );
+            }
+
+            return Task.CompletedTask;
+        });
+
+        attemptCount.Should().Be(2);
+        MssqlDatabaseLifecycleCoordinator.TransientConnectionRetryCount.Should().Be(retryCountBefore + 1);
+    }
+
+    [Test]
     public async Task It_waits_for_the_instance_application_lock_held_by_another_session()
     {
         SqlConnectionStringBuilder builder = new(Configuration.MssqlAdminConnectionString!)
@@ -174,5 +200,33 @@ public class Given_MssqlDatabaseLifecycleCoordinator
 
         var result = Convert.ToInt32(await command.ExecuteScalarAsync());
         result.Should().BeGreaterThanOrEqualTo(0);
+    }
+
+    private static SqlException CreateSqlException(int number, string message)
+    {
+        var sqlError = (SqlError)RuntimeHelpers.GetUninitializedObject(typeof(SqlError));
+        typeof(SqlError)
+            .GetField("_number", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(sqlError, number);
+        typeof(SqlError)
+            .GetField("_message", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(sqlError, message);
+
+        var errorList = new List<object> { sqlError };
+        var errorCollection = (SqlErrorCollection)
+            RuntimeHelpers.GetUninitializedObject(typeof(SqlErrorCollection));
+        typeof(SqlErrorCollection)
+            .GetField("_errors", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(errorCollection, errorList);
+
+        var sqlException = (SqlException)RuntimeHelpers.GetUninitializedObject(typeof(SqlException));
+        typeof(Exception)
+            .GetField("_message", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(sqlException, message);
+        typeof(SqlException)
+            .GetField("_errors", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(sqlException, errorCollection);
+
+        return sqlException;
     }
 }

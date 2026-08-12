@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
+using System.Globalization;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
@@ -364,7 +366,10 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
     )
     {
         var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
-        var executor = new DbConnectionCdcProviderDatabaseExecutor(connection);
+        var executor = new DbConnectionCdcProviderDatabaseExecutor(
+            connection,
+            providerErrorIdentityMapper: MapSqlServerProviderErrorIdentity
+        );
 
         return await service.SetupAsync(
             BuildRequest(executor, mode, boundSourceIdentity ?? ReadDataStoreIdentity(connection))
@@ -908,9 +913,24 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
         string.Join(
             "; ",
             diagnostics.Select(diagnostic =>
-                $"{diagnostic.Code}:{diagnostic.ArtifactKind}:{diagnostic.SafeName.Value}:{diagnostic.ExpectedValue}->{diagnostic.ObservedValue}:{diagnostic.ProviderErrorClass}"
+                $"{diagnostic.Code}:{diagnostic.ArtifactKind}:{diagnostic.SafeName.Value}:{diagnostic.ExpectedValue}->{diagnostic.ObservedValue}:error_class={diagnostic.ProviderErrorClass ?? "none"}:error_code={diagnostic.ProviderErrorCode ?? "none"}:error_state={diagnostic.ProviderErrorState ?? "none"}"
             )
         );
+
+    private static CdcProviderErrorIdentity? MapSqlServerProviderErrorIdentity(DbException exception)
+    {
+        if (exception is SqlException sqlException)
+        {
+            return new CdcProviderErrorIdentity(
+                sqlException.Number.ToString(CultureInfo.InvariantCulture),
+                sqlException.State.ToString(CultureInfo.InvariantCulture)
+            );
+        }
+
+        return string.IsNullOrWhiteSpace(exception.SqlState)
+            ? null
+            : new CdcProviderErrorIdentity(exception.SqlState, null);
+    }
 
     private sealed record ProjectionPrerequisites(bool ReadCommittedSnapshotOn, int NestedTriggersValue);
 

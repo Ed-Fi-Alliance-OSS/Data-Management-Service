@@ -43,6 +43,7 @@ internal static class MssqlDatabaseLifecycleCoordinator
         """;
 
     private const int MaxAttempts = 3;
+    private const int DeadlockVictimErrorNumber = 1205;
     private static readonly TimeSpan[] _retryDelays =
     [
         TimeSpan.FromMilliseconds(100),
@@ -77,8 +78,7 @@ internal static class MssqlDatabaseLifecycleCoordinator
                     return;
                 }
                 catch (Exception exception)
-                    when (attempt < MaxAttempts
-                        && IsTransientConnectionFailure(GetPrimaryException(exception))
+                    when (attempt < MaxAttempts && IsTransientLifecycleFailure(GetPrimaryException(exception))
                     )
                 {
                     Interlocked.Increment(ref _transientConnectionRetryCount);
@@ -243,7 +243,7 @@ internal static class MssqlDatabaseLifecycleCoordinator
             : exception;
     }
 
-    private static bool IsTransientConnectionFailure(Exception exception)
+    private static bool IsTransientLifecycleFailure(Exception exception)
     {
         if (exception is not SqlException sqlException)
         {
@@ -262,6 +262,7 @@ internal static class MssqlDatabaseLifecycleCoordinator
                         or 64
                         or 233
                         or 258
+                        or DeadlockVictimErrorNumber
                         or 10053
                         or 10054
                         or 10060

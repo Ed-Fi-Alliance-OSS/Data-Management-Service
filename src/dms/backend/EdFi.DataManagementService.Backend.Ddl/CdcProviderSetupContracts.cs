@@ -661,7 +661,14 @@ public sealed record CdcProviderDiagnostic(
     string? ObservedValue,
     string? ProviderErrorClass,
     CdcProviderRetryContinuityClassification Classification
-);
+)
+{
+    public string? ProviderErrorCode { get; init; }
+
+    public string? ProviderErrorState { get; init; }
+}
+
+public sealed record CdcProviderErrorIdentity(string? ProviderErrorCode, string? ProviderErrorState);
 
 public readonly record struct CdcSafeName
 {

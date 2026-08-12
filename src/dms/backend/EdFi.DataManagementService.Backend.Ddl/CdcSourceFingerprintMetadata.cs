@@ -32,11 +32,11 @@ public static class CdcSourceFingerprintMetadata
         }
         catch (DbException exception)
         {
-            return Unavailable(exception);
+            return Unavailable(executor, exception);
         }
         catch (InvalidOperationException exception)
         {
-            return Unavailable(exception);
+            return Unavailable(executor, exception);
         }
     }
 
@@ -151,8 +151,14 @@ public static class CdcSourceFingerprintMetadata
             ]
         );
 
-    private static CdcProviderSetupStepResult Unavailable(Exception exception) =>
-        new(
+    private static CdcProviderSetupStepResult Unavailable(
+        ICdcProviderDatabaseExecutor executor,
+        Exception exception
+    )
+    {
+        var providerErrorIdentity = executor.TryMapProviderErrorIdentity(exception);
+
+        return new CdcProviderSetupStepResult(
             artifactInventory:
             [
                 new CdcProviderArtifactObservation(
@@ -175,9 +181,14 @@ public static class CdcSourceFingerprintMetadata
                     ObservedValue: "unavailable",
                     ProviderErrorClass: exception.GetType().Name,
                     Classification: CdcProviderRetryContinuityClassification.FailClosed
-                ),
+                )
+                {
+                    ProviderErrorCode = providerErrorIdentity?.ProviderErrorCode,
+                    ProviderErrorState = providerErrorIdentity?.ProviderErrorState,
+                },
             ]
         );
+    }
 
     private static string? ReadOptional(IReadOnlyDictionary<string, string?> row, string key) =>
         row.TryGetValue(key, out var value) ? value : null;

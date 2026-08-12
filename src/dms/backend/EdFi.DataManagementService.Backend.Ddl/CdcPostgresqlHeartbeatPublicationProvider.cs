@@ -180,6 +180,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         catch (DbException exception)
         {
             return SetupPrincipalFailure(
+                executor,
                 CdcProviderArtifactKind.HeartbeatTable,
                 SafeName(SourceTable(context.Request, CdcSourceTableKind.CdcHeartbeat).TableName),
                 exception
@@ -188,6 +189,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         catch (InvalidOperationException exception)
         {
             return SetupPrincipalFailure(
+                executor,
                 CdcProviderArtifactKind.HeartbeatTable,
                 SafeName(SourceTable(context.Request, CdcSourceTableKind.CdcHeartbeat).TableName),
                 exception
@@ -241,6 +243,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         catch (DbException exception)
         {
             return SetupPrincipalFailure(
+                executor,
                 CdcProviderArtifactKind.SourceTable,
                 new CdcSafeName("postgresql_cdc_source_inventory"),
                 exception
@@ -249,6 +252,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         catch (InvalidOperationException exception)
         {
             return SetupPrincipalFailure(
+                executor,
                 CdcProviderArtifactKind.SourceTable,
                 new CdcSafeName("postgresql_cdc_source_inventory"),
                 exception
@@ -340,6 +344,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         catch (DbException exception)
         {
             return SetupPrincipalFailure(
+                executor,
                 CdcProviderArtifactKind.PostgresqlReplicaIdentity,
                 SafeName(SourceTable(context.Request, CdcSourceTableKind.Document).TableName),
                 exception
@@ -348,6 +353,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         catch (InvalidOperationException exception)
         {
             return SetupPrincipalFailure(
+                executor,
                 CdcProviderArtifactKind.PostgresqlReplicaIdentity,
                 SafeName(SourceTable(context.Request, CdcSourceTableKind.Document).TableName),
                 exception
@@ -457,6 +463,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         catch (DbException exception)
         {
             return SetupPrincipalFailure(
+                executor,
                 CdcProviderArtifactKind.PostgresqlPublication,
                 publicationName,
                 exception
@@ -465,6 +472,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         catch (InvalidOperationException exception)
         {
             return SetupPrincipalFailure(
+                executor,
                 CdcProviderArtifactKind.PostgresqlPublication,
                 publicationName,
                 exception
@@ -536,6 +544,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                 catch (DbException exception)
                 {
                     return SetupPrincipalFailure(
+                        executor,
                         CdcProviderArtifactKind.PostgresqlReplicationSlot,
                         replicationSlotName,
                         exception
@@ -682,11 +691,21 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
         }
         catch (DbException exception)
         {
-            return SetupPrincipalFailure(CdcProviderArtifactKind.Grant, connectorPrincipal, exception);
+            return SetupPrincipalFailure(
+                executor,
+                CdcProviderArtifactKind.Grant,
+                connectorPrincipal,
+                exception
+            );
         }
         catch (InvalidOperationException exception)
         {
-            return SetupPrincipalFailure(CdcProviderArtifactKind.Grant, connectorPrincipal, exception);
+            return SetupPrincipalFailure(
+                executor,
+                CdcProviderArtifactKind.Grant,
+                connectorPrincipal,
+                exception
+            );
         }
     }
 
@@ -2363,11 +2382,15 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
     }
 
     private static CdcProviderSetupStepResult SetupPrincipalFailure(
+        ICdcProviderDatabaseExecutor executor,
         CdcProviderArtifactKind artifactKind,
         CdcSafeName safeName,
         Exception exception
-    ) =>
-        new(
+    )
+    {
+        var providerErrorIdentity = executor.TryMapProviderErrorIdentity(exception);
+
+        return new CdcProviderSetupStepResult(
             diagnostics:
             [
                 new CdcProviderDiagnostic(
@@ -2381,9 +2404,14 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                     ObservedValue: "provider-error",
                     ProviderErrorClass: exception.GetType().Name,
                     Classification: CdcProviderRetryContinuityClassification.FailClosed
-                ),
+                )
+                {
+                    ProviderErrorCode = providerErrorIdentity?.ProviderErrorCode,
+                    ProviderErrorState = providerErrorIdentity?.ProviderErrorState,
+                },
             ]
         );
+    }
 
     private static CdcProviderSetupStepResult ProviderHistoryUnavailable(
         CdcSafeName replicationSlotName,

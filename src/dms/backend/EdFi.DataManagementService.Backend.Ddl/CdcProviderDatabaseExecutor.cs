@@ -19,10 +19,16 @@ public interface ICdcProviderDatabaseExecutor
     );
 }
 
+public interface ICdcProviderErrorIdentityMapper
+{
+    CdcProviderErrorIdentity? MapProviderErrorIdentity(Exception exception);
+}
+
 public sealed class DbConnectionCdcProviderDatabaseExecutor(
     DbConnection connection,
-    DbTransaction? transaction = null
-) : ICdcProviderDatabaseExecutor
+    DbTransaction? transaction = null,
+    Func<DbException, CdcProviderErrorIdentity?>? providerErrorIdentityMapper = null
+) : ICdcProviderDatabaseExecutor, ICdcProviderErrorIdentityMapper
 {
     public async Task ExecuteNonQueryAsync(string sql, CancellationToken cancellationToken)
     {
@@ -70,6 +76,16 @@ public sealed class DbConnectionCdcProviderDatabaseExecutor(
         return rows;
     }
 
+    public CdcProviderErrorIdentity? MapProviderErrorIdentity(Exception exception)
+    {
+        if (exception is not DbException dbException)
+        {
+            return null;
+        }
+
+        return providerErrorIdentityMapper?.Invoke(dbException) ?? DefaultProviderErrorIdentity(dbException);
+    }
+
     private async Task EnsureOpenAsync(CancellationToken cancellationToken)
     {
         if (connection.State == ConnectionState.Open)
@@ -78,5 +94,24 @@ public sealed class DbConnectionCdcProviderDatabaseExecutor(
         }
 
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static CdcProviderErrorIdentity? DefaultProviderErrorIdentity(DbException exception) =>
+        string.IsNullOrWhiteSpace(exception.SqlState) ? null : new(exception.SqlState, null);
+}
+
+internal static class CdcProviderDatabaseExecutorExtensions
+{
+    internal static CdcProviderErrorIdentity? TryMapProviderErrorIdentity(
+        this ICdcProviderDatabaseExecutor executor,
+        Exception exception
+    )
+    {
+        ArgumentNullException.ThrowIfNull(executor);
+        ArgumentNullException.ThrowIfNull(exception);
+
+        return executor is ICdcProviderErrorIdentityMapper mapper
+            ? mapper.MapProviderErrorIdentity(exception)
+            : null;
     }
 }

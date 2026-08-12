@@ -131,6 +131,36 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
     }
 
     [Test]
+    public async Task It_should_preserve_safe_provider_error_identity_without_leaking_exception_message()
+    {
+        const string sentinelSecret = "sentinel-secret";
+        var executor = new RecordingSqlServerCdcExecutor(
+            failExecuteSqlMarker: "cdc:sqlserver:enable-database-cdc",
+            executeFailure: new InvalidOperationException(sentinelSecret),
+            executeFailureIdentity: new CdcProviderErrorIdentity("51000", "7")
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        var diagnostic = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic => diagnostic.Code == "CDC_SQLSERVER_SETUP_PRINCIPAL_FAILURE")
+            .Which;
+
+        diagnostic.ProviderErrorCode.Should().Be("51000");
+        diagnostic.ProviderErrorState.Should().Be("7");
+        diagnostic.ToString().Should().NotContain(sentinelSecret);
+
+        result.ManifestPayload!.Json.Should().Contain("\"provider_error_code\": \"51000\"");
+        result.ManifestPayload.Json.Should().Contain("\"provider_error_state\": \"7\"");
+        result.ManifestPayload.Json.Should().NotContain(sentinelSecret);
+    }
+
+    [Test]
     public void It_should_create_the_opt_in_heartbeat_table_and_singleton()
     {
         _result
@@ -2621,7 +2651,9 @@ internal sealed class RecordingSqlServerConnectorAccess
         };
 }
 
-internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecutor
+internal sealed class RecordingSqlServerCdcExecutor
+    : ICdcProviderDatabaseExecutor,
+        ICdcProviderErrorIdentityMapper
 {
     private const string ExpectedHeartbeatSingletonCheckDefinition = "([HeartbeatId]=(1))";
     private const string ExpectedHeartbeatSequenceCheckDefinition = "([HeartbeatSequence]>=(0))";
@@ -2651,6 +2683,9 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
     private readonly CdcSourceTableKind? _omittedSourceInventoryTableKind;
     private readonly string _omittedSourceInventoryColumnName;
     private readonly CdcSourceTableKind? _postCreateMismatchedCaptureInstanceKind;
+    private readonly string _failExecuteSqlMarker;
+    private readonly Exception? _executeFailure;
+    private readonly CdcProviderErrorIdentity? _executeFailureIdentity;
     private int _databaseCdcStateQueryCount;
 
     public RecordingSqlServerCdcExecutor(
@@ -2678,7 +2713,10 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         IReadOnlyList<CdcSourceTableInventory>? sourceInventory = null,
         CdcSourceTableKind? omittedSourceInventoryTableKind = null,
         string omittedSourceInventoryColumnName = "",
-        CdcSourceTableKind? postCreateMismatchedCaptureInstanceKind = null
+        CdcSourceTableKind? postCreateMismatchedCaptureInstanceKind = null,
+        string failExecuteSqlMarker = "",
+        Exception? executeFailure = null,
+        CdcProviderErrorIdentity? executeFailureIdentity = null
     )
     {
         _databaseCdcEnabled = databaseCdcEnabled;
@@ -2709,6 +2747,9 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
         _omittedSourceInventoryTableKind = omittedSourceInventoryTableKind;
         _omittedSourceInventoryColumnName = omittedSourceInventoryColumnName;
         _postCreateMismatchedCaptureInstanceKind = postCreateMismatchedCaptureInstanceKind;
+        _failExecuteSqlMarker = failExecuteSqlMarker;
+        _executeFailure = executeFailure;
+        _executeFailureIdentity = executeFailureIdentity;
     }
 
     public List<string> ExecutedSql { get; } = [];
@@ -2764,6 +2805,17 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
     public Task ExecuteNonQueryAsync(string sql, CancellationToken cancellationToken)
     {
         ExecutedSql.Add(sql);
+
+        if (
+            _executeFailure is not null
+            && (
+                string.IsNullOrEmpty(_failExecuteSqlMarker)
+                || sql.Contains(_failExecuteSqlMarker, StringComparison.Ordinal)
+            )
+        )
+        {
+            throw _executeFailure;
+        }
 
         if (sql.Contains("cdc:sqlserver:enable-database-cdc"))
         {
@@ -2899,6 +2951,9 @@ internal sealed class RecordingSqlServerCdcExecutor : ICdcProviderDatabaseExecut
 
         return Task.FromResult(rows);
     }
+
+    public CdcProviderErrorIdentity? MapProviderErrorIdentity(Exception exception) =>
+        ReferenceEquals(exception, _executeFailure) ? _executeFailureIdentity : null;
 
     private IReadOnlyList<IReadOnlyDictionary<string, string?>> DatabaseCdcStateRows()
     {

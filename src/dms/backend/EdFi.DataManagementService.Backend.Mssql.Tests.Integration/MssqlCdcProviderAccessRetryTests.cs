@@ -999,7 +999,10 @@ public class Given_MssqlCdcProviderAccessRetry
     )
     {
         var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
-        var executor = new DbConnectionCdcProviderDatabaseExecutor(connection);
+        var executor = new DbConnectionCdcProviderDatabaseExecutor(
+            connection,
+            providerErrorIdentityMapper: MssqlCdcProviderErrorIdentityMapper.MapProviderErrorIdentity
+        );
 
         return await service.SetupAsync(
             new CdcProviderSetupRequest(
@@ -1856,7 +1859,7 @@ public class Given_MssqlCdcProviderAccessRetry
         string.Join(
             "; ",
             diagnostics.Select(diagnostic =>
-                $"{diagnostic.Code}:{diagnostic.ArtifactKind}:{diagnostic.SafeName.Value}:{diagnostic.ExpectedValue}->{diagnostic.ObservedValue}:{diagnostic.ProviderErrorClass}"
+                $"{diagnostic.Code}:{diagnostic.ArtifactKind}:{diagnostic.SafeName.Value}:{diagnostic.ExpectedValue}->{diagnostic.ObservedValue}:error_class={diagnostic.ProviderErrorClass ?? "none"}:error_code={diagnostic.ProviderErrorCode ?? "none"}:error_state={diagnostic.ProviderErrorState ?? "none"}"
             )
         );
 
