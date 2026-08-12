@@ -164,8 +164,11 @@ public abstract record AbstractUnionViewProjectionExpression
 
 public enum TrackedChangeTableKind
 {
-    // Per-resource tracked-change table in `tracked_changes_{ProjectEndpointName}`.
+    // Per-resource tracked-change table for a regular relational resource.
     Resource,
+
+    // Per-resource tracked-change table for a concrete subclass of an abstract resource.
+    ConcreteAbstract,
 
     // Shared descriptor tracked-change table, conventionally `tracked_changes_edfi.Descriptor`.
     SharedDescriptor
@@ -173,8 +176,8 @@ public enum TrackedChangeTableKind
 
 public enum TrackedChangeColumnRole
 {
-    // Value comes from an identityJsonPaths binding or a securableElements scalar binding.
-    SourceValue,
+    // A plain scalar value mirrored from a live identity or securable-element storage column.
+    Scalar,
 
     // Value is projected from `dms.Descriptor.Namespace` for a descriptor reference binding.
     DescriptorNamespace,
@@ -186,63 +189,65 @@ public enum TrackedChangeColumnRole
     PersonDocumentId
 }
 
-public enum PersonSecurableElementKind
+[Flags]
+public enum TrackedChangeColumnOrigin
 {
-    Student,
-    Contact,
-    Staff
+    None = 0,
+    Identity = 1,
+    SecurableElement = 2
 }
 
-public sealed record TrackedChangeDescriptorJoinInfo(
-    string JoinName,
-    QualifiedResourceName DescriptorResource,
-    DbColumnName SourceDescriptorIdColumn,
-    DbColumnName NamespaceOutputColumn,
-    DbColumnName CodeValueOutputColumn
-);
+public enum TrackedChangeSystemColumnRole
+{
+    Id,
+    ChangeVersion,
+    CreatedAt,
+    Discriminator
+}
 
-public sealed record TrackedChangeJoinStep(
-    DbTableName FromTable,
-    DbColumnName FromDocumentIdColumn,
-    DbTableName ToTable,
-    DbColumnName ToDocumentIdColumn
-);
-
-public sealed record TrackedChangePersonJoinInfo(
-    string JoinName,
-    PersonSecurableElementKind PersonKind,
-    JsonPathExpression SourceJsonPath,
-    IReadOnlyList<TrackedChangeJoinStep> JoinStepsInOrder,
-    DbColumnName PersonDocumentIdOutputColumn
+public sealed record TrackedChangeSystemColumnInfo(
+    TrackedChangeSystemColumnRole Role,
+    DbColumnName ColumnName,
+    RelationalScalarType? ScalarType,
+    bool IsNullable,
+    bool IsPrimaryKey
 );
 
 public sealed record TrackedChangeColumnInfo(
-    DbColumnName BaseColumnName,
     DbColumnName OldColumnName,
     DbColumnName NewColumnName,
-    RelationalScalarType ScalarType,
+    string SourceJsonPath,
+    DbColumnName? CanonicalStorageColumn,
     bool IsOldColumnNullable,
     bool IsNewColumnNullable,
+    RelationalScalarType ScalarType,
     TrackedChangeColumnRole Role,
-    JsonPathExpression? SourceJsonPath,
-    DbColumnName? SourceStorageColumn = null,
+    TrackedChangeColumnOrigin Origin,
     string? DescriptorJoinName = null,
     string? PersonJoinName = null
 );
 
+public sealed record TrackedChangeDescriptorJoinInfo(
+    string DescriptorJoinName,
+    DbColumnName SourceColumn,
+    QualifiedResourceName DescriptorResource
+);
+
+public sealed record TrackedChangePersonJoinInfo(
+    string PersonJoinName,
+    SecurableElementKind PersonKind,
+    IReadOnlyList<ColumnPathStep> JoinPath
+);
+
 public sealed record TrackedChangeTableInfo(
-    DbTableName TableName,
+    DbTableName Table,
     TrackedChangeTableKind Kind,
-    ResourceKeyEntry? ResourceKey,
     DbTableName SourceTable,
-    // System columns use fixed role-based SQL type mappings documented below; they are not value columns.
-    DbColumnName IdColumn,
-    DbColumnName ChangeVersionColumn,
-    DbColumnName CreatedAtColumn,
-    DbColumnName? DiscriminatorColumn,
     IReadOnlyList<TrackedChangeColumnInfo> ValueColumnsInTableOrder,
-    IReadOnlyList<TrackedChangeDescriptorJoinInfo> DescriptorJoinsInNameOrder,
-    IReadOnlyList<TrackedChangePersonJoinInfo> PersonJoinsInNameOrder
+    IReadOnlyList<TrackedChangeSystemColumnInfo> SystemColumns,
+    IReadOnlyList<DbColumnName> PrimaryKeyColumns,
+    IReadOnlyList<TrackedChangeDescriptorJoinInfo> DescriptorJoins,
+    IReadOnlyList<TrackedChangePersonJoinInfo> PersonJoins
 );
 
 // The four ReadChanges authorization views (see `change-queries.md` §"Authorization views")
@@ -374,28 +379,33 @@ Notes:
   - `DocumentStamping.ChangeTracking` is valid only on `TriggerKindParameters.DocumentStamping` entries and is attached when Change Queries requires that trigger to also write key-change and tombstone rows. The tracked-change table metadata tells emitters where and how to write tracked-change rows; the owning `DbTriggerInfo.IdentityProjectionColumns` remains the single key-change predicate source.
   - `MirrorStampTargetTable` is required (non-null) for every `TriggerKindParameters.DocumentStamping` entry and null for all other trigger kinds. The derivation pass assigns it by rule: the same table as `Table` for root-table stamping triggers, the resource's root table for child / `_ext` stamping triggers, and `dms.Descriptor` for the descriptor stamping trigger. Dialect emitters render the mirror UPDATE (the second UPDATE in the trigger body, after the `dms.Document` stamp UPDATE) against `MirrorStampTargetTable` and MUST NOT re-derive the target from `Table`. See `change-queries.md` §"Concrete-resource ContentVersion / ContentLastModifiedAt mirror".
   - For key-change rows, dialect emitters use the same null-safe old/new value-diff workset already required for identity stamping. Under key unification, this includes the presence-gated canonical expressions defined in `key-unification.md`.
-  - Scope: schema-derived project objects only (resource/extension/abstract-identity tables). This includes authorization-required indexes on resource tables derived from `securableElements` (see `auth.md`) and tracked-change tables/views derived from Change Query metadata (see `change-queries.md`). Core `dms.*` / `auth.*` objects (and their indexes/triggers) are owned by core DDL emission, with two carve-outs:
+  - Scope: schema-derived project objects only (resource/extension/abstract-identity tables). This includes authorization-required indexes on resource tables derived from `securableElements` (see `auth.md`) and tracked-change tables/views derived from Change Query metadata (see `change-queries.md`). Core `dms.*` / `auth.*` objects (and their indexes/triggers) are owned by core DDL emission, with the following carve-outs:
     - authorization indexes for descriptor `Namespace` securable elements land on `dms.Descriptor` (e.g. `IX_Descriptor_Namespace_Auth`) because all descriptor resources share that base table; these are emitted by `DeriveAuthorizationIndexInventoryPass` alongside resource-table auth indexes rather than by core DDL, since their existence is driven by per-resource `securableElements` metadata.
     - the shared descriptor tracked-change table (`tracked_changes_edfi.Descriptor`) and its `TriggerKindParameters.DocumentStamping`/`DocumentStamping.ChangeTracking` trigger are represented in tracked-change inventory because their columns and discriminator coverage are driven by descriptor resources in the effective schema.
+    - the descriptor change-version indexes `IX_Descriptor_Discriminator_ContentVersion` and `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId` land on the core-owned `dms.Descriptor` table but are derived by `DeriveIndexInventoryPass`; their existence and consumers are driven by the effective schema and Change Query planning. The core DDL emitter continues to own `IX_Descriptor_ResourceKeyId_DocumentId`. The derived key orders are `[Discriminator, ContentVersion]` and `[ResourceKeyId, ContentVersion, DocumentId]`, respectively.
 - `IndexesInCreateOrder` / `TriggersInCreateOrder` are stored in canonical deterministic order (schema, table, name), not a dependency-aware DDL execution order; DDL emission chooses any required creation sequence.
 - `TrackedChangeTablesInNameOrder` is stored in canonical deterministic order by physical object name. Dialect emitters, runtime Change Query SQL planning, manifests, and tests must consume this inventory rather than re-deriving table columns, descriptor joins, or person joins from emitted SQL strings.
 - The ReadChanges authorization view inventory is not part of `DerivedRelationalModelSet`: it is the static `AuthObjectDefinitions.ReadChangesAuthorizationViewDefinitions` list in `Backend.External` (see the `ReadChangesAuthViewKind` note above). Emission of these views is gated per model set by people-auth availability plus the presence of the five required `tracked_changes_edfi` association tables in `TrackedChangeTablesInNameOrder`; the DDL emitter and the manifest emitter apply the same guard so the manifest never advertises views the DDL does not create.
 - `TrackedChangeTableInfo` separates system columns from `ValueColumnsInTableOrder`:
-  - When `Kind = Resource`, `ResourceKey` is required and identifies the single resource represented by the tracked-change table.
-  - When `Kind = SharedDescriptor`, `ResourceKey` is `null`; the table covers every `ConcreteResourceModel` whose `StorageKind = SharedDescriptorTable` in the same `DerivedRelationalModelSet`. Consumers must not duplicate descriptor coverage lists inside `TrackedChangeTableInfo`.
+  - `Kind = Resource` identifies a per-resource table for a regular `ResourceStorageKind.RelationalTables` resource.
+  - `Kind = ConcreteAbstract` identifies a per-resource table for a concrete subclass of an abstract resource; each concrete subclass has its own tracked-change table rather than sharing an abstract-parent table.
+  - `Kind = SharedDescriptor` identifies the single shared descriptor table. It covers every `ConcreteResourceModel` whose `StorageKind = SharedDescriptorTable` in the same `DerivedRelationalModelSet`; consumers must not duplicate descriptor coverage lists inside `TrackedChangeTableInfo`.
+  - `SystemColumns` carries fixed columns as `TrackedChangeSystemColumnInfo` entries. Resource and concrete-abstract tables use role order `[Id, ChangeVersion, CreatedAt]`; the shared descriptor table uses `[Discriminator, Id, ChangeVersion, CreatedAt]`. `PrimaryKeyColumns` explicitly carries the primary-key column list (`[ChangeVersion]` in the shipped design) so renderers do not hardcode it.
   - `ValueColumnsInTableOrder` entries carry `RelationalScalarType` because they are schema-derived old/new values.
   - `IsOldColumnNullable` and `IsNewColumnNullable` describe the physical old/new tracked-change columns separately. They are required booleans, never tri-state values.
   - `IsOldColumnNullable` follows the nullability of the tracked source value. Required identity and required securable-element values are `false`; optional securable-element values, such as override-driven nullable paths, are `true`.
   - `IsNewColumnNullable` is normally `true` because delete tombstones leave `NewX` values `NULL`. If a future tracked-change table records only key-change rows and never tombstones, it may set `IsNewColumnNullable` from the source value nullability instead.
-  - `DescriptorJoinName` and `PersonJoinName` reference entries in `DescriptorJoinsInNameOrder` and `PersonJoinsInNameOrder`; join definitions are owned once at the table level and are not duplicated per value column.
+  - `DescriptorJoinName` and `PersonJoinName` reference entries in `DescriptorJoins` and `PersonJoins`; join definitions are owned once at the table level and are not duplicated per value column. Both lists are stored in ordinal name order (`DescriptorJoinName` and `PersonJoinName`, respectively) for deterministic manifests and emission.
+  - `CanonicalStorageColumn` identifies the canonical writable storage column when the source uses key-unified storage; it is otherwise null, except that a zero-hop self-person `PersonDocumentId` column uses `DocumentId`.
+  - `Origin` classifies whether the column serves identity, securable-element, or combined purposes.
   - `TrackedChangeColumnRole.DescriptorNamespace` and `TrackedChangeColumnRole.DescriptorCodeValue` require `DescriptorJoinName` and require `PersonJoinName = null`.
-  - `TrackedChangeColumnRole.PersonDocumentId` requires `PersonJoinName` and requires `DescriptorJoinName = null`.
-  - `TrackedChangeColumnRole.SourceValue` requires both join-name fields to be `null`.
-  - `IdColumn`, `ChangeVersionColumn`, `CreatedAtColumn`, and `DiscriminatorColumn` are fixed tracked-change system columns whose SQL types are inferred from their roles, following the same convention used by non-scalar `DbColumnModel` roles (`DocumentFk`, `CollectionKey`, `Ordinal`, etc.).
-  - `IdColumn`: `NOT NULL`, copied from `dms.Document.DocumentUuid`; PostgreSQL `uuid`, SQL Server `uniqueidentifier`.
-  - `ChangeVersionColumn`: `NOT NULL`, copied from the bumped `dms.Document.ContentVersion`; PostgreSQL/SQL Server `bigint`; primary tracked-change window/sort column.
-  - `CreatedAtColumn`: `NOT NULL`, tracked row insert timestamp; PostgreSQL `timestamp with time zone DEFAULT now()`, SQL Server `datetime2(7) DEFAULT sysutcdatetime()`.
-  - `DiscriminatorColumn`: present only when `Kind = SharedDescriptor`; `NOT NULL`; PostgreSQL `varchar(128)`, SQL Server `nvarchar(128)`; omitted (`null`) for per-resource tracked-change tables.
+  - `TrackedChangeColumnRole.PersonDocumentId` requires `DescriptorJoinName = null`. A join-backed person column requires `PersonJoinName`; a zero-hop self-person column instead has `PersonJoinName = null` and `CanonicalStorageColumn = DocumentId`.
+  - `TrackedChangeColumnRole.Scalar` requires both join-name fields to be null.
+  - `TrackedChangeSystemColumnInfo.Role` determines fixed system-column semantics and dialect rendering, following the same convention used by non-scalar `DbColumnModel` roles (`DocumentFk`, `CollectionKey`, `Ordinal`, etc.). `ColumnName`, `ScalarType`, `IsNullable`, and `IsPrimaryKey` carry the remaining SQL-free column metadata.
+  - `TrackedChangeSystemColumnRole.Id`: `NOT NULL`, copied from `dms.Document.DocumentUuid`; `ScalarType = null` because dialect emitters render PostgreSQL `uuid` / SQL Server `uniqueidentifier` by role.
+  - `TrackedChangeSystemColumnRole.ChangeVersion`: `NOT NULL`, copied from the bumped `dms.Document.ContentVersion`; `ScalarType = Int64`; primary tracked-change window/sort column.
+  - `TrackedChangeSystemColumnRole.CreatedAt`: `NOT NULL`, tracked row insert timestamp; `ScalarType = DateTime`; dialect emitters add PostgreSQL `now()` / SQL Server `sysutcdatetime()` defaults.
+  - `TrackedChangeSystemColumnRole.Discriminator`: present only when `Kind = SharedDescriptor`; `NOT NULL`; `ScalarType = String(MaxLength: 128)`; omitted from `SystemColumns` for per-resource tracked-change tables.
 
 ### 2.3 Mapping set (dialect-specific)
 

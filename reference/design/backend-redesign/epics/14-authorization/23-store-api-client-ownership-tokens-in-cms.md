@@ -102,7 +102,8 @@ them without adding ownership claims to access tokens.
 
 - This story and
   [Load and Cache API-client Ownership Tokens from CMS in DMS](24-load-and-cache-api-client-ownership-tokens-from-cms.md)
-  both block [DMS-1060](11-ownership-auth-strategy.md).
+  both block [DMS-1060](11-ownership-auth-strategy.md) and
+  [DMS-1410](11b-ownership-auth-get-many.md).
 - This story owns the CMS wire contract and must be available before the DMS story's end-to-end
   acceptance. Development may proceed in parallel against the approved decision record.
 - This story does not add ownership JWT claims, `/oauth/token_info` fields, Admin App UI, token

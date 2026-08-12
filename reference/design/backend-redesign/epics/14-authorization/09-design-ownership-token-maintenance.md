@@ -17,8 +17,8 @@ Refer to the [authorization design](../../design-docs/auth.md) for more informat
 - Propose what endpoints need to be updated or created to maintain the Ownership tokens of an ApiClient.
   - Consider that neither the Admin API nor the Admin App supports this, so the endpoint design will be brand new.
 - Propose how DMS will read and cache the Ownership tokens from CMS.
-- Once the proposals above are reviewed and approved, create the tickets that implement the changes. These new tickets should block DMS-1060.
-- Update DMS-1060 description if necessary.
+- Once the proposals above are reviewed and approved, create the tickets that implement the changes. These new tickets should block DMS-1060 and DMS-1410.
+- Update the DMS-1060 and DMS-1410 descriptions if necessary.
 
 ## Proposed Contract
 

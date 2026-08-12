@@ -49,5 +49,5 @@ the initial contract and exclusions.
 - This spike does not implement product changes.
 - It does not redesign the initial CMS maintenance endpoints or direct application-context delivery
   unless the revocation SLA cannot be met by the approved model.
-- It does not block DMS-1060 unless product or security rejects the approved bounded-staleness
-  contract.
+- It blocks neither DMS-1060 nor DMS-1410 unless product or security rejects the approved
+  bounded-staleness contract.

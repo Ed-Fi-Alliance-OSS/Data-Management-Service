@@ -438,8 +438,8 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
     public async Task It_fails_closed_for_descriptor_query_with_ownership_based_authorization()
     {
         // OwnershipBased is known-but-not-enabled for GET-many exactly as for every other operation:
-        // DMS-1060 owns the strategy, so the request keeps its 501 rather than silently succeeding with
-        // an empty page.
+        // DMS-1410 owns descriptor GET-many ownership support, so the request keeps its 501
+        // rather than silently succeeding with an empty page.
         var commandExecutor = new InMemoryRelationalCommandExecutor([]);
         var sut = CreateSut(commandExecutor);
 

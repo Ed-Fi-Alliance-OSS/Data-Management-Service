@@ -476,7 +476,7 @@ public class Given_RelationshipAuthorizationStrategyClassifier
             }
         );
 
-        // The classifier has no ownership-promotion mode at all: DMS-1060 owns the strategy, so the
+        // The classifier has no ownership-promotion mode at all: DMS-1410 owns promotion for GET-many, so the
         // resolved custom view is still reported (the caller validates it) while OwnershipBased keeps
         // the known-but-not-enabled classification that produces the fail-closed 501.
         classification

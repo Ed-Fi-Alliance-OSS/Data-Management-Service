@@ -217,9 +217,10 @@ public class Given_RelationalAuthorizationPlanner
     }
 
     // OwnershipBased is known-but-not-enabled for GET-many exactly as it is for every other operation:
-    // DMS-1060 owns the strategy end to end, including the CMS application-context token source and the
-    // write-side CreatedByOwnershipTokenId stamping a filter would match against. DMS-1062 ships no
-    // ownership token input at all, so there is no token state that could change these outcomes.
+    // DMS-1410 owns the future GET-many ownership filter and CMS application-context token input.
+    // DMS-1060 owns the write-side CreatedByOwnershipTokenId stamping a filter would match against.
+    // DMS-1062 ships no ownership token input at all, so there is no token state
+    // that could change these outcomes.
     [Test]
     public void It_returns_still_unsupported_for_ReadMany_when_OwnershipBased_is_configured_alone()
     {

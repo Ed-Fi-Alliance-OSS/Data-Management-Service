@@ -95,7 +95,8 @@ resolved.
 
 - [Store and Maintain API-client Ownership Tokens in CMS](23-store-api-client-ownership-tokens-in-cms.md)
   owns the CMS response contract and must be available before this story's end-to-end acceptance.
-- Both stories block [DMS-1060](11-ownership-auth-strategy.md); this story supplies context but does
+- Both stories block [DMS-1060](11-ownership-auth-strategy.md) and
+  [DMS-1410](11b-ownership-auth-get-many.md); this story supplies context but does
   not implement ownership stamping, filters, authorization checks, or SQL.
 - This story does not add ownership JWT claims, `/oauth/token_info` fields, push invalidation,
   Admin App UI, token lifecycle administration, or document-ownership transfer.

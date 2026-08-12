@@ -4,6 +4,7 @@ date: 2026-07-29
 jira: DMS-1058
 related:
   - DMS-1060
+  - DMS-1410
 ---
 
 # Decision Record: Ownership Token Maintenance and Delivery
@@ -39,7 +40,8 @@ and the DMS retrieval, caching, tenant, and failure contracts for consuming thos
 | --- | --- |
 | This decision record | Ownership-token maintenance, delivery, and cache contract |
 | [Authorization design](auth.md) | Overall relational authorization design; must defer to this record for ownership-token delivery after approval |
-| [DMS-1060 story mirror](../epics/14-authorization/11-ownership-auth-strategy.md) | Ownership-based CRUD and SQL semantics that consume this contract |
+| [DMS-1060 story mirror](../epics/14-authorization/11-ownership-auth-strategy.md) | POST stamping and single-record ownership authorization that consume this contract |
+| [DMS-1410 story mirror](../epics/14-authorization/11b-ownership-auth-get-many.md) | GET-many ownership filtering that consumes this contract |
 | [DMS-1058 spike mirror](../epics/14-authorization/09-design-ownership-token-maintenance.md) | Spike scope, acceptance criteria, and approval gate |
 | [CMS story draft](../epics/14-authorization/23-store-api-client-ownership-tokens-in-cms.md) and [DMS story draft](../epics/14-authorization/24-load-and-cache-api-client-ownership-tokens-from-cms.md) | Proposed delivery scope and acceptance evidence; after approval they become Jira stories and must not redefine this contract |
 | [Operational-lifecycle spike draft](../epics/14-authorization/25-ownership-token-operational-lifecycle-spike.md) | Optional follow-up investigation; reviewers decide whether to create, defer, or reject it |
@@ -58,15 +60,18 @@ transient planning fields are intentionally not design evidence.
 
 - The checked-in [DMS-1058 spike mirror](../epics/14-authorization/09-design-ownership-token-maintenance.md)
   requires a proposed CMS storage model, maintenance endpoints, a DMS read/cache design,
-  post-approval implementation stories that block DMS-1060, and any necessary DMS-1060 update.
+  post-approval implementation stories that block DMS-1060 and DMS-1410, and any necessary
+  updates to both descriptions.
 - The [DMS-1059 story mirror](../epics/14-authorization/10-emit-ownership-column-and-index.md)
   and [DDL emitter](../../../../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CoreDdlEmitter.cs)
   establish the downstream storage type: `dms.Document.CreatedByOwnershipTokenId` is a nullable
   `SMALLINT` with an index in both supported providers.
 - The [DMS-1060 story mirror](../epics/14-authorization/11-ownership-auth-strategy.md) establishes
-  one nullable creator token for POST stamping, many tokens for read/modify authorization,
+  one nullable creator token for POST stamping, many tokens for single-record authorization,
   unchanged ownership on PUT, PostgreSQL and SQL Server parity, and a defensive failure at 2,000
-  or more SQL Server scalar token parameters.
+  or more SQL Server scalar token parameters. The [DMS-1410 story mirror](../epics/14-authorization/11b-ownership-auth-get-many.md)
+  establishes GET-many ownership filtering using `OwnershipTokenIds`, including the same
+  PostgreSQL and SQL Server parameter-limit boundary.
 
 These contracts constrain DMS-1058's output without preselecting how CMS stores or delivers the
 two inputs.
@@ -156,7 +161,7 @@ At the pinned DMS revision:
   has no ownership inputs, while the
   [`RelationshipAuthorizationStrategyClassifier`](../../../../src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationshipAuthorizationStrategyClassifier.cs)
   explicitly recognizes `OwnershipBased` as known but not enabled. DMS therefore fails closed until
-  DMS-1060 consumes an approved metadata contract.
+  DMS-1060 and DMS-1410 consume an approved metadata contract.
 - The [authorization design](auth.md#authentication) currently says ownership tokens are JWT
   claims with a default 30-minute token lifetime. That statement predates the direct
   application-context cache and conflicts with this proposal's selected delivery path.
@@ -169,7 +174,7 @@ At the pinned DMS revision:
 | ODS stores one creator token and a separate read/modify collection per API client | CMS preserves both independent API-client assignments |
 | ODS permits duplicate assignment rows but deduplicates during retrieval | CMS uses a composite assignment key and returns a unique, sorted collection |
 | ODS stamps on create and makes the stored token non-updatable | Creator changes affect future creates only; PUT never transfers existing document ownership |
-| DMS-1060 fails at 2,000 or more SQL Server scalar ownership parameters | CMS rejects assignment collections larger than 1,999; DMS retains its defensive limit |
+| DMS-1060 and DMS-1410 fail at 2,000 or more SQL Server scalar ownership parameters | CMS rejects assignment collections larger than 1,999; both DMS consumers retain their defensive limit |
 | CMS has an existing limited API-client endpoint and DMS already retrieves and caches it | Ownership values extend `ApplicationContext`; no identity-provider or JWT changes are required |
 | CMS scopes API clients through their application's vendor, while tenant-owned catalog roots carry nullable `TenantId` | The ownership-token catalog carries `TenantId`, and every assignment/read validates the API client's existing tenant scope |
 | The existing cache key is client-only and provider failures collapse to null | The contract adds tenant-qualified keys/requests and typed not-found versus unavailable outcomes |
@@ -254,7 +259,8 @@ Each API client has zero or more `OwnershipTokenIds`.
 - A maximum of 1,999 values may be assigned to one API client.
 
 CMS enforces the 1,999-value maximum so it cannot create a configuration that exceeds DMS-1060's
-SQL Server scalar-parameter limit. DMS will retain its defensive failure for 2,000 or more values.
+single-record or DMS-1410's GET-many SQL Server scalar-parameter limit. Both DMS consumers retain
+their defensive failure for 2,000 or more values.
 
 ### Independent assignments
 
@@ -488,17 +494,19 @@ Ownership values do not become fields on JWT-derived `ClientAuthorizations`.
 
 DMS resolves application context at most once for an authenticated resource request when a
 consumer requires it. The request-scoped result is available to profile processing and relational
-authorization. DMS-1060 passes both the JWT-derived client authorizations and CMS-derived
-application context into `RelationalAuthorizationContext`.
+authorization. DMS-1373 propagates both the JWT-derived client authorizations and CMS-derived
+application context into `RelationalAuthorizationContext`. DMS-1060 consumes both ownership
+fields; DMS-1410 consumes `OwnershipTokenIds`.
 
 The request-scoped holder memoizes the first `Success`, `NotFound`, or `Unavailable` result for the
 remainder of that request. Only `Success` crosses the request boundary into `HybridCache`.
 
 Application context is required:
 
-- for every POST, because every create must be stamped even if the resource does not use
+- for every POST, because DMS-1060 stamps every create even if the resource does not use
   `OwnershipBased`; and
-- for GET, PUT, and DELETE when the selected authorization strategies include `OwnershipBased`.
+- for DMS-1060 GET-by-id, PUT, and DELETE and DMS-1410 GET-many when the selected authorization
+  strategies include `OwnershipBased`.
 
 Existing profile behavior may independently require application context.
 
@@ -565,9 +573,9 @@ When a required application context is not already cached:
 A successfully resolved application context with a null creator and empty token collection is a
 valid configuration:
 
-- POST stamps null; and
-- DMS-1060 applies its ownership-uninitialized or ownership-mismatch behavior when the resource
-  requires ownership authorization.
+- DMS-1060 POST stamps null; and
+- DMS-1060 applies its ownership-uninitialized or ownership-mismatch behavior to a single record,
+  while DMS-1410 applies its GET-many ownership filter using the empty token collection.
 
 Public failures do not disclose ownership-token values.
 
@@ -601,14 +609,18 @@ cap the setting, or remove caching; those are not part of the simplest first imp
 | Add push or event-driven cache invalidation | Deferred: it adds a distributed invalidation path; the proposed first implementation explicitly accepts the configured cache lifetime as its stale-access bound. |
 | Hard-delete ownership-token identities | Rejected: durable identifiers are needed to interpret historical document ownership after assignments are removed. |
 
-## Impact on DMS-1060 and `auth.md`
+## Impact on DMS-1060, DMS-1410, and `auth.md`
 
-DMS-1060's CRUD and SQL semantics remain unchanged. Its description is updated to state:
+DMS-1060's POST stamping and single-record authorization semantics remain unchanged. Its
+description is updated to state:
 
 > `CreatorOwnershipTokenId` and `OwnershipTokenIds` come from the tenant-qualified CMS
 > `ApplicationContext`, not JWT claims. DMS resolves and caches this context through
 > `GET /v3/apiClients/{clientId}`. CMS limits assignments to 1,999 tokens; DMS retains its defensive
 > failure for 2,000 or more.
+
+DMS-1410's GET-many filtering uses `OwnershipTokenIds` from the same tenant-qualified CMS
+`ApplicationContext`. `CreatorOwnershipTokenId` is not a GET-many input.
 
 The authentication section of the [authorization design](auth.md) should likewise replace the
 ownership-token JWT statement with the direct CMS application-context contract.
@@ -623,8 +635,8 @@ administration, retirement, API-client hand-off, diagnostics, and identifier-cap
 without expanding the initial implementation stories.
 
 DMS-1374 does not defer DMS-1058's caching acceptance criterion. This contract retains the initial
-cache lifetime and failure model. The follow-up does not block DMS-1060 unless product or security
-rejects the bounded-staleness model for the initial release.
+cache lifetime and failure model. The follow-up blocks neither DMS-1060 nor DMS-1410 unless product
+or security rejects the bounded-staleness model for the initial release.
 
 JWT delivery is not part of DMS-1374 unless new requirements invalidate the direct CMS
 application-context decision.
@@ -647,7 +659,7 @@ Scope:
   1,999-token boundary; and
 - unit, PostgreSQL/SQL Server integration, and CMS E2E coverage.
 
-This story blocks DMS-1060.
+This story blocks DMS-1060 and DMS-1410.
 
 ### Story 2: DMS-1373 — Load and cache API-client ownership tokens from CMS in DMS
 
@@ -663,21 +675,24 @@ Scope:
 - focused provider, cache, pipeline, multitenancy, and integration tests; and
 - correction of the ownership delivery statement in `auth.md`.
 
-This story blocks DMS-1060.
+This story blocks DMS-1060 and DMS-1410.
 
 Story 1 owns the CMS wire contract and must be available before Story 2's end-to-end acceptance.
 Development may proceed in parallel against this approved contract, but both stories directly block
-DMS-1060.
+DMS-1060 and DMS-1410.
 
-### DMS-1060 update
+### DMS-1060 and DMS-1410 updates
 
 The approved handoff:
 
-1. links DMS-1372 and DMS-1373 as blockers of DMS-1060;
-2. adds the CMS application-context paragraph above to DMS-1060;
-3. retains all existing ownership CRUD, ordering, ProblemDetails, batching, and database-provider
-   acceptance criteria; and
-4. retains the defensive SQL Server failure at 2,000 or more tokens.
+1. links DMS-1372 and DMS-1373 as blockers of DMS-1060 and DMS-1410;
+2. adds the CMS application-context paragraphs above to both tickets: DMS-1060 consumes both
+   ownership fields for POST stamping and single-record authorization, while DMS-1410 consumes
+   `OwnershipTokenIds` for GET-many filtering only;
+3. retains DMS-1060's POST stamping and single-record authorization ProblemDetails, batching, and
+   database-provider acceptance criteria, while assigning GET-many filtering and removal of the
+   temporary GET-many 501 only to DMS-1410; and
+4. retains the defensive SQL Server failure at 2,000 or more tokens for both consumers.
 
 ## Acceptance Criteria Traceability
 
@@ -686,5 +701,5 @@ The approved handoff:
 | Review ODS storage and propose CMS storage | [Evidence Baseline](#evidence-baseline); [Ownership Semantics](#ownership-semantics); [CMS Persistence Contract](#cms-persistence-contract) |
 | Propose endpoints to maintain API-client ownership tokens | [CMS HTTP Contract](#cms-http-contract) |
 | Propose how DMS reads and caches ownership tokens | [DMS Retrieval Contract](#dms-retrieval-contract); [Consequences](#consequences) |
-| After approval, create tickets that block DMS-1060 | [Post-Approval Implementation Handoff](#post-approval-implementation-handoff) |
-| Update DMS-1060 if necessary | [Impact on DMS-1060 and `auth.md`](#impact-on-dms-1060-and-authmd) |
+| After approval, create tickets that block DMS-1060 and DMS-1410 | [Post-Approval Implementation Handoff](#post-approval-implementation-handoff) |
+| Update DMS-1060 and DMS-1410 if necessary | [Impact on DMS-1060, DMS-1410, and `auth.md`](#impact-on-dms-1060-dms-1410-and-authmd) |
