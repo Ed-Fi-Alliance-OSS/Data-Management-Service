@@ -45,6 +45,24 @@ internal interface IPlanSqlDialect
     void AppendPagingClause(SqlWriter writer, string offsetParameterName, string limitParameterName);
 
     /// <summary>
+    /// Appends a dialect-specific row-limit prefix inside the <c>SELECT</c> list for cursor page
+    /// selection. SQL Server emits <c>TOP (@pageSize) </c> here; PostgreSQL limits in a trailing
+    /// clause and emits nothing.
+    /// </summary>
+    /// <param name="writer">The SQL writer to append to.</param>
+    /// <param name="pageSizeParameterName">The bare cursor page size parameter name.</param>
+    void AppendCursorSelectRowLimitPrefix(SqlWriter writer, string pageSizeParameterName);
+
+    /// <summary>
+    /// Appends a dialect-specific trailing size clause for cursor page selection. PostgreSQL emits
+    /// <c>LIMIT @pageSize</c>; SQL Server has already limited in the <c>SELECT</c> list and emits
+    /// nothing. Neither dialect emits an offset, which is what keeps cursor cost independent of depth.
+    /// </summary>
+    /// <param name="writer">The SQL writer to append to.</param>
+    /// <param name="pageSizeParameterName">The bare cursor page size parameter name.</param>
+    void AppendCursorPagingClause(SqlWriter writer, string pageSizeParameterName);
+
+    /// <summary>
     /// Appends a dialect-specific <c>CREATE TEMP TABLE</c> DDL statement for the keyset table.
     /// </summary>
     /// <param name="writer">The SQL writer to append to.</param>

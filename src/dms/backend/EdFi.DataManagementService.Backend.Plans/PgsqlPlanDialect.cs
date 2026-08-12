@@ -46,6 +46,28 @@ internal sealed class PgsqlPlanDialect : IPlanSqlDialect
             .AppendLine();
     }
 
+    /// <summary>
+    /// Emits nothing: PostgreSQL limits cursor pages in a trailing <c>LIMIT</c> clause.
+    /// </summary>
+    /// <param name="writer">The SQL writer to append to.</param>
+    /// <param name="pageSizeParameterName">The bare cursor page size parameter name.</param>
+    public void AppendCursorSelectRowLimitPrefix(SqlWriter writer, string pageSizeParameterName)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+    }
+
+    /// <summary>
+    /// Appends a PostgreSQL <c>LIMIT</c> clause with no offset operation.
+    /// </summary>
+    /// <param name="writer">The SQL writer to append to.</param>
+    /// <param name="pageSizeParameterName">The bare cursor page size parameter name.</param>
+    public void AppendCursorPagingClause(SqlWriter writer, string pageSizeParameterName)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+
+        writer.Append("LIMIT ").AppendParameter(pageSizeParameterName).AppendLine();
+    }
+
     /// <inheritdoc />
     public void AppendCreateKeysetTempTable(SqlWriter writer, KeysetTableContract keyset)
     {

@@ -136,11 +136,34 @@ internal static class NormalizedPlanContractCodec
         );
     }
 
-    public static PageDocumentIdSqlPlanDto Encode(ExternalPlans.PageDocumentIdSqlPlan plan)
+    /// <summary>
+    /// Encodes a compiled page plan.
+    /// </summary>
+    /// <param name="plan">The compiled plan.</param>
+    /// <param name="candidateMode">
+    /// The mode the plan was compiled in, supplied by the caller that compiled it. Null declares
+    /// traditional paging. The mode is not inferred from the role inventory: inferring it would let a
+    /// traditional plan that lost its paging roles encode as a valid unpaged candidate plan, which is
+    /// the defect the discriminator exists to catch. The declaration is validated against the plan's
+    /// roles here rather than only on decode, because canonical-JSON and hash callers never decode:
+    /// a plan declared as a mode it was not compiled in would otherwise be hashed into a golden.
+    /// </param>
+    public static PageDocumentIdSqlPlanDto Encode(
+        ExternalPlans.PageDocumentIdSqlPlan plan,
+        PageCandidateModeDto? candidateMode = null
+    )
     {
         ArgumentNullException.ThrowIfNull(plan);
 
+        ValidateCandidateModeRoleInventory(
+            plan.PageParametersInOrder,
+            candidateMode,
+            nameof(PageDocumentIdSqlPlanDto.PageParametersInOrder)
+        );
+        ValidateTotalCountMatchesCandidateMode(plan.TotalCountSql, candidateMode, nameof(plan));
+
         return new PageDocumentIdSqlPlanDto(
+            CandidateMode: candidateMode,
             PageDocumentIdSql: plan.PageDocumentIdSql,
             TotalCountSql: plan.TotalCountSql,
             PageParametersInOrder: plan.PageParametersInOrder.Select(parameter => new QuerySqlParameterDto(
@@ -436,10 +459,12 @@ internal static class NormalizedPlanContractCodec
             nameof(PageDocumentIdSqlPlanDto.PageParametersInOrder),
             "page query plan"
         );
-        ValidatePagingRoleInventory(
+        ValidateCandidateModeRoleInventory(
             decodedPageParameters,
+            dto.CandidateMode,
             nameof(PageDocumentIdSqlPlanDto.PageParametersInOrder)
         );
+        ValidateTotalCountMatchesCandidateMode(dto.TotalCountSql, dto.CandidateMode, nameof(dto));
 
         ExternalPlans.QuerySqlParameter[]? decodedTotalCountParameters;
 
@@ -1413,6 +1438,14 @@ internal static class NormalizedPlanContractCodec
             ExternalPlans.QuerySqlParameterRole.Filter => QuerySqlParameterRoleDto.Filter,
             ExternalPlans.QuerySqlParameterRole.Offset => QuerySqlParameterRoleDto.Offset,
             ExternalPlans.QuerySqlParameterRole.Limit => QuerySqlParameterRoleDto.Limit,
+            ExternalPlans.QuerySqlParameterRole.CursorInclusiveMinimum =>
+                QuerySqlParameterRoleDto.CursorInclusiveMinimum,
+            ExternalPlans.QuerySqlParameterRole.CursorInclusiveMaximum =>
+                QuerySqlParameterRoleDto.CursorInclusiveMaximum,
+            ExternalPlans.QuerySqlParameterRole.PageSize => QuerySqlParameterRoleDto.PageSize,
+            ExternalPlans.QuerySqlParameterRole.PartitionCount => QuerySqlParameterRoleDto.PartitionCount,
+            ExternalPlans.QuerySqlParameterRole.MinimumPartitionSize =>
+                QuerySqlParameterRoleDto.MinimumPartitionSize,
             _ => throw new ArgumentOutOfRangeException(nameof(role), role, "Unsupported query role."),
         };
     }
@@ -1426,6 +1459,17 @@ internal static class NormalizedPlanContractCodec
             QuerySqlParameterRoleDto.Filter => ExternalPlans.QuerySqlParameterRole.Filter,
             QuerySqlParameterRoleDto.Offset => ExternalPlans.QuerySqlParameterRole.Offset,
             QuerySqlParameterRoleDto.Limit => ExternalPlans.QuerySqlParameterRole.Limit,
+            QuerySqlParameterRoleDto.CursorInclusiveMinimum => ExternalPlans
+                .QuerySqlParameterRole
+                .CursorInclusiveMinimum,
+            QuerySqlParameterRoleDto.CursorInclusiveMaximum => ExternalPlans
+                .QuerySqlParameterRole
+                .CursorInclusiveMaximum,
+            QuerySqlParameterRoleDto.PageSize => ExternalPlans.QuerySqlParameterRole.PageSize,
+            QuerySqlParameterRoleDto.PartitionCount => ExternalPlans.QuerySqlParameterRole.PartitionCount,
+            QuerySqlParameterRoleDto.MinimumPartitionSize => ExternalPlans
+                .QuerySqlParameterRole
+                .MinimumPartitionSize,
             _ => throw new ArgumentOutOfRangeException(nameof(role), role, "Unsupported query role DTO."),
         };
     }
@@ -1821,35 +1865,89 @@ internal static class NormalizedPlanContractCodec
         );
     }
 
-    private static void ValidatePagingRoleInventory(
+    /// <summary>
+    /// Validates that a page plan's role inventory is exactly the trailing sequence its declared
+    /// candidate mode requires, preceded only by filter roles.
+    /// </summary>
+    /// <remarks>
+    /// Positional rather than counted, so a plan whose paging roles appear out of order, before a
+    /// filter, or duplicated is rejected rather than silently accepted. The declared mode is what makes
+    /// the filters-only inventory of an unpaged candidate plan distinguishable from a traditional plan
+    /// that lost its paging roles.
+    /// </remarks>
+    private static void ValidateCandidateModeRoleInventory(
         IReadOnlyList<ExternalPlans.QuerySqlParameter> parametersInOrder,
+        PageCandidateModeDto? candidateMode,
         string argumentName
     )
     {
-        var offsetCount = 0;
-        var limitCount = 0;
-
-        foreach (var parameter in parametersInOrder)
+        ExternalPlans.QuerySqlParameterRole[] expectedTrailingRoles = candidateMode switch
         {
-            switch (parameter.Role)
-            {
-                case ExternalPlans.QuerySqlParameterRole.Offset:
-                    offsetCount++;
-                    break;
-                case ExternalPlans.QuerySqlParameterRole.Limit:
-                    limitCount++;
-                    break;
-            }
+            null => [ExternalPlans.QuerySqlParameterRole.Offset, ExternalPlans.QuerySqlParameterRole.Limit],
+            PageCandidateModeDto.Cursor =>
+            [
+                ExternalPlans.QuerySqlParameterRole.CursorInclusiveMinimum,
+                ExternalPlans.QuerySqlParameterRole.CursorInclusiveMaximum,
+                ExternalPlans.QuerySqlParameterRole.PageSize,
+            ],
+            PageCandidateModeDto.UnpagedCandidates => [],
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(candidateMode),
+                candidateMode,
+                "Unsupported page candidate mode DTO."
+            ),
+        };
+
+        var observedRoles = parametersInOrder.Select(static parameter => parameter.Role).ToArray();
+        var filterCount = observedRoles.Length - expectedTrailingRoles.Length;
+        var isValid =
+            filterCount >= 0
+            && observedRoles
+                .Take(filterCount)
+                .All(static role => role is ExternalPlans.QuerySqlParameterRole.Filter)
+            && observedRoles.Skip(filterCount).SequenceEqual(expectedTrailingRoles);
+
+        if (isValid)
+        {
+            return;
         }
 
-        if (offsetCount == 1 && limitCount == 1)
+        var expectedDescription =
+            expectedTrailingRoles.Length == 0
+                ? "filter roles only"
+                : $"filter roles followed by [{string.Join(", ", expectedTrailingRoles)}]";
+
+        throw new ArgumentException(
+            $"Query plan parameters for candidate mode '{candidateMode?.ToString() ?? "Traditional"}' "
+                + $"must be {expectedDescription}. "
+                + $"Observed roles in order: [{string.Join(", ", observedRoles)}].",
+            argumentName
+        );
+    }
+
+    /// <summary>
+    /// Validates that total-count SQL appears only on a traditional plan.
+    /// </summary>
+    /// <remarks>
+    /// The count inventory's own validation is role-based and therefore mode-blind, so without this a
+    /// cursor or unpaged candidate plan carrying count SQL would satisfy every other rule. Only
+    /// traditional paging computes a count: a cursor page must add no count query, and the unpaged
+    /// candidate relation is counted by the partition consumer that wraps it, not by the plan.
+    /// </remarks>
+    private static void ValidateTotalCountMatchesCandidateMode(
+        string? totalCountSql,
+        PageCandidateModeDto? candidateMode,
+        string argumentName
+    )
+    {
+        if (candidateMode is not { } nontraditionalMode || totalCountSql is null)
         {
             return;
         }
 
         throw new ArgumentException(
-            "Query plan parameters must include exactly one Offset and one Limit role entry. "
-                + $"Observed counts: Offset={offsetCount}, Limit={limitCount}.",
+            $"{nameof(PageDocumentIdSqlPlanDto.TotalCountSql)} is only valid for traditional paging, "
+                + $"but candidate mode '{nontraditionalMode}' was declared.",
             argumentName
         );
     }

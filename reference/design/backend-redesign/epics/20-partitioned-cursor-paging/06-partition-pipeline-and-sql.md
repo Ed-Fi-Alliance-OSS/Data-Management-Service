@@ -42,6 +42,12 @@ balanced cursor ranges in one identifiers-only database command.
 - Compile the approved PostgreSQL and SQL Server row-number/count/partition-size queries using the
   shared candidate relation and provider-appropriate mathematical ceiling arithmetic; the exact
   equivalent expression is not contractual.
+- Validate `/partitions` resource-property filters and live change-version parameters through the same
+  Core validation GET-many performs, so equivalent raw requests reach DMS-1385's shared candidate
+  planning with equivalent inputs. Change-version parameters already have a standalone validator this
+  pipeline can call; resource-filter parsing must be extracted from `ValidateQueryMiddleware` rather
+  than duplicated, and `PartitionRequestValidator` reserves neither parameter family for exactly this
+  caller.
 - Return starting ids only, convert them to typed inclusive ranges, and token-encode them in Core.
 - Support regular resources, extension resources, descriptors, route qualifiers, tenants, and
   profile routing without document hydration or profile projection.
@@ -71,7 +77,7 @@ balanced cursor ranges in one identifiers-only database command.
 
 - Equivalent provider fixtures must produce identical typed ranges and token payloads.
 - Boundaries are calculated after every supported regular-resource authorization strategy and
-  after descriptor no-further/namespace authorization. No inaccessible starting id may be
+  after descriptor no-further/namespace/custom-view authorization. No inaccessible starting id may be
   returned.
 
 ## Explicit Exclusions / Not Assigned

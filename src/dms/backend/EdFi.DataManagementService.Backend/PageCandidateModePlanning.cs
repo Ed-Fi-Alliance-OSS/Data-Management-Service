@@ -1,0 +1,131 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Core.External.Model;
+
+namespace EdFi.DataManagementService.Backend;
+
+/// <summary>
+/// A compiled candidate query that is selected but never hydrated. Partition boundary planning
+/// consumes the candidate relation directly, so it needs the plan and its bindings rather than a
+/// <see cref="PageKeysetSpec.Query" />, whose contract is built around hydrating a page of documents.
+/// </summary>
+/// <param name="Plan">The compiled candidate SQL plan.</param>
+/// <param name="ParameterValues">Values for every parameter the plan binds.</param>
+internal sealed record CandidateQueryPlan(
+    PageDocumentIdSqlPlan Plan,
+    IReadOnlyDictionary<string, object?> ParameterValues
+);
+
+/// <summary>
+/// The candidate mode chosen for a plan, together with the parameter values that mode binds.
+/// </summary>
+/// <param name="Mode">The candidate selection mode passed to the shared SQL compiler.</param>
+/// <param name="ParameterValues">Values for the mode-owned parameters, in canonical order.</param>
+/// <param name="OwnedParameterNames">
+/// The parameter names this mode owns, reserved by filter-name allocation. Derived from the mode
+/// itself through <see cref="PageCandidateModeParameters.OwnedNames" />, which is the same derivation
+/// the SQL compiler validates and emits against, so the reserved set cannot drift from the emitted
+/// set. Only the active mode's own names are reserved: reserving another mode's names would suffix a
+/// filter parameter that does not actually collide with anything this query emits, which would change
+/// the SQL of a mode that has no stake in the name.
+/// </param>
+internal readonly record struct PlannedCandidateMode(
+    PageCandidateMode Mode,
+    IReadOnlyList<KeyValuePair<string, object?>> ParameterValues,
+    IReadOnlyList<string> OwnedParameterNames
+);
+
+/// <summary>
+/// Translates the Core paging choice into the backend candidate mode shared by the regular-resource
+/// and descriptor page keyset planners, so the two planners cannot drift in mode selection, parameter
+/// names, or bound values.
+/// </summary>
+internal static class PageCandidateModePlanning
+{
+    /// <summary>
+    /// Builds the candidate mode and bound values for a live collection paging choice.
+    /// </summary>
+    /// <param name="paging">The Core paging choice.</param>
+    /// <param name="orderingMode">
+    /// The page-selection ordering key. Applies to traditional paging only; a cursor page is always
+    /// ordered by <c>DocumentId</c> because its continuation token is anchored on that key.
+    /// </param>
+    public static PlannedCandidateMode ForPaging(CollectionPaging paging, PageOrderingMode orderingMode)
+    {
+        ArgumentNullException.ThrowIfNull(paging);
+
+        return paging switch
+        {
+            CollectionPaging.Traditional traditional => ForTraditional(traditional, orderingMode),
+            CollectionPaging.Cursor cursor => ForCursor(cursor),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(paging),
+                paging.GetType().Name,
+                "Unsupported collection paging mode."
+            ),
+        };
+    }
+
+    /// <summary>
+    /// Builds the unpaged candidate mode. It binds no values: its partition parameter names are
+    /// reserved against filter collisions, and partition-window SQL binds them when it emits them.
+    /// </summary>
+    public static PlannedCandidateMode ForUnpagedCandidates()
+    {
+        return Plan(new PageCandidateMode.UnpagedCandidates(), []);
+    }
+
+    private static PlannedCandidateMode ForTraditional(
+        CollectionPaging.Traditional traditional,
+        PageOrderingMode orderingMode
+    )
+    {
+        var mode = new PageCandidateMode.Traditional(
+            IncludeTotalCountSql: traditional.Parameters.TotalCount,
+            OrderingMode: orderingMode
+        );
+
+        return Plan(
+            mode,
+            [
+                new(mode.OffsetParameterName, (long)(traditional.Parameters.Offset ?? 0)),
+                new(
+                    mode.LimitParameterName,
+                    (long)(traditional.Parameters.Limit ?? traditional.Parameters.MaximumPageSize)
+                ),
+            ]
+        );
+    }
+
+    private static PlannedCandidateMode ForCursor(CollectionPaging.Cursor cursor)
+    {
+        var mode = new PageCandidateMode.Cursor();
+
+        return Plan(
+            mode,
+            [
+                new(mode.InclusiveMinimumParameterName, cursor.Range.InclusiveMinimum),
+                new(mode.InclusiveMaximumParameterName, cursor.Range.InclusiveMaximum),
+                new(mode.PageSizeParameterName, (long)cursor.PageSize.Value),
+            ]
+        );
+    }
+
+    /// <summary>
+    /// Pairs a candidate mode with its bound values and the names it reserves. Both the value keys and
+    /// the reserved names come from the mode instance, so neither can name a parameter the compiled SQL
+    /// will not emit.
+    /// </summary>
+    private static PlannedCandidateMode Plan(
+        PageCandidateMode mode,
+        IReadOnlyList<KeyValuePair<string, object?>> parameterValues
+    )
+    {
+        return new PlannedCandidateMode(mode, parameterValues, PageCandidateModeParameters.OwnedNames(mode));
+    }
+}

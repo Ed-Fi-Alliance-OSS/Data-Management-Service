@@ -806,19 +806,24 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
             ],
         };
 
-        var reorderedQueryPlan = _queryPlan with
+        // Permuted on the encoded form rather than the compiled plan, matching how the duplicate-name
+        // permutation assertions below build their inputs. The property under test is that canonical
+        // JSON is order-sensitive, and a compiled plan whose paging roles are out of order is not a
+        // plan any mode can declare.
+        var encodedQueryPlan = NormalizedPlanContractCodec.Encode(_queryPlan);
+        var reorderedQueryPlan = encodedQueryPlan with
         {
             PageParametersInOrder =
             [
-                _queryPlan.PageParametersInOrder[0],
-                _queryPlan.PageParametersInOrder[2],
-                _queryPlan.PageParametersInOrder[1],
+                encodedQueryPlan.PageParametersInOrder[0],
+                encodedQueryPlan.PageParametersInOrder[2],
+                encodedQueryPlan.PageParametersInOrder[1],
             ],
         };
 
         ComputeCanonicalWritePlanHash(reorderedColumnBindingsPlan).Should().NotBe(baselineWriteHash);
         ComputeCanonicalWritePlanHash(reorderedKeyUnificationMembersPlan).Should().NotBe(baselineWriteHash);
-        ComputeCanonicalQueryPlanHash(reorderedQueryPlan).Should().NotBe(baselineQueryHash);
+        NormalizedPlanDtoJson.ComputeCanonicalSha256(reorderedQueryPlan).Should().NotBe(baselineQueryHash);
     }
 
     [Test]
@@ -1949,9 +1954,8 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
 
         var exception = act.Should().Throw<ArgumentException>().Which;
         exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.PageParametersInOrder));
-        exception.Message.Should().Contain("exactly one Offset and one Limit role entry");
-        exception.Message.Should().Contain("Offset=0");
-        exception.Message.Should().Contain("Limit=1");
+        exception.Message.Should().Contain("must be filter roles followed by [Offset, Limit]");
+        exception.Message.Should().Contain("Observed roles in order:");
     }
 
     [Test]
@@ -1972,9 +1976,8 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
 
         var exception = act.Should().Throw<ArgumentException>().Which;
         exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.PageParametersInOrder));
-        exception.Message.Should().Contain("exactly one Offset and one Limit role entry");
-        exception.Message.Should().Contain("Offset=1");
-        exception.Message.Should().Contain("Limit=0");
+        exception.Message.Should().Contain("must be filter roles followed by [Offset, Limit]");
+        exception.Message.Should().Contain("Observed roles in order:");
     }
 
     [Test]
@@ -1997,9 +2000,8 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
 
         var exception = act.Should().Throw<ArgumentException>().Which;
         exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.PageParametersInOrder));
-        exception.Message.Should().Contain("exactly one Offset and one Limit role entry");
-        exception.Message.Should().Contain("Offset=2");
-        exception.Message.Should().Contain("Limit=1");
+        exception.Message.Should().Contain("must be filter roles followed by [Offset, Limit]");
+        exception.Message.Should().Contain("Observed roles in order:");
     }
 
     [Test]
@@ -2022,9 +2024,8 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
 
         var exception = act.Should().Throw<ArgumentException>().Which;
         exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.PageParametersInOrder));
-        exception.Message.Should().Contain("exactly one Offset and one Limit role entry");
-        exception.Message.Should().Contain("Offset=1");
-        exception.Message.Should().Contain("Limit=2");
+        exception.Message.Should().Contain("must be filter roles followed by [Offset, Limit]");
+        exception.Message.Should().Contain("Observed roles in order:");
     }
 
     [Test]

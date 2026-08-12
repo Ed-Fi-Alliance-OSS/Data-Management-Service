@@ -834,7 +834,7 @@ public class Given_HydrationBatchBuilder_With_Compiled_Query_Keyset
                     RootTable: new DbTableName(new DbSchemaName("edfi"), "School"),
                     Predicates: [],
                     UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
-                    IncludeTotalCountSql: true
+                    Mode: new PageCandidateMode.Traditional(IncludeTotalCountSql: true)
                 )
             );
             var keyset = new PageKeysetSpec.Query(
@@ -1017,7 +1017,7 @@ public class Given_HydrationBatchBuilder_With_Zero_Limit_Query_Keyset
                 RootTable: new DbTableName(new DbSchemaName("edfi"), "School"),
                 Predicates: [],
                 UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
-                IncludeTotalCountSql: includeTotalCountSql
+                Mode: new PageCandidateMode.Traditional(IncludeTotalCountSql: includeTotalCountSql)
             )
         );
 

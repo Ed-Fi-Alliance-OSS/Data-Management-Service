@@ -421,22 +421,19 @@ comparison cases owned by DMS-1390. The file-name number prefixes are left at th
 pre-consolidation values and carry no meaning beyond ordering.
 
 DMS-1383 owns the typed contracts, codec, and configuration that DMS-1384's validators consume.
-DMS-1391 owns the harness and pre-change traditional baseline and must complete before DMS-1385
-modifies the shared page-selection compiler; because DMS-1385 keeps traditional page-selection
-output behaviorally and textually unchanged, that baseline is regression insurance over the shared
-compiler rather than a record of an expected change. DMS-1391 has no E20 predecessor, so it should
-run alongside DMS-1383 and DMS-1384 rather than idling DMS-1385. The DMS-1385 dependency makes the
-baseline precede the downstream shared-execution change in DMS-1386, which actually alters shared
-traditional runtime execution. DMS-1387 boundary-compiler and SQL-golden work requires DMS-1383
-through DMS-1385, while route activation additionally requires DMS-1386. DMS-1392 is a separate
-final gate that consumes DMS-1385 through DMS-1391, and DMS-1393 owns independently sequenced
-production telemetry; the graph remains acyclic.
+DMS-1391 independently owns the harness and a traditional baseline captured from an identified
+pre-change commit. DMS-1385 keeps traditional page-selection output behaviorally and textually
+unchanged so that DMS-1392 can use that baseline as regression evidence, but DMS-1391 does not gate
+DMS-1385. DMS-1387 boundary-compiler and SQL-golden work requires DMS-1383 through DMS-1385, while
+route activation additionally requires DMS-1386. DMS-1392 is a separate final gate that consumes
+DMS-1385 through DMS-1391, and DMS-1393 owns independently sequenced production telemetry; the graph
+remains acyclic.
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
 | DMS-1383 | [`00a-cursor-contract-primitives.md`](20-partitioned-cursor-paging/00a-cursor-contract-primitives.md) | — | E08-S04, E08-S05, E10, E14, E15-S01, E15-S02 | Typed paging/range contracts, token codec, result-boundary shapes, configuration |
 | DMS-1384 | [`00b-cursor-and-partition-validation.md`](20-partitioned-cursor-paging/00b-cursor-and-partition-validation.md) | DMS-1383 | E08-S04, E08-S05, E10 | Cursor precedence validation, partition validation, ProblemDetails shell, operation-scoped rejection, typed path operations, query canonicalization |
-| DMS-1385 | [`02-shared-candidate-planning.md`](20-partitioned-cursor-paging/02-shared-candidate-planning.md) | DMS-1383, DMS-1391 | E08-S04, E08-S05, E10, E14, E15-S01, E15-S02 | Extended shared page-document-id plan, Core filter sharing, uniqueness assertion, and PostgreSQL/SQL Server cursor SQL goldens |
+| DMS-1385 | [`02-shared-candidate-planning.md`](20-partitioned-cursor-paging/02-shared-candidate-planning.md) | DMS-1383 | E08-S04, E08-S05, E10, E14, E15-S01, E15-S02 | Extended shared page-document-id plan, Core filter sharing, uniqueness assertion, and PostgreSQL/SQL Server cursor SQL goldens |
 | DMS-1386 | [`04-regular-resource-cursor-execution.md`](20-partitioned-cursor-paging/04-regular-resource-cursor-execution.md) | DMS-1383, DMS-1384, DMS-1385 | E08-S00, E08-S04, E08-S05 | Regular-resource and descriptor keyset boundary propagation and the shared response header |
 | DMS-1387 | [`06-partition-pipeline-and-sql.md`](20-partitioned-cursor-paging/06-partition-pipeline-and-sql.md) | DMS-1383, DMS-1384, DMS-1385, plus DMS-1386 for route activation | — | Typed `/partitions` route, dedicated Core partition pipeline, `IPartitionQueryHandler` backend contract, provider boundary CTEs, and typed inclusive ranges |
 | DMS-1388 | [`07-openapi-and-client-contract.md`](20-partitioned-cursor-paging/07-openapi-and-client-contract.md) | DMS-1383, DMS-1386, DMS-1387 | — | Runtime-gated cursor metadata and resource/extension/descriptor/profile partition OpenAPI augmentation plus a separable client-docs slice |

@@ -50,6 +50,33 @@ internal sealed class MssqlPlanDialect : IPlanSqlDialect
             .AppendLine(" ROWS ONLY");
     }
 
+    /// <summary>
+    /// Appends a SQL Server <c>TOP (@pageSize) </c> prefix inside the <c>SELECT</c> list.
+    /// </summary>
+    /// <remarks>
+    /// Using <c>TOP</c> rather than <c>OFFSET 0</c> keeps the no-offset invariant literal rather than
+    /// merely semantic, and it is also what makes the accompanying <c>ORDER BY</c> legal when this
+    /// statement is wrapped in a common table expression.
+    /// </remarks>
+    /// <param name="writer">The SQL writer to append to.</param>
+    /// <param name="pageSizeParameterName">The bare cursor page size parameter name.</param>
+    public void AppendCursorSelectRowLimitPrefix(SqlWriter writer, string pageSizeParameterName)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+
+        writer.Append("TOP (").AppendParameter(pageSizeParameterName).Append(") ");
+    }
+
+    /// <summary>
+    /// Emits nothing: SQL Server has already limited the cursor page in the <c>SELECT</c> list.
+    /// </summary>
+    /// <param name="writer">The SQL writer to append to.</param>
+    /// <param name="pageSizeParameterName">The bare cursor page size parameter name.</param>
+    public void AppendCursorPagingClause(SqlWriter writer, string pageSizeParameterName)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+    }
+
     /// <inheritdoc />
     public void AppendCreateKeysetTempTable(SqlWriter writer, KeysetTableContract keyset)
     {

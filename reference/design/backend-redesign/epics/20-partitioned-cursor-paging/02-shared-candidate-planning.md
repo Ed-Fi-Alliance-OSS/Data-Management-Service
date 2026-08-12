@@ -30,14 +30,10 @@ a dialect compiler emits them.
 
 ## Dependencies
 
-- Hard dependencies: DMS-1383 for typed paging/range and backend contract boundaries, and the
-  completed DMS-1391 harness and baseline.
-- The DMS-1391 baseline is required because this story modifies the shared page-selection compiler.
-  Traditional page-selection output stays behaviorally and textually unchanged, so the baseline is
-  regression insurance over that shared compiler rather than a record of an expected change: it is
-  the evidence that traditional SQL and latency did not move. DMS-1391 has no predecessor in this
-  epic and can be delivered while DMS-1383 and DMS-1384 are in progress, so this gate should not
-  idle the story.
+- Hard dependency: DMS-1383 for typed paging/range and backend contract boundaries.
+- DMS-1391 independently provides the traditional-paging harness and baseline used by DMS-1392's
+  final performance gate. DMS-1385 preserves traditional page-selection output behaviorally and
+  textually so that later comparison remains meaningful, but DMS-1391 does not gate this story.
 - External foundations: E08 regular/descriptor query planning, E10 live change-version filters,
   E14 row-level authorization planning, and E15 plan-SQL foundations plus plan-contract and
   deterministic-binding artifacts. This story extends the E15-owned `PageDocumentIdSqlCompiler`
@@ -50,8 +46,23 @@ a dialect compiler emits them.
 - Extend `PageDocumentIdQuerySpec` and `PageDocumentIdSqlCompiler`, already shared by the existing
   regular-resource and descriptor page planners, with explicit cursor-bound/page-size and
   partition-count/minimum-size parameter roles and an unpaged partition candidate form.
-- Share resource-filter and live change-version validation/planning between GET-many and
-  `/partitions`.
+- Share resource-filter and live change-version planning between the GET-many and `/partitions`
+  consumers in the backend: both page keyset planners expose one candidate entry point, so any
+  consumer supplying the same preprocessed filters, change-version window, and authorization receives
+  the same predicates over the same columns, the same authorization spec, and the same bound values.
+- That parity is semantic, not textual. Each mode reserves only the parameter names it actually emits,
+  so a resource filter whose sanitized name collides with a name another mode owns (`pageSize`,
+  `cursorMin`, `cursorMax`, `number`, `minimumPartitionSize`) keeps its plain name in every mode that
+  does not emit that parameter, and is suffixed only in the mode that does. Reserving every mode's names
+  in all modes is the rejected alternative: it renames traditional filter parameters over a collision
+  traditional paging does not have, which moves the traditional page SQL this story must leave
+  textually unchanged.
+- Core-side request validation is not shared here. There is no `/partitions` request pipeline to share
+  with until DMS-1387 builds one, and `PartitionRequestValidator` deliberately leaves resource-property
+  filters and change-version parameters to that caller. Change-version parameters are already parsed by
+  the standalone `ChangeVersionParameterValidator` that the partitions pipeline can call directly;
+  resource-filter parsing still lives inside `ValidateQueryMiddleware` and must be extracted rather
+  than duplicated when that pipeline arrives. That extraction is assigned to DMS-1387.
 - Preserve regular-resource root-table behavior and descriptor `dms.Descriptor` plus
   `ResourceKeyId` behavior.
 - Add explicit test assertions that every consumer and every supported authorization strategy
@@ -68,7 +79,9 @@ a dialect compiler emits them.
 
 - Planner unit tests prove both existing planners construct the extended shared spec and that
   traditional, cursor, and partition consumers receive identical predicates, authorization specs,
-  and filter parameter values for the same request.
+  and filter parameter values for the same request. Parity coverage includes a filter whose name
+  collides with a name another mode owns, so the reserve-only-what-this-mode-emits rule is asserted
+  rather than avoided by choosing non-colliding filter names.
 - Tests cover resource filters, id filters, min/max change version, unified aliases, empty
   candidates, and descriptors.
 - Authorization planner tests cover no-further, relationship, ownership, namespace, and view-based
@@ -79,9 +92,6 @@ a dialect compiler emits them.
 - Negative assertions prove cursor plans contain no offset, row-number skip, or total-count SQL.
 - Existing traditional page-selection SQL goldens remain unchanged and demonstrate no semantic
   regression.
-- The DMS-1391 baseline artifacts exist and identify a commit at or before this story, so the
-  pre-change baseline is genuinely pre-change. Comparing traditional latency against that baseline
-  is DMS-1392's acceptance gate, not this story's.
 - Edge cases cover inverted and extreme `Int64` ranges and page sizes 0, 1, and maximum.
 - Focused PostgreSQL and real SQL Server integration probes prove the generated SQL executes.
 

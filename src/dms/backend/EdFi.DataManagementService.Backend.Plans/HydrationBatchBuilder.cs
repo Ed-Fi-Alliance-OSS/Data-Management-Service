@@ -216,7 +216,7 @@ public static class HydrationBatchBuilder
         // 3. Optional total count
         if (keyset is PageKeysetSpec.Query { Plan.TotalCountSql: not null } queryWithCount)
         {
-            writer.AppendLine(EnsureTrailingSemicolon(queryWithCount.Plan.TotalCountSql));
+            writer.AppendLine(PlanSqlStatementText.AsTerminatedStatement(queryWithCount.Plan.TotalCountSql));
             writer.AppendLine();
         }
 
@@ -236,7 +236,9 @@ public static class HydrationBatchBuilder
         {
             foreach (var descriptorPlan in plan.DescriptorProjectionPlansInOrder)
             {
-                writer.AppendLine(EnsureTrailingSemicolon(descriptorPlan.SelectByKeysetSql));
+                writer.AppendLine(
+                    PlanSqlStatementText.AsTerminatedStatement(descriptorPlan.SelectByKeysetSql)
+                );
                 writer.AppendLine();
             }
         }
@@ -248,7 +250,9 @@ public static class HydrationBatchBuilder
             && plan.DocumentReferenceLookup is { } documentReferenceLookup
         )
         {
-            writer.AppendLine(EnsureTrailingSemicolon(documentReferenceLookup.SelectByKeysetSql));
+            writer.AppendLine(
+                PlanSqlStatementText.AsTerminatedStatement(documentReferenceLookup.SelectByKeysetSql)
+            );
             writer.AppendLine();
         }
 
@@ -278,7 +282,7 @@ public static class HydrationBatchBuilder
         {
             var tablePlan = plan.TablePlansInDependencyOrder[tablePlanIndex];
             writer.AppendLine(
-                EnsureTrailingSemicolon(
+                PlanSqlStatementText.AsTerminatedStatement(
                     RequireSingleDocumentSql(
                         planDialect,
                         $"table read plan at index '{tablePlanIndex}' for table '{tablePlan.TableModel.Table}'",
@@ -299,7 +303,7 @@ public static class HydrationBatchBuilder
             )
             {
                 writer.AppendLine(
-                    EnsureTrailingSemicolon(
+                    PlanSqlStatementText.AsTerminatedStatement(
                         RequireSingleDocumentSql(
                             planDialect,
                             $"descriptor projection plan at index '{descriptorPlanIndex}'",
@@ -321,7 +325,7 @@ public static class HydrationBatchBuilder
         )
         {
             writer.AppendLine(
-                EnsureTrailingSemicolon(
+                PlanSqlStatementText.AsTerminatedStatement(
                     RequireSingleDocumentSql(
                         planDialect,
                         "document-reference lookup plan",
@@ -449,7 +453,7 @@ public static class HydrationBatchBuilder
     {
         writer
             .AppendLine("WITH page_ids AS (")
-            .AppendLine(StripTrailingSemicolon(query.Plan.PageDocumentIdSql))
+            .AppendLine(PlanSqlStatementText.AsEmbeddableBody(query.Plan.PageDocumentIdSql))
             .AppendLine(")")
             .Append("INSERT INTO ")
             .AppendRelation(keyset.Table)
@@ -722,32 +726,5 @@ public static class HydrationBatchBuilder
         }
 
         return structuredTable;
-    }
-
-    /// <summary>
-    /// Ensures a SQL statement ends with a semicolon so it is properly terminated
-    /// when embedded in a multi-statement batch.
-    /// </summary>
-    private static string EnsureTrailingSemicolon(string sql)
-    {
-        var trimmed = sql.AsSpan().TrimEnd();
-        return trimmed.Length > 0 && trimmed[^1] == ';' ? sql : $"{trimmed};";
-    }
-
-    /// <summary>
-    /// Strips a trailing semicolon (and surrounding whitespace) from compiled SQL so it can
-    /// be safely embedded inside a CTE body. Compiled plan SQL (e.g. from
-    /// <see cref="PageDocumentIdSqlCompiler"/>) includes a trailing semicolon as a statement
-    /// terminator, which is invalid inside <c>WITH ... AS (...)</c>.
-    /// </summary>
-    private static string StripTrailingSemicolon(string sql)
-    {
-        var trimmed = sql.AsSpan().TrimEnd();
-        if (trimmed.Length > 0 && trimmed[^1] == ';')
-        {
-            trimmed = trimmed[..^1].TrimEnd();
-        }
-
-        return trimmed.ToString();
     }
 }

@@ -26,6 +26,39 @@ internal static class PlanSqlGoldenFixtureQueryPlans
         return Compile(dialect, CreateDescriptorQuerySpec());
     }
 
+    /// <summary>
+    /// Compiles the foundations candidate spec in cursor mode. Same root, filters, and unified-alias
+    /// rewrites as the traditional plan, so the goldens differ only where the mode differs.
+    /// </summary>
+    public static PageDocumentIdSqlPlan CompileCursorPageDocumentIdPlan(SqlDialect dialect)
+    {
+        return Compile(dialect, CreateFoundationsQuerySpec() with { Mode = new PageCandidateMode.Cursor() });
+    }
+
+    /// <summary>
+    /// Compiles the descriptor candidate spec in cursor mode, retaining the <c>dms.Descriptor</c> root,
+    /// the <c>ResourceKeyId</c> discriminator, and the shared document join for the id filter.
+    /// </summary>
+    public static PageDocumentIdSqlPlan CompileCursorDescriptorPageDocumentIdPlan(SqlDialect dialect)
+    {
+        return Compile(dialect, CreateDescriptorQuerySpec() with { Mode = new PageCandidateMode.Cursor() });
+    }
+
+    /// <summary>
+    /// Compiles the foundations candidate spec as the unpaged candidate relation consumed by partition
+    /// boundary planning.
+    /// </summary>
+    public static PageDocumentIdSqlPlan CompileUnpagedCandidatesPlan(SqlDialect dialect)
+    {
+        return Compile(
+            dialect,
+            CreateFoundationsQuerySpec() with
+            {
+                Mode = new PageCandidateMode.UnpagedCandidates(),
+            }
+        );
+    }
+
     private static PageDocumentIdSqlPlan Compile(SqlDialect dialect, PageDocumentIdQuerySpec querySpec)
     {
         return new PageDocumentIdSqlCompiler(dialect).Compile(querySpec);
@@ -88,7 +121,7 @@ internal static class PlanSqlGoldenFixtureQueryPlans
                     null
                 ),
             },
-            IncludeTotalCountSql: true
+            Mode: new PageCandidateMode.Traditional(IncludeTotalCountSql: true)
         );
     }
 
@@ -125,7 +158,7 @@ internal static class PlanSqlGoldenFixtureQueryPlans
                 ),
             ],
             UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
-            IncludeTotalCountSql: true
+            Mode: new PageCandidateMode.Traditional(IncludeTotalCountSql: true)
         );
     }
 }

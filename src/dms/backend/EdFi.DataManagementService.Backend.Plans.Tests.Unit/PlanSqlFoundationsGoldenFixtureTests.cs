@@ -107,6 +107,42 @@ public class Given_PlanSqlFoundations_GoldenFixture
     }
 
     [Test]
+    public void It_should_match_pgsql_cursor_page_document_id_sql_golden()
+    {
+        AssertGoldenMatches("pgsql.cursor-page-document-id.sql");
+    }
+
+    [Test]
+    public void It_should_match_mssql_cursor_page_document_id_sql_golden()
+    {
+        AssertGoldenMatches("mssql.cursor-page-document-id.sql");
+    }
+
+    [Test]
+    public void It_should_match_pgsql_cursor_descriptor_page_document_id_sql_golden()
+    {
+        AssertGoldenMatches("pgsql.cursor-descriptor-page-document-id.sql");
+    }
+
+    [Test]
+    public void It_should_match_mssql_cursor_descriptor_page_document_id_sql_golden()
+    {
+        AssertGoldenMatches("mssql.cursor-descriptor-page-document-id.sql");
+    }
+
+    [Test]
+    public void It_should_match_pgsql_unpaged_candidates_sql_golden()
+    {
+        AssertGoldenMatches("pgsql.unpaged-candidates.sql");
+    }
+
+    [Test]
+    public void It_should_match_mssql_unpaged_candidates_sql_golden()
+    {
+        AssertGoldenMatches("mssql.unpaged-candidates.sql");
+    }
+
+    [Test]
     public void It_should_match_pgsql_minimal_insert_sql_golden()
     {
         AssertGoldenMatches("pgsql.insert.sql");
@@ -138,6 +174,16 @@ public class Given_PlanSqlFoundations_GoldenFixture
             ["mssql.descriptor-page-document-id.sql"] = BuildDescriptorPageDocumentIdSql(SqlDialect.Mssql),
             ["pgsql.descriptor-total-count.sql"] = BuildDescriptorTotalCountSql(SqlDialect.Pgsql),
             ["mssql.descriptor-total-count.sql"] = BuildDescriptorTotalCountSql(SqlDialect.Mssql),
+            ["pgsql.cursor-page-document-id.sql"] = BuildCursorPageDocumentIdSql(SqlDialect.Pgsql),
+            ["mssql.cursor-page-document-id.sql"] = BuildCursorPageDocumentIdSql(SqlDialect.Mssql),
+            ["pgsql.cursor-descriptor-page-document-id.sql"] = BuildCursorDescriptorPageDocumentIdSql(
+                SqlDialect.Pgsql
+            ),
+            ["mssql.cursor-descriptor-page-document-id.sql"] = BuildCursorDescriptorPageDocumentIdSql(
+                SqlDialect.Mssql
+            ),
+            ["pgsql.unpaged-candidates.sql"] = BuildUnpagedCandidatesSql(SqlDialect.Pgsql),
+            ["mssql.unpaged-candidates.sql"] = BuildUnpagedCandidatesSql(SqlDialect.Mssql),
             ["pgsql.insert.sql"] = BuildSimpleInsertSql(SqlDialect.Pgsql),
             ["mssql.insert.sql"] = BuildSimpleInsertSql(SqlDialect.Mssql),
         };
@@ -156,6 +202,23 @@ public class Given_PlanSqlFoundations_GoldenFixture
     private static string BuildDescriptorTotalCountSql(SqlDialect dialect)
     {
         return PlanSqlGoldenFixtureQueryPlans.CompileDescriptorPageDocumentIdPlan(dialect).TotalCountSql!;
+    }
+
+    private static string BuildCursorPageDocumentIdSql(SqlDialect dialect)
+    {
+        return PlanSqlGoldenFixtureQueryPlans.CompileCursorPageDocumentIdPlan(dialect).PageDocumentIdSql;
+    }
+
+    private static string BuildCursorDescriptorPageDocumentIdSql(SqlDialect dialect)
+    {
+        return PlanSqlGoldenFixtureQueryPlans
+            .CompileCursorDescriptorPageDocumentIdPlan(dialect)
+            .PageDocumentIdSql;
+    }
+
+    private static string BuildUnpagedCandidatesSql(SqlDialect dialect)
+    {
+        return PlanSqlGoldenFixtureQueryPlans.CompileUnpagedCandidatesPlan(dialect).PageDocumentIdSql;
     }
 
     private static string BuildSimpleInsertSql(SqlDialect dialect)

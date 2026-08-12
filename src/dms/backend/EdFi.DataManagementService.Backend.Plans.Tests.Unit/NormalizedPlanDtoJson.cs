@@ -337,6 +337,17 @@ internal static class NormalizedPlanDtoJson
     private static void WriteQueryPlan(Utf8JsonWriter writer, PageDocumentIdSqlPlanDto value)
     {
         writer.WriteStartObject();
+
+        // Omitted for traditional plans, which keeps their canonical JSON and hash byte-identical to
+        // the form that predates cursor paging.
+        if (value.CandidateMode is { } candidateMode)
+        {
+            writer.WriteString(
+                "candidate_mode",
+                PlanJsonCanonicalization.ToPageCandidateModeToken(candidateMode)
+            );
+        }
+
         writer.WriteString(
             "page_document_id_sql",
             PlanJsonCanonicalization.NormalizeMultilineText(value.PageDocumentIdSql)

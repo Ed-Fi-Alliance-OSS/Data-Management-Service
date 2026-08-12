@@ -23,6 +23,11 @@ internal static class PlanJsonCanonicalization
             QuerySqlParameterRole.Filter => "filter",
             QuerySqlParameterRole.Offset => "offset",
             QuerySqlParameterRole.Limit => "limit",
+            QuerySqlParameterRole.CursorInclusiveMinimum => "cursor_inclusive_minimum",
+            QuerySqlParameterRole.CursorInclusiveMaximum => "cursor_inclusive_maximum",
+            QuerySqlParameterRole.PageSize => "page_size",
+            QuerySqlParameterRole.PartitionCount => "partition_count",
+            QuerySqlParameterRole.MinimumPartitionSize => "minimum_partition_size",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(value),
                 value,
@@ -38,10 +43,32 @@ internal static class PlanJsonCanonicalization
             QuerySqlParameterRoleDto.Filter => "filter",
             QuerySqlParameterRoleDto.Offset => "offset",
             QuerySqlParameterRoleDto.Limit => "limit",
+            QuerySqlParameterRoleDto.CursorInclusiveMinimum => "cursor_inclusive_minimum",
+            QuerySqlParameterRoleDto.CursorInclusiveMaximum => "cursor_inclusive_maximum",
+            QuerySqlParameterRoleDto.PageSize => "page_size",
+            QuerySqlParameterRoleDto.PartitionCount => "partition_count",
+            QuerySqlParameterRoleDto.MinimumPartitionSize => "minimum_partition_size",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(value),
                 value,
                 "Unsupported query parameter role DTO."
+            ),
+        };
+    }
+
+    /// <summary>
+    /// Returns the canonical token for a non-traditional candidate mode.
+    /// </summary>
+    public static string ToPageCandidateModeToken(PageCandidateModeDto value)
+    {
+        return value switch
+        {
+            PageCandidateModeDto.Cursor => "cursor",
+            PageCandidateModeDto.UnpagedCandidates => "unpaged_candidates",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(value),
+                value,
+                "Unsupported page candidate mode DTO."
             ),
         };
     }

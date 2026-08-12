@@ -18,6 +18,7 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// </remarks>
 public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 {
+    private const int CursorBoundCount = 2;
     private const string DocumentIdColumnName = "DocumentId";
     private const string ContentVersionColumnName = "ContentVersion";
     private const string DocumentUuidColumnName = "DocumentUuid";
@@ -59,15 +60,10 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             throw CreateNullPredicateEntryException();
         }
 
-        PlanSqlWriterExtensions.ValidateBareParameterName(
-            spec.OffsetParameterName,
-            nameof(spec.OffsetParameterName)
-        );
-        PlanSqlWriterExtensions.ValidateBareParameterName(
-            spec.LimitParameterName,
-            nameof(spec.LimitParameterName)
-        );
-        ValidatePagingParameterNamesAreDistinct(spec.OffsetParameterName, spec.LimitParameterName);
+        var mode = spec.Mode ?? new PageCandidateMode.Traditional();
+        var modeParameters = PageCandidateModeParameters.For(mode);
+
+        ValidateModeParameterNames(modeParameters);
 
         var rewrittenPredicates = RewriteAndSortPredicates(
             spec.Predicates,
@@ -87,21 +83,22 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         var filterParameterNamesInOrder = filterParametersInOrder
             .Select(static parameter => parameter.ParameterName)
             .ToArray();
-        ValidateFilterParameterNamesDoNotCollideWithPaging(
+        ValidateFilterParameterNamesDoNotCollideWithModeParameters(
             filterParameterNamesInOrder,
-            spec.OffsetParameterName,
-            spec.LimitParameterName
+            modeParameters
         );
         ValidateFilterParameterNamesAreUnique(filterParameterNamesInOrder);
 
         var pageSql = BuildPageDocumentIdSql(
             spec,
+            mode,
             rewrittenPredicates,
             authorization,
             authorizationClaimParameterization,
             requiresDocumentUuidJoin
         );
-        var totalCountSql = spec.IncludeTotalCountSql
+        var includeTotalCountSql = mode is PageCandidateMode.Traditional { IncludeTotalCountSql: true };
+        var totalCountSql = includeTotalCountSql
             ? BuildTotalCountSql(
                 spec.RootTable,
                 rewrittenPredicates,
@@ -110,12 +107,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                 requiresDocumentUuidJoin
             )
             : null;
-        var pageParametersInOrder = BuildPageParametersInOrder(
-            filterParametersInOrder,
-            spec.OffsetParameterName,
-            spec.LimitParameterName
-        );
-        var totalCountParametersInOrder = spec.IncludeTotalCountSql
+        var pageParametersInOrder = BuildPageParametersInOrder(filterParametersInOrder, modeParameters);
+        var totalCountParametersInOrder = includeTotalCountSql
             ? BuildTotalCountParametersInOrder(filterParametersInOrder)
             : null;
 
@@ -236,52 +229,63 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Ensures filter-parameter names do not collide with paging parameter names.
+    /// Ensures every mode-owned parameter name is a valid bare name and that the names are mutually
+    /// distinct (case-insensitive).
     /// </summary>
-    private static void ValidateFilterParameterNamesDoNotCollideWithPaging(
-        IReadOnlyList<string> filterParameterNames,
-        string offsetParameterName,
-        string limitParameterName
-    )
+    private static void ValidateModeParameterNames(IReadOnlyList<PageCandidateModeParameter> modeParameters)
     {
-        foreach (var parameterName in filterParameterNames)
+        foreach (var modeParameter in modeParameters)
         {
-            if (string.Equals(parameterName, offsetParameterName, StringComparison.OrdinalIgnoreCase))
-            {
-                throw CreateFilterPagingCollisionException(
-                    parameterName,
-                    offsetParameterName,
-                    nameof(PageDocumentIdQuerySpec.OffsetParameterName),
-                    nameof(PageDocumentIdQuerySpec.Predicates)
-                );
-            }
+            PlanSqlWriterExtensions.ValidateBareParameterName(modeParameter.Name, modeParameter.PropertyName);
+        }
 
-            if (string.Equals(parameterName, limitParameterName, StringComparison.OrdinalIgnoreCase))
+        for (var index = 0; index < modeParameters.Count; index++)
+        {
+            for (var otherIndex = index + 1; otherIndex < modeParameters.Count; otherIndex++)
             {
-                throw CreateFilterPagingCollisionException(
-                    parameterName,
-                    limitParameterName,
-                    nameof(PageDocumentIdQuerySpec.LimitParameterName),
-                    nameof(PageDocumentIdQuerySpec.Predicates)
-                );
+                if (
+                    string.Equals(
+                        modeParameters[index].Name,
+                        modeParameters[otherIndex].Name,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    throw CreateModeParameterCollisionException(
+                        modeParameters[index],
+                        modeParameters[otherIndex]
+                    );
+                }
             }
         }
     }
 
     /// <summary>
-    /// Ensures paging parameter names are distinct (case-insensitive).
+    /// Ensures no filter-parameter name equals a mode-owned parameter name (case-insensitive).
     /// </summary>
-    private static void ValidatePagingParameterNamesAreDistinct(
-        string offsetParameterName,
-        string limitParameterName
+    /// <remarks>
+    /// Keying the mode names requires them to be mutually distinct, which
+    /// <see cref="ValidateModeParameterNames" /> has already established by the time this runs.
+    /// </remarks>
+    private static void ValidateFilterParameterNamesDoNotCollideWithModeParameters(
+        IReadOnlyList<string> filterParameterNames,
+        IReadOnlyList<PageCandidateModeParameter> modeParameters
     )
     {
-        if (string.Equals(offsetParameterName, limitParameterName, StringComparison.OrdinalIgnoreCase))
+        var modeParametersByName = modeParameters.ToDictionary(
+            static modeParameter => modeParameter.Name,
+            StringComparer.OrdinalIgnoreCase
+        );
+        var collidingFilterParameterName = filterParameterNames.FirstOrDefault(
+            modeParametersByName.ContainsKey
+        );
+
+        if (collidingFilterParameterName is not null)
         {
-            throw CreatePagingParameterCollisionException(
-                offsetParameterName,
-                limitParameterName,
-                nameof(PageDocumentIdQuerySpec.OffsetParameterName)
+            throw CreateFilterModeParameterCollisionException(
+                collidingFilterParameterName,
+                modeParametersByName[collidingFilterParameterName],
+                nameof(PageDocumentIdQuerySpec.Predicates)
             );
         }
     }
@@ -354,14 +358,23 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// </summary>
     private static IReadOnlyList<QuerySqlParameter> BuildPageParametersInOrder(
         IReadOnlyList<QuerySqlParameter> filterParametersInOrder,
-        string offsetParameterName,
-        string limitParameterName
+        IReadOnlyList<PageCandidateModeParameter> modeParameters
     )
     {
-        var pageParametersInOrder = new List<QuerySqlParameter>(filterParametersInOrder.Count + 2);
+        var boundModeParameters = modeParameters
+            .Where(static modeParameter => modeParameter.IsBound)
+            .ToArray();
+        var pageParametersInOrder = new List<QuerySqlParameter>(
+            filterParametersInOrder.Count + boundModeParameters.Length
+        );
+
         pageParametersInOrder.AddRange(filterParametersInOrder);
-        pageParametersInOrder.Add(new QuerySqlParameter(QuerySqlParameterRole.Offset, offsetParameterName));
-        pageParametersInOrder.Add(new QuerySqlParameter(QuerySqlParameterRole.Limit, limitParameterName));
+        pageParametersInOrder.AddRange(
+            boundModeParameters.Select(static modeParameter => new QuerySqlParameter(
+                modeParameter.Role,
+                modeParameter.Name
+            ))
+        );
 
         return pageParametersInOrder;
     }
@@ -503,6 +516,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// </summary>
     private string BuildPageDocumentIdSql(
         PageDocumentIdQuerySpec spec,
+        PageCandidateMode mode,
         IReadOnlyList<RewrittenPredicate> predicates,
         PageDocumentIdAuthorizationSpec? authorization,
         AuthorizationClaimEducationOrganizationIdParameterization? authorizationClaimParameterization,
@@ -510,9 +524,17 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     )
     {
         var writer = new SqlWriter(_sqlDialect);
+        var cursor = mode as PageCandidateMode.Cursor;
+
+        writer.Append("SELECT ");
+
+        if (cursor is not null)
+        {
+            _planSqlDialect.AppendCursorSelectRowLimitPrefix(writer, cursor.PageSizeParameterName);
+        }
 
         writer
-            .Append($"SELECT {_rootAlias}.")
+            .Append($"{_rootAlias}.")
             .AppendQuoted(DocumentIdColumnName)
             .AppendLine()
             .Append("FROM ")
@@ -525,26 +547,75 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             spec.RootTable,
             predicates,
             authorization,
-            authorizationClaimParameterization
+            authorizationClaimParameterization,
+            cursor
         );
 
-        var orderingColumnName = spec.OrderingMode switch
+        // The unpaged candidate relation is deliberately unordered. Its consumer wraps it in a common
+        // table expression and applies its own row numbering, and SQL Server rejects ORDER BY in a CTE
+        // that has no TOP or OFFSET.
+        if (mode is PageCandidateMode.UnpagedCandidates)
+        {
+            writer.AppendLine(";");
+
+            return writer.ToString();
+        }
+
+        writer
+            .Append($"ORDER BY {_rootAlias}.")
+            .AppendQuoted(ResolveOrderingColumnName(mode))
+            .AppendLine(" ASC");
+
+        switch (mode)
+        {
+            case PageCandidateMode.Cursor cursorMode:
+                _planSqlDialect.AppendCursorPagingClause(writer, cursorMode.PageSizeParameterName);
+                break;
+
+            case PageCandidateMode.Traditional traditionalMode:
+                _planSqlDialect.AppendPagingClause(
+                    writer,
+                    traditionalMode.OffsetParameterName,
+                    traditionalMode.LimitParameterName
+                );
+                break;
+
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(mode),
+                    mode.GetType().Name,
+                    "Unsupported page candidate mode."
+                );
+        }
+
+        writer.AppendLine(";");
+
+        return writer.ToString();
+    }
+
+    /// <summary>
+    /// Resolves the page-selection ordering column. Only traditional paging can order by the mirrored
+    /// <c>ContentVersion</c> column; a cursor page is always ordered by <c>DocumentId</c>, because a
+    /// token anchored on the highest selected <c>DocumentId</c> is only safe when that is also the
+    /// page's ordering key.
+    /// </summary>
+    private static string ResolveOrderingColumnName(PageCandidateMode mode)
+    {
+        if (mode is not PageCandidateMode.Traditional traditional)
+        {
+            return DocumentIdColumnName;
+        }
+
+        return traditional.OrderingMode switch
         {
             PageOrderingMode.DocumentId => DocumentIdColumnName,
             PageOrderingMode.ContentVersion => ContentVersionColumnName,
             _ => throw new ArgumentOutOfRangeException(
-                nameof(spec),
-                spec.OrderingMode,
+                nameof(mode),
+                traditional.OrderingMode,
                 "Unsupported page ordering mode."
             ),
         };
-
-        writer.Append($"ORDER BY {_rootAlias}.").AppendQuoted(orderingColumnName).AppendLine(" ASC");
-
-        _planSqlDialect.AppendPagingClause(writer, spec.OffsetParameterName, spec.LimitParameterName);
-        writer.AppendLine(";");
-
-        return writer.ToString();
     }
 
     /// <summary>
@@ -567,7 +638,14 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             .AppendLine($" {_rootAlias}");
 
         AppendDocumentJoin(writer, requiresDocumentUuidJoin);
-        AppendWhereClause(writer, rootTable, predicates, authorization, authorizationClaimParameterization);
+        AppendWhereClause(
+            writer,
+            rootTable,
+            predicates,
+            authorization,
+            authorizationClaimParameterization,
+            cursor: null
+        );
         writer.AppendLine(";");
 
         return writer.ToString();
@@ -601,12 +679,19 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         DbTableName rootTable,
         IReadOnlyList<RewrittenPredicate> predicates,
         PageDocumentIdAuthorizationSpec? authorization,
-        AuthorizationClaimEducationOrganizationIdParameterization? authorizationClaimParameterization
+        AuthorizationClaimEducationOrganizationIdParameterization? authorizationClaimParameterization,
+        PageCandidateMode.Cursor? cursor
     )
     {
         var orderedAndFilters = BuildOrderedAuthorizationAndFilters(authorization);
         var hasRelationshipGroup = (authorization?.Strategies.Count ?? 0) > 0;
-        var predicateCount = predicates.Count + orderedAndFilters.Count + (hasRelationshipGroup ? 1 : 0);
+
+        // Cursor bounds are emitted last, alongside rather than instead of every authorization
+        // predicate. Appending them keeps the filter and authorization fragments byte-identical to the
+        // other candidate modes, which is what makes the shared-candidate guarantee checkable.
+        var cursorBoundCount = cursor is null ? 0 : CursorBoundCount;
+        var predicateCount =
+            predicates.Count + orderedAndFilters.Count + (hasRelationshipGroup ? 1 : 0) + cursorBoundCount;
 
         writer.AppendWhereClause(
             predicateCount,
@@ -631,16 +716,57 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                     return;
                 }
 
-                AppendAuthorizationSql(
+                var afterAuthorizationFilterIndex = authorizationFilterIndex - orderedAndFilters.Count;
+
+                if (hasRelationshipGroup && afterAuthorizationFilterIndex == 0)
+                {
+                    AppendAuthorizationSql(
+                        predicateWriter,
+                        rootTable,
+                        authorization!,
+                        authorizationClaimParameterization
+                            ?? throw new InvalidOperationException(
+                                "Authorization SQL emission requires a claim EdOrg parameterization when authorization strategies are present."
+                            )
+                    );
+                    return;
+                }
+
+                AppendCursorBoundSql(
                     predicateWriter,
-                    rootTable,
-                    authorization!,
-                    authorizationClaimParameterization
+                    cursor
                         ?? throw new InvalidOperationException(
-                            "Authorization SQL emission requires a claim EdOrg parameterization when authorization strategies are present."
-                        )
+                            "Cursor bound SQL emission requires a cursor candidate mode."
+                        ),
+                    afterAuthorizationFilterIndex - (hasRelationshipGroup ? 1 : 0)
                 );
             }
+        );
+    }
+
+    /// <summary>
+    /// Emits one inclusive cursor bound predicate against the root <c>DocumentId</c>.
+    /// </summary>
+    private void AppendCursorBoundSql(SqlWriter writer, PageCandidateMode.Cursor cursor, int boundIndex)
+    {
+        var (operatorToken, parameterName) = boundIndex switch
+        {
+            0 => (">=", cursor.InclusiveMinimumParameterName),
+            1 => ("<=", cursor.InclusiveMaximumParameterName),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(boundIndex),
+                boundIndex,
+                "Unsupported cursor bound index."
+            ),
+        };
+
+        _planSqlDialect.AppendComparisonSql(
+            writer,
+            _rootAlias,
+            new DbColumnName(DocumentIdColumnName),
+            operatorToken,
+            parameterName,
+            ScalarKind.Int64
         );
     }
 
@@ -1438,37 +1564,35 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Creates a deterministic exception describing a filter/paging parameter-name collision.
+    /// Creates a deterministic exception describing a filter/mode parameter-name collision.
     /// </summary>
-    private static ArgumentException CreateFilterPagingCollisionException(
+    private static ArgumentException CreateFilterModeParameterCollisionException(
         string filterParameterName,
-        string pagingParameterName,
-        string pagingParameterPropertyName,
+        PageCandidateModeParameter modeParameter,
         string paramName
     )
     {
         return new ArgumentException(
-            $"Filter parameter name '{filterParameterName}' collides with paging parameter name '{pagingParameterName}' (case-insensitive). "
-                + $"Rename the filter parameter or change {pagingParameterPropertyName}.",
+            $"Filter parameter name '{filterParameterName}' collides with candidate mode parameter name "
+                + $"'{modeParameter.Name}' (case-insensitive). "
+                + $"Rename the filter parameter or change {modeParameter.PropertyName}.",
             paramName
         );
     }
 
     /// <summary>
-    /// Creates a deterministic exception describing an offset/limit paging parameter-name collision.
+    /// Creates a deterministic exception describing a collision between two mode-owned parameter names.
     /// </summary>
-    private static ArgumentException CreatePagingParameterCollisionException(
-        string offsetParameterName,
-        string limitParameterName,
-        string paramName
+    private static ArgumentException CreateModeParameterCollisionException(
+        PageCandidateModeParameter first,
+        PageCandidateModeParameter second
     )
     {
-        return new ArgumentException(
-            $"Paging parameter names must be distinct (case-insensitive). "
-                + $"{nameof(PageDocumentIdQuerySpec.OffsetParameterName)}='{offsetParameterName}', "
-                + $"{nameof(PageDocumentIdQuerySpec.LimitParameterName)}='{limitParameterName}'. "
-                + $"Rename either {nameof(PageDocumentIdQuerySpec.OffsetParameterName)} or {nameof(PageDocumentIdQuerySpec.LimitParameterName)}.",
-            paramName
+        return BuildArgumentException(
+            "Candidate mode parameter names must be distinct (case-insensitive). "
+                + $"{first.PropertyName}='{first.Name}', {second.PropertyName}='{second.Name}'. "
+                + $"Rename either {first.PropertyName} or {second.PropertyName}.",
+            nameof(PageDocumentIdQuerySpec.Mode)
         );
     }
 

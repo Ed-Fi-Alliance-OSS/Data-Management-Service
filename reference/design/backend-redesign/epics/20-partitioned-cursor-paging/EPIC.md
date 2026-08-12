@@ -175,15 +175,12 @@ change-query extraction:
 ## Performance Invariants and Evidence
 
 Implementation is incomplete without reproducible PostgreSQL and real SQL Server evidence.
-DMS-1391 must add a repeatable script/configuration/result format or explicitly integrate and pin
-the external Suite-3 performance runner, then capture the traditional-paging baseline before
-DMS-1385 modifies the shared page-selection compiler. DMS-1385 preserves traditional page-selection
-SQL behaviorally and textually, so the baseline is regression insurance over that shared compiler
-rather than a record of an expected change: it is the evidence that traditional SQL and latency did
-not move. Because DMS-1386 depends on DMS-1385, the baseline also lands before the first change that
-does alter shared traditional runtime execution, DMS-1386's selected-id result set in the collection
-hydration batch. DMS-1391 has no predecessor in this epic and can be delivered while DMS-1383 and
-DMS-1384 are in progress.
+DMS-1391 adds a repeatable script/configuration/result format or explicitly integrates and pins the
+external Suite-3 performance runner, then captures the traditional-paging baseline from an
+identified commit before the shared page-selection compiler and collection hydration batch changes.
+DMS-1385 preserves traditional page-selection SQL behaviorally and textually so that DMS-1392 can
+use the baseline as regression evidence. DMS-1391 has no predecessor in this epic and proceeds
+independently of DMS-1385.
 
 The pre-change DMS-1391 baseline is deliberately limited to the three traditional offset
 scenarios used by the gates: offset 0, a one-page shallow offset, and a recorded deep offset, for
@@ -453,11 +450,10 @@ package is referred to everywhere else in this epic.
 
 DMS-1384 follows DMS-1383 because its validators consume the typed contracts and token codec, and it
 owns the request boundary end to end: the query-key presence its phase selection depends on is
-produced by its own parameter canonicalization. DMS-1391 has no predecessor in this epic and must
-complete before DMS-1385 modifies the shared page-selection compiler, so the baseline stands as
-regression insurance that traditional page-selection SQL and latency did not move; that dependency
-also places the baseline before the downstream DMS-1386 shared execution change. DMS-1386 and
-DMS-1387 consume the shared page-document-id plan and the compiled cursor SQL. DMS-1387 boundary
+produced by its own parameter canonicalization. DMS-1391 has no predecessor in this epic and proceeds
+independently of DMS-1385; its baseline identifies a commit before the DMS-1385 compiler and DMS-1386
+shared-execution changes regardless of delivery order. DMS-1386 and DMS-1387 consume the shared
+page-document-id plan and the compiled cursor SQL. DMS-1387 boundary
 compilation may proceed from DMS-1383 through DMS-1385, but route activation additionally requires
 DMS-1386, so `/partitions` cannot hand out tokens before both regular-resource and descriptor
 GET-many can consume them. DMS-1388 publishes no cursor parameter, response header, or partition

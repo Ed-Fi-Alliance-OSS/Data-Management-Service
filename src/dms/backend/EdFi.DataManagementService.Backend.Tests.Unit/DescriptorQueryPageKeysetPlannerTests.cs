@@ -79,7 +79,9 @@ public class Given_DescriptorQueryPageKeysetPlanner
                     ),
                 ]
             ),
-            new PaginationParameters(Limit: null, Offset: null, TotalCount: true, MaximumPageSize: 500)
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: null, Offset: null, TotalCount: true, MaximumPageSize: 500)
+            )
         );
 
         keyset.Plan.PageDocumentIdSql.Should().Contain($"FROM {expectedDescriptorFromFragment}");
@@ -158,7 +160,9 @@ public class Given_DescriptorQueryPageKeysetPlanner
                     ),
                 ]
             ),
-            new PaginationParameters(Limit: 25, Offset: 75, TotalCount: true, MaximumPageSize: 500)
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 75, TotalCount: true, MaximumPageSize: 500)
+            )
         );
         var second = planner.Plan(
             RelationalAccessTestData.CreateMappingSet(_requestResource),
@@ -194,7 +198,9 @@ public class Given_DescriptorQueryPageKeysetPlanner
                     ),
                 ]
             ),
-            new PaginationParameters(Limit: 25, Offset: 75, TotalCount: true, MaximumPageSize: 500)
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 75, TotalCount: true, MaximumPageSize: 500)
+            )
         );
 
         first.Plan.PageDocumentIdSql.Should().Be(second.Plan.PageDocumentIdSql);
@@ -289,7 +295,9 @@ public class Given_DescriptorQueryPageKeysetPlanner
                     ),
                 ]
             ),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            ),
             changeVersionRange: new ChangeVersionRange(100L, 200L)
         );
 
@@ -341,7 +349,9 @@ public class Given_DescriptorQueryPageKeysetPlanner
                     ),
                 ]
             ),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            ),
             CreateNamespaceAuthorization(SqlDialect.Pgsql, ["uri://ed-fi.org/"])
         );
 
@@ -366,7 +376,9 @@ public class Given_DescriptorQueryPageKeysetPlanner
             RelationalAccessTestData.CreateMappingSet(_requestResource),
             _descriptorResource,
             new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
-            new PaginationParameters(Limit: 25, Offset: 75, TotalCount: true, MaximumPageSize: 500)
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 75, TotalCount: true, MaximumPageSize: 500)
+            )
         );
 
         keyset.Plan.PageDocumentIdSql.Should().Contain($"FROM {expectedDescriptorFromFragment}");
@@ -430,7 +442,9 @@ public class Given_DescriptorQueryPageKeysetPlanner
                     ),
                 ]
             ),
-            new PaginationParameters(Limit: 25, Offset: 75, TotalCount: true, MaximumPageSize: 500)
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 75, TotalCount: true, MaximumPageSize: 500)
+            )
         );
 
         keyset.Plan.PageDocumentIdSql.Should().Contain($"FROM {expectedDescriptorFromFragment}");
@@ -482,7 +496,9 @@ public class Given_DescriptorQueryPageKeysetPlanner
                     ),
                 ]
             ),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+            )
         );
 
         keyset.ParameterValues["codeValue"].Should().Be("MiXeDCaSeValue");
@@ -503,7 +519,35 @@ public class Given_DescriptorQueryPageKeysetPlanner
                     new RelationalQueryPreprocessingOutcome.EmptyPage("no matches"),
                     []
                 ),
-                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+                new CollectionPaging.Traditional(
+                    new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+                )
+            );
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("preprocessingResult")
+            .WithMessage(
+                "Descriptor query page planning requires preprocessing results in the continue state.*"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_non_continue_preprocessing_outcomes_for_the_candidate_entry_point()
+    {
+        // The candidate entry point carries the same caller contract as the paged one: a consumer that
+        // reaches an empty preprocessing outcome must short-circuit the page itself rather than ask for a
+        // candidate relation. There is no Try overload to fall back on, so the contract is asserted here.
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var act = () =>
+            planner.PlanCandidates(
+                RelationalAccessTestData.CreateMappingSet(_requestResource),
+                _descriptorResource,
+                new DescriptorQueryPreprocessingResult(
+                    new RelationalQueryPreprocessingOutcome.EmptyPage("no matches"),
+                    []
+                )
             );
 
         act.Should()
@@ -527,7 +571,9 @@ public class Given_DescriptorQueryPageKeysetPlanner
             RelationalAccessTestData.CreateMappingSet(_requestResource),
             _descriptorResource,
             new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+            ),
             authorization
         );
 
@@ -556,7 +602,9 @@ public class Given_DescriptorQueryPageKeysetPlanner
             RelationalAccessTestData.CreateMappingSet(_requestResource),
             _descriptorResource,
             new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+            ),
             authorization
         );
 
@@ -589,7 +637,9 @@ public class Given_DescriptorQueryPageKeysetPlanner
             RelationalAccessTestData.CreateMappingSet(_requestResource),
             _descriptorResource,
             new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            ),
             authorization
         );
 
@@ -615,7 +665,9 @@ public class Given_DescriptorQueryPageKeysetPlanner
             RelationalAccessTestData.CreateMappingSet(_requestResource),
             _descriptorResource,
             new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            ),
             authorization
         );
 
@@ -645,7 +697,9 @@ public class Given_DescriptorQueryPageKeysetPlanner
                     ),
                 ]
             ),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            ),
             authorization
         );
 
@@ -664,7 +718,9 @@ public class Given_DescriptorQueryPageKeysetPlanner
             RelationalAccessTestData.CreateMappingSet(_requestResource),
             _descriptorResource,
             new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            )
         );
 
         keyset.Plan.PageDocumentIdSql.Should().NotContain("Namespace");
@@ -695,7 +751,9 @@ public class Given_DescriptorQueryPageKeysetPlanner
             RelationalAccessTestData.CreateMappingSet(_requestResource),
             _descriptorResource,
             new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+            ),
             changeVersionRange: new ChangeVersionRange(100L, 200L)
         );
 
@@ -720,7 +778,9 @@ public class Given_DescriptorQueryPageKeysetPlanner
             RelationalAccessTestData.CreateMappingSet(_requestResource),
             _descriptorResource,
             new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            ),
             changeVersionRange: new ChangeVersionRange(100L, null)
         );
 
@@ -739,7 +799,9 @@ public class Given_DescriptorQueryPageKeysetPlanner
             RelationalAccessTestData.CreateMappingSet(_requestResource),
             _descriptorResource,
             new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            ),
             changeVersionRange: new ChangeVersionRange(null, 200L)
         );
 
@@ -753,11 +815,8 @@ public class Given_DescriptorQueryPageKeysetPlanner
     public void It_should_leave_descriptor_page_sql_unchanged_when_no_change_version_bounds_are_supplied()
     {
         var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
-        var paginationParameters = new PaginationParameters(
-            Limit: 25,
-            Offset: 0,
-            TotalCount: true,
-            MaximumPageSize: 500
+        var paginationParameters = new CollectionPaging.Traditional(
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
         );
         var withoutRange = planner.Plan(
             RelationalAccessTestData.CreateMappingSet(_requestResource),
@@ -792,7 +851,9 @@ public class Given_DescriptorQueryPageKeysetPlanner
             RelationalAccessTestData.CreateMappingSet(_requestResource),
             _descriptorResource,
             new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            ),
             authorization,
             new ChangeVersionRange(100L, 200L)
         );
@@ -822,10 +883,263 @@ public class Given_DescriptorQueryPageKeysetPlanner
                     new RelationalQueryPreprocessingOutcome.Continue(),
                     []
                 ),
-                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+                new CollectionPaging.Traditional(
+                    new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+                )
             );
 
         act.Should().Throw<KeyNotFoundException>().WithMessage("*Other-Project.SchoolTypeDescriptor*");
+    }
+
+    [Test]
+    public void It_should_give_every_candidate_mode_the_same_descriptor_root_filters_and_filter_values()
+    {
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+        var authorization = CreateNamespaceAuthorization(SqlDialect.Pgsql, ["uri://ed-fi.org/"]);
+        var changeVersionRange = new ChangeVersionRange(100L, 200L);
+
+        var traditional = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            CreateParityPreprocessingResult(),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 75, TotalCount: false, MaximumPageSize: 500)
+            ),
+            authorization,
+            changeVersionRange
+        );
+        var cursor = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            CreateParityPreprocessingResult(),
+            new CollectionPaging.Cursor(new CursorRange(10L, 90L), new PageSize(25)),
+            authorization,
+            changeVersionRange
+        );
+        var unpaged = planner.PlanCandidates(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            CreateParityPreprocessingResult(),
+            authorization,
+            changeVersionRange
+        );
+
+        string[] filterParameterNames =
+        [
+            "resourceKeyId",
+            "namespace",
+            "minChangeVersion",
+            "maxChangeVersion",
+        ];
+
+        foreach (var filterParameterName in filterParameterNames)
+        {
+            cursor
+                .ParameterValues[filterParameterName]
+                .Should()
+                .Be(traditional.ParameterValues[filterParameterName]);
+            unpaged
+                .ParameterValues[filterParameterName]
+                .Should()
+                .Be(traditional.ParameterValues[filterParameterName]);
+        }
+
+        // The descriptor root and its mandatory ResourceKeyId discriminator survive in every mode.
+        foreach (var plan in new[] { traditional.Plan, cursor.Plan, unpaged.Plan })
+        {
+            plan.PageDocumentIdSql.Should().Contain("FROM \"dms\".\"Descriptor\" r");
+            plan.PageDocumentIdSql.Should().Contain("r.\"ResourceKeyId\" = @resourceKeyId");
+            plan.PageDocumentIdSql.Should().Contain("r.\"Namespace\"");
+            plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
+            plan.PageDocumentIdSql.Should().NotContain("DISTINCT");
+        }
+    }
+
+    [Test]
+    public void It_should_bind_the_descriptor_cursor_range_and_page_size_as_int64_values()
+    {
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Mssql);
+
+        var cursor = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            CreateParityPreprocessingResult(),
+            new CollectionPaging.Cursor(new CursorRange(10L, long.MaxValue), new PageSize(1))
+        );
+
+        cursor.ParameterValues["cursorMin"].Should().Be(10L);
+        cursor.ParameterValues["cursorMax"].Should().Be(long.MaxValue);
+        cursor.ParameterValues["pageSize"].Should().Be(1L);
+        cursor.ParameterValues.Keys.Should().NotContain("offset").And.NotContain("limit");
+        cursor.Plan.PageDocumentIdSql.Should().StartWith("SELECT TOP (@pageSize) r.[DocumentId]");
+    }
+
+    [Test]
+    public void It_should_emit_no_ordering_for_the_unpaged_descriptor_candidate_relation()
+    {
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Mssql);
+
+        var unpaged = planner.PlanCandidates(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            CreateParityPreprocessingResult()
+        );
+
+        unpaged.Plan.PageDocumentIdSql.Should().NotContain("ORDER BY");
+        unpaged.Plan.PageDocumentIdSql.Should().NotContain("OFFSET");
+        unpaged.Plan.PageDocumentIdSql.Should().NotContain("TOP (");
+    }
+
+    [TestCase("pageSize")]
+    [TestCase("cursorMin")]
+    [TestCase("cursorMax")]
+    [TestCase("number")]
+    [TestCase("minimumPartitionSize")]
+    public void It_should_allocate_traditional_descriptor_filter_parameter_names_unsuffixed_for_names_no_traditional_page_emits(
+        string queryFieldName
+    )
+    {
+        // Traditional descriptor page selection emits only offset and limit, so a descriptor field whose
+        // sanitized name matches a cursor or partition parameter has nothing to collide with and must
+        // keep its plain name.
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var traditional = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            CreateNamedFieldPreprocessingResult(queryFieldName),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            )
+        );
+
+        traditional.ParameterValues.Should().ContainKey(queryFieldName);
+        traditional.Plan.PageDocumentIdSql.Should().Contain($"r.\"Namespace\" = @{queryFieldName}");
+    }
+
+    [TestCase("cursorMin")]
+    [TestCase("pageSize")]
+    public void It_should_disambiguate_descriptor_cursor_filter_parameter_names_that_actually_collide(
+        string queryFieldName
+    )
+    {
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var cursor = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            CreateNamedFieldPreprocessingResult(queryFieldName),
+            new CollectionPaging.Cursor(new CursorRange(1L, 100L), new PageSize(25))
+        );
+
+        // The descriptor filter is renamed out of the way; the plain name stays with the cursor
+        // parameter that actually owns it in this mode.
+        var namespaceFilterName = NamespaceFilterParameterName(cursor.Plan);
+
+        namespaceFilterName.Should().NotBe(queryFieldName);
+        cursor.Plan.PageDocumentIdSql.Should().Contain($"r.\"Namespace\" = @{namespaceFilterName}");
+        cursor.ParameterValues.Should().ContainKeys("cursorMin", "cursorMax", "pageSize");
+    }
+
+    [Test]
+    public void It_should_keep_cross_mode_descriptor_filter_parity_semantic_when_a_filter_name_collides()
+    {
+        // Cross-mode parity is the same predicate over the same column bound to the same value, not the
+        // same parameter token. A descriptor filter sanitized to a name only cursor selection emits keeps
+        // its plain name in every mode that does not emit it.
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+        var preprocessingResult = CreateNamedFieldPreprocessingResult("pageSize");
+
+        var traditional = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            preprocessingResult,
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 75, TotalCount: false, MaximumPageSize: 500)
+            )
+        );
+        var cursor = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            preprocessingResult,
+            new CollectionPaging.Cursor(new CursorRange(10L, 90L), new PageSize(25))
+        );
+        var unpaged = planner.PlanCandidates(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            preprocessingResult
+        );
+
+        var traditionalFilterName = NamespaceFilterParameterName(traditional.Plan);
+        var cursorFilterName = NamespaceFilterParameterName(cursor.Plan);
+        var unpagedFilterName = NamespaceFilterParameterName(unpaged.Plan);
+
+        // Only cursor selection emits pageSize, so only cursor selection moves the filter off that name.
+        traditionalFilterName.Should().Be("pageSize");
+        unpagedFilterName.Should().Be("pageSize");
+        cursorFilterName.Should().NotBe("pageSize");
+        cursor.ParameterValues["pageSize"].Should().Be(25L);
+
+        // Same column, same operator, same bound value under whichever name each mode allocated.
+        var expectedFilterValue = traditional.ParameterValues[traditionalFilterName];
+
+        expectedFilterValue.Should().Be("uri://ed-fi.org/descriptor#Alternative");
+        cursor.ParameterValues[cursorFilterName].Should().Be(expectedFilterValue);
+        unpaged.ParameterValues[unpagedFilterName].Should().Be(expectedFilterValue);
+
+        traditional.Plan.PageDocumentIdSql.Should().Contain($"r.\"Namespace\" = @{traditionalFilterName}");
+        cursor.Plan.PageDocumentIdSql.Should().Contain($"r.\"Namespace\" = @{cursorFilterName}");
+        unpaged.Plan.PageDocumentIdSql.Should().Contain($"r.\"Namespace\" = @{unpagedFilterName}");
+    }
+
+    /// <summary>
+    /// Returns the name allocated to the descriptor field filter, which is every filter parameter other
+    /// than the mandatory <c>ResourceKeyId</c> discriminator the descriptor planner always emits.
+    /// </summary>
+    private static string NamespaceFilterParameterName(PageDocumentIdSqlPlan plan)
+    {
+        return plan
+            .PageParametersInOrder.Single(parameter =>
+                parameter.Role is QuerySqlParameterRole.Filter
+                && !string.Equals(parameter.ParameterName, "resourceKeyId", StringComparison.Ordinal)
+            )
+            .ParameterName;
+    }
+
+    private static DescriptorQueryPreprocessingResult CreateNamedFieldPreprocessingResult(
+        string queryFieldName
+    )
+    {
+        return new DescriptorQueryPreprocessingResult(
+            new RelationalQueryPreprocessingOutcome.Continue(),
+            [
+                CreateElement(
+                    queryFieldName,
+                    $"$.{queryFieldName}",
+                    "uri://ed-fi.org/descriptor#Alternative",
+                    "string",
+                    new DescriptorQueryFieldTarget.Namespace(new DbColumnName("Namespace")),
+                    new PreprocessedDescriptorQueryValue.Raw("uri://ed-fi.org/descriptor#Alternative")
+                ),
+            ]
+        );
+    }
+
+    private static DescriptorQueryPreprocessingResult CreateParityPreprocessingResult()
+    {
+        return new DescriptorQueryPreprocessingResult(
+            new RelationalQueryPreprocessingOutcome.Continue(),
+            [
+                CreateElement(
+                    "namespace",
+                    "$.namespace",
+                    "uri://ed-fi.org/descriptor#Alternative",
+                    "string",
+                    new DescriptorQueryFieldTarget.Namespace(new DbColumnName("Namespace")),
+                    new PreprocessedDescriptorQueryValue.Raw("uri://ed-fi.org/descriptor#Alternative")
+                ),
+            ]
+        );
     }
 
     private static PageDocumentIdAuthorizationSpec CreateNamespaceAuthorization(

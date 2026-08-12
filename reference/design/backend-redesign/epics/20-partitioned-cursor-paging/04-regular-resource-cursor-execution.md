@@ -74,8 +74,10 @@ half a hidden dependency of the regular-resource half.
   same ordered descriptor ids for equivalent fixtures.
 - Regular-resource cursor pages reapply every supported row-level authorization strategy through
   the shared candidate plan; a forged range cannot bypass it.
-- Cover descriptor no-further and namespace authorization, the strategies currently supported by
-  descriptor query execution. Do not promise unsupported relationship/ownership strategies.
+- Cover descriptor no-further, namespace, and custom-view authorization, the strategies currently
+  supported by descriptor query execution: `DescriptorReadHandler` compiles both namespace checks and
+  custom-view checks into the descriptor candidate relation. Do not promise unsupported
+  relationship/ownership strategies.
 
 ## Explicit Exclusions / Not Assigned
 

@@ -291,6 +291,7 @@ internal sealed class DescriptorReadHandler(
                 request.Resource,
                 proceed.NamespacePrefixParameterization,
                 preprocessingResult.QueryElementsInOrder.Count,
+                CountPagingParameters(request),
                 CountChangeVersionParameters(request.ChangeVersionRange)
             ) is
             { } parameterBudgetFailure
@@ -407,6 +408,27 @@ internal sealed class DescriptorReadHandler(
         + (changeVersionRange.MaxChangeVersion is null ? 0 : 1);
 
     /// <summary>
+    /// Builds the paging choice for a descriptor query request. Descriptor query requests carry only
+    /// traditional pagination parameters; cursor page selection reaches the descriptor handler with
+    /// cursor execution. This is the single construction site, so the parameter budget below and the
+    /// planner always describe the same candidate mode.
+    /// </summary>
+    private static CollectionPaging BuildPaging(DescriptorQueryRequest request) =>
+        new CollectionPaging.Traditional(request.PaginationParameters);
+
+    /// <summary>
+    /// Counts the paging parameters the descriptor page query will bind, taken from the candidate mode
+    /// the planner will receive rather than assumed. The count is mode-dependent — traditional paging
+    /// binds an offset and a limit, cursor selection binds two bounds and a page size — so a fixed count
+    /// would undercount as soon as a non-traditional mode reaches this handler, and the budget would
+    /// fail at execution instead of failing closed.
+    /// </summary>
+    private int CountPagingParameters(DescriptorQueryRequest request) =>
+        PageCandidateModePlanning
+            .ForPaging(BuildPaging(request), _orderingPolicy.ResolveForLiveQuery(request.ChangeVersionRange))
+            .ParameterValues.Count;
+
+    /// <summary>
     /// Returns a security-configuration failure when the descriptor page query's namespace prefix
     /// parameters, plus its query filter, paging, ResourceKeyId, and change-version parameters, exceed
     /// SQL Server's per-command parameter ceiling; otherwise <see langword="null"/>. The dialect gate
@@ -417,12 +439,13 @@ internal sealed class DescriptorReadHandler(
         QualifiedResourceName resource,
         NamespacePrefixParameterization? namespacePrefixParameterization,
         int queryFilterParameterCount,
+        int pagingParameterCount,
         int changeVersionParameterCount
     )
     {
         var nonAuthorizationParameterCount =
             queryFilterParameterCount
-            + AuthorizationParameterBudget.PaginationParameterCount
+            + pagingParameterCount
             + DescriptorQueryResourceKeyParameterCount
             + changeVersionParameterCount;
 
@@ -472,7 +495,7 @@ internal sealed class DescriptorReadHandler(
             request.MappingSet,
             request.Resource,
             preprocessingResult,
-            request.PaginationParameters,
+            BuildPaging(request),
             authorizationSpec,
             request.ChangeVersionRange,
             orderingMode: _orderingPolicy.ResolveForLiveQuery(request.ChangeVersionRange)
@@ -619,7 +642,7 @@ internal sealed class DescriptorReadHandler(
         var pageRowsSql = BuildPageRowsSql(dialect, plannedQuery.Plan.PageDocumentIdSql);
         var commandText = plannedQuery.Plan.TotalCountSql is null
             ? pageRowsSql
-            : $"{EnsureTrailingSemicolon(plannedQuery.Plan.TotalCountSql)}{Environment.NewLine}{Environment.NewLine}{pageRowsSql}";
+            : $"{PlanSqlStatementText.AsTerminatedStatement(plannedQuery.Plan.TotalCountSql)}{Environment.NewLine}{Environment.NewLine}{pageRowsSql}";
 
         return new RelationalCommand(commandText, BuildQueryParameters(plannedQuery));
     }
@@ -745,7 +768,7 @@ internal sealed class DescriptorReadHandler(
 
     private static string BuildPageRowsSql(SqlDialect dialect, string pageDocumentIdSql)
     {
-        var pageDocumentIdSqlBody = StripTrailingSemicolon(pageDocumentIdSql);
+        var pageDocumentIdSqlBody = PlanSqlStatementText.AsEmbeddableBody(pageDocumentIdSql);
 
         // The shared page compiler intentionally returns only a DocumentId keyset. Descriptor queries
         // root on dms.Descriptor, so this performs a page-sized PK lookup instead of widening that contract.
@@ -801,24 +824,6 @@ internal sealed class DescriptorReadHandler(
                 $"Relational descriptor GET-many row retrieval does not support SQL dialect '{dialect}'."
             ),
         };
-    }
-
-    private static string EnsureTrailingSemicolon(string sql)
-    {
-        var trimmed = sql.AsSpan().TrimEnd();
-        return trimmed.Length > 0 && trimmed[^1] == ';' ? sql : $"{trimmed};";
-    }
-
-    private static string StripTrailingSemicolon(string sql)
-    {
-        var trimmed = sql.AsSpan().TrimEnd();
-
-        if (trimmed.Length > 0 && trimmed[^1] == ';')
-        {
-            trimmed = trimmed[..^1].TrimEnd();
-        }
-
-        return trimmed.ToString();
     }
 
     /// <summary>
