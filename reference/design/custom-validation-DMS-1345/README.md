@@ -25,7 +25,7 @@ Six things are deliberately out of scope for this epic, each recorded in design.
 | Runtime loading of an assembly that was not part of the build | "## Rejected Alternatives" | Deferred to its own spike, which inherits this contract, the fan-in step, the failure surfacing, and the startup guard unchanged |
 | Out-of-process validation over a webhook or sidecar | "## Rejected Alternatives" | Rejected as scoped rather than deferred; a future requirement would be a new decision against its own evidence |
 | Any store-read capability for validators | "## Out of Scope" | Limits Scenario 3 to rules expressed against descriptor URIs, and makes the ODS UniqueId not-changed rule inexpressible, which DMS-1414 inherits |
-| Validation on DELETE | "## Verb Coverage" | Custom validation runs on POST and PUT only, matching the ODS precedent, which has no delete-time resource validation either |
+| Validation on GET or DELETE | "## Verb Coverage" | Custom validation runs on POST and PUT only, matching the ODS precedent, which has no delete-time resource validation either |
 | A wildcard in `AppliesTo` | "### Resource Applicability" | A validator enumerates every resource it applies to; adding a wildcard later is additive to `ValidatedResource` and breaks nothing |
 | Implementing any of the three driving scenarios | "## Driving Scenarios" | They are requirement drivers, not deliverables; the end-to-end story ships a neutral fixture validator instead |
 

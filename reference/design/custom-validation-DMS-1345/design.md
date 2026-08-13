@@ -137,7 +137,7 @@ All three ODS production `IResourceValidator` implementations are compiled in an
 
 ### Validator Contract
 
-Five public top-level types, and no more (`ValidationFailure` carries the two nested cases shown below):
+Five public top-level types, and no more (`CustomValidationFailure` carries the two nested cases shown below):
 
 ```csharp
 public sealed record ValidatedResource(ProjectName ProjectName, ResourceName ResourceName);
@@ -157,7 +157,7 @@ public interface ICustomResourceValidator
 {
     IReadOnlyList<ValidatedResource> AppliesTo { get; }
 
-    Task<IReadOnlyList<ValidationFailure>> Validate(
+    Task<IReadOnlyList<CustomValidationFailure>> Validate(
         JsonNode document,
         ResourceInfo resourceInfo,
         CustomValidationOperation operation,
@@ -181,14 +181,14 @@ A typed contract would mean inventing a class hierarchy DMS does not have.
 **Async.** The scenarios include external identity lookups, which need network I/O inside a single validation call, and DMS's pipeline is already `async` throughout (`IPipelineStep.Execute` returns `Task`, `Pipeline/IPipelineStep.cs:21-24`).
 **ODS divergence:** `IObjectValidator.ValidateObject` is synchronous end to end (`EdFi.Ods.Common/IObjectValidator.cs:14-27`), which forces every I/O-bound ODS validator to block a thread.
 
-**The result type.** `ValidationFailure` is a closed hierarchy with exactly two constructible cases, matching the two buckets DMS's 400 body already carries:
+**The result type.** `CustomValidationFailure` is a closed hierarchy with exactly two constructible cases, matching the two buckets DMS's 400 body already carries:
 
 ```csharp
-public abstract record ValidationFailure
+public abstract record CustomValidationFailure
 {
-    private ValidationFailure() { }
+    private CustomValidationFailure() { }
 
-    public sealed record OnPath : ValidationFailure
+    public sealed record OnPath : CustomValidationFailure
     {
         public OnPath(string jsonPath, string message)
         {
@@ -202,7 +202,7 @@ public abstract record ValidationFailure
         public string Message { get; }
     }
 
-    public sealed record OnResource : ValidationFailure
+    public sealed record OnResource : CustomValidationFailure
     {
         public OnResource(string message)
         {
@@ -276,10 +276,9 @@ An implementer ships an assembly that references the published abstractions pack
 ```csharp
 public static IServiceCollection AddDistrictValidators(
     this IServiceCollection services,
-    IConfiguration configuration)
+    Action<ExternalIdentityOptions> configureIdentity)
 {
-    services.Configure<ExternalIdentityOptions>(
-        configuration.GetSection("ExternalIdentity"));
+    services.Configure(configureIdentity);
 
     services.TryAddEnumerable(
         ServiceDescriptor.Transient<ICustomResourceValidator, StudentIdentityValidator>());
@@ -288,16 +287,22 @@ public static IServiceCollection AddDistrictValidators(
 }
 ```
 
+The sample takes an `Action<TOptions>` rather than an `IConfiguration` section deliberately.
+`Microsoft.Extensions.Options` and `Microsoft.Extensions.DependencyInjection.Abstractions` are both in the abstractions package's dependency closure, so `Configure` and `TryAddEnumerable` compile against the package alone; `Microsoft.Extensions.Configuration.Abstractions` and `Microsoft.Extensions.Options.ConfigurationExtensions` are not in that closure, so `IConfiguration` and `GetSection` would not.
+An implementer who prefers section binding references those two packages from their own assembly, which is theirs to decide; the contract does not oblige them either way, and does not carry the dependency on their behalf.
+
 The deployment references that assembly and adds one call at DMS's composition root, `WebApplicationBuilderExtensions.AddServices` (`Infrastructure/WebApplicationBuilderExtensions.cs:32`), alongside the calls already there:
 
 ```csharp
 webAppBuilder.Services
     .AddDmsDefaultConfiguration(...)
-    .AddDistrictValidators(webAppBuilder.Configuration);
+    .AddDistrictValidators(options =>
+        webAppBuilder.Configuration.GetSection("ExternalIdentity").Bind(options));
 ```
 
 That is the whole delivery mechanism.
-The implementer binds their own configuration through their own extension, so **custom validation adds no DMS-owned configuration surface**: there is no section to document in `docs/CONFIGURATION.md` and no option that turns the feature on or off, because a deployment that registered no validators has none.
+Note where the configuration plumbing lives: the deployment's composition root is an ASP.NET Core host that already has the full shared framework, so reading a section there costs nothing, while the implementer's own assembly stays compilable against the abstractions package alone.
+The implementer supplies their own options type and the deployment supplies its values, so **custom validation adds no DMS-owned configuration surface**: there is no section to document in `docs/CONFIGURATION.md` and no option that turns the feature on or off, because a deployment that registered no validators has none.
 
 **Core's own contribution is the guard, not the registration.** Core ships an extension that registers the startup guard specified under [Startup Failure Semantics](#startup-failure-semantics), and the frontend calls it once, unconditionally, the way it already calls `AddJwtAuthentication(this IServiceCollection services, IConfiguration configuration)` (`DmsCoreServiceExtensions.cs:238-241`, called at `Infrastructure/WebApplicationBuilderExtensions.cs:243`).
 Core is the right home for it because the collection being guarded is Core's own, and hosting it there keeps the guard's internals `internal` rather than forcing new public Core API purely to be callable from the frontend.
@@ -382,7 +387,7 @@ For DMS's current registrations the narrow guarantee happens to suffice in both 
 
 ### Response Shape
 
-DMS already builds its schema-validation 400 from the same two buckets `ValidationFailure` is designed around: `FailureResponse.CreateBaseJsonObject` (`Response/FailureResponse.cs:49-73`) serializes a `Dictionary<string, string[]>` onto `validationErrors` and a `string[]` onto `errors`.
+DMS already builds its schema-validation 400 from the same two buckets `CustomValidationFailure` is designed around: `FailureResponse.CreateBaseJsonObject` (`Response/FailureResponse.cs:49-73`) serializes a `Dictionary<string, string[]>` onto `validationErrors` and a `string[]` onto `errors`.
 
 Custom failures fold into those collections rather than a parallel shape.
 Every `OnPath` failure is appended to `validationErrors` under its own `JsonPath`, grouping multiple messages per path the way `DocumentValidator.ValidationErrorsFrom` already groups schema violations (`:254-266`); every `OnResource` failure is appended to `errors`.
@@ -413,7 +418,7 @@ A validator returning a non-empty list always produces a 400, since neither cons
 A validator that throws is not a validation result at all.
 
 `CoreExceptionLoggingMiddleware`, the second step of every DMS pipeline (`ApiService.cs:176-186`, itself at `:181`), wraps every later step in one catch chain (`Middleware/CoreExceptionLoggingMiddleware.cs:25-65`) with exactly two special-cased types, both Core authorization internals rather than contract surface: `AuthorizationException` (public, but declared in the internal Core assembly at `Security/AuthorizationException.cs:11`, so not referenceable from the abstractions package) becomes a 403, and `CustomViewAuthorizationValidationException` becomes a ProblemDetails 500.
-Everything else becomes a 500 from `FailureResponse.ForServerErrorMessageBody` (`:52-63`), with the exception captured onto `requestInfo.CaughtException` so the outer logging middleware attaches it to the structured failure log.
+Everything else becomes a 500: the catch-all arm (`Middleware/CoreExceptionLoggingMiddleware.cs:52-63`) calls `FailureResponse.ForServerErrorMessageBody` (`Response/FailureResponse.cs:437`) and captures the exception onto `requestInfo.CaughtException`, so the outer logging middleware attaches it to the structured failure log.
 
 **ODS divergence:** ODS maintains a hand-curated rethrow allowlist so specific exception types reach dedicated translations (`EdFi.Ods.Common/Extensions/ValidatorExtensions.cs:36-50`; of the three, only `ProfileMethodUsageException` carries a non-400 status, 405).
 DMS needs no equivalent: an abstractions-only validator cannot reference the 403-mapped type, so every unhandled validator exception becomes a loud, logged 500.
@@ -447,7 +452,7 @@ This is a material advantage over runtime assembly loading, where write access t
 ## Versioning and Compatibility
 
 The abstractions package is the complete compile-time surface a validator needs, versioned with ordinary semver.
-Adding a member to `ICustomResourceValidator`, or changing `ValidationFailure`, is a breaking major-version bump requiring every validator to be recompiled.
+Adding a member to `ICustomResourceValidator`, or changing `CustomValidationFailure`, is a breaking major-version bump requiring every validator to be recompiled.
 
 **Breaks surface at build time.** Because the validator is compiled into the same build as the host, the implementer's own compiler is what reports an incompatible contract change, and NuGet resolves one version of the abstractions assembly for the whole output.
 That is strictly better than the runtime-loading alternative, where the same mismatch appears as a type-identity or missing-member failure during process start, and it removes an entire class of deployment-time failure from this version's surface.
@@ -457,6 +462,16 @@ A DMS runtime major-version bump therefore changes the set of buildable validato
 
 **Hosting the contract in `Core.External` is deliberate.** That assembly is DMS's public seam, 88 `.cs` files carrying `IApiService`, `FrontendRequest`, the backend result types, and the security contracts, and publishing it places all of that under public semver, not just the new validator types.
 `Core.External.csproj` declares `IsPackable=true`, but nothing packs or publishes it today (`build-dms.ps1:1801-1867` packs only the API package and SchemaTools, and no `Core.External` nuspec exists), so adding the pack-and-publish step is prerequisite work in the contract ticket.
+
+**Publishing the assembly also publishes its dependency closure, which is prerequisite work of its own.**
+`Core.External.csproj` declares five `PackageReference`s (`:10-14`), none carrying `PrivateAssets`, and the project declares no `ProjectReference`, so all five become the published package's declared dependencies, resolving to a 26-package closure in `packages.lock.json`.
+The two analyzer references that `src/dms/Directory.Build.props:14-21` adds to every project are not part of that surface, since both carry `PrivateAssets=all` and therefore do not flow to consumers.
+One of the five is unused: no file in the project references any Roslyn API, and `Microsoft.CodeAnalysis` is declared as an ordinary reference without the `PrivateAssets` scoping the analyzers beside it carry.
+That single reference accounts for 16 of the 26 packages, including every Roslyn package, the six `System.Composition.*` packages, and `Humanizer.Core`, none of which is reachable from any other declared reference.
+Removing it leaves four declared dependencies, each genuinely used and individually small: `Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic` (`Model/ReferentialIdFactory.cs:6`), `Sandwych.QuickGraph.Core` (`Model/GraphMLEdge.cs:6`), and `Microsoft.Extensions.Logging` with `Microsoft.Extensions.Logging.Abstractions` (`Logging/RequestLoggingEventIds.cs`).
+Those resolve to a closure of eight once the logging packages' own transitives are counted (`DependencyInjection`, `DependencyInjection.Abstractions`, `Options`, `Primitives`), and it is precisely those transitives that make the `Action<TOptions>` registration sample above compile against the package alone.
+Removing the Roslyn reference is therefore prerequisite work in the contract ticket alongside the pack-and-publish step, and that ticket asserts the resulting dependency list rather than trusting it.
+Left in place, a district implementing a six-member interface would take a compile-and-publish dependency on the Roslyn compiler platform.
 
 **Supported versus possible.** A validator is in-process code that can constructor-inject anything the host registers, and `IDocumentStoreRepository` and `IQueryHandler` are public interfaces registered scoped in the host (`Backend.External/RepositoryContracts.cs:13`, `:39`) whose assembly the deployment already references, so an implementer can reach services this contract does not offer.
 Such a validator works and nothing stops it.
@@ -469,7 +484,7 @@ The implementer guide states this line rather than implying an enforcement that 
 
 The epic asks for "something like `IResourceValidator`", so the reference implementation was surveyed to decide what ports and what does not.
 
-**ODS's own validators are compiled in, not delivered as plugins.** All three production `IResourceValidator` implementations ship inside ODS assemblies and are registered by Autofac modules that ship with them: `DataAnnotationsResourceValidator` unconditionally in `EdFi.Ods.Api` (`EdFi.Ods.Api/Container/Modules/ApplicationModule.cs:305-307`), and `UniqueIdNotChangedEntityValidator` plus `EnsureUniqueIdAlreadyExistsEntityValidator` in `EdFi.Ods.Features` (`EdFi.Ods.Features/Container/Modules/UniqueIdIntegrationModule.cs:38-44`), behind a `ConditionalModule` gated on `ApiFeature.UniqueIdValidation` (`:19-23`).
+**ODS's own validators are compiled in, not delivered as plugins.** All three production `IResourceValidator` implementations ship inside ODS assemblies and are registered by Autofac modules that ship with them: `DataAnnotationsResourceValidator` unconditionally in `EdFi.Ods.Api` (`EdFi.Ods.Api/Container/Modules/ApplicationModule.cs:305-307`), and `UniqueIdNotChangedEntityValidator` plus `EnsureUniqueIdAlreadyExistsEntityValidator` in `EdFi.Ods.Features` (`EdFi.Ods.Features/Container/Modules/UniqueIdIntegrationModule.cs:38-44`), behind a `ConditionalModule` gated on `ApiFeature.UniqueIdValidation` (`:19`, `:24`).
 There are zero test-only implementations; the test-side FluentValidation samples reach a different contract, `IExplicitObjectValidator`.
 ODS's plugin folder is the mechanism by which a *third party* gets an assembly into the process, after which its Autofac module is picked up by an AppDomain-wide scan (`EdFi.Ods.Api/Helpers/TypeHelper.cs:42-51`, registered at `EdFi.Ods.Api/Startup/OdsStartupBase.cs:355-372`) that also picks up compiled-in modules.
 Both delivery paths therefore feed one registration seam, and nothing scans for `IResourceValidator` itself.
@@ -483,12 +498,12 @@ Both delivery paths therefore feed one registration seam, and nothing scans for 
 | POST/PUT only; Delete pipeline has no validation step | `PipelineStepsProviders.cs:59`, `:70-79` | **Adopted.** See [Verb Coverage](#verb-coverage). |
 | Accumulate-then-400 with a `validationErrors` path map | `ValidatorExtensions.cs:19-60`; `ErrorTranslator.cs:49-71` | **Adopted.** See [Response Shape](#response-shape). |
 | Plugin folder: probe in a throwaway context, check for `IPluginMarker`, then load for real | `EdFi.Ods.Api/Helpers/AssemblyLoaderHelper.cs:274-322` | **Deferred**, to the follow-up plugin spike. It is a delivery mechanism layered on the same registration seam, so deferring it costs this design nothing. |
-| Feature-flag gating of a validator set (`ConditionalModule`) | `UniqueIdIntegrationModule.cs:19-23` | **Not adopted.** In DMS a validator is active if it is registered, and `AppliesTo` is the only narrowing. An implementer wanting a toggle reads their own configuration in their own registration extension. |
+| Feature-flag gating of a validator set (`ConditionalModule`) | `UniqueIdIntegrationModule.cs:19`, `:24` | **Not adopted.** In DMS a validator is active if it is registered, and `AppliesTo` is the only narrowing. An implementer wanting a toggle reads their own configuration in their own registration extension. |
 | Module ordering: `ICustomModule` last, then `Override`-prefixed, then the rest | `TypeHelper.cs:22-51` | **Not needed.** Ordering keys on the module itself, not its origin. DMS has no module system and no last-wins requirement. |
 
 Three ODS behaviors are refused explicitly, each because it converts a defect into silence.
 
-1. **Member-less results vanish.** `ErrorTranslator.cs:54-60` adds model errors only inside `foreach (string memberName in validationResult.MemberNames)`, so a result with no member names never reaches `modelState` and never appears in `validationErrors`, dropping its message while still causing a 400. Refused by `ValidationFailure`'s two constructible cases plus the exhaustive consumption switch.
+1. **Member-less results vanish.** `ErrorTranslator.cs:54-60` adds model errors only inside `foreach (string memberName in validationResult.MemberNames)`, so a result with no member names never reaches `modelState` and never appears in `validationErrors`, dropping its message while still causing a 400. Refused by `CustomValidationFailure`'s two constructible cases plus the exhaustive consumption switch.
 2. **Registration failures are swallowed.** `OdsStartupBase.cs:384-387` catches, logs, and continues. Refused by [Startup Failure Semantics](#startup-failure-semantics).
 3. **`ValidationState` is dead code.** `SetValid()`/`SetInvalid()` write only when `ValidationState.Current` is non-null (`EdFi.Ods.Api/Validation/ObjectValidatorBase.cs:22-30`), `Current` reads log4net's `ThreadContext.Properties` (`EdFi.Ods.Common/ValidationState.cs:14-18`), and no production path assigns it: the controllers build a separate local instance for the `PutContext` (`EdFi.Ods.Api/Controllers/DataManagementControllerBase.cs:298`, `:366`) that never reaches the thread context. Even populated it would be last-writer-wins, and the response decision (`:312`, `:399`) consults the aggregated list instead. Refused by having no ambient state at all: `Validate` takes everything as parameters and returns everything as a value.
 
@@ -572,7 +587,7 @@ Whether to close that gap by adding a store-read capability is recorded under [D
 
 - `OnPath` throws for a null, empty, or non-`$`-rooted path, and for an empty message; `OnResource` throws for an empty message.
 - Within the abstractions assembly's own public construction surface, `OnResource` is the only way to express a path-less failure. Asserted reflectively; the expected constructor set is exactly the synthesized copy constructor, since CS8878 forbids restricting it.
-- A scratch library referencing only the published package compiles a validator and a registration extension that binds an options section, proving the package's dependency set is sufficient for the documented usage.
+- A scratch library referencing only the published package compiles a validator and the registration extension exactly as [Registration and Composition](#registration-and-composition) documents it, including the `Action<TOptions>` overload of `Configure`, proving the package's dependency set is sufficient for the documented usage.
 
 **Fan-in step unit tests:**
 
@@ -587,7 +602,7 @@ Whether to close that gap by adding a store-read capability is recorded under [D
 - `ValidationScope` carries the tenant (including the null single-tenant case) and the route qualifiers, asserted **separately**: a single-tenant routed deployment has a null tenant and non-empty qualifiers, so an implementation populating only `Tenant` would pass a tenant-only test while leaving that shape unable to scope a rule.
 - The scope's qualifier dictionary is a defensive copy, proven by downcasting to `Dictionary<,>`, mutating, and asserting the request is unchanged. Asserting that `IReadOnlyDictionary<,>` has no `Add` proves nothing, since a pass-through would pass it.
 - A validator that throws produces a 500 through the existing catch-all, not a 400 and not an escaping exception.
-- A `ValidationFailure` subtype other than the two cases (built via a test-only record chaining the copy constructor) throws at the consumption switch and surfaces as a 500.
+- A `CustomValidationFailure` subtype other than the two cases (built via a test-only record chaining the copy constructor) throws at the consumption switch and surfaces as a 500.
 - A custom-validator 400 is byte-identical in `detail` to the corresponding core schema-validation 400, on both arms.
 - The document is the profile-shaped body under a writable profile and `ParsedBody` otherwise.
 - A validator returning failures produces a log record naming that validator against the request's `TraceId`, and that record contains no failure message text.
@@ -616,8 +631,8 @@ Medium.
 Four implementation surfaces, in dependency order:
 
 1. **Abstractions package** - five public top-level types in `Core.External`, plus the pack-and-publish path that does not exist today (a `build-dms.ps1` package target, prerelease pack/push jobs, and a release promote step).
-2. **Fan-in pipeline step** - the `internal` step, the `validationErrors`/`errors` merge, per-request resolution from the request scope, the observability records, the `FrontendRequest` cancellation-token property and its assignment in `FromRequest`, and the unconditional startup guard.
-3. **Composition seam and implementer guide** - the Core extension that registers the guard and captures the collection, the documented registration call at the composition root, and the guide packaged with the abstractions package.
+2. **Fan-in pipeline step** - the `internal` step, the `validationErrors`/`errors` merge, per-request resolution from the request scope, the observability records, and the `FrontendRequest` cancellation-token property and its assignment in `FromRequest`.
+3. **Composition seam, startup guard, and implementer guide** - the Core extension that registers the guard and captures the collection, the unconditional startup guard itself, the documented registration call at the composition root, and the guide packaged with the abstractions package.
 4. **End-to-end proof** - a fixture validator registered through the documented seam and driven over real HTTP.
 
 No changes to the four existing validator interfaces.
