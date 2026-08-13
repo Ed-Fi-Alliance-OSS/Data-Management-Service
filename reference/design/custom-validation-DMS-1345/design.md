@@ -69,7 +69,7 @@ A bare file name repeats a file cited in full earlier in this document.
 ### Goals
 
 1. **Validation logic lives outside DMS core source.** A district or vendor writes its rules in its own assembly, against a published package, versioned and tested on its own cadence. DMS source carries the seam, not the rules.
-2. **Document-oriented and async contract.** DMS has no generated typed resource classes, and two of the three driving scenarios are I/O-bound, so the contract takes a `JsonNode` and returns a `Task`. Both are deliberate forks from the ODS signature.
+2. **Document-oriented and async contract.** DMS has no generated typed resource classes, and one of the three driving scenarios is I/O-bound, so the contract takes a `JsonNode` and returns a `Task`. Both are deliberate forks from the ODS signature.
 3. **Compatibility breaks surface at build time.** Because the validator is compiled into the deployment, an incompatible contract change fails the implementer's own build rather than a production startup.
 4. **Fail loud at startup.** A validator that is registered wrongly, or cannot be constructed, terminates the process rather than failing its first matching write.
 5. **Response parity with core validation.** A custom validator's 400 reuses DMS's existing failure factories and `detail` literals rather than inventing its own, so its body is indistinguishable from the core 400 that takes the same arm. An `OnPath` failure matches a core schema-validation 400 (`ForDataValidation`). An `OnResource` failure matches the `ForBadRequest` 400 that `Middleware/ParseBodyMiddleware.cs:22` and `Middleware/ValidateMatchingDocumentUuidsMiddleware.cs:35` already emit, and has no core schema-validation counterpart at all, since `DocumentValidator` always returns an empty `errors` array (`Validation/DocumentValidator.cs:94`) and so never reaches the `ForBadRequest` arm. The two factories differ in `type` and `title`, not only `detail` (`Response/FailureResponse.cs:83-84`, `:99-100`), so the parity claim is per-arm and not blanket.
@@ -193,7 +193,7 @@ public abstract record CustomValidationFailure
     {
         public OnPath(string jsonPath, string message)
         {
-            // throws ArgumentException unless jsonPath names a member under "$." and message is non-empty
+            // throws ArgumentException unless jsonPath is "$."-prefixed and message is non-empty
             JsonPath = jsonPath;
             Message = message;
         }
@@ -379,7 +379,9 @@ Failure *messages* are not logged, because they can quote submitted document val
 A validator that is registered wrongly, or that cannot be constructed, aborts DMS startup and terminates the process.
 **No custom validator ever serves a request unless it passed the startup guard.**
 
-This is a deliberate refusal of the ODS precedent for extension registration, where a module that throws during registration is caught, logged, and skipped (`EdFi.Ods.Api/Startup/OdsStartupBase.cs:384-387`), degrading a broken extension to silently absent validation.
+This is a deliberate refusal of the ODS precedent for extension registration, where a module that throws while being constructed or handed to `RegisterModule` is caught, logged, and skipped (`EdFi.Ods.Api/Startup/OdsStartupBase.cs:379-387`), degrading a broken extension to silently absent validation.
+The catch covers only that much: Autofac defers a module's own `Load` body to container build, outside the cited `try`, so a module that throws while performing its registrations is not swallowed but takes the process down.
+It is the swallowing half that this design refuses.
 
 Fatal conditions: a descriptor that is not transient; a descriptor carrying an `ImplementationFactory`; and a registered validator the container cannot construct.
 An `ImplementationInstance` descriptor is fatal too, but it is not an independent condition: `ServiceDescriptor` only produces one at `Singleton` lifetime, so the lifetime check already catches every such descriptor and a test for it cannot fail while the lifetime test passes.
@@ -479,7 +481,12 @@ This is a material advantage over runtime assembly loading, where write access t
 The abstractions package is the complete compile-time surface a validator needs, versioned with ordinary semver.
 Adding a member to `ICustomResourceValidator`, or changing `CustomValidationFailure`, is a breaking major-version bump requiring every validator to be recompiled.
 
-**Breaks surface at build time.** Because the validator is compiled into the same build as the host, the implementer's own compiler is what reports an incompatible contract change, and NuGet resolves one version of the abstractions assembly for the whole output.
+**Breaks surface at build time, provided the validator is rebuilt.** Because the validator is compiled into the same build as the host, the implementer's own compiler is what reports an incompatible contract change, and NuGet resolves one version of the abstractions assembly for the whole output.
+That guarantee is conditional on the deployment building the validator against the host's abstractions version, from source or by rebuilding its package.
+A deployment that instead references a *prebuilt* validator assembly compiled against an older major gets no compiler error: NuGet unifies to the host's version without failing the restore, and the mismatch becomes a type-load failure instead.
+This design does not leave that silent.
+The startup guard resolves every registered `ICustomResourceValidator` once from a throwaway scope (see [Startup Failure Semantics](#startup-failure-semantics)), so a validator that cannot load against the host's contract aborts startup rather than failing the first matching write.
+The outcome degrades from a build failure to a fail-loud startup failure, never to a running deployment with a broken validator, and the implementer guide states the rebuild expectation.
 That is strictly better than the runtime-loading alternative, where the same mismatch appears as a type-identity or missing-member failure during process start, and it removes an entire class of deployment-time failure from this version's surface.
 
 **Target framework.** A validator is compiled into the host's build and loaded into its runtime, so its target framework must be compatible with the host's; `Core.External` targets `net10.0` (`Core.External/EdFi.DataManagementService.Core.External.csproj:3`).
@@ -536,7 +543,7 @@ Both delivery paths therefore feed one registration seam, and nothing scans for 
 Three ODS behaviors are refused explicitly, each because it converts a defect into silence.
 
 1. **Member-less results vanish.** `ErrorTranslator.cs:54-60` adds model errors only inside `foreach (string memberName in validationResult.MemberNames)`, so a result with no member names never reaches `modelState` and never appears in `validationErrors`, dropping its message while still causing a 400. Refused by `CustomValidationFailure`'s two constructible cases plus the exhaustive consumption switch.
-2. **Registration failures are swallowed.** `OdsStartupBase.cs:384-387` catches, logs, and continues. Refused by [Startup Failure Semantics](#startup-failure-semantics).
+2. **Module construction and registration-call failures are swallowed.** `OdsStartupBase.cs:379-387` catches, logs, and continues; failures inside a module's deferred `Load` body escape that catch and are not swallowed. Refused by [Startup Failure Semantics](#startup-failure-semantics).
 3. **`ValidationState` is dead code.** `SetValid()`/`SetInvalid()` write only when `ValidationState.Current` is non-null (`EdFi.Ods.Api/Validation/ObjectValidatorBase.cs:22-30`), `Current` reads log4net's `ThreadContext.Properties` (`EdFi.Ods.Common/ValidationState.cs:14-18`), and no production path assigns it: the controllers build a separate local instance for the `PutContext` (`EdFi.Ods.Api/Controllers/DataManagementControllerBase.cs:298`, `:366`) that never reaches the thread context. Even populated it would be last-writer-wins, and the response decision (`:312`, `:399`) consults the aggregated list instead. Refused by having no ambient state at all: `Validate` takes everything as parameters and returns everything as a value.
 
 ---
