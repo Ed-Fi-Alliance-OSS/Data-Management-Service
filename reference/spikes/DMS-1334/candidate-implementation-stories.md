@@ -9,12 +9,12 @@ The confirmed gaps in [the spike findings](data-store-lifecycle-findings.md) res
 | S1 | Add durable CMS background jobs, schedules, and Management API v3 job polling | CMS |
 | S2 | Add a runtime-safe CMS DMS-template provisioner | CMS |
 | S3 | Add managed data-store lifecycle endpoints and reconciliation to CMS | CMS, consuming CMS S2 |
-| S4 | Publish/consume the DMS education-organization database contract and add a CMS target-database reader | DMS contract owner + CMS |
+| S4 | Add a CMS target-database education-organization reader | CMS |
 | S5 | Add CMS education-organization refresh, projection, and tenant aggregation | CMS, consuming CMS S4 |
 
 ## Dependency and delivery order
 
-- S1 and S4's provider-neutral interface/model work can begin independently. S4 provider SQL and contract tests are blocked until a DMS-owned relational contract and provider fixtures are published and pinned; final shared target-provider-setting wiring depends on S2. S2 design can begin, but package execution is blocked by DMS-1271 (transitively DMS-1270) until its trusted artifact contract is delivered.
+- S1 and S4 can begin independently. S4 defines its minimal relational read contract and provider fixtures before implementing the provider SQL; final shared target-provider-setting wiring depends on S2. S2 design can begin, but package execution is blocked by DMS-1271 (transitively DMS-1270) until its trusted artifact contract is delivered.
 - S3 requires S1 and S2.
 - S5 requires S1 and S4. Its complete v3 tenant aggregate also requires S3, although refresh persistence for ordinary unmanaged stores can be developed before S3 lands.
 - S2 must carry a Jira blocker link to open [DMS-1271](https://edfi.atlassian.net/browse/DMS-1271). It consumes DMS-1271's delivered trusted manifest/artifact contract but does not take ownership of DMS-1271's operator/bootstrap sequencing.
@@ -40,10 +40,8 @@ graph TD
  %% Blockers
  DMS1270[["DMS-1270 (artifact prerequisite)"]]
  DMS1271[["DMS-1271 (trusted artifact contract)"]]
- DMSCONTRACT[["DMS relational ed-org contract + fixtures"]]
  DMS1270 --> DMS1271
  DMS1271 --> S2
- DMSCONTRACT --> S4
 ```
 
 - S2 and S4 are implemented inside the existing CMS backend and provider-specific projects. They consume versioned DMS artifacts and database-shape contracts as data and add no CMS-to-DMS project/package reference, DMS runtime dependency, or Docker build-context change.
@@ -73,7 +71,7 @@ Each implementer must inspect neighboring files and follow current repository na
 | S1 | Ready now. |
 | S2 | Contract/options design may start; artifact execution waits for DMS-1270/DMS-1271 delivery and a pinned trusted artifact contract. |
 | S3 | Starts after S1 and S2 contracts are stable; end-to-end completion waits for both implementations. |
-| S4 | Interface/model design may start; provider SQL waits for the named DMS contract owner/ticket, pinned artifact, and both provider fixtures. |
+| S4 | Ready now; define the minimal relational read contract and provider fixtures before implementing provider SQL. |
 | S5 | Snapshot/schedule design may start; implementation needs S1/S4, complete aggregate needs S3, and endpoint conformance waits for the corrected pinned OpenAPI and verified removal-ticket provenance. |
 
 ## S1
@@ -382,17 +380,17 @@ Lifecycle statuses follow current v3 behavior: `PendingCreate`, `CreateInProgres
 
 ## S4
 
-**Publish/consume the DMS education-organization database contract and add a CMS target-database reader**
+**Add a CMS target-database education-organization reader**
 
 ### Description
 
 CMS needs to read the four core education-organization types from each configured DMS database for the Management API projection. Existing DMS token-info code is request- and mapping-specific and returns token ancestry; it is evidence for physical relationships, not an appropriate CMS dependency.
 
-This story first delivers/pins the DMS-owned relational integration contract and fixtures, then delivers a CMS-owned reader that enumerates a target data store's core education organizations in the Management API projection shape. This prerequisite is part of S4 delivery, not a sixth runtime story.
+This story first defines the minimal relational read contract and provider fixtures from the existing generated DMS PostgreSQL and SQL Server DDL, then delivers a reader that enumerates a target data store's core education organizations in the Management API projection shape.
 
 **Scope**
 
-- Publish and pin a DMS-owned relational contract defining its contract version; supported Data Standard/effective-schema versions; `dms.EffectiveSchema` compatibility fields; exact provider objects, columns, types, nullability, joins, hierarchy precedence, and deterministic ordering; and representative PostgreSQL/SQL Server fixtures.
+- Define a minimal relational read contract from the existing generated DMS PostgreSQL and SQL Server DDL, covering supported Data Standard/effective-schema versions; `dms.EffectiveSchema` compatibility fields; required provider objects, columns, types, nullability, joins, hierarchy precedence, and deterministic ordering; and representative provider fixtures.
 - Define a provider-neutral async reader contract in the existing CMS backend project returning education-organization ID, institution name, nullable short name, discriminator, and nullable direct parent ID.
 - Implement PostgreSQL and SQL Server adapters in the existing CMS provider projects using the stable DMS database shape for the four current Admin API core types: State Education Agency, Education Service Center, Local Education Agency, and School.
 - Validate the configured target provider, the target `dms.EffectiveSchema` contract/version, and every required core table and column before projection.
@@ -406,20 +404,19 @@ No public route is delivered. The output must be sufficient for the OpenAPI `edu
 
 **Architecture and boundaries**
 
-CMS owns the reader because it supports a Management API projection and runs inside a CMS refresh job. The provider-neutral contract and provider adapters follow the existing CMS layering; no CMS project references a DMS project. DMS continues to own Resources, Descriptors, and Discovery behavior and publishes the target database contract that CMS consumes as data.
+CMS owns the reader because it supports a Management API projection and runs inside a CMS refresh job. The provider-neutral contract and provider adapters follow the existing CMS layering; no CMS project references a DMS project. DMS continues to own Resources, Descriptors, and Discovery behavior, while the reader treats the generated DMS relational schema as its versioned integration boundary.
 
 The reader performs an explicit Management API projection against the pinned contract only. It does not reuse the token-info response discriminator (`Ed-Fi:School`), require DMS `RequestInfo`, load DMS mapping/schema packages, call the public DMS API, or require an OAuth client. A target incompatible with the supported versioned database contract fails before returning a partial projection.
 
 **Dependencies**
 
 - Existing CMS backend, PostgreSQL, and SQL Server project boundaries and service-registration conventions.
-- A named DMS contract owner and repository location/ticket established during refinement for the relational contract and provider fixtures; this deliverable is completed and pinned before provider SQL begins.
+- Existing generated DMS PostgreSQL and SQL Server DDL as the source for the minimal relational read contract and provider fixtures.
 - The target-provider setting from S2, which selects the target-database adapter independently of the CMS catalog provider.
 - Current Admin API behavior and DMS token-info implementation as behavioral evidence only, not runtime dependencies or reuse seams.
 
 **Blockers**
 
-- DMS relational education-organization contract publication — blocks provider SQL and contract tests. Refinement is incomplete until the owner, ticket, repository path, contract version, supported versions, and provider fixtures are recorded.
 - [S2](#s2) — blocks final shared target-provider-setting wiring. The provider-neutral interface/model can be developed before S2 completes.
 
 **Out of scope**
@@ -439,7 +436,7 @@ The reader performs an explicit Management API projection against the pinned con
 
 1. A provider-neutral CMS backend contract asynchronously returns the v3 projection fields using non-nullable internal models except for fields nullable in the contract.
 2. PostgreSQL and SQL Server implementations reside in the existing CMS provider projects and require no `RequestInfo`, authenticated DMS request, DMS HTTP call, DMS project/package reference, or DMS startup component.
-3. Before provider SQL is merged, a DMS-owned contract artifact is pinned. It specifies contract version, supported Data Standard/effective-schema versions, required `dms.EffectiveSchema` compatibility fields, exact PostgreSQL/SQL Server objects/columns/types/nullability, joins, hierarchy precedence, deterministic ordering, and representative fixtures for both providers.
+3. Before provider SQL is implemented, S4 defines and checks in a minimal relational read contract derived from the existing generated DMS PostgreSQL and SQL Server DDL. It specifies supported Data Standard/effective-schema versions, required `dms.EffectiveSchema` compatibility fields, required provider objects/columns/types/nullability, joins, hierarchy precedence, deterministic ordering, and representative fixtures for both providers.
 4. The reader enumerates exactly State Education Agency, Education Service Center, Local Education Agency, and School without requiring the caller to know IDs in advance.
 5. Before projecting data, the reader validates the pinned contract version, target `dms.EffectiveSchema` compatibility fields, and every required core object/column/type/nullability rule. A missing or incompatible contract produces a typed non-transient failure and no partial projection is returned.
 6. Core discriminators match current Admin API projection values: `edfi.StateEducationAgency`, `edfi.EducationServiceCenter`, `edfi.LocalEducationAgency`, and `edfi.School`. The existing token-info values such as `Ed-Fi:School` are not exposed on this contract.
@@ -450,15 +447,15 @@ The reader performs an explicit Management API projection against the pinned con
 11. Connection/transient provider failures remain distinguishable for retry classification and do not include secrets.
 12. The reader adds no public DMS or CMS route, job, snapshot table, OAuth credential, or HTTP dependency.
 13. Extension-defined education-organization types are excluded. The reader neither guesses nor synthesizes discriminator or parent semantics absent from the Management API contract.
-14. The CMS contract and adapters are implemented within the existing CMS project graph; no CMS-to-DMS project/package reference or Docker build-context change is introduced. The DMS deliverable is documentation/machine-readable fixtures consumed as a versioned integration contract, not a runtime library.
+14. The CMS contract and adapters are implemented within the existing CMS project graph; no CMS-to-DMS project/package reference, runtime library, or Docker build-context change is introduced.
 
 ### Tasks
 
 **Implementation**
 
-1. Create/complete the DMS-owned contract ticket and publish the pinned human-readable contract plus machine-readable PostgreSQL/SQL Server fixtures; obtain DMS/CMS owner approval.
+1. Define and check in the minimal relational read contract and representative PostgreSQL/SQL Server fixtures derived from the existing generated DMS DDL.
 2. Add provider-neutral projection models, reader interface, compatibility result, and typed error categories in the existing CMS backend project.
-3. Generate contract tests from the pinned fixtures, then implement PostgreSQL and SQL Server adapters without inferring any unlisted object or join.
+3. Add contract tests for the fixtures, then implement PostgreSQL and SQL Server adapters without inferring any unlisted object or join.
 4. Wire the adapter through the validated target-provider setting after S2 supplies it.
 5. Document the supported contract versions, compatibility diagnostics, provider assumptions, and coordinated DMS/CMS upgrade process.
 
@@ -611,7 +608,7 @@ More stories would split endpoints, provider adapters, tables, workers, feature 
 | G09 job polling | S1 |
 | G10 concurrency/crash recovery | S1 |
 | G11 DMS discovery | Existing capability; documented by S3. |
-| G12 versioned education-organization database contract and extraction | S4 DMS contract deliverable plus CMS reader |
+| G12 versioned education-organization database contract and extraction | S4 relational read contract, provider fixtures, and CMS reader |
 | G13 snapshot persistence | S5 |
 | G14 refresh all/one | S5 consuming S1/S4 |
 | G15 tenant aggregate | S5 |
@@ -625,4 +622,4 @@ More stories would split endpoints, provider adapters, tables, workers, feature 
 | G23 CMS/DMS project boundary | Existing structure is sufficient: S2/S4 stay in CMS and consume versioned DMS artifacts/database contracts as data; no cross-project reference is added. |
 | G24 original unscoped all-store read | Superseded/out of scope; S5 implements only the tenant aggregate. |
 
-Every candidate story maps to confirmed gaps, and every gap has an explicit implementation, reuse, or exclusion disposition. S1 is directly implementable now. S2–S5 are directly implementable only for the portions allowed by their ready-to-start gates; no developer or AI agent should invent the missing artifact/database contracts, ticket provenance, or response contract to bypass those gates.
+Every candidate story maps to confirmed gaps, and every gap has an explicit implementation, reuse, or exclusion disposition. S1 and S4 can start now. S2, S3, and S5 are directly implementable only for the portions allowed by their ready-to-start gates; no developer or AI agent should invent the missing artifact contract, ticket provenance, or response contract to bypass those gates.
