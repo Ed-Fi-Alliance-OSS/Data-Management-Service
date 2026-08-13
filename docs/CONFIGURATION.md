@@ -322,6 +322,33 @@ The `RateLimit` object should have the following parameters.
 | Window      | The number of seconds before the `PermitLimit` is reset. Must be > 0.                                                                                                                                                                                                      |
 | QueueLimit  | The maximum number of requests that can be Queued once `PermitLimit`s are exhausted. These requests will wait until the `Window` expires and will be processed FIFO. When the queue is exhausted, clients will receive a `429` `Too Many Requests` response. Must be >= 0. |
 
+### Rejection response
+
+A rejected request receives a `429 Too Many Requests` response with a
+`Retry-After` header and an Ed-Fi problem-details body served as
+`application/problem+json`. `Retry-After` carries the limiter-supplied
+recommended retry delay, rounded up to whole seconds. It is a suggested
+wait, not an exact countdown to the current window's reset — queue depth
+can make the recommended delay longer than one configured `Window`. The
+header is omitted in the unusual case that the limiter supplies no
+retry-after metadata, and the body is served either way. The
+`correlationId` is taken from the request header named by
+`AppSettings:CorrelationIdHeader` when that setting and header are
+present, otherwise from the server-generated trace identifier — the same
+selection the API's other error responses use.
+
+```json
+{
+  "detail": "The number of allowed requests has been exceeded. Retry the request later.",
+  "type": "urn:ed-fi:api:too-many-requests",
+  "title": "Too Many Requests",
+  "status": 429,
+  "correlationId": "0HNCTN1IRQMDG:00000001",
+  "validationErrors": {},
+  "errors": []
+}
+```
+
 ## OtlpLogging
 
 CMS and DMS compile in `Serilog.Sinks.OpenTelemetry` as a single

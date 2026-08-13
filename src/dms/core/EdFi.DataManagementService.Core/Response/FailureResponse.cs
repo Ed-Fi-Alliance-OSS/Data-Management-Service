@@ -45,6 +45,7 @@ public static class FailureResponse
     private static readonly string _parameterValidationFailedType =
         $"{_badRequestTypePrefix}:parameter-validation-failed";
     private static readonly string _unsupportedMediaTypeType = $"{_typePrefix}:unsupported-media-type";
+    private static readonly string _tooManyRequestsType = $"{_typePrefix}:too-many-requests";
 
     internal static JsonObject CreateBaseJsonObject(
         string detail,
@@ -247,6 +248,22 @@ public static class FailureResponse
             correlationId: traceId.Value,
             validationErrors: [],
             errors: errors
+        );
+
+    /// <summary>
+    /// Produces the 429 rate-limit rejection problem details. Retry timing is carried by the
+    /// Retry-After response header when the limiter supplies it, so the body stays constant
+    /// whether or not that metadata is available.
+    /// </summary>
+    public static JsonNode ForTooManyRequests(TraceId traceId) =>
+        CreateBaseJsonObject(
+            detail: "The number of allowed requests has been exceeded. Retry the request later.",
+            type: _tooManyRequestsType,
+            title: "Too Many Requests",
+            status: 429,
+            correlationId: traceId.Value,
+            validationErrors: [],
+            errors: []
         );
 
     public static JsonNode ForUnauthorized(TraceId traceId, string error, string description) =>
