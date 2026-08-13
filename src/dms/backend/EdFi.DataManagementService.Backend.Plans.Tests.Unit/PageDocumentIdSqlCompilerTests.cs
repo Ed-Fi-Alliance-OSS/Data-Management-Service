@@ -1302,42 +1302,42 @@ public class Given_PageDocumentIdSqlCompiler
         RelationshipAuthorizationPersonAuthViewKind.Student,
         RelationshipAuthorizationPersonKind.Student,
         "Student_DocumentId",
-        "r.\"DocumentId\" IN (SELECT t0.\"DocumentId\" FROM \"edfi\".\"StudentSchoolAssociation\" t0 WHERE t0.\"Student_DocumentId\" IN (SELECT t1.\"Student_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStudentDocumentId\" t1 WHERE t1.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"
+        "r.\"Student_DocumentId\" IN (SELECT t0.\"Student_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStudentDocumentId\" t0 WHERE t0.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"
     )]
     [TestCase(
         SqlDialect.Pgsql,
         RelationshipAuthorizationPersonAuthViewKind.Contact,
         RelationshipAuthorizationPersonKind.Contact,
         "Contact_DocumentId",
-        "r.\"DocumentId\" IN (SELECT t0.\"DocumentId\" FROM \"edfi\".\"StudentSchoolAssociation\" t0 WHERE t0.\"Contact_DocumentId\" IN (SELECT t1.\"Contact_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToContactDocumentId\" t1 WHERE t1.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"
+        "r.\"Contact_DocumentId\" IN (SELECT t0.\"Contact_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToContactDocumentId\" t0 WHERE t0.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"
     )]
     [TestCase(
         SqlDialect.Pgsql,
         RelationshipAuthorizationPersonAuthViewKind.Staff,
         RelationshipAuthorizationPersonKind.Staff,
         "Staff_DocumentId",
-        "r.\"DocumentId\" IN (SELECT t0.\"DocumentId\" FROM \"edfi\".\"StudentSchoolAssociation\" t0 WHERE t0.\"Staff_DocumentId\" IN (SELECT t1.\"Staff_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStaffDocumentId\" t1 WHERE t1.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"
+        "r.\"Staff_DocumentId\" IN (SELECT t0.\"Staff_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStaffDocumentId\" t0 WHERE t0.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"
     )]
     [TestCase(
         SqlDialect.Mssql,
         RelationshipAuthorizationPersonAuthViewKind.Student,
         RelationshipAuthorizationPersonKind.Student,
         "Student_DocumentId",
-        "r.[DocumentId] IN (SELECT t0.[DocumentId] FROM [edfi].[StudentSchoolAssociation] t0 WHERE t0.[Student_DocumentId] IN (SELECT t1.[Student_DocumentId] FROM [auth].[EducationOrganizationIdToStudentDocumentId] t1 WHERE t1.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0))"
+        "r.[Student_DocumentId] IN (SELECT t0.[Student_DocumentId] FROM [auth].[EducationOrganizationIdToStudentDocumentId] t0 WHERE t0.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0))"
     )]
     [TestCase(
         SqlDialect.Mssql,
         RelationshipAuthorizationPersonAuthViewKind.Contact,
         RelationshipAuthorizationPersonKind.Contact,
         "Contact_DocumentId",
-        "r.[DocumentId] IN (SELECT t0.[DocumentId] FROM [edfi].[StudentSchoolAssociation] t0 WHERE t0.[Contact_DocumentId] IN (SELECT t1.[Contact_DocumentId] FROM [auth].[EducationOrganizationIdToContactDocumentId] t1 WHERE t1.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0))"
+        "r.[Contact_DocumentId] IN (SELECT t0.[Contact_DocumentId] FROM [auth].[EducationOrganizationIdToContactDocumentId] t0 WHERE t0.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0))"
     )]
     [TestCase(
         SqlDialect.Mssql,
         RelationshipAuthorizationPersonAuthViewKind.Staff,
         RelationshipAuthorizationPersonKind.Staff,
         "Staff_DocumentId",
-        "r.[DocumentId] IN (SELECT t0.[DocumentId] FROM [edfi].[StudentSchoolAssociation] t0 WHERE t0.[Staff_DocumentId] IN (SELECT t1.[Staff_DocumentId] FROM [auth].[EducationOrganizationIdToStaffDocumentId] t1 WHERE t1.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0))"
+        "r.[Staff_DocumentId] IN (SELECT t0.[Staff_DocumentId] FROM [auth].[EducationOrganizationIdToStaffDocumentId] t0 WHERE t0.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0))"
     )]
     public void It_should_emit_direct_root_column_people_authorization_sql_for_page_and_total_count_queries(
         SqlDialect dialect,
@@ -1510,7 +1510,7 @@ public class Given_PageDocumentIdSqlCompiler
     }
 
     [Test]
-    public void It_should_close_direct_people_authorization_membership_and_root_subqueries()
+    public void It_should_close_direct_people_authorization_membership_subquery_and_enclosing_groups()
     {
         var plan = _compiler.Compile(
             CreateSpec(
@@ -1533,7 +1533,7 @@ public class Given_PageDocumentIdSqlCompiler
         );
 
         const string ExpectedPeoplePredicate =
-            "r.\"DocumentId\" IN (SELECT t0.\"DocumentId\" FROM \"edfi\".\"StudentSchoolAssociation\" t0 WHERE t0.\"Student_DocumentId\" IN (SELECT t1.\"Student_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStudentDocumentId\" t1 WHERE t1.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds)))))";
+            "r.\"Student_DocumentId\" IN (SELECT t0.\"Student_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStudentDocumentId\" t0 WHERE t0.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))))";
 
         plan.PageDocumentIdSql.Should().Contain(ExpectedPeoplePredicate);
         plan.TotalCountSql.Should().NotBeNull();
@@ -1564,7 +1564,7 @@ public class Given_PageDocumentIdSqlCompiler
         );
 
         const string ExpectedPeopleClaimFilter =
-            "WHERE t1.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds)";
+            "WHERE t0.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds)";
 
         plan.PageDocumentIdSql.Should().Contain(ExpectedPeopleClaimFilter);
         plan.TotalCountSql.Should().NotBeNull();
@@ -1609,14 +1609,14 @@ public class Given_PageDocumentIdSqlCompiler
 
         plan.PageDocumentIdSql.Should()
             .Contain(
-                "WHERE t1.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0, @ClaimEducationOrganizationIds_1"
+                "WHERE t0.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0, @ClaimEducationOrganizationIds_1"
             );
         plan.PageDocumentIdSql.Should().Contain("@ClaimEducationOrganizationIds_1998");
         plan.PageDocumentIdSql.Should().NotContain("SELECT [Id] FROM @ClaimEducationOrganizationIds");
         plan.TotalCountSql.Should().NotBeNull();
         plan.TotalCountSql.Should()
             .Contain(
-                "WHERE t1.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0, @ClaimEducationOrganizationIds_1"
+                "WHERE t0.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0, @ClaimEducationOrganizationIds_1"
             );
         plan.TotalCountSql.Should().Contain("@ClaimEducationOrganizationIds_1998");
         plan.TotalCountSql.Should().NotContain("SELECT [Id] FROM @ClaimEducationOrganizationIds");
@@ -1666,7 +1666,7 @@ public class Given_PageDocumentIdSqlCompiler
         );
 
         const string ExpectedPeopleClaimFilter =
-            "WHERE t1.[SourceEducationOrganizationId] IN (SELECT [Id] FROM @ClaimEducationOrganizationIds)";
+            "WHERE t0.[SourceEducationOrganizationId] IN (SELECT [Id] FROM @ClaimEducationOrganizationIds)";
 
         plan.PageDocumentIdSql.Should().Contain(ExpectedPeopleClaimFilter);
         plan.PageDocumentIdSql.Should().NotContain("@ClaimEducationOrganizationIds_0");
@@ -1732,11 +1732,11 @@ public class Given_PageDocumentIdSqlCompiler
 
     [TestCase(
         SqlDialect.Pgsql,
-        "r.\"DocumentId\" IN (SELECT t0.\"DocumentId\" FROM \"edfi\".\"Student\" t0 WHERE t0.\"DocumentId\" IN (SELECT t1.\"Student_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStudentDocumentId\" t1 WHERE t1.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"
+        "r.\"DocumentId\" IN (SELECT t0.\"Student_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStudentDocumentId\" t0 WHERE t0.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"
     )]
     [TestCase(
         SqlDialect.Mssql,
-        "r.[DocumentId] IN (SELECT t0.[DocumentId] FROM [edfi].[Student] t0 WHERE t0.[DocumentId] IN (SELECT t1.[Student_DocumentId] FROM [auth].[EducationOrganizationIdToStudentDocumentId] t1 WHERE t1.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0))"
+        "r.[DocumentId] IN (SELECT t0.[Student_DocumentId] FROM [auth].[EducationOrganizationIdToStudentDocumentId] t0 WHERE t0.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0))"
     )]
     public void It_should_emit_student_self_authorization_sql_from_root_document_id_without_unique_id_or_usi(
         SqlDialect dialect,
@@ -1993,11 +1993,11 @@ public class Given_PageDocumentIdSqlCompiler
 
     [TestCase(
         SqlDialect.Pgsql,
-        "r.\"DocumentId\" IN (SELECT t0.\"DocumentId\" FROM \"edfi\".\"StudentSchoolAssociation\" t0 WHERE t0.\"Student_DocumentId\" IN (SELECT t1.\"Student_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStudentDocumentIdThroughResponsibility\" t1 WHERE t1.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"
+        "r.\"Student_DocumentId\" IN (SELECT t0.\"Student_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStudentDocumentIdThroughResponsibility\" t0 WHERE t0.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"
     )]
     [TestCase(
         SqlDialect.Mssql,
-        "r.[DocumentId] IN (SELECT t0.[DocumentId] FROM [edfi].[StudentSchoolAssociation] t0 WHERE t0.[Student_DocumentId] IN (SELECT t1.[Student_DocumentId] FROM [auth].[EducationOrganizationIdToStudentDocumentIdThroughResponsibility] t1 WHERE t1.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0))"
+        "r.[Student_DocumentId] IN (SELECT t0.[Student_DocumentId] FROM [auth].[EducationOrganizationIdToStudentDocumentIdThroughResponsibility] t0 WHERE t0.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0))"
     )]
     public void It_should_emit_students_only_through_responsibility_authorization_sql_for_page_and_total_count_queries(
         SqlDialect dialect,
@@ -2034,11 +2034,11 @@ public class Given_PageDocumentIdSqlCompiler
 
     [TestCase(
         SqlDialect.Pgsql,
-        "r.\"SchoolId\" IN (SELECT t0.\"TargetEducationOrganizationId\" FROM \"auth\".\"EducationOrganizationIdToEducationOrganizationId\" t0 WHERE t0.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds)) AND r.\"DocumentId\" IN (SELECT t1.\"DocumentId\" FROM \"edfi\".\"StudentSchoolAssociation\" t1 WHERE t1.\"Student_DocumentId\" IN (SELECT t2.\"Student_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStudentDocumentId\" t2 WHERE t2.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"
+        "r.\"SchoolId\" IN (SELECT t0.\"TargetEducationOrganizationId\" FROM \"auth\".\"EducationOrganizationIdToEducationOrganizationId\" t0 WHERE t0.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds)) AND r.\"Student_DocumentId\" IN (SELECT t1.\"Student_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStudentDocumentId\" t1 WHERE t1.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"
     )]
     [TestCase(
         SqlDialect.Mssql,
-        "r.[SchoolId] IN (SELECT t0.[TargetEducationOrganizationId] FROM [auth].[EducationOrganizationIdToEducationOrganizationId] t0 WHERE t0.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0)) AND r.[DocumentId] IN (SELECT t1.[DocumentId] FROM [edfi].[StudentSchoolAssociation] t1 WHERE t1.[Student_DocumentId] IN (SELECT t2.[Student_DocumentId] FROM [auth].[EducationOrganizationIdToStudentDocumentId] t2 WHERE t2.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0))"
+        "r.[SchoolId] IN (SELECT t0.[TargetEducationOrganizationId] FROM [auth].[EducationOrganizationIdToEducationOrganizationId] t0 WHERE t0.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0)) AND r.[Student_DocumentId] IN (SELECT t1.[Student_DocumentId] FROM [auth].[EducationOrganizationIdToStudentDocumentId] t1 WHERE t1.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0))"
     )]
     public void It_should_and_edorg_and_people_subjects_inside_one_mixed_relationship_strategy(
         SqlDialect dialect,
@@ -2079,13 +2079,13 @@ public class Given_PageDocumentIdSqlCompiler
         SqlDialect.Pgsql,
         "FROM \"edfi\".\"StudentSchoolAssociation\"",
         "r.\"SchoolId\" IN (SELECT t0.\"TargetEducationOrganizationId\" FROM \"auth\".\"EducationOrganizationIdToEducationOrganizationId\" t0 WHERE t0.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))",
-        "r.\"DocumentId\" IN (SELECT t1.\"DocumentId\" FROM \"edfi\".\"StudentSchoolAssociation\" t1 WHERE t1.\"Student_DocumentId\" IN (SELECT t2.\"Student_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStudentDocumentId\" t2 WHERE t2.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"
+        "r.\"Student_DocumentId\" IN (SELECT t1.\"Student_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStudentDocumentId\" t1 WHERE t1.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"
     )]
     [TestCase(
         SqlDialect.Mssql,
         "FROM [edfi].[StudentSchoolAssociation]",
         "r.[SchoolId] IN (SELECT t0.[TargetEducationOrganizationId] FROM [auth].[EducationOrganizationIdToEducationOrganizationId] t0 WHERE t0.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0))",
-        "r.[DocumentId] IN (SELECT t1.[DocumentId] FROM [edfi].[StudentSchoolAssociation] t1 WHERE t1.[Student_DocumentId] IN (SELECT t2.[Student_DocumentId] FROM [auth].[EducationOrganizationIdToStudentDocumentId] t2 WHERE t2.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0))"
+        "r.[Student_DocumentId] IN (SELECT t1.[Student_DocumentId] FROM [auth].[EducationOrganizationIdToStudentDocumentId] t1 WHERE t1.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0))"
     )]
     public void It_should_or_edorg_only_and_people_involved_strategies_without_outer_authorization_joins(
         SqlDialect dialect,
@@ -2124,13 +2124,16 @@ public class Given_PageDocumentIdSqlCompiler
         plan.PageDocumentIdSql.Should().Contain(" OR ");
         plan.PageDocumentIdSql.Should().NotContain("JOIN \"auth\"");
         plan.PageDocumentIdSql.Should().NotContain("JOIN [auth]");
-        CountOrdinalOccurrences(plan.PageDocumentIdSql, expectedRootTableFromFragment).Should().Be(2);
+
+        // Once, not twice: the person predicate anchors on the root row's own reference column, so it no
+        // longer reopens the root table in a primary-key self-join alongside the outer FROM.
+        CountOrdinalOccurrences(plan.PageDocumentIdSql, expectedRootTableFromFragment).Should().Be(1);
 
         plan.TotalCountSql.Should().NotBeNull();
         plan.TotalCountSql.Should().Contain(expectedEdOrgPredicateFragment);
         plan.TotalCountSql.Should().Contain(expectedPeoplePredicateFragment);
         plan.TotalCountSql.Should().Contain(" OR ");
-        CountOrdinalOccurrences(plan.TotalCountSql!, expectedRootTableFromFragment).Should().Be(2);
+        CountOrdinalOccurrences(plan.TotalCountSql!, expectedRootTableFromFragment).Should().Be(1);
     }
 
     [TestCase(SqlDialect.Pgsql)]

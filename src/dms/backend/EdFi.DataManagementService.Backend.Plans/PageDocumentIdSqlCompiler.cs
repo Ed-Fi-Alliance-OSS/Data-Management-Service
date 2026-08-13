@@ -1096,6 +1096,9 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     {
         var personMetadata = subject.PersonMetadata;
 
+        // Load-bearing for anchor correctness, not merely a diagnostic: the emitters below qualify the
+        // anchor column with the root alias, so a stored anchor describing a different table would emit a
+        // predicate against a column that does not exist on the root row.
         RelationshipAuthorizationPeoplePathValidation.ValidateStoredAnchorRootTable(
             rootTable,
             personMetadata,
@@ -1107,20 +1110,17 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             case RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId:
                 AppendRootDocumentIdInPersonAuthViewSql(
                     writer,
-                    rootTable,
-                    personMetadata.StoredAnchor.RootDocumentIdColumn,
                     personMetadata.StoredAnchor.RootDocumentIdColumn,
                     subject.AuthObject,
                     authorizationClaimParameterization,
-                    aliasAllocator.AllocateNext(),
                     aliasAllocator.AllocateNext()
                 );
                 return;
             case RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn:
                 AppendRootDocumentIdInPersonAuthViewSql(
                     writer,
-                    rootTable,
-                    personMetadata.StoredAnchor.RootDocumentIdColumn,
+                    // Its step.SourceTable check is likewise load-bearing here: it is what guarantees the
+                    // returned column lives on the root row and can be anchored on the root alias.
                     RelationshipAuthorizationPeoplePathValidation.GetDirectRootPersonDocumentIdColumn(
                         rootTable,
                         subject.Table,
@@ -1130,7 +1130,6 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                     ),
                     subject.AuthObject,
                     authorizationClaimParameterization,
-                    aliasAllocator.AllocateNext(),
                     aliasAllocator.AllocateNext()
                 );
                 return;
@@ -1225,33 +1224,28 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         writer.Append(")");
     }
 
+    /// <summary>
+    /// Emits the Self and Direct person predicates anchored on the root row's own column — the person twin
+    /// of <see cref="AppendRootSubjectHierarchyMatchSql"/>. Anchoring on a primary-key self-join of the root
+    /// table instead would be semantically identical but makes PostgreSQL scan the root table twice and hash
+    /// every authorized DocumentId on every page, so the anchor column is always one the root row carries.
+    /// </summary>
     private static void AppendRootDocumentIdInPersonAuthViewSql(
         SqlWriter writer,
-        DbTableName rootTable,
-        DbColumnName rootDocumentIdColumn,
-        DbColumnName rootPersonDocumentIdColumn,
+        DbColumnName anchorColumn,
         RelationshipAuthorizationAuthObject authObject,
         AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
-        string rootSubqueryAlias,
         string authAlias
     )
     {
         writer.Append($"{_rootAlias}.");
-        writer.AppendQuoted(rootDocumentIdColumn.Value);
-        writer.Append(" IN (SELECT ");
-        writer.Append($"{rootSubqueryAlias}.");
-        writer.AppendQuoted(rootDocumentIdColumn.Value);
-        writer.Append(" FROM ");
-        writer.AppendRelation(new SqlRelationRef.PhysicalTable(rootTable));
-        writer.Append($" {rootSubqueryAlias} WHERE {rootSubqueryAlias}.");
-        writer.AppendQuoted(rootPersonDocumentIdColumn.Value);
+        writer.AppendQuoted(anchorColumn.Value);
         AppendPersonAuthViewMembershipSubquerySql(
             writer,
             authObject,
             authorizationClaimParameterization,
             authAlias
         );
-        writer.Append(")");
     }
 
     private static void AppendPersonAuthViewMembershipSubquerySql(
