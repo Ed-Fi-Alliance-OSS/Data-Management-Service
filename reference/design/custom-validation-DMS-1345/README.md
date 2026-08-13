@@ -45,4 +45,4 @@ This spike produced five ticket drafts, listed below in dependency order.
 
 These five ticket drafts are filed in Jira only after the design is reviewed and approved. On filing, each ticket is linked back to DMS-1346, its dependency links are set in Jira to mirror the `Depends on` column above, and the assigned Jira id and URL are backfilled into that ticket's frontmatter, replacing the placeholder values. The Status column is updated at the same time, from `draft - unfiled` to the filed ticket's id.
 
-A sixth ticket is also filed at that point: the design spike for plugin-folder delivery, linked to this epic as deferred follow-on work.
+A sixth ticket is also filed at that point: the design spike for plugin-folder delivery, linked to this epic as deferred follow-on work. This spike produced no draft for it, so whoever executes the filing gate authors its title, description and acceptance criteria at filing time; design.md "## Rejected Alternatives" is the source for its scope, and it inherits this contract, the fan-in step, the failure surfacing and the startup guard unchanged.

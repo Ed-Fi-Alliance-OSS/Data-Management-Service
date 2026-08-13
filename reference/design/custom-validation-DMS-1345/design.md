@@ -90,7 +90,7 @@ A bare file name repeats a file cited in full earlier in this document.
 ## Problem Statement
 
 DMS defines four write-path resource-document validator interfaces, all `internal` to `EdFi.DataManagementService.Core`, each with exactly one implementation.
-(The Core assembly holds other validator interfaces - `IApiSchemaValidator`, `IProfileDataValidator`, and the public document-cache validators - none of which validates a resource document on the write path, and none of which this design touches.)
+(Other validator interfaces exist and are out of scope here, none of them validating a resource document on the write path: `IApiSchemaValidator` and `IProfileDataValidator` are also internal to Core, the document-cache validators are public in Core, and `IResourceKeyValidator` is declared in `Core.External/Backend/IResourceKeyValidator.cs:14` with its implementation registered in Core.)
 
 | Interface | Declared at | Method |
 | --- | --- | --- |
@@ -105,7 +105,7 @@ All four take the parsed document or a piece of it, `RequestInfo` (which wraps `
 Each is registered exactly once as the sole implementation of its interface (`DmsCoreServiceExtensions.cs:84-87`), with no `IEnumerable<T>` collection registration anywhere for any validator interface.
 
 Wiring is by hand rather than by container.
-Middleware objects are `new`-ed directly inside `ApiService` with the resolved validator passed in: three validator middlewares in the POST (Upsert) pipeline (`ApiService.cs:230-233`) and four in the PUT (Update) pipeline (`:323-327`).
+Validator middleware objects are `new`-ed directly inside `ApiService` with the resolved validator passed in: three in the POST (Upsert) pipeline (`ApiService.cs:230`, `:231`, `:233`) and four in the PUT (Update) pipeline (`:323`, `:324`, `:326`, `:327`). Those line numbers are not contiguous because `ProfileWritePipelineMiddleware` sits between them (`:232`, `:325`) and is the one write-path middleware resolved from the container rather than `new`-ed.
 `PipelineOrderingTests.cs` inspects the step-type sequence these factories build, but its existing assertions pin only pairwise positions of other steps, so reordering the four validator middlewares fails no test today.
 
 So there is no seam at all.
@@ -218,7 +218,15 @@ public abstract record CustomValidationFailure
 
 `OnPath` carries a `"$."`-prefixed JSON path plus a message, following the convention `DocumentValidator` already emits (`Validation/DocumentValidator.cs:308`, `:315`).
 `OnResource` carries a message with no path, for a failure about the document as a whole such as a cross-field or external-lookup rejection.
-The cases are non-positional so that the validating constructor is the only way to build one, and that validation is what stops `OnPath("", message)` from smuggling an effectively path-less failure past the two-bucket rule.
+
+**A bare `"$."` is a valid `OnPath` value, not a degenerate one.**
+It is DMS's own document-level `validationErrors` key: `DocumentValidator` initializes `propertyName` to `string.Empty` (`Validation/DocumentValidator.cs:226`) and emits `"$." + propertyName` (`:315`), so an empty `InstanceLocation` produces exactly `"$."`, and `Middleware/ParseBodyMiddleware.cs:37` ships that key in production.
+So the two cases are not "has a path" versus "has none"; both can describe the whole document, and they differ in which bucket they land in.
+`OnPath("$.", message)` produces a `validationErrors["$."]` entry and the `ForDataValidation` shape core schema validation already uses for a document-level failure; `OnResource(message)` produces an `errors` entry and the `ForBadRequest` shape.
+An implementer wanting parity with core's document-level failures uses `OnPath("$.", ...)`.
+Rejecting `"$."` would leave a document-level `validationErrors` entry inexpressible through this contract while DMS itself emits one.
+
+The cases are non-positional so that the validating constructor is the only way to build one, and that validation is what stops a malformed path such as `""` or `"$"` from reaching the two-bucket rule.
 A positional record can host the same validation in a property initializer, so this is a choice to keep the surface minimal - no `Deconstruct`, no positional pattern - rather than a limitation of positional records.
 
 **Sealing limit.** The private base constructor closes ordinary construction, but the compiler synthesizes a protected copy constructor on every unsealed record and forbids restricting it (declaring it `private protected` fails with CS8878, probe-verified), so an external record can chain `base(existingFailure)` and compile.
@@ -323,7 +331,10 @@ No type in this contract is scoped, but a validator's constructor can take anyth
 
 **The rule is enforced by the startup guard, not documented.** The guard inspects every `ICustomResourceValidator` service descriptor and aborts startup on any that is not transient.
 It checks descriptor shape as well as lifetime: `ServiceDescriptor.Transient<ICustomResourceValidator>(_ => capturedInstance)` reports a transient lifetime while handing every request the same object, so a descriptor carrying an `ImplementationInstance` or an `ImplementationFactory` for this service type aborts startup alongside a non-transient one.
-This costs nothing an implementer legitimately needs, since a validator's dependencies arrive through its constructor and an extension that wants to supply configuration registers the configuration, not a pre-built validator.
+This does cost an implementer something real, and the ban is a deliberate conservative call rather than a free one.
+`ServiceDescriptor.Transient<ICustomResourceValidator, MyValidator>(sp => new MyValidator(...))` is a legitimate per-resolution factory that `TryAddEnumerable` accepts, and it is the ordinary way to pass a constructor argument that is not itself a service.
+The guard rejects it anyway, because a factory descriptor records what a delegate returns, not whether the delegate constructs anything: `sp => capturedInstance` and `sp => new MyValidator(...)` are the same shape to the audit, and only the second is safe.
+The supported route for a non-service constructor argument is therefore `Configure<TOptions>` plus constructor injection of `IOptions<TOptions>`, which the implementer guide states.
 The guard is unconditional Core behavior, running whether or not any validator is registered, so a deployment with none still fails loudly the day one is added wrongly.
 
 **Resolved per request, from the request's own scope.** DMS's existing validators are `new`-ed into pipelines exactly once, inside factory methods cached forever by `Lazy<PipelineProvider>` fields ("pipelines are built once since schema is now stable", `ApiService.cs:156-161`), which is safe only because none of them carries a scoped dependency.
@@ -370,7 +381,14 @@ A validator that is registered wrongly, or that cannot be constructed, aborts DM
 
 This is a deliberate refusal of the ODS precedent for extension registration, where a module that throws during registration is caught, logged, and skipped (`EdFi.Ods.Api/Startup/OdsStartupBase.cs:384-387`), degrading a broken extension to silently absent validation.
 
-Fatal conditions: a descriptor that is not transient; a descriptor carrying an `ImplementationInstance` or `ImplementationFactory`; and a registered validator the container cannot construct.
+Fatal conditions: a descriptor that is not transient; a descriptor carrying an `ImplementationFactory`; and a registered validator the container cannot construct.
+An `ImplementationInstance` descriptor is fatal too, but it is not an independent condition: `ServiceDescriptor` only produces one at `Singleton` lifetime, so the lifetime check already catches every such descriptor and a test for it cannot fail while the lifetime test passes.
+
+**The operator-facing message will name the wrong phase.**
+An `Order` in the 200s runs inside the `[0, 299]` window that `Program.cs:163-169` labels `InitializeApiSchemas`, whose failure text is "API schema initialization failed. DMS cannot start with invalid schemas." (`:167`).
+A deployment whose schemas are fine but whose validator registration is wrong therefore gets a fatal message about schemas.
+The failing task is still named in `DmsStartupOrchestrator`'s own `Critical` record (`Startup/DmsStartupOrchestrator.cs:93-97`), so the real cause is recoverable from the log, and this design accepts the mislabel rather than adding a startup phase for one guard.
+The implementer guide and the guard's own log record carry the accurate wording.
 
 **One guard, running after the container is built.** It is an `IDmsStartupTask`, so it runs through the frontend's existing fatal-startup path: `DmsStartupOrchestrator` catches any non-cancellation exception, logs it at `Critical`, and rethrows it wrapped (`Startup/DmsStartupOrchestrator.cs:93-97`), and `StartupPhaseExecutor.RunFatalAsync` (`Infrastructure/StartupPhaseExecutor.cs:88-116`) logs a fatal failure and calls `IStartupProcessExit.Exit`, implemented in production as `Environment.Exit` (`:13-19`).
 The guard does three things: audits the captured descriptor set for lifetime and shape; resolves the full `IEnumerable<ICustomResourceValidator>` once from a throwaway scope and discards the instances; and logs each validator's `AppliesTo`, warning on entries matching no resource in the effective ApiSchema.
@@ -476,6 +494,9 @@ The two analyzer references that `src/dms/Directory.Build.props:14-21` adds to e
 One of the five is unused: no file in the project references any Roslyn API, and `Microsoft.CodeAnalysis` is declared as an ordinary reference without the `PrivateAssets` scoping the analyzers beside it carry.
 That single reference accounts for 16 of the 26 packages, including every Roslyn package, the six `System.Composition.*` packages, and `Humanizer.Core`, none of which is reachable from any other declared reference.
 Removing it leaves `Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic` (`Model/ReferentialIdFactory.cs:6`), `Sandwych.QuickGraph.Core` (`Model/GraphMLEdge.cs:6`), and the two logging packages, of which only `Microsoft.Extensions.Logging.Abstractions` is actually used: the sole logging symbol in the project is `EventId` (`Logging/RequestLoggingEventIds.cs:15`, `:17`).
+`Microsoft.Extensions.Logging` itself is therefore also unused, and this design deliberately does not remove it in the same story.
+Removing it would drop `Microsoft.Extensions.Options` from the closure, which the documented registration extension needs, so the two changes are only safe together and in that order: declare `Options` explicitly first, then the logging reference becomes removable independently.
+The contract ticket does the first half and asserts the resulting list; retiring `Microsoft.Extensions.Logging` is left as a separate, later cleanup rather than smuggled into a contract story.
 The contract ticket additionally declares `Microsoft.Extensions.Options` and `Microsoft.Extensions.DependencyInjection.Abstractions` explicitly.
 Both arrive transitively today, but not equally safely.
 `Microsoft.Extensions.Options` has exactly one path into the closure, `Microsoft.Extensions.Logging` - the reference just identified as unused - so a later tidy-up would remove the sample's ability to compile without touching anything that mentions it.
@@ -596,7 +617,7 @@ Whether to close that gap by adding a store-read capability is recorded under [D
 
 **Contract unit tests** (abstractions package):
 
-- `OnPath` throws for a null or empty path, for a path that is not `"$."`-prefixed, and for a path that is `"$."` with nothing after it, and for an empty message; `OnResource` throws for an empty message. Bare `"$"` and bare `"$."` are both rejected alongside `""`: each is `$`-rooted yet names no member, and a failure about the document as a whole is `OnResource`'s case.
+- `OnPath` throws for a null or empty path, for any path that is not `"$."`-prefixed (including bare `"$"`), and for an empty message; `OnResource` throws for an empty message. A bare `"$."` is accepted and asserted as accepted, since it is DMS's document-level `validationErrors` key.
 - Within the abstractions assembly's own public construction surface, `OnResource` is the only way to express a path-less failure. Asserted reflectively; the expected constructor set is exactly the synthesized copy constructor, since CS8878 forbids restricting it.
 - A scratch library referencing only the published package compiles a validator and the registration extension exactly as [Registration and Composition](#registration-and-composition) documents it, including the `Action<TOptions>` overload of `Configure`, proving the package's dependency set is sufficient for the documented usage.
 
@@ -618,7 +639,7 @@ Whether to close that gap by adding a store-read capability is recorded under [D
 - The document is the profile-shaped body under a writable profile and `ParsedBody` otherwise.
 - A validator returning failures produces a log record naming that validator against the request's `TraceId`, and that record contains no failure message text.
 
-**Pipeline ordering tests:** the step sits immediately after `ProvideAuthorizationFiltersMiddleware` and immediately before the terminal handler in both write pipelines; and neither read pipeline contains it.
+**Pipeline ordering tests:** the step sits immediately after `ProvideAuthorizationFiltersMiddleware` and immediately before the terminal handler in both write pipelines; and neither read pipeline nor the delete pipeline contains it. The delete pipeline is asserted alongside the read pipelines because validation on DELETE is a stated non-goal, and without that assertion an implementation that added the step there would satisfy every other criterion.
 
 **Frontend tests:** `AspNetCoreFrontend.FromRequest` assigns `HttpContext.RequestAborted`, confirmed once by removing the assignment and observing the failure.
 Adding the property without assigning it would leave every validator on `CancellationToken.None` forever with every other test green.
@@ -639,7 +660,7 @@ Adding the property without assigning it would leave every validator on `Cancell
 ## Level of Effort
 
 Medium.
-Four implementation surfaces, in dependency order:
+Four implementation surfaces, in dependency order. They do not map one-to-one onto the five ticket drafts: surface 3 covers drafts 03 and 04, which are separate stories because the guide depends on all three preceding ones. See README.md "## Ticket Drafts" for the authoritative work-item list.
 
 1. **Abstractions package** - five public top-level types in `Core.External`, plus the pack-and-publish path that does not exist today (a `build-dms.ps1` package target, prerelease pack/push jobs, and a release promote step).
 2. **Fan-in pipeline step** - the `internal` step, the `validationErrors`/`errors` merge, per-request resolution from the request scope, the observability records, and the `FrontendRequest` cancellation-token property and its assignment in `FromRequest`.
