@@ -5,8 +5,12 @@
 
 using System.Globalization;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Ddl;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Security;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Common;
@@ -527,6 +531,544 @@ internal sealed record RelationshipAuthorizationVolumeGenerationResult(
     long AuthorizedStudentCount,
     long UnauthorizedStudentCount
 );
+
+/// <summary>
+/// One differential subject: a target resource paired with the query spec both the real compiler and the
+/// test-owned emitter consume.
+/// </summary>
+internal sealed record RelationshipAuthorizationDifferentialSpec(
+    string ResourceName,
+    DbTableName RootTable,
+    PageDocumentIdQuerySpec QuerySpec
+);
+
+/// <summary>
+/// The five resources DMS-1331 names, with their real DS 5.2 tables and columns and their real person paths —
+/// three direct and two transitive. Shared by both engines so the PostgreSQL and SQL Server differentials
+/// measure the same shapes.
+/// </summary>
+internal static class RelationshipAuthorizationDifferentialSpecs
+{
+    private static readonly DbSchemaName _edfi = new("edfi");
+    private static readonly DbColumnName _documentIdColumn = new("DocumentId");
+    private static readonly DbColumnName _studentDocumentIdColumn = new("Student_DocumentId");
+
+    public static IReadOnlyList<RelationshipAuthorizationDifferentialSpec> Create(
+        SqlDialect dialect,
+        IReadOnlyList<long> claimEducationOrganizationIds
+    )
+    {
+        var studentTable = new DbTableName(_edfi, "Student");
+        var studentSectionAssociationTable = new DbTableName(_edfi, "StudentSectionAssociation");
+        var studentAcademicRecordTable = new DbTableName(_edfi, "StudentAcademicRecord");
+
+        return
+        [
+            CreateDirectSpec(
+                dialect,
+                claimEducationOrganizationIds,
+                studentSectionAssociationTable,
+                studentTable
+            ),
+            CreateDirectSpec(
+                dialect,
+                claimEducationOrganizationIds,
+                new DbTableName(_edfi, "StudentSectionAttendanceEvent"),
+                studentTable
+            ),
+            CreateDirectSpec(
+                dialect,
+                claimEducationOrganizationIds,
+                new DbTableName(_edfi, "StudentGradebookEntry"),
+                studentTable
+            ),
+            CreateTransitiveSpec(
+                dialect,
+                claimEducationOrganizationIds,
+                new DbTableName(_edfi, "Grade"),
+                new DbColumnName("StudentSectionAssociation_DocumentId"),
+                studentSectionAssociationTable,
+                studentTable
+            ),
+            CreateTransitiveSpec(
+                dialect,
+                claimEducationOrganizationIds,
+                new DbTableName(_edfi, "CourseTranscript"),
+                new DbColumnName("StudentAcademicRecord_DocumentId"),
+                studentAcademicRecordTable,
+                studentTable
+            ),
+        ];
+    }
+
+    private static RelationshipAuthorizationDifferentialSpec CreateDirectSpec(
+        SqlDialect dialect,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        DbTableName rootTable,
+        DbTableName studentTable
+    )
+    {
+        var subject = new PageDocumentIdAuthorizationPersonSubject(
+            rootTable,
+            _studentDocumentIdColumn,
+            RelationshipAuthorizationAuthObject.CreatePerson(
+                RelationshipAuthorizationPersonAuthViewKind.Student
+            ),
+            [StudentContributor()],
+            new RelationshipAuthorizationPersonSubjectMetadata(
+                RelationshipAuthorizationPersonKind.Student,
+                new RelationshipAuthorizationPersonSubjectPath(
+                    RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn,
+                    [new ColumnPathStep(rootTable, _studentDocumentIdColumn, studentTable, _documentIdColumn)]
+                ),
+                new RelationshipAuthorizationPersonStoredAnchor(rootTable, _documentIdColumn),
+                ProposedAnchor: null
+            )
+        );
+
+        return new RelationshipAuthorizationDifferentialSpec(
+            rootTable.Name,
+            rootTable,
+            CreateQuerySpec(dialect, claimEducationOrganizationIds, rootTable, subject)
+        );
+    }
+
+    private static RelationshipAuthorizationDifferentialSpec CreateTransitiveSpec(
+        SqlDialect dialect,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        DbTableName rootTable,
+        DbColumnName rootReferenceColumn,
+        DbTableName intermediateTable,
+        DbTableName studentTable
+    )
+    {
+        var subject = new PageDocumentIdAuthorizationPersonSubject(
+            intermediateTable,
+            _studentDocumentIdColumn,
+            RelationshipAuthorizationAuthObject.CreatePerson(
+                RelationshipAuthorizationPersonAuthViewKind.Student
+            ),
+            [StudentContributor()],
+            new RelationshipAuthorizationPersonSubjectMetadata(
+                RelationshipAuthorizationPersonKind.Student,
+                new RelationshipAuthorizationPersonSubjectPath(
+                    RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath,
+                    [
+                        new ColumnPathStep(
+                            rootTable,
+                            rootReferenceColumn,
+                            intermediateTable,
+                            _documentIdColumn
+                        ),
+                        new ColumnPathStep(
+                            intermediateTable,
+                            _studentDocumentIdColumn,
+                            studentTable,
+                            _documentIdColumn
+                        ),
+                    ]
+                ),
+                new RelationshipAuthorizationPersonStoredAnchor(rootTable, _documentIdColumn),
+                ProposedAnchor: null
+            )
+        );
+
+        return new RelationshipAuthorizationDifferentialSpec(
+            rootTable.Name,
+            rootTable,
+            CreateQuerySpec(dialect, claimEducationOrganizationIds, rootTable, subject)
+        );
+    }
+
+    private static PageDocumentIdQuerySpec CreateQuerySpec(
+        SqlDialect dialect,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        DbTableName rootTable,
+        PageDocumentIdAuthorizationPersonSubject subject
+    ) =>
+        new(
+            RootTable: rootTable,
+            Predicates: [],
+            UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
+            Mode: new PageCandidateMode.Traditional(IncludeTotalCountSql: true),
+            Authorization: new PageDocumentIdAuthorizationSpec(
+                [
+                    new PageDocumentIdAuthorizationStrategy(
+                        AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                        [subject]
+                    ),
+                ],
+                AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                    dialect,
+                    claimEducationOrganizationIds,
+                    RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds
+                )
+            )
+        );
+
+    private static RelationshipAuthorizationSubjectContributor StudentContributor() =>
+        new(SecurableElementKind.Student, "$.studentReference.studentUniqueId", "StudentUniqueId");
+}
+
+/// <summary>
+/// Which authorization predicate shape the differential emitter writes.
+/// </summary>
+internal enum RelationshipAuthorizationPredicateShape
+{
+    /// <summary>The shape DMS-1331 introduces: anchored on a column of the root row.</summary>
+    Anchored,
+
+    /// <summary>
+    /// The pre-DMS-1331 shape: a primary-key self-join of the root table. Deliberately frozen here, in test
+    /// code, because this is the only test that proves the new shape returns the same rows as the old one
+    /// rather than the same rows as a hand-listed expectation.
+    /// </summary>
+    Legacy,
+}
+
+internal sealed record RelationshipAuthorizationDifferentialSql(string PageSql, string TotalCountSql);
+
+/// <summary>
+/// A test-owned, self-contained emitter of complete, executable page and totalCount SQL, carrying both
+/// authorization predicate shapes so a differential can execute them side by side (DMS-1331 AC2/AC4).
+/// </summary>
+/// <remarks>
+/// <para>
+/// Why fresh rather than a copy of the deleted production methods: those call helpers that remain
+/// <c>private</c> on <c>PageDocumentIdSqlCompiler</c>, the page and count wrappers are private too, the only
+/// public entry point is <c>Compile</c>, and this assembly is absent from the Plans <c>InternalsVisibleTo</c>
+/// list — which would not help anyway against private members. Widening production visibility for a test is
+/// the wrong trade, so this is written against the public models instead.
+/// </para>
+/// <para>
+/// The gap that opens is that a test-owned wrapper could drift from the product. The differential closes it by
+/// asserting that <see cref="RelationshipAuthorizationPredicateShape.Anchored"/> returns the identical ordered
+/// DocumentId sequence and totalCount as the real compiler's output. Combined with anchored ≡ legacy, that
+/// gives production ≡ legacy transitively, without reaching into any private member.
+/// </para>
+/// <para>
+/// That equivalence is over <b>result rows only</b>. Two different SQL texts can return identical result sets
+/// under entirely different plans, so this emitter is never a plan or timing subject: measurements take
+/// production's <c>Compile()</c> output as the "after" arm and use this emitter only for the legacy "before".
+/// </para>
+/// <para>
+/// Both shapes drive the full ordered <c>ColumnPathStep</c> list. A four-input
+/// (root, anchor, person column, auth view) helper could not express Grade or CourseTranscript, whose paths
+/// traverse an intermediate table.
+/// </para>
+/// </remarks>
+internal static class RelationshipAuthorizationDifferentialSqlEmitter
+{
+    private const string RootAlias = "r";
+
+    public static RelationshipAuthorizationDifferentialSql Emit(
+        PageDocumentIdQuerySpec spec,
+        SqlDialect dialect,
+        RelationshipAuthorizationPredicateShape shape,
+        int claimEducationOrganizationIdCount
+    )
+    {
+        ArgumentNullException.ThrowIfNull(spec);
+
+        var subject = SinglePersonSubject(spec);
+
+        return new RelationshipAuthorizationDifferentialSql(
+            EmitPageSql(spec, subject, dialect, shape, claimEducationOrganizationIdCount),
+            EmitTotalCountSql(spec, subject, dialect, shape, claimEducationOrganizationIdCount)
+        );
+    }
+
+    /// <summary>
+    /// The differential specs each carry exactly one relationship strategy with exactly one person subject.
+    /// Anything else is a malformed spec rather than a shape this emitter should guess at.
+    /// </summary>
+    private static PageDocumentIdAuthorizationPersonSubject SinglePersonSubject(PageDocumentIdQuerySpec spec)
+    {
+        var strategies = spec.Authorization?.Strategies;
+
+        if (
+            strategies is not { Count: 1 }
+            || strategies[0].Subjects is not { Count: 1 }
+            || strategies[0].Subjects[0] is not PageDocumentIdAuthorizationPersonSubject personSubject
+        )
+        {
+            throw new InvalidOperationException(
+                "The differential emitter requires a spec with exactly one strategy carrying exactly one person subject."
+            );
+        }
+
+        return personSubject;
+    }
+
+    private static string EmitPageSql(
+        PageDocumentIdQuerySpec spec,
+        PageDocumentIdAuthorizationPersonSubject subject,
+        SqlDialect dialect,
+        RelationshipAuthorizationPredicateShape shape,
+        int claimEducationOrganizationIdCount
+    )
+    {
+        var writer = new SqlWriter(SqlDialectFactory.Create(dialect));
+
+        writer.Append($"SELECT {RootAlias}.").AppendQuoted("DocumentId").AppendLine();
+        AppendFromAndWhere(writer, spec, subject, dialect, shape, claimEducationOrganizationIdCount);
+        writer.Append($"ORDER BY {RootAlias}.").AppendQuoted("DocumentId").AppendLine(" ASC");
+        writer.AppendLine(
+            dialect == SqlDialect.Mssql
+                ? "OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY;"
+                : "LIMIT @limit OFFSET @offset;"
+        );
+
+        return writer.ToString();
+    }
+
+    private static string EmitTotalCountSql(
+        PageDocumentIdQuerySpec spec,
+        PageDocumentIdAuthorizationPersonSubject subject,
+        SqlDialect dialect,
+        RelationshipAuthorizationPredicateShape shape,
+        int claimEducationOrganizationIdCount
+    )
+    {
+        var writer = new SqlWriter(SqlDialectFactory.Create(dialect));
+
+        writer.AppendLine("SELECT COUNT(1)");
+        AppendFromAndWhere(writer, spec, subject, dialect, shape, claimEducationOrganizationIdCount);
+        writer.AppendLine(";");
+
+        return writer.ToString();
+    }
+
+    private static void AppendFromAndWhere(
+        SqlWriter writer,
+        PageDocumentIdQuerySpec spec,
+        PageDocumentIdAuthorizationPersonSubject subject,
+        SqlDialect dialect,
+        RelationshipAuthorizationPredicateShape shape,
+        int claimEducationOrganizationIdCount
+    )
+    {
+        writer.Append("FROM ").AppendTable(spec.RootTable).AppendLine($" {RootAlias}");
+        writer.Append("WHERE (");
+        AppendAuthorizationPredicate(
+            writer,
+            spec.RootTable,
+            subject,
+            dialect,
+            shape,
+            claimEducationOrganizationIdCount
+        );
+        writer.AppendLine(")");
+    }
+
+    /// <summary>
+    /// The one place the two shapes differ. Everything around it — root relation, keyset ordering, paging and
+    /// claim parameterization — is shared, so a differential over these two texts isolates the predicate.
+    /// </summary>
+    private static void AppendAuthorizationPredicate(
+        SqlWriter writer,
+        DbTableName rootTable,
+        PageDocumentIdAuthorizationPersonSubject subject,
+        SqlDialect dialect,
+        RelationshipAuthorizationPredicateShape shape,
+        int claimEducationOrganizationIdCount
+    )
+    {
+        var personMetadata = subject.PersonMetadata;
+        var pathSteps = personMetadata.Path.Steps;
+        var aliasOrdinal = 0;
+
+        if (shape == RelationshipAuthorizationPredicateShape.Legacy)
+        {
+            // r."DocumentId" IN (SELECT t0."DocumentId" FROM <root> t0 [JOIN each hop] WHERE
+            //     t<n>.<personColumn> IN (<membership>))
+            var rootSubqueryAlias = $"t{aliasOrdinal++}";
+
+            writer
+                .Append($"{RootAlias}.")
+                .AppendQuoted(personMetadata.StoredAnchor.RootDocumentIdColumn.Value);
+            writer.Append(" IN (SELECT ").Append($"{rootSubqueryAlias}.");
+            writer.AppendQuoted(personMetadata.StoredAnchor.RootDocumentIdColumn.Value);
+            writer.Append(" FROM ").AppendTable(rootTable).Append($" {rootSubqueryAlias}");
+
+            var legacySourceAlias = AppendPathJoins(
+                writer,
+                pathSteps,
+                rootSubqueryAlias,
+                firstJoinedStepIndex: 0,
+                ref aliasOrdinal
+            );
+
+            writer.Append($" WHERE {legacySourceAlias}.");
+            writer.AppendQuoted(TerminalPersonColumn(subject, pathSteps).Value);
+            AppendMembershipSubquery(
+                writer,
+                subject,
+                dialect,
+                $"t{aliasOrdinal}",
+                claimEducationOrganizationIdCount
+            );
+            writer.Append(")");
+            return;
+        }
+
+        switch (personMetadata.Path.Kind)
+        {
+            case RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId:
+            case RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn:
+                // r.<anchor> IN (<membership>)
+                writer.Append($"{RootAlias}.").AppendQuoted(AnchorColumn(subject, pathSteps).Value);
+                AppendMembershipSubquery(
+                    writer,
+                    subject,
+                    dialect,
+                    $"t{aliasOrdinal}",
+                    claimEducationOrganizationIdCount
+                );
+                return;
+            case RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath:
+                AppendAnchoredTransitivePredicate(
+                    writer,
+                    subject,
+                    pathSteps,
+                    dialect,
+                    claimEducationOrganizationIdCount,
+                    ref aliasOrdinal
+                );
+                return;
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(subject),
+                    personMetadata.Path.Kind,
+                    "Unsupported person path kind."
+                );
+        }
+    }
+
+    /// <summary>
+    /// r.&lt;firstStep.SourceColumn&gt; IN (SELECT t0.&lt;firstStep.TargetColumn&gt; FROM
+    /// &lt;firstStep.TargetTable&gt; t0 [JOIN remaining hops] WHERE t&lt;n&gt;.&lt;personColumn&gt; IN (…)).
+    /// </summary>
+    private static void AppendAnchoredTransitivePredicate(
+        SqlWriter writer,
+        PageDocumentIdAuthorizationPersonSubject subject,
+        IReadOnlyList<ColumnPathStep> pathSteps,
+        SqlDialect dialect,
+        int claimEducationOrganizationIdCount,
+        ref int aliasOrdinal
+    )
+    {
+        var firstStep = pathSteps[0];
+        var firstHopAlias = $"t{aliasOrdinal++}";
+
+        writer.Append($"{RootAlias}.").AppendQuoted(firstStep.SourceColumnName.Value);
+        writer.Append(" IN (SELECT ").Append($"{firstHopAlias}.");
+        writer.AppendQuoted(RequiredTargetColumn(firstStep).Value);
+        writer.Append(" FROM ").AppendTable(RequiredTargetTable(firstStep));
+        writer.Append($" {firstHopAlias}");
+
+        var terminalSourceAlias = AppendPathJoins(
+            writer,
+            pathSteps,
+            firstHopAlias,
+            firstJoinedStepIndex: 1,
+            ref aliasOrdinal
+        );
+
+        writer.Append($" WHERE {terminalSourceAlias}.");
+        writer.AppendQuoted(TerminalPersonColumn(subject, pathSteps).Value);
+        AppendMembershipSubquery(
+            writer,
+            subject,
+            dialect,
+            $"t{aliasOrdinal}",
+            claimEducationOrganizationIdCount
+        );
+        writer.Append(")");
+    }
+
+    /// <summary>
+    /// Joins the intermediate hops of a transitive path, starting at <paramref name="firstJoinedStepIndex"/>
+    /// and stopping before the terminal step, which carries the person column rather than a join.
+    /// </summary>
+    private static string AppendPathJoins(
+        SqlWriter writer,
+        IReadOnlyList<ColumnPathStep> pathSteps,
+        string sourceAlias,
+        int firstJoinedStepIndex,
+        ref int aliasOrdinal
+    )
+    {
+        var currentSourceAlias = sourceAlias;
+
+        for (var stepIndex = firstJoinedStepIndex; stepIndex < pathSteps.Count - 1; stepIndex++)
+        {
+            var step = pathSteps[stepIndex];
+            var joinAlias = $"t{aliasOrdinal++}";
+
+            writer.Append(" JOIN ").AppendTable(RequiredTargetTable(step));
+            writer.Append($" {joinAlias} ON {joinAlias}.");
+            writer.AppendQuoted(RequiredTargetColumn(step).Value);
+            writer.Append($" = {currentSourceAlias}.");
+            writer.AppendQuoted(step.SourceColumnName.Value);
+
+            currentSourceAlias = joinAlias;
+        }
+
+        return currentSourceAlias;
+    }
+
+    private static void AppendMembershipSubquery(
+        SqlWriter writer,
+        PageDocumentIdAuthorizationPersonSubject subject,
+        SqlDialect dialect,
+        string authAlias,
+        int claimEducationOrganizationIdCount
+    )
+    {
+        writer.Append(" IN (SELECT ").Append($"{authAlias}.");
+        writer.AppendQuoted(subject.AuthObject.SubjectValueColumn.Value);
+        writer.Append(" FROM ").AppendTable(subject.AuthObject.Name);
+        writer.Append($" {authAlias} WHERE {authAlias}.");
+        writer.AppendQuoted(subject.AuthObject.ClaimEducationOrganizationIdColumn.Value);
+
+        if (dialect == SqlDialect.Mssql)
+        {
+            var placeholders = Enumerable
+                .Range(0, claimEducationOrganizationIdCount)
+                .Select(static index => $"@ClaimEducationOrganizationIds_{index}");
+
+            writer.Append($" IN ({string.Join(", ", placeholders)})");
+        }
+        else
+        {
+            writer.Append(" = ANY(@ClaimEducationOrganizationIds)");
+        }
+
+        writer.Append(")");
+    }
+
+    private static DbColumnName AnchorColumn(
+        PageDocumentIdAuthorizationPersonSubject subject,
+        IReadOnlyList<ColumnPathStep> pathSteps
+    ) =>
+        subject.PersonMetadata.Path.Kind == RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId
+            ? subject.PersonMetadata.StoredAnchor.RootDocumentIdColumn
+            : pathSteps[0].SourceColumnName;
+
+    private static DbColumnName TerminalPersonColumn(
+        PageDocumentIdAuthorizationPersonSubject subject,
+        IReadOnlyList<ColumnPathStep> pathSteps
+    ) => pathSteps.Count == 0 ? subject.Column : pathSteps[^1].SourceColumnName;
+
+    private static DbTableName RequiredTargetTable(ColumnPathStep step) =>
+        step.TargetTable
+        ?? throw new InvalidOperationException("Transitive person path steps must include a target table.");
+
+    private static DbColumnName RequiredTargetColumn(ColumnPathStep step) =>
+        step.TargetColumnName
+        ?? throw new InvalidOperationException("Transitive person path steps must include a target column.");
+}
 
 internal static class RelationalQueryAuthorizationAssertions
 {
