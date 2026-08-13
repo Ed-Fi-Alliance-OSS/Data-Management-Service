@@ -604,7 +604,8 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
         int limit = 25,
         int offset = 0,
         ChangeVersionRange? changeVersionRange = null,
-        AuthorizationStrategyEvaluator[]? authorizationStrategyEvaluators = null
+        AuthorizationStrategyEvaluator[]? authorizationStrategyEvaluators = null,
+        CollectionPaging? paging = null
     )
     {
         await using var scope = _serviceProvider.CreateAsyncScope();
@@ -616,14 +617,15 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
             MappingSet: _mappingSet,
             QueryElements: queryElements,
             AuthorizationStrategyEvaluators: authorizationStrategyEvaluators ?? [],
-            Paging: new CollectionPaging.Traditional(
-                new PaginationParameters(
-                    Limit: limit,
-                    Offset: offset,
-                    TotalCount: totalCount,
-                    MaximumPageSize: MaximumPageSize
-                )
-            ),
+            Paging: paging
+                ?? new CollectionPaging.Traditional(
+                    new PaginationParameters(
+                        Limit: limit,
+                        Offset: offset,
+                        TotalCount: totalCount,
+                        MaximumPageSize: MaximumPageSize
+                    )
+                ),
             TraceId: new TraceId(traceId),
             ChangeVersionRange: changeVersionRange
         );
@@ -685,6 +687,68 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
     private static void AssertSingleDescriptorMatch(QueryResult result, DescriptorReadSeed expectedSeed)
     {
         AssertDescriptorPage(result, [expectedSeed]);
+    }
+
+    // A descriptor cursor walk against a real database. Descriptor selection and row retrieval are one
+    // statement, so the boundary each page reports is the maximum of the keys that statement selected,
+    // and following it must deliver every seeded descriptor exactly once before the walk ends empty.
+    [Test]
+    public async Task It_walks_descriptor_pages_by_cursor()
+    {
+        await SeedDescriptorsAsync(PagingDescriptorSeeds);
+
+        List<string> walkedDocumentUuids = [];
+        var range = CursorRange.From(1);
+        var pages = 0;
+
+        while (pages++ < PagingDescriptorSeeds.Length + 1)
+        {
+            var success = (QueryResult.QuerySuccess)
+                await ExecuteQueryAsync(
+                    [],
+                    "mssql-descriptor-cursor-walk",
+                    paging: new CollectionPaging.Cursor(range, new PageSize(2))
+                );
+
+            // Cursor mode asks for no count on any page of the walk.
+            success.TotalCount.Should().BeNull();
+
+            walkedDocumentUuids.AddRange(
+                success.EdfiDocs.Select(document => document!["id"]!.GetValue<string>())
+            );
+
+            if (success.HighestSelectedDocumentId is not { } highestSelectedDocumentId)
+            {
+                success.EdfiDocs.Should().BeEmpty("the page that ends a walk selects nothing");
+                break;
+            }
+
+            success.AllowsDocumentIdContinuation.Should().BeTrue();
+            range = new CursorRange(highestSelectedDocumentId + 1, range.InclusiveMaximum);
+        }
+
+        string[] expectedDocumentUuids =
+        [
+            .. PagingDescriptorSeeds.Select(seed => seed.DocumentUuid.Value.ToString()),
+        ];
+
+        walkedDocumentUuids.Should().Equal(expectedDocumentUuids.AsEnumerable());
+    }
+
+    [Test]
+    public async Task It_selects_no_descriptor_page_at_a_zero_cursor_page_size()
+    {
+        await SeedDescriptorsAsync(PagingDescriptorSeeds);
+
+        var success = (QueryResult.QuerySuccess)
+            await ExecuteQueryAsync(
+                [],
+                "mssql-descriptor-cursor-size-0",
+                paging: new CollectionPaging.Cursor(CursorRange.From(1), new PageSize(0))
+            );
+
+        success.HighestSelectedDocumentId.Should().BeNull();
+        success.EdfiDocs.Should().BeEmpty();
     }
 
     private static void AssertDescriptorPage(
