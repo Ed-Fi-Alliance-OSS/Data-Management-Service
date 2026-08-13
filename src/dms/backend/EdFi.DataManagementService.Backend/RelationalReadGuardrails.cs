@@ -139,7 +139,7 @@ internal static class RelationalReadGuardrails
 
     /// <param name="supportedCustomViewStrategies">
     /// Custom view-based strategies this operation resolved and will apply. Custom views are supported
-    /// AND filters on GET-many, so they are neither reported as unsupported effective strategies nor
+    /// AND filters on both read paths, so they are neither reported as unsupported effective strategies nor
     /// omitted from the supported-strategy sentence. Empty (the default) for every operation that does
     /// not implement custom views, which keeps that operation's wording unchanged.
     /// </param>

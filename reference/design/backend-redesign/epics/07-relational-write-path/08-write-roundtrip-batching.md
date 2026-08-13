@@ -183,6 +183,7 @@ row says otherwise, these estimates assume no request references.
 | Create, no collections, no authorization, no precondition | 4 | first-phase capture/lock plus vacuous hydration; `INSERT dms."Document" ... RETURNING`; root insert; `SELECT "ContentVersion" ... FOR UPDATE` |
 | Create, proposed relationship authorization | 4 | the `AUTH1` check remains prefixed onto the `dms.Document` insert by `RelationalWriteNoProfilePersister.BuildAuthorizedInsertDocumentCommand`; no extra command |
 | Create, proposed namespace authorization | 5 | `ProposedNamespaceAuthorizationOrchestrator` remains a later command |
+| Create, proposed custom-view authorization | 4 or 5 | the check is emitted before the `dms.Document` and resource DML; it joins the insert command when the provider shape and parameter budget permit, and takes its own earlier command otherwise |
 | Create, N collection tables with new rows | 4 + 2 x (row groups across all collection tables) | collection reservation and persistence are unchanged in this slice; five collections is roughly 14 |
 | Resolves to an existing document, no authorization | 1 + persist | first-phase capture/lock and hydration; per-table DML; `ContentVersion` |
 | Resolves to an existing document, stored authorization | 1 + persist when embeddable | stored namespace then stored relationship are logical statements in the first-phase command; a structured parameter or command-budget boundary selects ordered same-session segments |
@@ -198,6 +199,7 @@ reference lookup, and hydration into one command when the provider shape and par
 | Changed, no collections, no authorization, no precondition | 3 | first-phase capture/lock and hydration; root `UPDATE`; `SELECT "ContentVersion" ... FOR UPDATE` |
 | Changed, stored authorization | 3 when embeddable | stored namespace then stored relationship join the first phase; structured parameters or a command-budget boundary use ordered segments |
 | Changed, proposed authorization | +1 to +2 | proposed namespace and proposed relationship are each their own command; the POST-create inline path does not apply to PUT |
+| Changed, custom-view authorization | +0 to +2 | the stored check joins the first phase when embeddable; the proposed check follows the same rule as the other proposed families, and stored is always ordered before proposed |
 | Guarded no-op, no proposed authorization | 1 | first phase holds the capture lock; the exact same-session lock proof replaces the freshness query |
 | With collections | + 2 x row groups | the same N+1 shape as POST |
 | Missing target | 1 | the first-phase capture returns absent and the session rolls back |
@@ -218,6 +220,15 @@ DELETE Adoption"); the "Was" column is the pre-adoption estimate they replace.
 | Authorization that does not fit the command's parameter budget | 2 or 3 | n/a | the check that does not fit takes an ordered segment and the deletes wait for it |
 | Blocked by an inbound foreign key | 1 | 3 | the violation surfaces on the same command and is mapped by constraint name |
 
+Custom view-based authorization is not in the measured set above. Its stored `cv1` statement is emitted like the
+other stored families, so a regular-resource DELETE is expected to keep the counts in this table plus one command
+for the view-contract probe each membership run is preceded by — and one more when a custom view is configured
+after `NamespaceBased`, because that run takes an ordered segment so its view is validated only once the namespace
+check has passed. A descriptor DELETE is structurally different, running its membership query on the write session
+inside the locked-target boundary rather than as an `AUTH1` statement. The regular-resource shape is covered
+functionally on both PostgreSQL and SQL Server, the descriptor locked-boundary shape on PostgreSQL, but neither
+has a recorded command count yet.
+
 ### GET-by-id
 
 | Variant | Commands |
@@ -225,6 +236,7 @@ DELETE Adoption"); the "Was" column is the pre-adoption estimate they replace.
 | No authorization | 2 — already at the draft target |
 | Namespace authorization only | 4 (adds the authorization command and `ShouldRetryPostHydrationReadBoundaryAsync`) |
 | Namespace and relationship authorization | 5 |
+| Custom-view authorization | unrecorded. A regular resource adds one command for the view-contract probe that precedes the membership run; the `cv1` statement itself joins the authorization command. A descriptor GET-by-id has no authorization command to join — it evaluates namespace in memory — so its membership query is an added command alongside that probe |
 
 ### Descriptor Writes
 

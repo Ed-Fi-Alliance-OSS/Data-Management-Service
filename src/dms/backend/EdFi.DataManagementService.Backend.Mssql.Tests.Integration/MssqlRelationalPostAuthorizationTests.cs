@@ -33,6 +33,13 @@ public class Given_A_Mssql_RelationalPost_Create_Authorization_With_A_Synthetic_
     private const string TermDescriptor = "uri://ed-fi.org/TermDescriptor#Fall Semester";
     private const string EntryGradeLevelDescriptor = "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade";
 
+    /// <summary>
+    /// A custom view over School authorizing School 100 only. A create carries its School as a proposed
+    /// reference value and has no stored value at all, so the view alone decides the write.
+    /// </summary>
+    private const string CustomViewStrategyName = "SchoolWithPostProviderTest";
+    private static readonly IReadOnlyList<string> _customViewStrategy = [CustomViewStrategyName];
+
     private static readonly QuerySchoolSeed[] _schoolSeeds =
     [
         new(new DocumentUuid(Guid.Parse("dddddddd-0000-0000-0000-000000000001")), 100, "North School"),
@@ -164,6 +171,8 @@ public class Given_A_Mssql_RelationalPost_Create_Authorization_With_A_Synthetic_
         await _context.InsertAuthEdgeAsync(300, ClaimEducationOrganizationId);
         await _context.DeleteAuthEdgeAsync(ClaimEducationOrganizationId, ClaimEducationOrganizationId);
         _context.ResetRecorder();
+
+        await _context.CreateSchoolCustomAuthViewAsync(CustomViewStrategyName, [100]);
     }
 
     [OneTimeTearDown]
@@ -171,8 +180,47 @@ public class Given_A_Mssql_RelationalPost_Create_Authorization_With_A_Synthetic_
     {
         if (_context is not null)
         {
+            await _context.DropCustomAuthViewAsync(CustomViewStrategyName);
             await _context.DisposeAsync();
         }
+    }
+
+    [Test]
+    public async Task Given_A_Custom_View_Strategy_It_Authorizes_A_Create_Whose_Proposed_School_The_View_Includes()
+    {
+        var seed = CreateRootChildSeed(
+            "cccccccc-0000-0000-0000-000000000601",
+            601,
+            "custom-view-authorized-create",
+            100,
+            []
+        );
+
+        var result = await PostRootChildAsync(seed, _customViewStrategy);
+
+        result.Should().BeOfType<UpsertResult.InsertSuccess>();
+        await AssertPersistedRowsAsync(seed);
+    }
+
+    [Test]
+    public async Task Given_A_Custom_View_Strategy_It_Denies_A_Create_Whose_Proposed_School_The_View_Excludes()
+    {
+        var seed = CreateRootChildSeed(
+            "cccccccc-0000-0000-0000-000000000602",
+            602,
+            "custom-view-denied-create",
+            200,
+            []
+        );
+
+        var result = await PostRootChildAsync(seed, _customViewStrategy);
+
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureCustomViewNotAuthorized>()
+            .Which.CustomViewFailure.StrategyName.Should()
+            .Be(CustomViewStrategyName);
+        await AssertNoCreateSideEffectsAsync(seed);
     }
 
     [Test]

@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Unit.Composite;
+using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
@@ -496,12 +497,16 @@ public class Given_The_Composite_Relational_Write_First_Phase
     private static CompositeRelationalWriteFirstPhase CreateSut(
         TestReferenceResolverAdapterFactory? adapterFactory = null,
         IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null,
-        RelationalCommandBudget? commandBudget = null
+        RelationalCommandBudget? commandBudget = null,
+        IRelationalCommandExecutor? customViewValidationCommandExecutor = null,
+        IRelationalWriteExceptionClassifier? writeExceptionClassifier = null
     ) =>
         new(
             adapterFactory ?? new TestReferenceResolverAdapterFactory(),
             relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor,
-            commandBudget: commandBudget
+            commandBudget: commandBudget,
+            customViewValidationCommandExecutor: customViewValidationCommandExecutor,
+            writeExceptionClassifier: writeExceptionClassifier
         );
 
     private static RelationalWriteLockedTarget CreateLockProof(
@@ -568,6 +573,349 @@ public class Given_The_Composite_Relational_Write_First_Phase
             createNewImmediateResult
         );
     }
+
+    [Test]
+    public async Task It_emits_the_stored_custom_view_checks_in_the_opening_command()
+    {
+        var input = CreateInput(RelationalWriteOperationKind.Put, includeReadPlan: false) with
+        {
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+        };
+        var session = new ScriptedWriteSession(
+            CreateReader(
+                CreateCaptureTable(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value)),
+                CreateAuthorizationTable()
+            )
+        );
+
+        await CreateSut().ResolveAsync(input, session);
+
+        session.Commands.Should().ContainSingle();
+        session.Commands[0].CommandText.Should().Contain("SchoolWithATag");
+    }
+
+    [Test]
+    public async Task It_maps_a_stored_custom_view_auth1_denial_to_the_custom_view_failure()
+    {
+        var input = CreateInput(RelationalWriteOperationKind.Put, includeReadPlan: false) with
+        {
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+        };
+        // One composite command carries capture and checks, so the abort is that command's failure.
+        var session = new ScriptedWriteSession(new FakeDbException("custom view denial"));
+
+        var resolution = await CreateSut(providerFailureExtractor: CustomViewFailureExtractor(0))
+            .ResolveAsync(input, session);
+
+        var failure = resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureCustomViewNotAuthorized>()
+            .Subject;
+        failure.CustomViewFailure.StrategyName.Should().Be("SchoolWithATag");
+        failure.CustomViewFailure.Hint.Should().Be("You may need a SchoolWithATag hint.");
+    }
+
+    [Test]
+    public async Task It_maps_a_stored_custom_view_denial_on_a_post_to_the_upsert_failure()
+    {
+        var input = CreateInput(RelationalWriteOperationKind.Post, includeReadPlan: false) with
+        {
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+        };
+        // One composite command carries capture and checks, so the abort is that command's failure.
+        var session = new ScriptedWriteSession(new FakeDbException("custom view denial"));
+
+        var resolution = await CreateSut(providerFailureExtractor: CustomViewFailureExtractor(0))
+            .ResolveAsync(input, session);
+
+        resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureCustomViewNotAuthorized>();
+    }
+
+    [Test]
+    public async Task It_maps_an_unmappable_custom_view_payload_to_security_configuration_failure()
+    {
+        var input = CreateInput(RelationalWriteOperationKind.Put, includeReadPlan: false) with
+        {
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+        };
+        // One composite command carries capture and checks, so the abort is that command's failure.
+        var session = new ScriptedWriteSession(new FakeDbException("custom view denial"));
+
+        // Index 4 addresses no planned check, so the payload is a configuration defect, not a denial.
+        var resolution = await CreateSut(providerFailureExtractor: CustomViewFailureExtractor(4))
+            .ResolveAsync(input, session);
+
+        resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureSecurityConfiguration>();
+    }
+
+    [Test]
+    public async Task It_attributes_a_non_auth1_failure_in_a_custom_view_command_to_the_configured_view()
+    {
+        var input = CreateInput(RelationalWriteOperationKind.Put, includeReadPlan: false) with
+        {
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+        };
+        var session = new ScriptedWriteSession(new FakeDbException("relation does not exist"));
+
+        var act = async () =>
+            await CreateSut(providerFailureExtractor: new TestProviderFailureExtractor("42P01", "missing"))
+                .ResolveAsync(input, session);
+
+        await act.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+    }
+
+    [Test]
+    public async Task It_maps_a_transient_failure_in_a_custom_view_command_to_a_write_conflict()
+    {
+        // A deadlock at reader-open carries no AUTH1 payload either, but it proves nothing about the
+        // configured view: it must keep the retryable 409 write-conflict classification instead of being
+        // relabelled as a custom-view validation 500.
+        var input = CreateInput(RelationalWriteOperationKind.Put, includeReadPlan: false) with
+        {
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+        };
+        var session = new ScriptedWriteSession(new FakeDbException("deadlock detected"));
+        var classifier = new ConfigurableRelationalWriteExceptionClassifier
+        {
+            IsTransientFailureToReturn = true,
+        };
+
+        var resolution = await CreateSut(
+                providerFailureExtractor: new TestProviderFailureExtractor("40P01", "deadlock detected"),
+                writeExceptionClassifier: classifier
+            )
+            .ResolveAsync(input, session);
+
+        resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureWriteConflict>();
+    }
+
+    [Test]
+    public async Task It_validates_a_co_batched_custom_view_before_running_the_opening_command()
+    {
+        // The view's statement rides the opening command, so a table masquerading as auth.{StrategyName} would
+        // answer it silently. Its contract is settled before that command is sent, which is also what keeps the
+        // 500 ahead of anything the command decides.
+        var input = CreateInput(RelationalWriteOperationKind.Put, includeReadPlan: false) with
+        {
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+        };
+        var session = new ScriptedWriteSession(
+            CreateReader(
+                CreateCaptureTable(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value)),
+                CreateAuthorizationTable()
+            )
+        );
+        var validationExecutor = new StubValidationCommandExecutor(
+            new FakeDbException("invalid custom authorization view DocumentId contract")
+        );
+
+        var act = async () =>
+            await CreateSut(customViewValidationCommandExecutor: validationExecutor)
+                .ResolveAsync(input, session);
+
+        await act.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+        validationExecutor
+            .ExecutedCommands.Should()
+            .ContainSingle()
+            .Subject.CommandText.Should()
+            .Contain("SchoolWithATag");
+        session.Commands.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_declines_the_single_composite_plan_for_a_custom_view_run_after_the_namespace_check()
+    {
+        // Nothing else here forces ordered segments: the run configured after NamespaceBased does, because its
+        // view may be validated only once that check has passed, which one command cannot express. Co-batched
+        // behind the namespace statement, a table masquerading as the view would answer the membership SQL and
+        // the request would proceed on it.
+        var input = CreateInput(RelationalWriteOperationKind.Put, includeReadPlan: false) with
+        {
+            StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(),
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(
+                ("SchoolWithAnEarlyTag", 0),
+                ("SchoolWithALateTag", 2)
+            ),
+        };
+        var session = new ScriptedWriteSession(
+            CreateCaptureReader(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value)),
+            CreateReader(CreateAuthorizationTable()),
+            CreateReader(CreateAuthorizationTable()),
+            CreateReader(CreateAuthorizationTable())
+        );
+
+        await CreateSut().ResolveAsync(input, session);
+
+        session.Commands.Should().HaveCount(4);
+        session.Commands[0].CommandText.Should().NotContain("SchoolWith");
+        session.Commands[1].CommandText.Should().Contain("SchoolWithAnEarlyTag");
+        session.Commands[2].CommandText.Should().Contain("namespacePrefixes");
+        session.Commands[3].CommandText.Should().Contain("SchoolWithALateTag");
+    }
+
+    [Test]
+    public async Task It_runs_the_custom_view_runs_around_the_namespace_segment_in_the_ordered_path()
+    {
+        // A deferred no-claims relationship denial sends the request to ordered segments, so every stored
+        // check runs as its own command. Configured order still has to hold: the view configured before
+        // NamespaceBased, then the namespace check, then the view configured after it.
+        var input = CreateInput(RelationalWriteOperationKind.Put, includeReadPlan: false) with
+        {
+            StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(),
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(
+                ("SchoolWithAnEarlyTag", 0),
+                ("SchoolWithALateTag", 2)
+            ),
+            StoredRelationshipAuthorization = new RelationshipAuthorizationResult.NoClaims([], []),
+        };
+        var session = new ScriptedWriteSession(
+            CreateCaptureReader(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value)),
+            CreateReader(CreateAuthorizationTable()),
+            CreateReader(CreateAuthorizationTable()),
+            CreateReader(CreateAuthorizationTable())
+        );
+
+        await CreateSut().ResolveAsync(input, session);
+
+        session.Commands.Should().HaveCount(4);
+        session.Commands[0].CommandText.Should().NotContain("SchoolWith");
+        session.Commands[1].CommandText.Should().Contain("SchoolWithAnEarlyTag");
+        session.Commands[2].CommandText.Should().Contain("namespacePrefixes");
+        session.Commands[3].CommandText.Should().Contain("SchoolWithALateTag");
+    }
+
+    [Test]
+    public async Task It_denies_from_a_segmented_after_namespace_custom_view_run_with_a_request_wide_index()
+    {
+        // The after-namespace run is its own segment carrying a non-zero request-wide index. The namespace
+        // segment has already passed, so the reported denial must be the later view's, resolved against the
+        // full planned list, and nothing downstream may run.
+        var input = CreateInput(RelationalWriteOperationKind.Put, includeReadPlan: false) with
+        {
+            StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(),
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(
+                ("SchoolWithAnEarlyTag", 0),
+                ("SchoolWithALateTag", 2)
+            ),
+            StoredRelationshipAuthorization = new RelationshipAuthorizationResult.NoClaims([], []),
+        };
+        var session = new ScriptedWriteSession(
+            CreateCaptureReader(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value)),
+            CreateReader(CreateAuthorizationTable()),
+            CreateReader(CreateAuthorizationTable()),
+            new FakeDbException("late custom view denial")
+        );
+
+        var resolution = await CreateSut(providerFailureExtractor: CustomViewFailureExtractor(1))
+            .ResolveAsync(input, session);
+
+        resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureCustomViewNotAuthorized>()
+            .Subject.CustomViewFailure.StrategyName.Should()
+            .Be("SchoolWithALateTag");
+        // Capture, the early view, the namespace segment, then the denying late view — and nothing after it,
+        // so the deferred relationship denial, reference lookup, and hydration never ran.
+        session.Commands.Should().HaveCount(4);
+        session.Commands[3].CommandText.Should().Contain("SchoolWithALateTag");
+    }
+
+    [Test]
+    public async Task It_denies_from_a_segmented_custom_view_run_before_the_namespace_segment_runs()
+    {
+        var input = CreateInput(RelationalWriteOperationKind.Put, includeReadPlan: false) with
+        {
+            StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(),
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithAnEarlyTag", 0)),
+            StoredRelationshipAuthorization = new RelationshipAuthorizationResult.NoClaims([], []),
+        };
+        var session = new ScriptedWriteSession(
+            CreateCaptureReader(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value)),
+            new FakeDbException("custom view denial")
+        );
+
+        var resolution = await CreateSut(providerFailureExtractor: CustomViewFailureExtractor(0))
+            .ResolveAsync(input, session);
+
+        resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureCustomViewNotAuthorized>()
+            .Subject.CustomViewFailure.StrategyName.Should()
+            .Be("SchoolWithAnEarlyTag");
+        // The namespace segment never ran: the earlier view's denial is the one reported.
+        session.Commands.Should().HaveCount(2);
+        session
+            .Commands.Should()
+            .AllSatisfy(command => command.CommandText.Should().NotContain("namespacePrefixes"));
+    }
+
+    /// <summary>
+    /// One stored custom-view check per configured strategy, indexed across the request the way the planner
+    /// assigns them. A self-basis path keeps the fixture independent of any reference model.
+    /// </summary>
+    private static RelationalCustomViewAuthorization CreateStoredCustomViewAuthorization(
+        params (string StrategyName, int RawConfiguredIndex)[] strategies
+    ) =>
+        new([
+            .. strategies.Select(
+                (strategy, index) =>
+                    new SingleRecordCustomViewAuthorizationCheckSpec(
+                        new ConfiguredAuthorizationStrategy(
+                            strategy.StrategyName,
+                            strategy.RawConfiguredIndex
+                        ),
+                        index,
+                        CustomViewAuthorizationCheckValueSource.Stored,
+                        new DbTableName(new DbSchemaName("auth"), strategy.StrategyName),
+                        new DbColumnName("DocumentId"),
+                        [
+                            new ColumnPathStep(
+                                new DbTableName(new DbSchemaName("edfi"), "School"),
+                                new DbColumnName("DocumentId"),
+                                null,
+                                null
+                            ),
+                        ],
+                        new CustomViewAuthorizationCheckTarget.Stored(
+                            new DbTableName(new DbSchemaName("edfi"), "School"),
+                            new DbColumnName("DocumentId")
+                        ),
+                        new QualifiedResourceName("Ed-Fi", "School"),
+                        [$"{strategy.StrategyName}Element"],
+                        $"You may need a {strategy.StrategyName} hint."
+                    )
+            ),
+        ]);
+
+    private static TestProviderFailureExtractor CustomViewFailureExtractor(
+        int index,
+        CustomViewAuthorizationAuth1FailureKind failureKind =
+            CustomViewAuthorizationAuth1FailureKind.NoMatchingCustomViewRow
+    ) =>
+        new(
+            CustomViewAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
+            CustomViewAuthorizationAuth1FailurePayloadCodec.Encode(
+                new CustomViewAuthorizationAuth1FailurePayload(index, failureKind)
+            )
+        );
 
     private static RelationalWriteNamespaceAuthorization CreateStoredNamespaceAuthorization() =>
         new(
@@ -735,6 +1083,31 @@ public class Given_The_Composite_Relational_Write_First_Phase
 
                 return Task.FromResult<IReadOnlyList<ReferenceLookupResult>>([]);
             }
+        }
+    }
+
+    /// <summary>
+    /// Stands in for the fresh-connection executor the custom-view validation probe uses, recording what it was
+    /// asked to run and optionally failing the way an object that is not a conforming view would.
+    /// </summary>
+    private sealed class StubValidationCommandExecutor(DbException? failure = null)
+        : IRelationalCommandExecutor
+    {
+        public SqlDialect Dialect => SqlDialect.Pgsql;
+
+        public List<RelationalCommand> ExecutedCommands { get; } = [];
+
+        public Task<TResult> ExecuteReaderAsync<TResult>(
+            RelationalCommand command,
+            Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,
+            CancellationToken cancellationToken = default
+        )
+        {
+            ExecutedCommands.Add(command);
+
+            return failure is null
+                ? Task.FromResult(default(TResult)!)
+                : Task.FromException<TResult>(failure);
         }
     }
 

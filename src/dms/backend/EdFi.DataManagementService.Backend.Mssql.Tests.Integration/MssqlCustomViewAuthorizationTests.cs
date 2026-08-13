@@ -470,6 +470,127 @@ public class Given_A_Mssql_Relational_Query_Authorization_With_A_Custom_View_Str
         }
     }
 
+    [Test]
+    public async Task It_denies_delete_for_a_school_the_custom_view_excludes_and_leaves_the_row()
+    {
+        var result = await _context.DeleteByIdAsync(
+            "ed-fi",
+            "School",
+            _schoolSeeds[1].DocumentUuid,
+            [ClaimEducationOrganizationId],
+            [CustomViewStrategyName]
+        );
+
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureCustomViewNotAuthorized>()
+            .Which.CustomViewFailure.StrategyName.Should()
+            .Be(CustomViewStrategyName);
+        // The check runs inside the locked-target boundary before the delete, so a denial must leave the row.
+        (await _context.CountDocumentRowsAsync(_schoolSeeds[1].DocumentUuid))
+            .Should()
+            .Be(1);
+    }
+
+    [Test]
+    public async Task It_denies_delete_with_if_match_for_a_school_the_custom_view_excludes()
+    {
+        // The If-Match delete authorizes through a different seam than the plain delete — the locked
+        // precondition path — so the denial has to hold there too, and ahead of the precondition outcome.
+        var result = await _context.DeleteByIdAsync(
+            "ed-fi",
+            "School",
+            _schoolSeeds[1].DocumentUuid,
+            [ClaimEducationOrganizationId],
+            [CustomViewStrategyName],
+            ifMatch: "*"
+        );
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureCustomViewNotAuthorized>();
+        (await _context.CountDocumentRowsAsync(_schoolSeeds[1].DocumentUuid)).Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_wraps_a_provider_error_when_the_configured_custom_view_does_not_exist_on_delete()
+    {
+        // GET-many already proves the view contract at the provider level; this proves the single-record
+        // DELETE path reaches it rather than reporting a generic delete failure.
+        await AssertCustomViewValidationFailure(async () =>
+            await _context.DeleteByIdAsync(
+                "ed-fi",
+                "School",
+                _schoolSeeds[0].DocumentUuid,
+                [ClaimEducationOrganizationId],
+                [MissingCustomViewStrategyName]
+            )
+        );
+
+        (await _context.CountDocumentRowsAsync(_schoolSeeds[0].DocumentUuid)).Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_throws_on_delete_when_the_custom_authorization_object_is_a_table_with_a_bigint_document_id()
+    {
+        // DELETE reaches the view through the co-batched stored run rather than a standalone query, and a table
+        // whose DocumentId is type-compatible answers that run's membership SQL without raising anything. Without
+        // validating the object the row would be deleted, or the caller denied, against something auth.md does
+        // not accept.
+        await _context.Database.ExecuteNonQueryAsync(
+            $"""
+            CREATE TABLE [auth].[{TableInsteadOfCustomViewStrategyName}] (
+                [DocumentId] bigint NOT NULL
+            );
+            """
+        );
+
+        try
+        {
+            var exception = await AssertCustomViewValidationFailure(async () =>
+                await _context.DeleteByIdAsync(
+                    "ed-fi",
+                    "School",
+                    _schoolSeeds[0].DocumentUuid,
+                    [ClaimEducationOrganizationId],
+                    [TableInsteadOfCustomViewStrategyName]
+                )
+            );
+
+            exception.Message.Should().Contain("Invalid custom authorization view DocumentId contract.");
+            (await _context.CountDocumentRowsAsync(_schoolSeeds[0].DocumentUuid)).Should().Be(1);
+        }
+        finally
+        {
+            await _context.Database.ExecuteNonQueryAsync(
+                $"""
+                IF OBJECT_ID(N'[auth].[{TableInsteadOfCustomViewStrategyName}]', N'U') IS NOT NULL
+                    DROP TABLE [auth].[{TableInsteadOfCustomViewStrategyName}];
+                """
+            );
+        }
+    }
+
+    [Test]
+    public async Task It_reports_a_referencing_document_failure_after_the_custom_view_authorizes_the_delete()
+    {
+        // School 100 IS in the view, so authorization passes and the delete proceeds — and then fails because
+        // a ClassPeriod references it. A denial would stop before the delete and prove nothing, so this is the
+        // case that shows custom-view validation and error attribution do not swallow an ordinary failure.
+        var result = await _context.DeleteByIdAsync(
+            "ed-fi",
+            "School",
+            _schoolSeeds[0].DocumentUuid,
+            [ClaimEducationOrganizationId],
+            [CustomViewStrategyName]
+        );
+
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureReference>()
+            .Which.ReferencingDocumentResourceNames.Should()
+            .NotBeEmpty();
+        (await _context.CountDocumentRowsAsync(_schoolSeeds[0].DocumentUuid)).Should().Be(1);
+    }
+
     private static async Task<SqlException> AssertCustomViewValidationFailure(Func<Task> action)
     {
         var assertion = await action.Should().ThrowAsync<CustomViewAuthorizationValidationException>();

@@ -146,7 +146,9 @@ public static class RelationalAuthorizationPlanner
             relationshipClassification is
             { Outcome: RelationshipAuthorizationClassificationOutcome.SecurityConfigurationError };
 
-        if (hasSecurityConfigurationError && operation is not NamespaceAuthorizationOperation.ReadMany)
+        var enforcesCustomViewChecks = EnforcesCustomViewChecks(operation);
+
+        if (hasSecurityConfigurationError && !enforcesCustomViewChecks)
         {
             return new RelationalAuthorizationPlanOutcome.SecurityConfigurationError(
                 nonNamespaceStrategies,
@@ -161,9 +163,9 @@ public static class RelationalAuthorizationPlanner
 
         if (hasSecurityConfigurationError)
         {
-            // ReadMany: Namespace-based and custom view-based are AND strategies that execute in
-            // CMS-configured order, so a classifier failure must not leap ahead of a Namespace
-            // terminal configured before it. Both namespace terminals participate — no configured
+            // Namespace-based and custom view-based are AND strategies that execute in CMS-configured
+            // order, so a classifier failure must not leap ahead of a Namespace terminal configured
+            // before it. Only reached by callers that enforce custom views; the rest returned above. Both namespace terminals participate — no configured
             // prefixes and no usable root column. Every other combination — no Namespace terminal,
             // or a Namespace terminal configured after the failing strategy — keeps the classifier's
             // security-configuration error.
@@ -187,7 +189,7 @@ public static class RelationalAuthorizationPlanner
 
         var classifiedCustomViewStrategies = relationshipClassification?.SupportedCustomViewStrategies ?? [];
         IReadOnlyList<SupportedCustomViewAuthorizationStrategy> supportedCustomViewStrategies =
-            operation is NamespaceAuthorizationOperation.ReadMany ? classifiedCustomViewStrategies : [];
+            enforcesCustomViewChecks ? classifiedCustomViewStrategies : [];
 
         if (namespaceOutcome is NamespaceAuthorizationPlanOutcome.NoUsableRootColumn noUsableRoot)
         {
@@ -212,14 +214,11 @@ public static class RelationalAuthorizationPlanner
             };
         }
 
-        // Custom-view strategies are only implemented for ReadMany. For every other operation their
-        // presence fails the request closed with 501, ranked after both namespace terminals above:
-        // like OwnershipBased — the other unimplemented AND strategy — an unimplemented custom view
-        // does not displace an earlier Namespace terminal.
-        if (
-            classifiedCustomViewStrategies.Count > 0
-            && operation is not NamespaceAuthorizationOperation.ReadMany
-        )
+        // A caller that does not yet execute custom-view checks fails the request closed with 501 rather
+        // than dropping the checks and serving unauthorized data. Ranked after both namespace terminals
+        // above: like OwnershipBased — the other unimplemented AND strategy — an unimplemented custom
+        // view does not displace an earlier Namespace terminal.
+        if (classifiedCustomViewStrategies.Count > 0 && !enforcesCustomViewChecks)
         {
             return new RelationalAuthorizationPlanOutcome.StillUnsupported(
                 nonNamespaceStrategies,
@@ -284,6 +283,36 @@ public static class RelationalAuthorizationPlanner
             supportedCustomViewStrategies
         );
     }
+
+    /// <summary>
+    /// Whether the caller for this operation executes the custom-view checks this planner hands back. When it
+    /// does not, a configured custom view fails the request closed with 501 instead of being silently dropped —
+    /// dropping it would serve data the strategy was configured to restrict.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Every operation's callers now execute them, for both storage kinds: the regular-resource paths carry the
+    /// checks in their <c>AUTH1</c> statements, and the descriptor paths — which have no <c>AUTH1</c> statement
+    /// to carry them — run them as their own membership query ordered against that path's namespace check.
+    /// <c>Update</c> covers both write verbs, because a POST resolves to a create or an upsert-as-update only
+    /// in-session, so both value sources are planned the same way.
+    /// </para>
+    /// <para>
+    /// The predicate is kept rather than inlined so an operation added without such a caller defaults to
+    /// failing closed instead of inheriting enforcement it does not implement.
+    /// </para>
+    /// </remarks>
+    private static bool EnforcesCustomViewChecks(NamespaceAuthorizationOperation operation) =>
+        operation switch
+        {
+            NamespaceAuthorizationOperation.ReadMany
+            or NamespaceAuthorizationOperation.ReadSingle
+            or NamespaceAuthorizationOperation.Delete
+            or NamespaceAuthorizationOperation.Update => true,
+            // Unreachable for today's operations, and deliberately fail-closed: an operation added without a
+            // caller that executes the checks must keep its 501 rather than silently dropping them.
+            _ => false,
+        };
 
     /// <summary>
     /// Lowest <c>RawConfiguredIndex</c> among <paramref name="failures"/>. A failure without a configured

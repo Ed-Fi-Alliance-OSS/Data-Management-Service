@@ -29,6 +29,10 @@ internal static class AuthorizationSecurityConfigurationDiagnostics
         "RelationshipAuthorization.InvalidAuthorizationResult";
     public const string RelationshipProposedValueExtractionInvalid =
         "RelationshipAuthorization.ProposedValueExtractionInvalid";
+    public const string CustomViewAuth1PayloadMappingFailed =
+        "CustomViewAuthorization.Auth1.PayloadMappingFailed";
+    public const string CustomViewProposedValueExtractionInvalid =
+        "CustomViewAuthorization.ProposedValueExtractionInvalid";
 
     public static SecurityConfigurationFailureDiagnostic[] ForNamespacePrefixParameterization(
         string providerOrPlannerFailureKind
@@ -49,6 +53,40 @@ internal static class AuthorizationSecurityConfigurationDiagnostics
                 ProviderOrPlannerFailureKind: providerOrPlannerFailureKind,
                 ConfiguredStrategyNames: [AuthorizationStrategyNameConstants.NamespaceBased],
                 PhysicalPath: FormatNamespacePhysicalPath(checks)
+            ),
+        ];
+
+    /// <summary>
+    /// Diagnostics for a custom-view AUTH1 payload that could not be mapped to a response. Names every
+    /// configured custom view in the batch and the physical basis paths they authorize against, since the
+    /// payload itself no longer identifies which check it came from.
+    /// </summary>
+    public static SecurityConfigurationFailureDiagnostic[] ForCustomViewAuthorizationAuth1(
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checks
+    ) =>
+        [
+            new SecurityConfigurationFailureDiagnostic(
+                ProviderOrPlannerFailureKind: CustomViewAuth1PayloadMappingFailed,
+                ConfiguredStrategyNames: DistinctInFirstOccurrenceOrder(
+                    checks.Select(static check => check.ConfiguredStrategy.StrategyName)
+                ),
+                PhysicalPath: FormatCustomViewPhysicalPath(checks)
+            ),
+        ];
+
+    /// <summary>
+    /// Diagnostics for proposed custom-view checks that could not be reconciled with the finalized root row.
+    /// </summary>
+    public static SecurityConfigurationFailureDiagnostic[] ForCustomViewProposedValueExtraction(
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checks
+    ) =>
+        [
+            new SecurityConfigurationFailureDiagnostic(
+                ProviderOrPlannerFailureKind: CustomViewProposedValueExtractionInvalid,
+                ConfiguredStrategyNames: DistinctInFirstOccurrenceOrder(
+                    checks.Select(static check => check.ConfiguredStrategy.StrategyName)
+                ),
+                PhysicalPath: FormatCustomViewPhysicalPath(checks)
             ),
         ];
 
@@ -118,6 +156,24 @@ internal static class AuthorizationSecurityConfigurationDiagnostics
                 )
             ),
         ];
+
+    private static string? FormatCustomViewPhysicalPath(
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checks
+    )
+    {
+        var physicalPaths = DistinctInFirstOccurrenceOrder(
+            checks.Select(static check =>
+                $"{check.AuthView}.{check.AuthViewDocumentIdColumn.Value} <- {check.PathToBasisResource[^1].SourceTable}.{check.PathToBasisResource[^1].SourceColumnName.Value}"
+            )
+        );
+
+        return physicalPaths.Length switch
+        {
+            0 => null,
+            1 => physicalPaths[0],
+            _ => string.Join(", ", physicalPaths),
+        };
+    }
 
     private static string? FormatNamespacePhysicalPath(IReadOnlyList<NamespaceAuthorizationCheckSpec> checks)
     {

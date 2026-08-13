@@ -70,6 +70,7 @@ public class Given_No_Profile_Relational_Post
             AuthorizationSubjectSelectorTestSupport.Create(),
             A.Fake<ISingleRecordRelationshipAuthorizationExecutor>(),
             A.Fake<INamespaceAuthorizationExecutor>(),
+            A.Fake<ICustomViewAuthorizationExecutor>(),
             A.Fake<IRelationalCommandExecutor>(),
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -161,6 +162,7 @@ public class Given_No_Profile_Relational_Put
             AuthorizationSubjectSelectorTestSupport.Create(),
             A.Fake<ISingleRecordRelationshipAuthorizationExecutor>(),
             A.Fake<INamespaceAuthorizationExecutor>(),
+            A.Fake<ICustomViewAuthorizationExecutor>(),
             A.Fake<IRelationalCommandExecutor>(),
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -252,6 +254,7 @@ public class Given_A_Profiled_Relational_Post
             AuthorizationSubjectSelectorTestSupport.Create(),
             A.Fake<ISingleRecordRelationshipAuthorizationExecutor>(),
             A.Fake<INamespaceAuthorizationExecutor>(),
+            A.Fake<ICustomViewAuthorizationExecutor>(),
             A.Fake<IRelationalCommandExecutor>(),
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -352,6 +355,7 @@ public class Given_A_Profiled_Relational_Put
             AuthorizationSubjectSelectorTestSupport.Create(),
             A.Fake<ISingleRecordRelationshipAuthorizationExecutor>(),
             A.Fake<INamespaceAuthorizationExecutor>(),
+            A.Fake<ICustomViewAuthorizationExecutor>(),
             A.Fake<IRelationalCommandExecutor>(),
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );

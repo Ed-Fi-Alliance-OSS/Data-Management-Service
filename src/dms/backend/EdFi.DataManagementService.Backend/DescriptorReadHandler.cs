@@ -32,6 +32,7 @@ internal sealed class DescriptorReadHandler(
     IServedEtagComposer servedEtagComposer,
     ILogger<DescriptorReadHandler> logger,
     IDocumentCacheReadAccelerationCoordinator readAccelerationCoordinator,
+    ICustomViewAuthorizationExecutor customViewAuthorizationExecutor,
     ChangeQueryPageOrderingPolicy? orderingPolicy = null
 ) : IDescriptorReadHandler
 {
@@ -56,6 +57,9 @@ internal sealed class DescriptorReadHandler(
         servedEtagComposer ?? throw new ArgumentNullException(nameof(servedEtagComposer));
     private readonly ILogger<DescriptorReadHandler> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly ICustomViewAuthorizationExecutor _customViewAuthorizationExecutor =
+        customViewAuthorizationExecutor
+        ?? throw new ArgumentNullException(nameof(customViewAuthorizationExecutor));
     private readonly ChangeQueryPageOrderingPolicy _orderingPolicy =
         orderingPolicy ?? ChangeQueryPageOrderingPolicy.Default;
     private readonly IDocumentCacheReadAccelerationCoordinator _readAccelerationCoordinator =
@@ -211,7 +215,8 @@ internal sealed class DescriptorReadHandler(
         ArgumentNullException.ThrowIfNull(readSingleOrDefaultAsync);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var authorizationResult = ResolveGetByIdAuthorizationPreflight(request);
+        var authorizationResult = await ResolveGetByIdAuthorizationPreflightAsync(request, cancellationToken)
+            .ConfigureAwait(false);
 
         if (authorizationResult.CompleteResult is not null)
         {
@@ -264,6 +269,32 @@ internal sealed class DescriptorReadHandler(
             return new DescriptorGetByIdReadResult<TRow>.Complete(new GetResult.GetFailureNotExists());
         }
 
+        // Custom views and NamespaceBased are AND filters executing in CMS-configured order, and the first
+        // failure is the one reported. The namespace check is in memory and the custom-view checks are their
+        // own query, so the order is sequenced here rather than by statement position.
+        var (customViewsBeforeNamespace, customViewsAfterNamespace) =
+            CustomViewAuthorizationCheckSplitter.PartitionByConfiguredIndex(
+                authorizationResult.CustomViewChecks,
+                authorizationResult.Proceed?.NamespaceChecks.Count > 0
+                    ? authorizationResult.Proceed.NamespaceChecks[0].RawConfiguredIndex
+                    : int.MaxValue
+            );
+
+        if (
+            await ExecuteGetByIdCustomViewsAsync(
+                    request,
+                    descriptorRow.DocumentId,
+                    customViewsBeforeNamespace,
+                    authorizationResult.CustomViewChecks,
+                    cancellationToken
+                )
+                .ConfigureAwait(false) is
+            { } beforeNamespaceDenial
+        )
+        {
+            return new DescriptorGetByIdReadResult<TRow>.Complete(beforeNamespaceDenial);
+        }
+
         if (
             ValidateGetByIdDescriptorCandidate(
                 descriptorRow,
@@ -275,6 +306,21 @@ internal sealed class DescriptorReadHandler(
             return new DescriptorGetByIdReadResult<TRow>.Complete(terminal);
         }
 
+        if (
+            await ExecuteGetByIdCustomViewsAsync(
+                    request,
+                    descriptorRow.DocumentId,
+                    customViewsAfterNamespace,
+                    authorizationResult.CustomViewChecks,
+                    cancellationToken
+                )
+                .ConfigureAwait(false) is
+            { } afterNamespaceDenial
+        )
+        {
+            return new DescriptorGetByIdReadResult<TRow>.Complete(afterNamespaceDenial);
+        }
+
         LogDiscriminatorMismatchIfPresent(request, descriptorRow);
 
         return new DescriptorGetByIdReadResult<TRow>.AuthorizedRow(descriptorRow);
@@ -282,11 +328,14 @@ internal sealed class DescriptorReadHandler(
 
     private sealed record DescriptorGetByIdAuthorizationResult(
         GetResult? CompleteResult,
-        NamespacePrefixParameterization? NamespacePrefixParameterization
+        NamespacePrefixParameterization? NamespacePrefixParameterization,
+        DescriptorReadAuthorizationPreflightOutcome.Proceed? Proceed,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> CustomViewChecks
     );
 
-    private static DescriptorGetByIdAuthorizationResult ResolveGetByIdAuthorizationPreflight(
-        DescriptorGetByIdRequest request
+    private async Task<DescriptorGetByIdAuthorizationResult> ResolveGetByIdAuthorizationPreflightAsync(
+        DescriptorGetByIdRequest request,
+        CancellationToken cancellationToken
     )
     {
         // StoredDocument reads are internal read-modify-write fetches that bypass per-record
@@ -295,7 +344,7 @@ internal sealed class DescriptorReadHandler(
         // namespace authorization preflight and the in-memory stored-namespace check below.
         if (request.ReadMode == RelationalGetRequestReadMode.StoredDocument)
         {
-            return new DescriptorGetByIdAuthorizationResult(null, null);
+            return new DescriptorGetByIdAuthorizationResult(null, null, null, []);
         }
 
         // Namespace planner terminals (no usable root column, no prefixes, MSSQL prefix cap) and
@@ -311,33 +360,83 @@ internal sealed class DescriptorReadHandler(
             "GET"
         );
 
-        // Custom views are implemented for GET-many only, so no GET-by-id terminal may carry checks.
-        // Guard every terminal uniformly rather than one shape, so a future planner change that starts
-        // emitting them here fails loudly instead of silently skipping validation.
-        ThrowIfGetByIdCarriesCustomViewChecks(authorizationPreflight);
-
-        return authorizationPreflight switch
+        switch (authorizationPreflight)
         {
-            DescriptorReadAuthorizationPreflightOutcome.NotImplemented notImplemented => new(
-                new GetResult.GetFailureNotImplemented(notImplemented.FailureMessage),
-                null
-            ),
-            DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError configError => new(
-                new GetResult.GetFailureSecurityConfiguration(configError.Errors, configError.Diagnostics),
-                null
-            ),
-            DescriptorReadAuthorizationPreflightOutcome.NamespaceNotAuthorized namespaceNotAuthorized => new(
-                new GetResult.GetFailureNamespaceNotAuthorized(namespaceNotAuthorized.Failure),
-                null
-            ),
-            DescriptorReadAuthorizationPreflightOutcome.Proceed proceed => new(
-                null,
-                proceed.NamespacePrefixParameterization
-            ),
-            _ => throw new InvalidOperationException(
-                $"Unsupported descriptor GET authorization preflight outcome '{authorizationPreflight.GetType().Name}'."
-            ),
-        };
+            case DescriptorReadAuthorizationPreflightOutcome.NotImplemented notImplemented:
+                // Custom views configured ahead of this terminal execute first, so a missing or
+                // non-conforming view keeps its own 500 rather than being hidden by the terminal.
+                await ValidateGetByIdCustomViewsAsync(
+                        request,
+                        notImplemented.CustomViewChecks,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+                return new DescriptorGetByIdAuthorizationResult(
+                    new GetResult.GetFailureNotImplemented(notImplemented.FailureMessage),
+                    null,
+                    null,
+                    []
+                );
+            case DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError configError:
+                await ValidateGetByIdCustomViewsAsync(
+                        request,
+                        configError.CustomViewChecks,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+                return new DescriptorGetByIdAuthorizationResult(
+                    new GetResult.GetFailureSecurityConfiguration(
+                        configError.Errors,
+                        configError.Diagnostics
+                    ),
+                    null,
+                    null,
+                    []
+                );
+            case DescriptorReadAuthorizationPreflightOutcome.NamespaceNotAuthorized namespaceNotAuthorized:
+                await ValidateGetByIdCustomViewsAsync(
+                        request,
+                        namespaceNotAuthorized.CustomViewChecks,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+                return new DescriptorGetByIdAuthorizationResult(
+                    new GetResult.GetFailureNamespaceNotAuthorized(namespaceNotAuthorized.Failure),
+                    null,
+                    null,
+                    []
+                );
+            case DescriptorReadAuthorizationPreflightOutcome.Proceed proceed:
+                if (
+                    !TryPlanGetByIdCustomViews(
+                        request,
+                        proceed.CustomViewStrategies,
+                        out var customViewChecks,
+                        out var customViewPlanFailure,
+                        out var customViewChecksBeforePlanFailure
+                    )
+                )
+                {
+                    await ValidateSingleRecordGetByIdCustomViewsAsync(
+                            request,
+                            customViewChecksBeforePlanFailure,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+                    return new DescriptorGetByIdAuthorizationResult(customViewPlanFailure!, null, null, []);
+                }
+
+                return new DescriptorGetByIdAuthorizationResult(
+                    null,
+                    proceed.NamespacePrefixParameterization,
+                    proceed,
+                    customViewChecks
+                );
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported descriptor GET authorization preflight outcome '{authorizationPreflight.GetType().Name}'."
+                );
+        }
     }
 
     private static GetResult? ValidateGetByIdDescriptorCandidate(
@@ -898,32 +997,157 @@ internal sealed class DescriptorReadHandler(
     }
 
     /// <summary>
-    /// Fails closed when a GET-by-id preflight terminal carries custom-view checks. GET-by-id has no
-    /// validation step, so silently dropping them would skip a configured authorization filter.
+    /// Plans the single-record custom-view checks descriptor GET-by-id executes, or reports the
+    /// security-configuration failure that stops the read.
     /// </summary>
-    private static void ThrowIfGetByIdCarriesCustomViewChecks(
-        DescriptorReadAuthorizationPreflightOutcome outcome
+    private static bool TryPlanGetByIdCustomViews(
+        DescriptorGetByIdRequest request,
+        IReadOnlyList<SupportedCustomViewAuthorizationStrategy> customViewStrategies,
+        out IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> customViewChecks,
+        out GetResult? securityConfigurationFailure,
+        out IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checksToValidateBeforeFailure
     )
     {
-        var customViewChecks = outcome switch
-        {
-            DescriptorReadAuthorizationPreflightOutcome.NotImplemented notImplemented =>
-                notImplemented.CustomViewChecks,
-            DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError configError =>
-                configError.CustomViewChecks,
-            DescriptorReadAuthorizationPreflightOutcome.NamespaceNotAuthorized namespaceNotAuthorized =>
-                namespaceNotAuthorized.CustomViewChecks,
-            DescriptorReadAuthorizationPreflightOutcome.Proceed proceed => proceed.CustomViewChecks,
-            _ => [],
-        };
+        customViewChecks = [];
+        securityConfigurationFailure = null;
+        checksToValidateBeforeFailure = [];
 
-        if (customViewChecks.Count > 0)
+        if (customViewStrategies.Count == 0)
         {
-            throw new InvalidOperationException(
-                $"Descriptor GET-by-id does not support custom view-based authorization, but the preflight "
-                    + $"outcome '{outcome.GetType().Name}' carried {customViewChecks.Count} custom-view check(s)."
-            );
+            return true;
         }
+
+        var outcome = SingleRecordCustomViewAuthorizationPlanner.Plan(
+            request.MappingSet,
+            request.MappingSet.GetConcreteResourceModelOrThrow(request.Resource),
+            customViewStrategies,
+            NamespaceAuthorizationOperation.ReadSingle
+        );
+
+        if (
+            outcome
+            is SingleRecordCustomViewAuthorizationPlanOutcome.SecurityConfiguration configurationFailure
+        )
+        {
+            var failure = BuildDescriptorCustomViewSecurityConfigurationFailure(
+                request.Resource,
+                configurationFailure.Failures
+            );
+
+            securityConfigurationFailure = new GetResult.GetFailureSecurityConfiguration(
+                failure.Errors,
+                failure.Diagnostics
+            );
+            // Views configured ahead of the earliest planning failure planned successfully and execute
+            // first, so they are still validated before this failure is reported.
+            checksToValidateBeforeFailure = SingleRecordChecksBeforeFailure(configurationFailure);
+            return false;
+        }
+
+        customViewChecks = ((SingleRecordCustomViewAuthorizationPlanOutcome.Plan)outcome).Checks;
+
+        return true;
+    }
+
+    /// <summary>
+    /// The planned single-record checks configured strictly before the earliest planning failure. Those views
+    /// planned successfully and execute first, so they are validated even though a later one cannot plan.
+    /// </summary>
+    private static IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> SingleRecordChecksBeforeFailure(
+        SingleRecordCustomViewAuthorizationPlanOutcome.SecurityConfiguration configurationFailure
+    )
+    {
+        var earliestFailureIndex = RelationalAuthorizationPlanner.EarliestSecurityConfigurationFailureIndex(
+            configurationFailure.Failures
+        );
+
+        return
+        [
+            .. configurationFailure.PlannedChecks.Where(check =>
+                check.ConfiguredStrategy.RawConfiguredIndex < earliestFailureIndex
+            ),
+        ];
+    }
+
+    /// <summary>
+    /// Validates single-record checks that execute ahead of a GET-by-id planning failure. These are
+    /// single-record specs, so they take the single-record validator rather than the page-query one.
+    /// </summary>
+    private Task ValidateSingleRecordGetByIdCustomViewsAsync(
+        DescriptorGetByIdRequest request,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checks,
+        CancellationToken cancellationToken
+    ) =>
+        CustomViewAuthorizationValidator.ValidateSingleRecordAsync(
+            _commandExecutor,
+            request.MappingSet.Key.Dialect,
+            checks,
+            cancellationToken
+        );
+
+    /// <summary>
+    /// Validates the views that execute ahead of a GET-by-id terminal. A null or empty list is a no-op, so
+    /// every terminal can call this unconditionally.
+    /// </summary>
+    private Task ValidateGetByIdCustomViewsAsync(
+        DescriptorGetByIdRequest request,
+        IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck>? customViewChecks,
+        CancellationToken cancellationToken
+    ) =>
+        CustomViewAuthorizationValidator.ValidateAsync(
+            _commandExecutor,
+            request.MappingSet.Key.Dialect,
+            customViewChecks,
+            cancellationToken
+        );
+
+    /// <summary>
+    /// Runs one ordered segment of custom-view membership checks against the fetched row, answering with the
+    /// caller-visible failure or <see langword="null"/> when the segment authorizes.
+    /// </summary>
+    /// <remarks>
+    /// The row has already been read into memory by the time this runs, which is what the in-memory namespace
+    /// check requires too. Denying afterwards discloses nothing: no part of the row reaches the response.
+    /// </remarks>
+    private async Task<GetResult?> ExecuteGetByIdCustomViewsAsync(
+        DescriptorGetByIdRequest request,
+        long documentId,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> runChecks,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> plannedChecks,
+        CancellationToken cancellationToken
+    )
+    {
+        if (runChecks.Count == 0)
+        {
+            return null;
+        }
+
+        var result = await _customViewAuthorizationExecutor
+            .ExecuteAsync(
+                new CustomViewAuthorizationExecutionRequest(
+                    request.MappingSet,
+                    documentId,
+                    runChecks,
+                    plannedChecks
+                ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return result switch
+        {
+            CustomViewAuthorizationExecutionResult.Authorized => null,
+            CustomViewAuthorizationExecutionResult.NotAuthorized notAuthorized =>
+                new GetResult.GetFailureCustomViewNotAuthorized(notAuthorized.Failure),
+            CustomViewAuthorizationExecutionResult.InvalidAuthorizationFailure invalid =>
+                new GetResult.GetFailureSecurityConfiguration([invalid.FailureMessage], invalid.Diagnostics),
+            // The row was deleted between this read's SELECT and the membership check, so there is no longer
+            // a record to authorize or to report a denial for.
+            CustomViewAuthorizationExecutionResult.StaleTarget => new GetResult.GetFailureNotExists(),
+            _ => throw new InvalidOperationException(
+                $"Unsupported custom view authorization execution result '{result.GetType().Name}'."
+            ),
+        };
     }
 
     /// <summary>
@@ -1653,14 +1877,17 @@ internal sealed class DescriptorReadHandler(
         return orchestratorOutcome switch
         {
             RelationalAuthorizationPlanOutcome.NoUsableRootColumn noUsableRoot =>
-                BuildDescriptorNoUsableRootPreflight(mappingSet, resource, operation, noUsableRoot),
+                BuildDescriptorNoUsableRootPreflight(mappingSet, resource, noUsableRoot),
             RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes =>
-                BuildDescriptorNoPrefixesPreflight(mappingSet, resource, operation, noPrefixes),
+                BuildDescriptorNoPrefixesPreflight(mappingSet, resource, noPrefixes),
+            // Both read paths route through the same builder, so this terminal carries the custom views
+            // configured ahead of it and its message excludes them from the unsupported list. Gating this on
+            // GET-many left GET-by-id with a bare 501 that skipped validating those views and named the
+            // resolved custom-view strategy as though it were an unsupported blocker.
             RelationalAuthorizationPlanOutcome.Plan plan
-                when operation is NamespaceAuthorizationOperation.ReadMany
-                    && RelationalReadGuardrails.HasDescriptorUnsupportedNonNamespaceStrategies(
-                        plan.NonNamespaceConfiguredStrategies
-                    ) => BuildDescriptorReadPlanPreflight(
+                when RelationalReadGuardrails.HasDescriptorUnsupportedNonNamespaceStrategies(
+                    plan.NonNamespaceConfiguredStrategies
+                ) => BuildDescriptorReadPlanPreflight(
                 mappingSet,
                 resource,
                 authorizationContext,
@@ -1673,17 +1900,6 @@ internal sealed class DescriptorReadHandler(
                     plan.CustomViewStrategies
                 )
             ),
-            RelationalAuthorizationPlanOutcome.Plan plan
-                when RelationalReadGuardrails.HasDescriptorUnsupportedNonNamespaceStrategies(
-                    plan.NonNamespaceConfiguredStrategies
-                ) => new DescriptorReadAuthorizationPreflightOutcome.NotImplemented(
-                RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
-                    resource,
-                    authorizationStrategyEvaluators,
-                    operationLabel,
-                    actionLabel
-                )
-            ),
             RelationalAuthorizationPlanOutcome.Plan plan => BuildDescriptorReadPlanPreflight(
                 mappingSet,
                 resource,
@@ -1694,23 +1910,19 @@ internal sealed class DescriptorReadHandler(
                 BuildDescriptorReadNotImplemented(
                     mappingSet,
                     resource,
-                    operation,
                     stillUnsupported,
                     RelationalReadGuardrails.BuildAuthorizationNotImplementedMessage(
                         resource,
                         authorizationStrategyEvaluators,
                         operationLabel,
                         actionLabel,
-                        operation is NamespaceAuthorizationOperation.ReadMany
-                            ? stillUnsupported.RelationshipClassification.SupportedCustomViewStrategies
-                            : null
+                        stillUnsupported.RelationshipClassification.SupportedCustomViewStrategies
                     )
                 ),
             RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError =>
                 BuildDescriptorReadSecurityConfigurationError(
                     mappingSet,
                     resource,
-                    operation,
                     securityConfigurationError
                 ),
             _ => throw new InvalidOperationException(
@@ -1722,7 +1934,6 @@ internal sealed class DescriptorReadHandler(
     private static DescriptorReadAuthorizationPreflightOutcome BuildDescriptorNoUsableRootPreflight(
         MappingSet mappingSet,
         QualifiedResourceName resource,
-        NamespaceAuthorizationOperation operation,
         RelationalAuthorizationPlanOutcome.NoUsableRootColumn noUsableRoot
     )
     {
@@ -1738,7 +1949,6 @@ internal sealed class DescriptorReadHandler(
             TryResolveTerminalCustomViewChecks(
                 mappingSet,
                 resource,
-                operation,
                 noUsableRoot.CustomViewStrategies,
                 noUsableRoot.RawConfiguredIndex,
                 out var customViewChecks
@@ -1759,7 +1969,6 @@ internal sealed class DescriptorReadHandler(
     private static DescriptorReadAuthorizationPreflightOutcome BuildDescriptorNoPrefixesPreflight(
         MappingSet mappingSet,
         QualifiedResourceName resource,
-        NamespaceAuthorizationOperation operation,
         RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes
     )
     {
@@ -1771,7 +1980,6 @@ internal sealed class DescriptorReadHandler(
             TryResolveTerminalCustomViewChecks(
                 mappingSet,
                 resource,
-                operation,
                 noPrefixes.CustomViewStrategies,
                 noPrefixes.RawConfiguredIndex,
                 out var customViewChecks
@@ -1791,7 +1999,6 @@ internal sealed class DescriptorReadHandler(
     private static DescriptorReadAuthorizationPreflightOutcome BuildDescriptorReadSecurityConfigurationError(
         MappingSet mappingSet,
         QualifiedResourceName resource,
-        NamespaceAuthorizationOperation operation,
         RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError
     )
     {
@@ -1808,7 +2015,6 @@ internal sealed class DescriptorReadHandler(
             TryResolveTerminalCustomViewChecks(
                 mappingSet,
                 resource,
-                operation,
                 securityConfigurationError.RelationshipClassification.SupportedCustomViewStrategies,
                 RelationalAuthorizationPlanner.EarliestSecurityConfigurationFailureIndex(
                     securityConfigurationError.RelationshipClassification.SecurityConfigurationFailures
@@ -1832,13 +2038,12 @@ internal sealed class DescriptorReadHandler(
     /// The known-but-not-enabled 501 terminal. OwnershipBased — the only known-but-not-enabled strategy —
     /// executes last per auth.md "Execution order", regardless of its configured position, so for GET-many
     /// every resolved custom view is validated before the 501 is reported, mirroring the relational query
-    /// path. That lets a missing or non-conforming view surface its own configuration failure.
-    /// Custom views are implemented for GET-many only, so other operations keep the bare 501.
+    /// path. That lets a missing or non-conforming view surface its own configuration failure. GET-by-id
+    /// carries its resolved views the same way, so neither read path reports a bare 501 over them.
     /// </summary>
     private static DescriptorReadAuthorizationPreflightOutcome BuildDescriptorReadNotImplemented(
         MappingSet mappingSet,
         QualifiedResourceName resource,
-        NamespaceAuthorizationOperation operation,
         RelationalAuthorizationPlanOutcome.StillUnsupported stillUnsupported,
         string failureMessage
     )
@@ -1849,7 +2054,6 @@ internal sealed class DescriptorReadHandler(
             TryResolveTerminalCustomViewChecks(
                 mappingSet,
                 resource,
-                operation,
                 stillUnsupported.RelationshipClassification.SupportedCustomViewStrategies,
                 terminalRawConfiguredIndex: null,
                 out var customViewChecks
@@ -1922,7 +2126,6 @@ internal sealed class DescriptorReadHandler(
     private static DescriptorReadAuthorizationPreflightOutcome? TryResolveTerminalCustomViewChecks(
         MappingSet mappingSet,
         QualifiedResourceName resource,
-        NamespaceAuthorizationOperation operation,
         IReadOnlyList<SupportedCustomViewAuthorizationStrategy> strategies,
         int? terminalRawConfiguredIndex,
         out IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck> checks
@@ -1930,12 +2133,9 @@ internal sealed class DescriptorReadHandler(
     {
         checks = [];
 
-        // Custom views are implemented for GET-many only, so every other operation keeps its bare terminal.
-        if (operation is not NamespaceAuthorizationOperation.ReadMany)
-        {
-            return null;
-        }
-
+        // Both read paths execute custom-view checks, so both owe this validation: they plan different check
+        // shapes, but a view that is missing or does not meet the DocumentId contract is the same 500 either
+        // way. The operation is no longer consulted.
         var strategiesToValidate = terminalRawConfiguredIndex is { } rawConfiguredIndex
             ? CustomViewAuthorizationTerminalOrdering.CustomViewsBeforeTerminal(
                 strategies,
@@ -2076,7 +2276,8 @@ internal sealed class DescriptorReadHandler(
         return new DescriptorReadAuthorizationPreflightOutcome.Proceed(
             plan.NamespaceChecks,
             namespacePrefixParameterization,
-            customViewChecks
+            customViewChecks,
+            plan.CustomViewStrategies
         );
     }
 
@@ -2136,8 +2337,8 @@ internal sealed class DescriptorReadHandler(
     /// <summary>
     /// Descriptor read authorization preflight results. Each terminal carries the custom-view checks that
     /// must be validated before it is reported — custom views are AND filters executing in CMS-configured
-    /// order, so those configured ahead of the terminal still run. The list is empty when nothing needs
-    /// validating, which is always the case outside GET-many since custom views are GET-many only.
+    /// order, so those configured ahead of the terminal still run. The list is empty when no custom view is
+    /// configured ahead of the terminal, which is the only case that needs no validation.
     /// </summary>
     private abstract record DescriptorReadAuthorizationPreflightOutcome
     {
@@ -2181,13 +2382,18 @@ internal sealed class DescriptorReadHandler(
         /// Dialect-specific prefix parameterization; non-null exactly when namespace authorization
         /// applies. Drives the GET-many SQL emission and the GET-by-id in-memory stored-value check.
         /// </param>
+        /// <param name="CustomViewStrategies">
+        /// The configured custom views, carried unplanned so each caller can plan the shape it executes:
+        /// GET-many compiles them into its page query, GET-by-id into a single-record membership query.
+        /// </param>
         public sealed record Proceed(
             IReadOnlyList<NamespaceAuthorizationCheckSpec> NamespaceChecks,
             NamespacePrefixParameterization? NamespacePrefixParameterization,
-            IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck> CustomViewChecks
+            IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck> CustomViewChecks,
+            IReadOnlyList<SupportedCustomViewAuthorizationStrategy> CustomViewStrategies
         ) : DescriptorReadAuthorizationPreflightOutcome
         {
-            public static Proceed NoAuthorization { get; } = new([], null, []);
+            public static Proceed NoAuthorization { get; } = new([], null, [], []);
         }
     }
 

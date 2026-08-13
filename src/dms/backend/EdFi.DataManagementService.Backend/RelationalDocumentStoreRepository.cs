@@ -36,6 +36,7 @@ public sealed class RelationalDocumentStoreRepository(
     RelationalEdOrgAuthorizationSubjectSelector edOrgAuthorizationSubjectSelector,
     ISingleRecordRelationshipAuthorizationExecutor singleRecordRelationshipAuthorizationExecutor,
     INamespaceAuthorizationExecutor namespaceAuthorizationExecutor,
+    ICustomViewAuthorizationExecutor customViewAuthorizationExecutor,
     IRelationalCommandExecutor commandExecutor,
     IDocumentCacheReadAccelerationCoordinator readAccelerationCoordinator,
     IRelationalParameterConfigurator? relationalParameterConfigurator = null,
@@ -82,6 +83,9 @@ public sealed class RelationalDocumentStoreRepository(
     private readonly INamespaceAuthorizationExecutor _namespaceAuthorizationExecutor =
         namespaceAuthorizationExecutor
         ?? throw new ArgumentNullException(nameof(namespaceAuthorizationExecutor));
+    private readonly ICustomViewAuthorizationExecutor _customViewAuthorizationExecutor =
+        customViewAuthorizationExecutor
+        ?? throw new ArgumentNullException(nameof(customViewAuthorizationExecutor));
 
     // The read executor. Custom view-based GET-many validation runs on it rather than on a write session:
     // each call takes a separate read connection and round trip, but a read never opens a write
@@ -424,13 +428,19 @@ public sealed class RelationalDocumentStoreRepository(
 
         return authorizationPreflight switch
         {
-            DeleteAuthorizationPreflightResult.Stop stop => Task.FromResult(stop.Result),
+            // Views configured ahead of the terminal execute first, so a missing or non-conforming view keeps
+            // its own 500 rather than being hidden by the terminal's response.
+            DeleteAuthorizationPreflightResult.Stop stop => ValidateThenReportDeleteTerminalAsync(
+                mappingSet,
+                stop
+            ),
             DeleteAuthorizationPreflightResult.Proceed proceed => DeleteDocumentByIdAsync(
                 deleteRequest,
                 mappingSet,
                 resource,
                 writePrecondition,
                 proceed.StoredNamespaceAuthorization,
+                proceed.StoredCustomViewAuthorization,
                 proceed.StoredRelationshipAuthorization
             ),
             _ => throw new InvalidOperationException(
@@ -445,6 +455,7 @@ public sealed class RelationalDocumentStoreRepository(
         QualifiedResourceName resource,
         WritePrecondition writePrecondition,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
+        RelationalCustomViewAuthorization? storedCustomViewAuthorization,
         RelationshipAuthorizationResult storedRelationshipAuthorization
     )
     {
@@ -491,7 +502,10 @@ public sealed class RelationalDocumentStoreRepository(
                     _deleteConstraintResolver,
                     _relationalParameterConfigurator,
                     _relationshipAuthorizationProviderFailureExtractor,
-                    _logger
+                    _logger,
+                    // Opens a connection per command, so the custom-view validation probe never joins the write
+                    // session's transaction.
+                    customViewValidationCommandExecutor: _commandExecutor
                 )
                     .ExecuteAsync(
                         new RelationalDeleteCommandRequest(
@@ -503,6 +517,7 @@ public sealed class RelationalDocumentStoreRepository(
                             storedRelationshipAuthorization
                         )
                         {
+                            CustomViewAuthorization = storedCustomViewAuthorization,
                             WritePrecondition = writePrecondition,
                             DeferredRelationshipDenial = BuildDeferredDeleteRelationshipDenial(
                                 storedRelationshipAuthorization,
@@ -616,6 +631,121 @@ public sealed class RelationalDocumentStoreRepository(
         return new DeleteResult.DeleteFailureRelationshipNotAuthorized(noClaimsFailure);
     }
 
+    private async Task<DeleteResult> ValidateThenReportDeleteTerminalAsync(
+        MappingSet mappingSet,
+        DeleteAuthorizationPreflightResult.Stop stop
+    )
+    {
+        await ValidateSingleRecordCustomViewsAsync(mappingSet, stop.CustomViewChecksToValidate)
+            .ConfigureAwait(false);
+
+        return stop.Result;
+    }
+
+    /// <inheritdoc cref="GetByIdTerminal"/>
+    private static DeleteAuthorizationPreflightResult DeleteTerminal(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DeleteResult result,
+        IReadOnlyList<SupportedCustomViewAuthorizationStrategy> customViewStrategies,
+        int terminalIndex
+    )
+    {
+        var strategiesToValidate = CustomViewAuthorizationTerminalOrdering.CustomViewsBeforeTerminal(
+            customViewStrategies,
+            terminalIndex
+        );
+
+        if (strategiesToValidate.Count == 0)
+        {
+            return new DeleteAuthorizationPreflightResult.Stop(result);
+        }
+
+        var outcome = SingleRecordCustomViewAuthorizationPlanner.Plan(
+            mappingSet,
+            mappingSet.GetConcreteResourceModelOrThrow(resource),
+            strategiesToValidate,
+            NamespaceAuthorizationOperation.Delete
+        );
+
+        if (
+            outcome
+            is SingleRecordCustomViewAuthorizationPlanOutcome.SecurityConfiguration configurationFailure
+        )
+        {
+            return new DeleteAuthorizationPreflightResult.Stop(
+                BuildDeleteAuthorizationSecurityConfigurationFailure(
+                    mappingSet,
+                    resource,
+                    configurationFailure.Failures
+                ),
+                SingleRecordChecksBeforeTerminal(
+                    configurationFailure.PlannedChecks,
+                    RelationalAuthorizationPlanner.EarliestSecurityConfigurationFailureIndex(
+                        configurationFailure.Failures
+                    )
+                )
+            );
+        }
+
+        return new DeleteAuthorizationPreflightResult.Stop(
+            result,
+            ((SingleRecordCustomViewAuthorizationPlanOutcome.Plan)outcome).Checks
+        );
+    }
+
+    /// <summary>
+    /// The write counterpart of <see cref="DeleteTerminal"/>. Every POST/PUT preflight terminal that can be
+    /// preceded by a custom view routes through this, so attaching the views is not a per-arm decision.
+    /// </summary>
+    private static WriteGuardRailPreflightResult<TResult> WriteTerminal<TResult>(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        TResult result,
+        IReadOnlyList<SupportedCustomViewAuthorizationStrategy> customViewStrategies,
+        int terminalIndex,
+        Func<IReadOnlyList<RelationshipAuthorizationFailureMetadata>, TResult> securityConfigurationFactory
+    )
+    {
+        var strategiesToValidate = CustomViewAuthorizationTerminalOrdering.CustomViewsBeforeTerminal(
+            customViewStrategies,
+            terminalIndex
+        );
+
+        if (strategiesToValidate.Count == 0)
+        {
+            return new WriteGuardRailPreflightResult<TResult>.Stop(result);
+        }
+
+        var outcome = SingleRecordCustomViewAuthorizationPlanner.Plan(
+            mappingSet,
+            mappingSet.GetConcreteResourceModelOrThrow(resource),
+            strategiesToValidate,
+            NamespaceAuthorizationOperation.Update
+        );
+
+        if (
+            outcome
+            is SingleRecordCustomViewAuthorizationPlanOutcome.SecurityConfiguration configurationFailure
+        )
+        {
+            return new WriteGuardRailPreflightResult<TResult>.Stop(
+                securityConfigurationFactory(configurationFailure.Failures),
+                SingleRecordChecksBeforeTerminal(
+                    configurationFailure.PlannedChecks,
+                    RelationalAuthorizationPlanner.EarliestSecurityConfigurationFailureIndex(
+                        configurationFailure.Failures
+                    )
+                )
+            );
+        }
+
+        return new WriteGuardRailPreflightResult<TResult>.Stop(
+            result,
+            ((SingleRecordCustomViewAuthorizationPlanOutcome.Plan)outcome).Checks
+        );
+    }
+
     private DeleteAuthorizationPreflightResult AuthorizeDeletePreflight(
         IDeleteRequest relationalDeleteRequest,
         MappingSet mappingSet,
@@ -636,7 +766,9 @@ public sealed class RelationalDocumentStoreRepository(
         switch (orchestratorOutcome)
         {
             case RelationalAuthorizationPlanOutcome.NoUsableRootColumn noUsableRoot:
-                return new DeleteAuthorizationPreflightResult.Stop(
+                return DeleteTerminal(
+                    mappingSet,
+                    resource,
                     new DeleteResult.DeleteFailureSecurityConfiguration(
                         [
                             NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
@@ -644,14 +776,20 @@ public sealed class RelationalDocumentStoreRepository(
                             ),
                         ],
                         RelationalReadGuardrails.BuildNoUsableRootColumnDiagnostics(noUsableRoot.Resource)
-                    )
+                    ),
+                    noUsableRoot.CustomViewStrategies,
+                    noUsableRoot.RawConfiguredIndex
                 );
 
             case RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes:
-                return new DeleteAuthorizationPreflightResult.Stop(
+                return DeleteTerminal(
+                    mappingSet,
+                    resource,
                     new DeleteResult.DeleteFailureNamespaceNotAuthorized(
                         NamespaceAuthorizationFactory.NoPrefixesConfiguredFailure(noPrefixes.StrategyName)
-                    )
+                    ),
+                    noPrefixes.CustomViewStrategies,
+                    noPrefixes.RawConfiguredIndex
                 );
 
             case RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError:
@@ -659,6 +797,8 @@ public sealed class RelationalDocumentStoreRepository(
                     mappingSet,
                     resource,
                     null,
+                    null,
+                    securityConfigurationError.RelationshipClassification.SupportedCustomViewStrategies,
                     securityConfigurationError.NonNamespaceConfiguredStrategies,
                     relationalDeleteRequest.AuthorizationContext
                 );
@@ -668,6 +808,8 @@ public sealed class RelationalDocumentStoreRepository(
                     mappingSet,
                     resource,
                     null,
+                    null,
+                    stillUnsupported.RelationshipClassification.SupportedCustomViewStrategies,
                     stillUnsupported.NonNamespaceConfiguredStrategies,
                     relationalDeleteRequest.AuthorizationContext
                 );
@@ -694,11 +836,30 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalAuthorizationContext authorizationContext
     )
     {
+        if (
+            !TryPlanDeleteCustomViewAuthorization(
+                mappingSet,
+                resource,
+                plan.CustomViewStrategies,
+                out var storedCustomViewAuthorization,
+                out var customViewSecurityConfigurationFailure,
+                out var customViewChecksToValidate
+            )
+        )
+        {
+            return new DeleteAuthorizationPreflightResult.Stop(
+                customViewSecurityConfigurationFailure!,
+                customViewChecksToValidate
+            );
+        }
+
         if (plan.NamespaceChecks.Count == 0)
         {
             return AuthorizeDeleteRelationshipPreflight(
                 mappingSet,
                 resource,
+                null,
+                storedCustomViewAuthorization,
                 null,
                 plan.NonNamespaceConfiguredStrategies,
                 authorizationContext
@@ -715,11 +876,15 @@ public sealed class RelationalDocumentStoreRepository(
             )
         )
         {
-            return new DeleteAuthorizationPreflightResult.Stop(
+            return DeleteTerminal(
+                mappingSet,
+                resource,
                 new DeleteResult.DeleteFailureSecurityConfiguration(
                     [securityConfigurationMessage],
                     securityConfigurationDiagnostics
-                )
+                ),
+                plan.CustomViewStrategies,
+                plan.NamespaceChecks[0].RawConfiguredIndex
             );
         }
 
@@ -732,15 +897,131 @@ public sealed class RelationalDocumentStoreRepository(
             mappingSet,
             resource,
             storedNamespaceAuthorization,
+            storedCustomViewAuthorization,
+            null,
             plan.NonNamespaceConfiguredStrategies,
             authorizationContext
         );
+    }
+
+    /// <summary>
+    /// Plans the custom-view checks a POST or PUT owes, across both value sources, or reports the
+    /// security-configuration failures that stop the write.
+    /// </summary>
+    private static bool TryPlanWriteCustomViewAuthorization(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<SupportedCustomViewAuthorizationStrategy> customViewStrategies,
+        out RelationalCustomViewAuthorization? customViewAuthorization,
+        out IReadOnlyList<RelationshipAuthorizationFailureMetadata>? securityConfigurationFailures,
+        out IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checksToValidateBeforeFailure
+    )
+    {
+        customViewAuthorization = null;
+        securityConfigurationFailures = null;
+        checksToValidateBeforeFailure = [];
+
+        if (customViewStrategies.Count == 0)
+        {
+            return true;
+        }
+
+        var outcome = SingleRecordCustomViewAuthorizationPlanner.Plan(
+            mappingSet,
+            mappingSet.GetConcreteResourceModelOrThrow(resource),
+            customViewStrategies,
+            NamespaceAuthorizationOperation.Update
+        );
+
+        if (
+            outcome
+            is SingleRecordCustomViewAuthorizationPlanOutcome.SecurityConfiguration configurationFailure
+        )
+        {
+            securityConfigurationFailures = configurationFailure.Failures;
+            // Views configured ahead of the earliest planning failure planned successfully and execute
+            // first, so they are still validated before this failure is reported.
+            checksToValidateBeforeFailure = SingleRecordChecksBeforeTerminal(
+                configurationFailure.PlannedChecks,
+                RelationalAuthorizationPlanner.EarliestSecurityConfigurationFailureIndex(
+                    configurationFailure.Failures
+                )
+            );
+            return false;
+        }
+
+        var checks = ((SingleRecordCustomViewAuthorizationPlanOutcome.Plan)outcome).Checks;
+
+        if (checks.Count > 0)
+        {
+            customViewAuthorization = new RelationalCustomViewAuthorization(checks);
+        }
+
+        return true;
+    }
+
+    private static bool TryPlanDeleteCustomViewAuthorization(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<SupportedCustomViewAuthorizationStrategy> customViewStrategies,
+        out RelationalCustomViewAuthorization? storedCustomViewAuthorization,
+        out DeleteResult? securityConfigurationFailure,
+        out IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checksToValidateBeforeFailure
+    )
+    {
+        storedCustomViewAuthorization = null;
+        securityConfigurationFailure = null;
+        checksToValidateBeforeFailure = [];
+
+        if (customViewStrategies.Count == 0)
+        {
+            return true;
+        }
+
+        var outcome = SingleRecordCustomViewAuthorizationPlanner.Plan(
+            mappingSet,
+            mappingSet.GetConcreteResourceModelOrThrow(resource),
+            customViewStrategies,
+            NamespaceAuthorizationOperation.Delete
+        );
+
+        if (
+            outcome
+            is SingleRecordCustomViewAuthorizationPlanOutcome.SecurityConfiguration configurationFailure
+        )
+        {
+            securityConfigurationFailure = BuildDeleteAuthorizationSecurityConfigurationFailure(
+                mappingSet,
+                resource,
+                configurationFailure.Failures
+            );
+            // Views configured ahead of the earliest planning failure planned successfully and execute first,
+            // so they are still validated before this failure is reported.
+            checksToValidateBeforeFailure = SingleRecordChecksBeforeTerminal(
+                configurationFailure.PlannedChecks,
+                RelationalAuthorizationPlanner.EarliestSecurityConfigurationFailureIndex(
+                    configurationFailure.Failures
+                )
+            );
+            return false;
+        }
+
+        var checks = ((SingleRecordCustomViewAuthorizationPlanOutcome.Plan)outcome).Checks;
+
+        if (checks.Count > 0)
+        {
+            storedCustomViewAuthorization = new RelationalCustomViewAuthorization(checks);
+        }
+
+        return true;
     }
 
     private DeleteAuthorizationPreflightResult AuthorizeDeleteRelationshipPreflight(
         MappingSet mappingSet,
         QualifiedResourceName resource,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
+        RelationalCustomViewAuthorization? storedCustomViewAuthorization,
+        IReadOnlyList<SupportedCustomViewAuthorizationStrategy>? customViewStrategiesToValidate,
         IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies,
         RelationalAuthorizationContext authorizationContext
     )
@@ -754,27 +1035,64 @@ public sealed class RelationalDocumentStoreRepository(
 
         return storedRelationshipAuthorization switch
         {
+            // OwnershipBased executes last per auth.md regardless of configured position, so every resolved
+            // view runs before this 501.
             RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled =>
-                new DeleteAuthorizationPreflightResult.Stop(
-                    new DeleteResult.DeleteFailureNotImplemented(
-                        BuildKnownButNotEnabledDeleteAuthorizationMessage(
-                            resource,
-                            knownButNotEnabled.Failures
-                        )
+                storedCustomViewAuthorization is { } plannedForNotImplemented
+                    ? new DeleteAuthorizationPreflightResult.Stop(
+                        new DeleteResult.DeleteFailureNotImplemented(
+                            BuildKnownButNotEnabledDeleteAuthorizationMessage(
+                                resource,
+                                knownButNotEnabled.Failures
+                            )
+                        ),
+                        plannedForNotImplemented.Checks
                     )
-                ),
-
-            RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError =>
-                new DeleteAuthorizationPreflightResult.Stop(
-                    BuildDeleteAuthorizationSecurityConfigurationFailure(
+                    : DeleteTerminal(
                         mappingSet,
                         resource,
-                        securityConfigurationError.Failures
+                        new DeleteResult.DeleteFailureNotImplemented(
+                            BuildKnownButNotEnabledDeleteAuthorizationMessage(
+                                resource,
+                                knownButNotEnabled.Failures
+                            )
+                        ),
+                        customViewStrategiesToValidate ?? [],
+                        int.MaxValue
+                    ),
+
+            RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError =>
+                storedCustomViewAuthorization is { } plannedForConfigError
+                    ? new DeleteAuthorizationPreflightResult.Stop(
+                        BuildDeleteAuthorizationSecurityConfigurationFailure(
+                            mappingSet,
+                            resource,
+                            securityConfigurationError.Failures
+                        ),
+                        SingleRecordChecksBeforeTerminal(
+                            plannedForConfigError.Checks,
+                            RelationalAuthorizationPlanner.EarliestSecurityConfigurationFailureIndex(
+                                securityConfigurationError.Failures
+                            )
+                        )
                     )
-                ),
+                    : DeleteTerminal(
+                        mappingSet,
+                        resource,
+                        BuildDeleteAuthorizationSecurityConfigurationFailure(
+                            mappingSet,
+                            resource,
+                            securityConfigurationError.Failures
+                        ),
+                        customViewStrategiesToValidate ?? [],
+                        RelationalAuthorizationPlanner.EarliestSecurityConfigurationFailureIndex(
+                            securityConfigurationError.Failures
+                        )
+                    ),
 
             _ => new DeleteAuthorizationPreflightResult.Proceed(
                 storedNamespaceAuthorization,
+                storedCustomViewAuthorization,
                 storedRelationshipAuthorization
             ),
         };
@@ -784,10 +1102,19 @@ public sealed class RelationalDocumentStoreRepository(
     {
         private DeleteAuthorizationPreflightResult() { }
 
-        public sealed record Stop(DeleteResult Result) : DeleteAuthorizationPreflightResult;
+        /// <inheritdoc cref="GetByIdAuthorizationPreflightResult.Stop.CustomViewChecksToValidate"/>
+        public sealed record Stop(
+            DeleteResult Result,
+            IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> CustomViewChecksToValidate
+        ) : DeleteAuthorizationPreflightResult
+        {
+            public Stop(DeleteResult result)
+                : this(result, []) { }
+        }
 
         public sealed record Proceed(
             RelationalWriteNamespaceAuthorization? StoredNamespaceAuthorization,
+            RelationalCustomViewAuthorization? StoredCustomViewAuthorization,
             RelationshipAuthorizationResult StoredRelationshipAuthorization
         ) : DeleteAuthorizationPreflightResult;
     }
@@ -1987,7 +2314,9 @@ public sealed class RelationalDocumentStoreRepository(
         switch (orchestratorOutcome)
         {
             case RelationalAuthorizationPlanOutcome.NoUsableRootColumn noUsableRoot:
-                return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
+                return WriteTerminal<UpsertResult>(
+                    mappingSet,
+                    resource,
                     new UpsertResult.UpsertFailureSecurityConfiguration(
                         [
                             NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
@@ -1995,14 +2324,22 @@ public sealed class RelationalDocumentStoreRepository(
                             ),
                         ],
                         RelationalReadGuardrails.BuildNoUsableRootColumnDiagnostics(noUsableRoot.Resource)
-                    )
+                    ),
+                    noUsableRoot.CustomViewStrategies,
+                    noUsableRoot.RawConfiguredIndex,
+                    failures => BuildPostAuthorizationSecurityConfigurationFailure(mappingSet, failures)
                 );
 
             case RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes:
-                return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
+                return WriteTerminal<UpsertResult>(
+                    mappingSet,
+                    resource,
                     new UpsertResult.UpsertFailureNamespaceNotAuthorized(
                         NamespaceAuthorizationFactory.NoPrefixesConfiguredFailure(noPrefixes.StrategyName)
-                    )
+                    ),
+                    noPrefixes.CustomViewStrategies,
+                    noPrefixes.RawConfiguredIndex,
+                    failures => BuildPostAuthorizationSecurityConfigurationFailure(mappingSet, failures)
                 );
 
             case RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError:
@@ -2013,7 +2350,10 @@ public sealed class RelationalDocumentStoreRepository(
                     securityConfigurationError.NonNamespaceConfiguredStrategies,
                     authorizationContext,
                     storedNamespaceAuthorization: null,
-                    proposedNamespaceAuthorization: null
+                    proposedNamespaceAuthorization: null,
+                    supportedCustomViewStrategies: securityConfigurationError
+                        .RelationshipClassification
+                        .SupportedCustomViewStrategies
                 );
 
             case RelationalAuthorizationPlanOutcome.StillUnsupported stillUnsupported:
@@ -2024,7 +2364,10 @@ public sealed class RelationalDocumentStoreRepository(
                     stillUnsupported.NonNamespaceConfiguredStrategies,
                     authorizationContext,
                     storedNamespaceAuthorization: null,
-                    proposedNamespaceAuthorization: null
+                    proposedNamespaceAuthorization: null,
+                    supportedCustomViewStrategies: stillUnsupported
+                        .RelationshipClassification
+                        .SupportedCustomViewStrategies
                 );
 
             case RelationalAuthorizationPlanOutcome.Plan plan:
@@ -2045,6 +2388,25 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalAuthorizationContext authorizationContext
     )
     {
+        // A POST may resolve to create or upsert-as-update in-session, so both value sources are planned
+        // here; the executor applies the stored checks only when the write resolves to an existing target.
+        if (
+            !TryPlanWriteCustomViewAuthorization(
+                mappingSet,
+                resource,
+                plan.CustomViewStrategies,
+                out var customViewAuthorization,
+                out var customViewFailures,
+                out var customViewChecksBeforeFailure
+            )
+        )
+        {
+            return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
+                BuildPostAuthorizationSecurityConfigurationFailure(mappingSet, customViewFailures!),
+                customViewChecksBeforeFailure
+            );
+        }
+
         if (plan.NamespaceChecks.Count == 0)
         {
             return AuthorizePostRelationshipBucket(
@@ -2054,7 +2416,8 @@ public sealed class RelationalDocumentStoreRepository(
                 plan.NonNamespaceConfiguredStrategies,
                 authorizationContext,
                 storedNamespaceAuthorization: null,
-                proposedNamespaceAuthorization: null
+                proposedNamespaceAuthorization: null,
+                customViewAuthorization: customViewAuthorization
             );
         }
 
@@ -2072,7 +2435,8 @@ public sealed class RelationalDocumentStoreRepository(
                 new UpsertResult.UpsertFailureSecurityConfiguration(
                     [securityConfigurationMessage],
                     securityConfigurationDiagnostics
-                )
+                ),
+                CustomViewChecksBeforeNamespaceCheck(customViewAuthorization, plan.NamespaceChecks)
             );
         }
 
@@ -2088,7 +2452,8 @@ public sealed class RelationalDocumentStoreRepository(
             plan.NonNamespaceConfiguredStrategies,
             authorizationContext,
             storedNamespaceAuthorization,
-            proposedNamespaceAuthorization
+            proposedNamespaceAuthorization,
+            customViewAuthorization
         );
     }
 
@@ -2127,9 +2492,36 @@ public sealed class RelationalDocumentStoreRepository(
         IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies,
         RelationalAuthorizationContext authorizationContext,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
-        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization
+        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization,
+        RelationalCustomViewAuthorization? customViewAuthorization = null,
+        IReadOnlyList<SupportedCustomViewAuthorizationStrategy>? supportedCustomViewStrategies = null
     )
     {
+        supportedCustomViewStrategies ??= [];
+
+        // The strategy-level SecurityConfigurationError and StillUnsupported arms reach this bucket before
+        // any custom view has been planned, so plan them here rather than at each terminal below: every Stop
+        // in this method then carries the views that execute ahead of it. Callers that already planned pass
+        // customViewAuthorization instead and skip this.
+        if (
+            customViewAuthorization is null
+            && supportedCustomViewStrategies.Count > 0
+            && !TryPlanWriteCustomViewAuthorization(
+                mappingSet,
+                resource,
+                supportedCustomViewStrategies,
+                out customViewAuthorization,
+                out var customViewFailures,
+                out var customViewChecksBeforeFailure
+            )
+        )
+        {
+            return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
+                BuildPostAuthorizationSecurityConfigurationFailure(mappingSet, customViewFailures!),
+                customViewChecksBeforeFailure
+            );
+        }
+
         var existingResourcePlan = _relationshipAuthorizationPlanner.PlanUpdateValues(
             mappingSet,
             resource,
@@ -2143,7 +2535,8 @@ public sealed class RelationalDocumentStoreRepository(
         if (securityConfigurationFailures.Count > 0)
         {
             return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
-                BuildPostAuthorizationSecurityConfigurationFailure(mappingSet, securityConfigurationFailures)
+                BuildPostAuthorizationSecurityConfigurationFailure(mappingSet, securityConfigurationFailures),
+                ChecksBeforeRelationshipFailure(customViewAuthorization, securityConfigurationFailures)
             );
         }
 
@@ -2156,7 +2549,8 @@ public sealed class RelationalDocumentStoreRepository(
                         existingResourcePlan.KnownButNotEnabledFailures
                     ),
                     UpsertFailureNotImplementedReason.StrategyNotEnabled
-                )
+                ),
+                AllCustomViewChecks(customViewAuthorization)
             );
         }
 
@@ -2168,7 +2562,8 @@ public sealed class RelationalDocumentStoreRepository(
                     null,
                     null,
                     storedNamespaceAuthorization,
-                    proposedNamespaceAuthorization
+                    proposedNamespaceAuthorization,
+                    customViewAuthorization: customViewAuthorization
                 ),
 
             RelationshipAuthorizationResult.Authorized => CreatePostRelationshipAuthorizationContinue(
@@ -2179,22 +2574,25 @@ public sealed class RelationalDocumentStoreRepository(
                 writePlan,
                 existingResourcePlan,
                 storedNamespaceAuthorization,
-                proposedNamespaceAuthorization
+                proposedNamespaceAuthorization,
+                customViewAuthorization
             ),
 
-            // NamespaceBased AND-composes before relationship OR strategies (auth.md). When a
-            // proposed namespace check is also planned, defer NoClaims through Continue so the
-            // namespace check gets to deny first; the write path's second command
-            // emits the NoClaims failure if namespace authorized. With no namespace check planned,
-            // short-circuit at preflight to avoid a needless executor roundtrip.
+            // NamespaceBased and custom view-based both AND-compose before relationship OR strategies
+            // (auth.md). When any of them is planned, defer NoClaims through Continue so those filters get to
+            // deny first; the write path's second command emits the NoClaims failure only once they have
+            // authorized. With no AND filter planned at all, short-circuit at preflight to avoid a needless
+            // executor roundtrip.
             RelationshipAuthorizationResult.NoClaims noClaims => proposedNamespaceAuthorization is null
             && storedNamespaceAuthorization is null
+            && customViewAuthorization is null
                 ? BuildNoClaimsPostRelationshipAuthorizationFailure(noClaims, authorizationContext)
                 : new WriteGuardRailPreflightResult<UpsertResult>.Continue(
                     null,
                     noClaims,
                     storedNamespaceAuthorization,
-                    proposedNamespaceAuthorization
+                    proposedNamespaceAuthorization,
+                    customViewAuthorization: customViewAuthorization
                 ),
 
             RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled =>
@@ -2205,13 +2603,18 @@ public sealed class RelationalDocumentStoreRepository(
                             knownButNotEnabled.Failures
                         ),
                         UpsertFailureNotImplementedReason.StrategyNotEnabled
-                    )
+                    ),
+                    AllCustomViewChecks(customViewAuthorization)
                 ),
 
             RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError =>
                 new WriteGuardRailPreflightResult<UpsertResult>.Stop(
                     BuildPostAuthorizationSecurityConfigurationFailure(
                         mappingSet,
+                        securityConfigurationError.Failures
+                    ),
+                    ChecksBeforeRelationshipFailure(
+                        customViewAuthorization,
                         securityConfigurationError.Failures
                     )
                 ),
@@ -2230,7 +2633,8 @@ public sealed class RelationalDocumentStoreRepository(
         ResourceWritePlan writePlan,
         RelationshipAuthorizationUpdatePlan existingResourcePlan,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
-        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization
+        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization,
+        RelationalCustomViewAuthorization? customViewAuthorization = null
     )
     {
         var createNewProposedValues = _relationshipAuthorizationPlanner.PlanProposedValues(
@@ -2241,36 +2645,40 @@ public sealed class RelationalDocumentStoreRepository(
             writePlan
         );
 
+        // Every deferral out of this method owes the executor the same namespace and custom-view plans, and
+        // only the create-new relationship result varies. Building them here rather than at each arm keeps a
+        // new arm from silently dropping a planned check by omitting a trailing argument.
+        WriteGuardRailPreflightResult<UpsertResult> DeferToExecutor(
+            RelationshipAuthorizationResult? createNewProposedRelationshipAuthorization,
+            RelationalWriteExecutorResult? createNewImmediateResult = null
+        ) =>
+            new WriteGuardRailPreflightResult<UpsertResult>.Continue(
+                null,
+                null,
+                storedNamespaceAuthorization,
+                proposedNamespaceAuthorization,
+                new PostRelationshipAuthorizationPlans(
+                    existingResourcePlan,
+                    createNewProposedRelationshipAuthorization,
+                    createNewImmediateResult
+                ),
+                customViewAuthorization
+            );
+
         return createNewProposedValues switch
         {
             RelationshipAuthorizationResult.NoAuthorizationRequired
-            or RelationshipAuthorizationResult.NoFurtherAuthorizationRequired =>
-                new WriteGuardRailPreflightResult<UpsertResult>.Continue(
-                    null,
-                    null,
-                    storedNamespaceAuthorization,
-                    proposedNamespaceAuthorization,
-                    new PostRelationshipAuthorizationPlans(existingResourcePlan, null, null)
-                ),
+            or RelationshipAuthorizationResult.NoFurtherAuthorizationRequired => DeferToExecutor(null),
 
-            RelationshipAuthorizationResult.Authorized createNewAuthorized =>
-                new WriteGuardRailPreflightResult<UpsertResult>.Continue(
-                    null,
-                    null,
-                    storedNamespaceAuthorization,
-                    proposedNamespaceAuthorization,
-                    new PostRelationshipAuthorizationPlans(existingResourcePlan, createNewAuthorized, null)
-                ),
+            RelationshipAuthorizationResult.Authorized createNewAuthorized => DeferToExecutor(
+                createNewAuthorized
+            ),
 
+            // A pending custom view is an AND filter too, so it has to run before this denial is reported.
             RelationshipAuthorizationResult.NoClaims noClaims => proposedNamespaceAuthorization is null
+            && customViewAuthorization is null
                 ? BuildNoClaimsPostRelationshipAuthorizationFailure(noClaims, authorizationContext)
-                : new WriteGuardRailPreflightResult<UpsertResult>.Continue(
-                    null,
-                    null,
-                    storedNamespaceAuthorization,
-                    proposedNamespaceAuthorization,
-                    new PostRelationshipAuthorizationPlans(existingResourcePlan, noClaims, null)
-                ),
+                : DeferToExecutor(noClaims),
 
             RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled =>
                 new WriteGuardRailPreflightResult<UpsertResult>.Stop(
@@ -2280,23 +2688,17 @@ public sealed class RelationalDocumentStoreRepository(
                             knownButNotEnabled.Failures
                         ),
                         UpsertFailureNotImplementedReason.StrategyNotEnabled
-                    )
+                    ),
+                    AllCustomViewChecks(customViewAuthorization)
                 ),
 
             RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError =>
-                new WriteGuardRailPreflightResult<UpsertResult>.Continue(
+                DeferToExecutor(
                     null,
-                    null,
-                    storedNamespaceAuthorization,
-                    proposedNamespaceAuthorization,
-                    new PostRelationshipAuthorizationPlans(
-                        existingResourcePlan,
-                        null,
-                        new RelationalWriteExecutorResult.Upsert(
-                            BuildPostAuthorizationSecurityConfigurationFailure(
-                                mappingSet,
-                                securityConfigurationError.Failures
-                            )
+                    new RelationalWriteExecutorResult.Upsert(
+                        BuildPostAuthorizationSecurityConfigurationFailure(
+                            mappingSet,
+                            securityConfigurationError.Failures
                         )
                     )
                 ),
@@ -2330,7 +2732,9 @@ public sealed class RelationalDocumentStoreRepository(
         switch (orchestratorOutcome)
         {
             case RelationalAuthorizationPlanOutcome.NoUsableRootColumn noUsableRoot:
-                return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
+                return WriteTerminal<UpdateResult>(
+                    mappingSet,
+                    resource,
                     new UpdateResult.UpdateFailureSecurityConfiguration(
                         [
                             NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
@@ -2338,14 +2742,22 @@ public sealed class RelationalDocumentStoreRepository(
                             ),
                         ],
                         RelationalReadGuardrails.BuildNoUsableRootColumnDiagnostics(noUsableRoot.Resource)
-                    )
+                    ),
+                    noUsableRoot.CustomViewStrategies,
+                    noUsableRoot.RawConfiguredIndex,
+                    failures => BuildPutAuthorizationSecurityConfigurationFailure(mappingSet, failures)
                 );
 
             case RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes:
-                return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
+                return WriteTerminal<UpdateResult>(
+                    mappingSet,
+                    resource,
                     new UpdateResult.UpdateFailureNamespaceNotAuthorized(
                         NamespaceAuthorizationFactory.NoPrefixesConfiguredFailure(noPrefixes.StrategyName)
-                    )
+                    ),
+                    noPrefixes.CustomViewStrategies,
+                    noPrefixes.RawConfiguredIndex,
+                    failures => BuildPutAuthorizationSecurityConfigurationFailure(mappingSet, failures)
                 );
 
             case RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError:
@@ -2356,7 +2768,10 @@ public sealed class RelationalDocumentStoreRepository(
                     securityConfigurationError.NonNamespaceConfiguredStrategies,
                     authorizationContext,
                     storedNamespaceAuthorization: null,
-                    proposedNamespaceAuthorization: null
+                    proposedNamespaceAuthorization: null,
+                    supportedCustomViewStrategies: securityConfigurationError
+                        .RelationshipClassification
+                        .SupportedCustomViewStrategies
                 );
 
             case RelationalAuthorizationPlanOutcome.StillUnsupported stillUnsupported:
@@ -2367,7 +2782,10 @@ public sealed class RelationalDocumentStoreRepository(
                     stillUnsupported.NonNamespaceConfiguredStrategies,
                     authorizationContext,
                     storedNamespaceAuthorization: null,
-                    proposedNamespaceAuthorization: null
+                    proposedNamespaceAuthorization: null,
+                    supportedCustomViewStrategies: stillUnsupported
+                        .RelationshipClassification
+                        .SupportedCustomViewStrategies
                 );
 
             case RelationalAuthorizationPlanOutcome.Plan plan:
@@ -2388,6 +2806,23 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalAuthorizationContext authorizationContext
     )
     {
+        if (
+            !TryPlanWriteCustomViewAuthorization(
+                mappingSet,
+                resource,
+                plan.CustomViewStrategies,
+                out var customViewAuthorization,
+                out var customViewFailures,
+                out var customViewChecksBeforeFailure
+            )
+        )
+        {
+            return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
+                BuildPutAuthorizationSecurityConfigurationFailure(mappingSet, customViewFailures!),
+                customViewChecksBeforeFailure
+            );
+        }
+
         if (plan.NamespaceChecks.Count == 0)
         {
             return AuthorizePutRelationshipBucket(
@@ -2397,7 +2832,8 @@ public sealed class RelationalDocumentStoreRepository(
                 plan.NonNamespaceConfiguredStrategies,
                 authorizationContext,
                 storedNamespaceAuthorization: null,
-                proposedNamespaceAuthorization: null
+                proposedNamespaceAuthorization: null,
+                customViewAuthorization: customViewAuthorization
             );
         }
 
@@ -2415,7 +2851,8 @@ public sealed class RelationalDocumentStoreRepository(
                 new UpdateResult.UpdateFailureSecurityConfiguration(
                     [securityConfigurationMessage],
                     securityConfigurationDiagnostics
-                )
+                ),
+                CustomViewChecksBeforeNamespaceCheck(customViewAuthorization, plan.NamespaceChecks)
             );
         }
 
@@ -2431,7 +2868,8 @@ public sealed class RelationalDocumentStoreRepository(
             plan.NonNamespaceConfiguredStrategies,
             authorizationContext,
             storedNamespaceAuthorization,
-            proposedNamespaceAuthorization
+            proposedNamespaceAuthorization,
+            customViewAuthorization
         );
     }
 
@@ -2442,9 +2880,36 @@ public sealed class RelationalDocumentStoreRepository(
         IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies,
         RelationalAuthorizationContext authorizationContext,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
-        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization
+        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization,
+        RelationalCustomViewAuthorization? customViewAuthorization = null,
+        IReadOnlyList<SupportedCustomViewAuthorizationStrategy>? supportedCustomViewStrategies = null
     )
     {
+        supportedCustomViewStrategies ??= [];
+
+        // The strategy-level SecurityConfigurationError and StillUnsupported arms reach this bucket before
+        // any custom view has been planned, so plan them here rather than at each terminal below: every Stop
+        // in this method then carries the views that execute ahead of it. Callers that already planned pass
+        // customViewAuthorization instead and skip this.
+        if (
+            customViewAuthorization is null
+            && supportedCustomViewStrategies.Count > 0
+            && !TryPlanWriteCustomViewAuthorization(
+                mappingSet,
+                resource,
+                supportedCustomViewStrategies,
+                out customViewAuthorization,
+                out var customViewFailures,
+                out var customViewChecksBeforeFailure
+            )
+        )
+        {
+            return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
+                BuildPutAuthorizationSecurityConfigurationFailure(mappingSet, customViewFailures!),
+                customViewChecksBeforeFailure
+            );
+        }
+
         var relationshipAuthorizationPlan = _relationshipAuthorizationPlanner.PlanUpdateValues(
             mappingSet,
             resource,
@@ -2458,7 +2923,8 @@ public sealed class RelationalDocumentStoreRepository(
         if (securityConfigurationFailures.Count > 0)
         {
             return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
-                BuildPutAuthorizationSecurityConfigurationFailure(mappingSet, securityConfigurationFailures)
+                BuildPutAuthorizationSecurityConfigurationFailure(mappingSet, securityConfigurationFailures),
+                ChecksBeforeRelationshipFailure(customViewAuthorization, securityConfigurationFailures)
             );
         }
 
@@ -2470,7 +2936,8 @@ public sealed class RelationalDocumentStoreRepository(
                 new UpdateResult.UpdateFailureNotImplemented(
                     BuildKnownButNotEnabledPutAuthorizationMessage(resource, knownButNotEnabledFailures),
                     UpdateFailureNotImplementedReason.StrategyNotEnabled
-                )
+                ),
+                AllCustomViewChecks(customViewAuthorization)
             );
         }
 
@@ -2482,29 +2949,34 @@ public sealed class RelationalDocumentStoreRepository(
                     null,
                     null,
                     storedNamespaceAuthorization,
-                    proposedNamespaceAuthorization
+                    proposedNamespaceAuthorization,
+                    customViewAuthorization: customViewAuthorization
                 ),
 
-            // NamespaceBased AND-composes before the relationship OR group (auth.md,
-            // 08-namespace-auth-strategy.md). When a namespace check is planned, defer the stored
-            // relationship NoClaims denial into the proposed-relationship slot so the stored-then-proposed
-            // namespace checks get to deny first; the write path's second command emits the
-            // NoClaims denial only after the proposed namespace check authorizes. With no namespace check
-            // planned, keep NoClaims in the stored slot so the stored boundary emits it after the target
-            // lock, preserving the existing 404-over-403 ordering for a missing PUT target.
+            // NamespaceBased and custom view-based both AND-compose before the relationship OR group
+            // (auth.md, 08-namespace-auth-strategy.md). When either is planned, defer the stored relationship
+            // NoClaims denial into the proposed-relationship slot so those filters get to deny first; the
+            // write path's second command emits the NoClaims denial only after they authorize. Leaving it in
+            // the stored slot with custom views pending ends the write at the first phase, before the proposed
+            // custom-view checks run at all. With no AND filter planned, keep NoClaims in the stored slot so
+            // the stored boundary emits it after the target lock, preserving the existing 404-over-403
+            // ordering for a missing PUT target.
             RelationshipAuthorizationResult.NoClaims noClaims => storedNamespaceAuthorization is null
             && proposedNamespaceAuthorization is null
+            && customViewAuthorization is null
                 ? new WriteGuardRailPreflightResult<UpdateResult>.Continue(
                     noClaims,
                     null,
                     storedNamespaceAuthorization,
-                    proposedNamespaceAuthorization
+                    proposedNamespaceAuthorization,
+                    customViewAuthorization: customViewAuthorization
                 )
                 : new WriteGuardRailPreflightResult<UpdateResult>.Continue(
                     null,
                     noClaims,
                     storedNamespaceAuthorization,
-                    proposedNamespaceAuthorization
+                    proposedNamespaceAuthorization,
+                    customViewAuthorization: customViewAuthorization
                 ),
 
             RelationshipAuthorizationResult.Authorized authorized =>
@@ -2513,7 +2985,8 @@ public sealed class RelationalDocumentStoreRepository(
                     relationshipAuthorizationPlan.ProposedValues
                         as RelationshipAuthorizationResult.Authorized,
                     storedNamespaceAuthorization,
-                    proposedNamespaceAuthorization
+                    proposedNamespaceAuthorization,
+                    customViewAuthorization: customViewAuthorization
                 ),
 
             _ => throw new InvalidOperationException(
@@ -2619,6 +3092,7 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization = null;
         RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null;
         PostRelationshipAuthorizationPlans? postRelationshipAuthorizationPlans = null;
+        RelationalCustomViewAuthorization? customViewAuthorization = null;
 
         if (preflight is not null)
         {
@@ -2632,9 +3106,17 @@ public sealed class RelationalDocumentStoreRepository(
                     storedNamespaceAuthorization = continueResult.StoredNamespaceAuthorization;
                     proposedNamespaceAuthorization = continueResult.ProposedNamespaceAuthorization;
                     postRelationshipAuthorizationPlans = continueResult.PostRelationshipAuthorizationPlans;
+                    customViewAuthorization = continueResult.CustomViewAuthorization;
                     break;
 
                 case WriteGuardRailPreflightResult<TResult>.Stop stopResult:
+                    // Views configured ahead of this terminal execute first, so a missing or non-conforming
+                    // one keeps its own failure instead of being masked by the terminal's result.
+                    await ValidateSingleRecordCustomViewsAsync(
+                            mappingSet,
+                            stopResult.CustomViewChecksToValidate
+                        )
+                        .ConfigureAwait(false);
                     return stopResult.Result;
 
                 default:
@@ -2684,6 +3166,7 @@ public sealed class RelationalDocumentStoreRepository(
                     )
                     {
                         PostRelationshipAuthorizationPlans = postRelationshipAuthorizationPlans,
+                        CustomViewAuthorization = customViewAuthorization,
                     }
                 )
                 .ConfigureAwait(false);
@@ -2745,7 +3228,8 @@ public sealed class RelationalDocumentStoreRepository(
                 RelationshipAuthorizationResult? proposedRelationshipAuthorization,
                 RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization = null,
                 RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null,
-                PostRelationshipAuthorizationPlans? postRelationshipAuthorizationPlans = null
+                PostRelationshipAuthorizationPlans? postRelationshipAuthorizationPlans = null,
+                RelationalCustomViewAuthorization? customViewAuthorization = null
             )
             {
                 ValidateStoredRelationshipAuthorization(storedRelationshipAuthorization);
@@ -2755,6 +3239,7 @@ public sealed class RelationalDocumentStoreRepository(
                 StoredNamespaceAuthorization = storedNamespaceAuthorization;
                 ProposedNamespaceAuthorization = proposedNamespaceAuthorization;
                 PostRelationshipAuthorizationPlans = postRelationshipAuthorizationPlans;
+                CustomViewAuthorization = customViewAuthorization;
             }
 
             public RelationshipAuthorizationResult? StoredRelationshipAuthorization { get; }
@@ -2764,6 +3249,12 @@ public sealed class RelationalDocumentStoreRepository(
             public RelationalWriteNamespaceAuthorization? StoredNamespaceAuthorization { get; }
 
             public RelationalWriteNamespaceAuthorization? ProposedNamespaceAuthorization { get; }
+
+            /// <summary>
+            /// Every custom-view check planned for this write, across both value sources. Null when no custom
+            /// view participates.
+            /// </summary>
+            public RelationalCustomViewAuthorization? CustomViewAuthorization { get; }
 
             public PostRelationshipAuthorizationPlans? PostRelationshipAuthorizationPlans { get; }
 
@@ -2808,7 +3299,15 @@ public sealed class RelationalDocumentStoreRepository(
             }
         }
 
-        public sealed record Stop(TResult Result) : WriteGuardRailPreflightResult<TResult>;
+        /// <inheritdoc cref="GetByIdAuthorizationPreflightResult.Stop.CustomViewChecksToValidate"/>
+        public sealed record Stop(
+            TResult Result,
+            IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> CustomViewChecksToValidate
+        ) : WriteGuardRailPreflightResult<TResult>
+        {
+            public Stop(TResult result)
+                : this(result, []) { }
+        }
     }
 
     private async Task<GetResult> GetDocumentByIdAsync(
@@ -2828,6 +3327,9 @@ public sealed class RelationalDocumentStoreRepository(
 
         if (authorizationPreflight is GetByIdAuthorizationPreflightResult.Stop preflightStop)
         {
+            await ValidateSingleRecordCustomViewsAsync(mappingSet, preflightStop.CustomViewChecksToValidate)
+                .ConfigureAwait(false);
+
             return preflightStop.Result;
         }
 
@@ -2867,6 +3369,7 @@ public sealed class RelationalDocumentStoreRepository(
                             relationalGetRequest,
                             mappingSet,
                             proceed.StoredNamespaceAuthorization,
+                            proceed.StoredCustomViewAuthorization,
                             proceed.StoredRelationshipAuthorization,
                             existingDocument.DocumentId,
                             existingDocument.ContentVersion,
@@ -3129,6 +3632,7 @@ public sealed class RelationalDocumentStoreRepository(
                             relationalGetRequest,
                             mappingSet,
                             proceed.StoredNamespaceAuthorization,
+                            proceed.StoredCustomViewAuthorization,
                             proceed.StoredRelationshipAuthorization,
                             existingDocument.DocumentId,
                             existingDocument.ContentVersion,
@@ -3266,6 +3770,128 @@ public sealed class RelationalDocumentStoreRepository(
         return currentDocument.ContentVersion != observedContentVersion.Value;
     }
 
+    /// <summary>
+    /// Builds a GET-by-id terminal carrying the views configured strictly before
+    /// <paramref name="terminalIndex"/>, so those views are validated before the terminal is reported. A
+    /// planning failure among them replaces the terminal, matching how the descriptor paths order the two.
+    /// </summary>
+    /// <remarks>
+    /// Every terminal on this path routes through here rather than constructing <c>Stop</c> directly, so a
+    /// terminal added later cannot quietly skip validation.
+    /// </remarks>
+    private static GetByIdAuthorizationPreflightResult GetByIdTerminal(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        GetResult result,
+        IReadOnlyList<SupportedCustomViewAuthorizationStrategy> customViewStrategies,
+        int terminalIndex
+    )
+    {
+        var strategiesToValidate = CustomViewAuthorizationTerminalOrdering.CustomViewsBeforeTerminal(
+            customViewStrategies,
+            terminalIndex
+        );
+
+        if (strategiesToValidate.Count == 0)
+        {
+            return new GetByIdAuthorizationPreflightResult.Stop(result);
+        }
+
+        var outcome = SingleRecordCustomViewAuthorizationPlanner.Plan(
+            mappingSet,
+            mappingSet.GetConcreteResourceModelOrThrow(resource),
+            strategiesToValidate,
+            NamespaceAuthorizationOperation.ReadSingle
+        );
+
+        if (
+            outcome
+            is SingleRecordCustomViewAuthorizationPlanOutcome.SecurityConfiguration configurationFailure
+        )
+        {
+            return new GetByIdAuthorizationPreflightResult.Stop(
+                BuildGetAuthorizationSecurityConfigurationFailure(
+                    mappingSet,
+                    resource,
+                    configurationFailure.Failures
+                ),
+                SingleRecordChecksBeforeTerminal(
+                    configurationFailure.PlannedChecks,
+                    RelationalAuthorizationPlanner.EarliestSecurityConfigurationFailureIndex(
+                        configurationFailure.Failures
+                    )
+                )
+            );
+        }
+
+        return new GetByIdAuthorizationPreflightResult.Stop(
+            result,
+            ((SingleRecordCustomViewAuthorizationPlanOutcome.Plan)outcome).Checks
+        );
+    }
+
+    /// <summary>
+    /// The already-planned custom-view checks configured strictly before the earliest relationship
+    /// security-configuration failure. Custom views AND-compose ahead of relationship strategies, so the ones
+    /// configured before the failure still execute and must be validated before it is reported.
+    /// </summary>
+    private static IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> ChecksBeforeRelationshipFailure(
+        RelationalCustomViewAuthorization? customViewAuthorization,
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> failures
+    ) =>
+        customViewAuthorization is null
+            ? []
+            : SingleRecordChecksBeforeTerminal(
+                customViewAuthorization.Checks,
+                RelationalAuthorizationPlanner.EarliestSecurityConfigurationFailureIndex(failures)
+            );
+
+    /// <summary>
+    /// Every planned custom-view check. Known-but-not-enabled relationship strategies execute last per
+    /// auth.md "Execution order" whatever their configured position, so every resolved view runs ahead of the
+    /// 501 rather than only those configured before it.
+    /// </summary>
+    private static IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> AllCustomViewChecks(
+        RelationalCustomViewAuthorization? customViewAuthorization
+    ) => customViewAuthorization?.Checks ?? [];
+
+    /// <summary>
+    /// The already-planned custom-view checks configured strictly before the namespace check, for terminals
+    /// that fail after custom-view planning succeeded.
+    /// </summary>
+    private static IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> CustomViewChecksBeforeNamespaceCheck(
+        RelationalCustomViewAuthorization? customViewAuthorization,
+        IReadOnlyList<NamespaceAuthorizationCheckSpec> namespaceChecks
+    ) =>
+        customViewAuthorization is null || namespaceChecks.Count == 0
+            ? []
+            : SingleRecordChecksBeforeTerminal(
+                customViewAuthorization.Checks,
+                namespaceChecks[0].RawConfiguredIndex
+            );
+
+    /// <summary>
+    /// The planned single-record checks configured strictly before <paramref name="terminalRawConfiguredIndex"/>.
+    /// </summary>
+    private static IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> SingleRecordChecksBeforeTerminal(
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checks,
+        int terminalRawConfiguredIndex
+    ) => [.. checks.Where(check => check.ConfiguredStrategy.RawConfiguredIndex < terminalRawConfiguredIndex)];
+
+    /// <summary>
+    /// Validates the views a GET-by-id terminal carries. Empty is a no-op, so every terminal can route
+    /// through this unconditionally.
+    /// </summary>
+    private Task ValidateSingleRecordCustomViewsAsync(
+        MappingSet mappingSet,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checks
+    ) =>
+        CustomViewAuthorizationValidator.ValidateSingleRecordAsync(
+            _commandExecutor,
+            mappingSet.Key.Dialect,
+            checks
+        );
+
     private GetByIdAuthorizationPreflightResult AuthorizeGetByIdPreflight(
         IGetRequest relationalGetRequest,
         MappingSet mappingSet,
@@ -3292,7 +3918,9 @@ public sealed class RelationalDocumentStoreRepository(
         switch (orchestratorOutcome)
         {
             case RelationalAuthorizationPlanOutcome.NoUsableRootColumn noUsableRoot:
-                return new GetByIdAuthorizationPreflightResult.Stop(
+                return GetByIdTerminal(
+                    mappingSet,
+                    resource,
                     new GetResult.GetFailureSecurityConfiguration(
                         [
                             NamespaceAuthorizationSecurityConfigurationMessages.NoUsableRootColumn(
@@ -3300,14 +3928,20 @@ public sealed class RelationalDocumentStoreRepository(
                             ),
                         ],
                         RelationalReadGuardrails.BuildNoUsableRootColumnDiagnostics(noUsableRoot.Resource)
-                    )
+                    ),
+                    noUsableRoot.CustomViewStrategies,
+                    noUsableRoot.RawConfiguredIndex
                 );
 
             case RelationalAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes:
-                return new GetByIdAuthorizationPreflightResult.Stop(
+                return GetByIdTerminal(
+                    mappingSet,
+                    resource,
                     new GetResult.GetFailureNamespaceNotAuthorized(
                         NamespaceAuthorizationFactory.NoPrefixesConfiguredFailure(noPrefixes.StrategyName)
-                    )
+                    ),
+                    noPrefixes.CustomViewStrategies,
+                    noPrefixes.RawConfiguredIndex
                 );
 
             case RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError:
@@ -3315,8 +3949,10 @@ public sealed class RelationalDocumentStoreRepository(
                     mappingSet,
                     resource,
                     null,
+                    null,
                     securityConfigurationError.NonNamespaceConfiguredStrategies,
-                    authorizationContext
+                    authorizationContext,
+                    securityConfigurationError.RelationshipClassification.SupportedCustomViewStrategies
                 );
 
             case RelationalAuthorizationPlanOutcome.StillUnsupported stillUnsupported:
@@ -3324,8 +3960,10 @@ public sealed class RelationalDocumentStoreRepository(
                     mappingSet,
                     resource,
                     null,
+                    null,
                     stillUnsupported.NonNamespaceConfiguredStrategies,
-                    authorizationContext
+                    authorizationContext,
+                    stillUnsupported.RelationshipClassification.SupportedCustomViewStrategies
                 );
 
             case RelationalAuthorizationPlanOutcome.Plan plan:
@@ -3345,12 +3983,30 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalAuthorizationContext authorizationContext
     )
     {
+        if (
+            !TryPlanGetByIdCustomViewAuthorization(
+                mappingSet,
+                resource,
+                plan.CustomViewStrategies,
+                out var storedCustomViewAuthorization,
+                out var customViewSecurityConfigurationFailure,
+                out var customViewChecksToValidate
+            )
+        )
+        {
+            return new GetByIdAuthorizationPreflightResult.Stop(
+                customViewSecurityConfigurationFailure!,
+                customViewChecksToValidate
+            );
+        }
+
         if (plan.NamespaceChecks.Count == 0)
         {
             return AuthorizeGetByIdRelationshipPreflight(
                 mappingSet,
                 resource,
                 null,
+                storedCustomViewAuthorization,
                 plan.NonNamespaceConfiguredStrategies,
                 authorizationContext
             );
@@ -3366,11 +4022,15 @@ public sealed class RelationalDocumentStoreRepository(
             )
         )
         {
-            return new GetByIdAuthorizationPreflightResult.Stop(
+            return GetByIdTerminal(
+                mappingSet,
+                resource,
                 new GetResult.GetFailureSecurityConfiguration(
                     [securityConfigurationMessage],
                     securityConfigurationDiagnostics
-                )
+                ),
+                plan.CustomViewStrategies,
+                plan.NamespaceChecks[0].RawConfiguredIndex
             );
         }
 
@@ -3383,17 +4043,79 @@ public sealed class RelationalDocumentStoreRepository(
             mappingSet,
             resource,
             storedNamespaceAuthorization,
+            storedCustomViewAuthorization,
             plan.NonNamespaceConfiguredStrategies,
             authorizationContext
         );
+    }
+
+    /// <summary>
+    /// Plans the stored custom-view checks, or reports the security-configuration failure that stops the read.
+    /// </summary>
+    private static bool TryPlanGetByIdCustomViewAuthorization(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        IReadOnlyList<SupportedCustomViewAuthorizationStrategy> customViewStrategies,
+        out RelationalCustomViewAuthorization? storedCustomViewAuthorization,
+        out GetResult? securityConfigurationFailure,
+        out IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checksToValidateBeforeFailure
+    )
+    {
+        storedCustomViewAuthorization = null;
+        securityConfigurationFailure = null;
+        checksToValidateBeforeFailure = [];
+
+        if (customViewStrategies.Count == 0)
+        {
+            return true;
+        }
+
+        var outcome = SingleRecordCustomViewAuthorizationPlanner.Plan(
+            mappingSet,
+            mappingSet.GetConcreteResourceModelOrThrow(resource),
+            customViewStrategies,
+            NamespaceAuthorizationOperation.ReadSingle
+        );
+
+        if (
+            outcome
+            is SingleRecordCustomViewAuthorizationPlanOutcome.SecurityConfiguration configurationFailure
+        )
+        {
+            securityConfigurationFailure = BuildGetAuthorizationSecurityConfigurationFailure(
+                mappingSet,
+                resource,
+                configurationFailure.Failures
+            );
+            // Views configured ahead of the earliest planning failure planned successfully and execute first,
+            // so they are still validated before this failure is reported.
+            checksToValidateBeforeFailure = SingleRecordChecksBeforeTerminal(
+                configurationFailure.PlannedChecks,
+                RelationalAuthorizationPlanner.EarliestSecurityConfigurationFailureIndex(
+                    configurationFailure.Failures
+                )
+            );
+            return false;
+        }
+
+        var checks = ((SingleRecordCustomViewAuthorizationPlanOutcome.Plan)outcome).Checks;
+
+        if (checks.Count > 0)
+        {
+            storedCustomViewAuthorization = new RelationalCustomViewAuthorization(checks);
+        }
+
+        return true;
     }
 
     private GetByIdAuthorizationPreflightResult AuthorizeGetByIdRelationshipPreflight(
         MappingSet mappingSet,
         QualifiedResourceName resource,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
+        RelationalCustomViewAuthorization? storedCustomViewAuthorization,
         IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies,
-        RelationalAuthorizationContext authorizationContext
+        RelationalAuthorizationContext authorizationContext,
+        IReadOnlyList<SupportedCustomViewAuthorizationStrategy>? customViewStrategiesToValidate = null
     )
     {
         var storedRelationshipAuthorization = _relationshipAuthorizationPlanner.PlanStoredValues(
@@ -3403,26 +4125,70 @@ public sealed class RelationalDocumentStoreRepository(
             authorizationContext
         );
 
+        // Reached either from a planner terminal, which carries the strategies it never got to plan, or from
+        // the Plan path, where the views planned successfully and are carried on the authorization instead.
+        var terminalCustomViewStrategies = customViewStrategiesToValidate ?? [];
+
         return storedRelationshipAuthorization switch
         {
+            // OwnershipBased executes last per auth.md regardless of configured position, so every resolved
+            // view runs before this 501.
             RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled =>
-                new GetByIdAuthorizationPreflightResult.Stop(
-                    new GetResult.GetFailureNotImplemented(
-                        BuildKnownButNotEnabledGetAuthorizationMessage(resource, knownButNotEnabled.Failures)
+                storedCustomViewAuthorization is { } plannedForNotImplemented
+                    ? new GetByIdAuthorizationPreflightResult.Stop(
+                        new GetResult.GetFailureNotImplemented(
+                            BuildKnownButNotEnabledGetAuthorizationMessage(
+                                resource,
+                                knownButNotEnabled.Failures
+                            )
+                        ),
+                        plannedForNotImplemented.Checks
                     )
-                ),
-
-            RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError =>
-                new GetByIdAuthorizationPreflightResult.Stop(
-                    BuildGetAuthorizationSecurityConfigurationFailure(
+                    : GetByIdTerminal(
                         mappingSet,
                         resource,
-                        securityConfigurationError.Failures
+                        new GetResult.GetFailureNotImplemented(
+                            BuildKnownButNotEnabledGetAuthorizationMessage(
+                                resource,
+                                knownButNotEnabled.Failures
+                            )
+                        ),
+                        terminalCustomViewStrategies,
+                        int.MaxValue
+                    ),
+
+            RelationshipAuthorizationResult.SecurityConfigurationError securityConfigurationError =>
+                storedCustomViewAuthorization is { } plannedForConfigError
+                    ? new GetByIdAuthorizationPreflightResult.Stop(
+                        BuildGetAuthorizationSecurityConfigurationFailure(
+                            mappingSet,
+                            resource,
+                            securityConfigurationError.Failures
+                        ),
+                        SingleRecordChecksBeforeTerminal(
+                            plannedForConfigError.Checks,
+                            RelationalAuthorizationPlanner.EarliestSecurityConfigurationFailureIndex(
+                                securityConfigurationError.Failures
+                            )
+                        )
                     )
-                ),
+                    : GetByIdTerminal(
+                        mappingSet,
+                        resource,
+                        BuildGetAuthorizationSecurityConfigurationFailure(
+                            mappingSet,
+                            resource,
+                            securityConfigurationError.Failures
+                        ),
+                        terminalCustomViewStrategies,
+                        RelationalAuthorizationPlanner.EarliestSecurityConfigurationFailureIndex(
+                            securityConfigurationError.Failures
+                        )
+                    ),
 
             _ => new GetByIdAuthorizationPreflightResult.Proceed(
                 storedNamespaceAuthorization,
+                storedCustomViewAuthorization,
                 storedRelationshipAuthorization
             ),
         };
@@ -3432,6 +4198,7 @@ public sealed class RelationalDocumentStoreRepository(
         IGetRequest relationalGetRequest,
         MappingSet mappingSet,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
+        RelationalCustomViewAuthorization? storedCustomViewAuthorization,
         RelationshipAuthorizationResult storedRelationshipAuthorization,
         long documentId,
         long storedContentVersion,
@@ -3439,41 +4206,20 @@ public sealed class RelationalDocumentStoreRepository(
     )
     {
         var authorizationContext = relationalGetRequest.AuthorizationContext;
+        var andFilterOutcome = await AuthorizeGetAndFiltersAsync(
+                mappingSet,
+                documentId,
+                storedNamespaceAuthorization,
+                storedCustomViewAuthorization
+            )
+            .ConfigureAwait(false);
 
-        if (storedNamespaceAuthorization is not null)
+        if (andFilterOutcome is not null)
         {
-            var namespaceOutcome = await ExecuteGetNamespaceAuthorizationAsync(
-                    mappingSet,
-                    documentId,
-                    storedNamespaceAuthorization,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-
-            if (namespaceOutcome is not null)
-            {
-                return namespaceOutcome;
-            }
-
-            var relationshipOutcome = await AuthorizeGetRelationshipAsync(
-                    mappingSet,
-                    storedRelationshipAuthorization,
-                    authorizationContext,
-                    documentId,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-
-            // Namespace authorization read the stored row but does not report a content version, so
-            // its decision must be pinned to the stored content version that drove this attempt. The
-            // served representation, the relationship boundary, and the post-hydration boundary must
-            // all agree on that one version; otherwise a mutation that interleaved with the
-            // authorization sequence could change the namespace and serve a representation the
-            // namespace check never validated.
-            return AnchorNamespaceReadBoundary(relationshipOutcome, storedContentVersion);
+            return andFilterOutcome;
         }
 
-        return await AuthorizeGetRelationshipAsync(
+        var relationshipOutcome = await AuthorizeGetRelationshipAsync(
                 mappingSet,
                 storedRelationshipAuthorization,
                 authorizationContext,
@@ -3481,6 +4227,138 @@ public sealed class RelationalDocumentStoreRepository(
                 cancellationToken
             )
             .ConfigureAwait(false);
+
+        if (storedNamespaceAuthorization is null && storedCustomViewAuthorization is null)
+        {
+            return relationshipOutcome;
+        }
+
+        // The AND checks read the stored row but report no content version, so their decisions are only
+        // valid for the version that drove this attempt. The served representation, the relationship
+        // boundary, and the post-hydration boundary must all agree on that one version; otherwise a
+        // mutation interleaving with the authorization sequence could change a namespace or a basis value
+        // and serve a representation those checks never validated.
+        return AnchorStoredAndFilterReadBoundary(relationshipOutcome, storedContentVersion);
+    }
+
+    /// <summary>
+    /// Runs the AND-combined stored checks in CMS-configured order, returning the first failing outcome or
+    /// <see langword="null"/> when all of them authorize.
+    /// </summary>
+    /// <remarks>
+    /// Custom views and <c>NamespaceBased</c> interleave by configured index, and the first failure is the one
+    /// reported, so custom views configured before the namespace check must run before it and those configured
+    /// after must run after. A compiled custom-view batch is one command, so honoring that order costs one
+    /// command per contiguous run — two only when custom views straddle the namespace index, which is why the
+    /// list is partitioned rather than executed check by check.
+    /// </remarks>
+    private async Task<GetAuthorizationOutcome?> AuthorizeGetAndFiltersAsync(
+        MappingSet mappingSet,
+        long documentId,
+        RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
+        RelationalCustomViewAuthorization? storedCustomViewAuthorization
+    )
+    {
+        if (storedNamespaceAuthorization is null)
+        {
+            return storedCustomViewAuthorization is null
+                ? null
+                : await ExecuteGetCustomViewAuthorizationAsync(
+                        mappingSet,
+                        documentId,
+                        storedCustomViewAuthorization.Checks,
+                        storedCustomViewAuthorization.Checks
+                    )
+                    .ConfigureAwait(false);
+        }
+
+        var (customViewsBeforeNamespace, customViewsAfterNamespace) = storedCustomViewAuthorization is null
+            ? ((IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec>)[], [])
+            : CustomViewAuthorizationCheckSplitter.PartitionByConfiguredIndex(
+                storedCustomViewAuthorization.Checks,
+                storedNamespaceAuthorization.Checks[0].RawConfiguredIndex
+            );
+
+        if (customViewsBeforeNamespace.Count > 0)
+        {
+            var beforeOutcome = await ExecuteGetCustomViewAuthorizationAsync(
+                    mappingSet,
+                    documentId,
+                    customViewsBeforeNamespace,
+                    storedCustomViewAuthorization!.Checks
+                )
+                .ConfigureAwait(false);
+
+            if (beforeOutcome is not null)
+            {
+                return beforeOutcome;
+            }
+        }
+
+        var namespaceOutcome = await ExecuteGetNamespaceAuthorizationAsync(
+                mappingSet,
+                documentId,
+                storedNamespaceAuthorization
+            )
+            .ConfigureAwait(false);
+
+        if (namespaceOutcome is not null)
+        {
+            return namespaceOutcome;
+        }
+
+        return customViewsAfterNamespace.Count == 0
+            ? null
+            : await ExecuteGetCustomViewAuthorizationAsync(
+                    mappingSet,
+                    documentId,
+                    customViewsAfterNamespace,
+                    storedCustomViewAuthorization!.Checks
+                )
+                .ConfigureAwait(false);
+    }
+
+    private async Task<GetAuthorizationOutcome?> ExecuteGetCustomViewAuthorizationAsync(
+        MappingSet mappingSet,
+        long documentId,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checks,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> plannedChecks
+    )
+    {
+        var executionResult = await _customViewAuthorizationExecutor
+            .ExecuteAsync(
+                new CustomViewAuthorizationExecutionRequest(mappingSet, documentId, checks, plannedChecks)
+            )
+            .ConfigureAwait(false);
+
+        return executionResult switch
+        {
+            CustomViewAuthorizationExecutionResult.Authorized => null,
+            CustomViewAuthorizationExecutionResult.NotAuthorized notAuthorized => new GetAuthorizationOutcome(
+                new GetResult.GetFailureCustomViewNotAuthorized(notAuthorized.Failure),
+                null,
+                false
+            ),
+            CustomViewAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
+                new GetAuthorizationOutcome(
+                    new GetResult.GetFailureSecurityConfiguration(
+                        [invalidFailure.FailureMessage],
+                        invalidFailure.Diagnostics
+                    ),
+                    null,
+                    false
+                ),
+            // The stored target row was deleted between the unlocked target lookup and this check. Retry so
+            // the read boundary re-resolves the target; a target still gone on the next attempt is a 404.
+            CustomViewAuthorizationExecutionResult.StaleTarget => new GetAuthorizationOutcome(
+                null,
+                null,
+                RetryTargetResolution: true
+            ),
+            _ => throw new InvalidOperationException(
+                $"Unsupported custom view authorization execution result '{executionResult.GetType().Name}'."
+            ),
+        };
     }
 
     private async Task<GetAuthorizationOutcome> AuthorizeGetRelationshipAsync(
@@ -3538,7 +4416,7 @@ public sealed class RelationalDocumentStoreRepository(
         }
     }
 
-    private static GetAuthorizationOutcome AnchorNamespaceReadBoundary(
+    private static GetAuthorizationOutcome AnchorStoredAndFilterReadBoundary(
         GetAuthorizationOutcome relationshipOutcome,
         long storedContentVersion
     )
@@ -3550,11 +4428,10 @@ public sealed class RelationalDocumentStoreRepository(
             return relationshipOutcome;
         }
 
-        // The namespace check ran against the stored row but reports no version, so its decision is
-        // only valid for the stored content version. When the relationship boundary either reported
-        // no version (a no-op OR group) or reported the same stored version, pin the read boundary to
-        // that version so hydration and the post-hydration boundary serve exactly the namespace-checked
-        // representation.
+        // The AND checks ran against the stored row but report no version, so their decisions are only
+        // valid for the stored content version. When the relationship boundary either reported no version
+        // (a no-op OR group) or reported the same stored version, pin the read boundary to that version so
+        // hydration and the post-hydration boundary serve exactly the representation those checks saw.
         if (
             authorized.ObservedContentVersion is null
             || authorized.ObservedContentVersion == storedContentVersion
@@ -3563,10 +4440,10 @@ public sealed class RelationalDocumentStoreRepository(
             return authorized with { ObservedContentVersion = storedContentVersion };
         }
 
-        // The relationship boundary observed a different content version than the one the namespace
-        // check authorized, so a mutation interleaved with the authorization sequence and the
-        // namespace decision can no longer be trusted for the version that would be served. Force a
-        // retry so the entire authorization sequence re-runs against the current row.
+        // The relationship boundary observed a different content version than the one the AND checks
+        // authorized, so a mutation interleaved with the authorization sequence and those decisions can no
+        // longer be trusted for the version that would be served. Force a retry so the entire
+        // authorization sequence re-runs against the current row.
         return authorized with
         {
             RetryTargetResolution = true,
@@ -3735,12 +4612,25 @@ public sealed class RelationalDocumentStoreRepository(
 
         // A document-independent namespace planner terminal (no usable root column, no prefixes, or
         // prefix cap exceeded) denied or failed the request before any target lookup.
-        public sealed record Stop(GetResult Result) : GetByIdAuthorizationPreflightResult;
+        /// <param name="CustomViewChecksToValidate">
+        /// The views configured strictly before this terminal. They are AND filters executing in
+        /// CMS-configured order, so they run first and a missing or non-conforming view keeps its own 500
+        /// rather than being hidden by the terminal's response.
+        /// </param>
+        public sealed record Stop(
+            GetResult Result,
+            IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> CustomViewChecksToValidate
+        ) : GetByIdAuthorizationPreflightResult
+        {
+            public Stop(GetResult result)
+                : this(result, []) { }
+        }
 
         // Document-dependent authorization remains and runs per attempt against the resolved target.
         // StoredNamespaceAuthorization is null when only relationship strategies must be evaluated.
         public sealed record Proceed(
             RelationalWriteNamespaceAuthorization? StoredNamespaceAuthorization,
+            RelationalCustomViewAuthorization? StoredCustomViewAuthorization,
             RelationshipAuthorizationResult StoredRelationshipAuthorization
         ) : GetByIdAuthorizationPreflightResult;
 
@@ -4311,6 +5201,14 @@ public sealed class RelationalDocumentStoreRepository(
                     + $"Strategy '{failure.ConfiguredStrategy?.StrategyName}' requires proposed-value EducationOrganization subject "
                     + $"{FormatSecurableElementDetail(failure.Location?.ReadableName, failure.Location?.JsonPath) ?? "from relationship authorization metadata"}, "
                     + $"but root column '{failure.Location?.Table}.{failure.Location?.Column?.Value}' does not have a matching root write binding.",
+            RelationshipAuthorizationFailureKind.MissingProposedCustomViewRootBinding =>
+                $"Relational {operationLabel} authorization metadata is invalid for resource '{RelationalWriteSupport.FormatResource(failure.Resource)}'. "
+                    + $"Strategy '{failure.ConfiguredStrategy?.StrategyName}' uses custom auth view '{failure.Location?.AuthorizationObjectName ?? "<unknown>"}'. "
+                    + (
+                        string.IsNullOrWhiteSpace(failure.Hint)
+                            ? "The custom view basis resource is reached only through a child collection table, so no root-table value can authorize proposed data for a write."
+                            : failure.Hint.Trim()
+                    ),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(failure),
                 failure.FailureKind,

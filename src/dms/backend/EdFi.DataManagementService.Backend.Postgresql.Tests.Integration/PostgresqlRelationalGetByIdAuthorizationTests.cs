@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
 using FluentAssertions;
+using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
@@ -51,6 +52,18 @@ public class Given_A_Postgresql_Relational_Get_By_Id_Authorization_With_A_Synthe
         AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
         AuthorizationStrategyNameConstants.OwnershipBased,
     ];
+
+    /// <summary>
+    /// A custom view over School authorizing School 100 only. School 200 is reachable through the claim's
+    /// edorg edges, so a denial on 200 can only come from the view's membership query.
+    /// </summary>
+    private const string CustomViewStrategyName = "SchoolWithGetByIdProviderTest";
+    private static readonly IReadOnlyList<string> _customViewStrategy = [CustomViewStrategyName];
+
+    /// <summary>
+    /// A configured strategy whose <c>auth</c> object the masquerade test creates as a table rather than a view.
+    /// </summary>
+    private const string TableInsteadOfCustomViewStrategyName = "SchoolWithGetByIdTableProviderTest";
 
     private static readonly QuerySchoolSeed[] _schoolSeeds =
     [
@@ -280,6 +293,7 @@ public class Given_A_Postgresql_Relational_Get_By_Id_Authorization_With_A_Synthe
 
         await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 100);
         await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 200);
+        await _context.CreateSchoolCustomAuthViewAsync(CustomViewStrategyName, [100]);
         await _context.InsertAuthEdgeAsync(300, ClaimEducationOrganizationId);
         await _context.DeleteAuthEdgeAsync(ClaimEducationOrganizationId, ClaimEducationOrganizationId);
     }
@@ -289,6 +303,7 @@ public class Given_A_Postgresql_Relational_Get_By_Id_Authorization_With_A_Synthe
     {
         if (_context is not null)
         {
+            await _context.DropCustomAuthViewAsync(CustomViewStrategyName);
             await _context.DisposeAsync();
         }
     }
@@ -297,6 +312,78 @@ public class Given_A_Postgresql_Relational_Get_By_Id_Authorization_With_A_Synthe
     public void SetUp()
     {
         _context.ResetRecorder();
+    }
+
+    [Test]
+    public async Task Given_A_Custom_View_Strategy_It_Authorizes_A_School_The_View_Includes()
+    {
+        var result = await _context.GetByIdAsync(
+            "ed-fi",
+            "School",
+            _schoolSeeds[0].DocumentUuid,
+            [ClaimEducationOrganizationId],
+            _customViewStrategy
+        );
+
+        result.Should().BeOfType<GetResult.GetSuccess>();
+    }
+
+    [Test]
+    public async Task Given_A_Custom_View_Strategy_It_Denies_A_School_The_View_Excludes()
+    {
+        var result = await _context.GetByIdAsync(
+            "ed-fi",
+            "School",
+            _schoolSeeds[1].DocumentUuid,
+            [ClaimEducationOrganizationId],
+            _customViewStrategy
+        );
+
+        var failure = result
+            .Should()
+            .BeOfType<GetResult.GetFailureCustomViewNotAuthorized>()
+            .Subject.CustomViewFailure;
+        failure.StrategyName.Should().Be(CustomViewStrategyName);
+    }
+
+    [Test]
+    public async Task Given_A_Custom_Authorization_Object_That_Is_A_Table_It_Throws_On_Get_By_Id()
+    {
+        // A table whose DocumentId is type-compatible answers the membership query without raising anything, so
+        // the request would authorize or deny against an object auth.md does not accept. The run has to prove the
+        // object is a view first, and surface the documented urn:ed-fi:api:system 500 instead.
+        await _context.Database.ExecuteNonQueryAsync(
+            $"""
+            CREATE TABLE "auth"."{TableInsteadOfCustomViewStrategyName}" (
+                "DocumentId" bigint NOT NULL
+            );
+            """
+        );
+
+        try
+        {
+            Func<Task> act = () =>
+                _context.GetByIdAsync(
+                    "ed-fi",
+                    "School",
+                    _schoolSeeds[0].DocumentUuid,
+                    [ClaimEducationOrganizationId],
+                    [TableInsteadOfCustomViewStrategyName]
+                );
+
+            var assertion = await act.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+            assertion
+                .Which.InnerException.Should()
+                .BeOfType<PostgresException>()
+                .Subject.Message.Should()
+                .Contain("Invalid custom authorization view DocumentId contract.");
+        }
+        finally
+        {
+            await _context.Database.ExecuteNonQueryAsync(
+                $"""DROP TABLE IF EXISTS "auth"."{TableInsteadOfCustomViewStrategyName}";"""
+            );
+        }
     }
 
     [Test]

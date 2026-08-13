@@ -30,13 +30,6 @@ public static class SecurityConfigurationFailureMessages
     public static string UnknownAuthorizationStrategies(IEnumerable<string> unavailableStrategyNames) =>
         $"Could not find authorization strategy implementations for the following strategy names: {FormatQuotedCsv(DistinctInFirstOccurrenceOrder(unavailableStrategyNames))}.";
 
-    public static string CustomViewBasisPropertyUnavailable(
-        string targetEntityName,
-        string propertyName,
-        string basisEntityName
-    ) =>
-        $"Unable to find a property on the authorization subject entity type '{targetEntityName}' corresponding to the '{propertyName}' property on the custom authorization view's basis entity type '{basisEntityName}' in order to perform authorization. Should a different authorization strategy be used?";
-
     private static string FormatBracketedQuotedList(IEnumerable<string> values) =>
         $"[{FormatQuotedCsv(values)}]";
 

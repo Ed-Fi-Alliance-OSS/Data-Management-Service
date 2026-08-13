@@ -85,6 +85,17 @@ internal static class RelationshipAuthorizationProviderFailureMapper
             return false;
         }
 
+        // A payload belonging to another AUTH1 family shares the transport but is not ours. Yield with no
+        // diagnostic so the codec that owns the discriminator claims it. Without this, a command carrying
+        // both relationship and custom-view statements would report a custom-view 403 as a relationship
+        // invalid-payload 500, because an unparseable payload below is treated as our own malformed one.
+        // Only *known* foreign discriminators yield: undecodable text with no discriminator still takes the
+        // parse-failure path, so a genuinely corrupt payload stays a loud security-configuration error.
+        if (IsForeignAuthorizationPayload(payloadText))
+        {
+            return false;
+        }
+
         if (
             !RelationshipAuthorizationAuth1FailurePayloadCodec.TryParsePayload(payloadText, out var payload)
             || payload is null
@@ -153,6 +164,21 @@ internal static class RelationshipAuthorizationProviderFailureMapper
             diagnostic.MappingFailureCategory
         );
     }
+
+    /// <summary>
+    /// Whether <paramref name="payloadText"/> carries the discriminator of an AUTH1 family other than
+    /// relationship. Namespace payloads lead with <c>ns1|</c> and custom view-based payloads with
+    /// <c>cv1|</c>; the relationship family leads with its own payload version.
+    /// </summary>
+    private static bool IsForeignAuthorizationPayload(string payloadText) =>
+        payloadText.StartsWith(
+            NamespaceAuthorizationAuth1FailurePayloadCodec.PayloadDiscriminator + "|",
+            StringComparison.Ordinal
+        )
+        || payloadText.StartsWith(
+            CustomViewAuthorizationAuth1FailurePayloadCodec.PayloadDiscriminator + "|",
+            StringComparison.Ordinal
+        );
 
     private static RelationshipAuthorizationProviderFailureDiagnostic BuildDiagnostic(
         SqlDialect dialect,

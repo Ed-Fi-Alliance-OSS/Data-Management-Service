@@ -44,6 +44,33 @@ public sealed record ResolvedSecurableElementPath(
 );
 
 /// <summary>
+/// A resolved custom view-based basis resource path: the column path steps plus the JSON paths of the
+/// reference that terminates the path.
+/// </summary>
+/// <param name="Steps">
+/// The chain of column path steps ending at the basis resource's <c>DocumentId</c>. Empty when no path
+/// could be resolved.
+/// </param>
+/// <param name="TerminalReferenceJsonPaths">
+/// Canonical JSON paths of the terminal reference's identity values, in binding order — the document
+/// reference's identity paths (for example <c>$.studentReference.studentUniqueId</c>) or a descriptor's
+/// value path (for example <c>$.transportationTypeDescriptor</c>). These name the securable element that
+/// custom view-based authorization decided on, which is what the ProblemDetails wording reports.
+/// <para>
+/// Empty when the basis resource <em>is</em> the subject resource: that path terminates on the subject's
+/// own <c>DocumentId</c> rather than on a reference, so there is no reference path to report and callers
+/// must fall back to the basis resource's own identity property names.
+/// </para>
+/// </param>
+public sealed record ResolvedBasisResourcePath(
+    IReadOnlyList<ColumnPathStep> Steps,
+    IReadOnlyList<string> TerminalReferenceJsonPaths
+)
+{
+    public static ResolvedBasisResourcePath Unresolved { get; } = new([], []);
+}
+
+/// <summary>
 /// Securable element metadata for a single EducationOrganization path, carrying
 /// both the JSON path and the MetaEd identity property name.
 /// </summary>
