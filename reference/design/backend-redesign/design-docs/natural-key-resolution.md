@@ -1,21 +1,5 @@
 # Natural-Key Reference Resolution: Removing UUIDv5 `ReferentialId`
 
-> **Status: PROPOSED — for team review. Nothing described here has landed on `main`; the design is
-> written in future tense throughout.** Once approved, implementation tickets will be created under
-> [`../epics/`](../epics/). Once implemented, this document will supersede the
-> earlier `ReferentialId` retention rationale (see
-> ["Response to the earlier analysis"](#response-to-the-earlier-analysis) for why the balance has
-> changed), and the passages of [overview.md](overview.md), [data-model.md](data-model.md),
-> [ddl-generation.md](ddl-generation.md), and [transactions-and-concurrency.md](transactions-and-concurrency.md) that describe
-> `dms.ReferentialIdentity` as current.
->
-> **`dms.Document` will not be affected by this proposal in any way.** It will remain inserted,
-> row-locked, the authoritative source of `DocumentId`/`DocumentUuid`/version metadata, the
-> GET/PUT/DELETE lookup target, and the base of the DocumentCache enqueue triggers. Every UUIDv5
-> referential-id artifact is in scope for removal: the `dms.ReferentialIdentity` table, generated
-> maintenance, database helpers, Core model members/calculators/factories, backend lookup/write
-> contracts, and tests or fixtures that seed or assert them.
-
 ## Summary
 
 `dms.ReferentialIdentity` maps a deterministic UUIDv5 hash of each document's identity
