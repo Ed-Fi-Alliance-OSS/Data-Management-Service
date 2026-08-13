@@ -3,11 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics.CodeAnalysis;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
@@ -21,6 +23,12 @@ namespace EdFi.DataManagementService.Core.Handler;
 
 internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resiliencePipeline) : IPipelineStep
 {
+    /// <summary>
+    /// The response header carrying the token for the page after this one, as published by the Ed-Fi
+    /// cursor-paging client contract.
+    /// </summary>
+    private const string NextPageTokenHeaderName = "Next-Page-Token";
+
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         _logger.LogDebug(
@@ -101,14 +109,66 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
             )
             : "application/json";
 
+        Dictionary<string, string> headers = requestInfo.CollectionPaging.IncludesTotalCount
+            ? new() { { "Total-Count", (success.TotalCount ?? 0).ToString() } }
+            : [];
+
+        if (TryCreateNextPageToken(requestInfo, success, out var nextPageToken))
+        {
+            headers.Add(NextPageTokenHeaderName, nextPageToken);
+        }
+
         return new FrontendResponse(
             StatusCode: 200,
             Body: success.EdfiDocs,
-            Headers: requestInfo.CollectionPaging.IncludesTotalCount
-                ? new() { { "Total-Count", (success.TotalCount ?? 0).ToString() } }
-                : [],
+            Headers: headers,
             ContentType: contentType
         );
+    }
+
+    /// <summary>
+    /// Whether this page can hand the client a token for the page after it, and what that token is.
+    /// </summary>
+    /// <remarks>
+    /// The one gate both resource families pass through: regular-resource and descriptor results reach
+    /// it as the same <see cref="QuerySuccess"/>, so neither can acquire a header rule of its own. It
+    /// asks what page selection chose, never what the response body contains — a page whose selected
+    /// rows were all deleted before hydration still advances the walk past them, and a client that
+    /// stopped on an empty body would stop early. A page that selected nothing, or one whose ordering
+    /// key was not DocumentId, has nothing to anchor a continuation on. At
+    /// <see cref="long.MaxValue"/> there is no next range to name, so the codec reports no token and
+    /// the header is omitted.
+    /// </remarks>
+    private static bool TryCreateNextPageToken(
+        RequestInfo requestInfo,
+        QuerySuccess success,
+        [NotNullWhen(true)] out string? nextPageToken
+    )
+    {
+        nextPageToken = null;
+
+        if (success.HighestSelectedDocumentId is not { } highestSelectedDocumentId)
+        {
+            return false;
+        }
+
+        if (!success.AllowsDocumentIdContinuation)
+        {
+            return false;
+        }
+
+        // A cursor request keeps its own upper bound, which is how a walk that entered through a
+        // partition stays inside that partition. A traditional request carried no bound, so a walk
+        // entered from one is unbounded above.
+        long inclusiveMaximum = requestInfo.CollectionPaging is CollectionPaging.Cursor cursor
+            ? cursor.Range.InclusiveMaximum
+            : long.MaxValue;
+
+        return PageTokenCodec.TryCreateNextPageToken(
+                highestSelectedDocumentId,
+                inclusiveMaximum,
+                out nextPageToken
+            ) && nextPageToken is not null;
     }
 
     private static IQueryRequest CreateQueryRequest(RequestInfo requestInfo)
