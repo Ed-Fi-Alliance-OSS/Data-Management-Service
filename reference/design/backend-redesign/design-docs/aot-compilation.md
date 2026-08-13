@@ -248,8 +248,8 @@ Why:
 - zstd decompression is extremely fast, compression is very small
 
 Implementation approach:
-- The pack header records the **uncompressed payload length**.
-- The consumer always **decompresses with zstd**
+- The pack envelope records `compression_algorithm` (must be ZSTD for PackFormatVersion=1), `zstd_uncompressed_payload_length`, and `payload_sha256`.
+- The consumer validates the envelope, decompresses `payload_zstd` with zstd into exactly the declared uncompressed length, and rejects any hash mismatch.
 
 ---
 
@@ -270,87 +270,17 @@ The pack must embed at least:
 
 `pack_format_version` exists so the consumer can reject packs it cannot decode even if the `EffectiveSchemaHash` matches; it should be treated as a strict protocol/version gate and only bumped for breaking serialization/envelope changes.
 
-### 9.2 Suggested protobuf schema (high level)
+### 9.2 Contract source of truth
 
-The contracts package would define a schema like (high level only; see the normative `.proto` in `reference/design/backend-redesign/design-docs/mpack-format-v1.md`):
+The contracts package MUST define and generate C# types from the normative `.proto` in `reference/design/backend-redesign/design-docs/mpack-format-v1.md`. This document intentionally does not repeat protobuf field numbers.
 
-```proto
-syntax = "proto3";
+Conceptually:
+- The **envelope** is uncompressed protobuf and contains the selection key fields, compression metadata, payload integrity hash, optional producer metadata, and `payload_zstd`.
+- `payload_zstd` is a second protobuf message (`MappingPackPayload`) encoded as protobuf and then zstd-compressed.
+- `MappingPackPayload` contains the deterministic `dms.ResourceKey` seed mapping, per-resource mapping artifacts, natural-key probe metadata, and the shared descriptor probe target.
+- This allows reading and validating the keying fields without decompressing the payload.
 
-package edfi.dms.mappingpacks.v1;
-
-enum SqlDialect {
-  SQL_DIALECT_UNSPECIFIED = 0;
-  SQL_DIALECT_PGSQL = 1;
-  SQL_DIALECT_MSSQL = 2;
-}
-
-enum ResourceStorageKind {
-  RESOURCE_STORAGE_KIND_UNSPECIFIED = 0;
-  RESOURCE_STORAGE_KIND_RELATIONAL_TABLES = 1;
-  RESOURCE_STORAGE_KIND_SHARED_DESCRIPTOR_TABLE = 2;
-}
-
-message MappingPackEnvelope {
-  // Self-identifying header
-  string effective_schema_hash = 1;
-  SqlDialect dialect = 2;
-  string relational_mapping_version = 3;
-  uint32 pack_format_version = 4;
-
-  // Payload is always MappingPackPayload encoded as protobuf, then zstd-compressed.
-  uint64 zstd_uncompressed_payload_length = 5;
-
-  // Zstd-compressed bytes of MappingPackPayload
-  bytes payload_zstd = 10;
-}
-
-message MappingPackPayload {
-  // The payload schema can evolve independently, but should remain compatible.
-  repeated ResourceKeyEntry resource_keys = 12;
-  repeated ResourcePack resources = 20;
-  DescriptorProbeTarget descriptor_probe_target = 21;
-}
-
-message ResourceKeyEntry {
-  // Deterministic id (seeded by DDL generator) used in core tables.
-  uint32 resource_key_id = 1; // must fit in SQL smallint
-  string project_name = 2;
-  string resource_name = 3;
-  string resource_version = 4; // SemVer from ApiSchema projectSchema.projectVersion
-  bool is_abstract_resource = 5;
-}
-
-message ResourcePack {
-  string project_name = 1;
-  string resource_name = 2;
-  bool is_abstract_resource = 3;
-  ResourceStorageKind storage_kind = 4; // unspecified for abstract; required for concrete
-
-  // Concrete resources only; abstract resources do not serialize relational plans.
-  RelationalResourceModel relational_model = 20;
-  ResourceWritePlan write_plan = 21;
-  ResourceReadPlan read_plan = 22;
-
-  // Required for abstract resources and concrete resources stored in relational tables.
-  // Omitted for resources stored in the shared descriptor table.
-  NaturalKeyProbeTarget natural_key_probe_target = 23;
-
-  // Required only for concrete resources stored in relational tables.
-  OwnNaturalKeyProbe own_natural_key_probe = 24;
-}
-
-message ResourceReadPlan {
-  repeated TableReadPlan table_plans = 1;
-  repeated ReferenceIdentityProjectionTablePlan reference_identity_projection_table_plans = 2;
-  repeated DescriptorProjectionPlan descriptor_projection_plans = 3;
-}
-```
-
-Notes:
-- The **envelope** is uncompressed protobuf.
-- The envelope’s `payload_zstd` is a second protobuf message (`MappingPackPayload`) encoded as protobuf and then zstd-compressed.
-- This allows reading the keying fields without decompressing the payload.
+Any PackFormatVersion=1 field additions, removals, or tag changes must be made in `mpack-format-v1.md` first, then regenerated into the shared contracts package.
 
 ---
 
@@ -410,6 +340,7 @@ public sealed class MappingPackBuilder
             Dialect = options.Dialect,
             RelationalMappingVersion = options.RelMappingVersion,
             PackFormatVersion = MappingPackFormat.V1,
+            CompressionAlgorithm = CompressionAlgorithm.CompressionAlgorithmZstd,
             ZstdUncompressedPayloadLength = (ulong)payloadBytes.Length,
             PayloadSha256 = ByteString.CopyFrom(sha),
             Producer = "dms-mappingpack",
@@ -507,6 +438,8 @@ public sealed class FileMappingPackStore : IMappingPackStore
 ```csharp
 public static class MappingPackLoader
 {
+    private const ulong MaxUncompressedPayloadLength = 256UL * 1024UL * 1024UL; // deployment-configurable
+
     public static MappingPackPayload LoadPayload(MappingPackEnvelope env, MappingPackKey expectedKey)
     {
         if (!string.Equals(env.EffectiveSchemaHash, expectedKey.EffectiveSchemaHash, StringComparison.Ordinal))
@@ -520,6 +453,12 @@ public static class MappingPackLoader
 
         if (env.PackFormatVersion != expectedKey.PackFormatVersion)
             throw new InvalidOperationException("Pack format version mismatch");
+
+        if (env.CompressionAlgorithm != CompressionAlgorithm.CompressionAlgorithmZstd)
+            throw new InvalidOperationException("Pack compression algorithm mismatch");
+
+        if (env.ZstdUncompressedPayloadLength is 0 || env.ZstdUncompressedPayloadLength > MaxUncompressedPayloadLength)
+            throw new InvalidOperationException("Pack uncompressed payload length invalid");
 
         byte[] compressed = env.PayloadZstd.ToByteArray();
         byte[] payloadBytes = DecompressZstd(compressed, (long)env.ZstdUncompressedPayloadLength);
