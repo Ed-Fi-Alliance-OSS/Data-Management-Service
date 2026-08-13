@@ -183,10 +183,13 @@ public static class HydrationExecutor
         await using var reader = await command.ExecuteReaderAsync(ct);
 
         // Keyset batches begin with temp-table reset/creation + INSERT materialization. Both Npgsql
-        // and SqlClient skip statements that return no rows when advancing result sets, so the reader
-        // is positioned at the batch's first row-returning statement automatically: the query keyset's
-        // materialization insert, which returns the ids it selected, or otherwise the first SELECT.
-        // The PostgreSQL single-document fast path starts at that same first SELECT.
+        // and SqlClient skip statements that produce no result set (DDL, and DML without an
+        // OUTPUT/RETURNING clause), so the reader is positioned at the batch's first row-returning
+        // statement automatically. An OUTPUT/RETURNING clause still produces a result set when the
+        // statement affects zero rows, so a query keyset's materialization insert always holds that
+        // first position, returning the ids it selected — an empty result set for a zero-size page.
+        // Without such a clause the first position is the first SELECT, where the PostgreSQL
+        // single-document fast path also starts.
         return await ReadPageAsync(reader, plan, keyset, executionOptions, ct);
     }
 
@@ -194,7 +197,7 @@ public static class HydrationExecutor
     /// How many result sets the hydration batch for <paramref name="keyset"/> emits, which is also the
     /// number of result-set positions the batch occupies when co-batched into a larger command. A query
     /// keyset's materialization insert returns its selected ids and therefore occupies a position; the
-    /// batch's remaining DDL/DML statements return nothing and occupy none.
+    /// batch's remaining DDL/DML statements produce no result set and occupy none.
     /// </summary>
     public static int GetResultSetCount(
         ResourceReadPlan plan,

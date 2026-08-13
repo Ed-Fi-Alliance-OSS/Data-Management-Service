@@ -47,20 +47,4 @@ public sealed class Given_Postgresql_DescriptorRuntime : PostgresqlApiIntegratio
     [Test]
     public Task It_requires_descriptor_reference_resolution_before_resource_write() =>
         DescriptorRuntimeScenario.It_requires_descriptor_reference_resolution_before_resource_write(Harness);
-
-    [Test]
-    public Task It_walks_a_regular_resource_collection_by_cursor() =>
-        CursorPagingExecutionScenario.It_walks_a_regular_resource_collection_by_cursor(Harness);
-
-    [Test]
-    public Task It_walks_a_descriptor_collection_by_cursor() =>
-        CursorPagingExecutionScenario.It_walks_a_descriptor_collection_by_cursor(Harness);
-
-    [Test]
-    public Task It_enters_a_cursor_walk_from_a_traditional_page() =>
-        CursorPagingExecutionScenario.It_enters_a_cursor_walk_from_a_traditional_page(Harness);
-
-    [Test]
-    public Task It_withholds_a_continuation_from_a_windowed_traditional_page() =>
-        CursorPagingExecutionScenario.It_withholds_a_continuation_from_a_windowed_traditional_page(Harness);
 }

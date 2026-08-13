@@ -142,7 +142,7 @@ internal static class CursorPagingOperationScopeScenario
     private static async Task SeedSchoolAsync(ApiIntegrationHarness harness)
     {
         string suffix = Guid.NewGuid().ToString("N")[..8];
-        string namespaceUri = $"uri://ed-fi.org/dms-1386/{suffix}";
+        string namespaceUri = $"uri://ed-fi.org/CursorPaging/{suffix}";
         long schoolId = 1_386_000L + Math.Abs(suffix.GetHashCode(StringComparison.Ordinal) % 100_000);
 
         await SeedDescriptorAsync(
@@ -161,7 +161,7 @@ internal static class CursorPagingOperationScopeScenario
         var schoolPayload = new JsonObject
         {
             ["schoolId"] = schoolId,
-            ["nameOfInstitution"] = $"DMS-1386 School {suffix}",
+            ["nameOfInstitution"] = $"CursorPaging School {suffix}",
             ["educationOrganizationCategories"] = new JsonArray(
                 new JsonObject
                 {

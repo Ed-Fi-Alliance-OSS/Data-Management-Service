@@ -246,8 +246,8 @@ internal static class CursorPagingExecutionScenario
 
         // The merge item requires a resolvable descriptor reference, so the reference target is created
         // through the same pipeline before the documents that point at it.
-        string descriptorNamespace = $"uri://ed-fi.org/SchoolTypeDescriptor/DMS-1386/{scenario}/{suffix}";
-        string descriptorCodeValue = $"DMS-1386-{scenario}-{suffix}-ref";
+        string descriptorNamespace = $"uri://ed-fi.org/SchoolTypeDescriptor/CursorPaging/{scenario}/{suffix}";
+        string descriptorCodeValue = $"CursorPaging-{scenario}-{suffix}-ref";
         await CreateAsync(
             harness,
             DescriptorEndpoint,
@@ -255,7 +255,7 @@ internal static class CursorPagingExecutionScenario
             {
                 ["namespace"] = descriptorNamespace,
                 ["codeValue"] = descriptorCodeValue,
-                ["shortDescription"] = $"DMS-1386 {scenario} {suffix} reference",
+                ["shortDescription"] = $"CursorPaging {scenario} {suffix} reference",
             }
         );
 
@@ -266,7 +266,7 @@ internal static class CursorPagingExecutionScenario
             var payload = new JsonObject
             {
                 ["profileRootOnlyMergeItemId"] = UniqueIdentity(suffix, index),
-                ["displayName"] = $"DMS-1386 {scenario} {suffix} {index}",
+                ["displayName"] = $"CursorPaging {scenario} {suffix} {index}",
                 ["primarySchoolTypeDescriptor"] = $"{descriptorNamespace}#{descriptorCodeValue}",
             };
 
@@ -285,9 +285,9 @@ internal static class CursorPagingExecutionScenario
         {
             var payload = new JsonObject
             {
-                ["namespace"] = $"uri://ed-fi.org/SchoolTypeDescriptor/DMS-1386/{scenario}/{suffix}",
-                ["codeValue"] = $"DMS-1386-{scenario}-{suffix}-{index}",
-                ["shortDescription"] = $"DMS-1386 {scenario} {suffix} {index}",
+                ["namespace"] = $"uri://ed-fi.org/SchoolTypeDescriptor/CursorPaging/{scenario}/{suffix}",
+                ["codeValue"] = $"CursorPaging-{scenario}-{suffix}-{index}",
+                ["shortDescription"] = $"CursorPaging {scenario} {suffix} {index}",
             };
 
             seededIds.Add(await CreateAsync(harness, DescriptorEndpoint, payload));
