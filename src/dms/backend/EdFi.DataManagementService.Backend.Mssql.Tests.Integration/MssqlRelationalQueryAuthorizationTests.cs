@@ -1283,6 +1283,108 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         );
     }
 
+    /// <summary>
+    /// Course and CourseTranscript are seeded for the transitive person pathway. Unlike the older helpers here,
+    /// neither disables triggers nor writes <c>dms.ReferentialIdentity</c> by hand: the table's own
+    /// <c>TR_&lt;Table&gt;_ReferentialIdentity</c> trigger computes the identity from the natural key, which is
+    /// the value the product would store.
+    /// </summary>
+    public async Task SeedCourseAsync(CourseSeed seed)
+    {
+        var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Course");
+        var documentId = await InsertDocumentAsync(seed.DocumentUuid.Value, resourceKeyId);
+        var schoolDocumentId = await GetSchoolDocumentIdAsync(seed.EducationOrganizationId);
+
+        await Database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[Course] (
+                [DocumentId],
+                [EducationOrganization_DocumentId],
+                [EducationOrganization_EducationOrganizationId],
+                [CourseCode],
+                [CourseTitle],
+                [NumberOfParts]
+            )
+            VALUES (
+                @documentId,
+                @schoolDocumentId,
+                @educationOrganizationId,
+                @courseCode,
+                @courseTitle,
+                1
+            );
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@schoolDocumentId", schoolDocumentId),
+            new SqlParameter("@educationOrganizationId", (long)seed.EducationOrganizationId),
+            new SqlParameter("@courseCode", seed.CourseCode),
+            new SqlParameter("@courseTitle", seed.CourseTitle)
+        );
+    }
+
+    public async Task SeedCourseTranscriptAsync(CourseTranscriptSeed seed)
+    {
+        var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "CourseTranscript");
+        var documentId = await InsertDocumentAsync(seed.DocumentUuid.Value, resourceKeyId);
+        var courseDocumentId = await GetCourseDocumentIdAsync(
+            seed.CourseCode,
+            seed.CourseEducationOrganizationId
+        );
+        var studentAcademicRecordDocumentId = await GetStudentAcademicRecordDocumentIdAsync(
+            seed.StudentAcademicRecordEducationOrganizationId,
+            seed.SchoolYear,
+            seed.StudentUniqueId,
+            seed.TermDescriptor
+        );
+        var termDescriptorId = await GetDescriptorDocumentIdAsync("TermDescriptor", seed.TermDescriptor);
+        var courseAttemptResultDescriptorId = await GetDescriptorDocumentIdAsync(
+            "CourseAttemptResultDescriptor",
+            seed.CourseAttemptResultDescriptor
+        );
+
+        await Database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[CourseTranscript] (
+                [DocumentId],
+                [CourseCourse_DocumentId],
+                [CourseCourse_CourseCode],
+                [CourseCourse_EducationOrganizationId],
+                [StudentAcademicRecord_DocumentId],
+                [StudentAcademicRecord_EducationOrganizationId],
+                [StudentAcademicRecord_SchoolYear],
+                [StudentAcademicRecord_StudentUniqueId],
+                [StudentAcademicRecord_TermDescriptor_DescriptorId],
+                [CourseAttemptResultDescriptor_DescriptorId]
+            )
+            VALUES (
+                @documentId,
+                @courseDocumentId,
+                @courseCode,
+                @courseEducationOrganizationId,
+                @studentAcademicRecordDocumentId,
+                @studentAcademicRecordEducationOrganizationId,
+                @schoolYear,
+                @studentUniqueId,
+                @termDescriptorId,
+                @courseAttemptResultDescriptorId
+            );
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@courseDocumentId", courseDocumentId),
+            new SqlParameter("@courseCode", seed.CourseCode),
+            new SqlParameter("@courseEducationOrganizationId", (long)seed.CourseEducationOrganizationId),
+            new SqlParameter("@studentAcademicRecordDocumentId", studentAcademicRecordDocumentId),
+            new SqlParameter(
+                "@studentAcademicRecordEducationOrganizationId",
+                (long)seed.StudentAcademicRecordEducationOrganizationId
+            ),
+            new SqlParameter("@schoolYear", seed.SchoolYear),
+            new SqlParameter("@studentUniqueId", seed.StudentUniqueId),
+            new SqlParameter("@termDescriptorId", termDescriptorId),
+            new SqlParameter("@courseAttemptResultDescriptorId", courseAttemptResultDescriptorId)
+        );
+    }
+
     public async Task<UpsertResult> UpsertAuthorizationNullableAsync(
         AuthorizationNullableSeed seed,
         IReadOnlyList<long> claimEducationOrganizationIds,
@@ -2745,6 +2847,20 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             new SqlParameter("@schoolYear", schoolYear),
             new SqlParameter("@studentUniqueId", studentUniqueId),
             new SqlParameter("@termDescriptorId", termDescriptorId)
+        );
+    }
+
+    private async Task<long> GetCourseDocumentIdAsync(string courseCode, int educationOrganizationId)
+    {
+        return await Database.ExecuteScalarAsync<long>(
+            """
+            SELECT [DocumentId]
+            FROM [edfi].[Course]
+            WHERE [CourseCode] = @courseCode
+              AND [EducationOrganization_EducationOrganizationId] = @educationOrganizationId;
+            """,
+            new SqlParameter("@courseCode", courseCode),
+            new SqlParameter("@educationOrganizationId", (long)educationOrganizationId)
         );
     }
 
@@ -4340,5 +4456,422 @@ public class Given_A_Mssql_Relational_Query_Authorization_With_A_Duplicate_Peopl
             .EdfiDocs.Select(static document => document!["id"]!.GetValue<string>())
             .Should()
             .Equal(_dualEnrolledStudentSeed.DocumentUuid.Value.ToString());
+    }
+}
+
+/// <summary>
+/// Binds the real query pipeline to the anchored authorization predicate on properly seeded rows, for one
+/// direct-column person pathway (StudentAcademicRecord) and one transitive pathway (CourseTranscript). The SQL
+/// Server twin of <c>Given_A_Postgresql_Relational_Query_Authorization_With_Anchored_Person_Pathways</c>.
+/// </summary>
+/// <remarks>
+/// The volume fixtures generate rows with direct set-based SQL and measure SQL against them, which is what the
+/// equivalence evidence needs but stops short of the product's own read path. This fixture closes that gap at
+/// small scale: it seeds through the same helpers the rest of this file uses and then asserts that
+/// <c>QueryAsync</c> returns the authorized documents, in order, with the anchored predicate visibly in the SQL
+/// the pipeline actually issued.
+/// </remarks>
+[TestFixture]
+[NonParallelizable]
+[Category("Authorization")]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard1)]
+public class Given_A_Mssql_Relational_Query_Authorization_With_Anchored_Person_Pathways
+{
+    private const long ClaimEducationOrganizationId =
+        RelationshipAuthorizationCrudTestSupport.ClaimEducationOrganizationId;
+    private const string TermDescriptor = "uri://ed-fi.org/TermDescriptor#Fall Semester";
+    private const string EntryGradeLevelDescriptor = "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade";
+    private const string CourseAttemptResultDescriptor = "uri://ed-fi.org/CourseAttemptResultDescriptor#Pass";
+    private const string CourseCode = "ANCHOR-101";
+    private const int SchoolYear = 2026;
+    private const string DirectPathwayResourceName = "StudentAcademicRecord";
+    private const string TransitivePathwayResourceName = "CourseTranscript";
+
+    private static readonly QuerySchoolSeed[] _schoolSeeds =
+    [
+        new(new DocumentUuid(Guid.Parse("15151515-0000-0000-0000-000000000001")), 100, "North School"),
+        new(new DocumentUuid(Guid.Parse("15151515-0000-0000-0000-000000000002")), 200, "East School"),
+        new(new DocumentUuid(Guid.Parse("15151515-0000-0000-0000-000000000003")), 300, "West School"),
+    ];
+
+    private static readonly SchoolYearTypeSeed _schoolYearSeed = new(
+        new DocumentUuid(Guid.Parse("15151515-0000-0000-0000-000000000011")),
+        SchoolYear,
+        true,
+        "2026"
+    );
+
+    /// <summary>Enrolled at two claim-reachable schools, so the student auth view yields its pair twice.</summary>
+    private static readonly StudentSeed _dualEnrolledStudentSeed = new(
+        new DocumentUuid(Guid.Parse("15151515-0000-0000-0000-000000000021")),
+        "32001",
+        "Dana",
+        "Dual"
+    );
+
+    private static readonly StudentSeed _singleEnrolledStudentSeed = new(
+        new DocumentUuid(Guid.Parse("15151515-0000-0000-0000-000000000022")),
+        "32002",
+        "Alex",
+        "Single"
+    );
+
+    private static readonly StudentSeed _unauthorizedStudentSeed = new(
+        new DocumentUuid(Guid.Parse("15151515-0000-0000-0000-000000000023")),
+        "32003",
+        "Uri",
+        "Unreachable"
+    );
+
+    private static readonly StudentSchoolAssociationSeed[] _studentSchoolAssociationSeeds =
+    [
+        new(
+            new DocumentUuid(Guid.Parse("15151515-0000-0000-0000-000000000031")),
+            "32001",
+            100,
+            SchoolYear,
+            EntryGradeLevelDescriptor,
+            new DateOnly(2026, 8, 15)
+        ),
+        new(
+            new DocumentUuid(Guid.Parse("15151515-0000-0000-0000-000000000032")),
+            "32001",
+            200,
+            SchoolYear,
+            EntryGradeLevelDescriptor,
+            new DateOnly(2026, 8, 15)
+        ),
+        new(
+            new DocumentUuid(Guid.Parse("15151515-0000-0000-0000-000000000033")),
+            "32002",
+            100,
+            SchoolYear,
+            EntryGradeLevelDescriptor,
+            new DateOnly(2026, 8, 15)
+        ),
+        new(
+            new DocumentUuid(Guid.Parse("15151515-0000-0000-0000-000000000034")),
+            "32003",
+            300,
+            SchoolYear,
+            EntryGradeLevelDescriptor,
+            new DateOnly(2026, 8, 15)
+        ),
+    ];
+
+    // Seeded in this order, so DocumentId — and therefore the page ordering — follows it.
+    private static readonly StudentAcademicRecordSeed _dualEnrolledStudentAcademicRecordSeed = new(
+        new DocumentUuid(Guid.Parse("15151515-0000-0000-0000-000000000041")),
+        100,
+        SchoolYear,
+        "32001",
+        TermDescriptor
+    );
+
+    private static readonly StudentAcademicRecordSeed _singleEnrolledStudentAcademicRecordSeed = new(
+        new DocumentUuid(Guid.Parse("15151515-0000-0000-0000-000000000042")),
+        100,
+        SchoolYear,
+        "32002",
+        TermDescriptor
+    );
+
+    private static readonly StudentAcademicRecordSeed _unauthorizedStudentAcademicRecordSeed = new(
+        new DocumentUuid(Guid.Parse("15151515-0000-0000-0000-000000000043")),
+        300,
+        SchoolYear,
+        "32003",
+        TermDescriptor
+    );
+
+    private static readonly CourseSeed _courseSeed = new(
+        new DocumentUuid(Guid.Parse("15151515-0000-0000-0000-000000000051")),
+        CourseCode,
+        100,
+        "Anchored Pathways"
+    );
+
+    private static readonly CourseTranscriptSeed _dualEnrolledCourseTranscriptSeed = new(
+        new DocumentUuid(Guid.Parse("15151515-0000-0000-0000-000000000061")),
+        CourseCode,
+        100,
+        100,
+        SchoolYear,
+        "32001",
+        TermDescriptor,
+        CourseAttemptResultDescriptor
+    );
+
+    private static readonly CourseTranscriptSeed _singleEnrolledCourseTranscriptSeed = new(
+        new DocumentUuid(Guid.Parse("15151515-0000-0000-0000-000000000062")),
+        CourseCode,
+        100,
+        100,
+        SchoolYear,
+        "32002",
+        TermDescriptor,
+        CourseAttemptResultDescriptor
+    );
+
+    private static readonly CourseTranscriptSeed _unauthorizedCourseTranscriptSeed = new(
+        new DocumentUuid(Guid.Parse("15151515-0000-0000-0000-000000000063")),
+        CourseCode,
+        100,
+        300,
+        SchoolYear,
+        "32003",
+        TermDescriptor,
+        CourseAttemptResultDescriptor
+    );
+
+    private MssqlRelationalQueryAuthorizationTestContext _context = null!;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore(
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+            );
+        }
+
+        _context = new MssqlRelationalQueryAuthorizationTestContext();
+        await _context.InitializeAsync(
+            RelationshipAuthorizationCrudTestSupport.FixtureRelativePath,
+            strict: false
+        );
+        await _context.SeedSchoolDescriptorDataAsync();
+        await _context.SeedTermDescriptorAsync(
+            Guid.Parse("15151515-0000-0000-0000-000000000071"),
+            TermDescriptor
+        );
+        await _context.SeedCourseAttemptResultDescriptorAsync(
+            Guid.Parse("15151515-0000-0000-0000-000000000072"),
+            CourseAttemptResultDescriptor
+        );
+
+        foreach (var schoolSeed in _schoolSeeds)
+        {
+            RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
+                await _context.CreateSchoolAsync(schoolSeed)
+            );
+        }
+
+        await _context.SeedSchoolYearTypeAsync(_schoolYearSeed);
+        await _context.SeedStudentAsync(_dualEnrolledStudentSeed);
+        await _context.SeedStudentAsync(_singleEnrolledStudentSeed);
+        await _context.SeedStudentAsync(_unauthorizedStudentSeed);
+
+        foreach (var associationSeed in _studentSchoolAssociationSeeds)
+        {
+            await _context.SeedStudentSchoolAssociationAsync(associationSeed);
+        }
+
+        await _context.SeedStudentAcademicRecordAsync(_dualEnrolledStudentAcademicRecordSeed);
+        await _context.SeedStudentAcademicRecordAsync(_singleEnrolledStudentAcademicRecordSeed);
+        await _context.SeedStudentAcademicRecordAsync(_unauthorizedStudentAcademicRecordSeed);
+
+        await _context.SeedCourseAsync(_courseSeed);
+        await _context.SeedCourseTranscriptAsync(_dualEnrolledCourseTranscriptSeed);
+        await _context.SeedCourseTranscriptAsync(_singleEnrolledCourseTranscriptSeed);
+        await _context.SeedCourseTranscriptAsync(_unauthorizedCourseTranscriptSeed);
+
+        await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 100);
+        await _context.InsertAuthEdgeAsync(ClaimEducationOrganizationId, 200);
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_context is not null)
+        {
+            await _context.DisposeAsync();
+        }
+    }
+
+    [SetUp]
+    public void SetUp()
+    {
+        _context.ResetRecorder();
+    }
+
+    [Test]
+    public async Task It_returns_the_authorized_direct_pathway_documents_in_order()
+    {
+        var result = await QueryAsync(DirectPathwayResourceName);
+
+        AssertPage(
+            result,
+            expectedTotalCount: 2,
+            _dualEnrolledStudentAcademicRecordSeed.DocumentUuid,
+            _singleEnrolledStudentAcademicRecordSeed.DocumentUuid
+        );
+    }
+
+    [Test]
+    public async Task It_returns_the_authorized_transitive_pathway_documents_in_order()
+    {
+        var result = await QueryAsync(TransitivePathwayResourceName);
+
+        AssertPage(
+            result,
+            expectedTotalCount: 2,
+            _dualEnrolledCourseTranscriptSeed.DocumentUuid,
+            _singleEnrolledCourseTranscriptSeed.DocumentUuid
+        );
+    }
+
+    /// <summary>
+    /// The boundary offset: the last authorized document, then a page past the end. TotalCount stays at the
+    /// authorized count either way, which is what proves the empty page is a paging boundary rather than a
+    /// collapsed authorization result.
+    /// </summary>
+    [TestCase(DirectPathwayResourceName)]
+    [TestCase(TransitivePathwayResourceName)]
+    public async Task It_pages_the_authorized_documents_to_the_boundary(string resourceName)
+    {
+        var lastAuthorizedDocumentUuid =
+            resourceName == DirectPathwayResourceName
+                ? _singleEnrolledStudentAcademicRecordSeed.DocumentUuid
+                : _singleEnrolledCourseTranscriptSeed.DocumentUuid;
+
+        var lastPage = await QueryAsync(resourceName, limit: 1, offset: 1);
+        AssertPage(lastPage, expectedTotalCount: 2, lastAuthorizedDocumentUuid);
+
+        _context.ResetRecorder();
+
+        var pastTheEnd = await QueryAsync(resourceName, limit: 1, offset: 2);
+        AssertPage(pastTheEnd, expectedTotalCount: 2);
+    }
+
+    /// <summary>
+    /// The anchored predicate, in the SQL the pipeline actually issued: the root relation appears exactly once
+    /// in both the page and the totalCount statement, and the semi-join opens on a column of the root row — the
+    /// person column itself for the direct pathway.
+    /// </summary>
+    [Test]
+    public async Task It_issues_the_anchored_direct_predicate_with_one_root_relation_reference()
+    {
+        await QueryAsync(DirectPathwayResourceName);
+
+        var keyset = _context.AssertSingleQueryHydration();
+
+        AssertSingleRootRelationReference(keyset, DirectPathwayResourceName);
+        AssertBothStatementsContain(keyset, "r.[Student_DocumentId] IN (SELECT");
+    }
+
+    /// <summary>
+    /// The transitive twin: the semi-join opens on the root row's reference FK and the subquery starts at the
+    /// first hop's target table, so the root relation is never reopened.
+    /// </summary>
+    [Test]
+    public async Task It_issues_the_anchored_transitive_predicate_with_one_root_relation_reference()
+    {
+        await QueryAsync(TransitivePathwayResourceName);
+
+        var keyset = _context.AssertSingleQueryHydration();
+
+        AssertSingleRootRelationReference(keyset, TransitivePathwayResourceName);
+        AssertBothStatementsContain(
+            keyset,
+            "r.[StudentAcademicRecord_DocumentId] IN (SELECT t0.[DocumentId] "
+                + "FROM [edfi].[StudentAcademicRecord] t0"
+        );
+    }
+
+    /// <summary>
+    /// The short-circuit the anchoring rewrite must not disturb: an empty claim set never reaches page SQL.
+    /// </summary>
+    [TestCase(DirectPathwayResourceName)]
+    [TestCase(TransitivePathwayResourceName)]
+    public async Task It_returns_an_empty_page_without_hydrating_when_claim_edorgs_are_empty(
+        string resourceName
+    )
+    {
+        var result = await _context.QueryAsync(
+            "ed-fi",
+            resourceName,
+            [],
+            RelationshipAuthorizationCrudTestSupport.StudentsOnlyStrategyNames
+        );
+
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0));
+        _context.AssertNoHydration();
+    }
+
+    /// <summary>
+    /// The duplicate-pair guarantee, extended to the transitive shape. The dual-enrolled student's pair occurs
+    /// twice in the auth view, and the semi-join must still yield its document once — a join would not.
+    /// </summary>
+    [TestCase(DirectPathwayResourceName)]
+    [TestCase(TransitivePathwayResourceName)]
+    public async Task It_returns_each_authorized_document_once_under_duplicate_auth_pairs(string resourceName)
+    {
+        await _context.AssertPeopleAuthViewPairCountAsync(
+            AuthPeopleViewKind.Student,
+            _dualEnrolledStudentSeed.StudentUniqueId,
+            ClaimEducationOrganizationId,
+            expectedPairCount: 2
+        );
+
+        var result = await QueryAsync(resourceName);
+
+        var duplicatePairDocumentUuid =
+            resourceName == DirectPathwayResourceName
+                ? _dualEnrolledStudentAcademicRecordSeed.DocumentUuid
+                : _dualEnrolledCourseTranscriptSeed.DocumentUuid;
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+
+        success
+            .EdfiDocs.Select(static document => document!["id"]!.GetValue<string>())
+            .Should()
+            .ContainSingle(id => id == duplicatePairDocumentUuid.Value.ToString());
+    }
+
+    private async Task<QueryResult> QueryAsync(string resourceName, int? limit = null, int? offset = null) =>
+        await _context.QueryAsync(
+            "ed-fi",
+            resourceName,
+            [ClaimEducationOrganizationId],
+            RelationshipAuthorizationCrudTestSupport.StudentsOnlyStrategyNames,
+            limit,
+            offset
+        );
+
+    private static void AssertSingleRootRelationReference(PageKeysetSpec.Query keyset, string rootTableName)
+    {
+        var quotedRootRelation = $"[edfi].[{rootTableName}]";
+
+        keyset.Plan.TotalCountSql.Should().NotBeNull();
+        CountOccurrences(keyset.Plan.PageDocumentIdSql, quotedRootRelation).Should().Be(1);
+        CountOccurrences(keyset.Plan.TotalCountSql!, quotedRootRelation).Should().Be(1);
+    }
+
+    private static void AssertBothStatementsContain(PageKeysetSpec.Query keyset, string expected)
+    {
+        keyset.Plan.TotalCountSql.Should().NotBeNull();
+        keyset.Plan.PageDocumentIdSql.Should().Contain(expected);
+        keyset.Plan.TotalCountSql!.Should().Contain(expected);
+    }
+
+    private static int CountOccurrences(string value, string text) =>
+        value.Split(text, StringSplitOptions.None).Length - 1;
+
+    private static void AssertPage(
+        QueryResult result,
+        int expectedTotalCount,
+        params DocumentUuid[] expectedDocumentUuids
+    )
+    {
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+
+        success.TotalCount.Should().Be(expectedTotalCount);
+        success
+            .EdfiDocs.Select(static document => document!["id"]!.GetValue<string>())
+            .Should()
+            .Equal(expectedDocumentUuids.Select(static documentUuid => documentUuid.Value.ToString()));
     }
 }

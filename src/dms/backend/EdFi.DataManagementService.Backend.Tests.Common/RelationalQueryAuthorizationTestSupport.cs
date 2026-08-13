@@ -103,6 +103,29 @@ internal sealed record AuthorizationStudentAcademicRecordSeed(
     string TermDescriptor
 );
 
+internal sealed record CourseSeed(
+    DocumentUuid DocumentUuid,
+    string CourseCode,
+    int EducationOrganizationId,
+    string CourseTitle
+);
+
+/// <summary>
+/// CourseTranscript's two reference groups: a Course and a StudentAcademicRecord, each named by its full
+/// natural key. It is the transitive person pathway's target — its Student is reached through the
+/// StudentAcademicRecord it points at, never through a column of its own.
+/// </summary>
+internal sealed record CourseTranscriptSeed(
+    DocumentUuid DocumentUuid,
+    string CourseCode,
+    int CourseEducationOrganizationId,
+    int StudentAcademicRecordEducationOrganizationId,
+    int SchoolYear,
+    string StudentUniqueId,
+    string TermDescriptor,
+    string CourseAttemptResultDescriptor
+);
+
 internal sealed record AuthorizationStudentSchoolSeed(
     DocumentUuid DocumentUuid,
     int AuthorizationStudentSchoolId,
