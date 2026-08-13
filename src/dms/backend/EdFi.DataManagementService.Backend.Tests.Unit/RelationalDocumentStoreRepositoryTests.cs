@@ -5042,6 +5042,70 @@ public class Given_RelationalDocumentStoreRepositoryTests
         success.AllowsDocumentIdContinuation.Should().BeTrue();
     }
 
+    /// <summary>
+    /// Read-acceleration candidate selection reports no selected-keyset boundary, so a cursor page
+    /// served through it would carry documents and no continuation, stalling the walk one page in.
+    /// Cursor pages therefore take the relational path, which does report the boundary.
+    /// </summary>
+    [Test]
+    public async Task It_selects_a_cursor_page_without_read_acceleration()
+    {
+        var mappingSet = CreateQuerySupportedMappingSet(
+            _schoolResourceInfo,
+            CreateSupportedQueryField(
+                "name",
+                "$.name",
+                "string",
+                new RelationalQueryFieldTarget.RootColumn(new DbColumnName("Name"))
+            )
+        );
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            paging: new CollectionPaging.Cursor(CursorRange.From(1), new PageSize(25))
+        );
+        var readAccelerationCoordinator = new RecordingReadAccelerationCoordinator();
+
+        UseReadAccelerationCoordinator(readAccelerationCoordinator);
+        StubHydrationWithBoundary(readPlan, 2509L);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        readAccelerationCoordinator.QueryAttempts.Should().Be(0);
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.HighestSelectedDocumentId.Should().Be(2509L);
+    }
+
+    /// <summary>
+    /// The traditional counterpart, so the test above proves cursor-specific routing rather than a
+    /// coordinator that is never consulted for queries at all.
+    /// </summary>
+    [Test]
+    public async Task It_selects_a_traditional_page_through_read_acceleration()
+    {
+        var mappingSet = CreateQuerySupportedMappingSet(
+            _schoolResourceInfo,
+            CreateSupportedQueryField(
+                "name",
+                "$.name",
+                "string",
+                new RelationalQueryFieldTarget.RootColumn(new DbColumnName("Name"))
+            )
+        );
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var queryRequest = CreateQueryRequest(mappingSet, [], totalCount: false);
+        var readAccelerationCoordinator = new RecordingReadAccelerationCoordinator();
+
+        UseReadAccelerationCoordinator(readAccelerationCoordinator);
+        StubHydrationWithBoundary(readPlan, 2509L);
+
+        await _sut.QueryDocuments(queryRequest);
+
+        readAccelerationCoordinator.QueryAttempts.Should().Be(1);
+    }
+
     private RelationalDocumentStoreRepository CreateRepositoryWithOrderingPolicy(
         ChangeQueryPageOrderingPolicy orderingPolicy
     ) =>

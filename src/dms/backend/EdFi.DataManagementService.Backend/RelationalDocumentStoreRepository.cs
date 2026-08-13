@@ -1135,8 +1135,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         if (queryRequest.MappingSet.TryGetDescriptorResourceModel(resource, out _))
         {
-            return await QueryDocumentsRelationalAsync(queryRequest, cancellationToken)
-                .ConfigureAwait(false);
+            return await QueryDocumentsRelationalAsync(queryRequest, cancellationToken).ConfigureAwait(false);
         }
 
         // Cursor pages select their keyset through the relational path, which is the only path that
@@ -1145,8 +1144,7 @@ public sealed class RelationalDocumentStoreRepository(
         // documents with no continuation and stall the walk one page in.
         if (queryRequest.Paging is CollectionPaging.Cursor)
         {
-            return await QueryDocumentsRelationalAsync(queryRequest, cancellationToken)
-                .ConfigureAwait(false);
+            return await QueryDocumentsRelationalAsync(queryRequest, cancellationToken).ConfigureAwait(false);
         }
 
         return await _readAccelerationCoordinator
@@ -1570,8 +1568,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         if (!SelectedQueryCandidatePageStillMatches(candidatePage, hydratedPage.DocumentMetadata))
         {
-            return await QueryDocumentsRelationalAsync(queryRequest, cancellationToken)
-                .ConfigureAwait(false);
+            return await QueryDocumentsRelationalAsync(queryRequest, cancellationToken).ConfigureAwait(false);
         }
 
         return BuildQuerySuccess(queryRequest, resource, readPlan, hydratedPage, orderingMode);

@@ -485,6 +485,15 @@ internal sealed class DescriptorReadHandler(
             request.TraceId.Value
         );
 
+        // Cursor pages take the uncached path, which is the only one that reports the selected-keyset
+        // boundary a continuation is anchored on. Read-acceleration candidate selection reports no
+        // boundary, so a cursor page served from cache would return documents with no continuation and
+        // stall the walk one page in.
+        if (request.Paging is CollectionPaging.Cursor)
+        {
+            return await HandleQueryNoCacheResultAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+
         return await _readAccelerationCoordinator
             .QueryAsync(
                 new DocumentCacheReadAccelerationQueryRequest(
