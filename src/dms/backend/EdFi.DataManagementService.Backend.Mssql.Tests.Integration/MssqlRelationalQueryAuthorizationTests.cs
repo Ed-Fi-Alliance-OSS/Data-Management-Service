@@ -1020,6 +1020,46 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         );
     }
 
+    /// <summary>
+    /// The four additional descriptors the bulk volume generator's root tables require as NOT NULL references.
+    /// Public wrappers rather than a widened <see cref="SeedDescriptorAsync"/>, matching how every other
+    /// descriptor is exposed here.
+    /// </summary>
+    public async Task SeedGradingPeriodDescriptorAsync(Guid documentUuid, string descriptor)
+    {
+        await SeedNamedDescriptorAsync(documentUuid, "GradingPeriodDescriptor", descriptor);
+    }
+
+    public async Task SeedGradeTypeDescriptorAsync(Guid documentUuid, string descriptor)
+    {
+        await SeedNamedDescriptorAsync(documentUuid, "GradeTypeDescriptor", descriptor);
+    }
+
+    public async Task SeedCourseAttemptResultDescriptorAsync(Guid documentUuid, string descriptor)
+    {
+        await SeedNamedDescriptorAsync(documentUuid, "CourseAttemptResultDescriptor", descriptor);
+    }
+
+    public async Task SeedAttendanceEventCategoryDescriptorAsync(Guid documentUuid, string descriptor)
+    {
+        await SeedNamedDescriptorAsync(documentUuid, "AttendanceEventCategoryDescriptor", descriptor);
+    }
+
+    private async Task SeedNamedDescriptorAsync(Guid documentUuid, string resourceName, string descriptorUri)
+    {
+        var codeValue = descriptorUri[(descriptorUri.LastIndexOf('#') + 1)..];
+
+        await SeedDescriptorAsync(
+            documentUuid,
+            resourceName,
+            $"Ed-Fi:{resourceName}",
+            descriptorUri,
+            descriptorUri[..descriptorUri.LastIndexOf('#')],
+            codeValue,
+            codeValue
+        );
+    }
+
     public async Task SeedStaffClassificationDescriptorAsync(Guid documentUuid, string descriptor)
     {
         await SeedDescriptorAsync(
