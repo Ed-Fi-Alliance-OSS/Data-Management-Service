@@ -521,7 +521,10 @@ The implementer guide states this line rather than implying an enforcement that 
 
 ## ODS/API Precedent
 
-The epic asks for "something like `IResourceValidator`", so the reference implementation was surveyed to decide what ports and what does not.
+The `IResourceValidator` framing comes from the driving discussion, not from the epic.
+Epic DMS-1345 carries no description; its entire text is the summary "Implement Custom Validation extension point in DMS. Required for custom business rules."
+The Confluence record of the workgroup discussion is where the reference implementation is named: "Custom validation scenarios were discussed for extending `IResourceValidator`", closing with "No additional custom validation patterns were identified beyond extending `IResourceValidator`" ([page 2588835841](https://edfi.atlassian.net/wiki/spaces/GOV/pages/2588835841), "July 2026 - Ed-Fi Data Management Service Workgroup").
+The reference implementation was therefore surveyed to decide what ports and what does not.
 
 **ODS's own validators are compiled in, not delivered as plugins.** All three production `IResourceValidator` implementations ship inside ODS assemblies and are registered by Autofac modules that ship with them: `DataAnnotationsResourceValidator` unconditionally in `EdFi.Ods.Api` (`EdFi.Ods.Api/Container/Modules/ApplicationModule.cs:305-307`), and `UniqueIdNotChangedEntityValidator` plus `EnsureUniqueIdAlreadyExistsEntityValidator` in `EdFi.Ods.Features` (`EdFi.Ods.Features/Container/Modules/UniqueIdIntegrationModule.cs:38-44`), behind a `ConditionalModule` gated on `ApiFeature.UniqueIdValidation` (`:19`, `:24`).
 There are zero test-only implementations; the test-side FluentValidation samples reach a different contract, `IExplicitObjectValidator`.
@@ -570,7 +573,7 @@ Rejected for the write path as currently scoped, not deferred.
 
 ## Driving Scenarios
 
-Three scenarios from the design discussion motivated this epic.
+Three scenarios from the driving discussion motivated this epic, recorded verbatim on [Confluence page 2588835841](https://edfi.atlassian.net/wiki/spaces/GOV/pages/2588835841) as validating students against external identity systems, making optional collections such as Race and Language required, and preventing Special Education and Title I program associations from being posted as generic program associations.
 Each is a requirement driver only: none is implemented here, and none is proposed as a validator DMS Core ships.
 They exist to show the contract can express them through an implementer's own assembly.
 Resource names and field paths were verified against the Data Standard 5.2 ApiSchema fixture (`src/dms/backend/Fixtures/authoritative/ds-5.2/inputs/ds-5.2-api-schema-authoritative.json`); the per-scenario grounding is carried in [05-prove-custom-validation-end-to-end.md](./05-prove-custom-validation-end-to-end.md).
@@ -591,7 +594,9 @@ An implementer adopting this shape accepts that every write to that resource dep
 A district that loads its own `ProgramTypeDescriptor` values and wants a rule against descriptor **content** would need the descriptor document itself, which this version's contract does not provide.
 
 **A known downstream consumer is only partly served, and this is the no-store-read non-goal biting.**
-DMS-1414 asks for documentation showing implementers how to achieve ODS/API UniqueId validation behaviour through this extension point, and DMS-1415 makes "confirmed that the contract can express UniqueId validation" an acceptance criterion.
+DMS-1414 asks for "a documented way to achieve ODS/API UniqueId validation behaviour in DMS via the custom validation extension point", and DMS-1415 carries the acceptance criterion "Confirmed with the custom validation work (DMS-1345 / DMS-1346) that `IResourceValidator` can express UniqueId validation".
+Both tickets carry the `needs-description` label, and DMS-1415 is an explicit placeholder whose own description says it is "provisional and drawn from the two sources above, not from refinement" and is to be replaced once the scope is agreed.
+What follows therefore answers the criterion as currently written, and should be revisited if refinement changes it.
 ODS implements that behaviour as two validators, and they land differently here.
 `EnsureUniqueIdAlreadyExistsEntityValidator` (`EdFi.Ods.Features/UniqueIdIntegration/Validation/EnsureUniqueIdAlreadyExistsEntityValidator.cs:22`) checks that an upstream pipeline step already resolved the submitted UniqueId to an internal id; the *kind* of rule is expressible here, though a DMS equivalent is shaped differently because there is no such upstream step and no typed model.
 `UniqueIdNotChangedEntityValidator` (`EdFi.Ods.Features/UniqueIdIntegration/Validation/UniqueIdNotChangedEntityValidator.cs:16`) injects `IPersonUniqueIdToIdCache` and calls `GetUniqueId(objType.Name, objectWithIdentifier.Id)` to fetch the **persisted** UniqueId before comparing it to the submitted one (`:32-45`).
@@ -689,4 +694,4 @@ No new response shape.
 - [DMS-1414](https://edfi.atlassian.net/browse/DMS-1414) / [DMS-1415](https://edfi.atlassian.net/browse/DMS-1415) - UniqueId Validation, a documentation-shaped consumer that depends on this design and is partly blocked by the store-read non-goal (see [Driving Scenarios](#driving-scenarios)).
 - [README.md](./README.md) - epic overview, out-of-scope table, and ticket index in dependency order.
 - [01-add-custom-validator-abstractions-contract.md](./01-add-custom-validator-abstractions-contract.md) through [05-prove-custom-validation-end-to-end.md](./05-prove-custom-validation-end-to-end.md) - the implementation stories realizing this design.
-- Driving discussion: [Confluence page 2588835841](https://edfi.atlassian.net/wiki/spaces/GOV/pages/2588835841).
+- Driving discussion: [Confluence page 2588835841](https://edfi.atlassian.net/wiki/spaces/GOV/pages/2588835841), "July 2026 - Ed-Fi Data Management Service Workgroup" (space `GOV`).

@@ -10,7 +10,7 @@ Runtime loading of a validator assembly that was not part of the build is deferr
 
 ## Provenance
 
-This design was produced by spike DMS-1346. The driving discussion is recorded on Confluence: [page 2588835841](https://edfi.atlassian.net/wiki/spaces/GOV/pages/2588835841).
+This design was produced by spike DMS-1346. The driving discussion is recorded on Confluence: [page 2588835841](https://edfi.atlassian.net/wiki/spaces/GOV/pages/2588835841), "July 2026 - Ed-Fi Data Management Service Workgroup". Epic DMS-1345 itself carries no description, so that page is the authoritative statement of what was asked for.
 
 ## Design Document
 
