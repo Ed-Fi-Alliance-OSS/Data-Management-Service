@@ -367,9 +367,9 @@ public static class WebApplicationBuilderExtensions
     /// Serves the rejection produced by the rate limiter middleware, which applies
     /// RejectionStatusCode before invoking this callback. Rejected requests never reach the DMS
     /// core pipeline, so the Retry-After header and the problem-details body are written at this
-    /// boundary. The Retry-After value rounds up to whole seconds so a client never retries
-    /// before the window resets, and the body stays constant whether or not the limiter
-    /// supplies retry-after metadata.
+    /// boundary. The Retry-After value is the limiter's recommended retry delay rounded up to
+    /// whole seconds so a client never retries sooner than recommended, and the body stays
+    /// constant whether or not the limiter supplies retry-after metadata.
     /// </summary>
     internal static async ValueTask WriteRateLimitRejectionAsync(
         OnRejectedContext context,

@@ -326,11 +326,14 @@ The `RateLimit` object should have the following parameters.
 
 A rejected request receives a `429 Too Many Requests` response with a
 `Retry-After` header and an Ed-Fi problem-details body served as
-`application/problem+json`. `Retry-After` carries the whole number of
-seconds, rounded up, until the fixed window resets; it is omitted in the
-unusual case that the limiter supplies no retry-after metadata, and the body
-is served either way. The `correlationId` is taken from the request header
-named by `AppSettings:CorrelationIdHeader` when that setting and header are
+`application/problem+json`. `Retry-After` carries the limiter-supplied
+recommended retry delay, rounded up to whole seconds. It is a suggested
+wait, not an exact countdown to the current window's reset — queue depth
+can make the recommended delay longer than one configured `Window`. The
+header is omitted in the unusual case that the limiter supplies no
+retry-after metadata, and the body is served either way. The
+`correlationId` is taken from the request header named by
+`AppSettings:CorrelationIdHeader` when that setting and header are
 present, otherwise from the server-generated trace identifier — the same
 selection the API's other error responses use.
 

@@ -234,6 +234,36 @@ public class Given_A_Rate_Limit_Rejection_With_Sub_Second_Retry_After_Metadata
     }
 }
 
+[TestFixture]
+[Parallelizable]
+public class Given_A_Rate_Limit_Rejection_With_Multi_Window_Retry_After_Metadata
+{
+    private DefaultHttpContext _httpContext = default!;
+
+    [OneTimeSetUp]
+    public async Task Setup()
+    {
+        // Queued demand can make the limiter recommend a delay spanning several configured
+        // windows; the handler must serve that recommendation rather than clamp it to one window.
+        _httpContext = RateLimitRejectionTestContext.CreateHttpContext();
+
+        await WebApplicationBuilderExtensions.WriteRateLimitRejectionAsync(
+            new OnRejectedContext
+            {
+                HttpContext = _httpContext,
+                Lease = new RateLimitRejectionTestContext.StubLease(retryAfter: TimeSpan.FromSeconds(90.4)),
+            },
+            CancellationToken.None
+        );
+    }
+
+    [Test]
+    public void It_serves_the_recommended_delay_rounded_up_as_the_retry_after_header()
+    {
+        _httpContext.Response.Headers.RetryAfter.ToString().Should().Be("91");
+    }
+}
+
 /// <summary>
 /// Builds the minimal HttpContext the rejection handler needs (request services carrying the
 /// frontend AppSettings options and a readable response body), plus a lease stub whose
