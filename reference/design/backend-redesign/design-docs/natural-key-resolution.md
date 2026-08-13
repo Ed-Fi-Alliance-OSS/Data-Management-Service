@@ -248,12 +248,17 @@ be independent of how many references are in the batch:
 ```sql
 SELECT keys.ordinal, target."DocumentId"
 FROM unnest(@ordinals, @schoolIds, @schoolYears, @sessionNames)
-     WITH ORDINALITY AS keys(ordinal, "SchoolId", "SchoolYear", "SessionName")
+     AS keys(ordinal, "SchoolId", "SchoolYear", "SessionName")
 JOIN edfi."Session" target
   ON target."SchoolReference_SchoolId" = keys."SchoolId"
  AND target."SchoolYearTypeReference_SchoolYear" = keys."SchoolYear"
  AND target."SessionName" = keys."SessionName"
 ```
+
+PostgreSQL examples must not use `WITH ORDINALITY` for these probe inputs. The explicit
+`@ordinals` array is the only attribution source; generated row-position ordinality would
+reintroduce a second ordinal model and could incorrectly encourage implementers to map errors by
+input row position rather than by `Entries[ordinal-1]`.
 
 SQL Server will shred one JSON parameter per group; the OPENJSON input will always be the leftmost
 input in the join tree, and every statement will end with `OPTION (FORCE ORDER)` (the rationale is
