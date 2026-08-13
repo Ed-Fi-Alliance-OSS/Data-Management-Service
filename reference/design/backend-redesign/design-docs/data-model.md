@@ -903,9 +903,9 @@ This redesign provisions an **identity table per abstract resource**:
     - SQL Server: native full-composite `ON UPDATE CASCADE` where retained by
       [SQL Server foreign-key pruning](sql-server-pruning.md), otherwise a safe `ON UPDATE NO ACTION` cut.
 
-Required: `{schema}.{AbstractResource}_View` union view
+Diagnostic/integration view: `{schema}.{AbstractResource}_View`
 
-Also provision a union view per abstract resource for diagnostics/ad-hoc querying:
+A union view may also be provisioned per abstract resource for diagnostics/ad-hoc querying:
 
 - View name: `{schema}.{AbstractResource}_View`
 - Columns: `DocumentId`, abstract identity fields in `identityJsonPaths` order, `ResourceKeyId`, `Discriminator` (NOT NULL; literal format `ProjectName:ResourceName`)
@@ -913,13 +913,14 @@ Also provision a union view per abstract resource for diagnostics/ad-hoc queryin
 
 Usage:
 
-- Required for abstract write-time reference resolution: the natural-key resolver probes `{AbstractResource}Identity` by `UX_<AbstractResource>Identity_RefKey` and projects `DocumentId` plus concrete `ResourceKeyId`.
+- Not required for abstract write-time reference resolution: the natural-key resolver probes the required `{AbstractResource}Identity` table by `UX_<AbstractResource>Identity_RefKey` and projects `DocumentId` plus concrete `ResourceKeyId`.
 - Not required for read-time reference identity projection (reference identity fields are stored locally on the referrer and
   kept consistent via database propagation: PostgreSQL cascades and SQL Server native cascades/cuts governed by
   [SQL Server foreign-key pruning](sql-server-pruning.md)).
 - Not required for membership/type validation (enforced by the composite FK to `{AbstractResource}Identity`).
+- Not required for API correctness; implementations must not make successful writes or reference compatibility checks depend on this view.
 
-DDL generation requirement:
+DDL generation requirement when emitted:
 
 - View SQL must be deterministic and canonicalized: stable `UNION ALL` arm ordering, stable select-list ordering from `identityJsonPaths` order, and explicit casts where needed for cross-engine union compatibility.
 - `Discriminator` literals are emitted as `ProjectName:ResourceName`; derivation fails fast when any value exceeds 256 characters.
@@ -1168,7 +1169,7 @@ Note: SQL examples in this directory may omit quoting for readability. The DDL g
     - extension collection tables: `{ResourceBaseName}Extension{CollectionSuffix}`
 - Abstract identity artifacts:
   - `{ProjectSchema}.{AbstractResource}Identity` (tables; FK targets for polymorphic references)
-  - `{ProjectSchema}.{AbstractResource}_View` (union views for diagnostics/ad-hoc querying)
+  - `{ProjectSchema}.{AbstractResource}_View` (optional union views for diagnostics/ad-hoc querying)
 
 ### 4) Column names (PascalCase + stable suffixes)
 

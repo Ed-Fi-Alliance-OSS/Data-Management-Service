@@ -298,6 +298,9 @@ compatibility, not diagnostic metadata. The compiled abstract-identity trigger c
 typed concrete-member `ResourceKeyId` literal alongside the diagnostic discriminator literal; dialect
 emitters must not recover the key by parsing `Discriminator` or re-deriving it from the source table.
 One table, one seek, no per-subtype SQL.
+The abstract identity table is the required write-time resolution surface. Any
+`{AbstractResource}_View` union view is diagnostic/integration-only and must not be required for
+reference resolution, target-type compatibility, or API correctness.
 
 Results will map by explicit ordinal (`Entries[ordinal-1]`, never row position); unmatched ordinals
 will flow into the unchanged reference-validation failure response, so error shapes and JSON-location
