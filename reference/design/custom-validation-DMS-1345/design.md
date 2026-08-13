@@ -192,7 +192,7 @@ public abstract record CustomValidationFailure
     {
         public OnPath(string jsonPath, string message)
         {
-            // throws ArgumentException unless jsonPath is "$"-rooted and message is non-empty
+            // throws ArgumentException unless jsonPath is "$."-prefixed and message is non-empty
             JsonPath = jsonPath;
             Message = message;
         }
@@ -339,11 +339,13 @@ It is therefore the last gate before persistence.
 
 Three constraints fix that position.
 
-1. **After core validation.** Each core validator calls `next()` only when it found no failure and otherwise assigns `requestInfo.FrontendResponse` and returns (`Middleware/ValidateDocumentMiddleware.cs:30-33`, `:34-69`), and `PipelineProvider.RunInternal` advances only through that callback (`Pipeline/PipelineProvider.cs:23-29`), so a custom validator only ever sees a schema-valid document and core failure is not a case the step must check for.
+1. **After core validation.** Each core validator calls `next()` only when it found no failure and otherwise assigns `requestInfo.FrontendResponse` and returns (`Middleware/ValidateDocumentMiddleware.cs:30-33`, `:34-69`), and `PipelineProvider.RunInternal` advances only through that callback (`Pipeline/PipelineProvider.cs:23-29`), so core schema failure is not a case the step must check for.
+This does not make the document a validator receives schema-valid.
+Schema validation runs on `ParsedBody` before profile shaping (`ApiService.cs:230`, `:232`), and a writable profile can strip schema-required members while `deferCreatabilityViolations: true` (`Middleware/ProfileWritePipelineMiddleware.cs:150`) lets the request continue, so a validator reading the profile-effective body can see a document missing members the schema requires.
 2. **After `BuildResourceInfoMiddleware`** (`:234-237` in Upsert, `:328-331` in Update), which populates `RequestInfo.ResourceInfo` (`Middleware/BuildResourceInfoMiddleware.cs:24-31`), needed by both `AppliesTo` filtering and the `resourceInfo` parameter.
 3. **After `ResourceActionAuthorizationMiddleware`** (`:242` in Upsert, `:336` in Update), so a client denied by resource/action authorization gets its authorization response before any validator runs. Custom validators can perform outbound HTTP; running them earlier would let denied requests trigger that I/O and let a validator's 400 displace the authorization response.
 
-Running last also means `RequestInfo.AuthorizationStrategyEvaluators` is already populated (`Middleware/ProvideAuthorizationFiltersMiddleware.cs:51`), which this version consumes but a later store-reading version would need.
+Running last also means `RequestInfo.AuthorizationStrategyEvaluators` is already populated (`Middleware/ProvideAuthorizationFiltersMiddleware.cs:51`), which this version does not consume but a later store-reading version would need.
 
 **Authorization boundary.** The invariant is narrower than "fully authorized".
 Namespace and relationship authorization is not a pipeline decision: both are evaluated inside the backend write, downstream of the terminal handler and therefore downstream of every custom validator (`Backend/RelationalDocumentStoreRepository.cs:1437`, `:1476`, `:1819`).
@@ -587,7 +589,7 @@ Whether to close that gap by adding a store-read capability is recorded under [D
 
 **Contract unit tests** (abstractions package):
 
-- `OnPath` throws for a null, empty, or non-`$`-rooted path, and for an empty message; `OnResource` throws for an empty message.
+- `OnPath` throws for a null, empty, or non-`$.`-prefixed path, and for an empty message; `OnResource` throws for an empty message. A bare `"$"` is rejected alongside `""`, since a failure about the document as a whole is `OnResource`'s case.
 - Within the abstractions assembly's own public construction surface, `OnResource` is the only way to express a path-less failure. Asserted reflectively; the expected constructor set is exactly the synthesized copy constructor, since CS8878 forbids restricting it.
 - A scratch library referencing only the published package compiles a validator and the registration extension exactly as [Registration and Composition](#registration-and-composition) documents it, including the `Action<TOptions>` overload of `Configure`, proving the package's dependency set is sufficient for the documented usage.
 
@@ -605,7 +607,7 @@ Whether to close that gap by adding a store-read capability is recorded under [D
 - The scope's qualifier dictionary is a defensive copy, proven by downcasting to `Dictionary<,>`, mutating, and asserting the request is unchanged. Asserting that `IReadOnlyDictionary<,>` has no `Add` proves nothing, since a pass-through would pass it.
 - A validator that throws produces a 500 through the existing catch-all, not a 400 and not an escaping exception.
 - A `CustomValidationFailure` subtype other than the two cases (built via a test-only record chaining the copy constructor) throws at the consumption switch and surfaces as a 500.
-- A custom-validator 400 is byte-identical in `detail` to the corresponding core schema-validation 400, on both arms.
+- A custom-validator 400 is byte-identical in `detail` to the literals `ValidateDocumentMiddleware` passes on each arm (`Middleware/ValidateDocumentMiddleware.cs:41`, `:50`). The comparison is against those literals rather than against a produced core schema-validation 400, since `DocumentValidator` always returns an empty `errors` array (`Validation/DocumentValidator.cs:94`) and so never produces an `errors`-arm 400.
 - The document is the profile-shaped body under a writable profile and `ParsedBody` otherwise.
 - A validator returning failures produces a log record naming that validator against the request's `TraceId`, and that record contains no failure message text.
 
