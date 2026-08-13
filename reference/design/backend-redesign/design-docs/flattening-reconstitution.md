@@ -269,6 +269,20 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
    - Use `{schema}.{A}Identity` as the composite-FK target for abstract reference sites; FKs use `ON UPDATE CASCADE` (identity tables are trigger-maintained) to propagate identity changes and enforce membership/type at the DB level.
    - (Optional) also emit `{schema}.{A}_View` as a narrow `UNION ALL` projection for diagnostics/ad-hoc querying.
 
+8. Apply SQL Server identity-collation metadata:
+   - For each `DbColumnModel` whose `ScalarType.Kind` is `String`, set
+     `UsesSqlServerIdentityCollation = true` when the column stores or copies an identity value:
+     canonical root natural-key strings, flattened `RefKey` string copies, abstract-identity string
+     columns, and local string identity members used by child/common/extension collection uniqueness.
+   - Under key unification, this flag follows storage: if any identity-bearing binding aliases a
+     canonical string storage column, the canonical stored column must carry the flag, and any
+     generated alias expression must not downgrade the resulting collation.
+   - Equivalent DDL metadata is required for generated descriptor identity string columns and
+     tracked-change old/new string copies whose origin includes identity, even when those columns are
+     produced outside the per-resource `DbColumnModel` inventory.
+   - Leave ordinary non-identity scalar payload strings false so they inherit the database default
+     unless another explicit contract applies.
+
 ### 4.2 Recommended child-table keys (stable internal collection identity)
 
 To preserve stable row identity across profile-scoped merges, nested descendants, and extension scopes, use:
@@ -1077,6 +1091,8 @@ public enum ScalarKind
 
 /// <summary>
 /// The relational scalar type, including constraints that affect DDL and parameter binding.
+/// SQL Server collation is intentionally not part of this scalar type because it is a column-role
+/// contract, not a property of every string scalar.
 /// </summary>
 public sealed record RelationalScalarType(
     ScalarKind Kind,
@@ -1101,8 +1117,15 @@ Rules:
     - Descriptor URI strings, including descriptor collections and descriptor identity parts inside scalar references, are not stored as strings (e.g., `$.gradeLevelDescriptor`, `$.programDescriptors[*]`, `$.courseOfferingReference.termDescriptor`).
 - `ScalarKind.Decimal` requires a matching entry in `decimalPropertyValidationInfos` (`totalDigits`, `decimalPlaces`); missing info is a schema compilation error.
 - `ScalarKind.DateTime` uses SQL Server `datetime2(7)` (no timezone) to align with Ed-Fi ODS SQL Server conventions; any incoming offsets are normalized to a UTC instant at write time.
+- The SQL Server string entries below are base types only. DDL generation MUST also apply column-role
+  metadata: any generated string column that stores or copies identity values emits
+  `COLLATE SQL_Latin1_General_CP1_CI_AS` after the base `nvarchar(...)` type. This covers canonical
+  natural-key string columns, flattened `RefKey` string copies, abstract-identity string columns,
+  descriptor identity source/copy columns, tracked-change old/new string identity copies, and local
+  string identity members used by child or extension collection uniqueness. Ordinary non-identity
+  scalar payload strings inherit the database default unless another explicit contract applies.
 
-| `ScalarKind` | ApiSchema JSON schema source | PostgreSQL type | SQL Server type |
+| `ScalarKind` | ApiSchema JSON schema source | PostgreSQL type | SQL Server base type |
 | --- | --- | --- | --- |
 | `String` | `type: "string"` (no `format`, `maxLength` required for scalar columns) | `varchar(n)` | `nvarchar(n)` |
 | `Int32` | `type: "integer"` | `integer` | `int` |
@@ -1289,6 +1312,12 @@ public abstract record ColumnStorage
 /// <param name="Storage">
 /// Storage/writable semantics for this column. See: key-unification.md.
 /// </param>
+/// <param name="UsesSqlServerIdentityCollation">
+/// True only for generated SQL Server string columns that store or copy identity values. When true,
+/// DDL generation appends <c>COLLATE SQL_Latin1_General_CP1_CI_AS</c> to the base <c>nvarchar(...)</c>
+/// type. Ordinary non-identity string payload columns leave this false and inherit the database
+/// default collation unless another explicit contract applies.
+/// </param>
 public sealed record DbColumnModel(
     DbColumnName ColumnName,
     ColumnKind Kind,
@@ -1296,7 +1325,8 @@ public sealed record DbColumnModel(
     bool IsNullable,
     JsonPathExpression? SourceJsonPath,            // null for derived columns (CollectionKey/ParentKey/Ordinal/MirroredContentVersion/MirroredContentLastModifiedAt)
     QualifiedResourceName? TargetResource,         // for DocumentFk / DescriptorFk
-    ColumnStorage Storage
+    ColumnStorage Storage,
+    bool UsesSqlServerIdentityCollation = false
 );
 
 /// <summary>

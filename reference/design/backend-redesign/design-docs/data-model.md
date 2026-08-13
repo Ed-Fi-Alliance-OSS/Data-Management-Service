@@ -1280,10 +1280,17 @@ Alignment note:
 Rules:
 
 - Scalar strings should have `maxLength`. When `maxLength` is omitted, PostgreSQL emits `varchar` (unbounded) and SQL Server emits `nvarchar(max)`.
+- SQL Server `nvarchar(n)` / `nvarchar(max)` are base storage types. Generated string columns that store or copy identity values MUST add the DMS identity collation:
+  `COLLATE SQL_Latin1_General_CP1_CI_AS`. This column-role overlay applies to canonical natural-key
+  string columns on resource roots, flattened `RefKey` string copies, abstract-identity string columns,
+  descriptor identity source/copy columns, tracked-change old/new string copies whose origin includes
+  identity, and local string identity members used by child or extension collection uniqueness. Ordinary
+  non-identity scalar payload strings continue to inherit the database default unless another explicit
+  contract applies.
 - Decimals must have `(totalDigits, decimalPlaces)` from `decimalPropertyValidationInfos`; missing info is an error.
 - `date-time` values are treated as UTC instants at the application boundary. SQL Server storage uses `datetime2(7)` (no offset), so any incoming offset is normalized to UTC at write time.
 
-| ApiSchema JSON schema | PostgreSQL type | SQL Server type |
+| ApiSchema JSON schema | PostgreSQL type | SQL Server base type |
 | --- | --- | --- |
 | `type: "string"` (no `format`, with `maxLength`) | `varchar(n)` | `nvarchar(n)` |
 | `type: "string"` (no `format`, no `maxLength`) | `varchar` | `nvarchar(max)` |
