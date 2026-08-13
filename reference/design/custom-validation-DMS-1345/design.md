@@ -526,6 +526,23 @@ Epic DMS-1345 carries no description; its entire text is the summary "Implement 
 The Confluence record of the workgroup discussion is where the reference implementation is named: "Custom validation scenarios were discussed for extending `IResourceValidator`", closing with "No additional custom validation patterns were identified beyond extending `IResourceValidator`" ([page 2588835841](https://edfi.atlassian.net/wiki/spaces/GOV/pages/2588835841), "July 2026 - Ed-Fi Data Management Service Workgroup").
 The reference implementation was therefore surveyed to decide what ports and what does not.
 
+**The current interface, recorded rather than only cited.** DMS-1346 asks for the definition of the current interface as part of this work, so it is reproduced here in full (`EdFi.Ods.Common/IObjectValidator.cs:14-27`):
+
+```csharp
+public interface IObjectValidator
+{
+    ICollection<ValidationResult> ValidateObject(object @object);
+}
+
+public interface IResourceValidator : IObjectValidator { }
+```
+
+That is the entire surface.
+`ValidationResult` is `System.ComponentModel.DataAnnotations.ValidationResult`, whose `MemberNames` carries the member paths ODS converts into `validationErrors` keys and whose `ErrorMessage` carries the message (`EdFi.Ods.Api/ExceptionHandling/ErrorTranslator.cs:54-60`).
+`IResourceValidator` declares no members of its own; its doc comment describes it as "a strongly typed interface specifically for validating incoming API resources".
+Its whole mechanical role is to be the service type a validator is registered as and the collection the write pipeline resolves: `ValidateResourceModel` constructor-injects `IEnumerable<IResourceValidator>` (`ValidateResourceModel.cs:23`, `:25`) and calls the inherited method through an extension typed on `IEnumerable<IObjectValidator>` (`EdFi.Ods.Common/Extensions/ValidatorExtensions.cs:19`), so the narrower interface is what separates resource validation from any other use of `IObjectValidator`.
+Each property of that shape is dispositioned in the table below.
+
 **ODS's own validators are compiled in, not delivered as plugins.** All three production `IResourceValidator` implementations ship inside ODS assemblies and are registered by Autofac modules that ship with them: `DataAnnotationsResourceValidator` unconditionally in `EdFi.Ods.Api` (`EdFi.Ods.Api/Container/Modules/ApplicationModule.cs:305-307`), and `UniqueIdNotChangedEntityValidator` plus `EnsureUniqueIdAlreadyExistsEntityValidator` in `EdFi.Ods.Features` (`EdFi.Ods.Features/Container/Modules/UniqueIdIntegrationModule.cs:38-44`), behind a `ConditionalModule` gated on `ApiFeature.UniqueIdValidation` (`:19`, `:24`).
 There are zero test-only implementations; the test-side FluentValidation samples reach a different contract, `IExplicitObjectValidator`.
 ODS's plugin folder is the mechanism by which a *third party* gets an assembly into the process, after which its Autofac module is picked up by an AppDomain-wide scan (`EdFi.Ods.Api/Helpers/TypeHelper.cs:42-51`, registered at `EdFi.Ods.Api/Startup/OdsStartupBase.cs:355-372`) that also picks up compiled-in modules.
@@ -593,7 +610,7 @@ An implementer adopting this shape accepts that every write to that resource dep
 **Descriptor content is out of reach.** Scenario 3 is expressible against descriptor **URIs**, because a descriptor URI's fragment is by construction the descriptor's `codeValue`, so the rule is fragment parsing.
 A district that loads its own `ProgramTypeDescriptor` values and wants a rule against descriptor **content** would need the descriptor document itself, which this version's contract does not provide.
 
-**A known downstream consumer is only partly served, and this is the no-store-read non-goal biting.**
+**A known downstream consumer is only partly served, the no-store-read non-goal being the larger of two reasons.**
 DMS-1414 asks for "a documented way to achieve ODS/API UniqueId validation behaviour in DMS via the custom validation extension point", and DMS-1415 carries the acceptance criterion "Confirmed with the custom validation work (DMS-1345 / DMS-1346) that `IResourceValidator` can express UniqueId validation".
 Both tickets carry the `needs-description` label, and DMS-1415 is an explicit placeholder whose own description says it is "provisional and drawn from the two sources above, not from refinement" and is to be replaced once the scope is agreed.
 What follows therefore answers the criterion as currently written, and should be revisited if refinement changes it.
@@ -601,7 +618,8 @@ ODS implements that behaviour as two validators, and they land differently here.
 `EnsureUniqueIdAlreadyExistsEntityValidator` (`EdFi.Ods.Features/UniqueIdIntegration/Validation/EnsureUniqueIdAlreadyExistsEntityValidator.cs:22`) checks that an upstream pipeline step already resolved the submitted UniqueId to an internal id; the *kind* of rule is expressible here, though a DMS equivalent is shaped differently because there is no such upstream step and no typed model.
 `UniqueIdNotChangedEntityValidator` (`EdFi.Ods.Features/UniqueIdIntegration/Validation/UniqueIdNotChangedEntityValidator.cs:16`) injects `IPersonUniqueIdToIdCache` and calls `GetUniqueId(objType.Name, objectWithIdentifier.Id)` to fetch the **persisted** UniqueId before comparing it to the submitted one (`:32-45`).
 That rule needs previously-stored state, and this version's contract supplies none, so "a person's UniqueId cannot be modified" is **not expressible on the supported surface**.
-An implementer can still satisfy it by injecting their own cache, exactly as ODS does, but nothing in DMS supplies a supported way to populate that cache from DMS's own data, so the honest answer to DMS-1415 is that the not-changed rule is out of scope for this version rather than achievable through documentation alone.
+An implementer can still inject their own cache, exactly as ODS does, but two things stop that from closing the gap: nothing in DMS supplies a supported way to populate that cache from DMS's own data, and the cache lookup needs the persisted document's identifier, which `Validate` does not receive (see [Deferred Follow-On Work](#deferred-follow-on-work) for why the body does not supply it either).
+The honest answer to DMS-1415 is therefore that the not-changed rule is out of scope for this version rather than achievable through documentation alone.
 Whether to close that gap by adding a store-read capability is recorded under [Deferred Follow-On Work](#deferred-follow-on-work) and should be decided with DMS-1414 rather than assumed.
 
 ---
@@ -618,7 +636,7 @@ Whether to close that gap by adding a store-read capability is recorded under [D
 | Deferred item | Reason |
 | --- | --- |
 | Runtime assembly loading (the plugin spike) | Planned as its own design stream. Inherits this contract, the fan-in step, the failure surfacing, and the startup guard unchanged; adds a discovery-and-registration path feeding the same collection. |
-| Store-read capability for validators | Additive to the contract surface (a validator obtains it by constructor injection, not as a parameter), so adding it later breaks no signature. Needs its own error-contract design. It is one of two things the ODS UniqueId not-changed rule needs, not the only one: that rule keys on the persisted document's identifier (`EdFi.Ods.Features/UniqueIdIntegration/Validation/UniqueIdNotChangedEntityValidator.cs:39`), and this version's `Validate` exposes neither a `DocumentUuid` nor the route, so DMS-1414 needs a document-identity capability alongside store access. |
+| Store-read capability for validators | Additive to the contract surface (a validator obtains it by constructor injection, not as a parameter), so adding it later breaks no signature. Needs its own error-contract design. It is one of two things the ODS UniqueId not-changed rule needs, not the only one: that rule keys on the persisted document's identifier (`EdFi.Ods.Features/UniqueIdIntegration/Validation/UniqueIdNotChangedEntityValidator.cs:39`), and this version's `Validate` exposes neither a `DocumentUuid` nor the route, so DMS-1414 needs a document-identity capability alongside store access. The document body does not stand in for it: an `Upsert` body carries no `id` by construction (`Middleware/RejectResourceIdentifierMiddleware.cs:35-45`), and although an `Update` body must carry one matching the route id (`Validation/MatchingDocumentUuidsValidator.cs:23-27`), a writable profile can strip it from the profile-effective body the validator receives, since an `IncludeOnly` member filter keeps only the members the profile names (`Profile/WritableRequestShaper.cs:661-670`). |
 | A wildcard in `AppliesTo` | Additive to `ValidatedResource`. Only worth adding against a real requirement for breadth, which is arguably a different extension point. |
 | Distinct handling for `OperationCanceledException` | The v1 default is the generic 500 arm. Whether cancellation deserves its own outcome is an open decision on the fan-in ticket. |
 | A copy-on-write or read-only `JsonNode` wrapper | Replaces the per-validator deep clone if that cost ever becomes measurable on a bulk-load path. |
