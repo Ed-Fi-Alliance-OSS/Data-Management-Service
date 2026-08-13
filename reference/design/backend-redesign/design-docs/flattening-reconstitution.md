@@ -564,9 +564,16 @@ The resulting write set is keyed by stable `CollectionItemId`s plus parent-scope
 
 ### 5.4 Write execution (single transaction, no N+1)
 
+This generic flatten-and-write algorithm applies to concrete resources with
+`StorageKind = RelationalTables`. Descriptor resources stored in the shared
+`dms.Descriptor` table use the descriptor write handler described in
+`natural-key-resolution.md`: upsert detection probes validated lowered URI +
+`ResourceKeyId` through the shared descriptor target and does not require an
+`OwnNaturalKeyProbe`.
+
 Within a single transaction:
 
-1. Resolve insert vs update with the compiled own-natural-key probe, then insert/update `dms.Document`
+1. Resolve insert vs update with the compiled own-natural-key probe for the relational-table resource, then insert/update `dms.Document`
 2. Write the resource root row (`INSERT` or `UPDATE`)
 3. For each non-root 1:1 scope:
    - `InsertSql` when the scope is visible and present, the row is newly present, and Core marked the scope creatable
@@ -2146,13 +2153,19 @@ Key points:
 
 ### 7.8 Example: POST/PUT execution (flatten + write)
 
-Assume `EffectiveSchemaHash` is sourced from the selected database’s `dms.EffectiveSchema` fingerprint (cached per connection string; see `transactions-and-concurrency.md`), and is available via a request-scoped context.
+Assume `EffectiveSchemaHash` is sourced from the selected database’s `dms.EffectiveSchema` fingerprint (cached per connection string; see `transactions-and-concurrency.md`), and is available via a request-scoped context. The main path in this sketch is for concrete resources with `StorageKind = RelationalTables`; descriptor resources stored in `SharedDescriptorTable` leave through the descriptor write handler before own-natural-key probing.
 
 ```csharp
 public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
 {
     var effectiveSchemaHash = _effectiveSchemaContext.EffectiveSchemaHash;
     var resource = new QualifiedResourceName(request.ResourceInfo.ProjectName.Value, request.ResourceInfo.ResourceName.Value);
+
+    if (_resourceCatalog.GetStorageKind(effectiveSchemaHash, resource) == ResourceStorageKind.SharedDescriptorTable)
+    {
+        await _descriptorWriteHandler.UpsertAsync(request, ct);
+        return;
+    }
 
     // 1) Compile-or-get the write plan for this resource.
     var writePlan = _planProvider.GetWritePlan(effectiveSchemaHash, resource);
@@ -2161,6 +2174,7 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
     await using var tx = await connection.BeginTransactionAsync(ct);
 
     // 2) Resolve identity (insert vs update) with the compiled own-natural-key probe and obtain DocumentId.
+    //    This branch is only for StorageKind=RelationalTables.
     //    (dms.Document writes are not shown here.)
     var documentId = await _documentIdAllocator.GetOrCreateDocumentIdAsync(request, connection, tx, ct);
 

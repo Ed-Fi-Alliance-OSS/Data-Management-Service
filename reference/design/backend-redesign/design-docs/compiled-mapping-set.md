@@ -478,6 +478,8 @@ public sealed record MappingSet(
     IReadOnlyDictionary<QualifiedResourceName, short> ResourceKeyIdByResource,
     IReadOnlyDictionary<short, ResourceKeyEntry> ResourceKeyById,
     IReadOnlyDictionary<QualifiedResourceName, NaturalKeyProbeTarget> NaturalKeyProbeTargets,
+    // Entries exist only for concrete resources with StorageKind=RelationalTables. Concrete
+    // resources stored in SharedDescriptorTable use DescriptorProbeTarget for identity lookup.
     IReadOnlyDictionary<QualifiedResourceName, OwnNaturalKeyProbe> OwnNaturalKeyProbesByResource,
     DescriptorProbeTarget DescriptorProbeTarget
 )
@@ -500,7 +502,7 @@ Design invariants:
 - **Model derivation** (E01) produces `DerivedRelationalModelSet` from the effective schema set.
 - **DDL emission** (E02/E03) consumes `DerivedRelationalModelSet` and a dialect to emit deterministic SQL and manifests.
 - **Plan compilation** (E15) consumes `DerivedRelationalModelSet` and a dialect to produce the `WritePlansByResource`/`ReadPlansByResource` dictionaries used by `MappingSet`.
-- **Pack build** (E05) serializes the `MappingSet` *semantics* into `.mpack` (payload is a subset required for runtime execution), including the storage-resolved target, own-key, and descriptor probe metadata.
+- **Pack build** (E05) serializes the `MappingSet` *semantics* into `.mpack` (payload is a subset required for runtime execution), including storage-resolved target probes, own-key probes for `RelationalTables` resources, and shared descriptor probe metadata.
 - **Pack load** (E05-S05) reconstructs the probe dictionaries and shared descriptor probe from those authoritative payload records without rerunning the probe compiler. Pack load and **runtime mapping selection** (E06-S02) must return the same `MappingSet` shape regardless of whether it came from packs or runtime compilation.
 
 ---
@@ -529,12 +531,24 @@ For a write request targeting resource `R`:
 
 1. **Plan lookup**
    - Resolve `QualifiedResourceName` from routing (project + resource).
-   - Lookup `ResourceWritePlan` via `MappingSet.WritePlansByResource[R]`.
+   - Resolve `R` in `MappingSet.Model` and branch on its `StorageKind`.
+   - Abstract resources are not direct write targets.
+   - For `StorageKind = SharedDescriptorTable`, route to the descriptor write handler. It uses
+     `MappingSet.DescriptorProbeTarget` plus `MappingSet.ResourceKeyIdByResource[R]` to resolve
+     insert vs update by validated lowered URI + `ResourceKeyId`; it MUST NOT require or look up
+     `MappingSet.OwnNaturalKeyProbesByResource[R]`.
+   - For `StorageKind = RelationalTables`, lookup `ResourceWritePlan` via `MappingSet.WritePlansByResource[R]`.
    - Use `MappingSet.ResourceKeyIdByResource[R]` when writing to shared tables like `dms.Document` / `dms.Descriptor` and when binding descriptor/abstract probe literals.
+   - The remaining generic flatten/write steps below apply to the `RelationalTables` branch.
 
 2. **Document identity and `DocumentId`**
    - Core extracts the document identity and reference instances with concrete JSON locations.
-   - Backend resolves insert vs update with the compiled own-natural-key probe for `R` and allocates/loads the root `DocumentId` (details in `flattening-reconstitution.md` and `natural-key-resolution.md`).
+   - For `StorageKind = RelationalTables`, backend resolves insert vs update with the compiled
+     own-natural-key probe for `R` and allocates/loads the root `DocumentId` (details in
+     `flattening-reconstitution.md` and `natural-key-resolution.md`).
+   - For `StorageKind = SharedDescriptorTable`, the descriptor branch has already resolved
+     insert/update through the descriptor lowered-URI + `ResourceKeyId` probe described in
+     `natural-key-resolution.md`.
 
 3. **Bulk reference + descriptor resolution**
    - Before constructing lookup entries, Core descriptor extraction rejects every non-ASCII or NUL
