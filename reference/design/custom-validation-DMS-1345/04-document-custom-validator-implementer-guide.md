@@ -1,0 +1,50 @@
+---
+jira: TBD
+jira_url: TBD
+epic: DMS-1345
+source_spike: DMS-1346
+---
+
+# Story: Document the Custom-Validator Implementer Guide
+
+## Description
+
+Once the contract, the fan-in step, and the composition seam have shipped, none of the reasoning behind them is written anywhere an implementer outside this spike would find it. This story adds implementer-facing documentation, packaged with the abstractions package so it travels with the contract rather than living only in the repository, per:
+
+- `reference/design/custom-validation-DMS-1345/design.md` ("### Registration and Composition", "### Lifetime and Resolution", "## Failure Surfacing", "## Security Posture", "## Versioning and Compatibility")
+
+The guide covers authoring a validator, registering it, what the contract does and does not give it, and the failure semantics it must design around. It documents one delivery path, compiled-in; runtime assembly loading is deferred to its own spike, and if an implementer asks, the answer is that it is not available in this version.
+
+Several of the guide's obligations are places where the obvious phrasing would overpromise, and the design assigns them here deliberately rather than leaving them to be discovered. The startup guard catches unresolvable constructor dependencies but not a service that constructs cleanly and throws when its request-scoped state is read, so the per-request-state rule is stated as a rule the implementer follows, not a guarantee the platform enforces. Reaching around the contract to host services such as `IDocumentStoreRepository` works and nothing stops it, so the guide states the supported-versus-possible line rather than implying an enforcement that does not exist. And the store-read gap has a named consequence for the ODS UniqueId behaviour that DMS-1414 will want, which the guide states plainly.
+
+This story depends on the abstractions-contract, fan-in-step, and composition-seam stories, and grounds every claim in what those actually shipped rather than re-deriving it from design.md.
+
+## Acceptance Criteria
+
+- A markdown document under `src/dms/core/EdFi.DataManagementService.Core.External/` contains a compiling code sample showing how to implement `ICustomResourceValidator`, including its `AppliesTo` declaration and the full `Validate` signature.
+- The same document contains a compiling code sample of the registration extension an implementer writes, showing `TryAddEnumerable` registration and options binding, plus the one line a deployment adds at DMS's composition root.
+- The document states that the abstractions package follows semver, that its published id is `EdFi.Api.Core.External`, and that a breaking change to `ICustomResourceValidator` or `ValidationFailure` requires every validator to be recompiled. It also states the consequence design.md records as deliberate: the package carries the whole pre-existing `Core.External` seam, not only the validator types, so that entire surface is what the semver promise covers.
+- The document states that because the validator is compiled into the deployment's build, an incompatible contract change surfaces at the implementer's own compiler rather than at a production process start, and that target framework is a compatibility axis alongside the package version, since a DMS runtime major-version bump changes the set of buildable validators without any package version changing.
+- The document states the constructor rules: constructors run on every write request regardless of whether `AppliesTo` matches, so they must stay trivial; and a validator's constructor must not require per-request state. The second is stated as a rule the implementer follows, with an explicit note that the startup guard catches only unresolvable dependencies and will not catch a service that constructs cleanly and throws when its request-scoped state is read.
+- The document states the transient-only lifetime rule and that the startup guard aborts the process on a non-transient descriptor, on an `ImplementationInstance` descriptor, and on an `ImplementationFactory` descriptor, so an implementer knows why a factory registration is rejected.
+- The document states that `AppliesTo` matching is exact and case-sensitive, that there is no wildcard, and that an entry matching no resource produces a startup warning rather than a failure, so a typo surfaces as a warning rather than as a validator that silently never runs.
+- The document states what `document` actually is: the profile-effective body, which is the profile-shaped body when a writable profile applies and `ParsedBody` otherwise, together with the consequence that version metadata injected into `ParsedBody` is visible on non-profile writes and absent on writable-profile writes.
+- The document states that a returned `OnPath` or `OnResource` failure always produces a 400 in the documented shape, and that an unhandled validator exception always produces a loud, logged 500, never a silent success. It notes that the catch chain's two special-cased exception types belong to Core's own authorization machinery: one is not referenceable from the abstractions package at all, and throwing the other from a validator is unsupported.
+- The document states that message order within `errors` and within each `validationErrors` entry is not part of the contract and a client must not depend on it. This is a client-facing contract term that would otherwise reach no deliverable.
+- The document states the write-path cost of I/O in a validator: the fan-in step awaits every applicable validator before the request reaches its handler, so a slow or unreachable external system makes every matching POST and PUT slow or failing; the only timeout is whatever the validator's own client is configured with; and a timeout surfaces as a 500 rather than a skipped validator.
+- The document states the deployment-scoping rule: a registration belongs to a whole DMS deployment, not to one district, so a district-specific rule is scoped by the `ValidationScope` that `Validate` receives. It must state that `Tenant` is null unless multi-tenancy is enabled and that `RouteQualifiers` is how a district is normally identified, so an implementer does not write a rule that silently never matches in a single-tenant routed deployment.
+- The document states the security posture an operator inherits: a validator runs in the DMS process with no isolation and can do anything that process can do, and because it is compiled into the deployment's build, the trust boundary is whoever reviews and builds that deployment's code.
+- The document states that this version's contract gives a validator no store access, so rules requiring a lookup against stored data cannot be expressed within the supported surface. It must also state the supported-versus-possible line rather than implying an enforcement that does not exist: an implementer can reference a host assembly and constructor-inject services such as `IDocumentStoreRepository`, nothing stops it, and doing so forfeits the package's compatibility promise because those assemblies carry no semver commitment.
+- The document states that the ODS "a person's UniqueId cannot be modified" rule is not expressible under this version's contract, because it requires reading persisted identity state, and points at the deferred store-read item rather than leaving a reader to conclude the gap is an oversight.
+- The document states that runtime loading of a validator assembly is not available in this version and is deferred to its own design spike, so an implementer does not go looking for a plugin folder.
+- The document is the one the abstractions-contract story's `PackageReadmeFile` points at, so it ships inside `EdFi.Api.Core.External`, proven by extracting the packed nupkg and asserting the content is present.
+- Both code samples are mirrored verbatim as compiling fixture classes in a project whose only reference is `EdFi.DataManagementService.Core.External`, matching what an external implementer actually has. Mirroring them into `EdFi.DataManagementService.Core.Tests.Unit` would prove nothing, since that project references Core, the frontend, and three Backend projects and has `InternalsVisibleTo` on Core, so a sample reaching for a Core internal would compile green there and fail for every real consumer.
+
+## Tasks
+
+1. Extend `src/dms/core/EdFi.DataManagementService.Core.External/README.md` with a custom-validator section, or add a sibling markdown file it links to if the README's existing scope should stay unchanged. Either placement keeps the documentation beside the shipped contract types.
+2. Write the two code samples against the actually-shipped signatures, not against design.md.
+3. Write the semver, target-framework, lifetime, `AppliesTo`, profile-body, failure-semantics, message-order, I/O-cost, scoping, and security sections.
+4. Write the store-read limitation section, including the supported-versus-possible line and the named UniqueId consequence.
+5. Add the compiling-sample fixture project whose only reference is `EdFi.DataManagementService.Core.External`, with a test asserting each sample type satisfies `ICustomResourceValidator`.
+6. Point the abstractions-contract story's `PackageReadmeFile` at this document and verify it is present in the extracted nupkg.
