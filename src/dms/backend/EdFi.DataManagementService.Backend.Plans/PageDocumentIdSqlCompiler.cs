@@ -1172,16 +1172,9 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             pathSteps
         );
 
-        // The anchored shape needs a first hop to open the subquery on plus a terminal step carrying the
-        // person column. A one-step path is the Direct shape; emitting it here would read the terminal person
-        // column off the first hop's target table, which does not carry it.
-        if (pathSteps.Count < 2)
-        {
-            throw new InvalidOperationException(
-                "Transitive People authorization paths require at least a root-owned reference step and a terminal person step."
-            );
-        }
-
+        // The anchored shape needs a first hop to open the subquery on plus a separate terminal step carrying
+        // the person column. RelationshipAuthorizationPersonSubjectPath enforces that at construction, so a
+        // one-step transitive path cannot reach here.
         var firstStep = pathSteps[0];
         var firstHopTable =
             firstStep.TargetTable
