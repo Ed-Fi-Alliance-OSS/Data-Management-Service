@@ -288,7 +288,7 @@ public static IServiceCollection AddDistrictValidators(
 ```
 
 The sample takes an `Action<TOptions>` rather than an `IConfiguration` section deliberately.
-`Microsoft.Extensions.Options` and `Microsoft.Extensions.DependencyInjection.Abstractions` are both in the abstractions package's dependency closure, so `Configure` and `TryAddEnumerable` compile against the package alone; `Microsoft.Extensions.Configuration.Abstractions` and `Microsoft.Extensions.Options.ConfigurationExtensions` are not in that closure, so `IConfiguration` and `GetSection` would not.
+`Microsoft.Extensions.Options` and `Microsoft.Extensions.DependencyInjection.Abstractions` are declared dependencies of the abstractions package, so `Configure` and `TryAddEnumerable` compile against the package alone; `Microsoft.Extensions.Configuration.Abstractions` and `Microsoft.Extensions.Options.ConfigurationExtensions` are not, so `IConfiguration` and `GetSection` would not.
 An implementer who prefers section binding references those two packages from their own assembly, which is theirs to decide; the contract does not oblige them either way, and does not carry the dependency on their behalf.
 
 The deployment references that assembly and adds one call at DMS's composition root, `WebApplicationBuilderExtensions.AddServices` (`Infrastructure/WebApplicationBuilderExtensions.cs:32`), alongside the calls already there:
@@ -468,10 +468,12 @@ A DMS runtime major-version bump therefore changes the set of buildable validato
 The two analyzer references that `src/dms/Directory.Build.props:14-21` adds to every project are not part of that surface, since both carry `PrivateAssets=all` and therefore do not flow to consumers.
 One of the five is unused: no file in the project references any Roslyn API, and `Microsoft.CodeAnalysis` is declared as an ordinary reference without the `PrivateAssets` scoping the analyzers beside it carry.
 That single reference accounts for 16 of the 26 packages, including every Roslyn package, the six `System.Composition.*` packages, and `Humanizer.Core`, none of which is reachable from any other declared reference.
-Removing it leaves four declared dependencies, each genuinely used and individually small: `Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic` (`Model/ReferentialIdFactory.cs:6`), `Sandwych.QuickGraph.Core` (`Model/GraphMLEdge.cs:6`), and `Microsoft.Extensions.Logging` with `Microsoft.Extensions.Logging.Abstractions` (`Logging/RequestLoggingEventIds.cs`).
-Those resolve to a closure of eight once the logging packages' own transitives are counted (`DependencyInjection`, `DependencyInjection.Abstractions`, `Options`, `Primitives`), and it is precisely those transitives that make the `Action<TOptions>` registration sample above compile against the package alone.
+Removing it leaves `Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic` (`Model/ReferentialIdFactory.cs:6`), `Sandwych.QuickGraph.Core` (`Model/GraphMLEdge.cs:6`), and the two logging packages, of which only `Microsoft.Extensions.Logging.Abstractions` is actually used: the sole logging symbol in the project is `EventId` (`Logging/RequestLoggingEventIds.cs:15`, `:17`).
+The contract ticket additionally declares `Microsoft.Extensions.Options` and `Microsoft.Extensions.DependencyInjection.Abstractions` explicitly.
+Both already arrive transitively today, but only by way of `Microsoft.Extensions.Logging`, and the registration extension this design documents needs them directly.
+A dependency the documented usage requires must be declared rather than inherited through a reference that is itself a cleanup candidate, or a later tidy-up removes the sample's ability to compile without touching anything that mentions it.
 Removing the Roslyn reference is therefore prerequisite work in the contract ticket alongside the pack-and-publish step, and that ticket asserts the resulting dependency list rather than trusting it.
-Left in place, a district implementing a six-member interface would take a compile-and-publish dependency on the Roslyn compiler platform.
+Left in place, a district implementing this contract would take a compile-and-publish dependency on the Roslyn compiler platform.
 
 **Supported versus possible.** A validator is in-process code that can constructor-inject anything the host registers, and `IDocumentStoreRepository` and `IQueryHandler` are public interfaces registered scoped in the host (`Backend.External/RepositoryContracts.cs:13`, `:39`) whose assembly the deployment already references, so an implementer can reach services this contract does not offer.
 Such a validator works and nothing stops it.
