@@ -1161,6 +1161,10 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     {
         var personMetadata = subject.PersonMetadata;
         var pathSteps = personMetadata.Path.Steps;
+
+        // Load-bearing for anchor correctness, not merely a diagnostic: this is what guarantees
+        // pathSteps[0].SourceTable is the query root, so the first step's source column is a column the root
+        // row itself carries and can be qualified with the root alias.
         RelationshipAuthorizationPeoplePathValidation.ValidateTransitivePersonPath(
             rootTable,
             subject.Table,
@@ -1168,25 +1172,50 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             pathSteps
         );
 
-        var rootSubqueryAlias = aliasAllocator.AllocateNext();
+        // The anchored shape needs a first hop to open the subquery on plus a terminal step carrying the
+        // person column. A one-step path is the Direct shape; emitting it here would read the terminal person
+        // column off the first hop's target table, which does not carry it.
+        if (pathSteps.Count < 2)
+        {
+            throw new InvalidOperationException(
+                "Transitive People authorization paths require at least a root-owned reference step and a terminal person step."
+            );
+        }
+
+        var firstStep = pathSteps[0];
+        var firstHopTable =
+            firstStep.TargetTable
+            ?? throw new InvalidOperationException(
+                "Transitive People authorization path steps must include a target table for first-hop joins."
+            );
+        var firstHopColumn =
+            firstStep.TargetColumnName
+            ?? throw new InvalidOperationException(
+                "Transitive People authorization path steps must include a target column for first-hop joins."
+            );
+
+        var firstHopAlias = aliasAllocator.AllocateNext();
         var pathJoinAliases = Enumerable
-            .Range(0, pathSteps.Count - 1)
+            .Range(0, pathSteps.Count - 2)
             .Select(_ => aliasAllocator.AllocateNext())
             .ToArray();
         var authAlias = aliasAllocator.AllocateNext();
 
+        // Anchor on the root row's own reference FK and open the subquery at the first hop's target table.
+        // Anchoring on a primary-key self-join of the root table would be semantically identical but makes
+        // PostgreSQL scan the root table twice and hash every authorized DocumentId on every page.
         writer.Append($"{_rootAlias}.");
-        writer.AppendQuoted(personMetadata.StoredAnchor.RootDocumentIdColumn.Value);
+        writer.AppendQuoted(firstStep.SourceColumnName.Value);
         writer.Append(" IN (SELECT ");
-        writer.Append($"{rootSubqueryAlias}.");
-        writer.AppendQuoted(personMetadata.StoredAnchor.RootDocumentIdColumn.Value);
+        writer.Append($"{firstHopAlias}.");
+        writer.AppendQuoted(firstHopColumn.Value);
         writer.Append(" FROM ");
-        writer.AppendRelation(new SqlRelationRef.PhysicalTable(rootTable));
-        writer.Append($" {rootSubqueryAlias}");
+        writer.AppendRelation(new SqlRelationRef.PhysicalTable(firstHopTable));
+        writer.Append($" {firstHopAlias}");
 
-        var currentSourceAlias = rootSubqueryAlias;
+        var currentSourceAlias = firstHopAlias;
 
-        for (var stepIndex = 0; stepIndex < pathSteps.Count - 1; stepIndex++)
+        for (var stepIndex = 1; stepIndex < pathSteps.Count - 1; stepIndex++)
         {
             var step = pathSteps[stepIndex];
             var targetTable =
@@ -1199,7 +1228,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                 ?? throw new InvalidOperationException(
                     "Transitive People authorization path steps must include a target column for intermediate joins."
                 );
-            var joinAlias = pathJoinAliases[stepIndex];
+            var joinAlias = pathJoinAliases[stepIndex - 1];
 
             writer.Append(" JOIN ");
             writer.AppendRelation(new SqlRelationRef.PhysicalTable(targetTable));

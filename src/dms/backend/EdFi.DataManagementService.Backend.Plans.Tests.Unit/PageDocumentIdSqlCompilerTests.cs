@@ -1776,11 +1776,11 @@ public class Given_PageDocumentIdSqlCompiler
 
     [TestCase(
         SqlDialect.Pgsql,
-        "r.\"DocumentId\" IN (SELECT t0.\"DocumentId\" FROM \"edfi\".\"CourseTranscript\" t0 JOIN \"edfi\".\"StudentAcademicRecord\" t1 ON t1.\"DocumentId\" = t0.\"StudentAcademicRecord_DocumentId\" WHERE t1.\"Student_DocumentId\" IN (SELECT t2.\"Student_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStudentDocumentId\" t2 WHERE t2.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"
+        "r.\"StudentAcademicRecord_DocumentId\" IN (SELECT t0.\"DocumentId\" FROM \"edfi\".\"StudentAcademicRecord\" t0 WHERE t0.\"Student_DocumentId\" IN (SELECT t1.\"Student_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStudentDocumentId\" t1 WHERE t1.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"
     )]
     [TestCase(
         SqlDialect.Mssql,
-        "r.[DocumentId] IN (SELECT t0.[DocumentId] FROM [edfi].[CourseTranscript] t0 JOIN [edfi].[StudentAcademicRecord] t1 ON t1.[DocumentId] = t0.[StudentAcademicRecord_DocumentId] WHERE t1.[Student_DocumentId] IN (SELECT t2.[Student_DocumentId] FROM [auth].[EducationOrganizationIdToStudentDocumentId] t2 WHERE t2.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0))"
+        "r.[StudentAcademicRecord_DocumentId] IN (SELECT t0.[DocumentId] FROM [edfi].[StudentAcademicRecord] t0 WHERE t0.[Student_DocumentId] IN (SELECT t1.[Student_DocumentId] FROM [auth].[EducationOrganizationIdToStudentDocumentId] t1 WHERE t1.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0))"
     )]
     public void It_should_emit_transitive_student_authorization_sql_with_ordered_path_joins_for_page_and_total_count_queries(
         SqlDialect dialect,
@@ -1875,7 +1875,7 @@ public class Given_PageDocumentIdSqlCompiler
         );
 
         const string ExpectedPeoplePredicate =
-            "r.\"DocumentId\" IN (SELECT t0.\"DocumentId\" FROM \"edfi\".\"CourseTranscript\" t0 JOIN \"edfi\".\"StudentAcademicRecord\" t1 ON t1.\"DocumentId\" = t0.\"StudentAcademicRecord_DocumentId\" WHERE t1.\"Student_DocumentId\" IN (SELECT t2.\"Student_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStudentDocumentId\" t2 WHERE t2.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds)))))";
+            "r.\"StudentAcademicRecord_DocumentId\" IN (SELECT t0.\"DocumentId\" FROM \"edfi\".\"StudentAcademicRecord\" t0 WHERE t0.\"Student_DocumentId\" IN (SELECT t1.\"Student_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStudentDocumentId\" t1 WHERE t1.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds)))))";
 
         plan.PageDocumentIdSql.Should().Contain(ExpectedPeoplePredicate);
         plan.TotalCountSql.Should().NotBeNull();
@@ -1933,11 +1933,11 @@ public class Given_PageDocumentIdSqlCompiler
 
     [TestCase(
         SqlDialect.Pgsql,
-        "r.\"DocumentId\" IN (SELECT t0.\"DocumentId\" FROM \"edfi\".\"CourseTranscript\" t0 JOIN \"edfi\".\"StudentAcademicRecord\" t1 ON t1.\"DocumentId\" = t0.\"StudentAcademicRecord_DocumentId\" WHERE t1.\"Contact_DocumentId\" IN (SELECT t2.\"Contact_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToContactDocumentId\" t2 WHERE t2.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"
+        "r.\"StudentAcademicRecord_DocumentId\" IN (SELECT t0.\"DocumentId\" FROM \"edfi\".\"StudentAcademicRecord\" t0 WHERE t0.\"Contact_DocumentId\" IN (SELECT t1.\"Contact_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToContactDocumentId\" t1 WHERE t1.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"
     )]
     [TestCase(
         SqlDialect.Mssql,
-        "r.[DocumentId] IN (SELECT t0.[DocumentId] FROM [edfi].[CourseTranscript] t0 JOIN [edfi].[StudentAcademicRecord] t1 ON t1.[DocumentId] = t0.[StudentAcademicRecord_DocumentId] WHERE t1.[Contact_DocumentId] IN (SELECT t2.[Contact_DocumentId] FROM [auth].[EducationOrganizationIdToContactDocumentId] t2 WHERE t2.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0))"
+        "r.[StudentAcademicRecord_DocumentId] IN (SELECT t0.[DocumentId] FROM [edfi].[StudentAcademicRecord] t0 WHERE t0.[Contact_DocumentId] IN (SELECT t1.[Contact_DocumentId] FROM [auth].[EducationOrganizationIdToContactDocumentId] t1 WHERE t1.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0))"
     )]
     public void It_should_emit_transitive_contact_authorization_sql_with_ordered_path_joins_for_page_and_total_count_queries(
         SqlDialect dialect,
