@@ -23,6 +23,39 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
+internal sealed class DescriptorCommandRecorder
+{
+    private readonly List<string> _commandTexts = [];
+
+    public IReadOnlyList<string> CommandTexts => _commandTexts;
+
+    public void Reset() => _commandTexts.Clear();
+
+    public void Record(RelationalCommand command) => _commandTexts.Add(command.CommandText);
+}
+
+/// <summary>
+/// Records the descriptor page commands the real provider executor ran, so a test can prove a cursor
+/// page cost exactly one command and asked for no count rather than inferring it from a null TotalCount.
+/// </summary>
+internal sealed class RecordingDescriptorCommandExecutor(
+    PostgresqlRelationalCommandExecutor inner,
+    DescriptorCommandRecorder recorder
+) : IRelationalCommandExecutor
+{
+    public SqlDialect Dialect => inner.Dialect;
+
+    public Task<TResult> ExecuteReaderAsync<TResult>(
+        RelationalCommand command,
+        Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,
+        CancellationToken cancellationToken = default
+    )
+    {
+        recorder.Record(command);
+        return inner.ExecuteReaderAsync(command, readAsync, cancellationToken);
+    }
+}
+
 [TestFixture]
 [NonParallelizable]
 [Category("DatabaseIntegration")]
@@ -528,6 +561,14 @@ public class Given_A_Postgresql_DescriptorRead_Query_Request
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();
+        services.AddSingleton<DescriptorCommandRecorder>();
+        services.AddScoped<PostgresqlRelationalCommandExecutor>();
+        services.AddScoped<IRelationalCommandExecutor>(
+            serviceProvider => new RecordingDescriptorCommandExecutor(
+                serviceProvider.GetRequiredService<PostgresqlRelationalCommandExecutor>(),
+                serviceProvider.GetRequiredService<DescriptorCommandRecorder>()
+            )
+        );
         services.AddPostgresqlBackendIntegrationTestServices();
 
         return services.BuildServiceProvider(
@@ -732,6 +773,161 @@ public class Given_A_Postgresql_DescriptorRead_Query_Request
 
         success.HighestSelectedDocumentId.Should().BeNull();
         success.EdfiDocs.Should().BeEmpty();
+    }
+
+    // The story requires real-provider descriptor evidence for the predicates a cursor page composes
+    // with, not only for the unfiltered walk. A filter reaching the descriptor candidate relation
+    // alongside the range is what keeps a filtered walk from returning documents the filter excludes.
+    [Test]
+    public async Task It_composes_a_descriptor_query_filter_with_the_cursor_range()
+    {
+        await SeedDescriptorsAsync(PagingDescriptorSeeds);
+
+        var success = (QueryResult.QuerySuccess)
+            await ExecuteQueryAsync(
+                [CreateQueryElement("codeValue", "$.codeValue", PagingSecondSeed.CodeValue)],
+                "pg-descriptor-cursor-filter",
+                paging: new CollectionPaging.Cursor(CursorRange.From(1), new PageSize(25))
+            );
+
+        success.EdfiDocs.Should().ContainSingle();
+        AssertDescriptorDocument(success.EdfiDocs[0]!.AsObject(), PagingSecondSeed);
+        success.HighestSelectedDocumentId.Should().NotBeNull();
+        success.AllowsDocumentIdContinuation.Should().BeTrue();
+    }
+
+    // A min-only window keeps DocumentId ordering, so a cursor page inside it continues normally.
+    [Test]
+    public async Task It_composes_a_min_only_change_version_window_with_the_descriptor_cursor_range()
+    {
+        await SeedDescriptorsAsync(PagingDescriptorSeeds);
+        var contentVersions = await ReadDescriptorContentVersionsByDocumentUuidAsync();
+        var lowestContentVersion = contentVersions.Values.Min();
+
+        var success = (QueryResult.QuerySuccess)
+            await ExecuteQueryAsync(
+                [],
+                "pg-descriptor-cursor-min-window",
+                changeVersionRange: new ChangeVersionRange(lowestContentVersion, null),
+                paging: new CollectionPaging.Cursor(CursorRange.From(1), new PageSize(25))
+            );
+
+        success.EdfiDocs.Should().HaveCount(PagingDescriptorSeeds.Length);
+        success.HighestSelectedDocumentId.Should().NotBeNull();
+        success.AllowsDocumentIdContinuation.Should().BeTrue();
+    }
+
+    // A window that excludes every descriptor selects nothing, so the page carries no boundary: the
+    // change-version predicate really reaches the cursor candidate relation rather than being dropped.
+    [Test]
+    public async Task It_composes_an_excluding_change_version_window_with_the_descriptor_cursor_range()
+    {
+        await SeedDescriptorsAsync(PagingDescriptorSeeds);
+        var contentVersions = await ReadDescriptorContentVersionsByDocumentUuidAsync();
+        var highestContentVersion = contentVersions.Values.Max();
+
+        var success = (QueryResult.QuerySuccess)
+            await ExecuteQueryAsync(
+                [],
+                "pg-descriptor-cursor-excluding-window",
+                changeVersionRange: new ChangeVersionRange(highestContentVersion + 1, null),
+                paging: new CollectionPaging.Cursor(CursorRange.From(1), new PageSize(25))
+            );
+
+        success.EdfiDocs.Should().BeEmpty();
+        success.HighestSelectedDocumentId.Should().BeNull();
+    }
+
+    // A max-bearing window still leaves a cursor page ordered by DocumentId, so its selected maximum can
+    // anchor a continuation. A traditional page over the same window cannot, and that contrast is the
+    // interim suppression rule observed on a real descriptor query.
+    [Test]
+    public async Task It_composes_a_max_bearing_change_version_window_with_the_descriptor_cursor_range()
+    {
+        await SeedDescriptorsAsync(PagingDescriptorSeeds);
+        var contentVersions = await ReadDescriptorContentVersionsByDocumentUuidAsync();
+        var highestContentVersion = contentVersions.Values.Max();
+
+        var cursorSuccess = (QueryResult.QuerySuccess)
+            await ExecuteQueryAsync(
+                [],
+                "pg-descriptor-cursor-max-window",
+                changeVersionRange: new ChangeVersionRange(null, highestContentVersion),
+                paging: new CollectionPaging.Cursor(CursorRange.From(1), new PageSize(25))
+            );
+
+        cursorSuccess.EdfiDocs.Should().HaveCount(PagingDescriptorSeeds.Length);
+        cursorSuccess.HighestSelectedDocumentId.Should().NotBeNull();
+        cursorSuccess.AllowsDocumentIdContinuation.Should().BeTrue();
+
+        var traditionalSuccess = (QueryResult.QuerySuccess)
+            await ExecuteQueryAsync(
+                [],
+                "pg-descriptor-traditional-max-window",
+                changeVersionRange: new ChangeVersionRange(null, highestContentVersion)
+            );
+
+        traditionalSuccess.HighestSelectedDocumentId.Should().NotBeNull();
+        traditionalSuccess.AllowsDocumentIdContinuation.Should().BeFalse();
+    }
+
+    [Test]
+    public async Task It_selects_the_whole_descriptor_collection_at_the_configured_maximum_page_size()
+    {
+        await SeedDescriptorsAsync(PagingDescriptorSeeds);
+
+        var success = (QueryResult.QuerySuccess)
+            await ExecuteQueryAsync(
+                [],
+                "pg-descriptor-cursor-size-max",
+                paging: new CollectionPaging.Cursor(CursorRange.From(1), new PageSize(MaximumPageSize))
+            );
+
+        success.EdfiDocs.Should().HaveCount(PagingDescriptorSeeds.Length);
+        success.HighestSelectedDocumentId.Should().NotBeNull();
+    }
+
+    // Observed at the provider command seam rather than inferred from a null TotalCount: a descriptor
+    // cursor page runs exactly one command, and that command asks for no count. A second roundtrip or a
+    // count would break the single-command invariant without changing any response value.
+    [Test]
+    public async Task It_runs_one_descriptor_command_with_no_count_for_a_cursor_page()
+    {
+        await SeedDescriptorsAsync(PagingDescriptorSeeds);
+
+        var recorder = _serviceProvider.GetRequiredService<DescriptorCommandRecorder>();
+        recorder.Reset();
+
+        var success = (QueryResult.QuerySuccess)
+            await ExecuteQueryAsync(
+                [],
+                "pg-descriptor-cursor-command-shape",
+                paging: new CollectionPaging.Cursor(CursorRange.From(1), new PageSize(2))
+            );
+
+        success.EdfiDocs.Should().HaveCount(2);
+        recorder.CommandTexts.Should().ContainSingle("a cursor page must not add a command or a roundtrip");
+        recorder.CommandTexts[0].Should().NotContain("COUNT");
+        recorder.CommandTexts[0].Should().Contain("@cursorMin");
+        recorder.CommandTexts[0].Should().Contain("@cursorMax");
+        recorder.CommandTexts[0].Should().Contain("@pageSize");
+        recorder.CommandTexts[0].Should().NotContain("@offset");
+    }
+
+    // The traditional counterpart does compile count SQL when asked, so the assertion above is a property
+    // of cursor mode rather than of this fixture never counting at all.
+    [Test]
+    public async Task It_still_counts_for_a_traditional_descriptor_page_when_requested()
+    {
+        await SeedDescriptorsAsync(PagingDescriptorSeeds);
+
+        var recorder = _serviceProvider.GetRequiredService<DescriptorCommandRecorder>();
+        recorder.Reset();
+
+        await ExecuteQueryAsync([], "pg-descriptor-traditional-command-shape", totalCount: true);
+
+        recorder.CommandTexts.Should().ContainSingle();
+        recorder.CommandTexts[0].Should().Contain("COUNT");
     }
 
     private static void AssertDescriptorPage(
