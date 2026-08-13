@@ -247,10 +247,21 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
      - reference-bearing identities (kept current via cascades and flattened `RefKey` columns)
      - polymorphic/abstract identities via `{AbstractResource}Identity`
    - Descriptor refs resolve through the lowered-URI + `ResourceKeyId` descriptor index.
-3. Backend writes within a single transaction:
-   - For update flows that already loaded the current document state, backend SHOULD compare the request-derived
-     post-merge rowset to the current persisted rowset before issuing DML. If they are equal, treat the request as a successful
-     no-op and skip data-modifying statements (see “No-op update detection” below).
+3. Backend plans and writes within a single transaction:
+   - For update flows, load the current document state needed for authorization, merge, stored-identity rebind,
+     and guarded no-op detection.
+   - Materialize the request-derived candidate rows after reference and descriptor ids have been populated. Before
+     storage binding, no-op synthesis, or collection-table DML, run the storage-resolved collection duplicate
+     validator from [natural-key-resolution.md](natural-key-resolution.md#collection-duplicate-detection).
+   - Bind candidates against current rows to produce the post-merge rowset.
+   - Before authorization-on-proposed-values and no-op detection, apply the stored-identity rebind required by
+     [natural-key-resolution.md](natural-key-resolution.md#how-the-write-path-will-preserve-stored-casing-sql-server)
+     for SQL Server regular-resource writes and for descriptor writes. The rebound rowset is the proposed state used
+     by downstream authorization, no-op comparison, and DML.
+   - Run authorization checks against stored values and the rebound proposed rowset before any data-modifying
+     statements.
+   - Compare the rebound post-merge rowset to the current persisted rowset before issuing DML. If they are equal,
+     treat the request as a successful no-op and skip data-modifying statements (see “No-op update detection” below).
    - Insert/update `dms.Document` (allocate `DocumentId`; persist `DocumentUuid` and `ResourceKeyId`).
    - Write resource root + child + extension tables (merge strategy for collections).
    - For each document reference site:
@@ -287,7 +298,8 @@ Authorization is enforced for all writes and MUST be applied before executing an
 
 Integration points:
 - Authentication occurs before the write path begins and produces a token-derived authorization context (EdOrgIds, namespace prefixes, ownership tokens, and any claim-set-derived strategy configuration).
-- Authorization checks run after reference resolution (so checks can use already-resolved `DocumentId`s) and before inserts/updates/deletes.
+- Authorization checks run after reference resolution (so checks can use already-resolved `DocumentId`s) and after
+  any stored-identity rebind needed to form the proposed rowset; they still run before inserts/updates/deletes.
 - For update operations, authorization is evaluated against:
   - **stored values** (to authorize the current state), and
   - **new values** (to authorize the requested state) when identifying values change (see [auth.md](auth.md) for the execution order and error semantics).
@@ -327,8 +339,9 @@ Engine considerations:
 For `PUT`, and for `POST` when upsert resolves to an existing document, the write path SHOULD support a
 whole-document no-op fast path:
 
-- Compare the request-derived relational rowset to the current persisted rowset using the stored/writable columns that
-  the normal write executor would bind, after applying the same collection merge rules the write path would execute.
+- Compare the rebound request-derived relational rowset to the current persisted rowset using the stored/writable columns
+  that the normal write executor would bind, after applying the same collection merge rules and storage-resolved
+  duplicate-validation boundary the write path would execute.
 - Reuse the update flow’s existing “load current document” roundtrip for this comparison. Do not add a dedicated
   preflight query by default; the optimization is meant to reduce write amplification, not trade one write for an
   extra read roundtrip.

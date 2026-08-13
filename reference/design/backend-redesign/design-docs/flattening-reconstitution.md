@@ -2169,7 +2169,11 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
         documentReferences,
         resolved);
 
-    // 6) Bind candidates against current sibling sets, reserve any needed CollectionItemIds,
+    // 6) Reject collection duplicates that only become visible after storage resolution.
+    //    See natural-key-resolution.md#collection-duplicate-detection.
+    _storageResolvedDuplicateValidator.Validate(writePlan, candidateSet, resolved);
+
+    // 7) Bind candidates against current sibling sets, reserve any needed CollectionItemIds,
     //    and produce the post-merge write set.
     var writeSet = _mergeBinder.Bind(
         writePlan,
@@ -2181,8 +2185,24 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
         tx,
         ct);
 
-    // 7) Execute root + child table writes in plan order (set-based).
-    await _writer.ExecuteAsync(writePlan, documentId, writeSet, connection, tx, ct);
+    // 8) Rebind CI-equal identity values to stored casing before proposed-value authorization
+    //    and no-op detection. This is active for the SQL Server identity contract and descriptor
+    //    stored-wins writes; PostgreSQL regular-resource writes are already byte-exact.
+    //    See natural-key-resolution.md#how-the-write-path-will-preserve-stored-casing-sql-server.
+    var proposedWriteSet = _storedIdentityRebinder.Rebind(writePlan, writeSet, currentState);
+
+    // 9) Authorize against stored state plus the rebound proposed state before any DML.
+    await _authorizationService.AuthorizeWriteAsync(request, currentState, proposedWriteSet, connection, tx, ct);
+
+    // 10) Apply the guarded no-op fast path using the same rebound rowset the writer would bind.
+    if (await _noOpDetector.IsNoOpAsync(writePlan, documentId, currentState, proposedWriteSet, connection, tx, ct))
+    {
+        await tx.CommitAsync(ct);
+        return;
+    }
+
+    // 11) Execute root + child table writes in plan order (set-based).
+    await _writer.ExecuteAsync(writePlan, documentId, proposedWriteSet, connection, tx, ct);
 
     // Abstract identity maintenance and update tracking are handled in-transaction by generated database triggers
     // (abstract-identity rows + version stamping; identity propagation via provider-specific full-composite FK actions;
@@ -2194,6 +2214,8 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
 
 Notes:
 - `_referenceResolver.ResolveAsync(...)` resolves document and descriptor references to `DocumentId` via generated natural-key probes: concrete `RefKey`, abstract identity `RefKey` plus concrete `ResourceKeyId`, and descriptor lowered-URI + `ResourceKeyId`.
+- `_storageResolvedDuplicateValidator.Validate(...)` is the backend-owned second duplicate boundary from `natural-key-resolution.md`: it uses resolved `DocumentId` / `DescriptorId` values where available and the schema-contract-derived comparer for local string identity members, before merge/no-op/DML can turn invalid input into an unmapped unique-constraint failure.
+- `_storedIdentityRebinder.Rebind(...)` is the stored-casing safeguard from `natural-key-resolution.md`: on SQL Server regular resources and descriptor writes, casing-only identity differences are rebound to persisted values before authorization, no-op comparison, and DML so request casing is not written, cascaded, or stamped.
 - `_writer.ExecuteAsync(...)` uses the compiled `CollectionMergePlan`s, table-local `CollectionKeyPreallocationPlan`s, batched reservations from `dms.CollectionItemIdSequence`, and `IBulkInserter` to avoid N+1 inserts while preserving stable `CollectionItemId`s for matched rows.
 - The sketch omits the explicit profile branches: profile-constrained creates consult `RootResourceCreatable`, non-collection scope behavior comes from `RequestScopeStates` / `StoredScopeStates` using `VisiblePresent`, `VisibleAbsent`, and `Hidden`, and collection merges consume `VisibleRequestCollectionItems` / `VisibleStoredCollectionRows` plus `HiddenMemberPaths`.
 - For separate-table 1:1 scopes (including document-scope `_ext` tables), execution uses `InsertSql` when the scoped row is newly `VisiblePresent`, `UpdateSql` when it already exists, and `DeleteByParentSql` only when the scope state is `VisibleAbsent`; `Hidden` scopes are preserved, and inlined `VisibleAbsent` scopes clear only their visible compiled bindings.

@@ -1133,7 +1133,9 @@ Core/backend C# contract may still carry a `ReferentialId` member.**
   AC: command-stream pins show round-trip counts unchanged (POST create stays at 2 commands) and RI
   command classification zero for resource POST target lookup; case-variant POST pins prove 200,
   stored casing served, guarded no-op, no referrer rewrite, no key-change row, and no
-  `IdentityVersion` bump on SQL Server; PostgreSQL behavior unchanged; write suites green.
+  `IdentityVersion` bump on SQL Server; PostgreSQL behavior unchanged; write suites green; the
+  write-flow sketches in `transactions-and-concurrency.md` and `flattening-reconstitution.md` show
+  stored-identity rebind before proposed-value authorization, no-op detection, and writer DML.
 - **T8 — Post-resolution collection duplicate detection + generic conflict fallback.** Add the
   two-tier duplicate detection that requires resolved ids for reference/descriptor collection
   members and the schema-contract-derived comparer for local string scalars. Add the ODS-parity 409
@@ -1141,7 +1143,10 @@ Core/backend C# contract may still carry a `ReferentialId` member.**
   already referential-id-free from T6 and only owns duplicate detection that depends on resolved
   relational ids or database exceptions. AC: the per-engine duplicate-detection pin matrix is green;
   the case-variant duplicate-descriptor E2E scenario is green; unmapped unique violations return the
-  generic ODS-parity 409 rather than a 5xx.
+  generic ODS-parity 409 rather than a 5xx; the write-flow sketches in
+  `transactions-and-concurrency.md` and `flattening-reconstitution.md` show the storage-resolved
+  duplicate validator after reference/descriptor resolution and before storage binding, no-op
+  detection, or collection-table DML.
 - **T9 — Descriptor write handler cutover + final Core UUIDv5 cleanup.** Replace descriptor upsert
   detection with lowered-URI + `ResourceKeyId` probes and implement stored-wins casing for descriptor
   writes (persisted-identity binding, the split no-op comparer, the case-insensitive PUT identity
