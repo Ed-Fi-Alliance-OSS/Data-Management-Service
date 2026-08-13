@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
@@ -2136,6 +2137,62 @@ public class Given_PageDocumentIdSqlCompiler
         CountOrdinalOccurrences(plan.TotalCountSql!, expectedRootTableFromFragment).Should().Be(1);
     }
 
+    /// <summary>
+    /// AC1's permanent regression gate. The authorization predicate must anchor on a column of the root row,
+    /// never on a primary-key self-join of the root table, so the root relation appears exactly once in the
+    /// emitted SQL. This holds at any row count, which is what makes it the gate rather than the integration
+    /// evidence. Scoped to person subjects: the custom-view multi-step branch deliberately keeps its self-join
+    /// and is covered by its own fixture.
+    /// </summary>
+    [TestCase(SqlDialect.Pgsql, RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId)]
+    [TestCase(SqlDialect.Pgsql, RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn)]
+    [TestCase(SqlDialect.Pgsql, RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath)]
+    [TestCase(SqlDialect.Mssql, RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId)]
+    [TestCase(SqlDialect.Mssql, RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn)]
+    [TestCase(SqlDialect.Mssql, RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath)]
+    public void It_should_reference_the_root_relation_exactly_once_for_every_person_path_kind(
+        SqlDialect dialect,
+        RelationshipAuthorizationPersonSubjectPathKind pathKind
+    )
+    {
+        var (rootTable, subject) = CreatePersonAuthorizationSubjectForPathKind(pathKind);
+        var plan = CompilePersonAuthorizationPlan(dialect, rootTable, subject);
+
+        // Built with the same dialect the compiler writes through, so the expected token cannot drift from the
+        // emitted one. It carries its closing delimiter, which is what keeps "edfi"."StudentSchoolAssociation"
+        // from matching inside a longer name such as "edfi"."StudentSchoolAssociationProgram".
+        var quotedRootRelation = SqlDialectFactory.Create(dialect).QualifyTable(rootTable);
+
+        CountOrdinalOccurrences(plan.PageDocumentIdSql, quotedRootRelation).Should().Be(1);
+        plan.TotalCountSql.Should().NotBeNull();
+        CountOrdinalOccurrences(plan.TotalCountSql!, quotedRootRelation).Should().Be(1);
+    }
+
+    /// <summary>
+    /// AC5. Both SQL strings delegate to the same WHERE-clause emitter, so their authorization predicates are
+    /// identical by construction — this asserts it instead of assuming it, which is what turns the shared
+    /// delegation into a checked contract.
+    /// </summary>
+    [TestCase(SqlDialect.Pgsql, RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId)]
+    [TestCase(SqlDialect.Pgsql, RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn)]
+    [TestCase(SqlDialect.Pgsql, RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath)]
+    [TestCase(SqlDialect.Mssql, RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId)]
+    [TestCase(SqlDialect.Mssql, RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn)]
+    [TestCase(SqlDialect.Mssql, RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath)]
+    public void It_should_emit_identical_authorization_predicates_in_page_and_total_count_sql(
+        SqlDialect dialect,
+        RelationshipAuthorizationPersonSubjectPathKind pathKind
+    )
+    {
+        var (rootTable, subject) = CreatePersonAuthorizationSubjectForPathKind(pathKind);
+        var plan = CompilePersonAuthorizationPlan(dialect, rootTable, subject);
+
+        plan.TotalCountSql.Should().NotBeNull();
+        ExtractAuthorizationPredicate(plan.TotalCountSql!)
+            .Should()
+            .Be(ExtractAuthorizationPredicate(plan.PageDocumentIdSql));
+    }
+
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
     public void It_should_or_multiple_authorization_strategies(SqlDialect dialect)
@@ -2865,6 +2922,123 @@ public class Given_PageDocumentIdSqlCompiler
 
     private static int CountOrdinalOccurrences(string value, string text) =>
         value.Split(text, StringSplitOptions.None).Length - 1;
+
+    private static PageDocumentIdSqlPlan CompilePersonAuthorizationPlan(
+        SqlDialect dialect,
+        DbTableName rootTable,
+        PageDocumentIdAuthorizationSubject subject
+    ) =>
+        new PageDocumentIdSqlCompiler(dialect).Compile(
+            CreateSpec(
+                [],
+                [],
+                includeTotalCountSql: true,
+                authorization: CreateAuthorizationSpec(
+                    dialect,
+                    CreateAuthorizationStrategy(
+                        AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
+                        subject
+                    )
+                ),
+                rootTable: rootTable
+            )
+        );
+
+    /// <summary>
+    /// One representative subject per person path kind, using real DS 5.2 table and column names: Student for
+    /// the self anchor, StudentSchoolAssociation for the direct reference anchor, and CourseTranscript for the
+    /// two-hop transitive anchor through StudentAcademicRecord.
+    /// </summary>
+    private static (
+        DbTableName RootTable,
+        PageDocumentIdAuthorizationSubject Subject
+    ) CreatePersonAuthorizationSubjectForPathKind(RelationshipAuthorizationPersonSubjectPathKind pathKind)
+    {
+        var studentTable = new DbTableName(new DbSchemaName("edfi"), "Student");
+        var studentSchoolAssociationTable = new DbTableName(
+            new DbSchemaName("edfi"),
+            "StudentSchoolAssociation"
+        );
+        var courseTranscriptTable = new DbTableName(new DbSchemaName("edfi"), "CourseTranscript");
+        var studentAcademicRecordTable = new DbTableName(new DbSchemaName("edfi"), "StudentAcademicRecord");
+        var documentIdColumn = new DbColumnName("DocumentId");
+
+        switch (pathKind)
+        {
+            case RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId:
+                return (
+                    studentTable,
+                    CreatePersonAuthorizationSubject(
+                        RelationshipAuthorizationPersonAuthViewKind.Student,
+                        RelationshipAuthorizationPersonKind.Student,
+                        documentIdColumn,
+                        pathKind,
+                        studentTable
+                    )
+                );
+            case RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn:
+                return (
+                    studentSchoolAssociationTable,
+                    CreatePersonAuthorizationSubject(
+                        RelationshipAuthorizationPersonAuthViewKind.Student,
+                        RelationshipAuthorizationPersonKind.Student,
+                        new DbColumnName("Student_DocumentId"),
+                        pathKind,
+                        studentSchoolAssociationTable
+                    )
+                );
+            case RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath:
+                return (
+                    courseTranscriptTable,
+                    CreateTransitivePersonAuthorizationSubject(
+                        RelationshipAuthorizationPersonAuthViewKind.Student,
+                        RelationshipAuthorizationPersonKind.Student,
+                        courseTranscriptTable,
+                        [
+                            new ColumnPathStep(
+                                courseTranscriptTable,
+                                new DbColumnName("StudentAcademicRecord_DocumentId"),
+                                studentAcademicRecordTable,
+                                documentIdColumn
+                            ),
+                            new ColumnPathStep(
+                                studentAcademicRecordTable,
+                                new DbColumnName("Student_DocumentId"),
+                                studentTable,
+                                documentIdColumn
+                            ),
+                        ]
+                    )
+                );
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(pathKind),
+                    pathKind,
+                    "Unsupported person path kind."
+                );
+        }
+    }
+
+    /// <summary>
+    /// Returns the single WHERE predicate line carrying the authorization group. Only the shared leading
+    /// indentation is trimmed; the predicate text itself is returned verbatim, so callers compare it exactly.
+    /// </summary>
+    private static string ExtractAuthorizationPredicate(string sql)
+    {
+        var authorizationPredicates = sql.Split('\n')
+            .Select(line => line.Trim())
+            .Where(line =>
+                line.Contains("\"auth\".", StringComparison.Ordinal)
+                || line.Contains("[auth].", StringComparison.Ordinal)
+            )
+            .ToArray();
+
+        authorizationPredicates
+            .Should()
+            .HaveCount(1, "the authorization group is emitted as exactly one WHERE predicate");
+
+        return authorizationPredicates[0];
+    }
 
     private static void AssertFragmentAppearsBefore(string sql, string firstFragment, string secondFragment)
     {
