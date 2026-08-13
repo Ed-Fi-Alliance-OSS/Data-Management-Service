@@ -266,6 +266,9 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
    - Maintain `{schema}.{A}Identity` via triggers on each participating concrete root table (upsert
      on insert/update of identity columns), populating `ResourceKeyId` from the trigger's typed
      compile-time concrete-member key literal and `Discriminator` from its diagnostic literal.
+     Root DELETE does not get a separate abstract-identity trigger; delete parity is delegated to
+     `FK_<AbstractResource>Identity_DocumentResourceKey ... ON DELETE CASCADE` when the write path
+     deletes the owning `dms.Document` row in the same transaction after the concrete root row.
    - Use `{schema}.{A}Identity` as the composite-FK target for abstract reference sites; FKs use `ON UPDATE CASCADE` (identity tables are trigger-maintained) to propagate identity changes and enforce membership/type at the DB level.
    - (Optional) also emit `{schema}.{A}_View` as a narrow `UNION ALL` projection for diagnostics/ad-hoc querying.
 

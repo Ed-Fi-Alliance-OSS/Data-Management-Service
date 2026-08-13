@@ -897,6 +897,10 @@ This redesign provisions an **identity table per abstract resource**:
   - This constrains the authoritative abstract-reference compatibility key to the owning document's concrete resource key while keeping `ResourceKeyId` out of abstract identity equality. `dms.Document.ResourceKeyId` remains the FK-constrained path to the seeded `dms.ResourceKey` mapping.
 - Maintenance:
   - triggers on each concrete member root table upsert the corresponding `{AbstractResource}Identity` row on insert/update of the concrete identity fields (including identity renames), populating `ResourceKeyId` from compile-time concrete-member metadata.
+  - root deletes do not generate a separate abstract-identity delete trigger. The identity row is owned by
+    `dms.Document` and is removed by `FK_<AbstractResource>Identity_DocumentResourceKey ... ON DELETE CASCADE`
+    when the write path deletes the owning `dms.Document` row in the same transaction after deleting the concrete
+    root row.
 - FKs for abstract reference sites:
   - referencing tables use composite FKs to `{schema}.{AbstractResource}Identity(<AbstractIdentityFields...>, DocumentId)`, backed by `UX_<AbstractResource>Identity_RefKey`.
     - PostgreSQL: `ON UPDATE CASCADE`.

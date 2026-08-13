@@ -1295,9 +1295,10 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
   compiled probes reproduce the legacy trigger derivation for as long as both exist, and abstract
   target pins proving the probe projects concrete `ResourceKeyId` without a discriminator-to-key map.
 - **Abstract identity parity/corruption pins** proving trigger-maintained `<Abstract>Identity` rows
-  and diagnostic union views stay in parity with concrete root rows across insert, delete, identity
-  rename, SQL Server identity collation behavior, PostgreSQL byte-sensitive behavior, and concrete
-  `ResourceKeyId` population from compile-time member metadata.
+  and diagnostic union views stay in parity with concrete root rows across insert, committed root
+  delete via `dms.Document` cascade, identity rename, SQL Server identity collation behavior,
+  PostgreSQL byte-sensitive behavior, and concrete `ResourceKeyId` population from compile-time
+  member metadata.
 - **Mapping-pack round-trip tests** prove target probes, own-key probes, serialized concrete
   `ResourceStorageKind`, and the shared descriptor probe survive PackFormatVersion 1 encode/decode
   with storage-resolved columns, typed key binding metadata, and semantic key-column order unchanged;
