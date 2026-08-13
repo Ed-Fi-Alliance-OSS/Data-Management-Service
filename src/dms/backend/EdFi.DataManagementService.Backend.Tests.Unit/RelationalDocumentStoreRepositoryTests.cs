@@ -4528,9 +4528,7 @@ public class Given_RelationalDocumentStoreRepositoryTests
         capturedRequest.MappingSet.Should().BeSameAs(mappingSet);
         capturedRequest.Resource.Should().Be(new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor"));
         capturedRequest.QueryElements.Should().BeSameAs(queryElements);
-        capturedRequest
-            .PaginationParameters.Should()
-            .Be(((CollectionPaging.Traditional)queryRequest.Paging).Parameters);
+        capturedRequest.Paging.Should().BeSameAs(queryRequest.Paging);
         capturedRequest.AuthorizationStrategyEvaluators.Should().BeSameAs(authorizationStrategyEvaluators);
         capturedRequest.ReadableProfileProjectionContext.Should().BeSameAs(projectionContext);
         capturedRequest.TraceId.Value.Should().Be("query-trace");
@@ -4556,43 +4554,97 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_declines_a_cursor_paged_query_until_cursor_page_selection_is_implemented()
+    public async Task It_selects_a_cursor_page_from_the_shared_candidate_plan()
     {
-        var queryRequest = A.Fake<IQueryRequest>();
-        A.CallTo(() => queryRequest.Paging)
-            .Returns(new CollectionPaging.Cursor(new CursorRange(10, 2509), new PageSize(100)));
-
-        var result = await _sut.QueryDocuments(queryRequest);
-
-        result
-            .Should()
-            .BeOfType<QueryResult.QueryFailureNotImplemented>()
-            .Which.FailureMessage.Should()
-            .Be("Cursor paging is not yet supported for relational queries.");
-    }
-
-    [Test]
-    public async Task It_declines_a_cursor_paged_query_before_resolving_any_read_dependency()
-    {
-        var queryRequest = A.Fake<IQueryRequest>();
-        A.CallTo(() => queryRequest.Paging)
-            .Returns(new CollectionPaging.Cursor(CursorRange.From(1), new PageSize(25)));
-
-        await _sut.QueryDocuments(queryRequest);
-
-        A.CallTo(() =>
-                _descriptorReadHandler.HandleQueryAsync(A<DescriptorQueryRequest>._, A<CancellationToken>._)
+        var mappingSet = CreateQuerySupportedMappingSet(
+            _schoolResourceInfo,
+            CreateSupportedQueryField(
+                "name",
+                "$.name",
+                "string",
+                new RelationalQueryFieldTarget.RootColumn(new DbColumnName("Name"))
             )
-            .MustNotHaveHappened();
+        );
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            paging: new CollectionPaging.Cursor(new CursorRange(10, 2509), new PageSize(100))
+        );
+
+        PageKeysetSpec? capturedKeyset = null;
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
-                    A<ResourceReadPlan>._,
+                    readPlan,
                     A<PageKeysetSpec>._,
                     A<HydrationExecutionOptions>._,
                     A<CancellationToken>._
                 )
             )
-            .MustNotHaveHappened();
+            .Invokes(call => capturedKeyset = call.GetArgument<PageKeysetSpec>(1))
+            .Returns(new HydratedPage(null, [], [new HydratedTableRows(readPlan.Model.Root, [])], []));
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .Returns([]);
+
+        await _sut.QueryDocuments(queryRequest);
+
+        var query = capturedKeyset.Should().BeOfType<PageKeysetSpec.Query>().Subject;
+        query
+            .ParameterValues.Should()
+            .Contain(
+                new KeyValuePair<string, object?>(PageCandidateParameterNames.CursorInclusiveMinimum, 10L)
+            )
+            .And.Contain(
+                new KeyValuePair<string, object?>(PageCandidateParameterNames.CursorInclusiveMaximum, 2509L)
+            )
+            .And.Contain(new KeyValuePair<string, object?>(PageCandidateParameterNames.PageSize, 100L));
+        query
+            .Plan.PageParametersInOrder.Select(static parameter => parameter.Role)
+            .Should()
+            .Contain(QuerySqlParameterRole.CursorInclusiveMinimum);
+    }
+
+    // Cursor mode never asks for a count, so the compiled page plan must carry none: a count would be a
+    // second scan of the candidate relation on every page of a walk.
+    [Test]
+    public async Task It_compiles_no_total_count_sql_for_a_cursor_page()
+    {
+        var mappingSet = CreateQuerySupportedMappingSet(
+            _schoolResourceInfo,
+            CreateSupportedQueryField(
+                "name",
+                "$.name",
+                "string",
+                new RelationalQueryFieldTarget.RootColumn(new DbColumnName("Name"))
+            )
+        );
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            paging: new CollectionPaging.Cursor(CursorRange.From(1), new PageSize(25))
+        );
+
+        PageKeysetSpec? capturedKeyset = null;
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => capturedKeyset = call.GetArgument<PageKeysetSpec>(1))
+            .Returns(new HydratedPage(null, [], [new HydratedTableRows(readPlan.Model.Root, [])], []));
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .Returns([]);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        capturedKeyset.Should().BeOfType<PageKeysetSpec.Query>().Which.Plan.TotalCountSql.Should().BeNull();
+        result.Should().BeOfType<QueryResult.QuerySuccess>().Which.TotalCount.Should().BeNull();
     }
 
     [Test]
@@ -4892,6 +4944,148 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
         success.HighestSelectedDocumentId.Should().Be(2509L);
         success.EdfiDocs.Should().BeEmpty();
+    }
+
+    // A traditional page over a max-bearing change-version window is ordered by ContentVersion, so its
+    // highest selected DocumentId is a real selected maximum that nevertheless does not describe where
+    // the page ended. The maximum is reported as selected; only continuation eligibility is withheld.
+    [Test]
+    public async Task It_keeps_the_real_boundary_but_disallows_continuation_for_a_windowed_traditional_page()
+    {
+        var mappingSet = CreateQuerySupportedMappingSet(
+            _schoolResourceInfo,
+            CreateSupportedQueryField(
+                "name",
+                "$.name",
+                "string",
+                new RelationalQueryFieldTarget.RootColumn(new DbColumnName("Name"))
+            )
+        );
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            changeVersionRange: new ChangeVersionRange(null, 900L)
+        );
+
+        StubHydrationWithBoundary(readPlan, 2509L);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.HighestSelectedDocumentId.Should().Be(2509L);
+        success.AllowsDocumentIdContinuation.Should().BeFalse();
+    }
+
+    // The legacy ordering switch keeps a windowed traditional page ordered by DocumentId, so the same
+    // request really can anchor a continuation. Eligibility follows the effective ordering, not the filter.
+    [Test]
+    public async Task It_allows_continuation_for_a_windowed_traditional_page_under_legacy_document_id_ordering()
+    {
+        var mappingSet = CreateQuerySupportedMappingSet(
+            _schoolResourceInfo,
+            CreateSupportedQueryField(
+                "name",
+                "$.name",
+                "string",
+                new RelationalQueryFieldTarget.RootColumn(new DbColumnName("Name"))
+            )
+        );
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            changeVersionRange: new ChangeVersionRange(null, 900L)
+        );
+
+        _sut = CreateRepositoryWithOrderingPolicy(
+            new ChangeQueryPageOrderingPolicy(useLegacyDocumentIdOrdering: true)
+        );
+        StubHydrationWithBoundary(readPlan, 2509L);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.HighestSelectedDocumentId.Should().Be(2509L);
+        success.AllowsDocumentIdContinuation.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task It_allows_continuation_for_a_cursor_page_over_a_max_bearing_window()
+    {
+        var mappingSet = CreateQuerySupportedMappingSet(
+            _schoolResourceInfo,
+            CreateSupportedQueryField(
+                "name",
+                "$.name",
+                "string",
+                new RelationalQueryFieldTarget.RootColumn(new DbColumnName("Name"))
+            )
+        );
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            paging: new CollectionPaging.Cursor(CursorRange.From(1), new PageSize(25)),
+            changeVersionRange: new ChangeVersionRange(null, 900L)
+        );
+
+        StubHydrationWithBoundary(readPlan, 2509L);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.HighestSelectedDocumentId.Should().Be(2509L);
+        success.AllowsDocumentIdContinuation.Should().BeTrue();
+    }
+
+    private RelationalDocumentStoreRepository CreateRepositoryWithOrderingPolicy(
+        ChangeQueryPageOrderingPolicy orderingPolicy
+    ) =>
+        new(
+            _logger,
+            _writeExecutor,
+            _currentEtagPreconditionChecker,
+            new ThrowingDescriptorWriteHandler(),
+            _descriptorReadHandler,
+            _referenceResolver,
+            _documentHydrator,
+            _readTargetLookupService,
+            _readMaterializer,
+            _readableProfileProjector,
+            _writeExceptionClassifier,
+            _deleteConstraintResolver,
+            _writeSessionFactory,
+            CreateAuthorizationSubjectSelector(),
+            _singleRecordRelationshipAuthorizationExecutor,
+            _namespaceAuthorizationExecutor,
+            _customViewAuthorizationExecutor,
+            _commandExecutor,
+            readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance,
+            orderingPolicy: orderingPolicy
+        );
+
+    private void StubHydrationWithBoundary(ResourceReadPlan readPlan, long highestSelectedDocumentId)
+    {
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(
+                new HydratedPage(null, [], [new HydratedTableRows(readPlan.Model.Root, [])], [])
+                {
+                    HighestSelectedDocumentId = highestSelectedDocumentId,
+                }
+            );
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .Returns([]);
     }
 
     [Test]
@@ -14725,7 +14919,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
         ResourceInfo? resourceInfo = null,
         IReadOnlyList<string>? namespacePrefixes = null,
         ChangeVersionRange? changeVersionRange = null,
-        PaginationParameters? paginationParameters = null
+        PaginationParameters? paginationParameters = null,
+        CollectionPaging? paging = null
     )
     {
         authorizationStrategyEvaluators ??= [];
@@ -14740,6 +14935,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
         );
 
         var queryRequest = A.Fake<IQueryRequest>();
+        A.CallTo(() => queryRequest.ChangeVersionRange)
+            .Returns(changeVersionRange ?? ChangeVersionRange.None);
         A.CallTo(() => queryRequest.ResourceInfo).Returns(resourceInfo);
         A.CallTo(() => queryRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => queryRequest.QueryElements).Returns(queryElements);
@@ -14748,11 +14945,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 new RelationalAuthorizationContext(claimEducationOrganizationIds, namespacePrefixes ?? [])
             );
         A.CallTo(() => queryRequest.AuthorizationStrategyEvaluators).Returns(authorizationStrategyEvaluators);
-        A.CallTo(() => queryRequest.Paging).Returns(new CollectionPaging.Traditional(paginationParameters));
+        A.CallTo(() => queryRequest.Paging)
+            .Returns(paging ?? new CollectionPaging.Traditional(paginationParameters));
         A.CallTo(() => queryRequest.TraceId).Returns(new TraceId("query-trace"));
         A.CallTo(() => queryRequest.ReadableProfileProjectionContext)
             .Returns(readableProfileProjectionContext);
-        A.CallTo(() => queryRequest.ChangeVersionRange).Returns(changeVersionRange);
         return queryRequest;
     }
 
@@ -14909,6 +15106,17 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     new RelationalScalarType(ScalarKind.String, MaxLength: 75),
                     false,
                     new JsonPathExpression("$.name", []),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                // The mirrored stamp that change-version filtering binds to. Appended last so the
+                // scalar column ordinals hydrated rows are asserted by stay where they are.
+                new DbColumnModel(
+                    new DbColumnName("ContentVersion"),
+                    ColumnKind.MirroredContentVersion,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
                     null,
                     new ColumnStorage.Stored()
                 ),

@@ -105,11 +105,16 @@ public sealed class RelationalDocumentStoreRepository(
         edOrgAuthorizationSubjectSelector
     );
 
+    /// <param name="OrderingMode">
+    /// The ordering the page was planned with. Carried rather than re-resolved so the continuation
+    /// decision is made from the ordering page selection actually used.
+    /// </param>
     private sealed record RelationalQueryPreparation(
         QualifiedResourceName Resource,
         ResourceReadPlan ReadPlan,
         PageKeysetSpec.Query PlannedQuery,
-        PageDocumentIdAuthorizationSpec? Authorization
+        PageDocumentIdAuthorizationSpec? Authorization,
+        PageOrderingMode OrderingMode
     );
 
     private abstract record RelationalQueryPreparationResult
@@ -1126,19 +1131,21 @@ public sealed class RelationalDocumentStoreRepository(
     {
         ArgumentNullException.ThrowIfNull(queryRequest);
 
-        if (queryRequest.Paging is not CollectionPaging.Traditional traditionalPaging)
-        {
-            // Cursor page selection arrives with the shared candidate planner and cursor execution.
-            return new QueryResult.QueryFailureNotImplemented(
-                "Cursor paging is not yet supported for relational queries."
-            );
-        }
-
         var resource = RelationalWriteSupport.ToQualifiedResourceName(queryRequest.ResourceInfo);
 
         if (queryRequest.MappingSet.TryGetDescriptorResourceModel(resource, out _))
         {
-            return await QueryDocumentsRelationalAsync(queryRequest, traditionalPaging, cancellationToken)
+            return await QueryDocumentsRelationalAsync(queryRequest, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        // Cursor pages select their keyset through the relational path, which is the only path that
+        // returns the selected-keyset boundary a continuation is anchored on. The read-acceleration
+        // candidate selection reports no boundary, so a cursor page routed through it would return
+        // documents with no continuation and stall the walk one page in.
+        if (queryRequest.Paging is CollectionPaging.Cursor)
+        {
+            return await QueryDocumentsRelationalAsync(queryRequest, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -1150,15 +1157,10 @@ public sealed class RelationalDocumentStoreRepository(
                     resource,
                     DocumentCacheReadAccelerationResourceKind.Resource,
                     fallbackCancellationToken =>
-                        QueryDocumentsRelationalAsync(
-                            queryRequest,
-                            traditionalPaging,
-                            fallbackCancellationToken
-                        ),
+                        QueryDocumentsRelationalAsync(queryRequest, fallbackCancellationToken),
                     selectionCancellationToken =>
                         SelectQueryReadAccelerationCandidatePageAsync(
                             queryRequest,
-                            traditionalPaging,
                             selectionCancellationToken
                         )
                 )
@@ -1173,7 +1175,6 @@ public sealed class RelationalDocumentStoreRepository(
 
     private async Task<QueryResult> QueryDocumentsRelationalAsync(
         IQueryRequest queryRequest,
-        CollectionPaging.Traditional traditionalPaging,
         CancellationToken cancellationToken = default
     )
     {
@@ -1193,7 +1194,7 @@ public sealed class RelationalDocumentStoreRepository(
                         mappingSet,
                         resource,
                         queryRequest.QueryElements,
-                        traditionalPaging.Parameters,
+                        queryRequest.Paging,
                         queryRequest.AuthorizationStrategyEvaluators,
                         queryRequest.ReadableProfileProjectionContext,
                         queryRequest.TraceId,
@@ -1209,7 +1210,6 @@ public sealed class RelationalDocumentStoreRepository(
 
         RelationalQueryPreparationResult preparationResult = await PrepareQueryReadAsync(
                 queryRequest,
-                traditionalPaging,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -1244,12 +1244,17 @@ public sealed class RelationalDocumentStoreRepository(
             throw new CustomViewAuthorizationValidationException(ex);
         }
 
-        return BuildQuerySuccess(queryRequest, preparation.Resource, preparation.ReadPlan, hydratedPage);
+        return BuildQuerySuccess(
+            queryRequest,
+            preparation.Resource,
+            preparation.ReadPlan,
+            hydratedPage,
+            preparation.OrderingMode
+        );
     }
 
     private async Task<RelationalQueryPreparationResult> PrepareQueryReadAsync(
         IQueryRequest queryRequest,
-        CollectionPaging.Traditional traditionalPaging,
         CancellationToken cancellationToken
     )
     {
@@ -1365,6 +1370,10 @@ public sealed class RelationalDocumentStoreRepository(
 
         PageKeysetSpec.Query? plannedQuery;
 
+        // Resolved once and reused for the selected-keyset boundary below, so the ordering the page was
+        // actually selected with is the ordering the continuation decision is made from.
+        var orderingMode = _orderingPolicy.ResolveForLiveQuery(queryRequest.ChangeVersionRange);
+
         try
         {
             var planner = new RelationalQueryPageKeysetPlanner(mappingSet.Key.Dialect);
@@ -1373,12 +1382,12 @@ public sealed class RelationalDocumentStoreRepository(
                 !planner.TryPlan(
                     readPlan.Model.Root,
                     preprocessingResult,
-                    traditionalPaging,
+                    queryRequest.Paging,
                     out plannedQuery,
                     out _,
                     authorization: pageQueryAuthorization,
                     changeVersionRange: queryRequest.ChangeVersionRange,
-                    orderingMode: _orderingPolicy.ResolveForLiveQuery(queryRequest.ChangeVersionRange)
+                    orderingMode: orderingMode
                 ) || plannedQuery is null
             )
             {
@@ -1439,20 +1448,24 @@ public sealed class RelationalDocumentStoreRepository(
         }
 
         return new RelationalQueryPreparationResult.Prepared(
-            new RelationalQueryPreparation(resource, readPlan, plannedQuery, pageQueryAuthorization)
+            new RelationalQueryPreparation(
+                resource,
+                readPlan,
+                plannedQuery,
+                pageQueryAuthorization,
+                orderingMode
+            )
         );
     }
 
     private async Task<DocumentCacheReadAccelerationQuerySelectionResult> SelectQueryReadAccelerationCandidatePageAsync(
         IQueryRequest queryRequest,
-        CollectionPaging.Traditional traditionalPaging,
         CancellationToken cancellationToken = default
     )
     {
         var mappingSet = queryRequest.MappingSet;
         RelationalQueryPreparationResult preparationResult = await PrepareQueryReadAsync(
                 queryRequest,
-                traditionalPaging,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -1505,7 +1518,7 @@ public sealed class RelationalDocumentStoreRepository(
             fallbackCancellationToken =>
                 HydrateSelectedQueryCandidatePageAsync(
                     queryRequest,
-                    traditionalPaging,
+                    preparation.OrderingMode,
                     preparation.Resource,
                     preparation.ReadPlan,
                     preparation.Authorization?.CustomViewChecks,
@@ -1517,7 +1530,7 @@ public sealed class RelationalDocumentStoreRepository(
 
     private async Task<QueryResult> HydrateSelectedQueryCandidatePageAsync(
         IQueryRequest queryRequest,
-        CollectionPaging.Traditional traditionalPaging,
+        PageOrderingMode orderingMode,
         QualifiedResourceName resource,
         ResourceReadPlan readPlan,
         IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck>? customViewChecks,
@@ -1547,6 +1560,8 @@ public sealed class RelationalDocumentStoreRepository(
             throw new CustomViewAuthorizationValidationException(ex);
         }
 
+        // The boundary comes from the candidate selection, not from what hydration found, which is what
+        // keeps a cache-accelerated page's continuation describing the keys selection chose.
         hydratedPage = hydratedPage with
         {
             TotalCount = candidatePage.TotalCount,
@@ -1555,11 +1570,11 @@ public sealed class RelationalDocumentStoreRepository(
 
         if (!SelectedQueryCandidatePageStillMatches(candidatePage, hydratedPage.DocumentMetadata))
         {
-            return await QueryDocumentsRelationalAsync(queryRequest, traditionalPaging, cancellationToken)
+            return await QueryDocumentsRelationalAsync(queryRequest, cancellationToken)
                 .ConfigureAwait(false);
         }
 
-        return BuildQuerySuccess(queryRequest, resource, readPlan, hydratedPage);
+        return BuildQuerySuccess(queryRequest, resource, readPlan, hydratedPage, orderingMode);
     }
 
     private static bool SelectedQueryCandidatePageStillMatches(
@@ -5486,7 +5501,8 @@ public sealed class RelationalDocumentStoreRepository(
         IQueryRequest relationalQueryRequest,
         QualifiedResourceName resource,
         ResourceReadPlan readPlan,
-        HydratedPage hydratedPage
+        HydratedPage hydratedPage,
+        PageOrderingMode orderingMode
     )
     {
         ArgumentNullException.ThrowIfNull(relationalQueryRequest);
@@ -5534,7 +5550,14 @@ public sealed class RelationalDocumentStoreRepository(
         }
 
         // The selected-keyset boundary passes through unchanged, including when the body above came back
-        // empty: it describes what page selection chose, not what survived to hydration.
+        // empty: it describes what page selection chose, not what survived to hydration. Whether it may
+        // anchor a continuation is a separate fact, decided from the ordering the page was selected with.
+        var continuationBoundary = PageContinuationBoundary.For(
+            relationalQueryRequest.Paging,
+            orderingMode,
+            hydratedPage.HighestSelectedDocumentId
+        );
+
         return new QueryResult.QuerySuccess(
             edfiDocs,
             relationalQueryRequest.Paging.IncludesTotalCount
@@ -5544,8 +5567,11 @@ public sealed class RelationalDocumentStoreRepository(
                     "query hydration"
                 )
                 : null,
-            hydratedPage.HighestSelectedDocumentId
-        );
+            continuationBoundary.SelectedMaximum
+        )
+        {
+            AllowsDocumentIdContinuation = continuationBoundary.AllowsDocumentIdContinuation,
+        };
     }
 
     private static WritePrecondition NormalizeWritePrecondition(WritePrecondition? writePrecondition) =>

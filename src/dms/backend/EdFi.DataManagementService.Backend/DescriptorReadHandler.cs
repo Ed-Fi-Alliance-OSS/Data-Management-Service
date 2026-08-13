@@ -552,7 +552,7 @@ internal sealed class DescriptorReadHandler(
         {
             QueryResult.QuerySuccess relationalSuccess = new(
                 [],
-                request.PaginationParameters.TotalCount
+                request.Paging.IncludesTotalCount
                     ? RelationalReadGuardrails.ConvertTotalCountOrThrow(
                         request.Resource,
                         rowsPage.Page.TotalCount,
@@ -566,7 +566,7 @@ internal sealed class DescriptorReadHandler(
 
         var candidatePage = CreateDescriptorReadAccelerationCandidatePage(
             rowsPage.Page,
-            request.PaginationParameters.TotalCount
+            request.Paging.IncludesTotalCount
         );
 
         return new DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage(
@@ -943,7 +943,7 @@ internal sealed class DescriptorReadHandler(
                 .ConfigureAwait(false);
 
             return new DescriptorQueryPreparationResult.Complete(
-                new QueryResult.QuerySuccess([], request.PaginationParameters.TotalCount ? 0 : null)
+                new QueryResult.QuerySuccess([], request.Paging.IncludesTotalCount ? 0 : null)
             );
         }
 
@@ -995,6 +995,17 @@ internal sealed class DescriptorReadHandler(
             new DescriptorQueryPreparation(authorizationSpec, plannedQuery)
         );
     }
+
+    /// <summary>
+    /// The maximum <c>DocumentId</c> among the selected descriptor rows, or <see langword="null"/> when
+    /// the page selected none. Taken across every row rather than from the last one: the page query
+    /// orders ascending today, but a boundary that depended on that could not survive an ordering
+    /// change, and the maximum costs the same either way.
+    /// </summary>
+    private static long? SelectedMaximumOf(IReadOnlyList<DescriptorReadRow> descriptorRows) =>
+        descriptorRows.Count == 0
+            ? null
+            : descriptorRows.Max(static descriptorRow => descriptorRow.DocumentId);
 
     /// <summary>
     /// Plans the single-record custom-view checks descriptor GET-by-id executes, or reports the
@@ -1175,24 +1186,15 @@ internal sealed class DescriptorReadHandler(
         + (changeVersionRange.MaxChangeVersion is null ? 0 : 1);
 
     /// <summary>
-    /// Builds the paging choice for a descriptor query request. Descriptor query requests carry only
-    /// traditional pagination parameters; cursor page selection reaches the descriptor handler with
-    /// cursor execution. This is the single construction site, so the parameter budget below and the
-    /// planner always describe the same candidate mode.
-    /// </summary>
-    private static CollectionPaging BuildPaging(DescriptorQueryRequest request) =>
-        new CollectionPaging.Traditional(request.PaginationParameters);
-
-    /// <summary>
     /// Counts the paging parameters the descriptor page query will bind, taken from the candidate mode
     /// the planner will receive rather than assumed. The count is mode-dependent — traditional paging
     /// binds an offset and a limit, cursor selection binds two bounds and a page size — so a fixed count
-    /// would undercount as soon as a non-traditional mode reaches this handler, and the budget would
-    /// fail at execution instead of failing closed.
+    /// would undercount the request's real command and the budget would fail at execution instead of
+    /// failing closed.
     /// </summary>
     private int CountPagingParameters(DescriptorQueryRequest request) =>
         PageCandidateModePlanning
-            .ForPaging(BuildPaging(request), _orderingPolicy.ResolveForLiveQuery(request.ChangeVersionRange))
+            .ForPaging(request.Paging, _orderingPolicy.ResolveForLiveQuery(request.ChangeVersionRange))
             .ParameterValues.Count;
 
     /// <summary>
@@ -1272,7 +1274,7 @@ internal sealed class DescriptorReadHandler(
             request.MappingSet,
             request.Resource,
             preprocessingResult,
-            BuildPaging(request),
+            request.Paging,
             authorizationSpec,
             request.ChangeVersionRange,
             orderingMode: _orderingPolicy.ResolveForLiveQuery(request.ChangeVersionRange)
@@ -1363,20 +1365,46 @@ internal sealed class DescriptorReadHandler(
             null
         );
 
+    /// <summary>
+    /// Builds the descriptor query response, including the selected-keyset boundary a cursor walk
+    /// continues from.
+    /// </summary>
+    /// <remarks>
+    /// The rows reaching here are the selected keyset, so their maximum is the boundary. That holds on
+    /// both read paths. Uncached selection retrieves rows in the same statement that selects them. The
+    /// cache-accelerated path selects candidates and retrieves rows separately, but it admits a page
+    /// only when every selected candidate is still present and unchanged, and otherwise re-reads through
+    /// the uncached path — so a page that lost rows between selection and retrieval never arrives here
+    /// with a short row set that would understate the boundary and stall the walk. Whether the maximum
+    /// may anchor a continuation is a separate fact, decided from the ordering the page was selected
+    /// with through the same helper the regular-resource path uses.
+    /// </remarks>
     private QueryResult.QuerySuccess MaterializeDescriptorQuerySuccess(
         DescriptorQueryRequest request,
         DescriptorQueryRowsPage queryRowsPage
-    ) =>
-        new(
+    )
+    {
+        var continuationBoundary = PageContinuationBoundary.For(
+            request.Paging,
+            _orderingPolicy.ResolveForLiveQuery(request.ChangeVersionRange),
+            SelectedMaximumOf(queryRowsPage.Rows)
+        );
+
+        return new QueryResult.QuerySuccess(
             MaterializeDescriptorQueryDocuments(request, queryRowsPage.Rows),
-            request.PaginationParameters.TotalCount
+            request.Paging.IncludesTotalCount
                 ? RelationalReadGuardrails.ConvertTotalCountOrThrow(
                     request.Resource,
                     queryRowsPage.TotalCount,
                     "descriptor query"
                 )
-                : null
-        );
+                : null,
+            continuationBoundary.SelectedMaximum
+        )
+        {
+            AllowsDocumentIdContinuation = continuationBoundary.AllowsDocumentIdContinuation,
+        };
+    }
 
     private JsonArray MaterializeDescriptorQueryDocuments(
         DescriptorQueryRequest request,

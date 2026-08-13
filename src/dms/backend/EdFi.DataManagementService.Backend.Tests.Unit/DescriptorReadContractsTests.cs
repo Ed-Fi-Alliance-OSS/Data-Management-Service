@@ -71,11 +71,8 @@ public class Given_Descriptor_Read_Contracts
                 "string"
             ),
         ];
-        var paginationParameters = new PaginationParameters(
-            Limit: 25,
-            Offset: 10,
-            TotalCount: true,
-            MaximumPageSize: 500
+        var paging = new CollectionPaging.Traditional(
+            new PaginationParameters(Limit: 25, Offset: 10, TotalCount: true, MaximumPageSize: 500)
         );
         AuthorizationStrategyEvaluator[] authorizationStrategyEvaluators =
         [
@@ -92,7 +89,7 @@ public class Given_Descriptor_Read_Contracts
             mappingSet,
             _descriptorResource,
             queryElements,
-            paginationParameters,
+            paging,
             authorizationStrategyEvaluators,
             readableProfileProjectionContext,
             traceId
@@ -102,7 +99,7 @@ public class Given_Descriptor_Read_Contracts
         request.MappingSet.Should().BeSameAs(mappingSet);
         request.Resource.Should().Be(_descriptorResource);
         request.QueryElements.Should().BeSameAs(queryElements);
-        request.PaginationParameters.Should().BeSameAs(paginationParameters);
+        request.Paging.Should().BeSameAs(paging);
         request.AuthorizationStrategyEvaluators.Should().BeSameAs(authorizationStrategyEvaluators);
         request.ReadableProfileProjectionContext.Should().BeSameAs(readableProfileProjectionContext);
         request.TraceId.Should().Be(traceId);
@@ -121,7 +118,9 @@ public class Given_Descriptor_Read_Contracts
             mappingSet,
             _descriptorResource,
             [],
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            ),
             [],
             null,
             new TraceId("trace-id"),

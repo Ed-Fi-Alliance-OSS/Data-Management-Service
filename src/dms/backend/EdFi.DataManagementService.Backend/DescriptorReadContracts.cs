@@ -103,7 +103,7 @@ public sealed record DescriptorQueryRequest
         MappingSet mappingSet,
         QualifiedResourceName resource,
         QueryElement[] queryElements,
-        PaginationParameters paginationParameters,
+        CollectionPaging paging,
         AuthorizationStrategyEvaluator[] authorizationStrategyEvaluators,
         ReadableProfileProjectionContext? readableProfileProjectionContext,
         TraceId traceId,
@@ -116,8 +116,7 @@ public sealed record DescriptorQueryRequest
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
         Resource = resource;
         QueryElements = queryElements ?? throw new ArgumentNullException(nameof(queryElements));
-        PaginationParameters =
-            paginationParameters ?? throw new ArgumentNullException(nameof(paginationParameters));
+        Paging = paging ?? throw new ArgumentNullException(nameof(paging));
         AuthorizationStrategyEvaluators =
             authorizationStrategyEvaluators
             ?? throw new ArgumentNullException(nameof(authorizationStrategyEvaluators));
@@ -146,9 +145,10 @@ public sealed record DescriptorQueryRequest
     public QueryElement[] QueryElements { get; init; }
 
     /// <summary>
-    /// The paging inputs for descriptor GET-many execution.
+    /// The paging choice for descriptor GET-many execution: traditional limit/offset, or cursor
+    /// selection over an inclusive DocumentId range.
     /// </summary>
-    public PaginationParameters PaginationParameters { get; init; }
+    public CollectionPaging Paging { get; init; }
 
     /// <summary>
     /// The effective GET-many authorization strategies already resolved by Core.

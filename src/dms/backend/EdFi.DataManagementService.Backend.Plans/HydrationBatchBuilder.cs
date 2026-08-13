@@ -126,7 +126,15 @@ public static class HydrationBatchBuilder
         planDialect.AppendCreateKeysetTempTable(writer, plan.KeysetTable);
         writer.AppendLine();
 
-        AppendKeysetMaterialization(writer, planDialect, plan.KeysetTable, keyset);
+        // This batch's reader derives its candidates from the metadata rows and has no position for a
+        // selected-id result set, so the materialization must not return one.
+        AppendKeysetMaterialization(
+            writer,
+            planDialect,
+            plan.KeysetTable,
+            keyset,
+            returnsSelectedIds: false
+        );
         writer.AppendLine();
 
         if (keyset.Plan.TotalCountSql is not null)
@@ -255,6 +263,7 @@ public static class HydrationBatchBuilder
             planDialect,
             plan.KeysetTable,
             keyset,
+            returnsSelectedIds: true,
             singleRowGuardPredicateSql
         );
         writer.AppendLine();
@@ -439,14 +448,21 @@ public static class HydrationBatchBuilder
         }
     }
 
+    /// <param name="returnsSelectedIds">
+    /// Whether a query keyset's materialization returns the ids it inserted as a result set. True for
+    /// the hydration batch, whose reader consumes that result set. False for the candidate-metadata
+    /// batch, whose reader has no position for it and derives its candidates from the metadata rows.
+    /// </param>
     private static void AppendKeysetMaterialization(
         SqlWriter writer,
         IPlanSqlDialect planDialect,
         KeysetTableContract keyset,
         PageKeysetSpec spec,
+        bool returnsSelectedIds,
         string? singleRowGuardPredicateSql = null
     )
     {
+        IPlanSqlDialect? selectedIdDialect = returnsSelectedIds ? planDialect : null;
         var quotedDocIdCol = writer.Dialect.QuoteIdentifier(keyset.DocumentIdColumnName.Value);
 
         switch (spec)
@@ -478,8 +494,15 @@ public static class HydrationBatchBuilder
                     .AppendLine(");");
                 break;
 
+            // A selected-page keyset supplies its own ids, so hydration reads no selected-id result set
+            // for it and GetResultSetCount counts none.
             case PageKeysetSpec.SelectedPage { DocumentIds.Count: 0 }:
-                AppendEmptySelectedPageKeysetMaterialization(writer, keyset, quotedDocIdCol);
+                AppendEmptyKeysetMaterialization(
+                    writer,
+                    keyset,
+                    quotedDocIdCol,
+                    selectedIdDialect: null
+                );
                 break;
 
             case PageKeysetSpec.SelectedPage selectedPage:
@@ -487,11 +510,17 @@ public static class HydrationBatchBuilder
                 break;
 
             case PageKeysetSpec.Query query when HasZeroPageSelectionSize(query):
-                AppendEmptyQueryKeysetMaterialization(writer, planDialect, keyset, quotedDocIdCol);
+                AppendEmptyKeysetMaterialization(writer, keyset, quotedDocIdCol, selectedIdDialect);
                 break;
 
             case PageKeysetSpec.Query query:
-                AppendQueryKeysetMaterialization(writer, planDialect, keyset, query, quotedDocIdCol);
+                AppendQueryKeysetMaterialization(
+                    writer,
+                    selectedIdDialect,
+                    keyset,
+                    query,
+                    quotedDocIdCol
+                );
                 break;
 
             default:
@@ -503,9 +532,13 @@ public static class HydrationBatchBuilder
         }
     }
 
+    /// <summary>
+    /// Materializes the planned page keyset. Returns the ids it inserted only when
+    /// <paramref name="selectedIdDialect"/> is supplied.
+    /// </summary>
     private static void AppendQueryKeysetMaterialization(
         SqlWriter writer,
-        IPlanSqlDialect planDialect,
+        IPlanSqlDialect? selectedIdDialect,
         KeysetTableContract keyset,
         PageKeysetSpec.Query query,
         string quotedDocIdCol
@@ -520,51 +553,23 @@ public static class HydrationBatchBuilder
             .Append(" (")
             .Append(quotedDocIdCol)
             .AppendLine(")");
-        planDialect.AppendKeysetSelectedIdOutputClause(writer, keyset);
+        selectedIdDialect?.AppendKeysetSelectedIdOutputClause(writer, keyset);
         writer.Append("SELECT ").Append(quotedDocIdCol).Append(" FROM page_ids");
-        planDialect.AppendKeysetSelectedIdReturningClause(writer, keyset);
+        selectedIdDialect?.AppendKeysetSelectedIdReturningClause(writer, keyset);
         writer.AppendLine(";");
     }
 
     /// <summary>
-    /// Materializes no keyset row while still returning the selected-id result set, so a zero-size
-    /// page occupies the same result-set positions as any other query keyset.
+    /// Materializes no keyset row. Returns the (empty) selected-id result set only when
+    /// <paramref name="selectedIdDialect"/> is supplied, so a zero-size query page occupies the same
+    /// result-set positions as any other query keyset in the hydration batch, while a keyset whose
+    /// reader has no position for that result set does not gain one it would never consume.
     /// </summary>
-    private static void AppendEmptyQueryKeysetMaterialization(
-        SqlWriter writer,
-        IPlanSqlDialect planDialect,
-        KeysetTableContract keyset,
-        string quotedDocIdCol
-    )
-    {
-        AppendEmptyKeysetInsert(writer, keyset, quotedDocIdCol, planDialect);
-    }
-
-    /// <summary>
-    /// Materializes no keyset row and returns nothing. A selected-page keyset supplies its own ids, so
-    /// hydration reads no selected-id result set for it and
-    /// <see cref="HydrationExecutor.GetResultSetCount"/> counts none; returning one here would leave a
-    /// result set no reader consumes, and every position after it would be read as the wrong result set.
-    /// </summary>
-    private static void AppendEmptySelectedPageKeysetMaterialization(
-        SqlWriter writer,
-        KeysetTableContract keyset,
-        string quotedDocIdCol
-    )
-    {
-        AppendEmptyKeysetInsert(writer, keyset, quotedDocIdCol, planDialect: null);
-    }
-
-    /// <summary>
-    /// The shared zero-row keyset insert. Returns the ids it inserted only when
-    /// <paramref name="planDialect"/> is supplied, which is what keeps the returned result set tied to
-    /// the keyset kinds hydration actually reads one for.
-    /// </summary>
-    private static void AppendEmptyKeysetInsert(
+    private static void AppendEmptyKeysetMaterialization(
         SqlWriter writer,
         KeysetTableContract keyset,
         string quotedDocIdCol,
-        IPlanSqlDialect? planDialect
+        IPlanSqlDialect? selectedIdDialect
     )
     {
         writer
@@ -573,9 +578,9 @@ public static class HydrationBatchBuilder
             .Append(" (")
             .Append(quotedDocIdCol)
             .AppendLine(")");
-        planDialect?.AppendKeysetSelectedIdOutputClause(writer, keyset);
+        selectedIdDialect?.AppendKeysetSelectedIdOutputClause(writer, keyset);
         writer.Append("SELECT CAST(NULL AS bigint) AS ").Append(quotedDocIdCol).Append(" WHERE 1 = 0");
-        planDialect?.AppendKeysetSelectedIdReturningClause(writer, keyset);
+        selectedIdDialect?.AppendKeysetSelectedIdReturningClause(writer, keyset);
         writer.AppendLine(";");
     }
 

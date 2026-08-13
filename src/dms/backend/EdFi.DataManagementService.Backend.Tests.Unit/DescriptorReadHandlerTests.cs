@@ -492,6 +492,108 @@ public class Given_DescriptorReadHandler
             .MustNotHaveHappened();
     }
 
+    // Descriptor selection and row retrieval are one statement, so the returned rows are the selected
+    // keyset and their maximum is the page's boundary.
+    [Test]
+    public async Task It_reports_the_maximum_selected_document_id_from_descriptor_query_rows()
+    {
+        var sut = CreateHandler(
+            CreateQueryRowsExecutor(
+                CreateDescriptorRow(Guid.NewGuid(), documentId: 101L, codeValue: "Alternative"),
+                CreateDescriptorRow(Guid.NewGuid(), documentId: 205L, codeValue: "Charter")
+            )
+        );
+
+        var result = await sut.HandleQueryAsync(CreateQueryRequest(SqlDialect.Pgsql));
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.HighestSelectedDocumentId.Should().Be(205L);
+        success.AllowsDocumentIdContinuation.Should().BeTrue();
+    }
+
+    // The page query orders ascending today, but a boundary taken from the last row rather than the
+    // maximum would silently under-report if that ever changed.
+    [Test]
+    public async Task It_reports_the_maximum_selected_document_id_whatever_order_the_rows_arrive_in()
+    {
+        var sut = CreateHandler(
+            CreateQueryRowsExecutor(
+                CreateDescriptorRow(Guid.NewGuid(), documentId: 205L, codeValue: "Charter"),
+                CreateDescriptorRow(Guid.NewGuid(), documentId: 101L, codeValue: "Alternative")
+            )
+        );
+
+        var result = await sut.HandleQueryAsync(CreateQueryRequest(SqlDialect.Pgsql));
+
+        result
+            .Should()
+            .BeOfType<QueryResult.QuerySuccess>()
+            .Which.HighestSelectedDocumentId.Should()
+            .Be(205L);
+    }
+
+    [Test]
+    public async Task It_reports_no_boundary_when_descriptor_page_selection_returned_no_rows()
+    {
+        var sut = CreateHandler(CreateQueryRowsExecutor());
+
+        var result = await sut.HandleQueryAsync(CreateQueryRequest(SqlDialect.Pgsql));
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.HighestSelectedDocumentId.Should().BeNull();
+        success.EdfiDocs.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_selects_a_descriptor_cursor_page_from_the_shared_candidate_plan()
+    {
+        var commandExecutor = CreateQueryRowsExecutor(
+            CreateDescriptorRow(Guid.NewGuid(), documentId: 101L, codeValue: "Alternative")
+        );
+        var sut = CreateHandler(commandExecutor);
+
+        var result = await sut.HandleQueryAsync(
+            CreateQueryRequest(
+                SqlDialect.Pgsql,
+                paging: new CollectionPaging.Cursor(new CursorRange(10, 2509), new PageSize(100))
+            )
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.HighestSelectedDocumentId.Should().Be(101L);
+        success.AllowsDocumentIdContinuation.Should().BeTrue();
+        success.TotalCount.Should().BeNull();
+        commandExecutor.Commands.Should().ContainSingle();
+        commandExecutor.Commands[0].CommandText.Should().Contain("@cursorMin");
+        commandExecutor.Commands[0].CommandText.Should().Contain("@cursorMax");
+        commandExecutor.Commands[0].CommandText.Should().Contain("@pageSize");
+        commandExecutor.Commands[0].CommandText.Should().NotContain("COUNT(1)");
+    }
+
+    // A windowed traditional descriptor page is ordered by ContentVersion, so its real selected maximum
+    // is reported while the continuation it cannot anchor is withheld.
+    [Test]
+    public async Task It_keeps_the_descriptor_boundary_but_disallows_continuation_for_a_windowed_traditional_page()
+    {
+        var sut = CreateHandler(
+            CreateQueryRowsExecutor(
+                CreateDescriptorRow(Guid.NewGuid(), documentId: 205L, codeValue: "Charter")
+            )
+        );
+
+        var result = await sut.HandleQueryAsync(
+            CreateQueryRequest(SqlDialect.Pgsql, changeVersionRange: new ChangeVersionRange(null, 900L))
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.HighestSelectedDocumentId.Should().Be(205L);
+        success.AllowsDocumentIdContinuation.Should().BeFalse();
+    }
+
+    private static InMemoryRelationalCommandExecutor CreateQueryRowsExecutor(
+        params IReadOnlyDictionary<string, object?>[] descriptorRows
+    ) => new([new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create(descriptorRows)])]);
+
     [Test]
     public async Task It_fails_closed_for_descriptor_query_authorization_without_executing_sql()
     {
@@ -2417,7 +2519,9 @@ public class Given_DescriptorReadHandler
         ReadableProfileProjectionContext? readableProfileProjectionContext = null,
         int? limit = 25,
         int? offset = 0,
-        bool includeDescriptorMetadata = true
+        bool includeDescriptorMetadata = true,
+        CollectionPaging? paging = null,
+        ChangeVersionRange? changeVersionRange = null
     )
     {
         var mappingSet = CreateQueryMappingSet(
@@ -2430,16 +2534,20 @@ public class Given_DescriptorReadHandler
             mappingSet,
             _descriptorResource,
             queryElements ?? [],
-            new PaginationParameters(
-                Limit: limit,
-                Offset: offset,
-                TotalCount: totalCount,
-                MaximumPageSize: 500
-            ),
+            paging
+                ?? new CollectionPaging.Traditional(
+                    new PaginationParameters(
+                        Limit: limit,
+                        Offset: offset,
+                        TotalCount: totalCount,
+                        MaximumPageSize: 500
+                    )
+                ),
             authorizationStrategyEvaluators ?? [],
             readableProfileProjectionContext,
             new TraceId("descriptor-query-trace"),
-            new RelationalAuthorizationContext([], namespacePrefixes ?? [])
+            new RelationalAuthorizationContext([], namespacePrefixes ?? []),
+            changeVersionRange
         );
     }
 

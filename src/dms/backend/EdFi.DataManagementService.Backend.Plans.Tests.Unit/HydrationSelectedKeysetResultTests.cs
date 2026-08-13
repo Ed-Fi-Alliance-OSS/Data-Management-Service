@@ -596,6 +596,7 @@ public class Given_HydrationExecutor_With_A_Selected_Keyset_Result_Set
         table.Columns.Add("IdentityVersion", typeof(long));
         table.Columns.Add("ContentLastModifiedAt", typeof(DateTimeOffset));
         table.Columns.Add("IdentityLastModifiedAt", typeof(DateTimeOffset));
+        table.Columns.Add("ResourceKeyId", typeof(short));
 
         foreach (var row in rows)
         {
@@ -605,7 +606,8 @@ public class Given_HydrationExecutor_With_A_Selected_Keyset_Result_Set
                 row.ContentVersion,
                 row.IdentityVersion,
                 new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
-                new DateTimeOffset(2026, 4, 2, 12, 1, 0, TimeSpan.Zero)
+                new DateTimeOffset(2026, 4, 2, 12, 1, 0, TimeSpan.Zero),
+                (short)1
             );
         }
 

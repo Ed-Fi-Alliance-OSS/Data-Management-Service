@@ -78,7 +78,9 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
             CreateMappingSet(SqlDialect.Pgsql),
             _descriptorResource,
             [],
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            ),
             evaluators,
             readableProfileProjectionContext: null,
             new TraceId("descriptor-query-contract"),
@@ -97,7 +99,9 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
             CreateMappingSet(SqlDialect.Pgsql),
             _descriptorResource,
             [],
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            ),
             [],
             readableProfileProjectionContext: null,
             new TraceId("descriptor-query-contract-default")
@@ -1075,7 +1079,9 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
             CreateMappingSet(dialect),
             _descriptorResource,
             [],
-            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: totalCount, MaximumPageSize: 500),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: totalCount, MaximumPageSize: 500)
+            ),
             additionalAuthorizationStrategy is null
                 ? [authorizationStrategy]
                 : [authorizationStrategy, additionalAuthorizationStrategy],
