@@ -27,8 +27,8 @@ This story depends on the abstractions-contract, fan-in-step, and composition-se
 - The same POST with a document that passes the fixture's check returns the normal success response, proving the validator does not block a valid request.
 - A PUT exercises the same fixture validator on the update pipeline and produces the same 400 shape on failure.
 - A POST to a resource the fixture validator's `AppliesTo` does not match is unaffected by the validator being registered.
-- The 400 body from the fixture validator is byte-identical in its `detail` member to the corresponding core schema-validation 400, asserted over real HTTP rather than in a unit test, so a divergence introduced anywhere in the composed stack is caught.
-- With the fixture validator's registration removed and nothing else changed, the same failing POST returns the normal success response. This proves the validator was actually reached through the composition seam rather than through some other path.
+- The 400 body from the fixture validator is byte-identical in its `detail` member to the corresponding core schema-validation 400, asserted over real HTTP rather than in a unit test, so a divergence introduced anywhere in the composed stack is caught. The fixture returns an `OnPath` failure for this assertion, since that is the arm core schema validation actually produces; `DocumentValidator` never emits an `errors`-arm 400 to compare an `OnResource` failure against.
+- With the fixture validator's registration removed and nothing else changed, the same failing POST returns the normal success response. This proves the validator was actually reached through the registration the story added, mirroring the one line a real deployment adds at the composition root, rather than through some other path.
 - The fixture validator lives in its own assembly whose only reference is the abstractions contract, so the test proves what an external implementer can actually build rather than what a project with access to Core internals can build.
 - `dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration` passes.
 

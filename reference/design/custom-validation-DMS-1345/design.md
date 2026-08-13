@@ -72,7 +72,7 @@ A bare file name repeats a file cited in full earlier in this document.
 2. **Document-oriented and async contract.** DMS has no generated typed resource classes, and two of the three driving scenarios are I/O-bound, so the contract takes a `JsonNode` and returns a `Task`. Both are deliberate forks from the ODS signature.
 3. **Compatibility breaks surface at build time.** Because the validator is compiled into the deployment, an incompatible contract change fails the implementer's own build rather than a production startup.
 4. **Fail loud at startup.** A validator that is registered wrongly, or cannot be constructed, terminates the process rather than failing its first matching write.
-5. **Response parity with core validation.** A custom validator's 400 is indistinguishable, body and `detail` alike, from a core schema-validation 400.
+5. **Response parity with core validation.** A custom validator's 400 reuses DMS's existing failure factories and `detail` literals rather than inventing its own, so its body is indistinguishable from the core 400 that takes the same arm. An `OnPath` failure matches a core schema-validation 400 (`ForDataValidation`). An `OnResource` failure matches the `ForBadRequest` 400 that `Middleware/ParseBodyMiddleware.cs:22` and `Middleware/ValidateMatchingDocumentUuidsMiddleware.cs:35` already emit, and has no core schema-validation counterpart at all, since `DocumentValidator` always returns an empty `errors` array (`Validation/DocumentValidator.cs:94`) and so never reaches the `ForBadRequest` arm. The two factories differ in `type` and `title`, not only `detail` (`Response/FailureResponse.cs:83-84`, `:99-100`), so the parity claim is per-arm and not blanket.
 6. **Applicability declared as data.** A validator names the resources it applies to, so an I/O-capable validator is never invoked for a write it has nothing to say about.
 7. **No new validation logic in Core.** Core gains a seam and an orchestration step, not rules.
 
@@ -89,7 +89,8 @@ A bare file name repeats a file cited in full earlier in this document.
 
 ## Problem Statement
 
-DMS defines four validator interfaces, all `internal` to `EdFi.DataManagementService.Core`, each with exactly one implementation.
+DMS defines four write-path resource-document validator interfaces, all `internal` to `EdFi.DataManagementService.Core`, each with exactly one implementation.
+(The Core assembly holds other validator interfaces - `IApiSchemaValidator`, `IProfileDataValidator`, and the public document-cache validators - none of which validates a resource document on the write path, and none of which this design touches.)
 
 | Interface | Declared at | Method |
 | --- | --- | --- |
@@ -192,7 +193,7 @@ public abstract record CustomValidationFailure
     {
         public OnPath(string jsonPath, string message)
         {
-            // throws ArgumentException unless jsonPath is "$."-prefixed and message is non-empty
+            // throws ArgumentException unless jsonPath names a member under "$." and message is non-empty
             JsonPath = jsonPath;
             Message = message;
         }
@@ -217,10 +218,13 @@ public abstract record CustomValidationFailure
 
 `OnPath` carries a `"$."`-prefixed JSON path plus a message, following the convention `DocumentValidator` already emits (`Validation/DocumentValidator.cs:308`, `:315`).
 `OnResource` carries a message with no path, for a failure about the document as a whole such as a cross-field or external-lookup rejection.
-The cases are non-positional because a positional record's primary constructor cannot host the argument validation, and that validation is what stops `OnPath("", message)` from smuggling an effectively path-less failure past the two-bucket rule.
+The cases are non-positional so that the validating constructor is the only way to build one, and that validation is what stops `OnPath("", message)` from smuggling an effectively path-less failure past the two-bucket rule.
+A positional record can host the same validation in a property initializer, so this is a choice to keep the surface minimal - no `Deconstruct`, no positional pattern - rather than a limitation of positional records.
 
 **Sealing limit.** The private base constructor closes ordinary construction, but the compiler synthesizes a protected copy constructor on every unsealed record and forbids restricting it (declaring it `private protected` fails with CS8878, probe-verified), so an external record can chain `base(existingFailure)` and compile.
 The guarantee is therefore completed at the consumption point: the fan-in step's switch is exhaustive over `OnPath` and `OnResource` and throws on any other subtype, so a smuggled third case is a loud 500 rather than a silently dropped failure.
+A `null` return from `Validate` is treated the same way and throws, rather than being coerced to an empty list.
+Coercing it would make a validator that mistakenly returns `null` indistinguishable from one that ran and passed, which is the silent-success outcome this design refuses everywhere else.
 This closes the ODS gap where a member-less `ValidationResult` disappears from `validationErrors` entirely (`EdFi.Ods.Api/ExceptionHandling/ErrorTranslator.cs:54-60`).
 
 ### Resource Applicability
@@ -376,7 +380,8 @@ The activation half closes a failure MS DI would otherwise defer: constructors r
 **Registering an `IDmsStartupTask` is not by itself enough to make it run.**
 The AspNetCore frontend never calls `RunAllAsync` (`Startup/DmsStartupOrchestrator.cs:30`, which has no production caller); it calls `RunByOrderRangeAsync` over `[0, 299]`, `[300, 399]`, and `[400, 499]` (`Program.cs:315-317`, `:329-331`, `:341-343`, bounded by `DmsStartupTaskOrderRanges`, `Startup/IDmsStartupTask.cs:10-14`), so a task whose `Order` falls outside those windows is registered, never executed, and never complained about.
 The guard's `Order` must therefore sit inside an executed window and above `LoadAndBuildEffectiveSchemaTask`'s `Order => 100` (`Startup/LoadAndBuildEffectiveSchemaTask.cs:34`), because the `AppliesTo` warning reads the effective ApiSchema that task builds.
-Any value in 101-299 satisfies both; the 200s is this design's preference, keeping the guard visibly after schema loading alongside where DMS's existing registration-validation guards sit (`Order => 50` and `Order => 55`, `Startup/ValidateDatabaseFingerprintReaderRegistrationTask.cs:19`, `Startup/ValidateResourceKeyRowReaderRegistrationTask.cs:19`).
+Any value in 101-299 satisfies both; the 200s is this design's preference, keeping the guard visibly after schema loading.
+DMS's existing registration-validation guards sit lower (`Order => 50` and `Order => 55`, `Startup/ValidateDatabaseFingerprintReaderRegistrationTask.cs:19`, `Startup/ValidateResourceKeyRowReaderRegistrationTask.cs:19`), and this guard deliberately does not join them: both run before `LoadAndBuildEffectiveSchemaTask` (`Order => 100`), whose effective ApiSchema the `AppliesTo` warning reads.
 That preference conflicts with the doc comment labelling 200-299 "Schema processing" (`Startup/IDmsStartupTask.cs:27`), which is introduced as a recommendation (`:25`) and enforced by nothing; the implementation records the mismatch at the `Order` declaration and proves the guard actually executed rather than merely being registered.
 
 **What the guard guarantees** is constructibility: a dependency the container cannot supply, or a constructor that throws when resolved outside a request.
@@ -396,7 +401,7 @@ Every `OnPath` failure is appended to `validationErrors` under its own `JsonPath
 The step then calls the same two factories `ValidateDocumentMiddleware` calls, under the same selection rule (`errors.Length > 0` picks `ForBadRequest`, otherwise `ForDataValidation`), passing that middleware's exact `detail` literals: `"The request could not be processed. See 'errors' for details."` and `"Data validation failed. See 'validationErrors' for details."` (`Middleware/ValidateDocumentMiddleware.cs:38-54`).
 
 The `detail` value is specified rather than left to the implementer because it is serialized into every 400 body as a client-visible member (`Response/FailureResponse.cs:49-61`), so an implementer choosing their own string is exactly what would make custom-validator 400s distinguishable.
-With it fixed, a client cannot tell from the body whether a 400 came from core schema validation or a custom validator.
+With it fixed, a client cannot tell from the body whether a 400 on a given arm came from core validation or a custom validator.
 (This is the write path's 400 shape, not literally every DMS 400: a known query failure returns 400 with an empty body, `Handler/QueryRequestHandler.cs:80`.)
 
 ### Accumulation Semantics
@@ -466,14 +471,16 @@ A DMS runtime major-version bump therefore changes the set of buildable validato
 `Core.External.csproj` declares `IsPackable=true`, but nothing packs or publishes it today (`build-dms.ps1:1801-1867` packs only the API package and SchemaTools, and no `Core.External` nuspec exists), so adding the pack-and-publish step is prerequisite work in the contract ticket.
 
 **Publishing the assembly also publishes its dependency closure, which is prerequisite work of its own.**
-`Core.External.csproj` declares five `PackageReference`s (`:10-14`), none carrying `PrivateAssets`, and the project declares no `ProjectReference`, so all five become the published package's declared dependencies, resolving to a 26-package closure in `packages.lock.json`.
+`Core.External.csproj` declares five `PackageReference`s (`:10-14`), none carrying `PrivateAssets`, and the project declares no `ProjectReference`, so all five become the published package's declared dependencies. `packages.lock.json` lists 26 entries, two of which are the analyzer references covered below; the five declared references resolve to a closure of 24.
 The two analyzer references that `src/dms/Directory.Build.props:14-21` adds to every project are not part of that surface, since both carry `PrivateAssets=all` and therefore do not flow to consumers.
 One of the five is unused: no file in the project references any Roslyn API, and `Microsoft.CodeAnalysis` is declared as an ordinary reference without the `PrivateAssets` scoping the analyzers beside it carry.
 That single reference accounts for 16 of the 26 packages, including every Roslyn package, the six `System.Composition.*` packages, and `Humanizer.Core`, none of which is reachable from any other declared reference.
 Removing it leaves `Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic` (`Model/ReferentialIdFactory.cs:6`), `Sandwych.QuickGraph.Core` (`Model/GraphMLEdge.cs:6`), and the two logging packages, of which only `Microsoft.Extensions.Logging.Abstractions` is actually used: the sole logging symbol in the project is `EventId` (`Logging/RequestLoggingEventIds.cs:15`, `:17`).
 The contract ticket additionally declares `Microsoft.Extensions.Options` and `Microsoft.Extensions.DependencyInjection.Abstractions` explicitly.
-Both already arrive transitively today, but only by way of `Microsoft.Extensions.Logging`, and the registration extension this design documents needs them directly.
-A dependency the documented usage requires must be declared rather than inherited through a reference that is itself a cleanup candidate, or a later tidy-up removes the sample's ability to compile without touching anything that mentions it.
+Both arrive transitively today, but not equally safely.
+`Microsoft.Extensions.Options` has exactly one path into the closure, `Microsoft.Extensions.Logging` - the reference just identified as unused - so a later tidy-up would remove the sample's ability to compile without touching anything that mentions it.
+`Microsoft.Extensions.DependencyInjection.Abstractions` also arrives through `Microsoft.Extensions.Logging.Abstractions`, which is used and staying, so declaring it is hygiene rather than a rescue.
+Either way, a dependency the documented usage requires belongs in the package's own declaration rather than inherited from whatever happens to be upstream.
 Removing the Roslyn reference is therefore prerequisite work in the contract ticket alongside the pack-and-publish step, and that ticket asserts the resulting dependency list rather than trusting it.
 Left in place, a district implementing this contract would take a compile-and-publish dependency on the Roslyn compiler platform.
 
@@ -578,7 +585,7 @@ Whether to close that gap by adding a store-read capability is recorded under [D
 | Deferred item | Reason |
 | --- | --- |
 | Runtime assembly loading (the plugin spike) | Planned as its own design stream. Inherits this contract, the fan-in step, the failure surfacing, and the startup guard unchanged; adds a discovery-and-registration path feeding the same collection. |
-| Store-read capability for validators | Additive to the contract surface (a validator obtains it by constructor injection, not as a parameter), so adding it later breaks no signature. Needs its own error-contract design, and is the blocker for the ODS UniqueId not-changed rule that DMS-1414 will want. |
+| Store-read capability for validators | Additive to the contract surface (a validator obtains it by constructor injection, not as a parameter), so adding it later breaks no signature. Needs its own error-contract design. It is one of two things the ODS UniqueId not-changed rule needs, not the only one: that rule keys on the persisted document's identifier (`EdFi.Ods.Features/UniqueIdIntegration/Validation/UniqueIdNotChangedEntityValidator.cs:39`), and this version's `Validate` exposes neither a `DocumentUuid` nor the route, so DMS-1414 needs a document-identity capability alongside store access. |
 | A wildcard in `AppliesTo` | Additive to `ValidatedResource`. Only worth adding against a real requirement for breadth, which is arguably a different extension point. |
 | Distinct handling for `OperationCanceledException` | The v1 default is the generic 500 arm. Whether cancellation deserves its own outcome is an open decision on the fan-in ticket. |
 | A copy-on-write or read-only `JsonNode` wrapper | Replaces the per-validator deep clone if that cost ever becomes measurable on a bulk-load path. |
@@ -589,7 +596,7 @@ Whether to close that gap by adding a store-read capability is recorded under [D
 
 **Contract unit tests** (abstractions package):
 
-- `OnPath` throws for a null, empty, or non-`$.`-prefixed path, and for an empty message; `OnResource` throws for an empty message. A bare `"$"` is rejected alongside `""`, since a failure about the document as a whole is `OnResource`'s case.
+- `OnPath` throws for a null or empty path, for a path that is not `"$."`-prefixed, and for a path that is `"$."` with nothing after it, and for an empty message; `OnResource` throws for an empty message. Bare `"$"` and bare `"$."` are both rejected alongside `""`: each is `$`-rooted yet names no member, and a failure about the document as a whole is `OnResource`'s case.
 - Within the abstractions assembly's own public construction surface, `OnResource` is the only way to express a path-less failure. Asserted reflectively; the expected constructor set is exactly the synthesized copy constructor, since CS8878 forbids restricting it.
 - A scratch library referencing only the published package compiles a validator and the registration extension exactly as [Registration and Composition](#registration-and-composition) documents it, including the `Action<TOptions>` overload of `Configure`, proving the package's dependency set is sufficient for the documented usage.
 
