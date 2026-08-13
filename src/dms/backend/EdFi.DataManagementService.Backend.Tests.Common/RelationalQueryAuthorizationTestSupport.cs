@@ -423,6 +423,111 @@ internal static class RelationalQueryAuthorizationRequestBodies
     }
 }
 
+/// <summary>
+/// Row-count targets for the bulk relationship-authorization volume generators (DMS-1331). Both engines share
+/// these so the PostgreSQL and SQL Server differentials measure the same populations.
+/// </summary>
+/// <remarks>
+/// The authorized count is an explicit target, not a side effect of "some reachable and some unreachable
+/// rows". Measurements bind an OFFSET, and an offset past the last authorized row would EXPLAIN an empty page
+/// — green while proving nothing — so every measuring fixture asserts its authorized count against the
+/// deepest offset it uses plus the page limit.
+/// </remarks>
+internal sealed record RelationshipAuthorizationVolumeCounts
+{
+    private RelationshipAuthorizationVolumeCounts(int authorizedRowsPerRoot, int unauthorizedRowsPerRoot)
+    {
+        AuthorizedRowsPerRoot = authorizedRowsPerRoot;
+        UnauthorizedRowsPerRoot = unauthorizedRowsPerRoot;
+    }
+
+    /// <summary>
+    /// Runs on every pull request. Feeds the differential row-set equivalence proof and the volume-independent
+    /// plan-shape assertions.
+    /// </summary>
+    public static RelationshipAuthorizationVolumeCounts Ci { get; } = new(8000, 2000);
+
+    /// <summary>
+    /// The deep-offset and timing lane. The authorized count exceeds the ticket's literal OFFSET 100000 plus
+    /// any page limit those fixtures use, which is what keeps that measurement on a real page.
+    /// </summary>
+    public static RelationshipAuthorizationVolumeCounts DeepOffset { get; } = new(120000, 30000);
+
+    public int AuthorizedRowsPerRoot { get; }
+
+    public int UnauthorizedRowsPerRoot { get; }
+
+    public int TotalRowsPerRoot => AuthorizedRowsPerRoot + UnauthorizedRowsPerRoot;
+
+    /// <summary>
+    /// Every <c>Stride</c>-th generated student is enrolled at the unreachable school. Interleaving the two
+    /// populations across the DocumentId ordering is what makes authorized and unauthorized rows alternate
+    /// across page boundaries instead of partitioning into a reachable prefix and an unreachable suffix.
+    /// </summary>
+    public int Stride =>
+        TotalRowsPerRoot % UnauthorizedRowsPerRoot == 0
+            ? TotalRowsPerRoot / UnauthorizedRowsPerRoot
+            : throw new InvalidOperationException(
+                $"Volume counts must interleave evenly: total {TotalRowsPerRoot} is not a multiple of the unauthorized count {UnauthorizedRowsPerRoot}."
+            );
+}
+
+/// <summary>
+/// The fixed identities the volume generators write. Shared across engines so a spec built for one dialect
+/// describes the other engine's rows too.
+/// </summary>
+internal static class RelationshipAuthorizationVolumeIdentifiers
+{
+    /// <summary>The claim EdOrg the measured queries authorize against. Reaches the reachable school only.</summary>
+    public const long ClaimEducationOrganizationId = 990_000L;
+
+    /// <summary>
+    /// Carries the whole Section/Course/GradingPeriod chain plus the authorized students' enrollments. One
+    /// designated school keeps every <c>GENERATED ALWAYS</c> unified column consistent with its parent's
+    /// reference key by construction.
+    /// </summary>
+    public const int ReachableSchoolId = 990_001;
+
+    /// <summary>
+    /// Carries only the unauthorized students' enrollments. Authorization is a property of the enrollment's
+    /// school, so a single school would authorize every generated student or none.
+    /// </summary>
+    public const int UnreachableSchoolId = 990_002;
+
+    public const int SchoolYear = 2024;
+
+    public const string StudentUniqueIdPrefix = "VOL-";
+
+    public const string TermDescriptorUri = "uri://ed-fi.org/TermDescriptor#Fall Semester";
+    public const string GradeLevelDescriptorUri = "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade";
+    public const string GradingPeriodDescriptorUri =
+        "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks";
+    public const string GradeTypeDescriptorUri = "uri://ed-fi.org/GradeTypeDescriptor#Semester";
+    public const string CourseAttemptResultDescriptorUri =
+        "uri://ed-fi.org/CourseAttemptResultDescriptor#Pass";
+    public const string AttendanceEventCategoryDescriptorUri =
+        "uri://ed-fi.org/AttendanceEventCategoryDescriptor#In Attendance";
+
+    public const string CourseCode = "VOL-COURSE";
+    public const string CourseTitle = "Volume Course";
+    public const string LocalCourseCode = "VOL-LOCAL";
+    public const string SessionName = "VOL-SESSION";
+    public const string SectionIdentifier = "VOL-SECTION";
+    public const string GradingPeriodName = "VOL-GRADINGPERIOD";
+    public const string GradebookEntryIdentifier = "VOL-GBE";
+    public const string GradebookEntryNamespace = "uri://ed-fi.org/volume";
+}
+
+/// <summary>
+/// What a volume generator produced, so fixtures can assert their preconditions instead of trusting the
+/// generator.
+/// </summary>
+internal sealed record RelationshipAuthorizationVolumeGenerationResult(
+    RelationshipAuthorizationVolumeCounts Counts,
+    long AuthorizedStudentCount,
+    long UnauthorizedStudentCount
+);
+
 internal static class RelationalQueryAuthorizationAssertions
 {
     public static void AssertInsertSuccess(UpsertResult result)
