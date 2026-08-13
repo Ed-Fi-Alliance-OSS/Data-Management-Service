@@ -13,6 +13,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
+using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.Model;
 using EdFi.DataManagementService.Tests.Integration.Doubles;
@@ -30,6 +31,7 @@ internal static class DocumentCacheReadAccelerationScenario
     private const string VisibleReadableContentType =
         "application/vnd.ed-fi.profilerootonlymergeitem.profilerootonlymergeitem-visible.readable+json";
     private const string LastModifiedDateFormat = "yyyy-MM-ddTHH:mm:ss'Z'";
+    private const string NextPageTokenHeaderName = "Next-Page-Token";
 
     public static IClaimSetProvider CreateStudentCreateOnlyClaimSetProvider() =>
         new StaticClaimSetProvider([
@@ -109,6 +111,20 @@ internal static class DocumentCacheReadAccelerationScenario
             .Select(node => node!["_etag"]!.GetValue<string>())
             .Should()
             .OnlyContain(etag => !string.IsNullOrWhiteSpace(etag));
+
+        // Every document on this page came from cache, and the continuation a cursor walk enters on
+        // still names the page after it: what a client is handed cannot depend on cache state.
+        string nextPageToken = queryResponse.Headers.GetValues(NextPageTokenHeaderName).Single();
+        PageTokenCodec
+            .TryDecode(nextPageToken, out var continuation)
+            .Should()
+            .BeTrue("an emitted continuation must decode through the codec that produced it");
+        continuation!
+            .InclusiveMinimum.Should()
+            .Be(
+                secondQueryMetadata.DocumentId + 1,
+                "the continuation resumes after the highest key this page selected"
+            );
     }
 
     public static async Task It_falls_back_relationally_when_cache_row_is_missing_or_stale(

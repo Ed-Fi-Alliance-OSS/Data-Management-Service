@@ -191,7 +191,7 @@ public class Given_DocumentCacheReadResponseShaper
     }
 
     [Test]
-    public void It_shapes_a_fresh_query_page_in_candidate_order_without_a_traditional_paging_boundary()
+    public void It_shapes_a_fresh_query_page_in_candidate_order_carrying_the_selection_boundary()
     {
         var sut = CreateShaper();
         var first = Candidate(documentId: 345, documentUuid: DocumentUuid);
@@ -203,7 +203,7 @@ public class Given_DocumentCacheReadResponseShaper
         var candidatePage = new DocumentCacheReadAccelerationCandidatePage(
             [first, second],
             TotalCount: 7,
-            HighestSelectedDocumentId: null,
+            ContinuationBoundary: new PageContinuationBoundary(346, AllowsDocumentIdContinuation: true),
             IncludesTotalCount: true
         );
 
@@ -215,11 +215,63 @@ public class Given_DocumentCacheReadResponseShaper
 
         var success = result.CachedResult.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
         success.TotalCount.Should().Be(7);
-        success.HighestSelectedDocumentId.Should().BeNull();
+        success.HighestSelectedDocumentId.Should().Be(346);
+        success.AllowsDocumentIdContinuation.Should().BeTrue();
         success
             .EdfiDocs.Select(document => document!["name"]!.GetValue<string>())
             .Should()
             .Equal("Lincoln High", "Washington High");
+    }
+
+    [Test]
+    public void It_shapes_a_fresh_query_page_that_cannot_anchor_a_document_id_continuation()
+    {
+        var sut = CreateShaper();
+        var candidate = Candidate(documentId: 345, documentUuid: DocumentUuid);
+        var hitPage = DocumentCacheReadBatchLookupResult.FromDocuments([
+            FreshHit(candidate, CachedDocumentJson(candidate, "Lincoln High")),
+        ]);
+        var candidatePage = new DocumentCacheReadAccelerationCandidatePage(
+            [candidate],
+            TotalCount: 1,
+            ContinuationBoundary: new PageContinuationBoundary(345, AllowsDocumentIdContinuation: false),
+            IncludesTotalCount: true
+        );
+
+        DocumentCacheReadLookupResult<QueryResult> result = sut.ShapeQuery(
+            CreateQueryRequest(candidatePage),
+            candidatePage,
+            hitPage
+        );
+
+        var success = result.CachedResult.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.HighestSelectedDocumentId.Should().Be(345);
+        success.AllowsDocumentIdContinuation.Should().BeFalse();
+    }
+
+    [Test]
+    public void It_shapes_a_fresh_query_page_selected_without_a_continuation_boundary()
+    {
+        var sut = CreateShaper();
+        var candidate = Candidate(documentId: 345, documentUuid: DocumentUuid);
+        var hitPage = DocumentCacheReadBatchLookupResult.FromDocuments([
+            FreshHit(candidate, CachedDocumentJson(candidate, "Lincoln High")),
+        ]);
+        var candidatePage = new DocumentCacheReadAccelerationCandidatePage(
+            [candidate],
+            TotalCount: 1,
+            ContinuationBoundary: new PageContinuationBoundary(null, AllowsDocumentIdContinuation: true),
+            IncludesTotalCount: true
+        );
+
+        DocumentCacheReadLookupResult<QueryResult> result = sut.ShapeQuery(
+            CreateQueryRequest(candidatePage),
+            candidatePage,
+            hitPage
+        );
+
+        var success = result.CachedResult.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.HighestSelectedDocumentId.Should().BeNull();
     }
 
     [Test]
@@ -233,7 +285,7 @@ public class Given_DocumentCacheReadResponseShaper
         var candidatePage = new DocumentCacheReadAccelerationCandidatePage(
             [candidate],
             TotalCount: 7,
-            HighestSelectedDocumentId: null,
+            ContinuationBoundary: default,
             IncludesTotalCount: false
         );
 
@@ -260,7 +312,7 @@ public class Given_DocumentCacheReadResponseShaper
         var candidatePage = new DocumentCacheReadAccelerationCandidatePage(
             [authorized],
             TotalCount: 1,
-            HighestSelectedDocumentId: 345,
+            ContinuationBoundary: new PageContinuationBoundary(345, AllowsDocumentIdContinuation: true),
             IncludesTotalCount: true
         );
 
@@ -298,7 +350,7 @@ public class Given_DocumentCacheReadResponseShaper
         var candidatePage = new DocumentCacheReadAccelerationCandidatePage(
             [first, second],
             TotalCount: 2,
-            HighestSelectedDocumentId: 346,
+            ContinuationBoundary: new PageContinuationBoundary(346, AllowsDocumentIdContinuation: true),
             IncludesTotalCount: true
         );
 

@@ -20,7 +20,7 @@ namespace EdFi.DataManagementService.Backend;
 /// Whether <paramref name="SelectedMaximum"/> describes where this page ended, which it does only when
 /// the page was ordered by DocumentId.
 /// </param>
-internal readonly record struct PageContinuationBoundary(
+public readonly record struct PageContinuationBoundary(
     long? SelectedMaximum,
     bool AllowsDocumentIdContinuation
 )

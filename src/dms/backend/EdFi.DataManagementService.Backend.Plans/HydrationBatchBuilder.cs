@@ -126,15 +126,10 @@ public static class HydrationBatchBuilder
         planDialect.AppendCreateKeysetTempTable(writer, plan.KeysetTable);
         writer.AppendLine();
 
-        // This batch's reader derives its candidates from the metadata rows and has no position for a
-        // selected-id result set, so the materialization must not return one.
-        AppendKeysetMaterialization(
-            writer,
-            planDialect,
-            plan.KeysetTable,
-            keyset,
-            returnsSelectedIds: false
-        );
+        // The selected ids are returned even though this batch's candidates come from the metadata
+        // rows: the page's continuation boundary describes the keys selection chose, and a row deleted
+        // between materialization and the metadata select below would otherwise lower or erase it.
+        AppendKeysetMaterialization(writer, planDialect, plan.KeysetTable, keyset, returnsSelectedIds: true);
         writer.AppendLine();
 
         if (keyset.Plan.TotalCountSql is not null)
@@ -450,8 +445,8 @@ public static class HydrationBatchBuilder
 
     /// <param name="returnsSelectedIds">
     /// Whether a query keyset's materialization returns the ids it inserted as a result set. True for
-    /// the hydration batch, whose reader consumes that result set. False for the candidate-metadata
-    /// batch, whose reader has no position for it and derives its candidates from the metadata rows.
+    /// the batches whose reader consumes that result set to resolve the page's continuation boundary.
+    /// False for a keyset that performs no page selection, which has no boundary to report.
     /// </param>
     private static void AppendKeysetMaterialization(
         SqlWriter writer,
@@ -497,12 +492,7 @@ public static class HydrationBatchBuilder
             // A selected-page keyset supplies its own ids, so hydration reads no selected-id result set
             // for it and GetResultSetCount counts none.
             case PageKeysetSpec.SelectedPage { DocumentIds.Count: 0 }:
-                AppendEmptyKeysetMaterialization(
-                    writer,
-                    keyset,
-                    quotedDocIdCol,
-                    selectedIdDialect: null
-                );
+                AppendEmptyKeysetMaterialization(writer, keyset, quotedDocIdCol, selectedIdDialect: null);
                 break;
 
             case PageKeysetSpec.SelectedPage selectedPage:
@@ -514,13 +504,7 @@ public static class HydrationBatchBuilder
                 break;
 
             case PageKeysetSpec.Query query:
-                AppendQueryKeysetMaterialization(
-                    writer,
-                    selectedIdDialect,
-                    keyset,
-                    query,
-                    quotedDocIdCol
-                );
+                AppendQueryKeysetMaterialization(writer, selectedIdDialect, keyset, query, quotedDocIdCol);
                 break;
 
             default:

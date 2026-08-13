@@ -2912,7 +2912,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         new(
             candidates ?? [Candidate()],
             totalCount,
-            highestSelectedDocumentId,
+            new PageContinuationBoundary(highestSelectedDocumentId, AllowsDocumentIdContinuation: true),
             includesTotalCount ?? (totalCount is not null)
         );
 

@@ -126,6 +126,8 @@ internal sealed class DocumentCacheReadResponseShaper(
                 );
             }
 
+            // The boundary is reported exactly as page selection resolved it, so a page answered from
+            // cache hands Core the same continuation facts the relational path would have.
             return DocumentCacheReadLookupResult<QueryResult>.Hit(
                 new QueryResult.QuerySuccess(
                     edfiDocs,
@@ -136,8 +138,13 @@ internal sealed class DocumentCacheReadResponseShaper(
                             "cache query response shaping"
                         )
                         : null,
-                    authorizedCandidatePage.HighestSelectedDocumentId
+                    authorizedCandidatePage.ContinuationBoundary.SelectedMaximum
                 )
+                {
+                    AllowsDocumentIdContinuation = authorizedCandidatePage
+                        .ContinuationBoundary
+                        .AllowsDocumentIdContinuation,
+                }
             );
         });
     }

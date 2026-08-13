@@ -1484,7 +1484,8 @@ public sealed class RelationalDocumentStoreRepository(
                     preparation.Resource,
                     preparation.ReadPlan,
                     preparation.PlannedQuery,
-                    queryRequest.Paging.IncludesTotalCount,
+                    queryRequest.Paging,
+                    preparation.OrderingMode,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -1506,8 +1507,13 @@ public sealed class RelationalDocumentStoreRepository(
                             "query candidate selection"
                         )
                         : null,
-                    candidatePage.HighestSelectedDocumentId
+                    candidatePage.ContinuationBoundary.SelectedMaximum
                 )
+                {
+                    AllowsDocumentIdContinuation = candidatePage
+                        .ContinuationBoundary
+                        .AllowsDocumentIdContinuation,
+                }
             );
         }
 
@@ -1563,7 +1569,7 @@ public sealed class RelationalDocumentStoreRepository(
         hydratedPage = hydratedPage with
         {
             TotalCount = candidatePage.TotalCount,
-            HighestSelectedDocumentId = candidatePage.HighestSelectedDocumentId,
+            HighestSelectedDocumentId = candidatePage.ContinuationBoundary.SelectedMaximum,
         };
 
         if (!SelectedQueryCandidatePageStillMatches(candidatePage, hydratedPage.DocumentMetadata))
@@ -1620,7 +1626,8 @@ public sealed class RelationalDocumentStoreRepository(
         QualifiedResourceName resource,
         ResourceReadPlan readPlan,
         PageKeysetSpec.Query plannedQuery,
-        bool includesTotalCount,
+        CollectionPaging paging,
+        PageOrderingMode orderingMode,
         CancellationToken cancellationToken
     )
     {
@@ -1634,7 +1641,8 @@ public sealed class RelationalDocumentStoreRepository(
                     ReadDocumentCandidatePageAsync(
                         reader,
                         plannedQuery.Plan.TotalCountSql is not null,
-                        includesTotalCount,
+                        paging,
+                        orderingMode,
                         resourceKeyId,
                         ct
                     ),
@@ -1683,12 +1691,26 @@ public sealed class RelationalDocumentStoreRepository(
     private static async Task<DocumentCacheReadAccelerationCandidatePage> ReadDocumentCandidatePageAsync(
         IRelationalCommandReader reader,
         bool hasTotalCount,
-        bool includesTotalCount,
+        CollectionPaging paging,
+        PageOrderingMode orderingMode,
         short resourceKeyId,
         CancellationToken cancellationToken
     )
     {
         ArgumentNullException.ThrowIfNull(reader);
+
+        // The keyset materialization returns the ids it selected, ahead of every other result set. The
+        // boundary is taken from them rather than from the candidates below, so it stays the keys
+        // selection chose even when a row is deleted before the metadata select reaches it.
+        long? selectedMaximum = await ReadSelectedDocumentIdMaximumAsync(reader, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!await reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException(
+                "Expected a query candidate result set after the selected page keyset ids but no more result sets were available."
+            );
+        }
 
         long? totalCount = null;
 
@@ -1720,14 +1742,37 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
-        // This candidate reader is used only by traditional paging. A cursor boundary must come from
-        // cursor page selection itself rather than being inferred from the selected document ids.
         return new DocumentCacheReadAccelerationCandidatePage(
             candidates,
             totalCount,
-            HighestSelectedDocumentId: null,
-            IncludesTotalCount: includesTotalCount
+            PageContinuationBoundary.For(paging, orderingMode, selectedMaximum),
+            IncludesTotalCount: paging.IncludesTotalCount
         );
+    }
+
+    /// <summary>
+    /// Reads the selected page keyset ids from the current result set and returns the maximum, or
+    /// <see langword="null"/> when the selection was empty. Taken across every returned row because
+    /// neither <c>RETURNING</c> nor <c>OUTPUT</c> promises an order.
+    /// </summary>
+    private static async Task<long?> ReadSelectedDocumentIdMaximumAsync(
+        IRelationalCommandReader reader,
+        CancellationToken cancellationToken
+    )
+    {
+        long? selectedMaximum = null;
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var selectedDocumentId = reader.GetFieldValue<long>(0);
+
+            if (selectedMaximum is null || selectedDocumentId > selectedMaximum)
+            {
+                selectedMaximum = selectedDocumentId;
+            }
+        }
+
+        return selectedMaximum;
     }
 
     private static async Task<long> ReadCandidatePageTotalCountAsync(

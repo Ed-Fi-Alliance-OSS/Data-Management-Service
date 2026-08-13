@@ -44,10 +44,15 @@ public sealed record DocumentCacheReadAccelerationCandidate(
     DateTimeOffset ContentLastModifiedAt
 );
 
+/// <param name="ContinuationBoundary">
+/// What the page selection that produced these candidates can tell Core about continuing after it.
+/// Carried on the candidate page because a page served from cache is shaped from the candidates alone,
+/// and a boundary left behind there would make the continuation header depend on cache state.
+/// </param>
 public sealed record DocumentCacheReadAccelerationCandidatePage(
     IReadOnlyList<DocumentCacheReadAccelerationCandidate> Candidates,
     long? TotalCount,
-    long? HighestSelectedDocumentId,
+    PageContinuationBoundary ContinuationBoundary,
     bool IncludesTotalCount
 )
 {

@@ -575,6 +575,11 @@ internal sealed class DescriptorReadHandler(
 
         var candidatePage = CreateDescriptorReadAccelerationCandidatePage(
             rowsPage.Page,
+            PageContinuationBoundary.For(
+                request.Paging,
+                _orderingPolicy.ResolveForLiveQuery(request.ChangeVersionRange),
+                SelectedMaximumOf(rowsPage.Page.Rows)
+            ),
             request.Paging.IncludesTotalCount
         );
 
@@ -1011,7 +1016,7 @@ internal sealed class DescriptorReadHandler(
     /// orders ascending today, but a boundary that depended on that could not survive an ordering
     /// change, and the maximum costs the same either way.
     /// </summary>
-    private static long? SelectedMaximumOf(IReadOnlyList<DescriptorReadRow> descriptorRows) =>
+    private static long? SelectedMaximumOf(IReadOnlyList<IDescriptorReadCandidateMetadata> descriptorRows) =>
         descriptorRows.Count == 0
             ? null
             : descriptorRows.Max(static descriptorRow => descriptorRow.DocumentId);
@@ -1454,12 +1459,13 @@ internal sealed class DescriptorReadHandler(
 
     private static DocumentCacheReadAccelerationCandidatePage CreateDescriptorReadAccelerationCandidatePage(
         DescriptorQueryCandidatePage queryRowsPage,
+        PageContinuationBoundary continuationBoundary,
         bool includesTotalCount
     ) =>
         new(
             [.. queryRowsPage.Rows.Select(CreateDescriptorReadAccelerationCandidate)],
             queryRowsPage.TotalCount,
-            HighestSelectedDocumentId: null,
+            continuationBoundary,
             IncludesTotalCount: includesTotalCount
         );
 

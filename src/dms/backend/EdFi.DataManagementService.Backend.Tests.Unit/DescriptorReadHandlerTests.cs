@@ -1984,7 +1984,10 @@ public class Given_DescriptorReadHandler
                         ),
                     ],
                     TotalCount: 7,
-                    HighestSelectedDocumentId: null,
+                    ContinuationBoundary: new PageContinuationBoundary(
+                        205L,
+                        AllowsDocumentIdContinuation: true
+                    ),
                     IncludesTotalCount: true
                 )
             );
@@ -1997,6 +2000,54 @@ public class Given_DescriptorReadHandler
                 )
             )
             .MustHaveHappenedOnceExactly();
+    }
+
+    // A windowed traditional descriptor page is ordered by ContentVersion, so the candidate page a
+    // cache-served response is shaped from reports the selected maximum without the continuation
+    // eligibility that maximum cannot carry.
+    [Test]
+    public async Task It_exposes_a_windowed_descriptor_candidate_page_that_cannot_anchor_a_continuation()
+    {
+        var documentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-999999999994");
+        var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(documentUuid, documentId: 205L, codeValue: "Charter")
+                ),
+            ]),
+        ]);
+        DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage capturedSelection = null!;
+
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(async call =>
+            {
+                var request = call.GetArgument<DocumentCacheReadAccelerationQueryRequest>(0)!;
+                var selectionResult = await request
+                    .SelectAuthorizedCandidatePage(call.GetArgument<CancellationToken>(1))
+                    .ConfigureAwait(false);
+                capturedSelection = selectionResult
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage>()
+                    .Subject;
+
+                return new QueryResult.QuerySuccess([], TotalCount: null);
+            });
+
+        var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
+
+        await sut.HandleQueryAsync(
+            CreateQueryRequest(SqlDialect.Pgsql, changeVersionRange: new ChangeVersionRange(null, 900L))
+        );
+
+        capturedSelection
+            .AuthorizedCandidatePage.ContinuationBoundary.Should()
+            .Be(new PageContinuationBoundary(205L, AllowsDocumentIdContinuation: false));
     }
 
     [Test]

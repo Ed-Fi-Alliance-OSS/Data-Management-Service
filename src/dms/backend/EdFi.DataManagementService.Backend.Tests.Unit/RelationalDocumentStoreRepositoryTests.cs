@@ -3757,6 +3757,61 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .MustNotHaveHappened();
     }
 
+    // The boundary describes the keys candidate selection chose, so a page whose selected rows were all
+    // deleted before the metadata select still advances a walk past them instead of stalling it.
+    [Test]
+    public async Task It_reports_the_selected_boundary_when_candidate_selection_found_no_surviving_rows()
+    {
+        var readAccelerationCoordinator = new RecordingReadAccelerationCoordinator();
+        var mappingSet = CreateQuerySupportedMappingSet(_schoolResourceInfo);
+        var queryRequest = CreateQueryRequest(mappingSet, [], totalCount: false);
+
+        UseReadAccelerationCoordinator(readAccelerationCoordinator);
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<
+                        Func<
+                            IRelationalCommandReader,
+                            CancellationToken,
+                            Task<DocumentCacheReadAccelerationCandidatePage>
+                        >
+                    >._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(
+                (
+                    RelationalCommand _,
+                    Func<
+                        IRelationalCommandReader,
+                        CancellationToken,
+                        Task<DocumentCacheReadAccelerationCandidatePage>
+                    > readAsync,
+                    CancellationToken cancellationToken
+                ) =>
+                    readAsync(
+                        new InMemoryRelationalCommandReader([
+                            InMemoryRelationalResultSet.Create(
+                                RelationalAccessTestData.CreateRow(("DocumentId", 345L)),
+                                RelationalAccessTestData.CreateRow(("DocumentId", 678L))
+                            ),
+                            InMemoryRelationalResultSet.Create(),
+                        ]),
+                        cancellationToken
+                    )
+            );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.EdfiDocs.Should().BeEmpty();
+        success.HighestSelectedDocumentId.Should().Be(678L);
+        success.AllowsDocumentIdContinuation.Should().BeTrue();
+        readAccelerationCoordinator.SelectedQueryCandidatePage.Should().BeNull();
+    }
+
     [Test]
     public async Task It_exposes_an_authorized_query_candidate_page_to_read_acceleration_before_hydration()
     {
@@ -3841,6 +3896,10 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     readAsync(
                         new InMemoryRelationalCommandReader([
                             InMemoryRelationalResultSet.Create(
+                                RelationalAccessTestData.CreateRow(("DocumentId", 345L)),
+                                RelationalAccessTestData.CreateRow(("DocumentId", 678L))
+                            ),
+                            InMemoryRelationalResultSet.Create(
                                 RelationalAccessTestData.CreateRow(
                                     ("DocumentId", 345L),
                                     ("DocumentUuid", firstDocumentUuid.Value),
@@ -3892,7 +3951,8 @@ public class Given_RelationalDocumentStoreRepositoryTests
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
         success.EdfiDocs.Should().HaveCount(2);
         success.TotalCount.Should().BeNull();
-        success.HighestSelectedDocumentId.Should().BeNull();
+        success.HighestSelectedDocumentId.Should().Be(678L);
+        success.AllowsDocumentIdContinuation.Should().BeTrue();
         capturedSelectedPage.DocumentIds.Should().Equal(345L, 678L);
         readAccelerationCoordinator.QueryAttempts.Should().Be(1);
         readAccelerationCoordinator.SelectedQueryRequest.Should().NotBeNull();
@@ -3920,7 +3980,10 @@ public class Given_RelationalDocumentStoreRepositoryTests
                         ),
                     ],
                     TotalCount: null,
-                    HighestSelectedDocumentId: null,
+                    ContinuationBoundary: new PageContinuationBoundary(
+                        678L,
+                        AllowsDocumentIdContinuation: true
+                    ),
                     IncludesTotalCount: false
                 )
             );
@@ -3981,6 +4044,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 ) =>
                     readAsync(
                         new InMemoryRelationalCommandReader([
+                            InMemoryRelationalResultSet.Create(
+                                RelationalAccessTestData.CreateRow(("DocumentId", 345L))
+                            ),
                             InMemoryRelationalResultSet.Create(
                                 RelationalAccessTestData.CreateRow(
                                     ("DocumentId", 345L),
@@ -4268,6 +4334,11 @@ public class Given_RelationalDocumentStoreRepositoryTests
                     return readAsync(
                         new InMemoryRelationalCommandReader([
                             InMemoryRelationalResultSet.Create(
+                                RelationalAccessTestData.CreateRow(
+                                    ("DocumentId", selectedMetadata.DocumentId)
+                                )
+                            ),
+                            InMemoryRelationalResultSet.Create(
                                 RelationalAccessTestData.CreateRow(("TotalCount", 3L))
                             ),
                             InMemoryRelationalResultSet.Create(
@@ -4304,9 +4375,15 @@ public class Given_RelationalDocumentStoreRepositoryTests
             .Equal(contentVersionSelectedMetadata.DocumentId);
         authorizedCandidatePage.IncludesTotalCount.Should().BeTrue();
         authorizedCandidatePage.TotalCount.Should().Be(3);
+        authorizedCandidatePage
+            .ContinuationBoundary.SelectedMaximum.Should()
+            .Be(contentVersionSelectedMetadata.DocumentId);
+        authorizedCandidatePage.ContinuationBoundary.AllowsDocumentIdContinuation.Should().BeFalse();
 
         var success = acceleratedResult.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
         success.TotalCount.Should().Be(3);
+        success.HighestSelectedDocumentId.Should().Be(contentVersionSelectedMetadata.DocumentId);
+        success.AllowsDocumentIdContinuation.Should().BeFalse();
         success.EdfiDocs.Single()!["id"]!
             .GetValue<string>()
             .Should()
@@ -4401,6 +4478,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
                 ) =>
                     readAsync(
                         new InMemoryRelationalCommandReader([
+                            InMemoryRelationalResultSet.Create(
+                                RelationalAccessTestData.CreateRow(("DocumentId", 345L))
+                            ),
                             InMemoryRelationalResultSet.Create(
                                 RelationalAccessTestData.CreateRow(("TotalCount", 7L))
                             ),
@@ -8591,12 +8671,13 @@ public class Given_RelationalDocumentStoreRepositoryTests
                             totalCount
                                 ?
                                 [
+                                    InMemoryRelationalResultSet.Create(),
                                     InMemoryRelationalResultSet.Create(
                                         RelationalAccessTestData.CreateRow(("TotalCount", 7L))
                                     ),
                                     InMemoryRelationalResultSet.Create(),
                                 ]
-                                : [InMemoryRelationalResultSet.Create()]
+                                : [InMemoryRelationalResultSet.Create(), InMemoryRelationalResultSet.Create()]
                         ),
                         cancellationToken
                     )
