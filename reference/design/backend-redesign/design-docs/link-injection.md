@@ -147,7 +147,8 @@ No new startup dictionary, no new fields on `ResourceKeyEntry`, no link-injectio
 
 Abstract references (e.g., `educationOrganizationReference`) resolve to the concrete subclass
 uniformly: the reference FK points at the concrete document's `dms.Document.DocumentId`
-(guaranteed by `{AbstractResource}Identity(DocumentId)` FK to `dms.Document(DocumentId)`; see
+(guaranteed by `{AbstractResource}Identity(DocumentId, ResourceKeyId)` FK to
+`dms.Document(DocumentId, ResourceKeyId)`; see
 [data-model.md](data-model.md) §"Abstract identity tables for polymorphic references"), so the
 auxiliary lookup returns the concrete `ResourceKeyId` with no discriminator join required.
 

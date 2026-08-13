@@ -24,9 +24,10 @@ and descriptor filter resolution can each be answered by one uniform, narrow ind
 
 This design will remove the table, stop computing UUIDv5 `ReferentialId` values anywhere in DMS,
 and answer each of those questions with a batched natural-key lookup against the schema's existing
-natural-key indexes. The only new lookup index is the
-descriptor lower-URI index; abstract resolution adds a `smallint ResourceKeyId` payload column to
-existing abstract identity rows but does not add another index:
+natural-key indexes. The only new lookup index is the descriptor lower-URI index; the design also
+adds a narrow `UX_Document_DocumentId_ResourceKeyId` parent key for descriptor/abstract
+document-resource invariants. Abstract resolution adds a `smallint ResourceKeyId` payload column and
+composite FK to existing abstract identity rows but does not add another abstract lookup index:
 
 | Lookup | Will be replaced by |
 |---|---|
@@ -41,8 +42,10 @@ cross-subclass identity uniqueness that the legacy alias/hash path made redundan
 stable FK/probe target with `DocumentId` last. `ResourceKeyId` and `Discriminator` are projected
 payload only and must be excluded from both abstract identity key shapes. Because the projected
 `ResourceKeyId` becomes the authoritative compatibility key for abstract references, every abstract
-identity table must also FK-constrain it to `dms.ResourceKey(ResourceKeyId)` so it cannot drift outside
-the seeded effective-schema mapping.
+identity table must pair it with `DocumentId` in a composite FK to
+`dms.Document(DocumentId, ResourceKeyId)` so it cannot drift from the owning document's concrete
+resource type. `dms.Document.ResourceKeyId` remains the FK-constrained path to the seeded
+effective-schema mapping.
 
 On SQL Server, those lookups will not inherit identity equality from the database default collation.
 The DDL generator will explicitly apply DMS's default case-insensitive collation,
@@ -105,8 +108,9 @@ standardized on that machinery for FK enforcement, identity lookup, Change Queri
   create-race unique violations (the 409/retry path).
 - **`<Abstract>Identity` tables** with their own `RefKey` indexes exist to enforce cross-subclass
   identity uniqueness and to serve as polymorphic FK targets. This design will add the concrete
-  member `ResourceKeyId` plus its `dms.ResourceKey` FK to those rows so abstract reference resolution
-  can return the same compatibility token the runtime uses today. Resolution is still one probe of one
+  member `ResourceKeyId` plus a composite `(DocumentId, ResourceKeyId)` FK to `dms.Document` so
+  abstract reference resolution can return the same compatibility token the runtime uses today without
+  allowing the identity row to disagree with its owning document. Resolution is still one probe of one
   table — not a union over subtype tables.
 
 The descriptor-specific probe target missing was a case-insensitive descriptor lookup, which this
@@ -156,7 +160,7 @@ era in which it was written; each is addressed structurally today:
 | Concern (2025 analysis) | Status today |
 |---|---|
 | "Reference-bearing identities force multi-pass resolution or denormalization" | Denormalization happened — for FK-cascade reasons, not resolution ([key-unification.md](key-unification.md)). `RefKey` flattening collapses transitive identity chains to one seek per reference. There is no multi-pass, no dependency layering, no cycle handling. |
-| "Polymorphic targets get significantly harder; abstract identity tables reintroduce central indexes with drift risk" | Abstract identity tables already exist and are already trigger-maintained — for cross-subclass uniqueness enforcement. Resolution will reuse them and add only a concrete-member `ResourceKeyId` column plus its `dms.ResourceKey` FK to the existing rows; no new lookup tables, natural-key/probe indexes, trigger families, or extra row writes are introduced for polymorphism. |
+| "Polymorphic targets get significantly harder; abstract identity tables reintroduce central indexes with drift risk" | Abstract identity tables already exist and are already trigger-maintained — for cross-subclass uniqueness enforcement. Resolution will reuse them and add only a concrete-member `ResourceKeyId` column plus a composite `(DocumentId, ResourceKeyId)` FK back to `dms.Document`; no new lookup tables, natural-key/probe indexes, trigger families, or extra row writes are introduced for polymorphism. |
 | "Batching needs TVPs/temp tables; parameter limits make giant OR-predicates non-viable" | Batching will be one prepared statement per target group, all groups in **one command, one round trip**: PostgreSQL will use typed `unnest` parallel arrays (SQL text independent of batch size); SQL Server will shred one JSON parameter per group via `OPENJSON … WITH` under `OPTION (FORCE ORDER)`. No TVPs, no temp tables. A guard will enforce SQL Server's parameter budget (`MssqlCommandLimits.MaxUserParametersPerCommand`). |
 | "≥1 lookup per referenced resource type; round trips grow" | One multi-statement command will be one round trip regardless of group count; inside the composite write pipeline, a union-projection form will embed the entire lookup as a *single statement* so existing round-trip counts will not regress (enforced by command-stream pinning tests). |
 | "Many query shapes → plan variability, cross-engine divergence" | The shapes will be generated from compiled metadata (uniform per group); the prototype differential-tested them old-vs-new over seeded databases on both engines and validated performance (see below). The SQL Server input-shape risk was real — two candidate shapes failed measurably in the prototype — and the surviving shape will be pinned by tests. |
@@ -287,8 +291,10 @@ for the descriptor type.
 **Descriptor targets** — a probe of `UX_Descriptor_UriLowered_ResourceKeyId` projecting
 `(Ordinal, DocumentId, ResourceKeyId)`. `ResourceKeyId` will read `dms.Descriptor`'s own NOT NULL
 column (DMS-1251) and will be the authoritative descriptor-type key for lookup and uniqueness.
-`Discriminator` remains stored for diagnostics/read compatibility, but descriptor resolution will
-not depend on it.
+`FK_Descriptor_DocumentResourceKey` will pair `(DocumentId, ResourceKeyId)` back to
+`dms.Document(DocumentId, ResourceKeyId)` so the descriptor-type key cannot drift from the owning
+document. `Discriminator` remains stored for diagnostics/read compatibility, but descriptor
+resolution will not depend on it.
 
 **Abstract targets** — a probe of `UX_<Abstract>Identity_RefKey` projecting
 `(Ordinal, DocumentId, ResourceKeyId)`. `ResourceKeyId` is the concrete member resource key stored on
@@ -297,10 +303,11 @@ member metadata that supplies the diagnostic `Discriminator`. The resolver will 
 abstract `Discriminator`; `IncompatibleTargetType` will continue to compare the resolved concrete
 `ResourceKeyId` with the target's allowed concrete resource keys. The abstract `RefKey` and `NK`
 index key shapes will remain unchanged; `ResourceKeyId` is payload only, not part of abstract
-identity equality. The abstract identity table must FK-constrain `ResourceKeyId` to
-`dms.ResourceKey(ResourceKeyId)` because the resolver treats the projected value as authoritative for
-compatibility, not diagnostic metadata. The compiled abstract-identity trigger contract must carry a
-typed concrete-member `ResourceKeyId` literal alongside the diagnostic discriminator literal; dialect
+identity equality. The abstract identity table must FK-constrain `(DocumentId, ResourceKeyId)` to
+`dms.Document(DocumentId, ResourceKeyId)` because the resolver treats the projected value as
+authoritative for compatibility, not diagnostic metadata, and the projected key must match the owning
+document's concrete resource type. The compiled abstract-identity trigger contract must carry a typed
+concrete-member `ResourceKeyId` literal alongside the diagnostic discriminator literal; dialect
 emitters must not recover the key by parsing `Discriminator` or re-deriving it from the source table.
 One table, one seek, no per-subtype SQL.
 The abstract identity table is the required write-time resolution surface. Any
@@ -875,7 +882,7 @@ removal:
 |---|---|
 | Concrete identity uniqueness | `UX_<R>_NK` (always was the primary enforcement) |
 | Cross-subclass abstract identity uniqueness | `UX_<Abstract>Identity_NK` on the abstract identity tables (this is the alias row's real job, and the tables already enforce it) |
-| Abstract reference compatibility | The concrete `ResourceKeyId` stored on the matched abstract identity row, FK-constrained to `dms.ResourceKey`, then compared with the target's allowed concrete resource-key set |
+| Abstract reference compatibility | The concrete `ResourceKeyId` stored on the matched abstract identity row, FK-constrained with `DocumentId` to the owning `dms.Document` row, then compared with the target's allowed concrete resource-key set |
 | Descriptor identity uniqueness | `UX_Descriptor_UriLowered_ResourceKeyId` (CI over ASCII-without-NUL URI, both engines) |
 | Create-race detection (409/retry) | `UX_<R>_NK` unique violations, classified exactly as today |
 | Reference targets exist and stay consistent | Composite FKs onto `RefKey` targets, unchanged |
@@ -885,10 +892,11 @@ The abstract rows are the critical transfer point for the removed central index.
 must enforce cross-subclass equality over only the abstract identity fields, while
 `UX_<Abstract>Identity_RefKey` must expose those same fields plus trailing `DocumentId` for abstract
 FKs and probes. Golden DDL must pin both constraints' column order and prove that `ResourceKeyId`
-and `Discriminator` remain payload only. Golden DDL must also pin the `ResourceKeyId` FK to
-`dms.ResourceKey`, because the compatibility key is now read from the abstract identity row rather
-than from the removed central index. Without that FK, `dms.ReferentialIdentity` would be removed before
-its abstract-resource invariants had an explicit relational owner.
+and `Discriminator` remain payload only. Golden DDL must also pin the composite
+`(DocumentId, ResourceKeyId)` FK to `dms.Document(DocumentId, ResourceKeyId)`, because the
+compatibility key is now read from the abstract identity row rather than from the removed central
+index. Without that FK, `dms.ReferentialIdentity` would be removed before its abstract-resource
+invariants had an explicit relational owner tied to the document's real concrete resource type.
 
 Deliberately lost will be: the `dms.ReferentialIdentity` corruption canary (the RI hash row drifting
 from the root row it summarizes), and a redundant second uniqueness net (the RI PK). Mitigations for
@@ -950,6 +958,8 @@ can cascade.
   `SQL_Latin1_General_CP1_CI_AS` column collation with the runtime `OrdinalIgnoreCase` comparer;
   PostgreSQL's corresponding contract pairs its existing case-sensitive storage with `Ordinal`.
 - Descriptor URI ASCII validation.
+- `UX_Document_DocumentId_ResourceKeyId`, used only as the parent key for descriptor and abstract
+  identity document/resource invariants.
 - PostgreSQL `UX_Descriptor_UriLowered_ResourceKeyId` expression index with the lowered URI pinned to
   `COLLATE "C"`, plus SQL Server
   non-persisted `dms.Descriptor.UriLowered` computed column and
@@ -987,7 +997,8 @@ can cascade.
   - `Add{Postgresql,Mssql}ReferenceResolver()` DI extensions will compose the natural-key resolver —
     a behavioral change for hosts that resolve references through the old registration.
 - Abstract identity tables and their union views will add a concrete `ResourceKeyId smallint NOT
-  NULL` payload column, with table columns FK-constrained to `dms.ResourceKey(ResourceKeyId)`.
+  NULL` payload column, with table columns FK-constrained as `(DocumentId, ResourceKeyId)` to
+  `dms.Document(DocumentId, ResourceKeyId)`.
   Existing abstract-identity maintenance triggers will populate it from a typed compile-time
   concrete-member key literal carried by `AbstractIdentityMaintenance`, not from discriminator
   parsing or DDL-emitter inference. The abstract identity `Discriminator` column
@@ -1001,17 +1012,20 @@ can cascade.
 
 ### To remain unchanged
 
-`dms.Document` in every respect (columns including `CreatedByOwnershipTokenId`, identity
-`DocumentId`, the DocumentCache enqueue triggers, all FKs into it); `dms.Descriptor` except for the
-descriptor unique-index swap, SQL Server's non-persisted `UriLowered` computed column, and the
-explicit SQL Server identity collation. The retained descriptor table contract includes
+`dms.Document` except for the narrow `UX_Document_DocumentId_ResourceKeyId` parent key used only by
+descriptor and abstract identity document/resource invariants (columns including
+`CreatedByOwnershipTokenId`, identity `DocumentId`, and the DocumentCache enqueue triggers remain
+unchanged); `dms.Descriptor` except for the descriptor unique-index swap, SQL Server's non-persisted
+`UriLowered` computed column, the composite `(DocumentId, ResourceKeyId)` FK back to `dms.Document`,
+and the explicit SQL Server identity collation. The retained descriptor table contract includes
 `ResourceKeyId NOT NULL`, `Discriminator` storage/read compatibility, and the mirrored
 `ContentVersion` / `ContentLastModifiedAt` columns required by descriptor change-version page
 selection on `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId`; the natural-key change must not
 move that live descriptor path back to a `dms.Document` join. The logical shapes of
-`UX_<R>_RefKey` / `UX_<R>_NK`; the abstract identity table family, its uniqueness/FK constraints, and
-its trigger topology except for concrete `ResourceKeyId` column population and explicit SQL Server
-identity collation; the DocumentCache table family; tracked-change tables and triggers; `auth.*`;
+`UX_<R>_RefKey` / `UX_<R>_NK`; the abstract identity table family, its uniqueness constraints, and
+its trigger topology except for concrete `ResourceKeyId` column population, the composite
+document/resource FK, and explicit SQL Server identity collation; the DocumentCache table family;
+tracked-change tables and triggers; `auth.*`;
 `dms.ResourceKey` / `dms.EffectiveSchema` / `dms.SchemaComponent`; the read/reconstitution pipeline;
 `RelationalMappingVersion` remains `v2` for this unreleased aggregate mapping shape.
 
@@ -1040,17 +1054,19 @@ Core/backend C# contract may still carry a `ReferentialId` member.**
   database default while `sys.columns` reports the pinned CI collation for representative canonical,
   copied, abstract, descriptor, and tracked-change identity columns; comparer-provider tests pin each
   schema contract; PostgreSQL DDL and comparer behavior are unchanged.
-- **T2 — Add abstract `ResourceKeyId` DDL, trigger population, and parity pins.** Add
-  `ResourceKeyId smallint NOT NULL` to each abstract identity table and union view, FK-constrain
-  table columns to `dms.ResourceKey(ResourceKeyId)`, then populate the table column from the existing
-  abstract-identity maintenance triggers using a new typed
+- **T2 — Add document/resource invariant key plus abstract `ResourceKeyId` DDL, trigger population,
+  and parity pins.** Add the `UX_Document_DocumentId_ResourceKeyId` parent key to `dms.Document`, add
+  `ResourceKeyId smallint NOT NULL` to each abstract identity table and union view, FK-constrain table
+  columns as `(DocumentId, ResourceKeyId)` to `dms.Document(DocumentId, ResourceKeyId)`, then populate
+  the table column from the existing abstract-identity maintenance triggers using a new typed
   `AbstractIdentityMaintenance.ResourceKeyIdValue` literal paired with the existing diagnostic
   `DiscriminatorValue`. `ResourceKeyId` is payload metadata for target disambiguation, never an
-  abstract identity member. AC: golden DDL/manifest diffs show only the abstract `ResourceKeyId`
-  column/view/trigger-value change for this part; abstract identity-column consumers exclude
-  `ResourceKeyId` and `Discriminator` from identity equality; parity and corruption pins prove
-  insert, delete, identity rename, and SQL Server/PostgreSQL casing behavior preserve concrete
-  `ResourceKeyId` population from compile-time metadata.
+  abstract identity member. AC: golden DDL/manifest diffs show the new document candidate key, the
+  abstract `ResourceKeyId` column/view/trigger-value change, and
+  `FK_<Abstract>Identity_DocumentResourceKey`; abstract identity-column consumers exclude
+  `ResourceKeyId` and `Discriminator` from identity equality; parity and corruption pins prove insert,
+  delete, identity rename, SQL Server/PostgreSQL casing behavior, and document/resource-key drift
+  attempts preserve or enforce concrete `ResourceKeyId` population from compile-time metadata.
 - **T3 — Compile and serialize natural-key probe metadata.** Compile per-resource probe metadata
   (reference targets, own-key probes, the descriptor probe) from the relational model — never from
   trigger metadata, constraint names, or discriminator string parsing — with an empty-identity compile
@@ -1072,7 +1088,8 @@ Core/backend C# contract may still carry a `ReferentialId` member.**
   unchanged on both engines; the mapper remains green when `ReferentialIdentityMaintenance` trigger
   metadata is withheld from a test mapping set; descriptor-valued identity diagnostics preserve
   semantic key-column order.
-- **T5 — Add descriptor ASCII validation + `UX_Descriptor_UriLowered_ResourceKeyId`.** Reject
+- **T5 — Add descriptor ASCII validation, `UX_Descriptor_UriLowered_ResourceKeyId`, and descriptor
+  document/resource FK.** Reject
   non-ASCII or NUL descriptor URI values on descriptor writes, descriptor references, and
   descriptor-valued query filters. This changes the current implementations: Core descriptor
   identity/reference extraction validates before constructing lowercased identities, relational
@@ -1082,13 +1099,16 @@ Core/backend C# contract may still carry a `ReferentialId` member.**
   validated-ASCII-without-NUL helper. Emit the final lower-storage index shape on both engines:
   PostgreSQL gets the unique expression index on `lower("Uri" COLLATE "C"), "ResourceKeyId"` with no
   new column; SQL Server gets the non-persisted `UriLowered AS LOWER([Uri])` computed column and a
-  unique index on `UriLowered, ResourceKeyId`. The legacy Discriminator-authoritative index stays
-  through the transition. AC: golden DDL diff shows exactly the new index shape (and SQL Server
-  computed column); PostgreSQL descriptor lookup SQL proves every lowered descriptor URI expression
-  uses `COLLATE "C"` rather than the database default; write failures identify the concrete
+  unique index on `UriLowered, ResourceKeyId`. Replace the descriptor's independent document/resource
+  constraints with `FK_Descriptor_DocumentResourceKey` on `(DocumentId, ResourceKeyId)` to
+  `dms.Document(DocumentId, ResourceKeyId)` so the lookup authority cannot drift from the owning
+  document. The legacy Discriminator-authoritative index stays through the transition. AC: golden DDL
+  diff shows exactly the new index shape (and SQL Server computed column) plus the descriptor
+  document/resource FK; PostgreSQL descriptor lookup SQL proves every lowered descriptor URI
+  expression uses `COLLATE "C"` rather than the database default; write failures identify the concrete
   descriptor-reference path or the offending descriptor `namespace`/`codeValue` field; query failures
   use the existing query-validation 400; validation pins prove no descriptor resolver call occurs for
-  non-ASCII or NUL input.
+  non-ASCII or NUL input and corruption pins reject descriptor/document `ResourceKeyId` drift.
 - **T6 — Natural-key resolver contract cutover.** Implement the dialect command builders
   (PostgreSQL `unnest` and SQL Server OPENJSON + `FORCE ORDER` group statements, the
   union-projection single-statement form, the parameter-budget guard), plus
@@ -1251,9 +1271,10 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
 - **Abstract identity DDL pins** prove every abstract identity table emits
   `UX_<Abstract>Identity_NK` over exactly the abstract identity fields in
   `abstractResources[A].identityJsonPaths` order, plus `UX_<Abstract>Identity_RefKey` over those same
-  fields with trailing `DocumentId`, plus `FK_<Abstract>Identity_ResourceKey` to
-  `dms.ResourceKey(ResourceKeyId)`. The fixtures must prove `ResourceKeyId` and `Discriminator` are
-  payload columns only and are absent from both key definitions.
+  fields with trailing `DocumentId`, plus `FK_<Abstract>Identity_DocumentResourceKey` to
+  `dms.Document(DocumentId, ResourceKeyId)`. The fixtures must prove `ResourceKeyId` and
+  `Discriminator` are payload columns only, are absent from both abstract identity key definitions,
+  and cannot drift from the owning document's `ResourceKeyId`.
 - **SQL Server collation-contract integration tests** will provision against the supported
   `Latin1_General_100_CS_AS_SC_UTF8` database default, assert that SchemaTools preserves that default,
   query `sys.columns` to prove representative identity columns use

@@ -353,6 +353,12 @@ This policy applies to:
 - descriptor-reference FKs (`..._DescriptorId`),
 - core-table FKs (e.g., `dms.Document(ResourceKeyId) → dms.ResourceKey`).
 
+Exception: the descriptor and abstract identity document/resource invariant FKs
+`(DocumentId, ResourceKeyId) → dms.Document(DocumentId, ResourceKeyId)` do not get duplicate
+child-side helper indexes when the child table already has `DocumentId` as its primary key. That
+primary key is the narrower seek path for parent-row deletes and invariant checks; the composite
+parent key exists only to make the invariant declarative.
+
 ## High-level workflow
 
 1. Load the configured core + extension `ApiSchema.json` set.

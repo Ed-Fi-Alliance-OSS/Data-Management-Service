@@ -92,7 +92,8 @@ CREATE TABLE dms.Document (
 
     CreatedAt timestamp with time zone NOT NULL DEFAULT now(),
 
-    CONSTRAINT UX_Document_DocumentUuid UNIQUE (DocumentUuid)
+    CONSTRAINT UX_Document_DocumentUuid UNIQUE (DocumentUuid),
+    CONSTRAINT UX_Document_DocumentId_ResourceKeyId UNIQUE (DocumentId, ResourceKeyId)
 );
 
 CREATE INDEX IX_Document_CreatedByOwnershipTokenId
@@ -123,6 +124,7 @@ CREATE TABLE dms.Document (
     CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_Document_CreatedAt DEFAULT (sysutcdatetime()),
 
     CONSTRAINT UX_Document_DocumentUuid UNIQUE (DocumentUuid),
+    CONSTRAINT UX_Document_DocumentId_ResourceKeyId UNIQUE (DocumentId, ResourceKeyId),
     CONSTRAINT FK_Document_ResourceKey FOREIGN KEY (ResourceKeyId)
         REFERENCES dms.ResourceKey (ResourceKeyId)
 );
@@ -135,7 +137,7 @@ Notes:
 
 - `DocumentUuid` remains stable across identity updates. POST upsert detection maps natural identity to the current document through the resource root's generated natural-key probe; reference resolution uses the generated natural-key resolver described in [natural-key-resolution.md](natural-key-resolution.md).
 - `ResourceKeyId` identifies the document’s concrete resource type; use `dms.ResourceKey` for `(ProjectName, ResourceName)` when needed (diagnostics, CDC metadata).
-- `dms.Document` deliberately carries no `(ResourceKeyId, DocumentId)` index: descriptor paging — the only query path that filtered documents by resource type — roots on `dms.Descriptor` via its denormalized `ResourceKeyId` (see §2), and every other `ResourceKeyId` filter rides a `DocumentUuid` unique probe. `FK_Document_ResourceKey` needs no referencing-side index either, because `dms.ResourceKey` rows are seeded at provisioning and never deleted or updated at runtime.
+- `UX_Document_DocumentId_ResourceKeyId` exists only as the parent key for descriptor and abstract identity document/resource invariants. It must not be used as a resource-type scan path; `dms.Document` deliberately carries no `(ResourceKeyId, DocumentId)` index. Descriptor paging — the only query path that filtered documents by resource type — roots on `dms.Descriptor` via its denormalized `ResourceKeyId` (see §2), and every other `ResourceKeyId` filter rides a `DocumentUuid` unique probe. `FK_Document_ResourceKey` needs no referencing-side index either, because `dms.ResourceKey` rows are seeded at provisioning and never deleted or updated at runtime.
 - `dms.Document` has no `(ContentVersion, DocumentId)` projector-discovery index. Durable
   projection work is paged through `dms.DocumentProjectionWork`; explicit baseline,
   rebuild, and scrub scans use the `DocumentId` primary-key order.
@@ -206,10 +208,8 @@ CREATE TABLE dms.Descriptor (
     ContentVersion bigint NOT NULL DEFAULT 0,
     ContentLastModifiedAt timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT PK_Descriptor PRIMARY KEY (DocumentId),
-    CONSTRAINT FK_Descriptor_Document FOREIGN KEY (DocumentId)
-        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    CONSTRAINT FK_Descriptor_ResourceKey FOREIGN KEY (ResourceKeyId)
-        REFERENCES dms.ResourceKey (ResourceKeyId)
+    CONSTRAINT FK_Descriptor_DocumentResourceKey FOREIGN KEY (DocumentId, ResourceKeyId)
+        REFERENCES dms.Document (DocumentId, ResourceKeyId) ON DELETE CASCADE
 );
 
 CREATE UNIQUE INDEX UX_Descriptor_UriLowered_ResourceKeyId
@@ -225,7 +225,7 @@ CREATE INDEX IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId
 
 Descriptor identity lookups are served by `UX_Descriptor_UriLowered_ResourceKeyId`. PostgreSQL emits the expression index shown above and uses the same `lower(<uri> COLLATE "C")` expression in descriptor probes so lowering is deterministic rather than inherited from the database default collation. SQL Server emits the same logical unique index over a non-persisted computed column, `UriLowered AS LOWER([Uri])`, plus `ResourceKeyId`.
 
-`ResourceKeyId` is denormalized from `dms.Document` at insert time (same transaction, same value) and is immutable thereafter, mirroring the immutability of a document's resource type. It exists so descriptor GET-all/GET-by-query paging and totalCount can root entirely on `dms.Descriptor` through `IX_Descriptor_ResourceKeyId_DocumentId` — an index over only the descriptor rows — instead of maintaining a `(ResourceKeyId, DocumentId)` index across every row of `dms.Document`. The stamping trigger's no-op diff deliberately excludes it, so a migration backfill of the column does not bump change versions.
+`ResourceKeyId` is denormalized from `dms.Document` at insert time (same transaction, same value) and is immutable thereafter, mirroring the immutability of a document's resource type. `FK_Descriptor_DocumentResourceKey` enforces that the descriptor row's authoritative descriptor-type key matches the owning `dms.Document.ResourceKeyId`; `dms.Document.ResourceKeyId` remains the FK-constrained path to `dms.ResourceKey`. The denormalized column exists so descriptor GET-all/GET-by-query paging and totalCount can root entirely on `dms.Descriptor` through `IX_Descriptor_ResourceKeyId_DocumentId` — an index over only the descriptor rows — instead of maintaining a `(ResourceKeyId, DocumentId)` index across every row of `dms.Document`. The stamping trigger's no-op diff deliberately excludes it, so a migration backfill of the column does not bump change versions.
 
 The effective date columns are part of the descriptor field contract. This matches legacy ODS behavior, where `edfi.Descriptor` includes nullable `EffectiveBeginDate` and `EffectiveEndDate` columns. DMS differs from ODS by using a single shared `dms.Descriptor` keyed by `DocumentId` and by not creating per-descriptor marker tables.
 
@@ -879,9 +879,9 @@ This redesign provisions an **identity table per abstract resource**:
 
 - Table name: `{schema}.{AbstractResource}Identity` (deterministic; provisioned with the rest of the schema).
 - Columns:
-  - `DocumentId` (PK; FK to `dms.Document(DocumentId)` ON DELETE CASCADE)
+  - `DocumentId` (PK; paired with `ResourceKeyId` in the composite FK to `dms.Document(DocumentId, ResourceKeyId)` ON DELETE CASCADE)
   - abstract identity fields in `abstractResources[A].identityJsonPaths` order
-  - `ResourceKeyId` (NOT NULL; FK to `dms.ResourceKey(ResourceKeyId)`; concrete member resource key projected for abstract reference compatibility checks)
+  - `ResourceKeyId` (NOT NULL; paired with `DocumentId` in the composite FK to `dms.Document(DocumentId, ResourceKeyId)`; concrete member resource key projected for abstract reference compatibility checks)
   - `Discriminator` (NOT NULL; concrete member discriminator literal in `ProjectName:ResourceName` format; useful for diagnostics)
 - Unique constraints:
   - `UX_<AbstractResource>Identity_NK UNIQUE (<AbstractIdentityFields...>)`
@@ -892,9 +892,9 @@ This redesign provisions an **identity table per abstract resource**:
     - uses the same abstract identity-field order with `DocumentId` last
     - excludes `ResourceKeyId` and `Discriminator`; the resolver may project `ResourceKeyId` from the matched row, but it is not part of the key
     - serves as the composite FK target and natural-key probe target for abstract reference sites
-- Resource-key FK:
-  - `FK_<AbstractResource>Identity_ResourceKey FOREIGN KEY (ResourceKeyId) REFERENCES dms.ResourceKey(ResourceKeyId)`.
-  - This constrains the authoritative abstract-reference compatibility key to the seeded effective-schema resource-key mapping while keeping `ResourceKeyId` out of abstract identity equality.
+- Document/resource FK:
+  - `FK_<AbstractResource>Identity_DocumentResourceKey FOREIGN KEY (DocumentId, ResourceKeyId) REFERENCES dms.Document(DocumentId, ResourceKeyId) ON DELETE CASCADE`.
+  - This constrains the authoritative abstract-reference compatibility key to the owning document's concrete resource key while keeping `ResourceKeyId` out of abstract identity equality. `dms.Document.ResourceKeyId` remains the FK-constrained path to the seeded `dms.ResourceKey` mapping.
 - Maintenance:
   - triggers on each concrete member root table upsert the corresponding `{AbstractResource}Identity` row on insert/update of the concrete identity fields (including identity renames), populating `ResourceKeyId` from compile-time concrete-member metadata.
 - FKs for abstract reference sites:

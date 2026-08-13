@@ -71,10 +71,12 @@ Source documents:
   - Holds `DocumentId`, `DocumentUuid`, `ResourceKeyId` (resource type), and update-tracking token columns (see below).
   - Stores ownership-based authorization stamping (`CreatedByOwnershipTokenId`; see `auth.md`).
   - `DocumentUuid` is unique and stable across identity updates.
+  - Exposes a narrow `(DocumentId, ResourceKeyId)` candidate key only for descriptor and abstract identity document/resource invariants; it is not a resource-type scan path.
 
 - `dms.Descriptor` (unified)
   - Unified descriptor table keyed by the descriptor document’s `DocumentId` so descriptor references can FK to `dms.Descriptor(DocumentId)` without per-descriptor tables.
   - Used for descriptor resolution through lowered URI + `ResourceKeyId`, for “is a descriptor” enforcement, and for type diagnostics/read compatibility.
+  - Constrains `(DocumentId, ResourceKeyId)` back to `dms.Document(DocumentId, ResourceKeyId)` so descriptor type identity cannot drift from the owning document.
 
 - `dms.DataStoreIdentity`
   - Always-provisioned singleton random source UUID, stable during ordinary operation and
@@ -128,7 +130,7 @@ For each project, create a physical schema derived from `ProjectEndpointName` (e
     - identity elements sourced from reference objects use the corresponding `..._DocumentId` FK columns (stable), with referenced identity values bound at `{RefBaseName}_{IdentityPart}` columns for query/reconstitution (under key unification these may be presence-gated aliases of canonical stored columns; see `key-unification.md`).
   - Reference FK columns:
     - for each document reference site: store `..._DocumentId` and the identity-part bindings, with a composite FK to the target identity key `(<IdentityParts...>, DocumentId)`. PostgreSQL uses `ON UPDATE CASCADE` for abstract targets and transitively mutable concrete targets (`ON UPDATE NO ACTION` otherwise). SQL Server assigns native cascade or a safe full-composite `NO ACTION` cut under `sql-server-pruning.md`. Under key unification, composite FKs are built over canonical stored identity columns (single source of truth), while per-site/per-path identity-part bindings can remain as generated/persisted aliases.
-    - polymorphic targets: composite FK to `{schema}.{AbstractResource}Identity(<AbstractIdentityParts...>, DocumentId)` with the same dialect-specific update behavior (native cascade on PostgreSQL; SQL Server action selected by `sql-server-pruning.md`),
+    - polymorphic targets: composite FK to `{schema}.{AbstractResource}Identity(<AbstractIdentityParts...>, DocumentId)` with the same dialect-specific update behavior (native cascade on PostgreSQL; SQL Server action selected by `sql-server-pruning.md`); the abstract identity row's projected concrete `ResourceKeyId` is constrained back to its owning `dms.Document` row by the document/resource invariant,
     - descriptors: FK to `dms.Descriptor(DocumentId)` via `..._DescriptorId`.
 
 - Collection tables `{schema}.{Resource}_{CollectionPath}`:
