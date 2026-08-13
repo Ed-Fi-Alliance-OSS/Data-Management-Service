@@ -22,7 +22,9 @@ Loading a validator from a dropped-in assembly at runtime is a separate design s
 - Downstream consumer: [DMS-1414](https://edfi.atlassian.net/browse/DMS-1414) UniqueId Validation, documentation-shaped and explicitly dependent on this design
 
 **Citation convention.**
-Paths beginning `EdFi.Ods.` are Ed-Fi ODS/API, relative to `Application/` in the Ed-Fi-ODS repository at branch `DMS-1226`, HEAD `90c75ffed3fc2bc0dafa14a2600b3a0d050f82e9` (committed 2026-06-22).
+Paths beginning `EdFi.Ods.` are Ed-Fi ODS/API, relative to `Application/` in the Ed-Fi-ODS repository at commit `90c75ffed3fc2bc0dafa14a2600b3a0d050f82e9` (committed 2026-06-22).
+That commit is the head of merged pull request [#1350](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/pull/1350), whose `DMS-1226` branch was deleted on merge, so it is not reachable as a branch on the public remote.
+Fetch it with `git fetch origin refs/pull/1350/head` to reproduce any ODS citation below.
 All other paths are DMS and are project-relative: an unprefixed path is relative to `src/dms/core/EdFi.DataManagementService.Core/`; a `Core.External/`, `Core.Tests.Unit/`, `Backend/`, `Backend.Ddl/`, or `Backend.External/` prefix names the sibling project; `Program.cs`, `AspNetCoreFrontend.cs`, `Infrastructure/`, and `Modules/` are relative to `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/`; and build scripts, workflows, and `docs/` are relative to the repository root.
 A bare file name repeats a file cited in full earlier in this document.
 
@@ -665,7 +667,7 @@ Whether to close that gap by adding a store-read capability is recorded under [D
 - The scope's qualifier dictionary is a defensive copy, proven by downcasting to `Dictionary<,>`, mutating, and asserting the request is unchanged. Asserting that `IReadOnlyDictionary<,>` has no `Add` proves nothing, since a pass-through would pass it.
 - A validator that throws produces a 500 through the existing catch-all, not a 400 and not an escaping exception.
 - A `CustomValidationFailure` subtype other than the two cases (built via a test-only record chaining the copy constructor) throws at the consumption switch and surfaces as a 500.
-- A custom-validator 400 is byte-identical in `detail` to the literals `ValidateDocumentMiddleware` passes on each arm (`Middleware/ValidateDocumentMiddleware.cs:41`, `:50`). The comparison is against those literals rather than against a produced core schema-validation 400, since `DocumentValidator` always returns an empty `errors` array (`Validation/DocumentValidator.cs:94`) and so never produces an `errors`-arm 400.
+- A custom-validator 400 is byte-identical to the core 400 taking the same arm in `detail`, `type`, `title`, and `status`: `detail` against the literals `ValidateDocumentMiddleware` passes on each arm (`Middleware/ValidateDocumentMiddleware.cs:41`, `:50`), and the other three against the arm's factory (`Response/FailureResponse.cs:83-85` for `ForDataValidation`, `:99-101` for `ForBadRequest`). Asserting `detail` alone would not catch a hand-built body, since `CreateBaseJsonObject` serializes `type` and `title` into every 400 and the two factories differ in both. The comparison is against those literals rather than against a produced core schema-validation 400, since `DocumentValidator` always returns an empty `errors` array (`Validation/DocumentValidator.cs:94`) and so never produces an `errors`-arm 400.
 - The document is the profile-shaped body under a writable profile and `ParsedBody` otherwise.
 - A validator returning failures produces a log record naming that validator against the request's `TraceId`, and that record contains no failure message text.
 
