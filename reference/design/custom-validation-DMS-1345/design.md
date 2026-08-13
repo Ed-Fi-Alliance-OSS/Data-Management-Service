@@ -485,11 +485,20 @@ Adding a member to `ICustomResourceValidator`, or changing `CustomValidationFail
 
 **Breaks surface at build time, provided the validator is rebuilt.** Because the validator is compiled into the same build as the host, the implementer's own compiler is what reports an incompatible contract change, and NuGet resolves one version of the abstractions assembly for the whole output.
 That guarantee is conditional on the deployment building the validator against the host's abstractions version, from source or by rebuilding its package.
-A deployment that instead references a *prebuilt* validator assembly compiled against an older major gets no compiler error: NuGet unifies to the host's version without failing the restore, and the mismatch becomes a type-load failure instead.
-This design does not leave that silent.
-The startup guard resolves every registered `ICustomResourceValidator` once from a throwaway scope (see [Startup Failure Semantics](#startup-failure-semantics)), so a validator that cannot load against the host's contract aborts startup rather than failing the first matching write.
-The outcome degrades from a build failure to a fail-loud startup failure, never to a running deployment with a broken validator, and the implementer guide states the rebuild expectation.
-That is strictly better than the runtime-loading alternative, where the same mismatch appears as a type-identity or missing-member failure during process start, and it removes an entire class of deployment-time failure from this version's surface.
+A deployment that instead references a *prebuilt* validator assembly compiled against an older major gets no compiler error: NuGet unifies to the host's version without failing the restore, and the mismatch becomes a runtime failure instead.
+This design does not leave that silent, but the guard's reach over it is partial, and the two halves of the breaking-change definition above fall on opposite sides of the line.
+
+The guard resolves every registered `ICustomResourceValidator` once from a throwaway scope and reads each one's `AppliesTo` to log it (see [Startup Failure Semantics](#startup-failure-semantics)), so a break the CLR resolves at type load, or one reached by executing the constructor or the `AppliesTo` getter, aborts startup before the process serves traffic.
+Adding a member to `ICustomResourceValidator` is in that half: the stale validator no longer implements the interface, and the CLR throws `TypeLoadException` naming the unimplemented member as soon as the type loads.
+
+What the guard does not reach is a member reference reachable only from the `Validate` body, which is not resolved until `Validate` is JIT-compiled, and that happens on the first write whose resource matches that validator's `AppliesTo`.
+Changing `CustomValidationFailure` is in this half: a validator whose `Validate` constructs an `OnPath` against a constructor that the host's newer contract no longer declares constructs cleanly, reports its `AppliesTo` cleanly, and then throws `MissingMethodException` on that first matching write.
+Both halves are probe-verified with a two-assembly swap: one validator compiled against an older contract, run unrecompiled against hosts carrying each kind of change.
+The `MissingMethodException` takes the catch-all arm and becomes the logged 500 of [Exceptions and Non-400 Outcomes](#exceptions-and-non-400-outcomes), so that write fails loudly and persists nothing, but the deployment starts clean and stays up until a matching write arrives.
+
+The outcome therefore degrades from a build failure to a loud failure, never to a silent one: a startup abort for the load-time half, and a logged 500 on the first matching write for the rest.
+Forcing `Validate` to JIT at startup would close the remainder; this version accepts it instead, since the escaping case is already loud and depends on a deployment shipping a validator binary it never rebuilt, which is the thing the implementer guide tells it not to do.
+Compiled-in delivery still removes the type-identity and assembly-probing failures the runtime-loading alternative would add.
 
 **Target framework.** A validator is compiled into the host's build and loaded into its runtime, so its target framework must be compatible with the host's; `Core.External` targets `net10.0` (`Core.External/EdFi.DataManagementService.Core.External.csproj:3`).
 A DMS runtime major-version bump therefore changes the set of buildable validators without any package version changing, which the implementer guide states alongside the semver rule.
