@@ -1169,10 +1169,22 @@ internal static class RelationshipAuthorizationDifferentialSqlEmitter
             ? subject.PersonMetadata.StoredAnchor.RootDocumentIdColumn
             : pathSteps[0].SourceColumnName;
 
+    /// <summary>
+    /// The column the innermost membership test is applied to. A zero-step path is the Self shape, where the
+    /// person column and the anchor are the same column, so it defers to <see cref="AnchorColumn"/> rather than
+    /// reading <c>subject.Column</c> independently.
+    /// </summary>
+    /// <remarks>
+    /// Production keeps those two in agreement by validating them — <c>ValidateSelfRootDocumentIdPath</c>, called
+    /// from the compiler's Self arm — and this emitter validates nothing. Reading the same source instead is what
+    /// keeps the Legacy arm from testing a different predicate than the Anchored one: only the Anchored arm is
+    /// pinned against production's output, so a disagreement in the Legacy arm would make the equivalence sweep
+    /// compare two genuinely different predicates and report their agreement as a proof.
+    /// </remarks>
     private static DbColumnName TerminalPersonColumn(
         PageDocumentIdAuthorizationPersonSubject subject,
         IReadOnlyList<ColumnPathStep> pathSteps
-    ) => pathSteps.Count == 0 ? subject.Column : pathSteps[^1].SourceColumnName;
+    ) => pathSteps.Count == 0 ? AnchorColumn(subject, pathSteps) : pathSteps[^1].SourceColumnName;
 
     private static DbTableName RequiredTargetTable(ColumnPathStep step) =>
         step.TargetTable

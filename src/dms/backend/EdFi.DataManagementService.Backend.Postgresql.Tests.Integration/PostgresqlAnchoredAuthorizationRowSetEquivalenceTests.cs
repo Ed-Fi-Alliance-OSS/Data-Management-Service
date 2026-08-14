@@ -479,6 +479,13 @@ public class Given_A_Postgresql_Anchored_Authorization_Row_Set_Equivalence
     private async Task<long> CountAsync(string sql, IReadOnlyList<long> claimEducationOrganizationIds) =>
         await _context.Database.ExecuteScalarAsync<long>(sql, ClaimParameter(claimEducationOrganizationIds));
 
+    /// <summary>
+    /// Named from the constant the specs are parameterized with, so the same binding serves production's SQL
+    /// and the emitter's rather than restating the name a rename could leave behind.
+    /// </summary>
     private static NpgsqlParameter ClaimParameter(IReadOnlyList<long> claimEducationOrganizationIds) =>
-        new("ClaimEducationOrganizationIds", claimEducationOrganizationIds.ToArray());
+        new(
+            RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds,
+            claimEducationOrganizationIds.ToArray()
+        );
 }
