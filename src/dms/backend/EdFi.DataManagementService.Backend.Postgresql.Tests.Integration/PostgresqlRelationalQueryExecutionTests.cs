@@ -621,6 +621,235 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         walkedDocumentUuids.Should().Equal(expectedProgression);
     }
 
+    // A cursor walk over the seeded collection: each page selects from the range the previous page's
+    // boundary opened, and the walk ends on a page that selects nothing. Every document is returned
+    // exactly once, which is the property a client depends on and the one an off-by-one boundary breaks.
+    [Test]
+    public async Task It_walks_every_document_exactly_once_across_cursor_pages()
+    {
+        var expectedDocumentIds = _persistedSchoolsInDocumentOrder
+            .Select(static school => school.DocumentId)
+            .ToArray();
+
+        List<long> walkedDocumentIds = [];
+        var range = CursorRange.From(1);
+        var pageCount = 0;
+
+        while (pageCount++ < expectedDocumentIds.Length + 1)
+        {
+            _recorder.Reset();
+            var success = (QueryResult.QuerySuccess)
+                await ExecuteCursorQueryAsync(range, pageSize: 2, traceId: $"pg-cursor-walk-{pageCount}");
+
+            // One command per page, and no count SQL on any of them.
+            var keyset = AssertSingleQueryHydration();
+            keyset.Plan.TotalCountSql.Should().BeNull();
+            success.TotalCount.Should().BeNull();
+
+            walkedDocumentIds.AddRange(_recorder.PageMaterializedDocumentIds);
+
+            if (success.HighestSelectedDocumentId is not { } highestSelectedDocumentId)
+            {
+                success.EdfiDocs.Should().BeEmpty();
+                break;
+            }
+
+            success.AllowsDocumentIdContinuation.Should().BeTrue();
+            range = new CursorRange(highestSelectedDocumentId + 1, range.InclusiveMaximum);
+        }
+
+        walkedDocumentIds.Should().Equal(expectedDocumentIds);
+    }
+
+    [Test]
+    public async Task It_selects_one_document_per_page_at_page_size_one()
+    {
+        var success = (QueryResult.QuerySuccess)
+            await ExecuteCursorQueryAsync(CursorRange.From(1), pageSize: 1, traceId: "pg-cursor-size-1");
+
+        success.HighestSelectedDocumentId.Should().Be(_persistedSchoolsInDocumentOrder[0].DocumentId);
+        AssertPageMaterialization(_persistedSchoolsInDocumentOrder[0].DocumentId);
+    }
+
+    [Test]
+    public async Task It_selects_the_whole_collection_at_the_configured_maximum_page_size()
+    {
+        var success = (QueryResult.QuerySuccess)
+            await ExecuteCursorQueryAsync(
+                CursorRange.From(1),
+                pageSize: MaximumPageSize,
+                traceId: "pg-cursor-size-max"
+            );
+
+        success.HighestSelectedDocumentId.Should().Be(_persistedSchoolsInDocumentOrder[^1].DocumentId);
+        AssertPageMaterialization([
+            .. _persistedSchoolsInDocumentOrder.Select(static school => school.DocumentId),
+        ]);
+    }
+
+    // A zero page size selects nothing and cannot advance a walk, by contract rather than by arithmetic.
+    [Test]
+    public async Task It_selects_nothing_at_page_size_zero()
+    {
+        var success = (QueryResult.QuerySuccess)
+            await ExecuteCursorQueryAsync(CursorRange.From(1), pageSize: 0, traceId: "pg-cursor-size-0");
+
+        success.HighestSelectedDocumentId.Should().BeNull();
+        success.EdfiDocs.Should().BeEmpty();
+    }
+
+    // An inverted range is the terminal condition of a bounded walk, not an error.
+    [Test]
+    public async Task It_selects_nothing_from_an_inverted_range()
+    {
+        var lastDocumentId = _persistedSchoolsInDocumentOrder[^1].DocumentId;
+
+        var success = (QueryResult.QuerySuccess)
+            await ExecuteCursorQueryAsync(
+                new CursorRange(lastDocumentId + 1, lastDocumentId),
+                pageSize: 25,
+                traceId: "pg-cursor-inverted"
+            );
+
+        success.HighestSelectedDocumentId.Should().BeNull();
+        success.EdfiDocs.Should().BeEmpty();
+    }
+
+    // Range bounds are seek positions, not identities. Neither bound here is a stored DocumentId, and
+    // the page still selects exactly the documents inside the range — which is what keeps a walk correct
+    // across the identity gaps deletes leave behind.
+    [Test]
+    public async Task It_seeks_within_bounds_that_are_not_stored_document_ids()
+    {
+        var firstDocumentId = _persistedSchoolsInDocumentOrder[0].DocumentId;
+        var lastDocumentId = _persistedSchoolsInDocumentOrder[^1].DocumentId;
+        var storedDocumentIds = _persistedSchoolsInDocumentOrder
+            .Select(static school => school.DocumentId)
+            .ToArray();
+
+        storedDocumentIds.Should().NotContain(firstDocumentId - 1).And.NotContain(lastDocumentId + 1);
+
+        var success = (QueryResult.QuerySuccess)
+            await ExecuteCursorQueryAsync(
+                new CursorRange(firstDocumentId - 1, lastDocumentId + 1),
+                pageSize: 25,
+                traceId: "pg-cursor-unstored-bounds"
+            );
+
+        success.HighestSelectedDocumentId.Should().Be(lastDocumentId);
+        AssertPageMaterialization(storedDocumentIds);
+    }
+
+    // A bound that excludes the first stored id starts the page at the next one, so a continuation that
+    // resumes at maximum+1 cannot re-return the document it already delivered.
+    [Test]
+    public async Task It_excludes_documents_below_the_inclusive_minimum()
+    {
+        var firstDocumentId = _persistedSchoolsInDocumentOrder[0].DocumentId;
+
+        var success = (QueryResult.QuerySuccess)
+            await ExecuteCursorQueryAsync(
+                CursorRange.From(firstDocumentId + 1),
+                pageSize: 25,
+                traceId: "pg-cursor-excludes-below-minimum"
+            );
+
+        success.HighestSelectedDocumentId.Should().Be(_persistedSchoolsInDocumentOrder[^1].DocumentId);
+        AssertPageMaterialization([
+            .. _persistedSchoolsInDocumentOrder.Skip(1).Select(static school => school.DocumentId),
+        ]);
+    }
+
+    [Test]
+    public async Task It_composes_a_query_filter_with_the_cursor_range()
+    {
+        var targetSchool = _persistedSchoolsInDocumentOrder[1];
+
+        var success = (QueryResult.QuerySuccess)
+            await ExecuteCursorQueryAsync(
+                CursorRange.From(1),
+                pageSize: 25,
+                traceId: "pg-cursor-filter",
+                queryElements:
+                [
+                    new QueryElement(
+                        "nameOfInstitution",
+                        [new JsonPath("$.nameOfInstitution")],
+                        targetSchool.NameOfInstitution,
+                        "string"
+                    ),
+                ]
+            );
+
+        success.HighestSelectedDocumentId.Should().Be(targetSchool.DocumentId);
+        AssertPageMaterialization(targetSchool.DocumentId);
+    }
+
+    // A min-only window still orders by DocumentId, so a cursor page inside it continues normally.
+    [Test]
+    public async Task It_composes_a_min_only_change_version_window_with_the_cursor_range()
+    {
+        var lowestContentVersion = _persistedSchoolsInDocumentOrder.Min(static school =>
+            school.ContentVersion
+        );
+
+        var success = (QueryResult.QuerySuccess)
+            await ExecuteCursorQueryAsync(
+                CursorRange.From(1),
+                pageSize: 25,
+                traceId: "pg-cursor-min-window",
+                changeVersionRange: new ChangeVersionRange(lowestContentVersion, null)
+            );
+
+        success.HighestSelectedDocumentId.Should().Be(_persistedSchoolsInDocumentOrder[^1].DocumentId);
+        success.AllowsDocumentIdContinuation.Should().BeTrue();
+    }
+
+    // A max-bearing window keeps the DocumentId ordering a cursor page always uses, so the page it
+    // selects can still anchor a continuation. What it must not do is silently order by something else.
+    [Test]
+    public async Task It_composes_a_max_bearing_change_version_window_with_the_cursor_range()
+    {
+        var highestContentVersion = _persistedSchoolsInDocumentOrder.Max(static school =>
+            school.ContentVersion
+        );
+
+        var success = (QueryResult.QuerySuccess)
+            await ExecuteCursorQueryAsync(
+                CursorRange.From(1),
+                pageSize: 25,
+                traceId: "pg-cursor-max-window",
+                changeVersionRange: new ChangeVersionRange(null, highestContentVersion)
+            );
+
+        success.HighestSelectedDocumentId.Should().Be(_persistedSchoolsInDocumentOrder[^1].DocumentId);
+        success.AllowsDocumentIdContinuation.Should().BeTrue();
+        AssertSingleQueryHydration().Plan.PageDocumentIdSql.Should().Contain("@cursorMin");
+    }
+
+    // A traditional page over the same window is ordered by ContentVersion, so it reports the maximum it
+    // really selected while refusing to let a DocumentId continuation be anchored on it.
+    [Test]
+    public async Task It_reports_a_boundary_without_continuation_for_a_windowed_traditional_page()
+    {
+        var highestContentVersion = _persistedSchoolsInDocumentOrder.Max(static school =>
+            school.ContentVersion
+        );
+
+        var success = (QueryResult.QuerySuccess)
+            await ExecuteQueryAsync(
+                [],
+                limit: MaximumPageSize,
+                offset: 0,
+                totalCount: false,
+                traceId: "pg-traditional-max-window",
+                changeVersionRange: new ChangeVersionRange(null, highestContentVersion)
+            );
+
+        success.HighestSelectedDocumentId.Should().NotBeNull();
+        success.AllowsDocumentIdContinuation.Should().BeFalse();
+    }
+
     private static ServiceProvider CreateServiceProvider(ChangeQueryPageOrderingPolicy? orderingPolicy = null)
     {
         ServiceCollection services = [];
@@ -820,6 +1049,42 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         string traceId,
         ChangeVersionRange? changeVersionRange = null,
         ServiceProvider? serviceProvider = null
+    ) =>
+        await ExecuteQueryAsync(
+            new CollectionPaging.Traditional(
+                new PaginationParameters(
+                    Limit: limit,
+                    Offset: offset,
+                    TotalCount: totalCount,
+                    MaximumPageSize: MaximumPageSize
+                )
+            ),
+            queryElements,
+            traceId,
+            changeVersionRange,
+            serviceProvider
+        );
+
+    private async Task<QueryResult> ExecuteCursorQueryAsync(
+        CursorRange range,
+        int pageSize,
+        string traceId,
+        QueryElement[]? queryElements = null,
+        ChangeVersionRange? changeVersionRange = null
+    ) =>
+        await ExecuteQueryAsync(
+            new CollectionPaging.Cursor(range, new PageSize(pageSize)),
+            queryElements ?? [],
+            traceId,
+            changeVersionRange
+        );
+
+    private async Task<QueryResult> ExecuteQueryAsync(
+        CollectionPaging paging,
+        QueryElement[] queryElements,
+        string traceId,
+        ChangeVersionRange? changeVersionRange = null,
+        ServiceProvider? serviceProvider = null
     )
     {
         await using var scope = (serviceProvider ?? _serviceProvider).CreateAsyncScope();
@@ -831,14 +1096,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
             MappingSet: _mappingSet,
             QueryElements: queryElements,
             AuthorizationStrategyEvaluators: [],
-            Paging: new CollectionPaging.Traditional(
-                new PaginationParameters(
-                    Limit: limit,
-                    Offset: offset,
-                    TotalCount: totalCount,
-                    MaximumPageSize: MaximumPageSize
-                )
-            ),
+            Paging: paging,
             TraceId: new TraceId(traceId),
             ChangeVersionRange: changeVersionRange
         );

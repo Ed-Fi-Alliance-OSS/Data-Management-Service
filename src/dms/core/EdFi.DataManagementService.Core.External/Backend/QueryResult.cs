@@ -20,10 +20,29 @@ public record QueryResult
     /// The maximum DocumentId in the selected page keyset, or null when page selection was skipped or
     /// selected no keys, including early-empty paths and zero-size pages. Independent of
     /// <paramref name="EdfiDocs"/>: it can be non-null while the body is empty, because every selected
-    /// row may be deleted before hydration completes. Populated by cursor execution in a later story.
+    /// row may be deleted before hydration completes.
     /// </param>
     public record QuerySuccess(JsonArray EdfiDocs, int? TotalCount, long? HighestSelectedDocumentId = null)
-        : QueryResult();
+        : QueryResult()
+    {
+        /// <summary>
+        /// Whether a DocumentId-anchored continuation may be created from
+        /// <see cref="HighestSelectedDocumentId"/>. False when this page was ordered by something else,
+        /// so its highest selected DocumentId does not describe where the page ended.
+        /// </summary>
+        /// <remarks>
+        /// Independent of <see cref="HighestSelectedDocumentId"/>, and deliberately not folded into it:
+        /// a page that selected keys but cannot anchor a DocumentId continuation is a different state
+        /// from a page that selected none, and collapsing the two would make the maximum report a
+        /// selection that happened as one that did not. Defaults to true because only page selection
+        /// ordered by something other than DocumentId can invalidate the anchor, and only the two
+        /// backend sites that produce a real maximum can observe that ordering; every other result
+        /// carries no maximum for this to qualify. Temporary: the only ordering that sets it false is
+        /// traditional paging over a max-bearing change-version window, which acquires its own
+        /// ContentVersion anchor in later work.
+        /// </remarks>
+        public bool AllowsDocumentIdContinuation { get; init; } = true;
+    }
 
     /// <summary>
     /// A known failure from the query handler, likely invalid query terms that

@@ -101,7 +101,7 @@ rule it governs.
 
 | Input/output | Contract |
 | --- | --- |
-| `Next-Page-Token` response header | Included whenever regular-resource or descriptor GET-many page selection produces a non-null `HighestSelectedDocumentId`, including on a `limit`/`offset` response that can begin a cursor walk and when concurrent deletes leave the hydrated response body empty. Absent when page selection is skipped or selects no keys, and at `Int64.MaxValue` where advancing would overflow. |
+| `Next-Page-Token` response header | Included whenever regular-resource or descriptor GET-many page selection produces a non-null `HighestSelectedDocumentId` and orders the page by `DocumentId`, including on a `limit`/`offset` response that can begin a cursor walk and when concurrent deletes leave the hydrated response body empty. Cursor page selection always orders by `DocumentId`; traditional page selection over a max-bearing change-version window orders by `ContentVersion`, so such a page carries no token until DMS-1394 gives it a `ContentVersion` anchor — see "Consistency Under Writes" below. Absent when page selection is skipped or selects no keys, and at `Int64.MaxValue` where advancing would overflow. |
 | `pageToken` | Selects the next inclusive `DocumentId` range. It is opaque to clients and is normally copied from `Next-Page-Token` or from a `/partitions` response. |
 | `pageSize` | Optional, and permitted only when `pageToken` is present; integer `0..MaximumPageSize`. When omitted, the configured `MaximumPageSize` applies — initially `500`, matching the existing default GET-many size. |
 | `limit`, `offset` | Remain supported for traditional paging. When `limit` is omitted, the configured `MaximumPageSize` applies. Neither parameter may be combined with `pageToken` or `pageSize`, including when its value is zero. |
@@ -116,11 +116,13 @@ first accessible candidate.
 
 Emitting `Next-Page-Token` on an ordinary `limit`/`offset` response is a deliberate extension: it
 lets a client enter a cursor walk without a separate call, and it is inert for clients that ignore
-it. The published guidance does not describe the header for traditional responses, and the
+it. The extension reaches every traditional response whose page selection ordered by `DocumentId`;
+a max-bearing change-version window orders by `ContentVersion` and so cannot yet be entered this
+way. The published guidance does not describe the header for traditional responses, and the
 authoritative collection fixtures do not define it as a response header.
 
 **Ending a walk.** The implementation does not fetch one extra row to predict the terminal page. It
-emits a token whenever page selection returns a non-empty keyset, and completion is normally
+emits a token whenever cursor page selection returns a non-empty keyset, and completion is normally
 discovered by the next request returning an empty keyset and no token. Consequently the last useful
 page is followed by one empty request. Predicting termination would require either an extra fetched
 row on every page or a count query, and both cost more across a full walk than one trailing empty

@@ -13,6 +13,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
@@ -46,9 +47,23 @@ public class QueryRequestHandlerTests
     }
 
     /// <summary>
-    /// Collection paging reaches the backend as the typed choice request validation produced. Cursor
-    /// page selection itself is not implemented yet, so a cursor request is answered from the
-    /// backend's not-implemented seam; the story that adds cursor execution replaces that answer.
+    /// The emitted continuation range, decoded by the codec that encodes it, so the assertion cannot
+    /// drift from the transport encoding by transcribing it.
+    /// </summary>
+    internal static CursorRange? DecodeNextPageToken(RequestInfo requestInfo)
+    {
+        if (!requestInfo.FrontendResponse.Headers.TryGetValue("Next-Page-Token", out var nextPageToken))
+        {
+            return null;
+        }
+
+        PageTokenCodec.TryDecode(nextPageToken, out var range).Should().BeTrue();
+        return range;
+    }
+
+    /// <summary>
+    /// Collection paging reaches the backend as the typed choice request validation produced, and the
+    /// page it selects comes back with a continuation the client can walk from.
     /// </summary>
     [TestFixture]
     [Parallelizable]
@@ -65,15 +80,7 @@ public class QueryRequestHandlerTests
             {
                 CapturedRequest = queryRequest;
 
-                // Mirrors the relational repository's guard: any paging other than traditional is
-                // not yet selectable.
-                return Task.FromResult<QueryResult>(
-                    queryRequest.Paging is CollectionPaging.Traditional
-                        ? new QueryResult.QuerySuccess([], 0)
-                        : new QueryResult.QueryFailureNotImplemented(
-                            "Cursor paging is not yet supported for relational queries."
-                        )
-                );
+                return Task.FromResult<QueryResult>(new QueryResult.QuerySuccess([], null, 21L));
             }
         }
 
@@ -102,9 +109,188 @@ public class QueryRequestHandlerTests
         }
 
         [Test]
-        public void It_returns_not_implemented_until_cursor_execution_lands()
+        public void It_serves_the_selected_page()
         {
-            _requestInfo.FrontendResponse.StatusCode.Should().Be(501);
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(200);
+        }
+
+        // The next range starts after the keys this page selected and keeps the request's own upper
+        // bound, which is how a walk that entered through a partition stays inside it.
+        [Test]
+        public void It_continues_after_the_selected_keys_within_the_requested_bound()
+        {
+            DecodeNextPageToken(_requestInfo).Should().Be(new CursorRange(22, 42));
+        }
+    }
+
+    /// <summary>
+    /// One gate decides the continuation header for every GET-many response: the page selected keys,
+    /// and the maximum it selected can anchor a DocumentId continuation. Nothing about the response
+    /// body participates, and neither resource family has a rule of its own.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Query_Success_Reaching_The_Continuation_Gate : QueryRequestHandlerTests
+    {
+        private sealed class Repository(QueryResult.QuerySuccess success)
+            : NotImplementedDocumentStoreRepository
+        {
+            public override Task<QueryResult> QueryDocuments(
+                IQueryRequest queryRequest,
+                CancellationToken cancellationToken = default
+            ) => Task.FromResult<QueryResult>(success);
+        }
+
+        private static readonly CollectionPaging _traditionalPaging = new CollectionPaging.Traditional(
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+        );
+
+        private static async Task<RequestInfo> ExecuteAsync(
+            QueryResult.QuerySuccess success,
+            CollectionPaging? paging = null,
+            RequestInfo? requestInfo = null
+        )
+        {
+            requestInfo ??= RequestInfoWithRelationalMappingSet();
+            requestInfo.CollectionPaging = paging ?? _traditionalPaging;
+
+            var (queryHandler, serviceProvider) = Handler(new Repository(success));
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            await queryHandler.Execute(requestInfo, NullNext);
+
+            return requestInfo;
+        }
+
+        // A traditional response can begin a cursor walk. It carried no upper bound, so the walk it
+        // starts is unbounded above.
+        [Test]
+        public async Task It_starts_an_unbounded_walk_from_a_traditional_page()
+        {
+            var requestInfo = await ExecuteAsync(new QueryResult.QuerySuccess([], null, 2509L));
+
+            DecodeNextPageToken(requestInfo).Should().Be(new CursorRange(2510, long.MaxValue));
+        }
+
+        [Test]
+        public async Task It_emits_no_continuation_when_page_selection_chose_nothing()
+        {
+            var requestInfo = await ExecuteAsync(new QueryResult.QuerySuccess([], null));
+
+            requestInfo.FrontendResponse.Headers.Should().NotContainKey("Next-Page-Token");
+        }
+
+        // The boundary describes selected keys, not surviving rows: a page whose every selected row was
+        // deleted before hydration still advances the walk past them. A client that stopped on an empty
+        // body would stop early, which is why the gate never asks about the body.
+        [Test]
+        public async Task It_continues_past_selected_keys_whose_rows_were_all_deleted()
+        {
+            var requestInfo = await ExecuteAsync(new QueryResult.QuerySuccess([], null, 2509L));
+
+            requestInfo.FrontendResponse.Body!.AsArray().Should().BeEmpty();
+            DecodeNextPageToken(requestInfo).Should().Be(new CursorRange(2510, long.MaxValue));
+        }
+
+        // A zero-size page selects no keys, so it cannot advance a walk — by contract, not by accident.
+        [Test]
+        public async Task It_emits_no_continuation_for_a_zero_size_page()
+        {
+            var requestInfo = await ExecuteAsync(
+                new QueryResult.QuerySuccess([], null),
+                new CollectionPaging.Cursor(CursorRange.From(1), new PageSize(0))
+            );
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(200);
+            requestInfo.FrontendResponse.Body!.AsArray().Should().BeEmpty();
+            requestInfo.FrontendResponse.Headers.Should().NotContainKey("Next-Page-Token");
+        }
+
+        // The terminal page of a walk: the range selected nothing, so the client learns the walk is
+        // over by receiving no continuation rather than by an extra fetched row or a count.
+        [Test]
+        public async Task It_emits_no_continuation_for_an_empty_terminal_page()
+        {
+            var requestInfo = await ExecuteAsync(
+                new QueryResult.QuerySuccess([], null),
+                new CollectionPaging.Cursor(new CursorRange(2510, 42), new PageSize(25))
+            );
+
+            requestInfo.FrontendResponse.Headers.Should().NotContainKey("Next-Page-Token");
+        }
+
+        // Advancing past Int64.MaxValue would overflow, so there is no next range to name.
+        [Test]
+        public async Task It_emits_no_continuation_at_the_maximum_document_id()
+        {
+            var requestInfo = await ExecuteAsync(new QueryResult.QuerySuccess([], null, long.MaxValue));
+
+            requestInfo.FrontendResponse.Headers.Should().NotContainKey("Next-Page-Token");
+        }
+
+        // A page ordered by something other than DocumentId really did select keys, and reports their
+        // maximum, but that maximum does not say where the page ended, so it cannot anchor a walk.
+        [Test]
+        public async Task It_emits_no_continuation_when_the_page_cannot_anchor_one()
+        {
+            var requestInfo = await ExecuteAsync(
+                new QueryResult.QuerySuccess([], null, 2509L) { AllowsDocumentIdContinuation = false }
+            );
+
+            requestInfo.FrontendResponse.Headers.Should().NotContainKey("Next-Page-Token");
+        }
+
+        [Test]
+        public async Task It_keeps_total_count_alongside_a_continuation()
+        {
+            var requestInfo = await ExecuteAsync(
+                new QueryResult.QuerySuccess([], 7, 2509L),
+                new CollectionPaging.Traditional(
+                    new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+                )
+            );
+
+            requestInfo
+                .FrontendResponse.Headers.Should()
+                .ContainKey("Total-Count")
+                .WhoseValue.Should()
+                .Be("7");
+            DecodeNextPageToken(requestInfo).Should().Be(new CursorRange(2510, long.MaxValue));
+        }
+
+        [Test]
+        public async Task It_emits_no_total_count_for_a_cursor_page()
+        {
+            var requestInfo = await ExecuteAsync(
+                new QueryResult.QuerySuccess([], null, 2509L),
+                new CollectionPaging.Cursor(CursorRange.From(1), new PageSize(25))
+            );
+
+            requestInfo.FrontendResponse.Headers.Should().NotContainKey("Total-Count");
+            requestInfo.FrontendResponse.ContentType.Should().Be("application/json");
+        }
+
+        // Regular-resource and descriptor results reach the handler as the same QuerySuccess, so the
+        // header they receive is decided once rather than by two rules that could drift apart.
+        [Test]
+        public async Task It_decides_the_continuation_the_same_way_for_both_resource_families()
+        {
+            QueryResult.QuerySuccess success = new([], null, 2509L);
+
+            var regularResourceRequestInfo = await ExecuteAsync(success);
+
+            var descriptorRequestInfo = RequestInfoWithRelationalMappingSet();
+            descriptorRequestInfo.ResourceInfo = descriptorRequestInfo.ResourceInfo with
+            {
+                ResourceName = new ResourceName("SchoolTypeDescriptor"),
+                IsDescriptor = true,
+            };
+
+            await ExecuteAsync(success, requestInfo: descriptorRequestInfo);
+
+            descriptorRequestInfo
+                .FrontendResponse.Headers.Should()
+                .Equal(regularResourceRequestInfo.FrontendResponse.Headers);
+            DecodeNextPageToken(descriptorRequestInfo).Should().Be(new CursorRange(2510, long.MaxValue));
         }
     }
 

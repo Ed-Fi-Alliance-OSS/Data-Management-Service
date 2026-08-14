@@ -146,11 +146,12 @@ public static class DmsCoreServiceExtensions
                             getSuccess.LastModifiedDate,
                             getSuccess.LastModifiedTraceId
                         ),
-                        QueryResult.QuerySuccess querySuccess => new QueryResult.QuerySuccess(
-                            new JsonArray("REDACTED"),
-                            querySuccess.TotalCount,
-                            querySuccess.HighestSelectedDocumentId
-                        ),
+                        // Copied rather than rebuilt, so a member added to the result later cannot be
+                        // dropped from the logged copy by omission here.
+                        QueryResult.QuerySuccess querySuccess => querySuccess with
+                        {
+                            EdfiDocs = new JsonArray("REDACTED"),
+                        },
                         _ => result,
                     };
                 };

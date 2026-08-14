@@ -99,6 +99,31 @@ internal sealed class MssqlPlanDialect : IPlanSqlDialect
             .AppendLine(" int NULL);");
     }
 
+    /// <summary>
+    /// Appends a SQL Server <c>OUTPUT INSERTED</c> clause naming the keyset document-id column.
+    /// </summary>
+    /// <param name="writer">The SQL writer to append to.</param>
+    /// <param name="keyset">The keyset table contract specifying table and column names.</param>
+    public void AppendKeysetSelectedIdOutputClause(SqlWriter writer, KeysetTableContract keyset)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        ArgumentNullException.ThrowIfNull(keyset);
+
+        writer.Append("OUTPUT INSERTED.").AppendQuoted(keyset.DocumentIdColumnName.Value).AppendLine();
+    }
+
+    /// <summary>
+    /// Emits nothing: SQL Server has already returned the inserted keyset ids from the insert's
+    /// <c>OUTPUT</c> clause.
+    /// </summary>
+    /// <param name="writer">The SQL writer to append to.</param>
+    /// <param name="keyset">The keyset table contract specifying table and column names.</param>
+    public void AppendKeysetSelectedIdReturningClause(SqlWriter writer, KeysetTableContract keyset)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        ArgumentNullException.ThrowIfNull(keyset);
+    }
+
     /// <inheritdoc />
     public void AppendDocumentMetadataSelect(SqlWriter writer, KeysetTableContract keyset)
     {
