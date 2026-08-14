@@ -5123,9 +5123,9 @@ public class Given_RelationalDocumentStoreRepositoryTests
     }
 
     /// <summary>
-    /// Read-acceleration candidate selection reports no selected-keyset boundary, so a cursor page
-    /// served through it would carry documents and no continuation, stalling the walk one page in.
-    /// Cursor pages therefore take the relational path, which does report the boundary.
+    /// A cursor walk depends on every page reporting the selected-keyset boundary its successor resumes
+    /// from, and only traditional paging is exercised against the read-acceleration path, so cursor
+    /// selection must route to the relational path.
     /// </summary>
     [Test]
     public async Task It_selects_a_cursor_page_without_read_acceleration()

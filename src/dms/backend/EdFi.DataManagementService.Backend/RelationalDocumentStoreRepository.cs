@@ -1138,10 +1138,10 @@ public sealed class RelationalDocumentStoreRepository(
             return await QueryDocumentsRelationalAsync(queryRequest, cancellationToken).ConfigureAwait(false);
         }
 
-        // Cursor pages select their keyset through the relational path, which is the only path that
-        // returns the selected-keyset boundary a continuation is anchored on. The read-acceleration
-        // candidate selection reports no boundary, so a cursor page routed through it would return
-        // documents with no continuation and stall the walk one page in.
+        // Cursor pages select their keyset through the relational path rather than read acceleration. A
+        // cursor walk depends on every page reporting the selected-keyset boundary its successor resumes
+        // from, and only traditional paging is exercised against the read-acceleration path, so cursor
+        // selection keeps to the path whose boundary reporting is covered end to end.
         if (queryRequest.Paging is CollectionPaging.Cursor)
         {
             return await QueryDocumentsRelationalAsync(queryRequest, cancellationToken).ConfigureAwait(false);

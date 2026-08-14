@@ -129,7 +129,7 @@ public static class HydrationBatchBuilder
         // The selected ids are returned even though this batch's candidates come from the metadata
         // rows: the page's continuation boundary describes the keys selection chose, and a row deleted
         // between materialization and the metadata select below would otherwise lower or erase it.
-        AppendKeysetMaterialization(writer, planDialect, plan.KeysetTable, keyset, returnsSelectedIds: true);
+        AppendKeysetMaterialization(writer, planDialect, plan.KeysetTable, keyset);
         writer.AppendLine();
 
         if (keyset.Plan.TotalCountSql is not null)
@@ -258,7 +258,6 @@ public static class HydrationBatchBuilder
             planDialect,
             plan.KeysetTable,
             keyset,
-            returnsSelectedIds: true,
             singleRowGuardPredicateSql
         );
         writer.AppendLine();
@@ -443,21 +442,19 @@ public static class HydrationBatchBuilder
         }
     }
 
-    /// <param name="returnsSelectedIds">
-    /// Whether a query keyset's materialization returns the ids it inserted as a result set. True for
-    /// the batches whose reader consumes that result set to resolve the page's continuation boundary.
-    /// False for a keyset that performs no page selection, which has no boundary to report.
-    /// </param>
+    /// <summary>
+    /// Materializes the page keyset. A query keyset also returns the ids it inserted as a result set,
+    /// which is what carries the page's continuation boundary out of hydration; the other keysets are
+    /// handed the ids to materialize, so they perform no page selection and have no boundary to report.
+    /// </summary>
     private static void AppendKeysetMaterialization(
         SqlWriter writer,
         IPlanSqlDialect planDialect,
         KeysetTableContract keyset,
         PageKeysetSpec spec,
-        bool returnsSelectedIds,
         string? singleRowGuardPredicateSql = null
     )
     {
-        IPlanSqlDialect? selectedIdDialect = returnsSelectedIds ? planDialect : null;
         var quotedDocIdCol = writer.Dialect.QuoteIdentifier(keyset.DocumentIdColumnName.Value);
 
         switch (spec)
@@ -500,11 +497,11 @@ public static class HydrationBatchBuilder
                 break;
 
             case PageKeysetSpec.Query query when HasZeroPageSelectionSize(query):
-                AppendEmptyKeysetMaterialization(writer, keyset, quotedDocIdCol, selectedIdDialect);
+                AppendEmptyKeysetMaterialization(writer, keyset, quotedDocIdCol, planDialect);
                 break;
 
             case PageKeysetSpec.Query query:
-                AppendQueryKeysetMaterialization(writer, selectedIdDialect, keyset, query, quotedDocIdCol);
+                AppendQueryKeysetMaterialization(writer, planDialect, keyset, query, quotedDocIdCol);
                 break;
 
             default:
@@ -517,12 +514,12 @@ public static class HydrationBatchBuilder
     }
 
     /// <summary>
-    /// Materializes the planned page keyset. Returns the ids it inserted only when
-    /// <paramref name="selectedIdDialect"/> is supplied.
+    /// Materializes the planned page keyset, returning the ids it inserted so the page's continuation
+    /// boundary describes the keys selection chose.
     /// </summary>
     private static void AppendQueryKeysetMaterialization(
         SqlWriter writer,
-        IPlanSqlDialect? selectedIdDialect,
+        IPlanSqlDialect planDialect,
         KeysetTableContract keyset,
         PageKeysetSpec.Query query,
         string quotedDocIdCol
@@ -537,9 +534,9 @@ public static class HydrationBatchBuilder
             .Append(" (")
             .Append(quotedDocIdCol)
             .AppendLine(")");
-        selectedIdDialect?.AppendKeysetSelectedIdOutputClause(writer, keyset);
+        planDialect.AppendKeysetSelectedIdOutputClause(writer, keyset);
         writer.Append("SELECT ").Append(quotedDocIdCol).Append(" FROM page_ids");
-        selectedIdDialect?.AppendKeysetSelectedIdReturningClause(writer, keyset);
+        planDialect.AppendKeysetSelectedIdReturningClause(writer, keyset);
         writer.AppendLine(";");
     }
 

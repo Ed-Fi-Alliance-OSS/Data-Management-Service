@@ -2920,11 +2920,9 @@ public class Given_DescriptorReadHandler
             StringComparison.Ordinal
         );
         selectIndex.Should().BeGreaterThanOrEqualTo(0);
-        int fromIndex = commandText.IndexOf(
-            $"{Environment.NewLine}FROM ",
-            documentIdProjectionIndex,
-            StringComparison.Ordinal
-        );
+        // Emitted SQL is canonicalized to Unix line endings, so the line break is matched literally
+        // rather than through the platform's newline.
+        int fromIndex = commandText.IndexOf("\nFROM ", documentIdProjectionIndex, StringComparison.Ordinal);
         fromIndex.Should().BeGreaterThan(documentIdProjectionIndex);
 
         return commandText[..(selectIndex + "SELECT".Length)] + commandText[fromIndex..];
