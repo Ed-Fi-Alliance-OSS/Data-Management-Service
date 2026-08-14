@@ -126,6 +126,25 @@ public class Given_RelationshipAuthorizationPeoplePathValidation
     }
 
     [Test]
+    public void It_rejects_transitive_path_when_nonterminal_step_is_missing_target_column()
+    {
+        var pathSteps = CreateValidTransitivePath();
+        pathSteps[0] = pathSteps[0] with { TargetColumnName = null };
+
+        Action act = () =>
+            RelationshipAuthorizationPeoplePathValidation.ValidateTransitivePersonPath(
+                _courseTranscriptTable,
+                _studentAcademicRecordTable,
+                _studentDocumentIdColumn,
+                pathSteps
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("Transitive People authorization path step 0 is missing a target column.");
+    }
+
+    [Test]
     public void It_rejects_transitive_path_when_terminal_source_table_does_not_match_expected_table()
     {
         var pathSteps = new List<ColumnPathStep>

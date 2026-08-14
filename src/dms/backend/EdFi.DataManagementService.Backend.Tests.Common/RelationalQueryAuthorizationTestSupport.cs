@@ -452,7 +452,8 @@ internal static class RelationalQueryAuthorizationRequestBodies
 
 /// <summary>
 /// Row-count targets for the bulk relationship-authorization volume generators (DMS-1331). Both engines share
-/// these so the PostgreSQL and SQL Server differentials measure the same populations.
+/// <see cref="Ci"/> so the PostgreSQL and SQL Server differentials measure the same populations;
+/// <see cref="DeepOffset"/> is a PostgreSQL-only lane.
 /// </summary>
 /// <remarks>
 /// The authorized count is an explicit target, not a side effect of "some reachable and some unreachable
@@ -475,9 +476,18 @@ internal sealed record RelationshipAuthorizationVolumeCounts
     public static RelationshipAuthorizationVolumeCounts Ci { get; } = new(8000, 2000);
 
     /// <summary>
-    /// The deep-offset and timing lane. The authorized count exceeds the ticket's literal OFFSET 100000 plus
-    /// any page limit those fixtures use, which is what keeps that measurement on a real page.
+    /// The deep-offset and timing lane, PostgreSQL only. The authorized count exceeds the ticket's literal
+    /// OFFSET 100000 plus any page limit those fixtures use, which is what keeps that measurement on a real page.
     /// </summary>
+    /// <remarks>
+    /// Only the PostgreSQL generator can produce this preset. Generating six figures of rows fires two row-level
+    /// triggers per row, so a single set-based INSERT runs past the shared 300-second statement timeout; the
+    /// PostgreSQL generator raises <c>PostgresqlGeneratedDdlTestDatabase.CommandTimeoutSeconds</c> for the
+    /// duration of generation and restores it afterwards, and the SQL Server generator has no equivalent. That is
+    /// deliberate rather than an oversight — AC3's EXPLAIN work is PostgreSQL-only, so SQL Server has no reason to
+    /// generate at this scale. Pointing the SQL Server generator here would need the same timeout save/restore
+    /// first.
+    /// </remarks>
     public static RelationshipAuthorizationVolumeCounts DeepOffset { get; } = new(120000, 30000);
 
     public int AuthorizedRowsPerRoot { get; }

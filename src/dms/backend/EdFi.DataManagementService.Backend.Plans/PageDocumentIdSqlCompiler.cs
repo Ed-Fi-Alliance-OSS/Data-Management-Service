@@ -1108,6 +1108,14 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         switch (personMetadata.Path.Kind)
         {
             case RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId:
+                // Load-bearing for the same reason as the Direct and Transitive checks below: the Self arm
+                // anchors on the stored anchor's column, so a subject bound to any other column would emit a
+                // predicate that authorizes on something other than the person the planner selected.
+                RelationshipAuthorizationPeoplePathValidation.ValidateSelfRootDocumentIdPath(
+                    subject.Table,
+                    subject.Column,
+                    personMetadata
+                );
                 AppendRootDocumentIdInPersonAuthViewSql(
                     writer,
                     personMetadata.StoredAnchor.RootDocumentIdColumn,

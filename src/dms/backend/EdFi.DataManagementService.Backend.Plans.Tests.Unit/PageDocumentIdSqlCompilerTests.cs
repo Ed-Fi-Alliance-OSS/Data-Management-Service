@@ -2059,9 +2059,7 @@ public class Given_PageDocumentIdSqlCompiler
 
         act.Should()
             .Throw<InvalidOperationException>()
-            .WithMessage(
-                "Transitive People authorization path steps must include a target column for first-hop joins."
-            );
+            .WithMessage("Transitive People authorization path step 0 is missing a target column.");
     }
 
     [Test]

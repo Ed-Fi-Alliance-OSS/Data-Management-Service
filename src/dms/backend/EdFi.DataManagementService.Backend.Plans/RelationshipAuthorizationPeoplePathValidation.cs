@@ -100,6 +100,16 @@ internal static class RelationshipAuthorizationPeoplePathValidation
                     $"Transitive People authorization path step {stepIndex} is missing a target table."
                 );
 
+            // Checked alongside the target table so the compilers' own null guards on both halves of a
+            // non-terminal step are uniformly defensive, and a malformed step reports the step it came from
+            // rather than the emitter position that happened to dereference it.
+            if (step.TargetColumnName is null)
+            {
+                throw new InvalidOperationException(
+                    $"Transitive People authorization path step {stepIndex} is missing a target column."
+                );
+            }
+
             if (!pathSteps[stepIndex + 1].SourceTable.Equals(targetTable))
             {
                 throw new InvalidOperationException(
