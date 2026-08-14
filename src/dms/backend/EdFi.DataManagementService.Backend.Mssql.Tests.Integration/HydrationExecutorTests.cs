@@ -51,9 +51,7 @@ public class Given_A_Page_With_Multiple_Documents_Mssql
                 DocumentUuid uniqueidentifier NOT NULL,
                 ResourceKeyId smallint NOT NULL DEFAULT 0,
                 ContentVersion bigint NOT NULL DEFAULT 1,
-                IdentityVersion bigint NOT NULL DEFAULT 1,
                 ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
                 CreatedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
             );
 
@@ -83,10 +81,10 @@ public class Given_A_Page_With_Multiple_Documents_Mssql
         await ExecuteSql(
             connection,
             """
-            INSERT INTO dms.Document (DocumentId, DocumentUuid, ContentVersion, IdentityVersion)
+            INSERT INTO dms.Document (DocumentId, DocumentUuid, ContentVersion)
             VALUES
-                (101, 'aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa', 10, 10),
-                (102, 'bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb', 20, 20);
+                (101, 'aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa', 10),
+                (102, 'bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb', 20);
 
             INSERT INTO hydtest.School (DocumentId, SchoolId)
             VALUES
@@ -315,9 +313,7 @@ public class Given_A_Single_DocumentId_Keyset_Mssql
                 DocumentUuid uniqueidentifier NOT NULL,
                 ResourceKeyId smallint NOT NULL DEFAULT 0,
                 ContentVersion bigint NOT NULL DEFAULT 1,
-                IdentityVersion bigint NOT NULL DEFAULT 1,
                 ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
                 CreatedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
             );
 
@@ -468,9 +464,7 @@ public class Given_A_Query_With_TotalCount_Requested_Mssql
                 DocumentUuid uniqueidentifier NOT NULL,
                 ResourceKeyId smallint NOT NULL DEFAULT 0,
                 ContentVersion bigint NOT NULL DEFAULT 1,
-                IdentityVersion bigint NOT NULL DEFAULT 1,
                 ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
                 CreatedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
             );
 
@@ -607,9 +601,7 @@ public class Given_A_Reference_Bearing_Resource_Mssql
                 DocumentUuid uniqueidentifier NOT NULL,
                 ResourceKeyId smallint NOT NULL DEFAULT 0,
                 ContentVersion bigint NOT NULL DEFAULT 1,
-                IdentityVersion bigint NOT NULL DEFAULT 1,
                 ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
                 CreatedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
             );
 

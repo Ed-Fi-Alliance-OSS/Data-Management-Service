@@ -803,9 +803,7 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
                 "ResourceKeyId",
                 "CreatedByOwnershipTokenId",
                 "ContentVersion",
-                "IdentityVersion",
                 "ContentLastModifiedAt",
-                "IdentityLastModifiedAt",
                 "CreatedAt",
             ]
         );

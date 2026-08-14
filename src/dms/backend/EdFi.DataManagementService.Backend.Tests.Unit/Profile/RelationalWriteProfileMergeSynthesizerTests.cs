@@ -2516,9 +2516,7 @@ internal static class RootExtensionChildCollectionTopologyBuilders
                 DocumentId: 345L,
                 DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
                 ContentVersion: 1L,
-                IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero),
                 ResourceKeyId: 1
             ),
             [
@@ -3021,9 +3019,7 @@ internal static class CollectionSynthesizerBuilders
                 DocumentId: documentId,
                 DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
                 ContentVersion: 1L,
-                IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero),
                 ResourceKeyId: 1
             ),
             [
@@ -3746,9 +3742,7 @@ internal static class DocumentReferenceCanonicalizeBuilders
                 DocumentId: documentId,
                 DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
                 ContentVersion: 1L,
-                IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
                 ResourceKeyId: 1
             ),
             [
@@ -4394,9 +4388,7 @@ internal static class DescriptorCanonicalizeBuilders
                 DocumentId: documentId,
                 DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
                 ContentVersion: 1L,
-                IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
                 ResourceKeyId: 1
             ),
             [
@@ -5204,9 +5196,7 @@ public class Given_top_level_collection_with_mixed_scalar_and_descriptor_identit
                 DocumentId: 345L,
                 DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
                 ContentVersion: 1L,
-                IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
                 ResourceKeyId: 1
             ),
             [
@@ -5659,9 +5649,7 @@ public class Given_top_level_collection_with_mixed_identity_and_cache_miss_resol
                 DocumentId: 345L,
                 DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
                 ContentVersion: 1L,
-                IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
                 ResourceKeyId: 1
             ),
             [
@@ -5824,9 +5812,7 @@ public class Given_top_level_collection_with_mixed_identity_and_duplicate_scalar
                 DocumentId: 345L,
                 DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-cccccccccccc"),
                 ContentVersion: 1L,
-                IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
                 ResourceKeyId: 1
             ),
             [
@@ -5976,9 +5962,7 @@ public class Given_top_level_collection_with_mixed_identity_duplicate_scalar_thr
                 DocumentId: 345L,
                 DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-dddddddddddd"),
                 ContentVersion: 1L,
-                IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
                 ResourceKeyId: 1
             ),
             [
@@ -6551,9 +6535,7 @@ public class Given_reference_backed_top_level_collection_with_descriptor_in_natu
                 DocumentId: parentDocumentId,
                 DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-eeeeeeeeeeee"),
                 ContentVersion: 1L,
-                IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
                 ResourceKeyId: 1
             ),
             [
@@ -6688,9 +6670,7 @@ public class Given_reference_backed_top_level_collection_with_descriptor_in_natu
                 DocumentId: parentDocumentId,
                 DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-ffffffffffff"),
                 ContentVersion: 1L,
-                IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 24, 12, 0, 0, TimeSpan.Zero),
                 ResourceKeyId: 1
             ),
             [
@@ -8378,9 +8358,7 @@ internal static class ThreeLevelTopologyBuilders
                 DocumentId: documentId,
                 DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
                 ContentVersion: 1L,
-                IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
                 ResourceKeyId: 1
             ),
             [

@@ -70,7 +70,7 @@ internal static class MssqlProfileGuardedNoOpIntegrationTestSupport
                 """
                 SELECT [DocumentId], [DocumentUuid], [ResourceKeyId],
                        [ContentVersion], [ContentLastModifiedAt],
-                       [IdentityVersion], [IdentityLastModifiedAt], [CreatedAt]
+                       [CreatedAt]
                 FROM [dms].[Document]
                 WHERE [DocumentUuid] = @documentUuid;
                 """,
@@ -487,20 +487,6 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Root_Only
     }
 
     [Test]
-    public void It_does_not_change_identity_version()
-    {
-        _stateAfterUpdate.Document.IdentityVersion.Should().Be(_stateBeforeUpdate.Document.IdentityVersion);
-    }
-
-    [Test]
-    public void It_does_not_change_identity_last_modified_at()
-    {
-        _stateAfterUpdate
-            .Document.IdentityLastModifiedAt.Should()
-            .Be(_stateBeforeUpdate.Document.IdentityLastModifiedAt);
-    }
-
-    [Test]
     public void It_does_not_change_created_at()
     {
         _stateAfterUpdate.Document.CreatedAt.Should().Be(_stateBeforeUpdate.Document.CreatedAt);
@@ -603,22 +589,6 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Post_As_Update_Wit
         _stateAfterPostAsUpdate
             .Document.ContentLastModifiedAt.Should()
             .Be(_stateBeforePostAsUpdate.Document.ContentLastModifiedAt);
-    }
-
-    [Test]
-    public void It_does_not_change_identity_version()
-    {
-        _stateAfterPostAsUpdate
-            .Document.IdentityVersion.Should()
-            .Be(_stateBeforePostAsUpdate.Document.IdentityVersion);
-    }
-
-    [Test]
-    public void It_does_not_change_identity_last_modified_at()
-    {
-        _stateAfterPostAsUpdate
-            .Document.IdentityLastModifiedAt.Should()
-            .Be(_stateBeforePostAsUpdate.Document.IdentityLastModifiedAt);
     }
 
     [Test]
@@ -955,20 +925,6 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Separate_
             .Be(_stateBeforeUpdate.Document.ContentLastModifiedAt);
     }
 
-    [Test]
-    public void It_does_not_change_identity_version()
-    {
-        _stateAfterUpdate.Document.IdentityVersion.Should().Be(_stateBeforeUpdate.Document.IdentityVersion);
-    }
-
-    [Test]
-    public void It_does_not_change_identity_last_modified_at()
-    {
-        _stateAfterUpdate
-            .Document.IdentityLastModifiedAt.Should()
-            .Be(_stateBeforeUpdate.Document.IdentityLastModifiedAt);
-    }
-
     /// <summary>
     /// Reads the single <c>sample.ProfileSeparateTableMergeItemExtension</c> row for the
     /// supplied <paramref name="documentUuid"/>. Wraps
@@ -1097,19 +1053,5 @@ internal class Given_A_Mssql_Relational_Profile_Guarded_No_Op_Put_With_Top_Level
         _stateAfterUpdate
             .Document.ContentLastModifiedAt.Should()
             .Be(_stateBeforeUpdate.Document.ContentLastModifiedAt);
-    }
-
-    [Test]
-    public void It_does_not_change_identity_version()
-    {
-        _stateAfterUpdate.Document.IdentityVersion.Should().Be(_stateBeforeUpdate.Document.IdentityVersion);
-    }
-
-    [Test]
-    public void It_does_not_change_identity_last_modified_at()
-    {
-        _stateAfterUpdate
-            .Document.IdentityLastModifiedAt.Should()
-            .Be(_stateBeforeUpdate.Document.IdentityLastModifiedAt);
     }
 }

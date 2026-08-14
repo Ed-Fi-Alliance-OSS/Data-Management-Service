@@ -173,9 +173,7 @@ internal static class DocumentMetadataColumns
     public const string DocumentId = "DocumentId";
     public const string DocumentUuid = "DocumentUuid";
     public const string ContentVersion = "ContentVersion";
-    public const string IdentityVersion = "IdentityVersion";
     public const string ContentLastModifiedAt = "ContentLastModifiedAt";
-    public const string IdentityLastModifiedAt = "IdentityLastModifiedAt";
     public const string ResourceKeyId = "ResourceKeyId";
 
     /// <summary>
@@ -186,9 +184,7 @@ internal static class DocumentMetadataColumns
         DocumentId,
         DocumentUuid,
         ContentVersion,
-        IdentityVersion,
         ContentLastModifiedAt,
-        IdentityLastModifiedAt,
         ResourceKeyId,
     ];
 

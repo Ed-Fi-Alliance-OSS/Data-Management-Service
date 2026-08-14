@@ -340,16 +340,17 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Mssql
     }
 
     [Test]
-    public void It_should_render_the_key_change_from_the_identity_changed_workset()
+    public void It_should_render_the_key_change_from_the_value_diff_workset()
     {
         _keyChange.Should().Contain("[OldBeginDate]");
         _keyChange.Should().Contain("[NewBeginDate]");
-        _keyChange.Should().Contain("FROM @identityChangedDocs idc");
-        _keyChange.Should().Contain("INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]");
+        _keyChange.Should().Contain("FROM @changedDocs cd");
+        _keyChange.Should().Contain("INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]");
         _keyChange.Should().Contain("INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
         _keyChange.Should().Contain("INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]");
         _keyChange.Should().Contain("del.[BeginDate]");
         _keyChange.Should().Contain("i.[BeginDate]");
+        _keyChange.Should().Contain("doc.[ContentVersion]");
         _keyChange
             .Should()
             .Contain(
@@ -366,7 +367,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Mssql
                 "INNER JOIN [edfi].[Student] newPj0s1 ON newPj0s1.[DocumentId] = newPj0s0.[Student_DocumentId]"
             );
         _keyChange.Should().Contain("doc.[DocumentUuid]");
-        _keyChange.Should().Contain("idc.[ContentVersion]");
+        _keyChange.Should().NotContain("idc.[ContentVersion]");
         _keyChange
             .Should()
             .Contain(

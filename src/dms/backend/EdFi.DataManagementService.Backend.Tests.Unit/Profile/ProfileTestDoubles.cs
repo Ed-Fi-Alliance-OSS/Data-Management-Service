@@ -1750,9 +1750,7 @@ internal static class ProfileTestDoubles
                 DocumentId: 345L,
                 DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
                 ContentVersion: 1L,
-                IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero),
                 ResourceKeyId: 1
             ),
             [new HydratedTableRows(writePlan.TablePlansInDependencyOrder[0].TableModel, [columnValues])],
@@ -1787,9 +1785,7 @@ internal static class ProfileTestDoubles
                 DocumentId: 345L,
                 DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
                 ContentVersion: 1L,
-                IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero),
                 ResourceKeyId: 1
             ),
             [new HydratedTableRows(hydrationRootModel, [hydrationColumnValues])],
@@ -1818,9 +1814,7 @@ internal static class ProfileTestDoubles
                 DocumentId: 345L,
                 DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
                 ContentVersion: 1L,
-                IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 17, 12, 0, 0, TimeSpan.Zero),
                 ResourceKeyId: 1
             ),
             [

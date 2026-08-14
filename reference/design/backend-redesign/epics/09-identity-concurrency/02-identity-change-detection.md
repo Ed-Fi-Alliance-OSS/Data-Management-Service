@@ -10,14 +10,15 @@ jira_url: https://edfi.atlassian.net/browse/DMS-998
 Detect whether a write changes the document’s identity projection values, so that:
 
 - `dms.ReferentialIdentity` is updated only when necessary,
-- and `IdentityVersion/IdentityLastModifiedAt` are stamped only on actual identity projection changes.
+- key-change records are emitted only for actual identity projection changes.
 
 Identity projection includes scalar identity parts and identity components sourced from references, whose propagated
 identity columns are maintained by native FK cascades.
 
 ## Acceptance Criteria
 
-- No-op updates that do not change identity projection values do not update `dms.ReferentialIdentity` or bump identity stamps (best effort).
+- No-op updates that do not change identity projection values do not update `dms.ReferentialIdentity`
+  or emit key-change records (best effort).
 - Identity changes are detected when:
   - scalar identity values change, or
   - identity-component reference targets change.
@@ -26,5 +27,5 @@ identity columns are maintained by native FK cascades.
 ## Tasks
 
 1. Emit per-dialect trigger logic that detects identity projection changes by comparing old/new identity columns.
-2. Gate `dms.ReferentialIdentity` maintenance and identity-stamp updates on that detection.
+2. Gate `dms.ReferentialIdentity` maintenance and key-change emission on that detection.
 3. Add tests for identity change detection scenarios (scalar + reference-sourced identity components).

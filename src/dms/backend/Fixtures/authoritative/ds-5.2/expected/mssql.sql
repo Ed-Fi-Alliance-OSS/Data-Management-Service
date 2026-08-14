@@ -255,9 +255,7 @@ CREATE TABLE [dms].[Document]
     [ResourceKeyId] smallint NOT NULL,
     [CreatedByOwnershipTokenId] smallint NULL,
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Document_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
-    [IdentityVersion] bigint NOT NULL CONSTRAINT [DF_Document_IdentityVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Document_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
-    [IdentityLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Document_IdentityLastModifiedAt] DEFAULT (sysutcdatetime()),
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Document_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_Document] PRIMARY KEY CLUSTERED ([DocumentId])
 );
@@ -36677,14 +36675,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[School_SchoolId] <> del.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND del.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND del.[School_SchoolId] IS NULL)) OR (CAST(i.[WeekIdentifier] AS varbinary(max)) <> CAST(del.[WeekIdentifier] AS varbinary(max)) OR (i.[WeekIdentifier] IS NULL AND del.[WeekIdentifier] IS NOT NULL) OR (i.[WeekIdentifier] IS NOT NULL AND del.[WeekIdentifier] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL)) OR (CAST(i.[WeekIdentifier] AS varbinary(max)) <> CAST(d.[WeekIdentifier] AS varbinary(max)) OR (i.[WeekIdentifier] IS NULL AND d.[WeekIdentifier] IS NOT NULL) OR (i.[WeekIdentifier] IS NOT NULL AND d.[WeekIdentifier] IS NULL));
         INSERT INTO [tracked_changes_edfi].[AcademicWeek] (
             [OldSchool_SchoolId],
             [OldWeekIdentifier],
@@ -36699,9 +36694,9 @@ BEGIN
             i.[School_SchoolId],
             i.[WeekIdentifier],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -36802,14 +36797,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[RatingTitle] AS varbinary(max)) <> CAST(del.[RatingTitle] AS varbinary(max)) OR (i.[RatingTitle] IS NULL AND del.[RatingTitle] IS NOT NULL) OR (i.[RatingTitle] IS NOT NULL AND del.[RatingTitle] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> del.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND del.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND del.[SchoolYear_SchoolYear] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[RatingTitle] AS varbinary(max)) <> CAST(d.[RatingTitle] AS varbinary(max)) OR (i.[RatingTitle] IS NULL AND d.[RatingTitle] IS NOT NULL) OR (i.[RatingTitle] IS NOT NULL AND d.[RatingTitle] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> d.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND d.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND d.[SchoolYear_SchoolYear] IS NULL));
         INSERT INTO [tracked_changes_edfi].[AccountabilityRating] (
             [OldEducationOrganization_EducationOrganizationId],
             [OldRatingTitle],
@@ -36828,9 +36820,9 @@ BEGIN
             i.[RatingTitle],
             i.[SchoolYear_SchoolYear],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -36929,14 +36921,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[AssessmentIdentifier] AS varbinary(max)) <> CAST(del.[AssessmentIdentifier] AS varbinary(max)) OR (i.[AssessmentIdentifier] IS NULL AND del.[AssessmentIdentifier] IS NOT NULL) OR (i.[AssessmentIdentifier] IS NOT NULL AND del.[AssessmentIdentifier] IS NULL)) OR (CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[AssessmentIdentifier] AS varbinary(max)) <> CAST(d.[AssessmentIdentifier] AS varbinary(max)) OR (i.[AssessmentIdentifier] IS NULL AND d.[AssessmentIdentifier] IS NOT NULL) OR (i.[AssessmentIdentifier] IS NOT NULL AND d.[AssessmentIdentifier] IS NULL)) OR (CAST(i.[Namespace] AS varbinary(max)) <> CAST(d.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND d.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND d.[Namespace] IS NULL));
         INSERT INTO [tracked_changes_edfi].[Assessment] (
             [OldAssessmentIdentifier],
             [OldNamespace],
@@ -36951,9 +36940,9 @@ BEGIN
             i.[AssessmentIdentifier],
             i.[Namespace],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -37095,14 +37084,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[AdministrationIdentifier] AS varbinary(max)) <> CAST(del.[AdministrationIdentifier] AS varbinary(max)) OR (i.[AdministrationIdentifier] IS NULL AND del.[AdministrationIdentifier] IS NOT NULL) OR (i.[AdministrationIdentifier] IS NOT NULL AND del.[AdministrationIdentifier] IS NULL)) OR (CAST(i.[Assessment_AssessmentIdentifier] AS varbinary(max)) <> CAST(del.[Assessment_AssessmentIdentifier] AS varbinary(max)) OR (i.[Assessment_AssessmentIdentifier] IS NULL AND del.[Assessment_AssessmentIdentifier] IS NOT NULL) OR (i.[Assessment_AssessmentIdentifier] IS NOT NULL AND del.[Assessment_AssessmentIdentifier] IS NULL)) OR (CAST(i.[Assessment_Namespace] AS varbinary(max)) <> CAST(del.[Assessment_Namespace] AS varbinary(max)) OR (i.[Assessment_Namespace] IS NULL AND del.[Assessment_Namespace] IS NOT NULL) OR (i.[Assessment_Namespace] IS NOT NULL AND del.[Assessment_Namespace] IS NULL)) OR (i.[AssigningEducationOrganization_EducationOrganizationId] <> del.[AssigningEducationOrganization_EducationOrganizationId] OR (i.[AssigningEducationOrganization_EducationOrganizationId] IS NULL AND del.[AssigningEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[AssigningEducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[AssigningEducationOrganization_EducationOrganizationId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[AdministrationIdentifier] AS varbinary(max)) <> CAST(d.[AdministrationIdentifier] AS varbinary(max)) OR (i.[AdministrationIdentifier] IS NULL AND d.[AdministrationIdentifier] IS NOT NULL) OR (i.[AdministrationIdentifier] IS NOT NULL AND d.[AdministrationIdentifier] IS NULL)) OR (CAST(i.[Assessment_AssessmentIdentifier] AS varbinary(max)) <> CAST(d.[Assessment_AssessmentIdentifier] AS varbinary(max)) OR (i.[Assessment_AssessmentIdentifier] IS NULL AND d.[Assessment_AssessmentIdentifier] IS NOT NULL) OR (i.[Assessment_AssessmentIdentifier] IS NOT NULL AND d.[Assessment_AssessmentIdentifier] IS NULL)) OR (CAST(i.[Assessment_Namespace] AS varbinary(max)) <> CAST(d.[Assessment_Namespace] AS varbinary(max)) OR (i.[Assessment_Namespace] IS NULL AND d.[Assessment_Namespace] IS NOT NULL) OR (i.[Assessment_Namespace] IS NOT NULL AND d.[Assessment_Namespace] IS NULL)) OR (i.[AssigningEducationOrganization_EducationOrganizationId] <> d.[AssigningEducationOrganization_EducationOrganizationId] OR (i.[AssigningEducationOrganization_EducationOrganizationId] IS NULL AND d.[AssigningEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[AssigningEducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[AssigningEducationOrganization_EducationOrganizationId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[AssessmentAdministration] (
             [OldAdministrationIdentifier],
             [OldAssessment_AssessmentIdentifier],
@@ -37125,9 +37111,9 @@ BEGIN
             i.[Assessment_Namespace],
             i.[AssigningEducationOrganization_EducationOrganizationId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -37271,14 +37257,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[AssessmentAdministration_AdministrationIdentifier] AS varbinary(max)) <> CAST(del.[AssessmentAdministration_AdministrationIdentifier] AS varbinary(max)) OR (i.[AssessmentAdministration_AdministrationIdentifier] IS NULL AND del.[AssessmentAdministration_AdministrationIdentifier] IS NOT NULL) OR (i.[AssessmentAdministration_AdministrationIdentifier] IS NOT NULL AND del.[AssessmentAdministration_AdministrationIdentifier] IS NULL)) OR (CAST(i.[AssessmentAdministration_AssessmentIdentifier] AS varbinary(max)) <> CAST(del.[AssessmentAdministration_AssessmentIdentifier] AS varbinary(max)) OR (i.[AssessmentAdministration_AssessmentIdentifier] IS NULL AND del.[AssessmentAdministration_AssessmentIdentifier] IS NOT NULL) OR (i.[AssessmentAdministration_AssessmentIdentifier] IS NOT NULL AND del.[AssessmentAdministration_AssessmentIdentifier] IS NULL)) OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] <> del.[AssessmentAdministration_AssigningEducationOrganizationId] OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] IS NULL AND del.[AssessmentAdministration_AssigningEducationOrganizationId] IS NOT NULL) OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] IS NOT NULL AND del.[AssessmentAdministration_AssigningEducationOrganizationId] IS NULL)) OR (CAST(i.[AssessmentAdministration_Namespace] AS varbinary(max)) <> CAST(del.[AssessmentAdministration_Namespace] AS varbinary(max)) OR (i.[AssessmentAdministration_Namespace] IS NULL AND del.[AssessmentAdministration_Namespace] IS NOT NULL) OR (i.[AssessmentAdministration_Namespace] IS NOT NULL AND del.[AssessmentAdministration_Namespace] IS NULL)) OR (i.[ParticipatingEducationOrganization_EducationOrganizationId] <> del.[ParticipatingEducationOrganization_EducationOrganizationId] OR (i.[ParticipatingEducationOrganization_EducationOrganizationId] IS NULL AND del.[ParticipatingEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[ParticipatingEducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[ParticipatingEducationOrganization_EducationOrganizationId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[AssessmentAdministration_AdministrationIdentifier] AS varbinary(max)) <> CAST(d.[AssessmentAdministration_AdministrationIdentifier] AS varbinary(max)) OR (i.[AssessmentAdministration_AdministrationIdentifier] IS NULL AND d.[AssessmentAdministration_AdministrationIdentifier] IS NOT NULL) OR (i.[AssessmentAdministration_AdministrationIdentifier] IS NOT NULL AND d.[AssessmentAdministration_AdministrationIdentifier] IS NULL)) OR (CAST(i.[AssessmentAdministration_AssessmentIdentifier] AS varbinary(max)) <> CAST(d.[AssessmentAdministration_AssessmentIdentifier] AS varbinary(max)) OR (i.[AssessmentAdministration_AssessmentIdentifier] IS NULL AND d.[AssessmentAdministration_AssessmentIdentifier] IS NOT NULL) OR (i.[AssessmentAdministration_AssessmentIdentifier] IS NOT NULL AND d.[AssessmentAdministration_AssessmentIdentifier] IS NULL)) OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] <> d.[AssessmentAdministration_AssigningEducationOrganizationId] OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] IS NULL AND d.[AssessmentAdministration_AssigningEducationOrganizationId] IS NOT NULL) OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] IS NOT NULL AND d.[AssessmentAdministration_AssigningEducationOrganizationId] IS NULL)) OR (CAST(i.[AssessmentAdministration_Namespace] AS varbinary(max)) <> CAST(d.[AssessmentAdministration_Namespace] AS varbinary(max)) OR (i.[AssessmentAdministration_Namespace] IS NULL AND d.[AssessmentAdministration_Namespace] IS NOT NULL) OR (i.[AssessmentAdministration_Namespace] IS NOT NULL AND d.[AssessmentAdministration_Namespace] IS NULL)) OR (i.[ParticipatingEducationOrganization_EducationOrganizationId] <> d.[ParticipatingEducationOrganization_EducationOrganizationId] OR (i.[ParticipatingEducationOrganization_EducationOrganizationId] IS NULL AND d.[ParticipatingEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[ParticipatingEducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[ParticipatingEducationOrganization_EducationOrganizationId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[AssessmentAdministrationParticipation] (
             [OldAssessmentAdministration_AdministrationIdentifier],
             [OldAssessmentAdministration_AssessmentIdentifier],
@@ -37305,9 +37288,9 @@ BEGIN
             i.[AssessmentAdministration_Namespace],
             i.[ParticipatingEducationOrganization_EducationOrganizationId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -37564,14 +37547,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[AssessmentBatteryPartName] AS varbinary(max)) <> CAST(del.[AssessmentBatteryPartName] AS varbinary(max)) OR (i.[AssessmentBatteryPartName] IS NULL AND del.[AssessmentBatteryPartName] IS NOT NULL) OR (i.[AssessmentBatteryPartName] IS NOT NULL AND del.[AssessmentBatteryPartName] IS NULL)) OR (CAST(i.[Assessment_AssessmentIdentifier] AS varbinary(max)) <> CAST(del.[Assessment_AssessmentIdentifier] AS varbinary(max)) OR (i.[Assessment_AssessmentIdentifier] IS NULL AND del.[Assessment_AssessmentIdentifier] IS NOT NULL) OR (i.[Assessment_AssessmentIdentifier] IS NOT NULL AND del.[Assessment_AssessmentIdentifier] IS NULL)) OR (CAST(i.[Assessment_Namespace] AS varbinary(max)) <> CAST(del.[Assessment_Namespace] AS varbinary(max)) OR (i.[Assessment_Namespace] IS NULL AND del.[Assessment_Namespace] IS NOT NULL) OR (i.[Assessment_Namespace] IS NOT NULL AND del.[Assessment_Namespace] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[AssessmentBatteryPartName] AS varbinary(max)) <> CAST(d.[AssessmentBatteryPartName] AS varbinary(max)) OR (i.[AssessmentBatteryPartName] IS NULL AND d.[AssessmentBatteryPartName] IS NOT NULL) OR (i.[AssessmentBatteryPartName] IS NOT NULL AND d.[AssessmentBatteryPartName] IS NULL)) OR (CAST(i.[Assessment_AssessmentIdentifier] AS varbinary(max)) <> CAST(d.[Assessment_AssessmentIdentifier] AS varbinary(max)) OR (i.[Assessment_AssessmentIdentifier] IS NULL AND d.[Assessment_AssessmentIdentifier] IS NOT NULL) OR (i.[Assessment_AssessmentIdentifier] IS NOT NULL AND d.[Assessment_AssessmentIdentifier] IS NULL)) OR (CAST(i.[Assessment_Namespace] AS varbinary(max)) <> CAST(d.[Assessment_Namespace] AS varbinary(max)) OR (i.[Assessment_Namespace] IS NULL AND d.[Assessment_Namespace] IS NOT NULL) OR (i.[Assessment_Namespace] IS NOT NULL AND d.[Assessment_Namespace] IS NULL));
         INSERT INTO [tracked_changes_edfi].[AssessmentBatteryPart] (
             [OldAssessmentBatteryPartName],
             [OldAssessment_AssessmentIdentifier],
@@ -37590,9 +37570,9 @@ BEGIN
             i.[Assessment_AssessmentIdentifier],
             i.[Assessment_Namespace],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -37771,14 +37751,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Assessment_AssessmentIdentifier] AS varbinary(max)) <> CAST(del.[Assessment_AssessmentIdentifier] AS varbinary(max)) OR (i.[Assessment_AssessmentIdentifier] IS NULL AND del.[Assessment_AssessmentIdentifier] IS NOT NULL) OR (i.[Assessment_AssessmentIdentifier] IS NOT NULL AND del.[Assessment_AssessmentIdentifier] IS NULL)) OR (CAST(i.[Assessment_Namespace] AS varbinary(max)) <> CAST(del.[Assessment_Namespace] AS varbinary(max)) OR (i.[Assessment_Namespace] IS NULL AND del.[Assessment_Namespace] IS NOT NULL) OR (i.[Assessment_Namespace] IS NOT NULL AND del.[Assessment_Namespace] IS NULL)) OR (CAST(i.[IdentificationCode] AS varbinary(max)) <> CAST(del.[IdentificationCode] AS varbinary(max)) OR (i.[IdentificationCode] IS NULL AND del.[IdentificationCode] IS NOT NULL) OR (i.[IdentificationCode] IS NOT NULL AND del.[IdentificationCode] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[Assessment_AssessmentIdentifier] AS varbinary(max)) <> CAST(d.[Assessment_AssessmentIdentifier] AS varbinary(max)) OR (i.[Assessment_AssessmentIdentifier] IS NULL AND d.[Assessment_AssessmentIdentifier] IS NOT NULL) OR (i.[Assessment_AssessmentIdentifier] IS NOT NULL AND d.[Assessment_AssessmentIdentifier] IS NULL)) OR (CAST(i.[Assessment_Namespace] AS varbinary(max)) <> CAST(d.[Assessment_Namespace] AS varbinary(max)) OR (i.[Assessment_Namespace] IS NULL AND d.[Assessment_Namespace] IS NOT NULL) OR (i.[Assessment_Namespace] IS NOT NULL AND d.[Assessment_Namespace] IS NULL)) OR (CAST(i.[IdentificationCode] AS varbinary(max)) <> CAST(d.[IdentificationCode] AS varbinary(max)) OR (i.[IdentificationCode] IS NULL AND d.[IdentificationCode] IS NOT NULL) OR (i.[IdentificationCode] IS NOT NULL AND d.[IdentificationCode] IS NULL));
         INSERT INTO [tracked_changes_edfi].[AssessmentItem] (
             [OldAssessment_AssessmentIdentifier],
             [OldAssessment_Namespace],
@@ -37797,9 +37774,9 @@ BEGIN
             i.[Assessment_Namespace],
             i.[IdentificationCode],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -38212,14 +38189,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[AssessmentIdentifier_Unified] AS varbinary(max)) <> CAST(del.[AssessmentIdentifier_Unified] AS varbinary(max)) OR (i.[AssessmentIdentifier_Unified] IS NULL AND del.[AssessmentIdentifier_Unified] IS NOT NULL) OR (i.[AssessmentIdentifier_Unified] IS NOT NULL AND del.[AssessmentIdentifier_Unified] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(del.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND del.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND del.[Namespace_Unified] IS NULL)) OR (CAST(i.[ScoreRangeId] AS varbinary(max)) <> CAST(del.[ScoreRangeId] AS varbinary(max)) OR (i.[ScoreRangeId] IS NULL AND del.[ScoreRangeId] IS NOT NULL) OR (i.[ScoreRangeId] IS NOT NULL AND del.[ScoreRangeId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[AssessmentIdentifier_Unified] AS varbinary(max)) <> CAST(d.[AssessmentIdentifier_Unified] AS varbinary(max)) OR (i.[AssessmentIdentifier_Unified] IS NULL AND d.[AssessmentIdentifier_Unified] IS NOT NULL) OR (i.[AssessmentIdentifier_Unified] IS NOT NULL AND d.[AssessmentIdentifier_Unified] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(d.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND d.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND d.[Namespace_Unified] IS NULL)) OR (CAST(i.[ScoreRangeId] AS varbinary(max)) <> CAST(d.[ScoreRangeId] AS varbinary(max)) OR (i.[ScoreRangeId] IS NULL AND d.[ScoreRangeId] IS NOT NULL) OR (i.[ScoreRangeId] IS NOT NULL AND d.[ScoreRangeId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[AssessmentScoreRangeLearningStandard] (
             [OldAssessmentIdentifier_Unified],
             [OldNamespace_Unified],
@@ -38238,9 +38212,9 @@ BEGIN
             i.[Namespace_Unified],
             i.[ScoreRangeId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -38417,14 +38391,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Code] AS varbinary(max)) <> CAST(del.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND del.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND del.[Code] IS NULL)) OR (i.[FiscalYear] <> del.[FiscalYear] OR (i.[FiscalYear] IS NULL AND del.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND del.[FiscalYear] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[Code] AS varbinary(max)) <> CAST(d.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND d.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND d.[Code] IS NULL)) OR (i.[FiscalYear] <> d.[FiscalYear] OR (i.[FiscalYear] IS NULL AND d.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND d.[FiscalYear] IS NULL));
         INSERT INTO [tracked_changes_edfi].[BalanceSheetDimension] (
             [OldCode],
             [OldFiscalYear],
@@ -38439,9 +38410,9 @@ BEGIN
             i.[Code],
             i.[FiscalYear],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -38579,14 +38550,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[BellScheduleName] AS varbinary(max)) <> CAST(del.[BellScheduleName] AS varbinary(max)) OR (i.[BellScheduleName] IS NULL AND del.[BellScheduleName] IS NOT NULL) OR (i.[BellScheduleName] IS NOT NULL AND del.[BellScheduleName] IS NULL)) OR (i.[School_SchoolId] <> del.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND del.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND del.[School_SchoolId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[BellScheduleName] AS varbinary(max)) <> CAST(d.[BellScheduleName] AS varbinary(max)) OR (i.[BellScheduleName] IS NULL AND d.[BellScheduleName] IS NOT NULL) OR (i.[BellScheduleName] IS NOT NULL AND d.[BellScheduleName] IS NULL)) OR (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[BellSchedule] (
             [OldBellScheduleName],
             [OldSchool_SchoolId],
@@ -38601,9 +38569,9 @@ BEGIN
             i.[BellScheduleName],
             i.[School_SchoolId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -38821,14 +38789,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[CalendarCode] AS varbinary(max)) <> CAST(del.[CalendarCode] AS varbinary(max)) OR (i.[CalendarCode] IS NULL AND del.[CalendarCode] IS NOT NULL) OR (i.[CalendarCode] IS NOT NULL AND del.[CalendarCode] IS NULL)) OR (i.[School_SchoolId] <> del.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND del.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND del.[School_SchoolId] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> del.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND del.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND del.[SchoolYear_SchoolYear] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[CalendarCode] AS varbinary(max)) <> CAST(d.[CalendarCode] AS varbinary(max)) OR (i.[CalendarCode] IS NULL AND d.[CalendarCode] IS NOT NULL) OR (i.[CalendarCode] IS NOT NULL AND d.[CalendarCode] IS NULL)) OR (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> d.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND d.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND d.[SchoolYear_SchoolYear] IS NULL));
         INSERT INTO [tracked_changes_edfi].[Calendar] (
             [OldCalendarCode],
             [OldSchool_SchoolId],
@@ -38847,9 +38812,9 @@ BEGIN
             i.[School_SchoolId],
             i.[SchoolYear_SchoolYear],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -38952,14 +38917,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Calendar_CalendarCode] AS varbinary(max)) <> CAST(del.[Calendar_CalendarCode] AS varbinary(max)) OR (i.[Calendar_CalendarCode] IS NULL AND del.[Calendar_CalendarCode] IS NOT NULL) OR (i.[Calendar_CalendarCode] IS NOT NULL AND del.[Calendar_CalendarCode] IS NULL)) OR (i.[Calendar_SchoolId] <> del.[Calendar_SchoolId] OR (i.[Calendar_SchoolId] IS NULL AND del.[Calendar_SchoolId] IS NOT NULL) OR (i.[Calendar_SchoolId] IS NOT NULL AND del.[Calendar_SchoolId] IS NULL)) OR (i.[Calendar_SchoolYear] <> del.[Calendar_SchoolYear] OR (i.[Calendar_SchoolYear] IS NULL AND del.[Calendar_SchoolYear] IS NOT NULL) OR (i.[Calendar_SchoolYear] IS NOT NULL AND del.[Calendar_SchoolYear] IS NULL)) OR (i.[Date] <> del.[Date] OR (i.[Date] IS NULL AND del.[Date] IS NOT NULL) OR (i.[Date] IS NOT NULL AND del.[Date] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[Calendar_CalendarCode] AS varbinary(max)) <> CAST(d.[Calendar_CalendarCode] AS varbinary(max)) OR (i.[Calendar_CalendarCode] IS NULL AND d.[Calendar_CalendarCode] IS NOT NULL) OR (i.[Calendar_CalendarCode] IS NOT NULL AND d.[Calendar_CalendarCode] IS NULL)) OR (i.[Calendar_SchoolId] <> d.[Calendar_SchoolId] OR (i.[Calendar_SchoolId] IS NULL AND d.[Calendar_SchoolId] IS NOT NULL) OR (i.[Calendar_SchoolId] IS NOT NULL AND d.[Calendar_SchoolId] IS NULL)) OR (i.[Calendar_SchoolYear] <> d.[Calendar_SchoolYear] OR (i.[Calendar_SchoolYear] IS NULL AND d.[Calendar_SchoolYear] IS NOT NULL) OR (i.[Calendar_SchoolYear] IS NOT NULL AND d.[Calendar_SchoolYear] IS NULL)) OR (i.[Date] <> d.[Date] OR (i.[Date] IS NULL AND d.[Date] IS NOT NULL) OR (i.[Date] IS NOT NULL AND d.[Date] IS NULL));
         INSERT INTO [tracked_changes_edfi].[CalendarDate] (
             [OldCalendar_CalendarCode],
             [OldCalendar_SchoolId],
@@ -38982,9 +38944,9 @@ BEGIN
             i.[Calendar_SchoolYear],
             i.[Date],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -39163,14 +39125,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[AccountIdentifier] AS varbinary(max)) <> CAST(del.[AccountIdentifier] AS varbinary(max)) OR (i.[AccountIdentifier] IS NULL AND del.[AccountIdentifier] IS NOT NULL) OR (i.[AccountIdentifier] IS NOT NULL AND del.[AccountIdentifier] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[FiscalYear_Unified] <> del.[FiscalYear_Unified] OR (i.[FiscalYear_Unified] IS NULL AND del.[FiscalYear_Unified] IS NOT NULL) OR (i.[FiscalYear_Unified] IS NOT NULL AND del.[FiscalYear_Unified] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[AccountIdentifier] AS varbinary(max)) <> CAST(d.[AccountIdentifier] AS varbinary(max)) OR (i.[AccountIdentifier] IS NULL AND d.[AccountIdentifier] IS NOT NULL) OR (i.[AccountIdentifier] IS NOT NULL AND d.[AccountIdentifier] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[FiscalYear_Unified] <> d.[FiscalYear_Unified] OR (i.[FiscalYear_Unified] IS NULL AND d.[FiscalYear_Unified] IS NOT NULL) OR (i.[FiscalYear_Unified] IS NOT NULL AND d.[FiscalYear_Unified] IS NULL));
         INSERT INTO [tracked_changes_edfi].[ChartOfAccount] (
             [OldAccountIdentifier],
             [OldEducationOrganization_EducationOrganizationId],
@@ -39189,9 +39148,9 @@ BEGIN
             i.[EducationOrganization_EducationOrganizationId],
             i.[FiscalYear_Unified],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -39329,14 +39288,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[ClassPeriodName] AS varbinary(max)) <> CAST(del.[ClassPeriodName] AS varbinary(max)) OR (i.[ClassPeriodName] IS NULL AND del.[ClassPeriodName] IS NOT NULL) OR (i.[ClassPeriodName] IS NOT NULL AND del.[ClassPeriodName] IS NULL)) OR (i.[School_SchoolId] <> del.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND del.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND del.[School_SchoolId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[ClassPeriodName] AS varbinary(max)) <> CAST(d.[ClassPeriodName] AS varbinary(max)) OR (i.[ClassPeriodName] IS NULL AND d.[ClassPeriodName] IS NOT NULL) OR (i.[ClassPeriodName] IS NOT NULL AND d.[ClassPeriodName] IS NULL)) OR (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[ClassPeriod] (
             [OldClassPeriodName],
             [OldSchool_SchoolId],
@@ -39351,9 +39307,9 @@ BEGIN
             i.[ClassPeriodName],
             i.[School_SchoolId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -39491,14 +39447,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[CohortIdentifier] AS varbinary(max)) <> CAST(del.[CohortIdentifier] AS varbinary(max)) OR (i.[CohortIdentifier] IS NULL AND del.[CohortIdentifier] IS NOT NULL) OR (i.[CohortIdentifier] IS NOT NULL AND del.[CohortIdentifier] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[CohortIdentifier] AS varbinary(max)) <> CAST(d.[CohortIdentifier] AS varbinary(max)) OR (i.[CohortIdentifier] IS NULL AND d.[CohortIdentifier] IS NOT NULL) OR (i.[CohortIdentifier] IS NOT NULL AND d.[CohortIdentifier] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[Cohort] (
             [OldCohortIdentifier],
             [OldEducationOrganization_EducationOrganizationId],
@@ -39513,9 +39466,9 @@ BEGIN
             i.[CohortIdentifier],
             i.[EducationOrganization_EducationOrganizationId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -39722,15 +39675,6 @@ BEGIN
             doc.[ContentVersion]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
-    END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([CommunityOrganizationId]))
-    BEGIN
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[CommunityOrganizationId] <> del.[CommunityOrganizationId] OR (i.[CommunityOrganizationId] IS NULL AND del.[CommunityOrganizationId] IS NOT NULL) OR (i.[CommunityOrganizationId] IS NOT NULL AND del.[CommunityOrganizationId] IS NULL));
     END
 END;
 GO
@@ -40322,15 +40266,6 @@ BEGIN
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
     END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([CommunityProviderId]))
-    BEGIN
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[CommunityProviderId] <> del.[CommunityProviderId] OR (i.[CommunityProviderId] IS NULL AND del.[CommunityProviderId] IS NOT NULL) OR (i.[CommunityProviderId] IS NOT NULL AND del.[CommunityProviderId] IS NULL));
-    END
 END;
 GO
 
@@ -40740,14 +40675,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[CommunityProvider_CommunityProviderId] <> del.[CommunityProvider_CommunityProviderId] OR (i.[CommunityProvider_CommunityProviderId] IS NULL AND del.[CommunityProvider_CommunityProviderId] IS NOT NULL) OR (i.[CommunityProvider_CommunityProviderId] IS NOT NULL AND del.[CommunityProvider_CommunityProviderId] IS NULL)) OR (CAST(i.[LicenseIdentifier] AS varbinary(max)) <> CAST(del.[LicenseIdentifier] AS varbinary(max)) OR (i.[LicenseIdentifier] IS NULL AND del.[LicenseIdentifier] IS NOT NULL) OR (i.[LicenseIdentifier] IS NOT NULL AND del.[LicenseIdentifier] IS NULL)) OR (CAST(i.[LicensingOrganization] AS varbinary(max)) <> CAST(del.[LicensingOrganization] AS varbinary(max)) OR (i.[LicensingOrganization] IS NULL AND del.[LicensingOrganization] IS NOT NULL) OR (i.[LicensingOrganization] IS NOT NULL AND del.[LicensingOrganization] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[CommunityProvider_CommunityProviderId] <> d.[CommunityProvider_CommunityProviderId] OR (i.[CommunityProvider_CommunityProviderId] IS NULL AND d.[CommunityProvider_CommunityProviderId] IS NOT NULL) OR (i.[CommunityProvider_CommunityProviderId] IS NOT NULL AND d.[CommunityProvider_CommunityProviderId] IS NULL)) OR (CAST(i.[LicenseIdentifier] AS varbinary(max)) <> CAST(d.[LicenseIdentifier] AS varbinary(max)) OR (i.[LicenseIdentifier] IS NULL AND d.[LicenseIdentifier] IS NOT NULL) OR (i.[LicenseIdentifier] IS NOT NULL AND d.[LicenseIdentifier] IS NULL)) OR (CAST(i.[LicensingOrganization] AS varbinary(max)) <> CAST(d.[LicensingOrganization] AS varbinary(max)) OR (i.[LicensingOrganization] IS NULL AND d.[LicensingOrganization] IS NOT NULL) OR (i.[LicensingOrganization] IS NOT NULL AND d.[LicensingOrganization] IS NULL));
         INSERT INTO [tracked_changes_edfi].[CommunityProviderLicense] (
             [OldCommunityProvider_CommunityProviderId],
             [OldLicenseIdentifier],
@@ -40766,9 +40698,9 @@ BEGIN
             i.[LicenseIdentifier],
             i.[LicensingOrganization],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -40872,14 +40804,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[Objective] AS varbinary(max)) <> CAST(del.[Objective] AS varbinary(max)) OR (i.[Objective] IS NULL AND del.[Objective] IS NOT NULL) OR (i.[Objective] IS NOT NULL AND del.[Objective] IS NULL)) OR (i.[ObjectiveGradeLevelDescriptor_DescriptorId] <> del.[ObjectiveGradeLevelDescriptor_DescriptorId] OR (i.[ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL AND del.[ObjectiveGradeLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[ObjectiveGradeLevelDescriptor_DescriptorId] IS NOT NULL AND del.[ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[Objective] AS varbinary(max)) <> CAST(d.[Objective] AS varbinary(max)) OR (i.[Objective] IS NULL AND d.[Objective] IS NOT NULL) OR (i.[Objective] IS NOT NULL AND d.[Objective] IS NULL)) OR (i.[ObjectiveGradeLevelDescriptor_DescriptorId] <> d.[ObjectiveGradeLevelDescriptor_DescriptorId] OR (i.[ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL AND d.[ObjectiveGradeLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[ObjectiveGradeLevelDescriptor_DescriptorId] IS NOT NULL AND d.[ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[CompetencyObjective] (
             [OldEducationOrganization_EducationOrganizationId],
             [OldObjective],
@@ -40902,9 +40831,9 @@ BEGIN
             newDj0.[Namespace],
             newDj0.[CodeValue],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ObjectiveGradeLevelDescriptor_DescriptorId]
@@ -41005,14 +40934,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[ContactUniqueId] AS varbinary(max)) <> CAST(del.[ContactUniqueId] AS varbinary(max)) OR (i.[ContactUniqueId] IS NULL AND del.[ContactUniqueId] IS NOT NULL) OR (i.[ContactUniqueId] IS NOT NULL AND del.[ContactUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[ContactUniqueId] AS varbinary(max)) <> CAST(d.[ContactUniqueId] AS varbinary(max)) OR (i.[ContactUniqueId] IS NULL AND d.[ContactUniqueId] IS NOT NULL) OR (i.[ContactUniqueId] IS NOT NULL AND d.[ContactUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[Contact] (
             [OldContactUniqueId],
             [OldContact_DocumentId],
@@ -41027,9 +40953,9 @@ BEGIN
             i.[ContactUniqueId],
             i.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -41479,14 +41405,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[CourseCode] AS varbinary(max)) <> CAST(del.[CourseCode] AS varbinary(max)) OR (i.[CourseCode] IS NULL AND del.[CourseCode] IS NOT NULL) OR (i.[CourseCode] IS NOT NULL AND del.[CourseCode] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[CourseCode] AS varbinary(max)) <> CAST(d.[CourseCode] AS varbinary(max)) OR (i.[CourseCode] IS NULL AND d.[CourseCode] IS NOT NULL) OR (i.[CourseCode] IS NOT NULL AND d.[CourseCode] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[Course] (
             [OldCourseCode],
             [OldEducationOrganization_EducationOrganizationId],
@@ -41501,9 +41424,9 @@ BEGIN
             i.[CourseCode],
             i.[EducationOrganization_EducationOrganizationId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -41840,14 +41763,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[LocalCourseCode] AS varbinary(max)) <> CAST(del.[LocalCourseCode] AS varbinary(max)) OR (i.[LocalCourseCode] IS NULL AND del.[LocalCourseCode] IS NOT NULL) OR (i.[LocalCourseCode] IS NOT NULL AND del.[LocalCourseCode] IS NULL)) OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL)) OR (i.[Session_SchoolYear] <> del.[Session_SchoolYear] OR (i.[Session_SchoolYear] IS NULL AND del.[Session_SchoolYear] IS NOT NULL) OR (i.[Session_SchoolYear] IS NOT NULL AND del.[Session_SchoolYear] IS NULL)) OR (CAST(i.[Session_SessionName] AS varbinary(max)) <> CAST(del.[Session_SessionName] AS varbinary(max)) OR (i.[Session_SessionName] IS NULL AND del.[Session_SessionName] IS NOT NULL) OR (i.[Session_SessionName] IS NOT NULL AND del.[Session_SessionName] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[LocalCourseCode] AS varbinary(max)) <> CAST(d.[LocalCourseCode] AS varbinary(max)) OR (i.[LocalCourseCode] IS NULL AND d.[LocalCourseCode] IS NOT NULL) OR (i.[LocalCourseCode] IS NOT NULL AND d.[LocalCourseCode] IS NULL)) OR (i.[SchoolId_Unified] <> d.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND d.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND d.[SchoolId_Unified] IS NULL)) OR (i.[Session_SchoolYear] <> d.[Session_SchoolYear] OR (i.[Session_SchoolYear] IS NULL AND d.[Session_SchoolYear] IS NOT NULL) OR (i.[Session_SchoolYear] IS NOT NULL AND d.[Session_SchoolYear] IS NULL)) OR (CAST(i.[Session_SessionName] AS varbinary(max)) <> CAST(d.[Session_SessionName] AS varbinary(max)) OR (i.[Session_SessionName] IS NULL AND d.[Session_SessionName] IS NOT NULL) OR (i.[Session_SessionName] IS NOT NULL AND d.[Session_SessionName] IS NULL));
         INSERT INTO [tracked_changes_edfi].[CourseOffering] (
             [OldLocalCourseCode],
             [OldSchoolId_Unified],
@@ -41870,9 +41790,9 @@ BEGIN
             i.[Session_SchoolYear],
             i.[Session_SessionName],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -42108,14 +42028,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[CourseAttemptResultDescriptor_DescriptorId] <> del.[CourseAttemptResultDescriptor_DescriptorId] OR (i.[CourseAttemptResultDescriptor_DescriptorId] IS NULL AND del.[CourseAttemptResultDescriptor_DescriptorId] IS NOT NULL) OR (i.[CourseAttemptResultDescriptor_DescriptorId] IS NOT NULL AND del.[CourseAttemptResultDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[CourseCourse_CourseCode] AS varbinary(max)) <> CAST(del.[CourseCourse_CourseCode] AS varbinary(max)) OR (i.[CourseCourse_CourseCode] IS NULL AND del.[CourseCourse_CourseCode] IS NOT NULL) OR (i.[CourseCourse_CourseCode] IS NOT NULL AND del.[CourseCourse_CourseCode] IS NULL)) OR (i.[CourseCourse_EducationOrganizationId] <> del.[CourseCourse_EducationOrganizationId] OR (i.[CourseCourse_EducationOrganizationId] IS NULL AND del.[CourseCourse_EducationOrganizationId] IS NOT NULL) OR (i.[CourseCourse_EducationOrganizationId] IS NOT NULL AND del.[CourseCourse_EducationOrganizationId] IS NULL)) OR (i.[StudentAcademicRecord_EducationOrganizationId] <> del.[StudentAcademicRecord_EducationOrganizationId] OR (i.[StudentAcademicRecord_EducationOrganizationId] IS NULL AND del.[StudentAcademicRecord_EducationOrganizationId] IS NOT NULL) OR (i.[StudentAcademicRecord_EducationOrganizationId] IS NOT NULL AND del.[StudentAcademicRecord_EducationOrganizationId] IS NULL)) OR (i.[StudentAcademicRecord_SchoolYear] <> del.[StudentAcademicRecord_SchoolYear] OR (i.[StudentAcademicRecord_SchoolYear] IS NULL AND del.[StudentAcademicRecord_SchoolYear] IS NOT NULL) OR (i.[StudentAcademicRecord_SchoolYear] IS NOT NULL AND del.[StudentAcademicRecord_SchoolYear] IS NULL)) OR (CAST(i.[StudentAcademicRecord_StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentAcademicRecord_StudentUniqueId] AS varbinary(max)) OR (i.[StudentAcademicRecord_StudentUniqueId] IS NULL AND del.[StudentAcademicRecord_StudentUniqueId] IS NOT NULL) OR (i.[StudentAcademicRecord_StudentUniqueId] IS NOT NULL AND del.[StudentAcademicRecord_StudentUniqueId] IS NULL)) OR (i.[StudentAcademicRecord_TermDescriptor_DescriptorId] <> del.[StudentAcademicRecord_TermDescriptor_DescriptorId] OR (i.[StudentAcademicRecord_TermDescriptor_DescriptorId] IS NULL AND del.[StudentAcademicRecord_TermDescriptor_DescriptorId] IS NOT NULL) OR (i.[StudentAcademicRecord_TermDescriptor_DescriptorId] IS NOT NULL AND del.[StudentAcademicRecord_TermDescriptor_DescriptorId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[CourseAttemptResultDescriptor_DescriptorId] <> d.[CourseAttemptResultDescriptor_DescriptorId] OR (i.[CourseAttemptResultDescriptor_DescriptorId] IS NULL AND d.[CourseAttemptResultDescriptor_DescriptorId] IS NOT NULL) OR (i.[CourseAttemptResultDescriptor_DescriptorId] IS NOT NULL AND d.[CourseAttemptResultDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[CourseCourse_CourseCode] AS varbinary(max)) <> CAST(d.[CourseCourse_CourseCode] AS varbinary(max)) OR (i.[CourseCourse_CourseCode] IS NULL AND d.[CourseCourse_CourseCode] IS NOT NULL) OR (i.[CourseCourse_CourseCode] IS NOT NULL AND d.[CourseCourse_CourseCode] IS NULL)) OR (i.[CourseCourse_EducationOrganizationId] <> d.[CourseCourse_EducationOrganizationId] OR (i.[CourseCourse_EducationOrganizationId] IS NULL AND d.[CourseCourse_EducationOrganizationId] IS NOT NULL) OR (i.[CourseCourse_EducationOrganizationId] IS NOT NULL AND d.[CourseCourse_EducationOrganizationId] IS NULL)) OR (i.[StudentAcademicRecord_EducationOrganizationId] <> d.[StudentAcademicRecord_EducationOrganizationId] OR (i.[StudentAcademicRecord_EducationOrganizationId] IS NULL AND d.[StudentAcademicRecord_EducationOrganizationId] IS NOT NULL) OR (i.[StudentAcademicRecord_EducationOrganizationId] IS NOT NULL AND d.[StudentAcademicRecord_EducationOrganizationId] IS NULL)) OR (i.[StudentAcademicRecord_SchoolYear] <> d.[StudentAcademicRecord_SchoolYear] OR (i.[StudentAcademicRecord_SchoolYear] IS NULL AND d.[StudentAcademicRecord_SchoolYear] IS NOT NULL) OR (i.[StudentAcademicRecord_SchoolYear] IS NOT NULL AND d.[StudentAcademicRecord_SchoolYear] IS NULL)) OR (CAST(i.[StudentAcademicRecord_StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentAcademicRecord_StudentUniqueId] AS varbinary(max)) OR (i.[StudentAcademicRecord_StudentUniqueId] IS NULL AND d.[StudentAcademicRecord_StudentUniqueId] IS NOT NULL) OR (i.[StudentAcademicRecord_StudentUniqueId] IS NOT NULL AND d.[StudentAcademicRecord_StudentUniqueId] IS NULL)) OR (i.[StudentAcademicRecord_TermDescriptor_DescriptorId] <> d.[StudentAcademicRecord_TermDescriptor_DescriptorId] OR (i.[StudentAcademicRecord_TermDescriptor_DescriptorId] IS NULL AND d.[StudentAcademicRecord_TermDescriptor_DescriptorId] IS NOT NULL) OR (i.[StudentAcademicRecord_TermDescriptor_DescriptorId] IS NOT NULL AND d.[StudentAcademicRecord_TermDescriptor_DescriptorId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[CourseTranscript] (
             [OldCourseAttemptResultDescriptor_Namespace],
             [OldCourseAttemptResultDescriptor_CodeValue],
@@ -42162,9 +42079,9 @@ BEGIN
             newDj1.[CodeValue],
             newPj0s1.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[CourseAttemptResultDescriptor_DescriptorId]
@@ -42549,14 +42466,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[CredentialIdentifier] AS varbinary(max)) <> CAST(del.[CredentialIdentifier] AS varbinary(max)) OR (i.[CredentialIdentifier] IS NULL AND del.[CredentialIdentifier] IS NOT NULL) OR (i.[CredentialIdentifier] IS NOT NULL AND del.[CredentialIdentifier] IS NULL)) OR (i.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] <> del.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] OR (i.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NULL AND del.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NOT NULL) OR (i.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NOT NULL AND del.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[CredentialIdentifier] AS varbinary(max)) <> CAST(d.[CredentialIdentifier] AS varbinary(max)) OR (i.[CredentialIdentifier] IS NULL AND d.[CredentialIdentifier] IS NOT NULL) OR (i.[CredentialIdentifier] IS NOT NULL AND d.[CredentialIdentifier] IS NULL)) OR (i.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] <> d.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] OR (i.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NULL AND d.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NOT NULL) OR (i.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NOT NULL AND d.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[Credential] (
             [OldCredentialIdentifier],
             [OldStateOfIssueStateAbbreviationDescriptor_Namespace],
@@ -42579,9 +42493,9 @@ BEGIN
             newDj0.[CodeValue],
             i.[Namespace],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[StateOfIssueStateAbbreviationDescriptor_DescriptorId]
@@ -42797,14 +42711,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[CrisisEventName] AS varbinary(max)) <> CAST(del.[CrisisEventName] AS varbinary(max)) OR (i.[CrisisEventName] IS NULL AND del.[CrisisEventName] IS NOT NULL) OR (i.[CrisisEventName] IS NOT NULL AND del.[CrisisEventName] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[CrisisEventName] AS varbinary(max)) <> CAST(d.[CrisisEventName] AS varbinary(max)) OR (i.[CrisisEventName] IS NULL AND d.[CrisisEventName] IS NOT NULL) OR (i.[CrisisEventName] IS NOT NULL AND d.[CrisisEventName] IS NULL));
         INSERT INTO [tracked_changes_edfi].[CrisisEvent] (
             [OldCrisisEventName],
             [NewCrisisEventName],
@@ -42815,9 +42726,9 @@ BEGIN
             del.[CrisisEventName],
             i.[CrisisEventName],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -42920,14 +42831,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[MappedNamespace] AS varbinary(max)) <> CAST(del.[MappedNamespace] AS varbinary(max)) OR (i.[MappedNamespace] IS NULL AND del.[MappedNamespace] IS NOT NULL) OR (i.[MappedNamespace] IS NOT NULL AND del.[MappedNamespace] IS NULL)) OR (CAST(i.[MappedValue] AS varbinary(max)) <> CAST(del.[MappedValue] AS varbinary(max)) OR (i.[MappedValue] IS NULL AND del.[MappedValue] IS NOT NULL) OR (i.[MappedValue] IS NOT NULL AND del.[MappedValue] IS NULL)) OR (CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)) OR (CAST(i.[Value] AS varbinary(max)) <> CAST(del.[Value] AS varbinary(max)) OR (i.[Value] IS NULL AND del.[Value] IS NOT NULL) OR (i.[Value] IS NOT NULL AND del.[Value] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[MappedNamespace] AS varbinary(max)) <> CAST(d.[MappedNamespace] AS varbinary(max)) OR (i.[MappedNamespace] IS NULL AND d.[MappedNamespace] IS NOT NULL) OR (i.[MappedNamespace] IS NOT NULL AND d.[MappedNamespace] IS NULL)) OR (CAST(i.[MappedValue] AS varbinary(max)) <> CAST(d.[MappedValue] AS varbinary(max)) OR (i.[MappedValue] IS NULL AND d.[MappedValue] IS NOT NULL) OR (i.[MappedValue] IS NOT NULL AND d.[MappedValue] IS NULL)) OR (CAST(i.[Namespace] AS varbinary(max)) <> CAST(d.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND d.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND d.[Namespace] IS NULL)) OR (CAST(i.[Value] AS varbinary(max)) <> CAST(d.[Value] AS varbinary(max)) OR (i.[Value] IS NULL AND d.[Value] IS NOT NULL) OR (i.[Value] IS NOT NULL AND d.[Value] IS NULL));
         INSERT INTO [tracked_changes_edfi].[DescriptorMapping] (
             [OldMappedNamespace],
             [OldMappedValue],
@@ -42950,9 +42858,9 @@ BEGIN
             i.[Namespace],
             i.[Value],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -43097,14 +43005,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[DisciplineActionIdentifier] AS varbinary(max)) <> CAST(del.[DisciplineActionIdentifier] AS varbinary(max)) OR (i.[DisciplineActionIdentifier] IS NULL AND del.[DisciplineActionIdentifier] IS NOT NULL) OR (i.[DisciplineActionIdentifier] IS NOT NULL AND del.[DisciplineActionIdentifier] IS NULL)) OR (i.[DisciplineDate] <> del.[DisciplineDate] OR (i.[DisciplineDate] IS NULL AND del.[DisciplineDate] IS NOT NULL) OR (i.[DisciplineDate] IS NOT NULL AND del.[DisciplineDate] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[DisciplineActionIdentifier] AS varbinary(max)) <> CAST(d.[DisciplineActionIdentifier] AS varbinary(max)) OR (i.[DisciplineActionIdentifier] IS NULL AND d.[DisciplineActionIdentifier] IS NOT NULL) OR (i.[DisciplineActionIdentifier] IS NOT NULL AND d.[DisciplineActionIdentifier] IS NULL)) OR (i.[DisciplineDate] <> d.[DisciplineDate] OR (i.[DisciplineDate] IS NULL AND d.[DisciplineDate] IS NOT NULL) OR (i.[DisciplineDate] IS NOT NULL AND d.[DisciplineDate] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[DisciplineAction] (
             [OldDisciplineActionIdentifier],
             [OldDisciplineDate],
@@ -43131,9 +43036,9 @@ BEGIN
             i.[ResponsibilitySchool_SchoolId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
@@ -43351,14 +43256,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[IncidentIdentifier] AS varbinary(max)) <> CAST(del.[IncidentIdentifier] AS varbinary(max)) OR (i.[IncidentIdentifier] IS NULL AND del.[IncidentIdentifier] IS NOT NULL) OR (i.[IncidentIdentifier] IS NOT NULL AND del.[IncidentIdentifier] IS NULL)) OR (i.[School_SchoolId] <> del.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND del.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND del.[School_SchoolId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[IncidentIdentifier] AS varbinary(max)) <> CAST(d.[IncidentIdentifier] AS varbinary(max)) OR (i.[IncidentIdentifier] IS NULL AND d.[IncidentIdentifier] IS NOT NULL) OR (i.[IncidentIdentifier] IS NOT NULL AND d.[IncidentIdentifier] IS NULL)) OR (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[DisciplineIncident] (
             [OldIncidentIdentifier],
             [OldSchool_SchoolId],
@@ -43373,9 +43275,9 @@ BEGIN
             i.[IncidentIdentifier],
             i.[School_SchoolId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -43591,14 +43493,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[ContentIdentifier] AS varbinary(max)) <> CAST(del.[ContentIdentifier] AS varbinary(max)) OR (i.[ContentIdentifier] IS NULL AND del.[ContentIdentifier] IS NOT NULL) OR (i.[ContentIdentifier] IS NOT NULL AND del.[ContentIdentifier] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[ContentIdentifier] AS varbinary(max)) <> CAST(d.[ContentIdentifier] AS varbinary(max)) OR (i.[ContentIdentifier] IS NULL AND d.[ContentIdentifier] IS NOT NULL) OR (i.[ContentIdentifier] IS NOT NULL AND d.[ContentIdentifier] IS NULL));
         INSERT INTO [tracked_changes_edfi].[EducationContent] (
             [OldContentIdentifier],
             [OldNamespace],
@@ -43613,9 +43512,9 @@ BEGIN
             i.[ContentIdentifier],
             i.[Namespace],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -43989,14 +43888,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] <> del.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] OR (i.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] IS NULL AND del.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] IS NOT NULL) OR (i.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] IS NOT NULL AND del.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] IS NULL)) OR (CAST(i.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] AS varbinary(max)) <> CAST(del.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] AS varbinary(max)) OR (i.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] IS NULL AND del.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] IS NOT NULL) OR (i.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] IS NOT NULL AND del.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] <> d.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] OR (i.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] IS NULL AND d.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] IS NOT NULL) OR (i.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] IS NOT NULL AND d.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] IS NULL)) OR (CAST(i.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] AS varbinary(max)) <> CAST(d.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] AS varbinary(max)) OR (i.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] IS NULL AND d.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] IS NOT NULL) OR (i.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] IS NOT NULL AND d.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] IS NULL));
         INSERT INTO [tracked_changes_edfi].[EducationOrganizationInterventionPrescriptionAssociation] (
             [OldEducationOrganization_EducationOrganizationId],
             [OldInterventionPrescriptionInterventionPrescription_EducationOrganizationId],
@@ -44015,9 +43911,9 @@ BEGIN
             i.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId],
             i.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -44185,15 +44081,6 @@ BEGIN
             doc.[ContentVersion]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
-    END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([EducationOrganizationNetworkId]))
-    BEGIN
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganizationNetworkId] <> del.[EducationOrganizationNetworkId] OR (i.[EducationOrganizationNetworkId] IS NULL AND del.[EducationOrganizationNetworkId] IS NOT NULL) OR (i.[EducationOrganizationNetworkId] IS NOT NULL AND del.[EducationOrganizationNetworkId] IS NULL));
     END
 END;
 GO
@@ -44368,14 +44255,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganizationNetwork_EducationOrganizationNetworkId] <> del.[EducationOrganizationNetwork_EducationOrganizationNetworkId] OR (i.[EducationOrganizationNetwork_EducationOrganizationNetworkId] IS NULL AND del.[EducationOrganizationNetwork_EducationOrganizationNetworkId] IS NOT NULL) OR (i.[EducationOrganizationNetwork_EducationOrganizationNetworkId] IS NOT NULL AND del.[EducationOrganizationNetwork_EducationOrganizationNetworkId] IS NULL)) OR (i.[MemberEducationOrganization_EducationOrganizationId] <> del.[MemberEducationOrganization_EducationOrganizationId] OR (i.[MemberEducationOrganization_EducationOrganizationId] IS NULL AND del.[MemberEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[MemberEducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[MemberEducationOrganization_EducationOrganizationId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[EducationOrganizationNetwork_EducationOrganizationNetworkId] <> d.[EducationOrganizationNetwork_EducationOrganizationNetworkId] OR (i.[EducationOrganizationNetwork_EducationOrganizationNetworkId] IS NULL AND d.[EducationOrganizationNetwork_EducationOrganizationNetworkId] IS NOT NULL) OR (i.[EducationOrganizationNetwork_EducationOrganizationNetworkId] IS NOT NULL AND d.[EducationOrganizationNetwork_EducationOrganizationNetworkId] IS NULL)) OR (i.[MemberEducationOrganization_EducationOrganizationId] <> d.[MemberEducationOrganization_EducationOrganizationId] OR (i.[MemberEducationOrganization_EducationOrganizationId] IS NULL AND d.[MemberEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[MemberEducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[MemberEducationOrganization_EducationOrganizationId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[EducationOrganizationNetworkAssociation] (
             [OldEducationOrganizationNetwork_EducationOrganizationNetworkId],
             [OldMemberEducationOrganization_EducationOrganizationId],
@@ -44390,9 +44274,9 @@ BEGIN
             i.[EducationOrganizationNetwork_EducationOrganizationNetworkId],
             i.[MemberEducationOrganization_EducationOrganizationId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -44725,14 +44609,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[PeerEducationOrganization_EducationOrganizationId] <> del.[PeerEducationOrganization_EducationOrganizationId] OR (i.[PeerEducationOrganization_EducationOrganizationId] IS NULL AND del.[PeerEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[PeerEducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[PeerEducationOrganization_EducationOrganizationId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[PeerEducationOrganization_EducationOrganizationId] <> d.[PeerEducationOrganization_EducationOrganizationId] OR (i.[PeerEducationOrganization_EducationOrganizationId] IS NULL AND d.[PeerEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[PeerEducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[PeerEducationOrganization_EducationOrganizationId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[EducationOrganizationPeerAssociation] (
             [OldEducationOrganization_EducationOrganizationId],
             [OldPeerEducationOrganization_EducationOrganizationId],
@@ -44747,9 +44628,9 @@ BEGIN
             i.[EducationOrganization_EducationOrganizationId],
             i.[PeerEducationOrganization_EducationOrganizationId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -45030,15 +44911,6 @@ BEGIN
             doc.[ContentVersion]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
-    END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([EducationServiceCenterId]))
-    BEGIN
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationServiceCenterId] <> del.[EducationServiceCenterId] OR (i.[EducationServiceCenterId] IS NULL AND del.[EducationServiceCenterId] IS NOT NULL) OR (i.[EducationServiceCenterId] IS NOT NULL AND del.[EducationServiceCenterId] IS NULL));
     END
 END;
 GO
@@ -45468,14 +45340,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EvaluationRubricRating] <> del.[EvaluationRubricRating] OR (i.[EvaluationRubricRating] IS NULL AND del.[EvaluationRubricRating] IS NOT NULL) OR (i.[EvaluationRubricRating] IS NOT NULL AND del.[EvaluationRubricRating] IS NULL)) OR (i.[ProgramEvaluationElement_ProgramEducationOrganizationId] <> del.[ProgramEvaluationElement_ProgramEducationOrganizationId] OR (i.[ProgramEvaluationElement_ProgramEducationOrganizationId] IS NULL AND del.[ProgramEvaluationElement_ProgramEducationOrganizationId] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramEducationOrganizationId] IS NOT NULL AND del.[ProgramEvaluationElement_ProgramEducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramEvaluationElement_ProgramEvaluationElementTitle] AS varbinary(max)) <> CAST(del.[ProgramEvaluationElement_ProgramEvaluationElementTitle] AS varbinary(max)) OR (i.[ProgramEvaluationElement_ProgramEvaluationElementTitle] IS NULL AND del.[ProgramEvaluationElement_ProgramEvaluationElementTitle] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramEvaluationElementTitle] IS NOT NULL AND del.[ProgramEvaluationElement_ProgramEvaluationElementTitle] IS NULL)) OR (i.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] <> del.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] OR (i.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND del.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluationElement_ProgramEvaluationTitle] AS varbinary(max)) <> CAST(del.[ProgramEvaluationElement_ProgramEvaluationTitle] AS varbinary(max)) OR (i.[ProgramEvaluationElement_ProgramEvaluationTitle] IS NULL AND del.[ProgramEvaluationElement_ProgramEvaluationTitle] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramEvaluationTitle] IS NOT NULL AND del.[ProgramEvaluationElement_ProgramEvaluationTitle] IS NULL)) OR (i.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] <> del.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluationElement_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramEvaluationElement_ProgramName] AS varbinary(max)) OR (i.[ProgramEvaluationElement_ProgramName] IS NULL AND del.[ProgramEvaluationElement_ProgramName] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramName] IS NOT NULL AND del.[ProgramEvaluationElement_ProgramName] IS NULL)) OR (i.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[EvaluationRubricRating] <> d.[EvaluationRubricRating] OR (i.[EvaluationRubricRating] IS NULL AND d.[EvaluationRubricRating] IS NOT NULL) OR (i.[EvaluationRubricRating] IS NOT NULL AND d.[EvaluationRubricRating] IS NULL)) OR (i.[ProgramEvaluationElement_ProgramEducationOrganizationId] <> d.[ProgramEvaluationElement_ProgramEducationOrganizationId] OR (i.[ProgramEvaluationElement_ProgramEducationOrganizationId] IS NULL AND d.[ProgramEvaluationElement_ProgramEducationOrganizationId] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramEducationOrganizationId] IS NOT NULL AND d.[ProgramEvaluationElement_ProgramEducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramEvaluationElement_ProgramEvaluationElementTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluationElement_ProgramEvaluationElementTitle] AS varbinary(max)) OR (i.[ProgramEvaluationElement_ProgramEvaluationElementTitle] IS NULL AND d.[ProgramEvaluationElement_ProgramEvaluationElementTitle] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramEvaluationElementTitle] IS NOT NULL AND d.[ProgramEvaluationElement_ProgramEvaluationElementTitle] IS NULL)) OR (i.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] <> d.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] OR (i.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluationElement_ProgramEvaluationTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluationElement_ProgramEvaluationTitle] AS varbinary(max)) OR (i.[ProgramEvaluationElement_ProgramEvaluationTitle] IS NULL AND d.[ProgramEvaluationElement_ProgramEvaluationTitle] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramEvaluationTitle] IS NOT NULL AND d.[ProgramEvaluationElement_ProgramEvaluationTitle] IS NULL)) OR (i.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] <> d.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluationElement_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramEvaluationElement_ProgramName] AS varbinary(max)) OR (i.[ProgramEvaluationElement_ProgramName] IS NULL AND d.[ProgramEvaluationElement_ProgramName] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramName] IS NOT NULL AND d.[ProgramEvaluationElement_ProgramName] IS NULL)) OR (i.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[EvaluationRubricDimension] (
             [OldEvaluationRubricRating],
             [OldProgramEvaluationElement_ProgramEducationOrganizationId],
@@ -45526,9 +45395,9 @@ BEGIN
             newDj2.[Namespace],
             newDj2.[CodeValue],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId]
@@ -45635,14 +45504,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[FeederSchool_SchoolId] <> del.[FeederSchool_SchoolId] OR (i.[FeederSchool_SchoolId] IS NULL AND del.[FeederSchool_SchoolId] IS NOT NULL) OR (i.[FeederSchool_SchoolId] IS NOT NULL AND del.[FeederSchool_SchoolId] IS NULL)) OR (i.[School_SchoolId] <> del.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND del.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND del.[School_SchoolId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[FeederSchool_SchoolId] <> d.[FeederSchool_SchoolId] OR (i.[FeederSchool_SchoolId] IS NULL AND d.[FeederSchool_SchoolId] IS NOT NULL) OR (i.[FeederSchool_SchoolId] IS NOT NULL AND d.[FeederSchool_SchoolId] IS NULL)) OR (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[FeederSchoolAssociation] (
             [OldBeginDate],
             [OldFeederSchool_SchoolId],
@@ -45661,9 +45527,9 @@ BEGIN
             i.[FeederSchool_SchoolId],
             i.[School_SchoolId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -45762,14 +45628,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Code] AS varbinary(max)) <> CAST(del.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND del.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND del.[Code] IS NULL)) OR (i.[FiscalYear] <> del.[FiscalYear] OR (i.[FiscalYear] IS NULL AND del.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND del.[FiscalYear] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[Code] AS varbinary(max)) <> CAST(d.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND d.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND d.[Code] IS NULL)) OR (i.[FiscalYear] <> d.[FiscalYear] OR (i.[FiscalYear] IS NULL AND d.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND d.[FiscalYear] IS NULL));
         INSERT INTO [tracked_changes_edfi].[FunctionDimension] (
             [OldCode],
             [OldFiscalYear],
@@ -45784,9 +45647,9 @@ BEGIN
             i.[Code],
             i.[FiscalYear],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -45924,14 +45787,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Code] AS varbinary(max)) <> CAST(del.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND del.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND del.[Code] IS NULL)) OR (i.[FiscalYear] <> del.[FiscalYear] OR (i.[FiscalYear] IS NULL AND del.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND del.[FiscalYear] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[Code] AS varbinary(max)) <> CAST(d.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND d.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND d.[Code] IS NULL)) OR (i.[FiscalYear] <> d.[FiscalYear] OR (i.[FiscalYear] IS NULL AND d.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND d.[FiscalYear] IS NULL));
         INSERT INTO [tracked_changes_edfi].[FundDimension] (
             [OldCode],
             [OldFiscalYear],
@@ -45946,9 +45806,9 @@ BEGIN
             i.[Code],
             i.[FiscalYear],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -46112,14 +45972,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[GradeTypeDescriptor_DescriptorId] <> del.[GradeTypeDescriptor_DescriptorId] OR (i.[GradeTypeDescriptor_DescriptorId] IS NULL AND del.[GradeTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradeTypeDescriptor_DescriptorId] IS NOT NULL AND del.[GradeTypeDescriptor_DescriptorId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] <> del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) <> CAST(del.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL)) OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL)) OR (i.[SchoolYear_Unified] <> del.[SchoolYear_Unified] OR (i.[SchoolYear_Unified] IS NULL AND del.[SchoolYear_Unified] IS NOT NULL) OR (i.[SchoolYear_Unified] IS NOT NULL AND del.[SchoolYear_Unified] IS NULL)) OR (i.[StudentSectionAssociation_BeginDate] <> del.[StudentSectionAssociation_BeginDate] OR (i.[StudentSectionAssociation_BeginDate] IS NULL AND del.[StudentSectionAssociation_BeginDate] IS NOT NULL) OR (i.[StudentSectionAssociation_BeginDate] IS NOT NULL AND del.[StudentSectionAssociation_BeginDate] IS NULL)) OR (CAST(i.[StudentSectionAssociation_LocalCourseCode] AS varbinary(max)) <> CAST(del.[StudentSectionAssociation_LocalCourseCode] AS varbinary(max)) OR (i.[StudentSectionAssociation_LocalCourseCode] IS NULL AND del.[StudentSectionAssociation_LocalCourseCode] IS NOT NULL) OR (i.[StudentSectionAssociation_LocalCourseCode] IS NOT NULL AND del.[StudentSectionAssociation_LocalCourseCode] IS NULL)) OR (CAST(i.[StudentSectionAssociation_SectionIdentifier] AS varbinary(max)) <> CAST(del.[StudentSectionAssociation_SectionIdentifier] AS varbinary(max)) OR (i.[StudentSectionAssociation_SectionIdentifier] IS NULL AND del.[StudentSectionAssociation_SectionIdentifier] IS NOT NULL) OR (i.[StudentSectionAssociation_SectionIdentifier] IS NOT NULL AND del.[StudentSectionAssociation_SectionIdentifier] IS NULL)) OR (CAST(i.[StudentSectionAssociation_SessionName] AS varbinary(max)) <> CAST(del.[StudentSectionAssociation_SessionName] AS varbinary(max)) OR (i.[StudentSectionAssociation_SessionName] IS NULL AND del.[StudentSectionAssociation_SessionName] IS NOT NULL) OR (i.[StudentSectionAssociation_SessionName] IS NOT NULL AND del.[StudentSectionAssociation_SessionName] IS NULL)) OR (CAST(i.[StudentSectionAssociation_StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentSectionAssociation_StudentUniqueId] AS varbinary(max)) OR (i.[StudentSectionAssociation_StudentUniqueId] IS NULL AND del.[StudentSectionAssociation_StudentUniqueId] IS NOT NULL) OR (i.[StudentSectionAssociation_StudentUniqueId] IS NOT NULL AND del.[StudentSectionAssociation_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[GradeTypeDescriptor_DescriptorId] <> d.[GradeTypeDescriptor_DescriptorId] OR (i.[GradeTypeDescriptor_DescriptorId] IS NULL AND d.[GradeTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradeTypeDescriptor_DescriptorId] IS NOT NULL AND d.[GradeTypeDescriptor_DescriptorId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] <> d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) <> CAST(d.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL)) OR (i.[SchoolId_Unified] <> d.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND d.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND d.[SchoolId_Unified] IS NULL)) OR (i.[SchoolYear_Unified] <> d.[SchoolYear_Unified] OR (i.[SchoolYear_Unified] IS NULL AND d.[SchoolYear_Unified] IS NOT NULL) OR (i.[SchoolYear_Unified] IS NOT NULL AND d.[SchoolYear_Unified] IS NULL)) OR (i.[StudentSectionAssociation_BeginDate] <> d.[StudentSectionAssociation_BeginDate] OR (i.[StudentSectionAssociation_BeginDate] IS NULL AND d.[StudentSectionAssociation_BeginDate] IS NOT NULL) OR (i.[StudentSectionAssociation_BeginDate] IS NOT NULL AND d.[StudentSectionAssociation_BeginDate] IS NULL)) OR (CAST(i.[StudentSectionAssociation_LocalCourseCode] AS varbinary(max)) <> CAST(d.[StudentSectionAssociation_LocalCourseCode] AS varbinary(max)) OR (i.[StudentSectionAssociation_LocalCourseCode] IS NULL AND d.[StudentSectionAssociation_LocalCourseCode] IS NOT NULL) OR (i.[StudentSectionAssociation_LocalCourseCode] IS NOT NULL AND d.[StudentSectionAssociation_LocalCourseCode] IS NULL)) OR (CAST(i.[StudentSectionAssociation_SectionIdentifier] AS varbinary(max)) <> CAST(d.[StudentSectionAssociation_SectionIdentifier] AS varbinary(max)) OR (i.[StudentSectionAssociation_SectionIdentifier] IS NULL AND d.[StudentSectionAssociation_SectionIdentifier] IS NOT NULL) OR (i.[StudentSectionAssociation_SectionIdentifier] IS NOT NULL AND d.[StudentSectionAssociation_SectionIdentifier] IS NULL)) OR (CAST(i.[StudentSectionAssociation_SessionName] AS varbinary(max)) <> CAST(d.[StudentSectionAssociation_SessionName] AS varbinary(max)) OR (i.[StudentSectionAssociation_SessionName] IS NULL AND d.[StudentSectionAssociation_SessionName] IS NOT NULL) OR (i.[StudentSectionAssociation_SessionName] IS NOT NULL AND d.[StudentSectionAssociation_SessionName] IS NULL)) OR (CAST(i.[StudentSectionAssociation_StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentSectionAssociation_StudentUniqueId] AS varbinary(max)) OR (i.[StudentSectionAssociation_StudentUniqueId] IS NULL AND d.[StudentSectionAssociation_StudentUniqueId] IS NOT NULL) OR (i.[StudentSectionAssociation_StudentUniqueId] IS NOT NULL AND d.[StudentSectionAssociation_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[Grade] (
             [OldGradeTypeDescriptor_Namespace],
             [OldGradeTypeDescriptor_CodeValue],
@@ -46178,9 +46035,9 @@ BEGIN
             i.[StudentSectionAssociation_StudentUniqueId],
             newPj0s1.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradeTypeDescriptor_DescriptorId]
@@ -46326,14 +46183,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[GradebookEntryIdentifier] AS varbinary(max)) <> CAST(del.[GradebookEntryIdentifier] AS varbinary(max)) OR (i.[GradebookEntryIdentifier] IS NULL AND del.[GradebookEntryIdentifier] IS NOT NULL) OR (i.[GradebookEntryIdentifier] IS NOT NULL AND del.[GradebookEntryIdentifier] IS NULL)) OR (CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[GradebookEntryIdentifier] AS varbinary(max)) <> CAST(d.[GradebookEntryIdentifier] AS varbinary(max)) OR (i.[GradebookEntryIdentifier] IS NULL AND d.[GradebookEntryIdentifier] IS NOT NULL) OR (i.[GradebookEntryIdentifier] IS NOT NULL AND d.[GradebookEntryIdentifier] IS NULL)) OR (CAST(i.[Namespace] AS varbinary(max)) <> CAST(d.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND d.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND d.[Namespace] IS NULL));
         INSERT INTO [tracked_changes_edfi].[GradebookEntry] (
             [OldGradebookEntryIdentifier],
             [OldNamespace],
@@ -46348,9 +46202,9 @@ BEGIN
             i.[GradebookEntryIdentifier],
             i.[Namespace],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -46495,14 +46349,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[GradingPeriodDescriptor_DescriptorId] <> del.[GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriodDescriptor_DescriptorId] IS NULL AND del.[GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND del.[GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[GradingPeriodName] AS varbinary(max)) <> CAST(del.[GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriodName] IS NULL AND del.[GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriodName] IS NOT NULL AND del.[GradingPeriodName] IS NULL)) OR (i.[School_SchoolId] <> del.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND del.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND del.[School_SchoolId] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> del.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND del.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND del.[SchoolYear_SchoolYear] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[GradingPeriodDescriptor_DescriptorId] <> d.[GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriodDescriptor_DescriptorId] IS NULL AND d.[GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[GradingPeriodName] AS varbinary(max)) <> CAST(d.[GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriodName] IS NULL AND d.[GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriodName] IS NOT NULL AND d.[GradingPeriodName] IS NULL)) OR (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> d.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND d.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND d.[SchoolYear_SchoolYear] IS NULL));
         INSERT INTO [tracked_changes_edfi].[GradingPeriod] (
             [OldGradingPeriodDescriptor_Namespace],
             [OldGradingPeriodDescriptor_CodeValue],
@@ -46529,9 +46380,9 @@ BEGIN
             i.[School_SchoolId],
             i.[SchoolYear_SchoolYear],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradingPeriodDescriptor_DescriptorId]
@@ -46637,14 +46488,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[GraduationPlanTypeDescriptor_DescriptorId] <> del.[GraduationPlanTypeDescriptor_DescriptorId] OR (i.[GraduationPlanTypeDescriptor_DescriptorId] IS NULL AND del.[GraduationPlanTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[GraduationPlanTypeDescriptor_DescriptorId] IS NOT NULL AND del.[GraduationPlanTypeDescriptor_DescriptorId] IS NULL)) OR (i.[GraduationSchoolYear_GraduationSchoolYear] <> del.[GraduationSchoolYear_GraduationSchoolYear] OR (i.[GraduationSchoolYear_GraduationSchoolYear] IS NULL AND del.[GraduationSchoolYear_GraduationSchoolYear] IS NOT NULL) OR (i.[GraduationSchoolYear_GraduationSchoolYear] IS NOT NULL AND del.[GraduationSchoolYear_GraduationSchoolYear] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[GraduationPlanTypeDescriptor_DescriptorId] <> d.[GraduationPlanTypeDescriptor_DescriptorId] OR (i.[GraduationPlanTypeDescriptor_DescriptorId] IS NULL AND d.[GraduationPlanTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[GraduationPlanTypeDescriptor_DescriptorId] IS NOT NULL AND d.[GraduationPlanTypeDescriptor_DescriptorId] IS NULL)) OR (i.[GraduationSchoolYear_GraduationSchoolYear] <> d.[GraduationSchoolYear_GraduationSchoolYear] OR (i.[GraduationSchoolYear_GraduationSchoolYear] IS NULL AND d.[GraduationSchoolYear_GraduationSchoolYear] IS NOT NULL) OR (i.[GraduationSchoolYear_GraduationSchoolYear] IS NOT NULL AND d.[GraduationSchoolYear_GraduationSchoolYear] IS NULL));
         INSERT INTO [tracked_changes_edfi].[GraduationPlan] (
             [OldEducationOrganization_EducationOrganizationId],
             [OldGraduationPlanTypeDescriptor_Namespace],
@@ -46667,9 +46515,9 @@ BEGIN
             newDj0.[CodeValue],
             i.[GraduationSchoolYear_GraduationSchoolYear],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GraduationPlanTypeDescriptor_DescriptorId]
@@ -47004,14 +46852,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[InterventionIdentificationCode] AS varbinary(max)) <> CAST(del.[InterventionIdentificationCode] AS varbinary(max)) OR (i.[InterventionIdentificationCode] IS NULL AND del.[InterventionIdentificationCode] IS NOT NULL) OR (i.[InterventionIdentificationCode] IS NOT NULL AND del.[InterventionIdentificationCode] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[InterventionIdentificationCode] AS varbinary(max)) <> CAST(d.[InterventionIdentificationCode] AS varbinary(max)) OR (i.[InterventionIdentificationCode] IS NULL AND d.[InterventionIdentificationCode] IS NOT NULL) OR (i.[InterventionIdentificationCode] IS NOT NULL AND d.[InterventionIdentificationCode] IS NULL));
         INSERT INTO [tracked_changes_edfi].[Intervention] (
             [OldEducationOrganization_EducationOrganizationId],
             [OldInterventionIdentificationCode],
@@ -47026,9 +46871,9 @@ BEGIN
             i.[EducationOrganization_EducationOrganizationId],
             i.[InterventionIdentificationCode],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -47439,14 +47284,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[InterventionPrescriptionIdentificationCode] AS varbinary(max)) <> CAST(del.[InterventionPrescriptionIdentificationCode] AS varbinary(max)) OR (i.[InterventionPrescriptionIdentificationCode] IS NULL AND del.[InterventionPrescriptionIdentificationCode] IS NOT NULL) OR (i.[InterventionPrescriptionIdentificationCode] IS NOT NULL AND del.[InterventionPrescriptionIdentificationCode] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[InterventionPrescriptionIdentificationCode] AS varbinary(max)) <> CAST(d.[InterventionPrescriptionIdentificationCode] AS varbinary(max)) OR (i.[InterventionPrescriptionIdentificationCode] IS NULL AND d.[InterventionPrescriptionIdentificationCode] IS NOT NULL) OR (i.[InterventionPrescriptionIdentificationCode] IS NOT NULL AND d.[InterventionPrescriptionIdentificationCode] IS NULL));
         INSERT INTO [tracked_changes_edfi].[InterventionPrescription] (
             [OldEducationOrganization_EducationOrganizationId],
             [OldInterventionPrescriptionIdentificationCode],
@@ -47461,9 +47303,9 @@ BEGIN
             i.[EducationOrganization_EducationOrganizationId],
             i.[InterventionPrescriptionIdentificationCode],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -47874,14 +47716,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[InterventionStudyIdentificationCode] AS varbinary(max)) <> CAST(del.[InterventionStudyIdentificationCode] AS varbinary(max)) OR (i.[InterventionStudyIdentificationCode] IS NULL AND del.[InterventionStudyIdentificationCode] IS NOT NULL) OR (i.[InterventionStudyIdentificationCode] IS NOT NULL AND del.[InterventionStudyIdentificationCode] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[InterventionStudyIdentificationCode] AS varbinary(max)) <> CAST(d.[InterventionStudyIdentificationCode] AS varbinary(max)) OR (i.[InterventionStudyIdentificationCode] IS NULL AND d.[InterventionStudyIdentificationCode] IS NOT NULL) OR (i.[InterventionStudyIdentificationCode] IS NOT NULL AND d.[InterventionStudyIdentificationCode] IS NULL));
         INSERT INTO [tracked_changes_edfi].[InterventionStudy] (
             [OldEducationOrganization_EducationOrganizationId],
             [OldInterventionStudyIdentificationCode],
@@ -47896,9 +47735,9 @@ BEGIN
             i.[EducationOrganization_EducationOrganizationId],
             i.[InterventionStudyIdentificationCode],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -48348,14 +48187,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[LearningStandardId] AS varbinary(max)) <> CAST(del.[LearningStandardId] AS varbinary(max)) OR (i.[LearningStandardId] IS NULL AND del.[LearningStandardId] IS NOT NULL) OR (i.[LearningStandardId] IS NOT NULL AND del.[LearningStandardId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[LearningStandardId] AS varbinary(max)) <> CAST(d.[LearningStandardId] AS varbinary(max)) OR (i.[LearningStandardId] IS NULL AND d.[LearningStandardId] IS NOT NULL) OR (i.[LearningStandardId] IS NOT NULL AND d.[LearningStandardId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[LearningStandard] (
             [OldLearningStandardId],
             [OldNamespace],
@@ -48370,9 +48206,9 @@ BEGIN
             i.[LearningStandardId],
             i.[Namespace],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -48551,14 +48387,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)) OR (CAST(i.[SourceLearningStandard_LearningStandardId] AS varbinary(max)) <> CAST(del.[SourceLearningStandard_LearningStandardId] AS varbinary(max)) OR (i.[SourceLearningStandard_LearningStandardId] IS NULL AND del.[SourceLearningStandard_LearningStandardId] IS NOT NULL) OR (i.[SourceLearningStandard_LearningStandardId] IS NOT NULL AND del.[SourceLearningStandard_LearningStandardId] IS NULL)) OR (CAST(i.[TargetLearningStandard_LearningStandardId] AS varbinary(max)) <> CAST(del.[TargetLearningStandard_LearningStandardId] AS varbinary(max)) OR (i.[TargetLearningStandard_LearningStandardId] IS NULL AND del.[TargetLearningStandard_LearningStandardId] IS NOT NULL) OR (i.[TargetLearningStandard_LearningStandardId] IS NOT NULL AND del.[TargetLearningStandard_LearningStandardId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[Namespace] AS varbinary(max)) <> CAST(d.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND d.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND d.[Namespace] IS NULL)) OR (CAST(i.[SourceLearningStandard_LearningStandardId] AS varbinary(max)) <> CAST(d.[SourceLearningStandard_LearningStandardId] AS varbinary(max)) OR (i.[SourceLearningStandard_LearningStandardId] IS NULL AND d.[SourceLearningStandard_LearningStandardId] IS NOT NULL) OR (i.[SourceLearningStandard_LearningStandardId] IS NOT NULL AND d.[SourceLearningStandard_LearningStandardId] IS NULL)) OR (CAST(i.[TargetLearningStandard_LearningStandardId] AS varbinary(max)) <> CAST(d.[TargetLearningStandard_LearningStandardId] AS varbinary(max)) OR (i.[TargetLearningStandard_LearningStandardId] IS NULL AND d.[TargetLearningStandard_LearningStandardId] IS NOT NULL) OR (i.[TargetLearningStandard_LearningStandardId] IS NOT NULL AND d.[TargetLearningStandard_LearningStandardId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[LearningStandardEquivalenceAssociation] (
             [OldNamespace],
             [OldSourceLearningStandard_LearningStandardId],
@@ -48577,9 +48410,9 @@ BEGIN
             i.[SourceLearningStandard_LearningStandardId],
             i.[TargetLearningStandard_LearningStandardId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -48758,14 +48591,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[AccountIdentifier] AS varbinary(max)) <> CAST(del.[AccountIdentifier] AS varbinary(max)) OR (i.[AccountIdentifier] IS NULL AND del.[AccountIdentifier] IS NOT NULL) OR (i.[AccountIdentifier] IS NOT NULL AND del.[AccountIdentifier] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[FiscalYear_Unified] <> del.[FiscalYear_Unified] OR (i.[FiscalYear_Unified] IS NULL AND del.[FiscalYear_Unified] IS NOT NULL) OR (i.[FiscalYear_Unified] IS NOT NULL AND del.[FiscalYear_Unified] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[AccountIdentifier] AS varbinary(max)) <> CAST(d.[AccountIdentifier] AS varbinary(max)) OR (i.[AccountIdentifier] IS NULL AND d.[AccountIdentifier] IS NOT NULL) OR (i.[AccountIdentifier] IS NOT NULL AND d.[AccountIdentifier] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[FiscalYear_Unified] <> d.[FiscalYear_Unified] OR (i.[FiscalYear_Unified] IS NULL AND d.[FiscalYear_Unified] IS NOT NULL) OR (i.[FiscalYear_Unified] IS NOT NULL AND d.[FiscalYear_Unified] IS NULL));
         INSERT INTO [tracked_changes_edfi].[LocalAccount] (
             [OldAccountIdentifier],
             [OldEducationOrganization_EducationOrganizationId],
@@ -48784,9 +48614,9 @@ BEGIN
             i.[EducationOrganization_EducationOrganizationId],
             i.[FiscalYear_Unified],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -48928,14 +48758,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[AsOfDate] <> del.[AsOfDate] OR (i.[AsOfDate] IS NULL AND del.[AsOfDate] IS NOT NULL) OR (i.[AsOfDate] IS NOT NULL AND del.[AsOfDate] IS NULL)) OR (CAST(i.[LocalAccount_AccountIdentifier] AS varbinary(max)) <> CAST(del.[LocalAccount_AccountIdentifier] AS varbinary(max)) OR (i.[LocalAccount_AccountIdentifier] IS NULL AND del.[LocalAccount_AccountIdentifier] IS NOT NULL) OR (i.[LocalAccount_AccountIdentifier] IS NOT NULL AND del.[LocalAccount_AccountIdentifier] IS NULL)) OR (i.[LocalAccount_EducationOrganizationId] <> del.[LocalAccount_EducationOrganizationId] OR (i.[LocalAccount_EducationOrganizationId] IS NULL AND del.[LocalAccount_EducationOrganizationId] IS NOT NULL) OR (i.[LocalAccount_EducationOrganizationId] IS NOT NULL AND del.[LocalAccount_EducationOrganizationId] IS NULL)) OR (i.[LocalAccount_FiscalYear] <> del.[LocalAccount_FiscalYear] OR (i.[LocalAccount_FiscalYear] IS NULL AND del.[LocalAccount_FiscalYear] IS NOT NULL) OR (i.[LocalAccount_FiscalYear] IS NOT NULL AND del.[LocalAccount_FiscalYear] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[AsOfDate] <> d.[AsOfDate] OR (i.[AsOfDate] IS NULL AND d.[AsOfDate] IS NOT NULL) OR (i.[AsOfDate] IS NOT NULL AND d.[AsOfDate] IS NULL)) OR (CAST(i.[LocalAccount_AccountIdentifier] AS varbinary(max)) <> CAST(d.[LocalAccount_AccountIdentifier] AS varbinary(max)) OR (i.[LocalAccount_AccountIdentifier] IS NULL AND d.[LocalAccount_AccountIdentifier] IS NOT NULL) OR (i.[LocalAccount_AccountIdentifier] IS NOT NULL AND d.[LocalAccount_AccountIdentifier] IS NULL)) OR (i.[LocalAccount_EducationOrganizationId] <> d.[LocalAccount_EducationOrganizationId] OR (i.[LocalAccount_EducationOrganizationId] IS NULL AND d.[LocalAccount_EducationOrganizationId] IS NOT NULL) OR (i.[LocalAccount_EducationOrganizationId] IS NOT NULL AND d.[LocalAccount_EducationOrganizationId] IS NULL)) OR (i.[LocalAccount_FiscalYear] <> d.[LocalAccount_FiscalYear] OR (i.[LocalAccount_FiscalYear] IS NULL AND d.[LocalAccount_FiscalYear] IS NOT NULL) OR (i.[LocalAccount_FiscalYear] IS NOT NULL AND d.[LocalAccount_FiscalYear] IS NULL));
         INSERT INTO [tracked_changes_edfi].[LocalActual] (
             [OldAsOfDate],
             [OldLocalAccount_AccountIdentifier],
@@ -48958,9 +48785,9 @@ BEGIN
             i.[LocalAccount_EducationOrganizationId],
             i.[LocalAccount_FiscalYear],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -49063,14 +48890,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[AsOfDate] <> del.[AsOfDate] OR (i.[AsOfDate] IS NULL AND del.[AsOfDate] IS NOT NULL) OR (i.[AsOfDate] IS NOT NULL AND del.[AsOfDate] IS NULL)) OR (CAST(i.[LocalAccount_AccountIdentifier] AS varbinary(max)) <> CAST(del.[LocalAccount_AccountIdentifier] AS varbinary(max)) OR (i.[LocalAccount_AccountIdentifier] IS NULL AND del.[LocalAccount_AccountIdentifier] IS NOT NULL) OR (i.[LocalAccount_AccountIdentifier] IS NOT NULL AND del.[LocalAccount_AccountIdentifier] IS NULL)) OR (i.[LocalAccount_EducationOrganizationId] <> del.[LocalAccount_EducationOrganizationId] OR (i.[LocalAccount_EducationOrganizationId] IS NULL AND del.[LocalAccount_EducationOrganizationId] IS NOT NULL) OR (i.[LocalAccount_EducationOrganizationId] IS NOT NULL AND del.[LocalAccount_EducationOrganizationId] IS NULL)) OR (i.[LocalAccount_FiscalYear] <> del.[LocalAccount_FiscalYear] OR (i.[LocalAccount_FiscalYear] IS NULL AND del.[LocalAccount_FiscalYear] IS NOT NULL) OR (i.[LocalAccount_FiscalYear] IS NOT NULL AND del.[LocalAccount_FiscalYear] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[AsOfDate] <> d.[AsOfDate] OR (i.[AsOfDate] IS NULL AND d.[AsOfDate] IS NOT NULL) OR (i.[AsOfDate] IS NOT NULL AND d.[AsOfDate] IS NULL)) OR (CAST(i.[LocalAccount_AccountIdentifier] AS varbinary(max)) <> CAST(d.[LocalAccount_AccountIdentifier] AS varbinary(max)) OR (i.[LocalAccount_AccountIdentifier] IS NULL AND d.[LocalAccount_AccountIdentifier] IS NOT NULL) OR (i.[LocalAccount_AccountIdentifier] IS NOT NULL AND d.[LocalAccount_AccountIdentifier] IS NULL)) OR (i.[LocalAccount_EducationOrganizationId] <> d.[LocalAccount_EducationOrganizationId] OR (i.[LocalAccount_EducationOrganizationId] IS NULL AND d.[LocalAccount_EducationOrganizationId] IS NOT NULL) OR (i.[LocalAccount_EducationOrganizationId] IS NOT NULL AND d.[LocalAccount_EducationOrganizationId] IS NULL)) OR (i.[LocalAccount_FiscalYear] <> d.[LocalAccount_FiscalYear] OR (i.[LocalAccount_FiscalYear] IS NULL AND d.[LocalAccount_FiscalYear] IS NOT NULL) OR (i.[LocalAccount_FiscalYear] IS NOT NULL AND d.[LocalAccount_FiscalYear] IS NULL));
         INSERT INTO [tracked_changes_edfi].[LocalBudget] (
             [OldAsOfDate],
             [OldLocalAccount_AccountIdentifier],
@@ -49093,9 +48917,9 @@ BEGIN
             i.[LocalAccount_EducationOrganizationId],
             i.[LocalAccount_FiscalYear],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -49203,14 +49027,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[AsOfDate] <> del.[AsOfDate] OR (i.[AsOfDate] IS NULL AND del.[AsOfDate] IS NOT NULL) OR (i.[AsOfDate] IS NOT NULL AND del.[AsOfDate] IS NULL)) OR (CAST(i.[LocalAccount_AccountIdentifier] AS varbinary(max)) <> CAST(del.[LocalAccount_AccountIdentifier] AS varbinary(max)) OR (i.[LocalAccount_AccountIdentifier] IS NULL AND del.[LocalAccount_AccountIdentifier] IS NOT NULL) OR (i.[LocalAccount_AccountIdentifier] IS NOT NULL AND del.[LocalAccount_AccountIdentifier] IS NULL)) OR (i.[LocalAccount_EducationOrganizationId] <> del.[LocalAccount_EducationOrganizationId] OR (i.[LocalAccount_EducationOrganizationId] IS NULL AND del.[LocalAccount_EducationOrganizationId] IS NOT NULL) OR (i.[LocalAccount_EducationOrganizationId] IS NOT NULL AND del.[LocalAccount_EducationOrganizationId] IS NULL)) OR (i.[LocalAccount_FiscalYear] <> del.[LocalAccount_FiscalYear] OR (i.[LocalAccount_FiscalYear] IS NULL AND del.[LocalAccount_FiscalYear] IS NOT NULL) OR (i.[LocalAccount_FiscalYear] IS NOT NULL AND del.[LocalAccount_FiscalYear] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[AsOfDate] <> d.[AsOfDate] OR (i.[AsOfDate] IS NULL AND d.[AsOfDate] IS NOT NULL) OR (i.[AsOfDate] IS NOT NULL AND d.[AsOfDate] IS NULL)) OR (CAST(i.[LocalAccount_AccountIdentifier] AS varbinary(max)) <> CAST(d.[LocalAccount_AccountIdentifier] AS varbinary(max)) OR (i.[LocalAccount_AccountIdentifier] IS NULL AND d.[LocalAccount_AccountIdentifier] IS NOT NULL) OR (i.[LocalAccount_AccountIdentifier] IS NOT NULL AND d.[LocalAccount_AccountIdentifier] IS NULL)) OR (i.[LocalAccount_EducationOrganizationId] <> d.[LocalAccount_EducationOrganizationId] OR (i.[LocalAccount_EducationOrganizationId] IS NULL AND d.[LocalAccount_EducationOrganizationId] IS NOT NULL) OR (i.[LocalAccount_EducationOrganizationId] IS NOT NULL AND d.[LocalAccount_EducationOrganizationId] IS NULL)) OR (i.[LocalAccount_FiscalYear] <> d.[LocalAccount_FiscalYear] OR (i.[LocalAccount_FiscalYear] IS NULL AND d.[LocalAccount_FiscalYear] IS NOT NULL) OR (i.[LocalAccount_FiscalYear] IS NOT NULL AND d.[LocalAccount_FiscalYear] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[LocalContractedStaff] (
             [OldAsOfDate],
             [OldLocalAccount_AccountIdentifier],
@@ -49241,9 +49062,9 @@ BEGIN
             i.[Staff_StaffUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
@@ -49616,15 +49437,6 @@ BEGIN
             doc.[ContentVersion]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
-    END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([LocalEducationAgencyId]))
-    BEGIN
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[LocalEducationAgencyId] <> del.[LocalEducationAgencyId] OR (i.[LocalEducationAgencyId] IS NULL AND del.[LocalEducationAgencyId] IS NOT NULL) OR (i.[LocalEducationAgencyId] IS NOT NULL AND del.[LocalEducationAgencyId] IS NULL));
     END
 END;
 GO
@@ -50115,14 +49927,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[AsOfDate] <> del.[AsOfDate] OR (i.[AsOfDate] IS NULL AND del.[AsOfDate] IS NOT NULL) OR (i.[AsOfDate] IS NOT NULL AND del.[AsOfDate] IS NULL)) OR (CAST(i.[LocalAccount_AccountIdentifier] AS varbinary(max)) <> CAST(del.[LocalAccount_AccountIdentifier] AS varbinary(max)) OR (i.[LocalAccount_AccountIdentifier] IS NULL AND del.[LocalAccount_AccountIdentifier] IS NOT NULL) OR (i.[LocalAccount_AccountIdentifier] IS NOT NULL AND del.[LocalAccount_AccountIdentifier] IS NULL)) OR (i.[LocalAccount_EducationOrganizationId] <> del.[LocalAccount_EducationOrganizationId] OR (i.[LocalAccount_EducationOrganizationId] IS NULL AND del.[LocalAccount_EducationOrganizationId] IS NOT NULL) OR (i.[LocalAccount_EducationOrganizationId] IS NOT NULL AND del.[LocalAccount_EducationOrganizationId] IS NULL)) OR (i.[LocalAccount_FiscalYear] <> del.[LocalAccount_FiscalYear] OR (i.[LocalAccount_FiscalYear] IS NULL AND del.[LocalAccount_FiscalYear] IS NOT NULL) OR (i.[LocalAccount_FiscalYear] IS NOT NULL AND del.[LocalAccount_FiscalYear] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[AsOfDate] <> d.[AsOfDate] OR (i.[AsOfDate] IS NULL AND d.[AsOfDate] IS NOT NULL) OR (i.[AsOfDate] IS NOT NULL AND d.[AsOfDate] IS NULL)) OR (CAST(i.[LocalAccount_AccountIdentifier] AS varbinary(max)) <> CAST(d.[LocalAccount_AccountIdentifier] AS varbinary(max)) OR (i.[LocalAccount_AccountIdentifier] IS NULL AND d.[LocalAccount_AccountIdentifier] IS NOT NULL) OR (i.[LocalAccount_AccountIdentifier] IS NOT NULL AND d.[LocalAccount_AccountIdentifier] IS NULL)) OR (i.[LocalAccount_EducationOrganizationId] <> d.[LocalAccount_EducationOrganizationId] OR (i.[LocalAccount_EducationOrganizationId] IS NULL AND d.[LocalAccount_EducationOrganizationId] IS NOT NULL) OR (i.[LocalAccount_EducationOrganizationId] IS NOT NULL AND d.[LocalAccount_EducationOrganizationId] IS NULL)) OR (i.[LocalAccount_FiscalYear] <> d.[LocalAccount_FiscalYear] OR (i.[LocalAccount_FiscalYear] IS NULL AND d.[LocalAccount_FiscalYear] IS NOT NULL) OR (i.[LocalAccount_FiscalYear] IS NOT NULL AND d.[LocalAccount_FiscalYear] IS NULL));
         INSERT INTO [tracked_changes_edfi].[LocalEncumbrance] (
             [OldAsOfDate],
             [OldLocalAccount_AccountIdentifier],
@@ -50145,9 +49954,9 @@ BEGIN
             i.[LocalAccount_EducationOrganizationId],
             i.[LocalAccount_FiscalYear],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -50255,14 +50064,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[AsOfDate] <> del.[AsOfDate] OR (i.[AsOfDate] IS NULL AND del.[AsOfDate] IS NOT NULL) OR (i.[AsOfDate] IS NOT NULL AND del.[AsOfDate] IS NULL)) OR (CAST(i.[LocalAccount_AccountIdentifier] AS varbinary(max)) <> CAST(del.[LocalAccount_AccountIdentifier] AS varbinary(max)) OR (i.[LocalAccount_AccountIdentifier] IS NULL AND del.[LocalAccount_AccountIdentifier] IS NOT NULL) OR (i.[LocalAccount_AccountIdentifier] IS NOT NULL AND del.[LocalAccount_AccountIdentifier] IS NULL)) OR (i.[LocalAccount_EducationOrganizationId] <> del.[LocalAccount_EducationOrganizationId] OR (i.[LocalAccount_EducationOrganizationId] IS NULL AND del.[LocalAccount_EducationOrganizationId] IS NOT NULL) OR (i.[LocalAccount_EducationOrganizationId] IS NOT NULL AND del.[LocalAccount_EducationOrganizationId] IS NULL)) OR (i.[LocalAccount_FiscalYear] <> del.[LocalAccount_FiscalYear] OR (i.[LocalAccount_FiscalYear] IS NULL AND del.[LocalAccount_FiscalYear] IS NOT NULL) OR (i.[LocalAccount_FiscalYear] IS NOT NULL AND del.[LocalAccount_FiscalYear] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[AsOfDate] <> d.[AsOfDate] OR (i.[AsOfDate] IS NULL AND d.[AsOfDate] IS NOT NULL) OR (i.[AsOfDate] IS NOT NULL AND d.[AsOfDate] IS NULL)) OR (CAST(i.[LocalAccount_AccountIdentifier] AS varbinary(max)) <> CAST(d.[LocalAccount_AccountIdentifier] AS varbinary(max)) OR (i.[LocalAccount_AccountIdentifier] IS NULL AND d.[LocalAccount_AccountIdentifier] IS NOT NULL) OR (i.[LocalAccount_AccountIdentifier] IS NOT NULL AND d.[LocalAccount_AccountIdentifier] IS NULL)) OR (i.[LocalAccount_EducationOrganizationId] <> d.[LocalAccount_EducationOrganizationId] OR (i.[LocalAccount_EducationOrganizationId] IS NULL AND d.[LocalAccount_EducationOrganizationId] IS NOT NULL) OR (i.[LocalAccount_EducationOrganizationId] IS NOT NULL AND d.[LocalAccount_EducationOrganizationId] IS NULL)) OR (i.[LocalAccount_FiscalYear] <> d.[LocalAccount_FiscalYear] OR (i.[LocalAccount_FiscalYear] IS NULL AND d.[LocalAccount_FiscalYear] IS NOT NULL) OR (i.[LocalAccount_FiscalYear] IS NOT NULL AND d.[LocalAccount_FiscalYear] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[LocalPayroll] (
             [OldAsOfDate],
             [OldLocalAccount_AccountIdentifier],
@@ -50293,9 +50099,9 @@ BEGIN
             i.[Staff_StaffUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
@@ -50396,14 +50202,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[ClassroomIdentificationCode] AS varbinary(max)) <> CAST(del.[ClassroomIdentificationCode] AS varbinary(max)) OR (i.[ClassroomIdentificationCode] IS NULL AND del.[ClassroomIdentificationCode] IS NOT NULL) OR (i.[ClassroomIdentificationCode] IS NOT NULL AND del.[ClassroomIdentificationCode] IS NULL)) OR (i.[School_SchoolId] <> del.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND del.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND del.[School_SchoolId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[ClassroomIdentificationCode] AS varbinary(max)) <> CAST(d.[ClassroomIdentificationCode] AS varbinary(max)) OR (i.[ClassroomIdentificationCode] IS NULL AND d.[ClassroomIdentificationCode] IS NOT NULL) OR (i.[ClassroomIdentificationCode] IS NOT NULL AND d.[ClassroomIdentificationCode] IS NULL)) OR (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[Location] (
             [OldClassroomIdentificationCode],
             [OldSchool_SchoolId],
@@ -50418,9 +50221,9 @@ BEGIN
             i.[ClassroomIdentificationCode],
             i.[School_SchoolId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -50519,14 +50322,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Code] AS varbinary(max)) <> CAST(del.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND del.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND del.[Code] IS NULL)) OR (i.[FiscalYear] <> del.[FiscalYear] OR (i.[FiscalYear] IS NULL AND del.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND del.[FiscalYear] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[Code] AS varbinary(max)) <> CAST(d.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND d.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND d.[Code] IS NULL)) OR (i.[FiscalYear] <> d.[FiscalYear] OR (i.[FiscalYear] IS NULL AND d.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND d.[FiscalYear] IS NULL));
         INSERT INTO [tracked_changes_edfi].[ObjectDimension] (
             [OldCode],
             [OldFiscalYear],
@@ -50541,9 +50341,9 @@ BEGIN
             i.[Code],
             i.[FiscalYear],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -50683,14 +50483,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[AssessmentIdentifier_Unified] AS varbinary(max)) <> CAST(del.[AssessmentIdentifier_Unified] AS varbinary(max)) OR (i.[AssessmentIdentifier_Unified] IS NULL AND del.[AssessmentIdentifier_Unified] IS NOT NULL) OR (i.[AssessmentIdentifier_Unified] IS NOT NULL AND del.[AssessmentIdentifier_Unified] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(del.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND del.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND del.[Namespace_Unified] IS NULL)) OR (CAST(i.[IdentificationCode] AS varbinary(max)) <> CAST(del.[IdentificationCode] AS varbinary(max)) OR (i.[IdentificationCode] IS NULL AND del.[IdentificationCode] IS NOT NULL) OR (i.[IdentificationCode] IS NOT NULL AND del.[IdentificationCode] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[AssessmentIdentifier_Unified] AS varbinary(max)) <> CAST(d.[AssessmentIdentifier_Unified] AS varbinary(max)) OR (i.[AssessmentIdentifier_Unified] IS NULL AND d.[AssessmentIdentifier_Unified] IS NOT NULL) OR (i.[AssessmentIdentifier_Unified] IS NOT NULL AND d.[AssessmentIdentifier_Unified] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(d.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND d.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND d.[Namespace_Unified] IS NULL)) OR (CAST(i.[IdentificationCode] AS varbinary(max)) <> CAST(d.[IdentificationCode] AS varbinary(max)) OR (i.[IdentificationCode] IS NULL AND d.[IdentificationCode] IS NOT NULL) OR (i.[IdentificationCode] IS NOT NULL AND d.[IdentificationCode] IS NULL));
         INSERT INTO [tracked_changes_edfi].[ObjectiveAssessment] (
             [OldAssessmentIdentifier_Unified],
             [OldNamespace_Unified],
@@ -50709,9 +50506,9 @@ BEGIN
             i.[Namespace_Unified],
             i.[IdentificationCode],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -50966,14 +50763,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[RequisitionNumber] AS varbinary(max)) <> CAST(del.[RequisitionNumber] AS varbinary(max)) OR (i.[RequisitionNumber] IS NULL AND del.[RequisitionNumber] IS NOT NULL) OR (i.[RequisitionNumber] IS NOT NULL AND del.[RequisitionNumber] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[RequisitionNumber] AS varbinary(max)) <> CAST(d.[RequisitionNumber] AS varbinary(max)) OR (i.[RequisitionNumber] IS NULL AND d.[RequisitionNumber] IS NOT NULL) OR (i.[RequisitionNumber] IS NOT NULL AND d.[RequisitionNumber] IS NULL));
         INSERT INTO [tracked_changes_edfi].[OpenStaffPosition] (
             [OldEducationOrganization_EducationOrganizationId],
             [OldRequisitionNumber],
@@ -50988,9 +50782,9 @@ BEGIN
             i.[EducationOrganization_EducationOrganizationId],
             i.[RequisitionNumber],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -51167,14 +50961,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Code] AS varbinary(max)) <> CAST(del.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND del.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND del.[Code] IS NULL)) OR (i.[FiscalYear] <> del.[FiscalYear] OR (i.[FiscalYear] IS NULL AND del.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND del.[FiscalYear] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[Code] AS varbinary(max)) <> CAST(d.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND d.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND d.[Code] IS NULL)) OR (i.[FiscalYear] <> d.[FiscalYear] OR (i.[FiscalYear] IS NULL AND d.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND d.[FiscalYear] IS NULL));
         INSERT INTO [tracked_changes_edfi].[OperationalUnitDimension] (
             [OldCode],
             [OldFiscalYear],
@@ -51189,9 +50980,9 @@ BEGIN
             i.[Code],
             i.[FiscalYear],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -51513,15 +51304,6 @@ BEGIN
             doc.[ContentVersion]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
-    END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([OrganizationDepartmentId]))
-    BEGIN
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[OrganizationDepartmentId] <> del.[OrganizationDepartmentId] OR (i.[OrganizationDepartmentId] IS NULL AND del.[OrganizationDepartmentId] IS NOT NULL) OR (i.[OrganizationDepartmentId] IS NOT NULL AND del.[OrganizationDepartmentId] IS NULL));
     END
 END;
 GO
@@ -51933,14 +51715,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[PersonId] AS varbinary(max)) <> CAST(del.[PersonId] AS varbinary(max)) OR (i.[PersonId] IS NULL AND del.[PersonId] IS NOT NULL) OR (i.[PersonId] IS NOT NULL AND del.[PersonId] IS NULL)) OR (i.[SourceSystemDescriptor_DescriptorId] <> del.[SourceSystemDescriptor_DescriptorId] OR (i.[SourceSystemDescriptor_DescriptorId] IS NULL AND del.[SourceSystemDescriptor_DescriptorId] IS NOT NULL) OR (i.[SourceSystemDescriptor_DescriptorId] IS NOT NULL AND del.[SourceSystemDescriptor_DescriptorId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[PersonId] AS varbinary(max)) <> CAST(d.[PersonId] AS varbinary(max)) OR (i.[PersonId] IS NULL AND d.[PersonId] IS NOT NULL) OR (i.[PersonId] IS NOT NULL AND d.[PersonId] IS NULL)) OR (i.[SourceSystemDescriptor_DescriptorId] <> d.[SourceSystemDescriptor_DescriptorId] OR (i.[SourceSystemDescriptor_DescriptorId] IS NULL AND d.[SourceSystemDescriptor_DescriptorId] IS NOT NULL) OR (i.[SourceSystemDescriptor_DescriptorId] IS NOT NULL AND d.[SourceSystemDescriptor_DescriptorId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[Person] (
             [OldPersonId],
             [OldSourceSystemDescriptor_Namespace],
@@ -51959,9 +51738,9 @@ BEGIN
             newDj0.[Namespace],
             newDj0.[CodeValue],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[SourceSystemDescriptor_DescriptorId]
@@ -52070,14 +51849,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EventDate] <> del.[EventDate] OR (i.[EventDate] IS NULL AND del.[EventDate] IS NOT NULL) OR (i.[EventDate] IS NOT NULL AND del.[EventDate] IS NULL)) OR (i.[PostSecondaryEventCategoryDescriptor_DescriptorId] <> del.[PostSecondaryEventCategoryDescriptor_DescriptorId] OR (i.[PostSecondaryEventCategoryDescriptor_DescriptorId] IS NULL AND del.[PostSecondaryEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[PostSecondaryEventCategoryDescriptor_DescriptorId] IS NOT NULL AND del.[PostSecondaryEventCategoryDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[EventDate] <> d.[EventDate] OR (i.[EventDate] IS NULL AND d.[EventDate] IS NOT NULL) OR (i.[EventDate] IS NOT NULL AND d.[EventDate] IS NULL)) OR (i.[PostSecondaryEventCategoryDescriptor_DescriptorId] <> d.[PostSecondaryEventCategoryDescriptor_DescriptorId] OR (i.[PostSecondaryEventCategoryDescriptor_DescriptorId] IS NULL AND d.[PostSecondaryEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[PostSecondaryEventCategoryDescriptor_DescriptorId] IS NOT NULL AND d.[PostSecondaryEventCategoryDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[PostSecondaryEvent] (
             [OldEventDate],
             [OldPostSecondaryEventCategoryDescriptor_Namespace],
@@ -52104,9 +51880,9 @@ BEGIN
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[PostSecondaryEventCategoryDescriptor_DescriptorId]
@@ -52278,15 +52054,6 @@ BEGIN
             doc.[ContentVersion]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
-    END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([PostSecondaryInstitutionId]))
-    BEGIN
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[PostSecondaryInstitutionId] <> del.[PostSecondaryInstitutionId] OR (i.[PostSecondaryInstitutionId] IS NULL AND del.[PostSecondaryInstitutionId] IS NOT NULL) OR (i.[PostSecondaryInstitutionId] IS NOT NULL AND del.[PostSecondaryInstitutionId] IS NULL));
     END
 END;
 GO
@@ -52739,14 +52506,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(del.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND del.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND del.[ProgramName] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> del.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramTypeDescriptor_DescriptorId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(d.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND d.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND d.[ProgramName] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> d.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[Program] (
             [OldEducationOrganization_EducationOrganizationId],
             [OldProgramName],
@@ -52769,9 +52533,9 @@ BEGIN
             newDj0.[Namespace],
             newDj0.[CodeValue],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramTypeDescriptor_DescriptorId]
@@ -52911,14 +52675,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Code] AS varbinary(max)) <> CAST(del.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND del.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND del.[Code] IS NULL)) OR (i.[FiscalYear] <> del.[FiscalYear] OR (i.[FiscalYear] IS NULL AND del.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND del.[FiscalYear] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[Code] AS varbinary(max)) <> CAST(d.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND d.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND d.[Code] IS NULL)) OR (i.[FiscalYear] <> d.[FiscalYear] OR (i.[FiscalYear] IS NULL AND d.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND d.[FiscalYear] IS NULL));
         INSERT INTO [tracked_changes_edfi].[ProgramDimension] (
             [OldCode],
             [OldFiscalYear],
@@ -52933,9 +52694,9 @@ BEGIN
             i.[Code],
             i.[FiscalYear],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -53090,14 +52851,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[ProgramEvaluationPeriodDescriptor_DescriptorId] <> del.[ProgramEvaluationPeriodDescriptor_DescriptorId] OR (i.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND del.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluationTitle] AS varbinary(max)) <> CAST(del.[ProgramEvaluationTitle] AS varbinary(max)) OR (i.[ProgramEvaluationTitle] IS NULL AND del.[ProgramEvaluationTitle] IS NOT NULL) OR (i.[ProgramEvaluationTitle] IS NOT NULL AND del.[ProgramEvaluationTitle] IS NULL)) OR (i.[ProgramEvaluationTypeDescriptor_DescriptorId] <> del.[ProgramEvaluationTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[ProgramEvaluationPeriodDescriptor_DescriptorId] <> d.[ProgramEvaluationPeriodDescriptor_DescriptorId] OR (i.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluationTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluationTitle] AS varbinary(max)) OR (i.[ProgramEvaluationTitle] IS NULL AND d.[ProgramEvaluationTitle] IS NOT NULL) OR (i.[ProgramEvaluationTitle] IS NOT NULL AND d.[ProgramEvaluationTitle] IS NULL)) OR (i.[ProgramEvaluationTypeDescriptor_DescriptorId] <> d.[ProgramEvaluationTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[ProgramEvaluation] (
             [OldProgramEvaluationPeriodDescriptor_Namespace],
             [OldProgramEvaluationPeriodDescriptor_CodeValue],
@@ -53140,9 +52898,9 @@ BEGIN
             newDj2.[Namespace],
             newDj2.[CodeValue],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluationPeriodDescriptor_DescriptorId]
@@ -53266,14 +53024,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[ProgramEvaluationElementTitle] AS varbinary(max)) <> CAST(del.[ProgramEvaluationElementTitle] AS varbinary(max)) OR (i.[ProgramEvaluationElementTitle] IS NULL AND del.[ProgramEvaluationElementTitle] IS NOT NULL) OR (i.[ProgramEvaluationElementTitle] IS NOT NULL AND del.[ProgramEvaluationElementTitle] IS NULL)) OR (i.[ProgramEducationOrganizationId_Unified] <> del.[ProgramEducationOrganizationId_Unified] OR (i.[ProgramEducationOrganizationId_Unified] IS NULL AND del.[ProgramEducationOrganizationId_Unified] IS NOT NULL) OR (i.[ProgramEducationOrganizationId_Unified] IS NOT NULL AND del.[ProgramEducationOrganizationId_Unified] IS NULL)) OR (i.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] <> del.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] OR (i.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] IS NULL AND del.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] IS NOT NULL AND del.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluationTitle_Unified] AS varbinary(max)) <> CAST(del.[ProgramEvaluationTitle_Unified] AS varbinary(max)) OR (i.[ProgramEvaluationTitle_Unified] IS NULL AND del.[ProgramEvaluationTitle_Unified] IS NOT NULL) OR (i.[ProgramEvaluationTitle_Unified] IS NOT NULL AND del.[ProgramEvaluationTitle_Unified] IS NULL)) OR (i.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] <> del.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] OR (i.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] IS NULL AND del.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] IS NOT NULL AND del.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] IS NULL)) OR (CAST(i.[ProgramName_Unified] AS varbinary(max)) <> CAST(del.[ProgramName_Unified] AS varbinary(max)) OR (i.[ProgramName_Unified] IS NULL AND del.[ProgramName_Unified] IS NOT NULL) OR (i.[ProgramName_Unified] IS NOT NULL AND del.[ProgramName_Unified] IS NULL)) OR (i.[ProgramTypeDescriptor_Unified_DescriptorId] <> del.[ProgramTypeDescriptor_Unified_DescriptorId] OR (i.[ProgramTypeDescriptor_Unified_DescriptorId] IS NULL AND del.[ProgramTypeDescriptor_Unified_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_Unified_DescriptorId] IS NOT NULL AND del.[ProgramTypeDescriptor_Unified_DescriptorId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[ProgramEvaluationElementTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluationElementTitle] AS varbinary(max)) OR (i.[ProgramEvaluationElementTitle] IS NULL AND d.[ProgramEvaluationElementTitle] IS NOT NULL) OR (i.[ProgramEvaluationElementTitle] IS NOT NULL AND d.[ProgramEvaluationElementTitle] IS NULL)) OR (i.[ProgramEducationOrganizationId_Unified] <> d.[ProgramEducationOrganizationId_Unified] OR (i.[ProgramEducationOrganizationId_Unified] IS NULL AND d.[ProgramEducationOrganizationId_Unified] IS NOT NULL) OR (i.[ProgramEducationOrganizationId_Unified] IS NOT NULL AND d.[ProgramEducationOrganizationId_Unified] IS NULL)) OR (i.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] <> d.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] OR (i.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] IS NULL AND d.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] IS NOT NULL AND d.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluationTitle_Unified] AS varbinary(max)) <> CAST(d.[ProgramEvaluationTitle_Unified] AS varbinary(max)) OR (i.[ProgramEvaluationTitle_Unified] IS NULL AND d.[ProgramEvaluationTitle_Unified] IS NOT NULL) OR (i.[ProgramEvaluationTitle_Unified] IS NOT NULL AND d.[ProgramEvaluationTitle_Unified] IS NULL)) OR (i.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] <> d.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] OR (i.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] IS NULL AND d.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] IS NOT NULL AND d.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] IS NULL)) OR (CAST(i.[ProgramName_Unified] AS varbinary(max)) <> CAST(d.[ProgramName_Unified] AS varbinary(max)) OR (i.[ProgramName_Unified] IS NULL AND d.[ProgramName_Unified] IS NOT NULL) OR (i.[ProgramName_Unified] IS NOT NULL AND d.[ProgramName_Unified] IS NULL)) OR (i.[ProgramTypeDescriptor_Unified_DescriptorId] <> d.[ProgramTypeDescriptor_Unified_DescriptorId] OR (i.[ProgramTypeDescriptor_Unified_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_Unified_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_Unified_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_Unified_DescriptorId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[ProgramEvaluationElement] (
             [OldProgramEvaluationElementTitle],
             [OldProgramEducationOrganizationId_Unified],
@@ -53320,9 +53075,9 @@ BEGIN
             newDj2.[Namespace],
             newDj2.[CodeValue],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
@@ -53524,14 +53279,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[ProgramEvaluationObjectiveTitle] AS varbinary(max)) <> CAST(del.[ProgramEvaluationObjectiveTitle] AS varbinary(max)) OR (i.[ProgramEvaluationObjectiveTitle] IS NULL AND del.[ProgramEvaluationObjectiveTitle] IS NOT NULL) OR (i.[ProgramEvaluationObjectiveTitle] IS NOT NULL AND del.[ProgramEvaluationObjectiveTitle] IS NULL)) OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] <> del.[ProgramEvaluation_ProgramEducationOrganizationId] OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL AND del.[ProgramEvaluation_ProgramEducationOrganizationId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] IS NOT NULL AND del.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL)) OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] <> del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluation_ProgramEvaluationTitle] AS varbinary(max)) <> CAST(del.[ProgramEvaluation_ProgramEvaluationTitle] AS varbinary(max)) OR (i.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL AND del.[ProgramEvaluation_ProgramEvaluationTitle] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationTitle] IS NOT NULL AND del.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL)) OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] <> del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluation_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramEvaluation_ProgramName] AS varbinary(max)) OR (i.[ProgramEvaluation_ProgramName] IS NULL AND del.[ProgramEvaluation_ProgramName] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramName] IS NOT NULL AND del.[ProgramEvaluation_ProgramName] IS NULL)) OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[ProgramEvaluationObjectiveTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluationObjectiveTitle] AS varbinary(max)) OR (i.[ProgramEvaluationObjectiveTitle] IS NULL AND d.[ProgramEvaluationObjectiveTitle] IS NOT NULL) OR (i.[ProgramEvaluationObjectiveTitle] IS NOT NULL AND d.[ProgramEvaluationObjectiveTitle] IS NULL)) OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] <> d.[ProgramEvaluation_ProgramEducationOrganizationId] OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL AND d.[ProgramEvaluation_ProgramEducationOrganizationId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL)) OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluation_ProgramEvaluationTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluation_ProgramEvaluationTitle] AS varbinary(max)) OR (i.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationTitle] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationTitle] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL)) OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluation_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramEvaluation_ProgramName] AS varbinary(max)) OR (i.[ProgramEvaluation_ProgramName] IS NULL AND d.[ProgramEvaluation_ProgramName] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramName] IS NOT NULL AND d.[ProgramEvaluation_ProgramName] IS NULL)) OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[ProgramEvaluationObjective] (
             [OldProgramEvaluationObjectiveTitle],
             [OldProgramEvaluation_ProgramEducationOrganizationId],
@@ -53578,9 +53330,9 @@ BEGIN
             newDj2.[Namespace],
             newDj2.[CodeValue],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
@@ -53802,14 +53554,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Code] AS varbinary(max)) <> CAST(del.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND del.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND del.[Code] IS NULL)) OR (i.[FiscalYear] <> del.[FiscalYear] OR (i.[FiscalYear] IS NULL AND del.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND del.[FiscalYear] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[Code] AS varbinary(max)) <> CAST(d.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND d.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND d.[Code] IS NULL)) OR (i.[FiscalYear] <> d.[FiscalYear] OR (i.[FiscalYear] IS NULL AND d.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND d.[FiscalYear] IS NULL));
         INSERT INTO [tracked_changes_edfi].[ProjectDimension] (
             [OldCode],
             [OldFiscalYear],
@@ -53824,9 +53573,9 @@ BEGIN
             i.[Code],
             i.[FiscalYear],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -53978,14 +53727,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] <> del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) <> CAST(del.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL)) OR (i.[GradingPeriodGradingPeriod_SchoolId] <> del.[GradingPeriodGradingPeriod_SchoolId] OR (i.[GradingPeriodGradingPeriod_SchoolId] IS NULL AND del.[GradingPeriodGradingPeriod_SchoolId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_SchoolId] IS NOT NULL AND del.[GradingPeriodGradingPeriod_SchoolId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_SchoolYear] <> del.[GradingPeriodGradingPeriod_SchoolYear] OR (i.[GradingPeriodGradingPeriod_SchoolYear] IS NULL AND del.[GradingPeriodGradingPeriod_SchoolYear] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_SchoolYear] IS NOT NULL AND del.[GradingPeriodGradingPeriod_SchoolYear] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] <> d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) <> CAST(d.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL)) OR (i.[GradingPeriodGradingPeriod_SchoolId] <> d.[GradingPeriodGradingPeriod_SchoolId] OR (i.[GradingPeriodGradingPeriod_SchoolId] IS NULL AND d.[GradingPeriodGradingPeriod_SchoolId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_SchoolId] IS NOT NULL AND d.[GradingPeriodGradingPeriod_SchoolId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_SchoolYear] <> d.[GradingPeriodGradingPeriod_SchoolYear] OR (i.[GradingPeriodGradingPeriod_SchoolYear] IS NULL AND d.[GradingPeriodGradingPeriod_SchoolYear] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_SchoolYear] IS NOT NULL AND d.[GradingPeriodGradingPeriod_SchoolYear] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[ReportCard] (
             [OldEducationOrganization_EducationOrganizationId],
             [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace],
@@ -54024,9 +53770,9 @@ BEGIN
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
@@ -54251,14 +53997,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[RestraintEventIdentifier] AS varbinary(max)) <> CAST(del.[RestraintEventIdentifier] AS varbinary(max)) OR (i.[RestraintEventIdentifier] IS NULL AND del.[RestraintEventIdentifier] IS NOT NULL) OR (i.[RestraintEventIdentifier] IS NOT NULL AND del.[RestraintEventIdentifier] IS NULL)) OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[RestraintEventIdentifier] AS varbinary(max)) <> CAST(d.[RestraintEventIdentifier] AS varbinary(max)) OR (i.[RestraintEventIdentifier] IS NULL AND d.[RestraintEventIdentifier] IS NOT NULL) OR (i.[RestraintEventIdentifier] IS NOT NULL AND d.[RestraintEventIdentifier] IS NULL)) OR (i.[SchoolId_Unified] <> d.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND d.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND d.[SchoolId_Unified] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[RestraintEvent] (
             [OldRestraintEventIdentifier],
             [OldSchoolId_Unified],
@@ -54281,9 +54024,9 @@ BEGIN
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
@@ -54644,15 +54387,6 @@ BEGIN
             doc.[ContentVersion]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
-    END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([SchoolId]))
-    BEGIN
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL));
     END
 END;
 GO
@@ -55137,14 +54871,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[SchoolYear] <> del.[SchoolYear] OR (i.[SchoolYear] IS NULL AND del.[SchoolYear] IS NOT NULL) OR (i.[SchoolYear] IS NOT NULL AND del.[SchoolYear] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[SchoolYear] <> d.[SchoolYear] OR (i.[SchoolYear] IS NULL AND d.[SchoolYear] IS NOT NULL) OR (i.[SchoolYear] IS NOT NULL AND d.[SchoolYear] IS NULL));
         INSERT INTO [tracked_changes_edfi].[SchoolYearType] (
             [OldSchoolYear],
             [NewSchoolYear],
@@ -55155,9 +54886,9 @@ BEGIN
             del.[SchoolYear],
             i.[SchoolYear],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -55262,14 +54993,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[CourseOffering_LocalCourseCode] AS varbinary(max)) <> CAST(del.[CourseOffering_LocalCourseCode] AS varbinary(max)) OR (i.[CourseOffering_LocalCourseCode] IS NULL AND del.[CourseOffering_LocalCourseCode] IS NOT NULL) OR (i.[CourseOffering_LocalCourseCode] IS NOT NULL AND del.[CourseOffering_LocalCourseCode] IS NULL)) OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL)) OR (i.[CourseOffering_SchoolYear] <> del.[CourseOffering_SchoolYear] OR (i.[CourseOffering_SchoolYear] IS NULL AND del.[CourseOffering_SchoolYear] IS NOT NULL) OR (i.[CourseOffering_SchoolYear] IS NOT NULL AND del.[CourseOffering_SchoolYear] IS NULL)) OR (CAST(i.[CourseOffering_SessionName] AS varbinary(max)) <> CAST(del.[CourseOffering_SessionName] AS varbinary(max)) OR (i.[CourseOffering_SessionName] IS NULL AND del.[CourseOffering_SessionName] IS NOT NULL) OR (i.[CourseOffering_SessionName] IS NOT NULL AND del.[CourseOffering_SessionName] IS NULL)) OR (CAST(i.[SectionIdentifier] AS varbinary(max)) <> CAST(del.[SectionIdentifier] AS varbinary(max)) OR (i.[SectionIdentifier] IS NULL AND del.[SectionIdentifier] IS NOT NULL) OR (i.[SectionIdentifier] IS NOT NULL AND del.[SectionIdentifier] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[CourseOffering_LocalCourseCode] AS varbinary(max)) <> CAST(d.[CourseOffering_LocalCourseCode] AS varbinary(max)) OR (i.[CourseOffering_LocalCourseCode] IS NULL AND d.[CourseOffering_LocalCourseCode] IS NOT NULL) OR (i.[CourseOffering_LocalCourseCode] IS NOT NULL AND d.[CourseOffering_LocalCourseCode] IS NULL)) OR (i.[SchoolId_Unified] <> d.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND d.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND d.[SchoolId_Unified] IS NULL)) OR (i.[CourseOffering_SchoolYear] <> d.[CourseOffering_SchoolYear] OR (i.[CourseOffering_SchoolYear] IS NULL AND d.[CourseOffering_SchoolYear] IS NOT NULL) OR (i.[CourseOffering_SchoolYear] IS NOT NULL AND d.[CourseOffering_SchoolYear] IS NULL)) OR (CAST(i.[CourseOffering_SessionName] AS varbinary(max)) <> CAST(d.[CourseOffering_SessionName] AS varbinary(max)) OR (i.[CourseOffering_SessionName] IS NULL AND d.[CourseOffering_SessionName] IS NOT NULL) OR (i.[CourseOffering_SessionName] IS NOT NULL AND d.[CourseOffering_SessionName] IS NULL)) OR (CAST(i.[SectionIdentifier] AS varbinary(max)) <> CAST(d.[SectionIdentifier] AS varbinary(max)) OR (i.[SectionIdentifier] IS NULL AND d.[SectionIdentifier] IS NOT NULL) OR (i.[SectionIdentifier] IS NOT NULL AND d.[SectionIdentifier] IS NULL));
         INSERT INTO [tracked_changes_edfi].[Section] (
             [OldCourseOffering_LocalCourseCode],
             [OldSchoolId_Unified],
@@ -55296,9 +55024,9 @@ BEGIN
             i.[CourseOffering_SessionName],
             i.[SectionIdentifier],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -55407,14 +55135,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[CalendarDate_CalendarCode] AS varbinary(max)) <> CAST(del.[CalendarDate_CalendarCode] AS varbinary(max)) OR (i.[CalendarDate_CalendarCode] IS NULL AND del.[CalendarDate_CalendarCode] IS NOT NULL) OR (i.[CalendarDate_CalendarCode] IS NOT NULL AND del.[CalendarDate_CalendarCode] IS NULL)) OR (i.[CalendarDate_Date] <> del.[CalendarDate_Date] OR (i.[CalendarDate_Date] IS NULL AND del.[CalendarDate_Date] IS NOT NULL) OR (i.[CalendarDate_Date] IS NOT NULL AND del.[CalendarDate_Date] IS NULL)) OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL)) OR (i.[SchoolYear_Unified] <> del.[SchoolYear_Unified] OR (i.[SchoolYear_Unified] IS NULL AND del.[SchoolYear_Unified] IS NOT NULL) OR (i.[SchoolYear_Unified] IS NOT NULL AND del.[SchoolYear_Unified] IS NULL)) OR (CAST(i.[Section_LocalCourseCode] AS varbinary(max)) <> CAST(del.[Section_LocalCourseCode] AS varbinary(max)) OR (i.[Section_LocalCourseCode] IS NULL AND del.[Section_LocalCourseCode] IS NOT NULL) OR (i.[Section_LocalCourseCode] IS NOT NULL AND del.[Section_LocalCourseCode] IS NULL)) OR (CAST(i.[Section_SectionIdentifier] AS varbinary(max)) <> CAST(del.[Section_SectionIdentifier] AS varbinary(max)) OR (i.[Section_SectionIdentifier] IS NULL AND del.[Section_SectionIdentifier] IS NOT NULL) OR (i.[Section_SectionIdentifier] IS NOT NULL AND del.[Section_SectionIdentifier] IS NULL)) OR (CAST(i.[Section_SessionName] AS varbinary(max)) <> CAST(del.[Section_SessionName] AS varbinary(max)) OR (i.[Section_SessionName] IS NULL AND del.[Section_SessionName] IS NOT NULL) OR (i.[Section_SessionName] IS NOT NULL AND del.[Section_SessionName] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[CalendarDate_CalendarCode] AS varbinary(max)) <> CAST(d.[CalendarDate_CalendarCode] AS varbinary(max)) OR (i.[CalendarDate_CalendarCode] IS NULL AND d.[CalendarDate_CalendarCode] IS NOT NULL) OR (i.[CalendarDate_CalendarCode] IS NOT NULL AND d.[CalendarDate_CalendarCode] IS NULL)) OR (i.[CalendarDate_Date] <> d.[CalendarDate_Date] OR (i.[CalendarDate_Date] IS NULL AND d.[CalendarDate_Date] IS NOT NULL) OR (i.[CalendarDate_Date] IS NOT NULL AND d.[CalendarDate_Date] IS NULL)) OR (i.[SchoolId_Unified] <> d.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND d.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND d.[SchoolId_Unified] IS NULL)) OR (i.[SchoolYear_Unified] <> d.[SchoolYear_Unified] OR (i.[SchoolYear_Unified] IS NULL AND d.[SchoolYear_Unified] IS NOT NULL) OR (i.[SchoolYear_Unified] IS NOT NULL AND d.[SchoolYear_Unified] IS NULL)) OR (CAST(i.[Section_LocalCourseCode] AS varbinary(max)) <> CAST(d.[Section_LocalCourseCode] AS varbinary(max)) OR (i.[Section_LocalCourseCode] IS NULL AND d.[Section_LocalCourseCode] IS NOT NULL) OR (i.[Section_LocalCourseCode] IS NOT NULL AND d.[Section_LocalCourseCode] IS NULL)) OR (CAST(i.[Section_SectionIdentifier] AS varbinary(max)) <> CAST(d.[Section_SectionIdentifier] AS varbinary(max)) OR (i.[Section_SectionIdentifier] IS NULL AND d.[Section_SectionIdentifier] IS NOT NULL) OR (i.[Section_SectionIdentifier] IS NOT NULL AND d.[Section_SectionIdentifier] IS NULL)) OR (CAST(i.[Section_SessionName] AS varbinary(max)) <> CAST(d.[Section_SessionName] AS varbinary(max)) OR (i.[Section_SessionName] IS NULL AND d.[Section_SessionName] IS NOT NULL) OR (i.[Section_SessionName] IS NOT NULL AND d.[Section_SessionName] IS NULL));
         INSERT INTO [tracked_changes_edfi].[SectionAttendanceTakenEvent] (
             [OldCalendarDate_CalendarCode],
             [OldCalendarDate_Date],
@@ -55449,9 +55174,9 @@ BEGIN
             i.[Section_SectionIdentifier],
             i.[Section_SessionName],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -55747,14 +55472,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[School_SchoolId] <> del.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND del.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND del.[School_SchoolId] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> del.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND del.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND del.[SchoolYear_SchoolYear] IS NULL)) OR (CAST(i.[SessionName] AS varbinary(max)) <> CAST(del.[SessionName] AS varbinary(max)) OR (i.[SessionName] IS NULL AND del.[SessionName] IS NOT NULL) OR (i.[SessionName] IS NOT NULL AND del.[SessionName] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> d.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND d.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND d.[SchoolYear_SchoolYear] IS NULL)) OR (CAST(i.[SessionName] AS varbinary(max)) <> CAST(d.[SessionName] AS varbinary(max)) OR (i.[SessionName] IS NULL AND d.[SessionName] IS NOT NULL) OR (i.[SessionName] IS NOT NULL AND d.[SessionName] IS NULL));
         INSERT INTO [tracked_changes_edfi].[Session] (
             [OldSchool_SchoolId],
             [OldSchoolYear_SchoolYear],
@@ -55773,9 +55495,9 @@ BEGIN
             i.[SchoolYear_SchoolYear],
             i.[SessionName],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -55952,14 +55674,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Code] AS varbinary(max)) <> CAST(del.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND del.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND del.[Code] IS NULL)) OR (i.[FiscalYear] <> del.[FiscalYear] OR (i.[FiscalYear] IS NULL AND del.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND del.[FiscalYear] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[Code] AS varbinary(max)) <> CAST(d.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND d.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND d.[Code] IS NULL)) OR (i.[FiscalYear] <> d.[FiscalYear] OR (i.[FiscalYear] IS NULL AND d.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND d.[FiscalYear] IS NULL));
         INSERT INTO [tracked_changes_edfi].[SourceDimension] (
             [OldCode],
             [OldFiscalYear],
@@ -55974,9 +55693,9 @@ BEGIN
             i.[Code],
             i.[FiscalYear],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -56114,14 +55833,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[StaffUniqueId] AS varbinary(max)) <> CAST(del.[StaffUniqueId] AS varbinary(max)) OR (i.[StaffUniqueId] IS NULL AND del.[StaffUniqueId] IS NOT NULL) OR (i.[StaffUniqueId] IS NOT NULL AND del.[StaffUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[StaffUniqueId] AS varbinary(max)) <> CAST(d.[StaffUniqueId] AS varbinary(max)) OR (i.[StaffUniqueId] IS NULL AND d.[StaffUniqueId] IS NOT NULL) OR (i.[StaffUniqueId] IS NOT NULL AND d.[StaffUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[Staff] (
             [OldStaffUniqueId],
             [OldStaff_DocumentId],
@@ -56136,9 +55852,9 @@ BEGIN
             i.[StaffUniqueId],
             i.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -56245,14 +55961,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[AbsenceEventCategoryDescriptor_DescriptorId] <> del.[AbsenceEventCategoryDescriptor_DescriptorId] OR (i.[AbsenceEventCategoryDescriptor_DescriptorId] IS NULL AND del.[AbsenceEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[AbsenceEventCategoryDescriptor_DescriptorId] IS NOT NULL AND del.[AbsenceEventCategoryDescriptor_DescriptorId] IS NULL)) OR (i.[EventDate] <> del.[EventDate] OR (i.[EventDate] IS NULL AND del.[EventDate] IS NOT NULL) OR (i.[EventDate] IS NOT NULL AND del.[EventDate] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[AbsenceEventCategoryDescriptor_DescriptorId] <> d.[AbsenceEventCategoryDescriptor_DescriptorId] OR (i.[AbsenceEventCategoryDescriptor_DescriptorId] IS NULL AND d.[AbsenceEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[AbsenceEventCategoryDescriptor_DescriptorId] IS NOT NULL AND d.[AbsenceEventCategoryDescriptor_DescriptorId] IS NULL)) OR (i.[EventDate] <> d.[EventDate] OR (i.[EventDate] IS NULL AND d.[EventDate] IS NOT NULL) OR (i.[EventDate] IS NOT NULL AND d.[EventDate] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StaffAbsenceEvent] (
             [OldAbsenceEventCategoryDescriptor_Namespace],
             [OldAbsenceEventCategoryDescriptor_CodeValue],
@@ -56279,9 +55992,9 @@ BEGIN
             i.[Staff_StaffUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AbsenceEventCategoryDescriptor_DescriptorId]
@@ -56508,14 +56221,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (CAST(i.[Cohort_CohortIdentifier] AS varbinary(max)) <> CAST(del.[Cohort_CohortIdentifier] AS varbinary(max)) OR (i.[Cohort_CohortIdentifier] IS NULL AND del.[Cohort_CohortIdentifier] IS NOT NULL) OR (i.[Cohort_CohortIdentifier] IS NOT NULL AND del.[Cohort_CohortIdentifier] IS NULL)) OR (i.[Cohort_EducationOrganizationId] <> del.[Cohort_EducationOrganizationId] OR (i.[Cohort_EducationOrganizationId] IS NULL AND del.[Cohort_EducationOrganizationId] IS NOT NULL) OR (i.[Cohort_EducationOrganizationId] IS NOT NULL AND del.[Cohort_EducationOrganizationId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (CAST(i.[Cohort_CohortIdentifier] AS varbinary(max)) <> CAST(d.[Cohort_CohortIdentifier] AS varbinary(max)) OR (i.[Cohort_CohortIdentifier] IS NULL AND d.[Cohort_CohortIdentifier] IS NOT NULL) OR (i.[Cohort_CohortIdentifier] IS NOT NULL AND d.[Cohort_CohortIdentifier] IS NULL)) OR (i.[Cohort_EducationOrganizationId] <> d.[Cohort_EducationOrganizationId] OR (i.[Cohort_EducationOrganizationId] IS NULL AND d.[Cohort_EducationOrganizationId] IS NOT NULL) OR (i.[Cohort_EducationOrganizationId] IS NOT NULL AND d.[Cohort_EducationOrganizationId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StaffCohortAssociation] (
             [OldBeginDate],
             [OldCohort_CohortIdentifier],
@@ -56542,9 +56252,9 @@ BEGIN
             i.[Staff_StaffUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
@@ -56689,14 +56399,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[DisciplineIncident_IncidentIdentifier] AS varbinary(max)) <> CAST(del.[DisciplineIncident_IncidentIdentifier] AS varbinary(max)) OR (i.[DisciplineIncident_IncidentIdentifier] IS NULL AND del.[DisciplineIncident_IncidentIdentifier] IS NOT NULL) OR (i.[DisciplineIncident_IncidentIdentifier] IS NOT NULL AND del.[DisciplineIncident_IncidentIdentifier] IS NULL)) OR (i.[DisciplineIncident_SchoolId] <> del.[DisciplineIncident_SchoolId] OR (i.[DisciplineIncident_SchoolId] IS NULL AND del.[DisciplineIncident_SchoolId] IS NOT NULL) OR (i.[DisciplineIncident_SchoolId] IS NOT NULL AND del.[DisciplineIncident_SchoolId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[DisciplineIncident_IncidentIdentifier] AS varbinary(max)) <> CAST(d.[DisciplineIncident_IncidentIdentifier] AS varbinary(max)) OR (i.[DisciplineIncident_IncidentIdentifier] IS NULL AND d.[DisciplineIncident_IncidentIdentifier] IS NOT NULL) OR (i.[DisciplineIncident_IncidentIdentifier] IS NOT NULL AND d.[DisciplineIncident_IncidentIdentifier] IS NULL)) OR (i.[DisciplineIncident_SchoolId] <> d.[DisciplineIncident_SchoolId] OR (i.[DisciplineIncident_SchoolId] IS NULL AND d.[DisciplineIncident_SchoolId] IS NOT NULL) OR (i.[DisciplineIncident_SchoolId] IS NOT NULL AND d.[DisciplineIncident_SchoolId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StaffDisciplineIncidentAssociation] (
             [OldDisciplineIncident_IncidentIdentifier],
             [OldDisciplineIncident_SchoolId],
@@ -56719,9 +56426,9 @@ BEGIN
             i.[Staff_StaffUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
@@ -56871,14 +56578,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[StaffClassificationDescriptor_DescriptorId] <> del.[StaffClassificationDescriptor_DescriptorId] OR (i.[StaffClassificationDescriptor_DescriptorId] IS NULL AND del.[StaffClassificationDescriptor_DescriptorId] IS NOT NULL) OR (i.[StaffClassificationDescriptor_DescriptorId] IS NOT NULL AND del.[StaffClassificationDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[StaffUniqueId_Unified] AS varbinary(max)) <> CAST(del.[StaffUniqueId_Unified] AS varbinary(max)) OR (i.[StaffUniqueId_Unified] IS NULL AND del.[StaffUniqueId_Unified] IS NOT NULL) OR (i.[StaffUniqueId_Unified] IS NOT NULL AND del.[StaffUniqueId_Unified] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[StaffClassificationDescriptor_DescriptorId] <> d.[StaffClassificationDescriptor_DescriptorId] OR (i.[StaffClassificationDescriptor_DescriptorId] IS NULL AND d.[StaffClassificationDescriptor_DescriptorId] IS NOT NULL) OR (i.[StaffClassificationDescriptor_DescriptorId] IS NOT NULL AND d.[StaffClassificationDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[StaffUniqueId_Unified] AS varbinary(max)) <> CAST(d.[StaffUniqueId_Unified] AS varbinary(max)) OR (i.[StaffUniqueId_Unified] IS NULL AND d.[StaffUniqueId_Unified] IS NOT NULL) OR (i.[StaffUniqueId_Unified] IS NOT NULL AND d.[StaffUniqueId_Unified] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StaffEducationOrganizationAssignmentAssociation] (
             [OldBeginDate],
             [OldEducationOrganization_EducationOrganizationId],
@@ -56909,9 +56613,9 @@ BEGIN
             i.[StaffUniqueId_Unified],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[StaffClassificationDescriptor_DescriptorId]
@@ -57019,14 +56723,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[ContactTitle] AS varbinary(max)) <> CAST(del.[ContactTitle] AS varbinary(max)) OR (i.[ContactTitle] IS NULL AND del.[ContactTitle] IS NOT NULL) OR (i.[ContactTitle] IS NOT NULL AND del.[ContactTitle] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[ContactTitle] AS varbinary(max)) <> CAST(d.[ContactTitle] AS varbinary(max)) OR (i.[ContactTitle] IS NULL AND d.[ContactTitle] IS NOT NULL) OR (i.[ContactTitle] IS NOT NULL AND d.[ContactTitle] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StaffEducationOrganizationContactAssociation] (
             [OldContactTitle],
             [OldEducationOrganization_EducationOrganizationId],
@@ -57049,9 +56750,9 @@ BEGIN
             i.[Staff_StaffUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
@@ -57240,14 +56941,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[EmploymentStatusDescriptor_DescriptorId] <> del.[EmploymentStatusDescriptor_DescriptorId] OR (i.[EmploymentStatusDescriptor_DescriptorId] IS NULL AND del.[EmploymentStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[EmploymentStatusDescriptor_DescriptorId] IS NOT NULL AND del.[EmploymentStatusDescriptor_DescriptorId] IS NULL)) OR (i.[HireDate] <> del.[HireDate] OR (i.[HireDate] IS NULL AND del.[HireDate] IS NOT NULL) OR (i.[HireDate] IS NOT NULL AND del.[HireDate] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[EmploymentStatusDescriptor_DescriptorId] <> d.[EmploymentStatusDescriptor_DescriptorId] OR (i.[EmploymentStatusDescriptor_DescriptorId] IS NULL AND d.[EmploymentStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[EmploymentStatusDescriptor_DescriptorId] IS NOT NULL AND d.[EmploymentStatusDescriptor_DescriptorId] IS NULL)) OR (i.[HireDate] <> d.[HireDate] OR (i.[HireDate] IS NULL AND d.[HireDate] IS NOT NULL) OR (i.[HireDate] IS NOT NULL AND d.[HireDate] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StaffEducationOrganizationEmploymentAssociation] (
             [OldEducationOrganization_EducationOrganizationId],
             [OldEmploymentStatusDescriptor_Namespace],
@@ -57278,9 +56976,9 @@ BEGIN
             i.[Staff_StaffUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[EmploymentStatusDescriptor_DescriptorId]
@@ -57625,14 +57323,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[StaffLeaveEventCategoryDescriptor_DescriptorId] <> del.[StaffLeaveEventCategoryDescriptor_DescriptorId] OR (i.[StaffLeaveEventCategoryDescriptor_DescriptorId] IS NULL AND del.[StaffLeaveEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[StaffLeaveEventCategoryDescriptor_DescriptorId] IS NOT NULL AND del.[StaffLeaveEventCategoryDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[StaffLeaveEventCategoryDescriptor_DescriptorId] <> d.[StaffLeaveEventCategoryDescriptor_DescriptorId] OR (i.[StaffLeaveEventCategoryDescriptor_DescriptorId] IS NULL AND d.[StaffLeaveEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[StaffLeaveEventCategoryDescriptor_DescriptorId] IS NOT NULL AND d.[StaffLeaveEventCategoryDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StaffLeave] (
             [OldBeginDate],
             [OldStaffLeaveEventCategoryDescriptor_Namespace],
@@ -57659,9 +57354,9 @@ BEGIN
             i.[Staff_StaffUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[StaffLeaveEventCategoryDescriptor_DescriptorId]
@@ -57854,14 +57549,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StaffProgramAssociation] (
             [OldBeginDate],
             [OldProgramProgram_EducationOrganizationId],
@@ -57896,9 +57588,9 @@ BEGIN
             i.[Staff_StaffUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
@@ -58087,14 +57779,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[ProgramAssignmentDescriptor_DescriptorId] <> del.[ProgramAssignmentDescriptor_DescriptorId] OR (i.[ProgramAssignmentDescriptor_DescriptorId] IS NULL AND del.[ProgramAssignmentDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramAssignmentDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramAssignmentDescriptor_DescriptorId] IS NULL)) OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[ProgramAssignmentDescriptor_DescriptorId] <> d.[ProgramAssignmentDescriptor_DescriptorId] OR (i.[ProgramAssignmentDescriptor_DescriptorId] IS NULL AND d.[ProgramAssignmentDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramAssignmentDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramAssignmentDescriptor_DescriptorId] IS NULL)) OR (i.[SchoolId_Unified] <> d.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND d.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND d.[SchoolId_Unified] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StaffSchoolAssociation] (
             [OldProgramAssignmentDescriptor_Namespace],
             [OldProgramAssignmentDescriptor_CodeValue],
@@ -58121,9 +57810,9 @@ BEGIN
             i.[Staff_StaffUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramAssignmentDescriptor_DescriptorId]
@@ -58317,14 +58006,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (CAST(i.[Section_LocalCourseCode] AS varbinary(max)) <> CAST(del.[Section_LocalCourseCode] AS varbinary(max)) OR (i.[Section_LocalCourseCode] IS NULL AND del.[Section_LocalCourseCode] IS NOT NULL) OR (i.[Section_LocalCourseCode] IS NOT NULL AND del.[Section_LocalCourseCode] IS NULL)) OR (i.[Section_SchoolId] <> del.[Section_SchoolId] OR (i.[Section_SchoolId] IS NULL AND del.[Section_SchoolId] IS NOT NULL) OR (i.[Section_SchoolId] IS NOT NULL AND del.[Section_SchoolId] IS NULL)) OR (i.[Section_SchoolYear] <> del.[Section_SchoolYear] OR (i.[Section_SchoolYear] IS NULL AND del.[Section_SchoolYear] IS NOT NULL) OR (i.[Section_SchoolYear] IS NOT NULL AND del.[Section_SchoolYear] IS NULL)) OR (CAST(i.[Section_SectionIdentifier] AS varbinary(max)) <> CAST(del.[Section_SectionIdentifier] AS varbinary(max)) OR (i.[Section_SectionIdentifier] IS NULL AND del.[Section_SectionIdentifier] IS NOT NULL) OR (i.[Section_SectionIdentifier] IS NOT NULL AND del.[Section_SectionIdentifier] IS NULL)) OR (CAST(i.[Section_SessionName] AS varbinary(max)) <> CAST(del.[Section_SessionName] AS varbinary(max)) OR (i.[Section_SessionName] IS NULL AND del.[Section_SessionName] IS NOT NULL) OR (i.[Section_SessionName] IS NOT NULL AND del.[Section_SessionName] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (CAST(i.[Section_LocalCourseCode] AS varbinary(max)) <> CAST(d.[Section_LocalCourseCode] AS varbinary(max)) OR (i.[Section_LocalCourseCode] IS NULL AND d.[Section_LocalCourseCode] IS NOT NULL) OR (i.[Section_LocalCourseCode] IS NOT NULL AND d.[Section_LocalCourseCode] IS NULL)) OR (i.[Section_SchoolId] <> d.[Section_SchoolId] OR (i.[Section_SchoolId] IS NULL AND d.[Section_SchoolId] IS NOT NULL) OR (i.[Section_SchoolId] IS NOT NULL AND d.[Section_SchoolId] IS NULL)) OR (i.[Section_SchoolYear] <> d.[Section_SchoolYear] OR (i.[Section_SchoolYear] IS NULL AND d.[Section_SchoolYear] IS NOT NULL) OR (i.[Section_SchoolYear] IS NOT NULL AND d.[Section_SchoolYear] IS NULL)) OR (CAST(i.[Section_SectionIdentifier] AS varbinary(max)) <> CAST(d.[Section_SectionIdentifier] AS varbinary(max)) OR (i.[Section_SectionIdentifier] IS NULL AND d.[Section_SectionIdentifier] IS NOT NULL) OR (i.[Section_SectionIdentifier] IS NOT NULL AND d.[Section_SectionIdentifier] IS NULL)) OR (CAST(i.[Section_SessionName] AS varbinary(max)) <> CAST(d.[Section_SessionName] AS varbinary(max)) OR (i.[Section_SessionName] IS NULL AND d.[Section_SessionName] IS NOT NULL) OR (i.[Section_SessionName] IS NOT NULL AND d.[Section_SessionName] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StaffSectionAssociation] (
             [OldBeginDate],
             [OldSection_LocalCourseCode],
@@ -58363,9 +58049,9 @@ BEGIN
             i.[Staff_StaffUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
@@ -58652,15 +58338,6 @@ BEGIN
             doc.[ContentVersion]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId];
-    END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([StateEducationAgencyId]))
-    BEGIN
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[StateEducationAgencyId] <> del.[StateEducationAgencyId] OR (i.[StateEducationAgencyId] IS NULL AND del.[StateEducationAgencyId] IS NOT NULL) OR (i.[StateEducationAgencyId] IS NOT NULL AND del.[StateEducationAgencyId] IS NULL));
     END
 END;
 GO
@@ -59147,14 +58824,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND del.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND del.[StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND d.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND d.[StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[Student] (
             [OldStudentUniqueId],
             [OldStudent_DocumentId],
@@ -59169,9 +58843,9 @@ BEGIN
             i.[StudentUniqueId],
             i.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -59280,14 +58954,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> del.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND del.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND del.[SchoolYear_SchoolYear] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[TermDescriptor_DescriptorId] <> del.[TermDescriptor_DescriptorId] OR (i.[TermDescriptor_DescriptorId] IS NULL AND del.[TermDescriptor_DescriptorId] IS NOT NULL) OR (i.[TermDescriptor_DescriptorId] IS NOT NULL AND del.[TermDescriptor_DescriptorId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> d.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND d.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND d.[SchoolYear_SchoolYear] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL)) OR (i.[TermDescriptor_DescriptorId] <> d.[TermDescriptor_DescriptorId] OR (i.[TermDescriptor_DescriptorId] IS NULL AND d.[TermDescriptor_DescriptorId] IS NOT NULL) OR (i.[TermDescriptor_DescriptorId] IS NOT NULL AND d.[TermDescriptor_DescriptorId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StudentAcademicRecord] (
             [OldEducationOrganization_EducationOrganizationId],
             [OldSchoolYear_SchoolYear],
@@ -59318,9 +58989,9 @@ BEGIN
             newDj0.[CodeValue],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[TermDescriptor_DescriptorId]
@@ -59627,14 +59298,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Assessment_AssessmentIdentifier] AS varbinary(max)) <> CAST(del.[Assessment_AssessmentIdentifier] AS varbinary(max)) OR (i.[Assessment_AssessmentIdentifier] IS NULL AND del.[Assessment_AssessmentIdentifier] IS NOT NULL) OR (i.[Assessment_AssessmentIdentifier] IS NOT NULL AND del.[Assessment_AssessmentIdentifier] IS NULL)) OR (CAST(i.[Assessment_Namespace] AS varbinary(max)) <> CAST(del.[Assessment_Namespace] AS varbinary(max)) OR (i.[Assessment_Namespace] IS NULL AND del.[Assessment_Namespace] IS NOT NULL) OR (i.[Assessment_Namespace] IS NOT NULL AND del.[Assessment_Namespace] IS NULL)) OR (CAST(i.[StudentAssessmentIdentifier] AS varbinary(max)) <> CAST(del.[StudentAssessmentIdentifier] AS varbinary(max)) OR (i.[StudentAssessmentIdentifier] IS NULL AND del.[StudentAssessmentIdentifier] IS NOT NULL) OR (i.[StudentAssessmentIdentifier] IS NOT NULL AND del.[StudentAssessmentIdentifier] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[Assessment_AssessmentIdentifier] AS varbinary(max)) <> CAST(d.[Assessment_AssessmentIdentifier] AS varbinary(max)) OR (i.[Assessment_AssessmentIdentifier] IS NULL AND d.[Assessment_AssessmentIdentifier] IS NOT NULL) OR (i.[Assessment_AssessmentIdentifier] IS NOT NULL AND d.[Assessment_AssessmentIdentifier] IS NULL)) OR (CAST(i.[Assessment_Namespace] AS varbinary(max)) <> CAST(d.[Assessment_Namespace] AS varbinary(max)) OR (i.[Assessment_Namespace] IS NULL AND d.[Assessment_Namespace] IS NOT NULL) OR (i.[Assessment_Namespace] IS NOT NULL AND d.[Assessment_Namespace] IS NULL)) OR (CAST(i.[StudentAssessmentIdentifier] AS varbinary(max)) <> CAST(d.[StudentAssessmentIdentifier] AS varbinary(max)) OR (i.[StudentAssessmentIdentifier] IS NULL AND d.[StudentAssessmentIdentifier] IS NOT NULL) OR (i.[StudentAssessmentIdentifier] IS NOT NULL AND d.[StudentAssessmentIdentifier] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StudentAssessment] (
             [OldAssessment_AssessmentIdentifier],
             [OldAssessment_Namespace],
@@ -59665,9 +59333,9 @@ BEGIN
             i.[ReportedSchool_SchoolId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
@@ -59822,14 +59490,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] <> del.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] OR (i.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] IS NULL AND del.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] IS NOT NULL AND del.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[StudentAssessment_AssessmentIdentifier] AS varbinary(max)) <> CAST(del.[StudentAssessment_AssessmentIdentifier] AS varbinary(max)) OR (i.[StudentAssessment_AssessmentIdentifier] IS NULL AND del.[StudentAssessment_AssessmentIdentifier] IS NOT NULL) OR (i.[StudentAssessment_AssessmentIdentifier] IS NOT NULL AND del.[StudentAssessment_AssessmentIdentifier] IS NULL)) OR (CAST(i.[StudentAssessment_Namespace] AS varbinary(max)) <> CAST(del.[StudentAssessment_Namespace] AS varbinary(max)) OR (i.[StudentAssessment_Namespace] IS NULL AND del.[StudentAssessment_Namespace] IS NOT NULL) OR (i.[StudentAssessment_Namespace] IS NOT NULL AND del.[StudentAssessment_Namespace] IS NULL)) OR (CAST(i.[StudentAssessment_StudentAssessmentIdentifier] AS varbinary(max)) <> CAST(del.[StudentAssessment_StudentAssessmentIdentifier] AS varbinary(max)) OR (i.[StudentAssessment_StudentAssessmentIdentifier] IS NULL AND del.[StudentAssessment_StudentAssessmentIdentifier] IS NOT NULL) OR (i.[StudentAssessment_StudentAssessmentIdentifier] IS NOT NULL AND del.[StudentAssessment_StudentAssessmentIdentifier] IS NULL)) OR (CAST(i.[StudentAssessment_StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentAssessment_StudentUniqueId] AS varbinary(max)) OR (i.[StudentAssessment_StudentUniqueId] IS NULL AND del.[StudentAssessment_StudentUniqueId] IS NOT NULL) OR (i.[StudentAssessment_StudentUniqueId] IS NOT NULL AND del.[StudentAssessment_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] <> d.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] OR (i.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] IS NULL AND d.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] IS NOT NULL AND d.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[StudentAssessment_AssessmentIdentifier] AS varbinary(max)) <> CAST(d.[StudentAssessment_AssessmentIdentifier] AS varbinary(max)) OR (i.[StudentAssessment_AssessmentIdentifier] IS NULL AND d.[StudentAssessment_AssessmentIdentifier] IS NOT NULL) OR (i.[StudentAssessment_AssessmentIdentifier] IS NOT NULL AND d.[StudentAssessment_AssessmentIdentifier] IS NULL)) OR (CAST(i.[StudentAssessment_Namespace] AS varbinary(max)) <> CAST(d.[StudentAssessment_Namespace] AS varbinary(max)) OR (i.[StudentAssessment_Namespace] IS NULL AND d.[StudentAssessment_Namespace] IS NOT NULL) OR (i.[StudentAssessment_Namespace] IS NOT NULL AND d.[StudentAssessment_Namespace] IS NULL)) OR (CAST(i.[StudentAssessment_StudentAssessmentIdentifier] AS varbinary(max)) <> CAST(d.[StudentAssessment_StudentAssessmentIdentifier] AS varbinary(max)) OR (i.[StudentAssessment_StudentAssessmentIdentifier] IS NULL AND d.[StudentAssessment_StudentAssessmentIdentifier] IS NOT NULL) OR (i.[StudentAssessment_StudentAssessmentIdentifier] IS NOT NULL AND d.[StudentAssessment_StudentAssessmentIdentifier] IS NULL)) OR (CAST(i.[StudentAssessment_StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentAssessment_StudentUniqueId] AS varbinary(max)) OR (i.[StudentAssessment_StudentUniqueId] IS NULL AND d.[StudentAssessment_StudentUniqueId] IS NOT NULL) OR (i.[StudentAssessment_StudentUniqueId] IS NOT NULL AND d.[StudentAssessment_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StudentAssessmentEducationOrganizationAssociation] (
             [OldEducationOrganizationAssociationTypeDescriptor_Namespace],
             [OldEducationOrganizationAssociationTypeDescriptor_CodeValue],
@@ -59868,9 +59533,9 @@ BEGIN
             i.[StudentAssessment_StudentUniqueId],
             newPj0s1.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[EducationOrganizationAssociationTypeDescriptor_DescriptorId]
@@ -60065,14 +59730,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[AssessmentAdministration_AdministrationIdentifier] AS varbinary(max)) <> CAST(del.[AssessmentAdministration_AdministrationIdentifier] AS varbinary(max)) OR (i.[AssessmentAdministration_AdministrationIdentifier] IS NULL AND del.[AssessmentAdministration_AdministrationIdentifier] IS NOT NULL) OR (i.[AssessmentAdministration_AdministrationIdentifier] IS NOT NULL AND del.[AssessmentAdministration_AdministrationIdentifier] IS NULL)) OR (CAST(i.[AssessmentAdministration_AssessmentIdentifier] AS varbinary(max)) <> CAST(del.[AssessmentAdministration_AssessmentIdentifier] AS varbinary(max)) OR (i.[AssessmentAdministration_AssessmentIdentifier] IS NULL AND del.[AssessmentAdministration_AssessmentIdentifier] IS NOT NULL) OR (i.[AssessmentAdministration_AssessmentIdentifier] IS NOT NULL AND del.[AssessmentAdministration_AssessmentIdentifier] IS NULL)) OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] <> del.[AssessmentAdministration_AssigningEducationOrganizationId] OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] IS NULL AND del.[AssessmentAdministration_AssigningEducationOrganizationId] IS NOT NULL) OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] IS NOT NULL AND del.[AssessmentAdministration_AssigningEducationOrganizationId] IS NULL)) OR (CAST(i.[AssessmentAdministration_Namespace] AS varbinary(max)) <> CAST(del.[AssessmentAdministration_Namespace] AS varbinary(max)) OR (i.[AssessmentAdministration_Namespace] IS NULL AND del.[AssessmentAdministration_Namespace] IS NOT NULL) OR (i.[AssessmentAdministration_Namespace] IS NOT NULL AND del.[AssessmentAdministration_Namespace] IS NULL)) OR (i.[StudentEducationOrganizationAssociation_EducationOrganizationId] <> del.[StudentEducationOrganizationAssociation_EducationOrganizationId] OR (i.[StudentEducationOrganizationAssociation_EducationOrganizationId] IS NULL AND del.[StudentEducationOrganizationAssociation_EducationOrganizationId] IS NOT NULL) OR (i.[StudentEducationOrganizationAssociation_EducationOrganizationId] IS NOT NULL AND del.[StudentEducationOrganizationAssociation_EducationOrganizationId] IS NULL)) OR (CAST(i.[StudentUniqueId_Unified] AS varbinary(max)) <> CAST(del.[StudentUniqueId_Unified] AS varbinary(max)) OR (i.[StudentUniqueId_Unified] IS NULL AND del.[StudentUniqueId_Unified] IS NOT NULL) OR (i.[StudentUniqueId_Unified] IS NOT NULL AND del.[StudentUniqueId_Unified] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[AssessmentAdministration_AdministrationIdentifier] AS varbinary(max)) <> CAST(d.[AssessmentAdministration_AdministrationIdentifier] AS varbinary(max)) OR (i.[AssessmentAdministration_AdministrationIdentifier] IS NULL AND d.[AssessmentAdministration_AdministrationIdentifier] IS NOT NULL) OR (i.[AssessmentAdministration_AdministrationIdentifier] IS NOT NULL AND d.[AssessmentAdministration_AdministrationIdentifier] IS NULL)) OR (CAST(i.[AssessmentAdministration_AssessmentIdentifier] AS varbinary(max)) <> CAST(d.[AssessmentAdministration_AssessmentIdentifier] AS varbinary(max)) OR (i.[AssessmentAdministration_AssessmentIdentifier] IS NULL AND d.[AssessmentAdministration_AssessmentIdentifier] IS NOT NULL) OR (i.[AssessmentAdministration_AssessmentIdentifier] IS NOT NULL AND d.[AssessmentAdministration_AssessmentIdentifier] IS NULL)) OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] <> d.[AssessmentAdministration_AssigningEducationOrganizationId] OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] IS NULL AND d.[AssessmentAdministration_AssigningEducationOrganizationId] IS NOT NULL) OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] IS NOT NULL AND d.[AssessmentAdministration_AssigningEducationOrganizationId] IS NULL)) OR (CAST(i.[AssessmentAdministration_Namespace] AS varbinary(max)) <> CAST(d.[AssessmentAdministration_Namespace] AS varbinary(max)) OR (i.[AssessmentAdministration_Namespace] IS NULL AND d.[AssessmentAdministration_Namespace] IS NOT NULL) OR (i.[AssessmentAdministration_Namespace] IS NOT NULL AND d.[AssessmentAdministration_Namespace] IS NULL)) OR (i.[StudentEducationOrganizationAssociation_EducationOrganizationId] <> d.[StudentEducationOrganizationAssociation_EducationOrganizationId] OR (i.[StudentEducationOrganizationAssociation_EducationOrganizationId] IS NULL AND d.[StudentEducationOrganizationAssociation_EducationOrganizationId] IS NOT NULL) OR (i.[StudentEducationOrganizationAssociation_EducationOrganizationId] IS NOT NULL AND d.[StudentEducationOrganizationAssociation_EducationOrganizationId] IS NULL)) OR (CAST(i.[StudentUniqueId_Unified] AS varbinary(max)) <> CAST(d.[StudentUniqueId_Unified] AS varbinary(max)) OR (i.[StudentUniqueId_Unified] IS NULL AND d.[StudentUniqueId_Unified] IS NOT NULL) OR (i.[StudentUniqueId_Unified] IS NOT NULL AND d.[StudentUniqueId_Unified] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StudentAssessmentRegistration] (
             [OldAssessmentAdministration_AdministrationIdentifier],
             [OldAssessmentAdministration_AssessmentIdentifier],
@@ -60107,9 +59769,9 @@ BEGIN
             i.[StudentUniqueId_Unified],
             newPj0s1.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[StudentEducationOrganizationAssociation] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentEducationOrganizationAssociation_DocumentId]
@@ -60305,14 +59967,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[AssessmentBatteryPart_AssessmentBatteryPartName] AS varbinary(max)) <> CAST(del.[AssessmentBatteryPart_AssessmentBatteryPartName] AS varbinary(max)) OR (i.[AssessmentBatteryPart_AssessmentBatteryPartName] IS NULL AND del.[AssessmentBatteryPart_AssessmentBatteryPartName] IS NOT NULL) OR (i.[AssessmentBatteryPart_AssessmentBatteryPartName] IS NOT NULL AND del.[AssessmentBatteryPart_AssessmentBatteryPartName] IS NULL)) OR (CAST(i.[AssessmentIdentifier_Unified] AS varbinary(max)) <> CAST(del.[AssessmentIdentifier_Unified] AS varbinary(max)) OR (i.[AssessmentIdentifier_Unified] IS NULL AND del.[AssessmentIdentifier_Unified] IS NOT NULL) OR (i.[AssessmentIdentifier_Unified] IS NOT NULL AND del.[AssessmentIdentifier_Unified] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(del.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND del.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND del.[Namespace_Unified] IS NULL)) OR (CAST(i.[StudentAssessmentRegistration_AdministrationIdentifier] AS varbinary(max)) <> CAST(del.[StudentAssessmentRegistration_AdministrationIdentifier] AS varbinary(max)) OR (i.[StudentAssessmentRegistration_AdministrationIdentifier] IS NULL AND del.[StudentAssessmentRegistration_AdministrationIdentifier] IS NOT NULL) OR (i.[StudentAssessmentRegistration_AdministrationIdentifier] IS NOT NULL AND del.[StudentAssessmentRegistration_AdministrationIdentifier] IS NULL)) OR (i.[StudentAssessmentRegistration_AssigningEducationOrganizationId] <> del.[StudentAssessmentRegistration_AssigningEducationOrganizationId] OR (i.[StudentAssessmentRegistration_AssigningEducationOrganizationId] IS NULL AND del.[StudentAssessmentRegistration_AssigningEducationOrganizationId] IS NOT NULL) OR (i.[StudentAssessmentRegistration_AssigningEducationOrganizationId] IS NOT NULL AND del.[StudentAssessmentRegistration_AssigningEducationOrganizationId] IS NULL)) OR (i.[StudentAssessmentRegistration_EducationOrganizationId] <> del.[StudentAssessmentRegistration_EducationOrganizationId] OR (i.[StudentAssessmentRegistration_EducationOrganizationId] IS NULL AND del.[StudentAssessmentRegistration_EducationOrganizationId] IS NOT NULL) OR (i.[StudentAssessmentRegistration_EducationOrganizationId] IS NOT NULL AND del.[StudentAssessmentRegistration_EducationOrganizationId] IS NULL)) OR (CAST(i.[StudentAssessmentRegistration_StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentAssessmentRegistration_StudentUniqueId] AS varbinary(max)) OR (i.[StudentAssessmentRegistration_StudentUniqueId] IS NULL AND del.[StudentAssessmentRegistration_StudentUniqueId] IS NOT NULL) OR (i.[StudentAssessmentRegistration_StudentUniqueId] IS NOT NULL AND del.[StudentAssessmentRegistration_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[AssessmentBatteryPart_AssessmentBatteryPartName] AS varbinary(max)) <> CAST(d.[AssessmentBatteryPart_AssessmentBatteryPartName] AS varbinary(max)) OR (i.[AssessmentBatteryPart_AssessmentBatteryPartName] IS NULL AND d.[AssessmentBatteryPart_AssessmentBatteryPartName] IS NOT NULL) OR (i.[AssessmentBatteryPart_AssessmentBatteryPartName] IS NOT NULL AND d.[AssessmentBatteryPart_AssessmentBatteryPartName] IS NULL)) OR (CAST(i.[AssessmentIdentifier_Unified] AS varbinary(max)) <> CAST(d.[AssessmentIdentifier_Unified] AS varbinary(max)) OR (i.[AssessmentIdentifier_Unified] IS NULL AND d.[AssessmentIdentifier_Unified] IS NOT NULL) OR (i.[AssessmentIdentifier_Unified] IS NOT NULL AND d.[AssessmentIdentifier_Unified] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(d.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND d.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND d.[Namespace_Unified] IS NULL)) OR (CAST(i.[StudentAssessmentRegistration_AdministrationIdentifier] AS varbinary(max)) <> CAST(d.[StudentAssessmentRegistration_AdministrationIdentifier] AS varbinary(max)) OR (i.[StudentAssessmentRegistration_AdministrationIdentifier] IS NULL AND d.[StudentAssessmentRegistration_AdministrationIdentifier] IS NOT NULL) OR (i.[StudentAssessmentRegistration_AdministrationIdentifier] IS NOT NULL AND d.[StudentAssessmentRegistration_AdministrationIdentifier] IS NULL)) OR (i.[StudentAssessmentRegistration_AssigningEducationOrganizationId] <> d.[StudentAssessmentRegistration_AssigningEducationOrganizationId] OR (i.[StudentAssessmentRegistration_AssigningEducationOrganizationId] IS NULL AND d.[StudentAssessmentRegistration_AssigningEducationOrganizationId] IS NOT NULL) OR (i.[StudentAssessmentRegistration_AssigningEducationOrganizationId] IS NOT NULL AND d.[StudentAssessmentRegistration_AssigningEducationOrganizationId] IS NULL)) OR (i.[StudentAssessmentRegistration_EducationOrganizationId] <> d.[StudentAssessmentRegistration_EducationOrganizationId] OR (i.[StudentAssessmentRegistration_EducationOrganizationId] IS NULL AND d.[StudentAssessmentRegistration_EducationOrganizationId] IS NOT NULL) OR (i.[StudentAssessmentRegistration_EducationOrganizationId] IS NOT NULL AND d.[StudentAssessmentRegistration_EducationOrganizationId] IS NULL)) OR (CAST(i.[StudentAssessmentRegistration_StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentAssessmentRegistration_StudentUniqueId] AS varbinary(max)) OR (i.[StudentAssessmentRegistration_StudentUniqueId] IS NULL AND d.[StudentAssessmentRegistration_StudentUniqueId] IS NOT NULL) OR (i.[StudentAssessmentRegistration_StudentUniqueId] IS NOT NULL AND d.[StudentAssessmentRegistration_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StudentAssessmentRegistrationBatteryPartAssociation] (
             [OldAssessmentBatteryPart_AssessmentBatteryPartName],
             [OldAssessmentIdentifier_Unified],
@@ -60351,9 +60010,9 @@ BEGIN
             i.[StudentAssessmentRegistration_StudentUniqueId],
             newPj0s2.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[StudentAssessmentRegistration] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[StudentAssessmentRegistration_DocumentId]
@@ -60713,15 +60372,6 @@ BEGIN
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
-    END
 END;
 GO
 
@@ -60902,14 +60552,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (CAST(i.[Cohort_CohortIdentifier] AS varbinary(max)) <> CAST(del.[Cohort_CohortIdentifier] AS varbinary(max)) OR (i.[Cohort_CohortIdentifier] IS NULL AND del.[Cohort_CohortIdentifier] IS NOT NULL) OR (i.[Cohort_CohortIdentifier] IS NOT NULL AND del.[Cohort_CohortIdentifier] IS NULL)) OR (i.[Cohort_EducationOrganizationId] <> del.[Cohort_EducationOrganizationId] OR (i.[Cohort_EducationOrganizationId] IS NULL AND del.[Cohort_EducationOrganizationId] IS NOT NULL) OR (i.[Cohort_EducationOrganizationId] IS NOT NULL AND del.[Cohort_EducationOrganizationId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (CAST(i.[Cohort_CohortIdentifier] AS varbinary(max)) <> CAST(d.[Cohort_CohortIdentifier] AS varbinary(max)) OR (i.[Cohort_CohortIdentifier] IS NULL AND d.[Cohort_CohortIdentifier] IS NOT NULL) OR (i.[Cohort_CohortIdentifier] IS NOT NULL AND d.[Cohort_CohortIdentifier] IS NULL)) OR (i.[Cohort_EducationOrganizationId] <> d.[Cohort_EducationOrganizationId] OR (i.[Cohort_EducationOrganizationId] IS NULL AND d.[Cohort_EducationOrganizationId] IS NOT NULL) OR (i.[Cohort_EducationOrganizationId] IS NOT NULL AND d.[Cohort_EducationOrganizationId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StudentCohortAssociation] (
             [OldBeginDate],
             [OldCohort_CohortIdentifier],
@@ -60936,9 +60583,9 @@ BEGIN
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
@@ -61099,14 +60746,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] <> del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) <> CAST(del.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL)) OR (i.[GradingPeriodGradingPeriod_SchoolId] <> del.[GradingPeriodGradingPeriod_SchoolId] OR (i.[GradingPeriodGradingPeriod_SchoolId] IS NULL AND del.[GradingPeriodGradingPeriod_SchoolId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_SchoolId] IS NOT NULL AND del.[GradingPeriodGradingPeriod_SchoolId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_SchoolYear] <> del.[GradingPeriodGradingPeriod_SchoolYear] OR (i.[GradingPeriodGradingPeriod_SchoolYear] IS NULL AND del.[GradingPeriodGradingPeriod_SchoolYear] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_SchoolYear] IS NOT NULL AND del.[GradingPeriodGradingPeriod_SchoolYear] IS NULL)) OR (i.[ObjectiveCompetencyObjective_EducationOrganizationId] <> del.[ObjectiveCompetencyObjective_EducationOrganizationId] OR (i.[ObjectiveCompetencyObjective_EducationOrganizationId] IS NULL AND del.[ObjectiveCompetencyObjective_EducationOrganizationId] IS NOT NULL) OR (i.[ObjectiveCompetencyObjective_EducationOrganizationId] IS NOT NULL AND del.[ObjectiveCompetencyObjective_EducationOrganizationId] IS NULL)) OR (CAST(i.[ObjectiveCompetencyObjective_Objective] AS varbinary(max)) <> CAST(del.[ObjectiveCompetencyObjective_Objective] AS varbinary(max)) OR (i.[ObjectiveCompetencyObjective_Objective] IS NULL AND del.[ObjectiveCompetencyObjective_Objective] IS NOT NULL) OR (i.[ObjectiveCompetencyObjective_Objective] IS NOT NULL AND del.[ObjectiveCompetencyObjective_Objective] IS NULL)) OR (i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] <> del.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] OR (i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL AND del.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NOT NULL AND del.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] <> d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) <> CAST(d.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL)) OR (i.[GradingPeriodGradingPeriod_SchoolId] <> d.[GradingPeriodGradingPeriod_SchoolId] OR (i.[GradingPeriodGradingPeriod_SchoolId] IS NULL AND d.[GradingPeriodGradingPeriod_SchoolId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_SchoolId] IS NOT NULL AND d.[GradingPeriodGradingPeriod_SchoolId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_SchoolYear] <> d.[GradingPeriodGradingPeriod_SchoolYear] OR (i.[GradingPeriodGradingPeriod_SchoolYear] IS NULL AND d.[GradingPeriodGradingPeriod_SchoolYear] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_SchoolYear] IS NOT NULL AND d.[GradingPeriodGradingPeriod_SchoolYear] IS NULL)) OR (i.[ObjectiveCompetencyObjective_EducationOrganizationId] <> d.[ObjectiveCompetencyObjective_EducationOrganizationId] OR (i.[ObjectiveCompetencyObjective_EducationOrganizationId] IS NULL AND d.[ObjectiveCompetencyObjective_EducationOrganizationId] IS NOT NULL) OR (i.[ObjectiveCompetencyObjective_EducationOrganizationId] IS NOT NULL AND d.[ObjectiveCompetencyObjective_EducationOrganizationId] IS NULL)) OR (CAST(i.[ObjectiveCompetencyObjective_Objective] AS varbinary(max)) <> CAST(d.[ObjectiveCompetencyObjective_Objective] AS varbinary(max)) OR (i.[ObjectiveCompetencyObjective_Objective] IS NULL AND d.[ObjectiveCompetencyObjective_Objective] IS NOT NULL) OR (i.[ObjectiveCompetencyObjective_Objective] IS NOT NULL AND d.[ObjectiveCompetencyObjective_Objective] IS NULL)) OR (i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] <> d.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] OR (i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL AND d.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NOT NULL AND d.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StudentCompetencyObjective] (
             [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace],
             [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue],
@@ -61157,9 +60801,9 @@ BEGIN
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
@@ -61348,14 +60992,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Contact_ContactUniqueId] AS varbinary(max)) <> CAST(del.[Contact_ContactUniqueId] AS varbinary(max)) OR (i.[Contact_ContactUniqueId] IS NULL AND del.[Contact_ContactUniqueId] IS NOT NULL) OR (i.[Contact_ContactUniqueId] IS NOT NULL AND del.[Contact_ContactUniqueId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[Contact_ContactUniqueId] AS varbinary(max)) <> CAST(d.[Contact_ContactUniqueId] AS varbinary(max)) OR (i.[Contact_ContactUniqueId] IS NULL AND d.[Contact_ContactUniqueId] IS NOT NULL) OR (i.[Contact_ContactUniqueId] IS NOT NULL AND d.[Contact_ContactUniqueId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StudentContactAssociation] (
             [OldContact_ContactUniqueId],
             [OldStudent_StudentUniqueId],
@@ -61378,9 +61019,9 @@ BEGIN
             newPj1s0.[DocumentId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Contact] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Contact_DocumentId]
@@ -61493,14 +61134,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BehaviorDescriptor_DescriptorId] <> del.[BehaviorDescriptor_DescriptorId] OR (i.[BehaviorDescriptor_DescriptorId] IS NULL AND del.[BehaviorDescriptor_DescriptorId] IS NOT NULL) OR (i.[BehaviorDescriptor_DescriptorId] IS NOT NULL AND del.[BehaviorDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[DisciplineIncident_IncidentIdentifier] AS varbinary(max)) <> CAST(del.[DisciplineIncident_IncidentIdentifier] AS varbinary(max)) OR (i.[DisciplineIncident_IncidentIdentifier] IS NULL AND del.[DisciplineIncident_IncidentIdentifier] IS NOT NULL) OR (i.[DisciplineIncident_IncidentIdentifier] IS NOT NULL AND del.[DisciplineIncident_IncidentIdentifier] IS NULL)) OR (i.[DisciplineIncident_SchoolId] <> del.[DisciplineIncident_SchoolId] OR (i.[DisciplineIncident_SchoolId] IS NULL AND del.[DisciplineIncident_SchoolId] IS NOT NULL) OR (i.[DisciplineIncident_SchoolId] IS NOT NULL AND del.[DisciplineIncident_SchoolId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[BehaviorDescriptor_DescriptorId] <> d.[BehaviorDescriptor_DescriptorId] OR (i.[BehaviorDescriptor_DescriptorId] IS NULL AND d.[BehaviorDescriptor_DescriptorId] IS NOT NULL) OR (i.[BehaviorDescriptor_DescriptorId] IS NOT NULL AND d.[BehaviorDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[DisciplineIncident_IncidentIdentifier] AS varbinary(max)) <> CAST(d.[DisciplineIncident_IncidentIdentifier] AS varbinary(max)) OR (i.[DisciplineIncident_IncidentIdentifier] IS NULL AND d.[DisciplineIncident_IncidentIdentifier] IS NOT NULL) OR (i.[DisciplineIncident_IncidentIdentifier] IS NOT NULL AND d.[DisciplineIncident_IncidentIdentifier] IS NULL)) OR (i.[DisciplineIncident_SchoolId] <> d.[DisciplineIncident_SchoolId] OR (i.[DisciplineIncident_SchoolId] IS NULL AND d.[DisciplineIncident_SchoolId] IS NOT NULL) OR (i.[DisciplineIncident_SchoolId] IS NOT NULL AND d.[DisciplineIncident_SchoolId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StudentDisciplineIncidentBehaviorAssociation] (
             [OldBehaviorDescriptor_Namespace],
             [OldBehaviorDescriptor_CodeValue],
@@ -61531,9 +61169,9 @@ BEGIN
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[BehaviorDescriptor_DescriptorId]
@@ -61719,14 +61357,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[DisciplineIncident_IncidentIdentifier] AS varbinary(max)) <> CAST(del.[DisciplineIncident_IncidentIdentifier] AS varbinary(max)) OR (i.[DisciplineIncident_IncidentIdentifier] IS NULL AND del.[DisciplineIncident_IncidentIdentifier] IS NOT NULL) OR (i.[DisciplineIncident_IncidentIdentifier] IS NOT NULL AND del.[DisciplineIncident_IncidentIdentifier] IS NULL)) OR (i.[DisciplineIncident_SchoolId] <> del.[DisciplineIncident_SchoolId] OR (i.[DisciplineIncident_SchoolId] IS NULL AND del.[DisciplineIncident_SchoolId] IS NOT NULL) OR (i.[DisciplineIncident_SchoolId] IS NOT NULL AND del.[DisciplineIncident_SchoolId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[DisciplineIncident_IncidentIdentifier] AS varbinary(max)) <> CAST(d.[DisciplineIncident_IncidentIdentifier] AS varbinary(max)) OR (i.[DisciplineIncident_IncidentIdentifier] IS NULL AND d.[DisciplineIncident_IncidentIdentifier] IS NOT NULL) OR (i.[DisciplineIncident_IncidentIdentifier] IS NOT NULL AND d.[DisciplineIncident_IncidentIdentifier] IS NULL)) OR (i.[DisciplineIncident_SchoolId] <> d.[DisciplineIncident_SchoolId] OR (i.[DisciplineIncident_SchoolId] IS NULL AND d.[DisciplineIncident_SchoolId] IS NOT NULL) OR (i.[DisciplineIncident_SchoolId] IS NOT NULL AND d.[DisciplineIncident_SchoolId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StudentDisciplineIncidentNonOffenderAssociation] (
             [OldDisciplineIncident_IncidentIdentifier],
             [OldDisciplineIncident_SchoolId],
@@ -61749,9 +61384,9 @@ BEGIN
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
@@ -61894,14 +61529,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StudentEducationOrganizationAssessmentAccommodation] (
             [OldEducationOrganization_EducationOrganizationId],
             [OldStudent_StudentUniqueId],
@@ -61920,9 +61552,9 @@ BEGIN
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
@@ -62065,14 +61697,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StudentEducationOrganizationAssociation] (
             [OldEducationOrganization_EducationOrganizationId],
             [OldStudent_StudentUniqueId],
@@ -62091,9 +61720,9 @@ BEGIN
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
@@ -62945,14 +62574,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ResponsibilityDescriptor_DescriptorId] <> del.[ResponsibilityDescriptor_DescriptorId] OR (i.[ResponsibilityDescriptor_DescriptorId] IS NULL AND del.[ResponsibilityDescriptor_DescriptorId] IS NOT NULL) OR (i.[ResponsibilityDescriptor_DescriptorId] IS NOT NULL AND del.[ResponsibilityDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ResponsibilityDescriptor_DescriptorId] <> d.[ResponsibilityDescriptor_DescriptorId] OR (i.[ResponsibilityDescriptor_DescriptorId] IS NULL AND d.[ResponsibilityDescriptor_DescriptorId] IS NOT NULL) OR (i.[ResponsibilityDescriptor_DescriptorId] IS NOT NULL AND d.[ResponsibilityDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StudentEducationOrganizationResponsibilityAssociation] (
             [OldBeginDate],
             [OldEducationOrganization_EducationOrganizationId],
@@ -62983,9 +62609,9 @@ BEGIN
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ResponsibilityDescriptor_DescriptorId]
@@ -63093,14 +62719,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[GradebookEntry_GradebookEntryIdentifier] AS varbinary(max)) <> CAST(del.[GradebookEntry_GradebookEntryIdentifier] AS varbinary(max)) OR (i.[GradebookEntry_GradebookEntryIdentifier] IS NULL AND del.[GradebookEntry_GradebookEntryIdentifier] IS NOT NULL) OR (i.[GradebookEntry_GradebookEntryIdentifier] IS NOT NULL AND del.[GradebookEntry_GradebookEntryIdentifier] IS NULL)) OR (CAST(i.[GradebookEntry_Namespace] AS varbinary(max)) <> CAST(del.[GradebookEntry_Namespace] AS varbinary(max)) OR (i.[GradebookEntry_Namespace] IS NULL AND del.[GradebookEntry_Namespace] IS NOT NULL) OR (i.[GradebookEntry_Namespace] IS NOT NULL AND del.[GradebookEntry_Namespace] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[GradebookEntry_GradebookEntryIdentifier] AS varbinary(max)) <> CAST(d.[GradebookEntry_GradebookEntryIdentifier] AS varbinary(max)) OR (i.[GradebookEntry_GradebookEntryIdentifier] IS NULL AND d.[GradebookEntry_GradebookEntryIdentifier] IS NOT NULL) OR (i.[GradebookEntry_GradebookEntryIdentifier] IS NOT NULL AND d.[GradebookEntry_GradebookEntryIdentifier] IS NULL)) OR (CAST(i.[GradebookEntry_Namespace] AS varbinary(max)) <> CAST(d.[GradebookEntry_Namespace] AS varbinary(max)) OR (i.[GradebookEntry_Namespace] IS NULL AND d.[GradebookEntry_Namespace] IS NOT NULL) OR (i.[GradebookEntry_Namespace] IS NOT NULL AND d.[GradebookEntry_Namespace] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StudentGradebookEntry] (
             [OldGradebookEntry_GradebookEntryIdentifier],
             [OldGradebookEntry_Namespace],
@@ -63123,9 +62746,9 @@ BEGIN
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
@@ -63229,14 +62852,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StudentHealth] (
             [OldEducationOrganization_EducationOrganizationId],
             [OldStudent_StudentUniqueId],
@@ -63255,9 +62875,9 @@ BEGIN
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
@@ -63574,15 +63194,6 @@ BEGIN
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
-    END
 END;
 GO
 
@@ -63800,14 +63411,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[Intervention_EducationOrganizationId] <> del.[Intervention_EducationOrganizationId] OR (i.[Intervention_EducationOrganizationId] IS NULL AND del.[Intervention_EducationOrganizationId] IS NOT NULL) OR (i.[Intervention_EducationOrganizationId] IS NOT NULL AND del.[Intervention_EducationOrganizationId] IS NULL)) OR (CAST(i.[Intervention_InterventionIdentificationCode] AS varbinary(max)) <> CAST(del.[Intervention_InterventionIdentificationCode] AS varbinary(max)) OR (i.[Intervention_InterventionIdentificationCode] IS NULL AND del.[Intervention_InterventionIdentificationCode] IS NOT NULL) OR (i.[Intervention_InterventionIdentificationCode] IS NOT NULL AND del.[Intervention_InterventionIdentificationCode] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[Intervention_EducationOrganizationId] <> d.[Intervention_EducationOrganizationId] OR (i.[Intervention_EducationOrganizationId] IS NULL AND d.[Intervention_EducationOrganizationId] IS NOT NULL) OR (i.[Intervention_EducationOrganizationId] IS NOT NULL AND d.[Intervention_EducationOrganizationId] IS NULL)) OR (CAST(i.[Intervention_InterventionIdentificationCode] AS varbinary(max)) <> CAST(d.[Intervention_InterventionIdentificationCode] AS varbinary(max)) OR (i.[Intervention_InterventionIdentificationCode] IS NULL AND d.[Intervention_InterventionIdentificationCode] IS NOT NULL) OR (i.[Intervention_InterventionIdentificationCode] IS NOT NULL AND d.[Intervention_InterventionIdentificationCode] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StudentInterventionAssociation] (
             [OldIntervention_EducationOrganizationId],
             [OldIntervention_InterventionIdentificationCode],
@@ -63830,9 +63438,9 @@ BEGIN
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
@@ -63984,14 +63592,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[AttendanceEventCategoryDescriptor_DescriptorId] <> del.[AttendanceEventCategoryDescriptor_DescriptorId] OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL AND del.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL AND del.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL)) OR (i.[EventDate] <> del.[EventDate] OR (i.[EventDate] IS NULL AND del.[EventDate] IS NOT NULL) OR (i.[EventDate] IS NOT NULL AND del.[EventDate] IS NULL)) OR (i.[Intervention_EducationOrganizationId] <> del.[Intervention_EducationOrganizationId] OR (i.[Intervention_EducationOrganizationId] IS NULL AND del.[Intervention_EducationOrganizationId] IS NOT NULL) OR (i.[Intervention_EducationOrganizationId] IS NOT NULL AND del.[Intervention_EducationOrganizationId] IS NULL)) OR (CAST(i.[Intervention_InterventionIdentificationCode] AS varbinary(max)) <> CAST(del.[Intervention_InterventionIdentificationCode] AS varbinary(max)) OR (i.[Intervention_InterventionIdentificationCode] IS NULL AND del.[Intervention_InterventionIdentificationCode] IS NOT NULL) OR (i.[Intervention_InterventionIdentificationCode] IS NOT NULL AND del.[Intervention_InterventionIdentificationCode] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[AttendanceEventCategoryDescriptor_DescriptorId] <> d.[AttendanceEventCategoryDescriptor_DescriptorId] OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL AND d.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL AND d.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL)) OR (i.[EventDate] <> d.[EventDate] OR (i.[EventDate] IS NULL AND d.[EventDate] IS NOT NULL) OR (i.[EventDate] IS NOT NULL AND d.[EventDate] IS NULL)) OR (i.[Intervention_EducationOrganizationId] <> d.[Intervention_EducationOrganizationId] OR (i.[Intervention_EducationOrganizationId] IS NULL AND d.[Intervention_EducationOrganizationId] IS NOT NULL) OR (i.[Intervention_EducationOrganizationId] IS NOT NULL AND d.[Intervention_EducationOrganizationId] IS NULL)) OR (CAST(i.[Intervention_InterventionIdentificationCode] AS varbinary(max)) <> CAST(d.[Intervention_InterventionIdentificationCode] AS varbinary(max)) OR (i.[Intervention_InterventionIdentificationCode] IS NULL AND d.[Intervention_InterventionIdentificationCode] IS NOT NULL) OR (i.[Intervention_InterventionIdentificationCode] IS NOT NULL AND d.[Intervention_InterventionIdentificationCode] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StudentInterventionAttendanceEvent] (
             [OldAttendanceEventCategoryDescriptor_Namespace],
             [OldAttendanceEventCategoryDescriptor_CodeValue],
@@ -64026,9 +63631,9 @@ BEGIN
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
@@ -64190,15 +63795,6 @@ BEGIN
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
-    END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
     END
 END;
 GO
@@ -64472,15 +64068,6 @@ BEGIN
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
-    END
 END;
 GO
 
@@ -64713,15 +64300,6 @@ BEGIN
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
-    END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
     END
 END;
 GO
@@ -65034,15 +64612,6 @@ BEGIN
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
-    END
 END;
 GO
 
@@ -65235,14 +64804,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[AttendanceEventCategoryDescriptor_DescriptorId] <> del.[AttendanceEventCategoryDescriptor_DescriptorId] OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL AND del.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL AND del.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[EventDate] <> del.[EventDate] OR (i.[EventDate] IS NULL AND del.[EventDate] IS NOT NULL) OR (i.[EventDate] IS NOT NULL AND del.[EventDate] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[AttendanceEventCategoryDescriptor_DescriptorId] <> d.[AttendanceEventCategoryDescriptor_DescriptorId] OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL AND d.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL AND d.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[EventDate] <> d.[EventDate] OR (i.[EventDate] IS NULL AND d.[EventDate] IS NOT NULL) OR (i.[EventDate] IS NOT NULL AND d.[EventDate] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StudentProgramAttendanceEvent] (
             [OldAttendanceEventCategoryDescriptor_Namespace],
             [OldAttendanceEventCategoryDescriptor_CodeValue],
@@ -65289,9 +64855,9 @@ BEGIN
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
@@ -65420,14 +64986,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EvaluationDate] <> del.[EvaluationDate] OR (i.[EvaluationDate] IS NULL AND del.[EvaluationDate] IS NOT NULL) OR (i.[EvaluationDate] IS NOT NULL AND del.[EvaluationDate] IS NULL)) OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] <> del.[ProgramEvaluation_ProgramEducationOrganizationId] OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL AND del.[ProgramEvaluation_ProgramEducationOrganizationId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] IS NOT NULL AND del.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL)) OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] <> del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluation_ProgramEvaluationTitle] AS varbinary(max)) <> CAST(del.[ProgramEvaluation_ProgramEvaluationTitle] AS varbinary(max)) OR (i.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL AND del.[ProgramEvaluation_ProgramEvaluationTitle] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationTitle] IS NOT NULL AND del.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL)) OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] <> del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluation_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramEvaluation_ProgramName] AS varbinary(max)) OR (i.[ProgramEvaluation_ProgramName] IS NULL AND del.[ProgramEvaluation_ProgramName] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramName] IS NOT NULL AND del.[ProgramEvaluation_ProgramName] IS NULL)) OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[EvaluationDate] <> d.[EvaluationDate] OR (i.[EvaluationDate] IS NULL AND d.[EvaluationDate] IS NOT NULL) OR (i.[EvaluationDate] IS NOT NULL AND d.[EvaluationDate] IS NULL)) OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] <> d.[ProgramEvaluation_ProgramEducationOrganizationId] OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL AND d.[ProgramEvaluation_ProgramEducationOrganizationId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL)) OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluation_ProgramEvaluationTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluation_ProgramEvaluationTitle] AS varbinary(max)) OR (i.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationTitle] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationTitle] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL)) OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluation_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramEvaluation_ProgramName] AS varbinary(max)) OR (i.[ProgramEvaluation_ProgramName] IS NULL AND d.[ProgramEvaluation_ProgramName] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramName] IS NOT NULL AND d.[ProgramEvaluation_ProgramName] IS NULL)) OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StudentProgramEvaluation] (
             [OldEvaluationDate],
             [OldProgramEvaluation_ProgramEducationOrganizationId],
@@ -65482,9 +65045,9 @@ BEGIN
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
@@ -65713,14 +65276,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EntryDate] <> del.[EntryDate] OR (i.[EntryDate] IS NULL AND del.[EntryDate] IS NOT NULL) OR (i.[EntryDate] IS NOT NULL AND del.[EntryDate] IS NULL)) OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[EntryDate] <> d.[EntryDate] OR (i.[EntryDate] IS NULL AND d.[EntryDate] IS NOT NULL) OR (i.[EntryDate] IS NOT NULL AND d.[EntryDate] IS NULL)) OR (i.[SchoolId_Unified] <> d.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND d.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND d.[SchoolId_Unified] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StudentSchoolAssociation] (
             [OldEntryDate],
             [OldSchoolId_Unified],
@@ -65743,9 +65303,9 @@ BEGIN
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
@@ -65938,14 +65498,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[AttendanceEventCategoryDescriptor_DescriptorId] <> del.[AttendanceEventCategoryDescriptor_DescriptorId] OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL AND del.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL AND del.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL)) OR (i.[EventDate] <> del.[EventDate] OR (i.[EventDate] IS NULL AND del.[EventDate] IS NOT NULL) OR (i.[EventDate] IS NOT NULL AND del.[EventDate] IS NULL)) OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL)) OR (i.[Session_SchoolYear] <> del.[Session_SchoolYear] OR (i.[Session_SchoolYear] IS NULL AND del.[Session_SchoolYear] IS NOT NULL) OR (i.[Session_SchoolYear] IS NOT NULL AND del.[Session_SchoolYear] IS NULL)) OR (CAST(i.[Session_SessionName] AS varbinary(max)) <> CAST(del.[Session_SessionName] AS varbinary(max)) OR (i.[Session_SessionName] IS NULL AND del.[Session_SessionName] IS NOT NULL) OR (i.[Session_SessionName] IS NOT NULL AND del.[Session_SessionName] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[AttendanceEventCategoryDescriptor_DescriptorId] <> d.[AttendanceEventCategoryDescriptor_DescriptorId] OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL AND d.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL AND d.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL)) OR (i.[EventDate] <> d.[EventDate] OR (i.[EventDate] IS NULL AND d.[EventDate] IS NOT NULL) OR (i.[EventDate] IS NOT NULL AND d.[EventDate] IS NULL)) OR (i.[SchoolId_Unified] <> d.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND d.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND d.[SchoolId_Unified] IS NULL)) OR (i.[Session_SchoolYear] <> d.[Session_SchoolYear] OR (i.[Session_SchoolYear] IS NULL AND d.[Session_SchoolYear] IS NOT NULL) OR (i.[Session_SchoolYear] IS NOT NULL AND d.[Session_SchoolYear] IS NULL)) OR (CAST(i.[Session_SessionName] AS varbinary(max)) <> CAST(d.[Session_SessionName] AS varbinary(max)) OR (i.[Session_SessionName] IS NULL AND d.[Session_SessionName] IS NOT NULL) OR (i.[Session_SessionName] IS NOT NULL AND d.[Session_SessionName] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StudentSchoolAttendanceEvent] (
             [OldAttendanceEventCategoryDescriptor_Namespace],
             [OldAttendanceEventCategoryDescriptor_CodeValue],
@@ -65984,9 +65541,9 @@ BEGIN
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
@@ -66148,15 +65705,6 @@ BEGIN
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
-    END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
     END
 END;
 GO
@@ -66391,15 +65939,6 @@ BEGIN
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
     END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
-    END
 END;
 GO
 
@@ -66547,14 +66086,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (CAST(i.[Section_LocalCourseCode] AS varbinary(max)) <> CAST(del.[Section_LocalCourseCode] AS varbinary(max)) OR (i.[Section_LocalCourseCode] IS NULL AND del.[Section_LocalCourseCode] IS NOT NULL) OR (i.[Section_LocalCourseCode] IS NOT NULL AND del.[Section_LocalCourseCode] IS NULL)) OR (i.[Section_SchoolId] <> del.[Section_SchoolId] OR (i.[Section_SchoolId] IS NULL AND del.[Section_SchoolId] IS NOT NULL) OR (i.[Section_SchoolId] IS NOT NULL AND del.[Section_SchoolId] IS NULL)) OR (i.[Section_SchoolYear] <> del.[Section_SchoolYear] OR (i.[Section_SchoolYear] IS NULL AND del.[Section_SchoolYear] IS NOT NULL) OR (i.[Section_SchoolYear] IS NOT NULL AND del.[Section_SchoolYear] IS NULL)) OR (CAST(i.[Section_SectionIdentifier] AS varbinary(max)) <> CAST(del.[Section_SectionIdentifier] AS varbinary(max)) OR (i.[Section_SectionIdentifier] IS NULL AND del.[Section_SectionIdentifier] IS NOT NULL) OR (i.[Section_SectionIdentifier] IS NOT NULL AND del.[Section_SectionIdentifier] IS NULL)) OR (CAST(i.[Section_SessionName] AS varbinary(max)) <> CAST(del.[Section_SessionName] AS varbinary(max)) OR (i.[Section_SessionName] IS NULL AND del.[Section_SessionName] IS NOT NULL) OR (i.[Section_SessionName] IS NOT NULL AND del.[Section_SessionName] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (CAST(i.[Section_LocalCourseCode] AS varbinary(max)) <> CAST(d.[Section_LocalCourseCode] AS varbinary(max)) OR (i.[Section_LocalCourseCode] IS NULL AND d.[Section_LocalCourseCode] IS NOT NULL) OR (i.[Section_LocalCourseCode] IS NOT NULL AND d.[Section_LocalCourseCode] IS NULL)) OR (i.[Section_SchoolId] <> d.[Section_SchoolId] OR (i.[Section_SchoolId] IS NULL AND d.[Section_SchoolId] IS NOT NULL) OR (i.[Section_SchoolId] IS NOT NULL AND d.[Section_SchoolId] IS NULL)) OR (i.[Section_SchoolYear] <> d.[Section_SchoolYear] OR (i.[Section_SchoolYear] IS NULL AND d.[Section_SchoolYear] IS NOT NULL) OR (i.[Section_SchoolYear] IS NOT NULL AND d.[Section_SchoolYear] IS NULL)) OR (CAST(i.[Section_SectionIdentifier] AS varbinary(max)) <> CAST(d.[Section_SectionIdentifier] AS varbinary(max)) OR (i.[Section_SectionIdentifier] IS NULL AND d.[Section_SectionIdentifier] IS NOT NULL) OR (i.[Section_SectionIdentifier] IS NOT NULL AND d.[Section_SectionIdentifier] IS NULL)) OR (CAST(i.[Section_SessionName] AS varbinary(max)) <> CAST(d.[Section_SessionName] AS varbinary(max)) OR (i.[Section_SessionName] IS NULL AND d.[Section_SessionName] IS NOT NULL) OR (i.[Section_SessionName] IS NOT NULL AND d.[Section_SessionName] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StudentSectionAssociation] (
             [OldBeginDate],
             [OldSection_LocalCourseCode],
@@ -66593,9 +66129,9 @@ BEGIN
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
@@ -66753,14 +66289,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[AttendanceEventCategoryDescriptor_DescriptorId] <> del.[AttendanceEventCategoryDescriptor_DescriptorId] OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL AND del.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL AND del.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL)) OR (i.[EventDate] <> del.[EventDate] OR (i.[EventDate] IS NULL AND del.[EventDate] IS NOT NULL) OR (i.[EventDate] IS NOT NULL AND del.[EventDate] IS NULL)) OR (CAST(i.[Section_LocalCourseCode] AS varbinary(max)) <> CAST(del.[Section_LocalCourseCode] AS varbinary(max)) OR (i.[Section_LocalCourseCode] IS NULL AND del.[Section_LocalCourseCode] IS NOT NULL) OR (i.[Section_LocalCourseCode] IS NOT NULL AND del.[Section_LocalCourseCode] IS NULL)) OR (i.[Section_SchoolId] <> del.[Section_SchoolId] OR (i.[Section_SchoolId] IS NULL AND del.[Section_SchoolId] IS NOT NULL) OR (i.[Section_SchoolId] IS NOT NULL AND del.[Section_SchoolId] IS NULL)) OR (i.[Section_SchoolYear] <> del.[Section_SchoolYear] OR (i.[Section_SchoolYear] IS NULL AND del.[Section_SchoolYear] IS NOT NULL) OR (i.[Section_SchoolYear] IS NOT NULL AND del.[Section_SchoolYear] IS NULL)) OR (CAST(i.[Section_SectionIdentifier] AS varbinary(max)) <> CAST(del.[Section_SectionIdentifier] AS varbinary(max)) OR (i.[Section_SectionIdentifier] IS NULL AND del.[Section_SectionIdentifier] IS NOT NULL) OR (i.[Section_SectionIdentifier] IS NOT NULL AND del.[Section_SectionIdentifier] IS NULL)) OR (CAST(i.[Section_SessionName] AS varbinary(max)) <> CAST(del.[Section_SessionName] AS varbinary(max)) OR (i.[Section_SessionName] IS NULL AND del.[Section_SessionName] IS NOT NULL) OR (i.[Section_SessionName] IS NOT NULL AND del.[Section_SessionName] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[AttendanceEventCategoryDescriptor_DescriptorId] <> d.[AttendanceEventCategoryDescriptor_DescriptorId] OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL AND d.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL AND d.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL)) OR (i.[EventDate] <> d.[EventDate] OR (i.[EventDate] IS NULL AND d.[EventDate] IS NOT NULL) OR (i.[EventDate] IS NOT NULL AND d.[EventDate] IS NULL)) OR (CAST(i.[Section_LocalCourseCode] AS varbinary(max)) <> CAST(d.[Section_LocalCourseCode] AS varbinary(max)) OR (i.[Section_LocalCourseCode] IS NULL AND d.[Section_LocalCourseCode] IS NOT NULL) OR (i.[Section_LocalCourseCode] IS NOT NULL AND d.[Section_LocalCourseCode] IS NULL)) OR (i.[Section_SchoolId] <> d.[Section_SchoolId] OR (i.[Section_SchoolId] IS NULL AND d.[Section_SchoolId] IS NOT NULL) OR (i.[Section_SchoolId] IS NOT NULL AND d.[Section_SchoolId] IS NULL)) OR (i.[Section_SchoolYear] <> d.[Section_SchoolYear] OR (i.[Section_SchoolYear] IS NULL AND d.[Section_SchoolYear] IS NOT NULL) OR (i.[Section_SchoolYear] IS NOT NULL AND d.[Section_SchoolYear] IS NULL)) OR (CAST(i.[Section_SectionIdentifier] AS varbinary(max)) <> CAST(d.[Section_SectionIdentifier] AS varbinary(max)) OR (i.[Section_SectionIdentifier] IS NULL AND d.[Section_SectionIdentifier] IS NOT NULL) OR (i.[Section_SectionIdentifier] IS NOT NULL AND d.[Section_SectionIdentifier] IS NULL)) OR (CAST(i.[Section_SessionName] AS varbinary(max)) <> CAST(d.[Section_SessionName] AS varbinary(max)) OR (i.[Section_SessionName] IS NULL AND d.[Section_SessionName] IS NOT NULL) OR (i.[Section_SessionName] IS NOT NULL AND d.[Section_SessionName] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StudentSectionAttendanceEvent] (
             [OldAttendanceEventCategoryDescriptor_Namespace],
             [OldAttendanceEventCategoryDescriptor_CodeValue],
@@ -66807,9 +66340,9 @@ BEGIN
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
@@ -67010,15 +66543,6 @@ BEGIN
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
-    END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
     END
 END;
 GO
@@ -67363,14 +66887,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[ConsentToEvaluationReceivedDate] <> del.[ConsentToEvaluationReceivedDate] OR (i.[ConsentToEvaluationReceivedDate] IS NULL AND del.[ConsentToEvaluationReceivedDate] IS NOT NULL) OR (i.[ConsentToEvaluationReceivedDate] IS NOT NULL AND del.[ConsentToEvaluationReceivedDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[ConsentToEvaluationReceivedDate] <> d.[ConsentToEvaluationReceivedDate] OR (i.[ConsentToEvaluationReceivedDate] IS NULL AND d.[ConsentToEvaluationReceivedDate] IS NOT NULL) OR (i.[ConsentToEvaluationReceivedDate] IS NOT NULL AND d.[ConsentToEvaluationReceivedDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StudentSpecialEducationProgramEligibilityAssociation] (
             [OldConsentToEvaluationReceivedDate],
             [OldEducationOrganization_EducationOrganizationId],
@@ -67409,9 +66930,9 @@ BEGIN
             i.[Student_StudentUniqueId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
@@ -67573,15 +67094,6 @@ BEGIN
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId];
-    END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> del.[BeginDate] OR (i.[BeginDate] IS NULL AND del.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND del.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> del.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND del.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND del.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(del.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND del.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND del.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL));
     END
 END;
 GO
@@ -67759,14 +67271,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(del.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND del.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND del.[Student_StudentUniqueId] IS NULL)) OR (i.[TransportationEducationOrganization_EducationOrganizationId] <> del.[TransportationEducationOrganization_EducationOrganizationId] OR (i.[TransportationEducationOrganization_EducationOrganizationId] IS NULL AND del.[TransportationEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[TransportationEducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[TransportationEducationOrganization_EducationOrganizationId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL)) OR (i.[TransportationEducationOrganization_EducationOrganizationId] <> d.[TransportationEducationOrganization_EducationOrganizationId] OR (i.[TransportationEducationOrganization_EducationOrganizationId] IS NULL AND d.[TransportationEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[TransportationEducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[TransportationEducationOrganization_EducationOrganizationId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[StudentTransportation] (
             [OldStudent_StudentUniqueId],
             [OldTransportationEducationOrganization_EducationOrganizationId],
@@ -67785,9 +67294,9 @@ BEGIN
             i.[TransportationEducationOrganization_EducationOrganizationId],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Student] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Student_DocumentId]
@@ -68005,14 +67514,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)) OR (CAST(i.[SurveyIdentifier] AS varbinary(max)) <> CAST(del.[SurveyIdentifier] AS varbinary(max)) OR (i.[SurveyIdentifier] IS NULL AND del.[SurveyIdentifier] IS NOT NULL) OR (i.[SurveyIdentifier] IS NOT NULL AND del.[SurveyIdentifier] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[Namespace] AS varbinary(max)) <> CAST(d.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND d.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND d.[Namespace] IS NULL)) OR (CAST(i.[SurveyIdentifier] AS varbinary(max)) <> CAST(d.[SurveyIdentifier] AS varbinary(max)) OR (i.[SurveyIdentifier] IS NULL AND d.[SurveyIdentifier] IS NOT NULL) OR (i.[SurveyIdentifier] IS NOT NULL AND d.[SurveyIdentifier] IS NULL));
         INSERT INTO [tracked_changes_edfi].[Survey] (
             [OldNamespace],
             [OldSurveyIdentifier],
@@ -68027,9 +67533,9 @@ BEGIN
             i.[Namespace],
             i.[SurveyIdentifier],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -68132,14 +67638,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Course_CourseCode] AS varbinary(max)) <> CAST(del.[Course_CourseCode] AS varbinary(max)) OR (i.[Course_CourseCode] IS NULL AND del.[Course_CourseCode] IS NOT NULL) OR (i.[Course_CourseCode] IS NOT NULL AND del.[Course_CourseCode] IS NULL)) OR (i.[Course_EducationOrganizationId] <> del.[Course_EducationOrganizationId] OR (i.[Course_EducationOrganizationId] IS NULL AND del.[Course_EducationOrganizationId] IS NOT NULL) OR (i.[Course_EducationOrganizationId] IS NOT NULL AND del.[Course_EducationOrganizationId] IS NULL)) OR (CAST(i.[Survey_Namespace] AS varbinary(max)) <> CAST(del.[Survey_Namespace] AS varbinary(max)) OR (i.[Survey_Namespace] IS NULL AND del.[Survey_Namespace] IS NOT NULL) OR (i.[Survey_Namespace] IS NOT NULL AND del.[Survey_Namespace] IS NULL)) OR (CAST(i.[Survey_SurveyIdentifier] AS varbinary(max)) <> CAST(del.[Survey_SurveyIdentifier] AS varbinary(max)) OR (i.[Survey_SurveyIdentifier] IS NULL AND del.[Survey_SurveyIdentifier] IS NOT NULL) OR (i.[Survey_SurveyIdentifier] IS NOT NULL AND del.[Survey_SurveyIdentifier] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[Course_CourseCode] AS varbinary(max)) <> CAST(d.[Course_CourseCode] AS varbinary(max)) OR (i.[Course_CourseCode] IS NULL AND d.[Course_CourseCode] IS NOT NULL) OR (i.[Course_CourseCode] IS NOT NULL AND d.[Course_CourseCode] IS NULL)) OR (i.[Course_EducationOrganizationId] <> d.[Course_EducationOrganizationId] OR (i.[Course_EducationOrganizationId] IS NULL AND d.[Course_EducationOrganizationId] IS NOT NULL) OR (i.[Course_EducationOrganizationId] IS NOT NULL AND d.[Course_EducationOrganizationId] IS NULL)) OR (CAST(i.[Survey_Namespace] AS varbinary(max)) <> CAST(d.[Survey_Namespace] AS varbinary(max)) OR (i.[Survey_Namespace] IS NULL AND d.[Survey_Namespace] IS NOT NULL) OR (i.[Survey_Namespace] IS NOT NULL AND d.[Survey_Namespace] IS NULL)) OR (CAST(i.[Survey_SurveyIdentifier] AS varbinary(max)) <> CAST(d.[Survey_SurveyIdentifier] AS varbinary(max)) OR (i.[Survey_SurveyIdentifier] IS NULL AND d.[Survey_SurveyIdentifier] IS NOT NULL) OR (i.[Survey_SurveyIdentifier] IS NOT NULL AND d.[Survey_SurveyIdentifier] IS NULL));
         INSERT INTO [tracked_changes_edfi].[SurveyCourseAssociation] (
             [OldCourse_CourseCode],
             [OldCourse_EducationOrganizationId],
@@ -68162,9 +67665,9 @@ BEGIN
             i.[Survey_Namespace],
             i.[Survey_SurveyIdentifier],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -68272,14 +67775,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[Program_EducationOrganizationId] <> del.[Program_EducationOrganizationId] OR (i.[Program_EducationOrganizationId] IS NULL AND del.[Program_EducationOrganizationId] IS NOT NULL) OR (i.[Program_EducationOrganizationId] IS NOT NULL AND del.[Program_EducationOrganizationId] IS NULL)) OR (CAST(i.[Program_ProgramName] AS varbinary(max)) <> CAST(del.[Program_ProgramName] AS varbinary(max)) OR (i.[Program_ProgramName] IS NULL AND del.[Program_ProgramName] IS NOT NULL) OR (i.[Program_ProgramName] IS NOT NULL AND del.[Program_ProgramName] IS NULL)) OR (i.[Program_ProgramTypeDescriptor_DescriptorId] <> del.[Program_ProgramTypeDescriptor_DescriptorId] OR (i.[Program_ProgramTypeDescriptor_DescriptorId] IS NULL AND del.[Program_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[Program_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND del.[Program_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Survey_Namespace] AS varbinary(max)) <> CAST(del.[Survey_Namespace] AS varbinary(max)) OR (i.[Survey_Namespace] IS NULL AND del.[Survey_Namespace] IS NOT NULL) OR (i.[Survey_Namespace] IS NOT NULL AND del.[Survey_Namespace] IS NULL)) OR (CAST(i.[Survey_SurveyIdentifier] AS varbinary(max)) <> CAST(del.[Survey_SurveyIdentifier] AS varbinary(max)) OR (i.[Survey_SurveyIdentifier] IS NULL AND del.[Survey_SurveyIdentifier] IS NOT NULL) OR (i.[Survey_SurveyIdentifier] IS NOT NULL AND del.[Survey_SurveyIdentifier] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[Program_EducationOrganizationId] <> d.[Program_EducationOrganizationId] OR (i.[Program_EducationOrganizationId] IS NULL AND d.[Program_EducationOrganizationId] IS NOT NULL) OR (i.[Program_EducationOrganizationId] IS NOT NULL AND d.[Program_EducationOrganizationId] IS NULL)) OR (CAST(i.[Program_ProgramName] AS varbinary(max)) <> CAST(d.[Program_ProgramName] AS varbinary(max)) OR (i.[Program_ProgramName] IS NULL AND d.[Program_ProgramName] IS NOT NULL) OR (i.[Program_ProgramName] IS NOT NULL AND d.[Program_ProgramName] IS NULL)) OR (i.[Program_ProgramTypeDescriptor_DescriptorId] <> d.[Program_ProgramTypeDescriptor_DescriptorId] OR (i.[Program_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[Program_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[Program_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[Program_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Survey_Namespace] AS varbinary(max)) <> CAST(d.[Survey_Namespace] AS varbinary(max)) OR (i.[Survey_Namespace] IS NULL AND d.[Survey_Namespace] IS NOT NULL) OR (i.[Survey_Namespace] IS NOT NULL AND d.[Survey_Namespace] IS NULL)) OR (CAST(i.[Survey_SurveyIdentifier] AS varbinary(max)) <> CAST(d.[Survey_SurveyIdentifier] AS varbinary(max)) OR (i.[Survey_SurveyIdentifier] IS NULL AND d.[Survey_SurveyIdentifier] IS NOT NULL) OR (i.[Survey_SurveyIdentifier] IS NOT NULL AND d.[Survey_SurveyIdentifier] IS NULL));
         INSERT INTO [tracked_changes_edfi].[SurveyProgramAssociation] (
             [OldProgram_EducationOrganizationId],
             [OldProgram_ProgramName],
@@ -68310,9 +67810,9 @@ BEGIN
             i.[Survey_Namespace],
             i.[Survey_SurveyIdentifier],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[Program_ProgramTypeDescriptor_DescriptorId]
@@ -68415,14 +67915,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[QuestionCode] AS varbinary(max)) <> CAST(del.[QuestionCode] AS varbinary(max)) OR (i.[QuestionCode] IS NULL AND del.[QuestionCode] IS NOT NULL) OR (i.[QuestionCode] IS NOT NULL AND del.[QuestionCode] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(del.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND del.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND del.[Namespace_Unified] IS NULL)) OR (CAST(i.[SurveyIdentifier_Unified] AS varbinary(max)) <> CAST(del.[SurveyIdentifier_Unified] AS varbinary(max)) OR (i.[SurveyIdentifier_Unified] IS NULL AND del.[SurveyIdentifier_Unified] IS NOT NULL) OR (i.[SurveyIdentifier_Unified] IS NOT NULL AND del.[SurveyIdentifier_Unified] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[QuestionCode] AS varbinary(max)) <> CAST(d.[QuestionCode] AS varbinary(max)) OR (i.[QuestionCode] IS NULL AND d.[QuestionCode] IS NOT NULL) OR (i.[QuestionCode] IS NOT NULL AND d.[QuestionCode] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(d.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND d.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND d.[Namespace_Unified] IS NULL)) OR (CAST(i.[SurveyIdentifier_Unified] AS varbinary(max)) <> CAST(d.[SurveyIdentifier_Unified] AS varbinary(max)) OR (i.[SurveyIdentifier_Unified] IS NULL AND d.[SurveyIdentifier_Unified] IS NOT NULL) OR (i.[SurveyIdentifier_Unified] IS NOT NULL AND d.[SurveyIdentifier_Unified] IS NULL));
         INSERT INTO [tracked_changes_edfi].[SurveyQuestion] (
             [OldQuestionCode],
             [OldNamespace_Unified],
@@ -68441,9 +67938,9 @@ BEGIN
             i.[Namespace_Unified],
             i.[SurveyIdentifier_Unified],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -68585,14 +68082,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(del.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND del.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND del.[Namespace_Unified] IS NULL)) OR (CAST(i.[SurveyQuestion_QuestionCode] AS varbinary(max)) <> CAST(del.[SurveyQuestion_QuestionCode] AS varbinary(max)) OR (i.[SurveyQuestion_QuestionCode] IS NULL AND del.[SurveyQuestion_QuestionCode] IS NOT NULL) OR (i.[SurveyQuestion_QuestionCode] IS NOT NULL AND del.[SurveyQuestion_QuestionCode] IS NULL)) OR (CAST(i.[SurveyIdentifier_Unified] AS varbinary(max)) <> CAST(del.[SurveyIdentifier_Unified] AS varbinary(max)) OR (i.[SurveyIdentifier_Unified] IS NULL AND del.[SurveyIdentifier_Unified] IS NOT NULL) OR (i.[SurveyIdentifier_Unified] IS NOT NULL AND del.[SurveyIdentifier_Unified] IS NULL)) OR (CAST(i.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) <> CAST(del.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NULL AND del.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL AND del.[SurveyResponse_SurveyResponseIdentifier] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(d.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND d.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND d.[Namespace_Unified] IS NULL)) OR (CAST(i.[SurveyQuestion_QuestionCode] AS varbinary(max)) <> CAST(d.[SurveyQuestion_QuestionCode] AS varbinary(max)) OR (i.[SurveyQuestion_QuestionCode] IS NULL AND d.[SurveyQuestion_QuestionCode] IS NOT NULL) OR (i.[SurveyQuestion_QuestionCode] IS NOT NULL AND d.[SurveyQuestion_QuestionCode] IS NULL)) OR (CAST(i.[SurveyIdentifier_Unified] AS varbinary(max)) <> CAST(d.[SurveyIdentifier_Unified] AS varbinary(max)) OR (i.[SurveyIdentifier_Unified] IS NULL AND d.[SurveyIdentifier_Unified] IS NOT NULL) OR (i.[SurveyIdentifier_Unified] IS NOT NULL AND d.[SurveyIdentifier_Unified] IS NULL)) OR (CAST(i.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) <> CAST(d.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NULL AND d.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL AND d.[SurveyResponse_SurveyResponseIdentifier] IS NULL));
         INSERT INTO [tracked_changes_edfi].[SurveyQuestionResponse] (
             [OldNamespace_Unified],
             [OldSurveyQuestion_QuestionCode],
@@ -68615,9 +68109,9 @@ BEGIN
             i.[SurveyIdentifier_Unified],
             i.[SurveyResponse_SurveyResponseIdentifier],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -68835,14 +68329,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Survey_Namespace] AS varbinary(max)) <> CAST(del.[Survey_Namespace] AS varbinary(max)) OR (i.[Survey_Namespace] IS NULL AND del.[Survey_Namespace] IS NOT NULL) OR (i.[Survey_Namespace] IS NOT NULL AND del.[Survey_Namespace] IS NULL)) OR (CAST(i.[Survey_SurveyIdentifier] AS varbinary(max)) <> CAST(del.[Survey_SurveyIdentifier] AS varbinary(max)) OR (i.[Survey_SurveyIdentifier] IS NULL AND del.[Survey_SurveyIdentifier] IS NOT NULL) OR (i.[Survey_SurveyIdentifier] IS NOT NULL AND del.[Survey_SurveyIdentifier] IS NULL)) OR (CAST(i.[SurveyResponseIdentifier] AS varbinary(max)) <> CAST(del.[SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveyResponseIdentifier] IS NULL AND del.[SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveyResponseIdentifier] IS NOT NULL AND del.[SurveyResponseIdentifier] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[Survey_Namespace] AS varbinary(max)) <> CAST(d.[Survey_Namespace] AS varbinary(max)) OR (i.[Survey_Namespace] IS NULL AND d.[Survey_Namespace] IS NOT NULL) OR (i.[Survey_Namespace] IS NOT NULL AND d.[Survey_Namespace] IS NULL)) OR (CAST(i.[Survey_SurveyIdentifier] AS varbinary(max)) <> CAST(d.[Survey_SurveyIdentifier] AS varbinary(max)) OR (i.[Survey_SurveyIdentifier] IS NULL AND d.[Survey_SurveyIdentifier] IS NOT NULL) OR (i.[Survey_SurveyIdentifier] IS NOT NULL AND d.[Survey_SurveyIdentifier] IS NULL)) OR (CAST(i.[SurveyResponseIdentifier] AS varbinary(max)) <> CAST(d.[SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveyResponseIdentifier] IS NULL AND d.[SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveyResponseIdentifier] IS NOT NULL AND d.[SurveyResponseIdentifier] IS NULL));
         INSERT INTO [tracked_changes_edfi].[SurveyResponse] (
             [OldSurvey_Namespace],
             [OldSurvey_SurveyIdentifier],
@@ -68861,9 +68352,9 @@ BEGIN
             i.[Survey_SurveyIdentifier],
             i.[SurveyResponseIdentifier],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -68966,14 +68457,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[SurveyResponse_Namespace] AS varbinary(max)) <> CAST(del.[SurveyResponse_Namespace] AS varbinary(max)) OR (i.[SurveyResponse_Namespace] IS NULL AND del.[SurveyResponse_Namespace] IS NOT NULL) OR (i.[SurveyResponse_Namespace] IS NOT NULL AND del.[SurveyResponse_Namespace] IS NULL)) OR (CAST(i.[SurveyResponse_SurveyIdentifier] AS varbinary(max)) <> CAST(del.[SurveyResponse_SurveyIdentifier] AS varbinary(max)) OR (i.[SurveyResponse_SurveyIdentifier] IS NULL AND del.[SurveyResponse_SurveyIdentifier] IS NOT NULL) OR (i.[SurveyResponse_SurveyIdentifier] IS NOT NULL AND del.[SurveyResponse_SurveyIdentifier] IS NULL)) OR (CAST(i.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) <> CAST(del.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NULL AND del.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL AND del.[SurveyResponse_SurveyResponseIdentifier] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[SurveyResponse_Namespace] AS varbinary(max)) <> CAST(d.[SurveyResponse_Namespace] AS varbinary(max)) OR (i.[SurveyResponse_Namespace] IS NULL AND d.[SurveyResponse_Namespace] IS NOT NULL) OR (i.[SurveyResponse_Namespace] IS NOT NULL AND d.[SurveyResponse_Namespace] IS NULL)) OR (CAST(i.[SurveyResponse_SurveyIdentifier] AS varbinary(max)) <> CAST(d.[SurveyResponse_SurveyIdentifier] AS varbinary(max)) OR (i.[SurveyResponse_SurveyIdentifier] IS NULL AND d.[SurveyResponse_SurveyIdentifier] IS NOT NULL) OR (i.[SurveyResponse_SurveyIdentifier] IS NOT NULL AND d.[SurveyResponse_SurveyIdentifier] IS NULL)) OR (CAST(i.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) <> CAST(d.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NULL AND d.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL AND d.[SurveyResponse_SurveyResponseIdentifier] IS NULL));
         INSERT INTO [tracked_changes_edfi].[SurveyResponseEducationOrganizationTargetAssociation] (
             [OldEducationOrganization_EducationOrganizationId],
             [OldSurveyResponse_Namespace],
@@ -68996,9 +68484,9 @@ BEGIN
             i.[SurveyResponse_SurveyIdentifier],
             i.[SurveyResponse_SurveyResponseIdentifier],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -69104,14 +68592,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL)) OR (CAST(i.[SurveyResponse_Namespace] AS varbinary(max)) <> CAST(del.[SurveyResponse_Namespace] AS varbinary(max)) OR (i.[SurveyResponse_Namespace] IS NULL AND del.[SurveyResponse_Namespace] IS NOT NULL) OR (i.[SurveyResponse_Namespace] IS NOT NULL AND del.[SurveyResponse_Namespace] IS NULL)) OR (CAST(i.[SurveyResponse_SurveyIdentifier] AS varbinary(max)) <> CAST(del.[SurveyResponse_SurveyIdentifier] AS varbinary(max)) OR (i.[SurveyResponse_SurveyIdentifier] IS NULL AND del.[SurveyResponse_SurveyIdentifier] IS NOT NULL) OR (i.[SurveyResponse_SurveyIdentifier] IS NOT NULL AND del.[SurveyResponse_SurveyIdentifier] IS NULL)) OR (CAST(i.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) <> CAST(del.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NULL AND del.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL AND del.[SurveyResponse_SurveyResponseIdentifier] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL)) OR (CAST(i.[SurveyResponse_Namespace] AS varbinary(max)) <> CAST(d.[SurveyResponse_Namespace] AS varbinary(max)) OR (i.[SurveyResponse_Namespace] IS NULL AND d.[SurveyResponse_Namespace] IS NOT NULL) OR (i.[SurveyResponse_Namespace] IS NOT NULL AND d.[SurveyResponse_Namespace] IS NULL)) OR (CAST(i.[SurveyResponse_SurveyIdentifier] AS varbinary(max)) <> CAST(d.[SurveyResponse_SurveyIdentifier] AS varbinary(max)) OR (i.[SurveyResponse_SurveyIdentifier] IS NULL AND d.[SurveyResponse_SurveyIdentifier] IS NOT NULL) OR (i.[SurveyResponse_SurveyIdentifier] IS NOT NULL AND d.[SurveyResponse_SurveyIdentifier] IS NULL)) OR (CAST(i.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) <> CAST(d.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NULL AND d.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL AND d.[SurveyResponse_SurveyResponseIdentifier] IS NULL));
         INSERT INTO [tracked_changes_edfi].[SurveyResponseStaffTargetAssociation] (
             [OldStaff_StaffUniqueId],
             [OldSurveyResponse_Namespace],
@@ -69138,9 +68623,9 @@ BEGIN
             i.[SurveyResponse_SurveyResponseIdentifier],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]
@@ -69282,14 +68767,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Survey_Namespace] AS varbinary(max)) <> CAST(del.[Survey_Namespace] AS varbinary(max)) OR (i.[Survey_Namespace] IS NULL AND del.[Survey_Namespace] IS NOT NULL) OR (i.[Survey_Namespace] IS NOT NULL AND del.[Survey_Namespace] IS NULL)) OR (CAST(i.[Survey_SurveyIdentifier] AS varbinary(max)) <> CAST(del.[Survey_SurveyIdentifier] AS varbinary(max)) OR (i.[Survey_SurveyIdentifier] IS NULL AND del.[Survey_SurveyIdentifier] IS NOT NULL) OR (i.[Survey_SurveyIdentifier] IS NOT NULL AND del.[Survey_SurveyIdentifier] IS NULL)) OR (CAST(i.[SurveySectionTitle] AS varbinary(max)) <> CAST(del.[SurveySectionTitle] AS varbinary(max)) OR (i.[SurveySectionTitle] IS NULL AND del.[SurveySectionTitle] IS NOT NULL) OR (i.[SurveySectionTitle] IS NOT NULL AND del.[SurveySectionTitle] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[Survey_Namespace] AS varbinary(max)) <> CAST(d.[Survey_Namespace] AS varbinary(max)) OR (i.[Survey_Namespace] IS NULL AND d.[Survey_Namespace] IS NOT NULL) OR (i.[Survey_Namespace] IS NOT NULL AND d.[Survey_Namespace] IS NULL)) OR (CAST(i.[Survey_SurveyIdentifier] AS varbinary(max)) <> CAST(d.[Survey_SurveyIdentifier] AS varbinary(max)) OR (i.[Survey_SurveyIdentifier] IS NULL AND d.[Survey_SurveyIdentifier] IS NOT NULL) OR (i.[Survey_SurveyIdentifier] IS NOT NULL AND d.[Survey_SurveyIdentifier] IS NULL)) OR (CAST(i.[SurveySectionTitle] AS varbinary(max)) <> CAST(d.[SurveySectionTitle] AS varbinary(max)) OR (i.[SurveySectionTitle] IS NULL AND d.[SurveySectionTitle] IS NOT NULL) OR (i.[SurveySectionTitle] IS NOT NULL AND d.[SurveySectionTitle] IS NULL));
         INSERT INTO [tracked_changes_edfi].[SurveySection] (
             [OldSurvey_Namespace],
             [OldSurvey_SurveyIdentifier],
@@ -69308,9 +68790,9 @@ BEGIN
             i.[Survey_SurveyIdentifier],
             i.[SurveySectionTitle],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -69419,14 +68901,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Section_LocalCourseCode] AS varbinary(max)) <> CAST(del.[Section_LocalCourseCode] AS varbinary(max)) OR (i.[Section_LocalCourseCode] IS NULL AND del.[Section_LocalCourseCode] IS NOT NULL) OR (i.[Section_LocalCourseCode] IS NOT NULL AND del.[Section_LocalCourseCode] IS NULL)) OR (i.[Section_SchoolId] <> del.[Section_SchoolId] OR (i.[Section_SchoolId] IS NULL AND del.[Section_SchoolId] IS NOT NULL) OR (i.[Section_SchoolId] IS NOT NULL AND del.[Section_SchoolId] IS NULL)) OR (i.[Section_SchoolYear] <> del.[Section_SchoolYear] OR (i.[Section_SchoolYear] IS NULL AND del.[Section_SchoolYear] IS NOT NULL) OR (i.[Section_SchoolYear] IS NOT NULL AND del.[Section_SchoolYear] IS NULL)) OR (CAST(i.[Section_SectionIdentifier] AS varbinary(max)) <> CAST(del.[Section_SectionIdentifier] AS varbinary(max)) OR (i.[Section_SectionIdentifier] IS NULL AND del.[Section_SectionIdentifier] IS NOT NULL) OR (i.[Section_SectionIdentifier] IS NOT NULL AND del.[Section_SectionIdentifier] IS NULL)) OR (CAST(i.[Section_SessionName] AS varbinary(max)) <> CAST(del.[Section_SessionName] AS varbinary(max)) OR (i.[Section_SessionName] IS NULL AND del.[Section_SessionName] IS NOT NULL) OR (i.[Section_SessionName] IS NOT NULL AND del.[Section_SessionName] IS NULL)) OR (CAST(i.[Survey_Namespace] AS varbinary(max)) <> CAST(del.[Survey_Namespace] AS varbinary(max)) OR (i.[Survey_Namespace] IS NULL AND del.[Survey_Namespace] IS NOT NULL) OR (i.[Survey_Namespace] IS NOT NULL AND del.[Survey_Namespace] IS NULL)) OR (CAST(i.[Survey_SurveyIdentifier] AS varbinary(max)) <> CAST(del.[Survey_SurveyIdentifier] AS varbinary(max)) OR (i.[Survey_SurveyIdentifier] IS NULL AND del.[Survey_SurveyIdentifier] IS NOT NULL) OR (i.[Survey_SurveyIdentifier] IS NOT NULL AND del.[Survey_SurveyIdentifier] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[Section_LocalCourseCode] AS varbinary(max)) <> CAST(d.[Section_LocalCourseCode] AS varbinary(max)) OR (i.[Section_LocalCourseCode] IS NULL AND d.[Section_LocalCourseCode] IS NOT NULL) OR (i.[Section_LocalCourseCode] IS NOT NULL AND d.[Section_LocalCourseCode] IS NULL)) OR (i.[Section_SchoolId] <> d.[Section_SchoolId] OR (i.[Section_SchoolId] IS NULL AND d.[Section_SchoolId] IS NOT NULL) OR (i.[Section_SchoolId] IS NOT NULL AND d.[Section_SchoolId] IS NULL)) OR (i.[Section_SchoolYear] <> d.[Section_SchoolYear] OR (i.[Section_SchoolYear] IS NULL AND d.[Section_SchoolYear] IS NOT NULL) OR (i.[Section_SchoolYear] IS NOT NULL AND d.[Section_SchoolYear] IS NULL)) OR (CAST(i.[Section_SectionIdentifier] AS varbinary(max)) <> CAST(d.[Section_SectionIdentifier] AS varbinary(max)) OR (i.[Section_SectionIdentifier] IS NULL AND d.[Section_SectionIdentifier] IS NOT NULL) OR (i.[Section_SectionIdentifier] IS NOT NULL AND d.[Section_SectionIdentifier] IS NULL)) OR (CAST(i.[Section_SessionName] AS varbinary(max)) <> CAST(d.[Section_SessionName] AS varbinary(max)) OR (i.[Section_SessionName] IS NULL AND d.[Section_SessionName] IS NOT NULL) OR (i.[Section_SessionName] IS NOT NULL AND d.[Section_SessionName] IS NULL)) OR (CAST(i.[Survey_Namespace] AS varbinary(max)) <> CAST(d.[Survey_Namespace] AS varbinary(max)) OR (i.[Survey_Namespace] IS NULL AND d.[Survey_Namespace] IS NOT NULL) OR (i.[Survey_Namespace] IS NOT NULL AND d.[Survey_Namespace] IS NULL)) OR (CAST(i.[Survey_SurveyIdentifier] AS varbinary(max)) <> CAST(d.[Survey_SurveyIdentifier] AS varbinary(max)) OR (i.[Survey_SurveyIdentifier] IS NULL AND d.[Survey_SurveyIdentifier] IS NOT NULL) OR (i.[Survey_SurveyIdentifier] IS NOT NULL AND d.[Survey_SurveyIdentifier] IS NULL));
         INSERT INTO [tracked_changes_edfi].[SurveySectionAssociation] (
             [OldSection_LocalCourseCode],
             [OldSection_SchoolId],
@@ -69461,9 +68940,9 @@ BEGIN
             i.[Survey_Namespace],
             i.[Survey_SurveyIdentifier],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -69566,14 +69045,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(del.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND del.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND del.[Namespace_Unified] IS NULL)) OR (CAST(i.[SurveyIdentifier_Unified] AS varbinary(max)) <> CAST(del.[SurveyIdentifier_Unified] AS varbinary(max)) OR (i.[SurveyIdentifier_Unified] IS NULL AND del.[SurveyIdentifier_Unified] IS NOT NULL) OR (i.[SurveyIdentifier_Unified] IS NOT NULL AND del.[SurveyIdentifier_Unified] IS NULL)) OR (CAST(i.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) <> CAST(del.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NULL AND del.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL AND del.[SurveyResponse_SurveyResponseIdentifier] IS NULL)) OR (CAST(i.[SurveySection_SurveySectionTitle] AS varbinary(max)) <> CAST(del.[SurveySection_SurveySectionTitle] AS varbinary(max)) OR (i.[SurveySection_SurveySectionTitle] IS NULL AND del.[SurveySection_SurveySectionTitle] IS NOT NULL) OR (i.[SurveySection_SurveySectionTitle] IS NOT NULL AND del.[SurveySection_SurveySectionTitle] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(d.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND d.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND d.[Namespace_Unified] IS NULL)) OR (CAST(i.[SurveyIdentifier_Unified] AS varbinary(max)) <> CAST(d.[SurveyIdentifier_Unified] AS varbinary(max)) OR (i.[SurveyIdentifier_Unified] IS NULL AND d.[SurveyIdentifier_Unified] IS NOT NULL) OR (i.[SurveyIdentifier_Unified] IS NOT NULL AND d.[SurveyIdentifier_Unified] IS NULL)) OR (CAST(i.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) <> CAST(d.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NULL AND d.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL AND d.[SurveyResponse_SurveyResponseIdentifier] IS NULL)) OR (CAST(i.[SurveySection_SurveySectionTitle] AS varbinary(max)) <> CAST(d.[SurveySection_SurveySectionTitle] AS varbinary(max)) OR (i.[SurveySection_SurveySectionTitle] IS NULL AND d.[SurveySection_SurveySectionTitle] IS NOT NULL) OR (i.[SurveySection_SurveySectionTitle] IS NOT NULL AND d.[SurveySection_SurveySectionTitle] IS NULL));
         INSERT INTO [tracked_changes_edfi].[SurveySectionResponse] (
             [OldNamespace_Unified],
             [OldSurveyIdentifier_Unified],
@@ -69596,9 +69072,9 @@ BEGIN
             i.[SurveyResponse_SurveyResponseIdentifier],
             i.[SurveySection_SurveySectionTitle],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -69703,14 +69179,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> del.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND del.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND del.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(del.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND del.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND del.[Namespace_Unified] IS NULL)) OR (CAST(i.[SurveyIdentifier_Unified] AS varbinary(max)) <> CAST(del.[SurveyIdentifier_Unified] AS varbinary(max)) OR (i.[SurveyIdentifier_Unified] IS NULL AND del.[SurveyIdentifier_Unified] IS NOT NULL) OR (i.[SurveyIdentifier_Unified] IS NOT NULL AND del.[SurveyIdentifier_Unified] IS NULL)) OR (CAST(i.[SurveySectionResponse_SurveyResponseIdentifier] AS varbinary(max)) <> CAST(del.[SurveySectionResponse_SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveySectionResponse_SurveyResponseIdentifier] IS NULL AND del.[SurveySectionResponse_SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveySectionResponse_SurveyResponseIdentifier] IS NOT NULL AND del.[SurveySectionResponse_SurveyResponseIdentifier] IS NULL)) OR (CAST(i.[SurveySectionResponse_SurveySectionTitle] AS varbinary(max)) <> CAST(del.[SurveySectionResponse_SurveySectionTitle] AS varbinary(max)) OR (i.[SurveySectionResponse_SurveySectionTitle] IS NULL AND del.[SurveySectionResponse_SurveySectionTitle] IS NOT NULL) OR (i.[SurveySectionResponse_SurveySectionTitle] IS NOT NULL AND del.[SurveySectionResponse_SurveySectionTitle] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(d.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND d.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND d.[Namespace_Unified] IS NULL)) OR (CAST(i.[SurveyIdentifier_Unified] AS varbinary(max)) <> CAST(d.[SurveyIdentifier_Unified] AS varbinary(max)) OR (i.[SurveyIdentifier_Unified] IS NULL AND d.[SurveyIdentifier_Unified] IS NOT NULL) OR (i.[SurveyIdentifier_Unified] IS NOT NULL AND d.[SurveyIdentifier_Unified] IS NULL)) OR (CAST(i.[SurveySectionResponse_SurveyResponseIdentifier] AS varbinary(max)) <> CAST(d.[SurveySectionResponse_SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveySectionResponse_SurveyResponseIdentifier] IS NULL AND d.[SurveySectionResponse_SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveySectionResponse_SurveyResponseIdentifier] IS NOT NULL AND d.[SurveySectionResponse_SurveyResponseIdentifier] IS NULL)) OR (CAST(i.[SurveySectionResponse_SurveySectionTitle] AS varbinary(max)) <> CAST(d.[SurveySectionResponse_SurveySectionTitle] AS varbinary(max)) OR (i.[SurveySectionResponse_SurveySectionTitle] IS NULL AND d.[SurveySectionResponse_SurveySectionTitle] IS NOT NULL) OR (i.[SurveySectionResponse_SurveySectionTitle] IS NOT NULL AND d.[SurveySectionResponse_SurveySectionTitle] IS NULL));
         INSERT INTO [tracked_changes_edfi].[SurveySectionResponseEducationOrganizationTargetAssociation] (
             [OldEducationOrganization_EducationOrganizationId],
             [OldNamespace_Unified],
@@ -69737,9 +69210,9 @@ BEGIN
             i.[SurveySectionResponse_SurveyResponseIdentifier],
             i.[SurveySectionResponse_SurveySectionTitle],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -69847,14 +69320,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(del.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND del.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND del.[Staff_StaffUniqueId] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(del.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND del.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND del.[Namespace_Unified] IS NULL)) OR (CAST(i.[SurveyIdentifier_Unified] AS varbinary(max)) <> CAST(del.[SurveyIdentifier_Unified] AS varbinary(max)) OR (i.[SurveyIdentifier_Unified] IS NULL AND del.[SurveyIdentifier_Unified] IS NOT NULL) OR (i.[SurveyIdentifier_Unified] IS NOT NULL AND del.[SurveyIdentifier_Unified] IS NULL)) OR (CAST(i.[SurveySectionResponse_SurveyResponseIdentifier] AS varbinary(max)) <> CAST(del.[SurveySectionResponse_SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveySectionResponse_SurveyResponseIdentifier] IS NULL AND del.[SurveySectionResponse_SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveySectionResponse_SurveyResponseIdentifier] IS NOT NULL AND del.[SurveySectionResponse_SurveyResponseIdentifier] IS NULL)) OR (CAST(i.[SurveySectionResponse_SurveySectionTitle] AS varbinary(max)) <> CAST(del.[SurveySectionResponse_SurveySectionTitle] AS varbinary(max)) OR (i.[SurveySectionResponse_SurveySectionTitle] IS NULL AND del.[SurveySectionResponse_SurveySectionTitle] IS NOT NULL) OR (i.[SurveySectionResponse_SurveySectionTitle] IS NOT NULL AND del.[SurveySectionResponse_SurveySectionTitle] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(d.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND d.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND d.[Namespace_Unified] IS NULL)) OR (CAST(i.[SurveyIdentifier_Unified] AS varbinary(max)) <> CAST(d.[SurveyIdentifier_Unified] AS varbinary(max)) OR (i.[SurveyIdentifier_Unified] IS NULL AND d.[SurveyIdentifier_Unified] IS NOT NULL) OR (i.[SurveyIdentifier_Unified] IS NOT NULL AND d.[SurveyIdentifier_Unified] IS NULL)) OR (CAST(i.[SurveySectionResponse_SurveyResponseIdentifier] AS varbinary(max)) <> CAST(d.[SurveySectionResponse_SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveySectionResponse_SurveyResponseIdentifier] IS NULL AND d.[SurveySectionResponse_SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveySectionResponse_SurveyResponseIdentifier] IS NOT NULL AND d.[SurveySectionResponse_SurveyResponseIdentifier] IS NULL)) OR (CAST(i.[SurveySectionResponse_SurveySectionTitle] AS varbinary(max)) <> CAST(d.[SurveySectionResponse_SurveySectionTitle] AS varbinary(max)) OR (i.[SurveySectionResponse_SurveySectionTitle] IS NULL AND d.[SurveySectionResponse_SurveySectionTitle] IS NOT NULL) OR (i.[SurveySectionResponse_SurveySectionTitle] IS NOT NULL AND d.[SurveySectionResponse_SurveySectionTitle] IS NULL));
         INSERT INTO [tracked_changes_edfi].[SurveySectionResponseStaffTargetAssociation] (
             [OldStaff_StaffUniqueId],
             [OldNamespace_Unified],
@@ -69885,9 +69355,9 @@ BEGIN
             i.[SurveySectionResponse_SurveySectionTitle],
             newPj0s0.[DocumentId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
         INNER JOIN [edfi].[Staff] oldPj0s0 ON oldPj0s0.[DocumentId] = del.[Staff_DocumentId]

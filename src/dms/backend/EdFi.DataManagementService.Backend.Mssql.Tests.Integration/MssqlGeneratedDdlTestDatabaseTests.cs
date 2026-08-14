@@ -24,11 +24,7 @@ internal sealed record MssqlGeneratedDdlMutableCounts(
     long AuthEducationOrganizationCount
 );
 
-internal sealed record MssqlGeneratedDdlDocumentState(
-    long DocumentId,
-    long ContentVersion,
-    long IdentityVersion
-);
+internal sealed record MssqlGeneratedDdlDocumentState(long DocumentId, long ContentVersion);
 
 internal sealed record MssqlGeneratedDdlResetIntegrityState(
     long DisabledForeignKeyCount,
@@ -254,7 +250,7 @@ public class Given_MssqlGeneratedDdlTestDatabase
 
         var documentRows = await _database.QueryRowsAsync(
             """
-            SELECT [DocumentId], [ContentVersion], [IdentityVersion]
+            SELECT [DocumentId], [ContentVersion]
             FROM [dms].[Document]
             WHERE [DocumentUuid] = @documentUuid;
             """,
@@ -263,8 +259,7 @@ public class Given_MssqlGeneratedDdlTestDatabase
         var documentRow = documentRows.Should().ContainSingle().Which;
         var documentState = new MssqlGeneratedDdlDocumentState(
             Convert.ToInt64(documentRow["DocumentId"]),
-            Convert.ToInt64(documentRow["ContentVersion"]),
-            Convert.ToInt64(documentRow["IdentityVersion"])
+            Convert.ToInt64(documentRow["ContentVersion"])
         );
 
         await _database.ExecuteNonQueryAsync(

@@ -82,6 +82,11 @@ public class Given_MaterializedDocumentFixtureSeeder
             && command.Parameters.Any(parameter => Equals(parameter.Value, 970101L))
         );
 
+        documentInsert
+            .CommandText.Should()
+            .Be(
+                "INSERT INTO \"dms\".\"Document\" (\"DocumentId\", \"DocumentUuid\", \"ResourceKeyId\", \"CreatedByOwnershipTokenId\", \"ContentVersion\", \"ContentLastModifiedAt\", \"CreatedAt\") VALUES (@p0, @p1, @p2, NULL, @p3, @p4, @p4)"
+            );
         documentInsert.Parameters.Should().Contain(parameter => Equals(parameter.Value, 970101L));
         documentInsert
             .Parameters.Any(parameter =>
@@ -130,6 +135,15 @@ public class Given_MaterializedDocumentFixtureSeeder
             .Should()
             .Contain(command =>
                 command.Contains("[ContentLastModifiedAt] datetime2(7)", StringComparison.Ordinal)
+            );
+
+        var documentInsert = commands.Single(command =>
+            command.CommandText.StartsWith("INSERT INTO [dms].[Document]", StringComparison.Ordinal)
+        );
+        documentInsert
+            .CommandText.Should()
+            .Be(
+                "INSERT INTO [dms].[Document] ([DocumentId], [DocumentUuid], [ResourceKeyId], [CreatedByOwnershipTokenId], [ContentVersion], [ContentLastModifiedAt], [CreatedAt]) VALUES (@p0, @p1, @p2, NULL, @p3, @p4, @p4)"
             );
 
         var descriptorInsert = commands.Single(command =>
