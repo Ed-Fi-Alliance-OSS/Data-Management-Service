@@ -58,8 +58,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 /// </remarks>
 internal static class PostgresqlRelationalQueryAuthorizationVolumeGenerator
 {
-    private const int StudentUniqueIdOrdinalOffset = 5;
-
     /// <summary>
     /// Generation runs with a longer statement timeout than the harness default. One set-based INSERT per table
     /// is still one statement, but it fires the referential-identity and stamp triggers once per row, so at the
@@ -907,7 +905,7 @@ internal static class PostgresqlRelationalQueryAuthorizationVolumeGenerator
             SELECT
                         student."DocumentId",
                         student."StudentUniqueId",
-                        substring(student."StudentUniqueId" from {StudentUniqueIdOrdinalOffset})::bigint AS ordinal
+                        substring(student."StudentUniqueId" from {RelationshipAuthorizationVolumeIdentifiers.StudentUniqueIdOrdinalOffset})::bigint AS ordinal
                     FROM "edfi"."Student" student
                     WHERE student."StudentUniqueId" LIKE @studentUniqueIdPrefix || '%'
             """;

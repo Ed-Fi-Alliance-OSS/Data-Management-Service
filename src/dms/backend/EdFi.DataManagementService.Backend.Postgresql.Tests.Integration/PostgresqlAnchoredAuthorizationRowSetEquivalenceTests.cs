@@ -35,6 +35,14 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 /// Equal result rows say nothing about plans or runtime, so nothing here licenses timing the emitter. The
 /// measurement fixtures take production's own SQL as their subject.
 /// </para>
+/// <para>
+/// The generator preconditions are asserted here rather than in a fixture of their own, matching the SQL Server
+/// twin: each fixture provisions its own database and generates the whole population in
+/// <c>OneTimeSetUp</c>, so a separate precondition fixture buys a second full generation on every pull request
+/// and proves nothing this one cannot. What those preconditions are for is unchanged — every measuring fixture
+/// still asserts its own authorized-row count, and a generator regression fails loudly here instead of quietly
+/// turning a later EXPLAIN into an empty page.
+/// </para>
 /// </remarks>
 [TestFixture]
 [NonParallelizable]
@@ -67,6 +75,7 @@ public class Given_A_Postgresql_Anchored_Authorization_Row_Set_Equivalence
     ];
 
     private PostgresqlRelationalQueryAuthorizationTestContext _context = null!;
+    private RelationshipAuthorizationVolumeGenerationResult _generated = null!;
 
     public static IEnumerable<string> ResourceNames =>
         RelationshipAuthorizationDifferentialSpecs
@@ -81,7 +90,7 @@ public class Given_A_Postgresql_Anchored_Authorization_Row_Set_Equivalence
     {
         _context = new PostgresqlRelationalQueryAuthorizationTestContext();
         await _context.InitializeAsync(FixtureRelativePath, strict: true);
-        await PostgresqlRelationalQueryAuthorizationVolumeGenerator.GenerateAsync(
+        _generated = await PostgresqlRelationalQueryAuthorizationVolumeGenerator.GenerateAsync(
             _context,
             RelationshipAuthorizationVolumeCounts.Ci
         );
@@ -91,6 +100,130 @@ public class Given_A_Postgresql_Anchored_Authorization_Row_Set_Equivalence
     public async Task OneTimeTearDown()
     {
         await _context.DisposeAsync();
+    }
+
+    [Test]
+    public void It_should_generate_the_stated_authorized_and_unauthorized_student_counts()
+    {
+        _generated
+            .AuthorizedStudentCount.Should()
+            .Be(RelationshipAuthorizationVolumeCounts.Ci.AuthorizedRowsPerRoot);
+        _generated
+            .UnauthorizedStudentCount.Should()
+            .Be(RelationshipAuthorizationVolumeCounts.Ci.UnauthorizedRowsPerRoot);
+    }
+
+    [TestCaseSource(nameof(ResourceNames))]
+    public async Task It_should_generate_one_row_per_student_in_every_root_table(string resourceName)
+    {
+        var rowCount = await _context.Database.ExecuteScalarAsync<long>(
+            $"""SELECT count(*) FROM "edfi"."{resourceName}";"""
+        );
+
+        rowCount
+            .Should()
+            .Be(
+                RelationshipAuthorizationVolumeCounts.Ci.TotalRowsPerRoot,
+                $"every generated student gets exactly one {resourceName} row"
+            );
+    }
+
+    /// <summary>
+    /// The referential-identity trigger hashes each row's natural key into a primary key, so a generator that
+    /// failed to vary the hashed columns would not merely under-count here — its INSERT would have failed. One
+    /// identity row per generated row is the evidence that the per-row triggers ran and collided with nothing.
+    /// </summary>
+    [TestCaseSource(nameof(ResourceNames))]
+    public async Task It_should_write_one_referential_identity_row_per_generated_root_row(string resourceName)
+    {
+        var identityCount = await _context.Database.ExecuteScalarAsync<long>(
+            $"""
+            SELECT count(*)
+            FROM "dms"."ReferentialIdentity" identityRow
+            INNER JOIN "edfi"."{resourceName}" root ON root."DocumentId" = identityRow."DocumentId";
+            """
+        );
+
+        identityCount
+            .Should()
+            .Be(
+                RelationshipAuthorizationVolumeCounts.Ci.TotalRowsPerRoot,
+                $"the {resourceName} referential-identity trigger fires for every generated row"
+            );
+    }
+
+    /// <summary>
+    /// Authorized and unauthorized rows must alternate across page boundaries. If the generator partitioned the
+    /// populations instead, a page taken from the front of the DocumentId ordering would be entirely authorized
+    /// and the paging assertions built on this data would stop exercising the mix they claim to.
+    /// </summary>
+    [Test]
+    public async Task It_should_interleave_unauthorized_rows_across_the_document_id_ordering()
+    {
+        var stride = RelationshipAuthorizationVolumeCounts.Ci.Stride;
+        var firstPageSize = stride * 4;
+
+        var unauthorizedInFirstPage = await _context.Database.ExecuteScalarAsync<long>(
+            """
+            SELECT count(*)
+            FROM (
+                SELECT root."Student_DocumentId"
+                FROM "edfi"."StudentSectionAssociation" root
+                ORDER BY root."DocumentId"
+                LIMIT @firstPageSize
+            ) firstPage
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM "auth"."EducationOrganizationIdToStudentDocumentId" authView
+                WHERE authView."Student_DocumentId" = firstPage."Student_DocumentId"
+                  AND authView."SourceEducationOrganizationId" = @claimEducationOrganizationId
+            );
+            """,
+            new NpgsqlParameter("firstPageSize", firstPageSize),
+            new NpgsqlParameter(
+                "claimEducationOrganizationId",
+                RelationshipAuthorizationVolumeIdentifiers.ClaimEducationOrganizationId
+            )
+        );
+
+        unauthorizedInFirstPage
+            .Should()
+            .Be(
+                firstPageSize / stride,
+                "every stride-th row of the ordering is unauthorized, so any page carries both populations"
+            );
+    }
+
+    /// <summary>
+    /// The claim reaches the reachable school only. If the closure edge reached both, every generated student
+    /// would be authorized and the split would be vacuous.
+    /// </summary>
+    [Test]
+    public async Task It_should_authorize_only_students_enrolled_at_the_reachable_school()
+    {
+        var authorizedAtUnreachableSchool = await _context.Database.ExecuteScalarAsync<long>(
+            """
+            SELECT count(*)
+            FROM "edfi"."StudentSchoolAssociation" enrollment
+            WHERE enrollment."SchoolId_Unified" = @unreachableSchoolId
+              AND EXISTS (
+                  SELECT 1
+                  FROM "auth"."EducationOrganizationIdToStudentDocumentId" authView
+                  WHERE authView."Student_DocumentId" = enrollment."Student_DocumentId"
+                    AND authView."SourceEducationOrganizationId" = @claimEducationOrganizationId
+              );
+            """,
+            new NpgsqlParameter(
+                "unreachableSchoolId",
+                (long)RelationshipAuthorizationVolumeIdentifiers.UnreachableSchoolId
+            ),
+            new NpgsqlParameter(
+                "claimEducationOrganizationId",
+                RelationshipAuthorizationVolumeIdentifiers.ClaimEducationOrganizationId
+            )
+        );
+
+        authorizedAtUnreachableSchool.Should().Be(0);
     }
 
     /// <summary>

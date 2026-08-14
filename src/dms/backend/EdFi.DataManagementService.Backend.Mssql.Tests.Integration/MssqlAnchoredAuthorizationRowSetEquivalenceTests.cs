@@ -34,9 +34,10 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 /// since equal counts are satisfied by any permutation or by compensating swaps.
 /// </para>
 /// <para>
-/// The generator preconditions the PostgreSQL side keeps in its own fixture are asserted here instead, so SQL
-/// Server generates the volume once per pull request rather than twice. AC3 plan verification is PostgreSQL-only
-/// by existing precedent, so nothing here measures a plan and no statistics barrier is needed.
+/// The generator preconditions are asserted here rather than in a fixture of their own, so SQL Server generates
+/// the volume once per pull request; the PostgreSQL differential is arranged the same way. AC3 plan
+/// verification is PostgreSQL-only by existing precedent, so nothing here measures a plan and no statistics
+/// barrier is needed.
 /// </para>
 /// </remarks>
 [TestFixture]

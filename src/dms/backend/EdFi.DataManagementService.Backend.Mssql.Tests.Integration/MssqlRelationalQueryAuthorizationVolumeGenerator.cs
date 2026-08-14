@@ -65,8 +65,6 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 /// </remarks>
 internal static class MssqlRelationalQueryAuthorizationVolumeGenerator
 {
-    private const int StudentUniqueIdOrdinalOffset = 5;
-
     public static async Task<RelationshipAuthorizationVolumeGenerationResult> GenerateAsync(
         MssqlRelationalQueryAuthorizationTestContext context,
         RelationshipAuthorizationVolumeCounts counts
@@ -801,7 +799,7 @@ internal static class MssqlRelationalQueryAuthorizationVolumeGenerator
 
     private static string StudentsWithOrdinalSql() =>
         $"SELECT student.[DocumentId], student.[StudentUniqueId], "
-        + $"CAST(SUBSTRING(student.[StudentUniqueId], {StudentUniqueIdOrdinalOffset}, 8) AS bigint) AS ordinal "
+        + $"CAST(SUBSTRING(student.[StudentUniqueId], {RelationshipAuthorizationVolumeIdentifiers.StudentUniqueIdOrdinalOffset}, 8) AS bigint) AS ordinal "
         + "FROM [edfi].[Student] student "
         + "WHERE student.[StudentUniqueId] LIKE @studentUniqueIdPrefix + '%'";
 

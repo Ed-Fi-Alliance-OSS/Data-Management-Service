@@ -525,6 +525,15 @@ internal static class RelationshipAuthorizationVolumeIdentifiers
 
     public const string StudentUniqueIdPrefix = "VOL-";
 
+    /// <summary>
+    /// 1-based SQL substring start of the zero-padded ordinal a generated student unique id carries, which is
+    /// the character immediately after <see cref="StudentUniqueIdPrefix"/>. Derived rather than written out,
+    /// because both engines slice the unique id here to recover the ordinal, and that ordinal is what decides
+    /// which rows the claim authorizes — a prefix change with a stale literal would either mis-split the
+    /// populations or fail the cast from inside a six-figure bulk INSERT.
+    /// </summary>
+    public static int StudentUniqueIdOrdinalOffset => StudentUniqueIdPrefix.Length + 1;
+
     public const string TermDescriptorUri = "uri://ed-fi.org/TermDescriptor#Fall Semester";
     public const string GradeLevelDescriptorUri = "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade";
     public const string GradingPeriodDescriptorUri =
@@ -566,10 +575,16 @@ internal sealed record RelationshipAuthorizationDifferentialSpec(
 );
 
 /// <summary>
-/// The five resources DMS-1331 names, with their real DS 5.2 tables and columns and their real person paths —
-/// three direct and two transitive. Shared by both engines so the PostgreSQL and SQL Server differentials
-/// measure the same shapes.
+/// The five resources DMS-1331 names, plus Student, with their real DS 5.2 tables and columns and their real
+/// person paths. Shared by both engines so the PostgreSQL and SQL Server differentials measure the same shapes.
 /// </summary>
+/// <remarks>
+/// Student is here for shape coverage rather than because the ticket names it: the rewrite changed three person
+/// path kinds, and Student is the only one of these roots that exercises
+/// <see cref="RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId"/>. Without it the Self arm —
+/// the one that collapsed the most SQL, from a full root subquery to a bare membership test — would have no
+/// executed row-set evidence on either engine, and the emitter's own Self branches would be unreachable.
+/// </remarks>
 internal static class RelationshipAuthorizationDifferentialSpecs
 {
     private static readonly DbSchemaName _edfi = new("edfi");
@@ -587,6 +602,7 @@ internal static class RelationshipAuthorizationDifferentialSpecs
 
         return
         [
+            CreateSelfSpec(dialect, claimEducationOrganizationIds, studentTable),
             CreateDirectSpec(
                 dialect,
                 claimEducationOrganizationIds,
@@ -622,6 +638,41 @@ internal static class RelationshipAuthorizationDifferentialSpecs
                 studentTable
             ),
         ];
+    }
+
+    /// <summary>
+    /// The Self shape: the root row is the person, so the anchor is the root's own DocumentId and the path
+    /// carries no steps at all.
+    /// </summary>
+    private static RelationshipAuthorizationDifferentialSpec CreateSelfSpec(
+        SqlDialect dialect,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        DbTableName studentTable
+    )
+    {
+        var subject = new PageDocumentIdAuthorizationPersonSubject(
+            studentTable,
+            _documentIdColumn,
+            RelationshipAuthorizationAuthObject.CreatePerson(
+                RelationshipAuthorizationPersonAuthViewKind.Student
+            ),
+            [StudentContributor()],
+            new RelationshipAuthorizationPersonSubjectMetadata(
+                RelationshipAuthorizationPersonKind.Student,
+                new RelationshipAuthorizationPersonSubjectPath(
+                    RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId,
+                    []
+                ),
+                new RelationshipAuthorizationPersonStoredAnchor(studentTable, _documentIdColumn),
+                ProposedAnchor: null
+            )
+        );
+
+        return new RelationshipAuthorizationDifferentialSpec(
+            studentTable.Name,
+            studentTable,
+            CreateQuerySpec(dialect, claimEducationOrganizationIds, studentTable, subject)
+        );
     }
 
     private static RelationshipAuthorizationDifferentialSpec CreateDirectSpec(

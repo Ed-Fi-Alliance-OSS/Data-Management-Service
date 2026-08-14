@@ -39,6 +39,15 @@ internal static class AnchoredAuthorizationPlanSupport
     /// One direct-column subject and one transitive subject — the two shapes the rewrite changes. Both are
     /// resources the ticket names.
     /// </summary>
+    /// <remarks>
+    /// Constraint on anything added here: a subject's root table must not also be a base relation of its own
+    /// authorization view. <see cref="AssertAnchoredShape"/> counts scans by the unqualified
+    /// <c>Relation Name</c> PostgreSQL reports, so a root the inlined view scans too would be counted twice and
+    /// fail as a self-join regression that is not one. Student is the shape that trips it — the student auth
+    /// view reads StudentSchoolAssociation — and the same holds for any name <c>tracked_changes_edfi</c>
+    /// mirrors. The row-set differential carries such subjects instead; it counts occurrences in SQL text,
+    /// where the schema is present.
+    /// </remarks>
     public const string DirectSubjectResourceName = "StudentSectionAssociation";
     public const string TransitiveSubjectResourceName = "Grade";
 
