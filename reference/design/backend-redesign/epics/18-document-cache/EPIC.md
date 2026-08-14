@@ -38,6 +38,10 @@ gates normal canonical API routing.
 - `DMS-1317` — `07-documentcache-integration-tests-and-runbooks.md` — Add provider integration coverage and runbooks
 - `DMS-1318` — `08-representation-restamp-utility.md` — Add the out-of-band representation-restamp utility
 
+## Recommended Follow-On Stories
+
+- `DMS-1428` — `09-documentcache-administration-cli.md` — Add a DocumentCache administration CLI
+
 ## Delivery Dependencies
 
 The story and cross-epic dependency graph is maintained once in
