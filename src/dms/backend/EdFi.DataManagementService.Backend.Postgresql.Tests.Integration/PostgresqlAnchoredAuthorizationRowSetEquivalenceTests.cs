@@ -99,7 +99,10 @@ public class Given_A_Postgresql_Anchored_Authorization_Row_Set_Equivalence
     [OneTimeTearDown]
     public async Task OneTimeTearDown()
     {
-        await _context.DisposeAsync();
+        if (_context is not null)
+        {
+            await _context.DisposeAsync();
+        }
     }
 
     [Test]

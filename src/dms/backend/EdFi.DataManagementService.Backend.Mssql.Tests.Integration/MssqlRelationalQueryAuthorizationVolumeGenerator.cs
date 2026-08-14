@@ -81,7 +81,7 @@ internal static class MssqlRelationalQueryAuthorizationVolumeGenerator
         );
         await GenerateVolumeRowsAsync(context.Database, counts);
 
-        return await ReadGenerationResultAsync(context.Database, counts);
+        return await ReadGenerationResultAsync(context.Database);
     }
 
     /// <summary>
@@ -399,7 +399,7 @@ internal static class MssqlRelationalQueryAuthorizationVolumeGenerator
                 CAST('2010-05-14' AS date),
                 'Volume',
                 'Student',
-                @studentUniqueIdPrefix + RIGHT('00000000' + CAST(numbered.ordinal AS varchar(8)), 8)
+                @studentUniqueIdPrefix + {ZeroPaddedOrdinalSql("numbered.ordinal")}
             FROM ({NumberedDocumentsSql()}) numbered;
             """,
             TotalRowsParameter(counts),
@@ -719,8 +719,7 @@ internal static class MssqlRelationalQueryAuthorizationVolumeGenerator
     }
 
     private static async Task<RelationshipAuthorizationVolumeGenerationResult> ReadGenerationResultAsync(
-        MssqlGeneratedDdlTestDatabase database,
-        RelationshipAuthorizationVolumeCounts counts
+        MssqlGeneratedDdlTestDatabase database
     )
     {
         var authorizedStudentCount = await database.ExecuteScalarAsync<long>(
@@ -752,7 +751,6 @@ internal static class MssqlRelationalQueryAuthorizationVolumeGenerator
         );
 
         return new RelationshipAuthorizationVolumeGenerationResult(
-            counts,
             authorizedStudentCount,
             unauthorizedStudentCount
         );
@@ -799,9 +797,20 @@ internal static class MssqlRelationalQueryAuthorizationVolumeGenerator
 
     private static string StudentsWithOrdinalSql() =>
         $"SELECT student.[DocumentId], student.[StudentUniqueId], "
-        + $"CAST(SUBSTRING(student.[StudentUniqueId], {RelationshipAuthorizationVolumeIdentifiers.StudentUniqueIdOrdinalOffset}, 8) AS bigint) AS ordinal "
+        + $"CAST(SUBSTRING(student.[StudentUniqueId], {RelationshipAuthorizationVolumeIdentifiers.StudentUniqueIdOrdinalOffset}, {RelationshipAuthorizationVolumeIdentifiers.StudentUniqueIdOrdinalWidth}) AS bigint) AS ordinal "
         + "FROM [edfi].[Student] student "
         + "WHERE student.[StudentUniqueId] LIKE @studentUniqueIdPrefix + '%'";
+
+    /// <summary>
+    /// T-SQL has no <c>lpad</c>, so the zero fill is derived from the shared ordinal width rather than written
+    /// out alongside it.
+    /// </summary>
+    private static string ZeroPaddedOrdinalSql(string ordinalExpression)
+    {
+        var width = RelationshipAuthorizationVolumeIdentifiers.StudentUniqueIdOrdinalWidth;
+
+        return $"RIGHT('{new string('0', width)}' + CAST({ordinalExpression} AS varchar({width})), {width})";
+    }
 
     private static string IsUnauthorizedSql(string ordinalExpression) => $"{ordinalExpression} % @stride = 0";
 

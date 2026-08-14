@@ -51,21 +51,6 @@ internal static class AnchoredAuthorizationPlanSupport
     public const string DirectSubjectResourceName = "StudentSectionAssociation";
     public const string TransitiveSubjectResourceName = "Grade";
 
-    /// <summary>
-    /// The node types that hold a row set in memory. PostgreSQL reports a hash aggregate as node type
-    /// <c>Aggregate</c> with a hashed strategy, and it picks whichever of these fits the semi-join it is given —
-    /// the observed legacy plans use <c>Sort</c> where the ticket's prototype reported a hash — so the set is
-    /// wider than the two names AC3 happens to mention.
-    /// </summary>
-    private static readonly string[] _setHoldingNodeTypes =
-    [
-        "Hash",
-        "Aggregate",
-        "Sort",
-        "Materialize",
-        "Memoize",
-    ];
-
     public static readonly long[] Claim =
     [
         RelationshipAuthorizationVolumeIdentifiers.ClaimEducationOrganizationId,
@@ -124,7 +109,7 @@ internal static class AnchoredAuthorizationPlanSupport
 
     /// <summary>
     /// The two structural claims AC3 makes about the anchored shape: the root relation is read once, and nothing
-    /// holds a set drawn from it as a join's inner side.
+    /// on a join's inner side or inside a subplan reads it.
     /// </summary>
     public static void AssertAnchoredShape(JsonElement plan, string rootRelationName, string context)
     {
@@ -136,29 +121,44 @@ internal static class AnchoredAuthorizationPlanSupport
                     + $"exactly once ({context})"
             );
 
-        FindInnerSideMaterializationsOfRootRelation(plan, rootRelationName)
+        FindReopenedRootRelationReads(plan, rootRelationName)
             .Should()
             .BeEmpty(
-                $"nothing may hold a set drawn from '{rootRelationName}' as a join's inner side — that set of "
-                    + $"every authorized DocumentId, rebuilt on every page, is what DMS-1331 removes ({context})"
+                $"nothing on a join's inner side or inside a subplan may read '{rootRelationName}' — reopening it "
+                    + $"there to derive every authorized DocumentId on every page is what DMS-1331 removes "
+                    + $"({context})"
             );
     }
 
     /// <summary>
-    /// The authorized-DocumentId set the ticket measured at 15 MB is a set drawn from the root relation and held
-    /// as the semi-join's inner side. Anything that holds rows qualifies, because the planner picks the operator:
-    /// the observed legacy plans hold it in a <c>Sort</c> under a merge semi-join where the prototype reported a
-    /// hash. Scoping to the inner side is what separates that from the page's own keyset <c>Sort</c>, which sits
-    /// on the outer path in the anchored plan and is the legitimate cost of ordering a page.
+    /// Every plan node that reopens the root relation away from the page's own scan of it: on a join's inner side
+    /// or inside a subplan.
     /// </summary>
-    public static IReadOnlyList<JsonElement> FindInnerSideMaterializationsOfRootRelation(
+    /// <remarks>
+    /// <para>
+    /// Deliberately node-type-agnostic. Which operator carries the reopened rows is the planner's choice and moves
+    /// with row count, <c>work_mem</c>, cost settings and server version — the legacy plans observed here use a
+    /// <c>Sort</c> under a merge semi-join where the ticket's prototype rig reported a hash, and a nested-loop
+    /// semi-join would carry a bare index scan holding nothing at all. Asserting on a list of set-holding node
+    /// types would therefore both fail on legacy plans that are exactly the pathology and pass on anchored plans
+    /// that reprobe the root per row.
+    /// </para>
+    /// <para>
+    /// The position, unlike the operator, follows from semi-join semantics rather than from cost: the root's page
+    /// scan is the row-preserving side, so it is always the outer, and any second read of the root is therefore
+    /// either the semi-join's inner side or — when the sublink is not pulled up — a subplan. That is what makes
+    /// this the same claim as before without the coupling, and it is also what separates a reopened read from the
+    /// page's own keyset ordering on the outer path, which is the legitimate cost of ordering a page.
+    /// </para>
+    /// </remarks>
+    public static IReadOnlyList<JsonElement> FindReopenedRootRelationReads(
         JsonElement plan,
         string rootRelationName
     ) =>
         [
             .. PostgresqlQueryPlanNavigator
                 .CollectNodes(plan)
-                .Where(IsInnerSideSetHoldingNode)
+                .Where(IsInnerOrSubplanNode)
                 .Where(node =>
                     PostgresqlQueryPlanNavigator.FindAllRelationScanPaths(node, rootRelationName).Count > 0
                 ),
@@ -193,10 +193,9 @@ internal static class AnchoredAuthorizationPlanSupport
     public static NpgsqlParameter ClaimParameter() =>
         new(RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds, Claim);
 
-    private static bool IsInnerSideSetHoldingNode(JsonElement node) =>
-        _setHoldingNodeTypes.Contains(PostgresqlQueryPlanNavigator.GetNodeType(node))
-        && node.TryGetProperty("Parent Relationship", out var parentRelationship)
-        && parentRelationship.GetString() == "Inner";
+    private static bool IsInnerOrSubplanNode(JsonElement node) =>
+        node.TryGetProperty("Parent Relationship", out var parentRelationship)
+        && parentRelationship.GetString() is "Inner" or "SubPlan";
 
     private static double ReadDouble(JsonElement element, string propertyName) =>
         element.TryGetProperty(propertyName, out var value) ? value.GetDouble() : 0;
@@ -204,7 +203,8 @@ internal static class AnchoredAuthorizationPlanSupport
 
 /// <summary>
 /// AC3 plan shape, at CI scale, on every pull request. EXPLAINs the page SQL the production compiler emits and
-/// asserts the anchored predicate reads the root relation once and never materializes a set drawn from it.
+/// asserts the anchored predicate reads the root relation once and never reopens it on a join's inner side or in
+/// a subplan.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -269,9 +269,9 @@ public class Given_A_Postgresql_Anchored_Authorization_Query_Plan
     }
 
     /// <summary>
-    /// AC3 on production's own SQL: the root relation is read once, nothing materializes a set drawn from it,
-    /// and both the person and the claim predicate reached the plan as conditions rather than being applied
-    /// above a materialized intermediate.
+    /// AC3 on production's own SQL: the root relation is read once, nothing reopens it on a join's inner side or
+    /// in a subplan, and both the person and the claim predicate reached the plan as conditions rather than being
+    /// applied above a materialized intermediate.
     /// </summary>
     [TestCaseSource(nameof(SubjectResourceNames))]
     public async Task It_should_read_the_root_relation_once_in_the_anchored_page_plan(string resourceName)
@@ -314,9 +314,9 @@ public class Given_A_Postgresql_Anchored_Authorization_Query_Plan
 
     /// <summary>
     /// The non-vacuity control. Both structural claims above are run against the primary-key self-join DMS-1331
-    /// replaces, and both must come out the other way there: the root relation appears twice, and a set drawn
-    /// from it is held as a join's inner side. Without this, a plan-shape assertion that no plan could fail would
-    /// read as evidence.
+    /// replaces, and both must come out the other way there: the root relation appears twice, and the second read
+    /// sits on a join's inner side or in a subplan. Without this, a plan-shape assertion that no plan could fail
+    /// would read as evidence.
     /// </summary>
     [TestCaseSource(nameof(SubjectResourceNames))]
     public async Task It_should_read_the_root_relation_twice_in_the_legacy_page_plan(string resourceName)
@@ -348,11 +348,11 @@ public class Given_A_Postgresql_Anchored_Authorization_Query_Plan
             );
 
         AnchoredAuthorizationPlanSupport
-            .FindInnerSideMaterializationsOfRootRelation(explained.Plan, rootRelationName)
+            .FindReopenedRootRelationReads(explained.Plan, rootRelationName)
             .Should()
             .NotBeEmpty(
-                $"the legacy predicate feeds its semi-join a set drawn from '{rootRelationName}' — without this "
-                    + "the no-materialization assertion would prove nothing"
+                $"the legacy predicate reopens '{rootRelationName}' on its semi-join's inner side — without this "
+                    + "the no-reopened-read assertion would prove nothing"
             );
     }
 
@@ -499,14 +499,28 @@ public class Given_A_Postgresql_Anchored_Authorization_Deep_Offset_Measurement
     /// scaffolding rather than the predicate, and it fails loudly instead of being folded silently into the
     /// reported numbers.
     /// </summary>
+    /// <remarks>
+    /// The authorized-row precondition matters more here than in the tests that report numbers, not less: two
+    /// empty pages past the last authorized row plan identically, so without it this guard would pass in exactly
+    /// the case it exists to detect, and — unlike a timing or a shape assertion — there is nothing in the result
+    /// that would look wrong.
+    /// </remarks>
     [TestCaseSource(nameof(SubjectResourceNames))]
     public async Task It_should_plan_the_emitter_anchored_page_sql_the_same_as_production(string resourceName)
     {
         var spec = AnchoredAuthorizationPlanSupport.SpecFor(resourceName);
-        var productionSql = AnchoredAuthorizationPlanSupport.CompileProduction(spec).PageDocumentIdSql;
+        var productionPlan = AnchoredAuthorizationPlanSupport.CompileProduction(spec);
+        var productionSql = productionPlan.PageDocumentIdSql;
         var emitterSql = AnchoredAuthorizationPlanSupport.EmitPageSql(
             spec,
             RelationshipAuthorizationPredicateShape.Anchored
+        );
+
+        await AnchoredAuthorizationPlanSupport.AssertAuthorizedRowPreconditionAsync(
+            _context.Database,
+            productionPlan,
+            resourceName,
+            TicketOffset
         );
 
         foreach (var offset in _measuredOffsets)

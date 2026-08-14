@@ -89,7 +89,7 @@ internal static class PostgresqlRelationalQueryAuthorizationVolumeGenerator
             await GenerateVolumeRowsAsync(context.Database, counts);
             await AnalyzeGeneratedTablesAsync(context.Database);
 
-            return await ReadGenerationResultAsync(context.Database, counts);
+            return await ReadGenerationResultAsync(context.Database);
         }
         finally
         {
@@ -444,7 +444,7 @@ internal static class PostgresqlRelationalQueryAuthorizationVolumeGenerator
                 DATE '2010-05-14',
                 'Volume',
                 'Student',
-                @studentUniqueIdPrefix || lpad(numbered.ordinal::text, 8, '0')
+                @studentUniqueIdPrefix || lpad(numbered.ordinal::text, {RelationshipAuthorizationVolumeIdentifiers.StudentUniqueIdOrdinalWidth}, '0')
             FROM numbered;
             """,
             TotalRowsParameter(counts),
@@ -861,8 +861,7 @@ internal static class PostgresqlRelationalQueryAuthorizationVolumeGenerator
     }
 
     private static async Task<RelationshipAuthorizationVolumeGenerationResult> ReadGenerationResultAsync(
-        PostgresqlGeneratedDdlTestDatabase database,
-        RelationshipAuthorizationVolumeCounts counts
+        PostgresqlGeneratedDdlTestDatabase database
     )
     {
         var authorizedStudentCount = await database.ExecuteScalarAsync<long>(
@@ -894,7 +893,6 @@ internal static class PostgresqlRelationalQueryAuthorizationVolumeGenerator
         );
 
         return new RelationshipAuthorizationVolumeGenerationResult(
-            counts,
             authorizedStudentCount,
             unauthorizedStudentCount
         );

@@ -544,6 +544,15 @@ internal static class RelationshipAuthorizationVolumeIdentifiers
     /// </summary>
     public static int StudentUniqueIdOrdinalOffset => StudentUniqueIdPrefix.Length + 1;
 
+    /// <summary>
+    /// Zero-padded width of that ordinal. Both engines pad to this width when writing the unique id, and
+    /// SQL Server slices exactly this many characters back out — <c>SUBSTRING</c> takes a length where
+    /// PostgreSQL's <c>substring(... from n)</c> takes the remainder — so a width written out per call site would
+    /// let the writer and the reader disagree, recover a truncated ordinal, and mis-split the two populations
+    /// on one engine only.
+    /// </summary>
+    public const int StudentUniqueIdOrdinalWidth = 8;
+
     public const string TermDescriptorUri = "uri://ed-fi.org/TermDescriptor#Fall Semester";
     public const string GradeLevelDescriptorUri = "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade";
     public const string GradingPeriodDescriptorUri =
@@ -565,11 +574,12 @@ internal static class RelationshipAuthorizationVolumeIdentifiers
 }
 
 /// <summary>
-/// What a volume generator produced, so fixtures can assert their preconditions instead of trusting the
-/// generator.
+/// What a volume generator observed in the database after generating, so fixtures can assert their preconditions
+/// instead of trusting the generator. Deliberately carries only measured counts: echoing the requested
+/// <see cref="RelationshipAuthorizationVolumeCounts"/> back would let a fixture compare the generator's input
+/// against itself and read as a precondition while proving nothing.
 /// </summary>
 internal sealed record RelationshipAuthorizationVolumeGenerationResult(
-    RelationshipAuthorizationVolumeCounts Counts,
     long AuthorizedStudentCount,
     long UnauthorizedStudentCount
 );
