@@ -112,7 +112,7 @@ Source documents:
 - Global sequence: `dms.ChangeVersionSequence` (`bigint`).
 - `dms.Document` token columns:
   - `ContentVersion` (global monotonic stamp for representation changes and identity-projection changes; also serves as `ChangeVersion`).
-  - `ContentLastModifiedAt`. `Identity-projection changes are captured by the same content stamps because they change the stored representation.`
+  - `ContentLastModifiedAt`. Identity-projection changes are captured by the same content stamps because they change the stored representation.
 - Change Queries surface (see [change-queries.md](change-queries.md)):
   - per-resource `ContentVersion` / `ContentLastModifiedAt` mirror on every `StorageKind = RelationalTables` root and on `dms.Descriptor`; backs resource and descriptor `?minChangeVersion=X&maxChangeVersion=Y` reads as a single-table range filter.
   - per-resource `tracked_changes_<schema>.<resource>` tables and shared `tracked_changes_edfi.Descriptor`; back `/deletes` and `/keyChanges`. Populated by the same `*_Stamp` triggers extended with `DocumentStamping.ChangeTracking`.
