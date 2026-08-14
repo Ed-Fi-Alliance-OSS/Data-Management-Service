@@ -1286,9 +1286,7 @@ internal static class AlignedExtensionScopeTopologyBuilders
                 DocumentId: documentId,
                 DocumentUuid: Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"),
                 ContentVersion: 1L,
-                IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
                 ResourceKeyId: 1
             ),
             [
@@ -1693,9 +1691,7 @@ public class Given_an_inlined_parent_collection_under_a_root_extension_scope
                 DocumentId: documentId,
                 DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
                 ContentVersion: 1L,
-                IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 30, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 30, 12, 0, 0, TimeSpan.Zero),
                 ResourceKeyId: 1
             ),
             [
@@ -2888,9 +2884,7 @@ internal static class NestedTopologyBuilders
                 DocumentId: documentId,
                 DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
                 ContentVersion: 1L,
-                IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
                 ResourceKeyId: 1
             ),
             [
@@ -3806,9 +3800,7 @@ internal static class DescriptorBackedNestedTopologyBuilders
                 DocumentId: documentId,
                 DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
                 ContentVersion: 1L,
-                IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
                 ResourceKeyId: 1
             ),
             [
@@ -5075,9 +5067,7 @@ internal static class NumericDocumentReferenceBackedNestedTopologyBuilders
                 DocumentId: documentId,
                 DocumentUuid: Guid.Parse("aaaaaaaa-2222-3333-4444-cccccccccccc"),
                 ContentVersion: 1L,
-                IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
                 ResourceKeyId: 1
             ),
             [
@@ -5706,9 +5696,7 @@ internal static class DocumentReferenceBackedNestedTopologyBuilders
                 DocumentId: documentId,
                 DocumentUuid: Guid.Parse("aaaaaaaa-2222-3333-4444-bbbbbbbbbbbb"),
                 ContentVersion: 1L,
-                IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
                 ResourceKeyId: 1
             ),
             [
@@ -6685,9 +6673,7 @@ internal static class CompositeDescriptorScalarDocumentReferenceBackedNestedTopo
                 DocumentId: documentId,
                 DocumentUuid: Guid.Parse("aaaaaaaa-3333-4444-5555-dddddddddddd"),
                 ContentVersion: 1L,
-                IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
                 ResourceKeyId: 1
             ),
             [
@@ -7232,9 +7218,7 @@ internal static class AlignedExtensionScopeWithChildrenTopologyBuilders
                 DocumentId: documentId,
                 DocumentUuid: Guid.Parse("dddddddd-2222-3333-4444-eeeeeeeeeeee"),
                 ContentVersion: 1L,
-                IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
                 ResourceKeyId: 1
             ),
             [

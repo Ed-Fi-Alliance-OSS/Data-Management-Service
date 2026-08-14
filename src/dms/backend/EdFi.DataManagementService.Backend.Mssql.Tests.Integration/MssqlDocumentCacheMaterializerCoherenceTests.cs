@@ -57,9 +57,7 @@ public class Given_Mssql_DocumentCacheMaterializer_Coherence
                 [ResourceKeyId] smallint NOT NULL,
                 [CreatedByOwnershipTokenId] smallint NULL,
                 [ContentVersion] bigint NOT NULL,
-                [IdentityVersion] bigint NOT NULL,
                 [ContentLastModifiedAt] datetimeoffset NOT NULL,
-                [IdentityLastModifiedAt] datetimeoffset NOT NULL,
                 [CreatedAt] datetimeoffset NOT NULL
             );
 
@@ -69,9 +67,7 @@ public class Given_Mssql_DocumentCacheMaterializer_Coherence
                 [ResourceKeyId],
                 [CreatedByOwnershipTokenId],
                 [ContentVersion],
-                [IdentityVersion],
                 [ContentLastModifiedAt],
-                [IdentityLastModifiedAt],
                 [CreatedAt]
             )
             VALUES (
@@ -80,8 +76,6 @@ public class Given_Mssql_DocumentCacheMaterializer_Coherence
                 11,
                 NULL,
                 222,
-                111,
-                '2026-07-30T14:15:16+00:00',
                 '2026-07-30T14:15:16+00:00',
                 '2026-07-30T14:15:16+00:00'
             );
@@ -205,15 +199,7 @@ public class Given_Mssql_DocumentCacheMaterializer_Coherence
                 TotalCount: null,
                 DocumentMetadata:
                 [
-                    new DocumentMetadataRow(
-                        DocumentId,
-                        DocumentGuid,
-                        ContentVersion,
-                        ContentVersion,
-                        LastModifiedAt,
-                        LastModifiedAt,
-                        11
-                    ),
+                    new DocumentMetadataRow(DocumentId, DocumentGuid, ContentVersion, LastModifiedAt, 11),
                 ],
                 TableRowsInDependencyOrder:
                 [

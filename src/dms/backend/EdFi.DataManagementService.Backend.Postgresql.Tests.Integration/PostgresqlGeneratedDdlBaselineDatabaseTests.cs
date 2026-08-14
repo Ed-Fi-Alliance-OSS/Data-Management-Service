@@ -173,7 +173,7 @@ public class Given_PostgresqlGeneratedDdlBaselineDatabase
             """
             INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
             VALUES (@documentUuid, @resourceKeyId)
-            RETURNING "DocumentId", "ContentVersion", "IdentityVersion";
+            RETURNING "DocumentId", "ContentVersion";
             """,
             new NpgsqlParameter("documentUuid", documentUuid),
             new NpgsqlParameter("resourceKeyId", resourceKeyId)
@@ -181,8 +181,7 @@ public class Given_PostgresqlGeneratedDdlBaselineDatabase
         var documentRow = documentRows.Should().ContainSingle().Which;
         var documentState = new PostgresqlGeneratedDdlDocumentState(
             Convert.ToInt64(documentRow["DocumentId"]),
-            Convert.ToInt64(documentRow["ContentVersion"]),
-            Convert.ToInt64(documentRow["IdentityVersion"])
+            Convert.ToInt64(documentRow["ContentVersion"])
         );
 
         await database.ExecuteNonQueryAsync(

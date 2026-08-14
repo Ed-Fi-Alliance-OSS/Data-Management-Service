@@ -13262,8 +13262,6 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             documentId,
             documentUuid.Value,
             contentVersion,
-            contentVersion,
-            lastModifiedAt,
             lastModifiedAt,
             resourceKeyId
         );

@@ -49,9 +49,7 @@ public class Given_A_Page_With_Multiple_Documents
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "IdentityVersion" bigint NOT NULL DEFAULT 1,
                 "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "CreatedAt" timestamptz NOT NULL DEFAULT now()
             );
 
@@ -83,10 +81,10 @@ public class Given_A_Page_With_Multiple_Documents
             """
             DELETE FROM dms."Document" WHERE "DocumentId" IN (101, 102);
 
-            INSERT INTO dms."Document" ("DocumentId", "DocumentUuid", "ContentVersion", "IdentityVersion")
+            INSERT INTO dms."Document" ("DocumentId", "DocumentUuid", "ContentVersion")
             VALUES
-                (101, 'aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa', 10, 10),
-                (102, 'bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb', 20, 20);
+                (101, 'aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa', 10),
+                (102, 'bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb', 20);
 
             INSERT INTO hydtest."School" ("DocumentId", "SchoolId")
             VALUES
@@ -313,9 +311,7 @@ public class Given_A_Postgresql_Selected_Page_Keyset_With_Nonascending_DocumentI
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "IdentityVersion" bigint NOT NULL DEFAULT 1,
                 "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "CreatedAt" timestamptz NOT NULL DEFAULT now()
             );
 
@@ -346,11 +342,11 @@ public class Given_A_Postgresql_Selected_Page_Keyset_With_Nonascending_DocumentI
             """
             DELETE FROM dms."Document" WHERE "DocumentId" IN (701, 702, 703);
 
-            INSERT INTO dms."Document" ("DocumentId", "DocumentUuid", "ContentVersion", "IdentityVersion")
+            INSERT INTO dms."Document" ("DocumentId", "DocumentUuid", "ContentVersion")
             VALUES
-                (701, '00000000-0000-0000-0000-000000000701', 71, 71),
-                (702, '00000000-0000-0000-0000-000000000702', 72, 72),
-                (703, '00000000-0000-0000-0000-000000000703', 73, 73);
+                (701, '00000000-0000-0000-0000-000000000701', 71),
+                (702, '00000000-0000-0000-0000-000000000702', 72),
+                (703, '00000000-0000-0000-0000-000000000703', 73);
 
             INSERT INTO hydselected."School" ("DocumentId", "SchoolId")
             VALUES
@@ -432,9 +428,7 @@ public class Given_A_Single_DocumentId_Keyset
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "IdentityVersion" bigint NOT NULL DEFAULT 1,
                 "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "CreatedAt" timestamptz NOT NULL DEFAULT now()
             );
 
@@ -600,9 +594,7 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "IdentityVersion" bigint NOT NULL DEFAULT 1,
                 "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "CreatedAt" timestamptz NOT NULL DEFAULT now()
             );
 
@@ -642,16 +634,16 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
             DELETE FROM dms."Descriptor" WHERE "DocumentId" IN (12001, 12002, 12003);
             DELETE FROM dms."Document" WHERE "DocumentId" IN (10001, 10002, 11001, 11002, 11003, 12001, 12002, 12003);
 
-            INSERT INTO dms."Document" ("DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion", "IdentityVersion")
+            INSERT INTO dms."Document" ("DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion")
             VALUES
-                (10001, '00000000-0000-0000-0000-000000010001', 1, 11, 11),
-                (10002, '00000000-0000-0000-0000-000000010002', 1, 12, 12),
-                (11001, '00000000-0000-0000-0000-000000011001', 2, 1, 1),
-                (11002, '00000000-0000-0000-0000-000000011002', 3, 1, 1),
-                (11003, '00000000-0000-0000-0000-000000011003', 4, 1, 1),
-                (12001, '00000000-0000-0000-0000-000000012001', 5, 1, 1),
-                (12002, '00000000-0000-0000-0000-000000012002', 6, 1, 1),
-                (12003, '00000000-0000-0000-0000-000000012003', 7, 1, 1);
+                (10001, '00000000-0000-0000-0000-000000010001', 1, 11),
+                (10002, '00000000-0000-0000-0000-000000010002', 1, 12),
+                (11001, '00000000-0000-0000-0000-000000011001', 2, 1),
+                (11002, '00000000-0000-0000-0000-000000011002', 3, 1),
+                (11003, '00000000-0000-0000-0000-000000011003', 4, 1),
+                (12001, '00000000-0000-0000-0000-000000012001', 5, 1),
+                (12002, '00000000-0000-0000-0000-000000012002', 6, 1),
+                (12003, '00000000-0000-0000-0000-000000012003', 7, 1);
 
             INSERT INTO dms."Descriptor" ("DocumentId", "Namespace", "CodeValue", "ShortDescription", "Discriminator", "Uri")
             VALUES
@@ -1073,9 +1065,7 @@ public class Given_A_Query_With_TotalCount_Requested
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "IdentityVersion" bigint NOT NULL DEFAULT 1,
                 "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "CreatedAt" timestamptz NOT NULL DEFAULT now()
             );
 
@@ -1212,9 +1202,7 @@ public class Given_A_Reference_Bearing_Resource
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "IdentityVersion" bigint NOT NULL DEFAULT 1,
                 "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "CreatedAt" timestamptz NOT NULL DEFAULT now()
             );
 
@@ -1424,9 +1412,7 @@ public class Given_Two_Postgresql_Hydration_Batches_On_The_Same_Transaction
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "IdentityVersion" bigint NOT NULL DEFAULT 1,
                 "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "CreatedAt" timestamptz NOT NULL DEFAULT now()
             );
 

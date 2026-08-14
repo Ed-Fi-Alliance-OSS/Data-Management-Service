@@ -437,9 +437,9 @@ internal static class TrackedChangeTriggerBodyEmitter
     /// <summary>
     /// Emits a SQL Server <c>INSERT INTO … SELECT</c> statement that writes a key-change row into the
     /// tracked-change table when a document's identity columns change. The SELECT joins
-    /// <c>@identityChangedDocs idc</c> to <c>inserted i</c>, <c>deleted del</c>, and
+    /// <c>@changedDocs cd</c> to <c>inserted i</c>, <c>deleted del</c>, and
     /// <c>dms.Document doc</c>; old values come from <c>del</c>, new from <c>i</c>;
-    /// <c>ChangeVersion</c> is read from <c>idc.[ContentVersion]</c>.
+    /// <c>ChangeVersion</c> is read from the post-stamp <c>doc.[ContentVersion]</c>.
     /// </summary>
     /// <param name="writer">The <see cref="SqlWriter"/> to append the statement to.</param>
     /// <param name="dialect">The SQL dialect for identifier quoting and table qualification.</param>
@@ -461,15 +461,15 @@ internal static class TrackedChangeTriggerBodyEmitter
             plan,
             oldImage: MssqlOldImage,
             newImage: MssqlNewImage,
-            changeVersionSql: $"idc.{dialect.QuoteIdentifier("ContentVersion")}"
+            changeVersionSql: $"doc.{dialect.QuoteIdentifier("ContentVersion")}"
         );
 
-        // FROM @identityChangedDocs idc … fixed joins … old-image and new-image joins
+        // FROM @changedDocs cd … fixed joins … old-image and new-image joins
         // The terminating `;` is appended to the last line of the block, not on its own line.
         var fixedLines = new[]
         {
-            "FROM @identityChangedDocs idc",
-            $"INNER JOIN inserted i ON i.{dialect.QuoteIdentifier(keyColumn.Value)} = idc.{dialect.QuoteIdentifier("DocumentId")}",
+            "FROM @changedDocs cd",
+            $"INNER JOIN inserted i ON i.{dialect.QuoteIdentifier(keyColumn.Value)} = cd.{dialect.QuoteIdentifier("DocumentId")}",
             $"INNER JOIN deleted del ON del.{dialect.QuoteIdentifier(keyColumn.Value)} = i.{dialect.QuoteIdentifier(keyColumn.Value)}",
             $"INNER JOIN {dialect.QualifyTable(DmsTableNames.Document)} doc ON doc.{dialect.QuoteIdentifier("DocumentId")} = i.{dialect.QuoteIdentifier(keyColumn.Value)}",
         };

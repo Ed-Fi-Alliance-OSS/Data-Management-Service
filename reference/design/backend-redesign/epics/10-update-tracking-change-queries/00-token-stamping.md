@@ -3,7 +3,7 @@ jira: DMS-1002
 jira_url: https://edfi.atlassian.net/browse/DMS-1002
 ---
 
-# Story: Emit Stamping Triggers for `dms.Document` (Content + Identity Stamps)
+# Story: Emit Stamping Triggers for `dms.Document` Content Stamps
 
 ## Description
 
@@ -11,17 +11,16 @@ Implement write-side stamping per `reference/design/backend-redesign/design-docs
 
 - On any representation change (root/child/extension table writes, including FK-cascade updates to propagated identity columns), bump:
   - `dms.Document.ContentVersion` and `dms.Document.ContentLastModifiedAt`.
-- On any identity projection change, also bump:
-  - `dms.Document.IdentityVersion` and `dms.Document.IdentityLastModifiedAt`,
-  - and treat it as a representation change (also bump content stamps).
+- Identity projection changes are representation changes and therefore bump the same content stamps.
 
 A successful update request that produces no persisted-row changes is not a representation change and must not allocate new stamps.
 
 ## Acceptance Criteria
 
 - Representation changes update `ContentVersion` and `ContentLastModifiedAt`.
-- Identity projection changes update `IdentityVersion` and `IdentityLastModifiedAt` and also update `ContentVersion`.
-- Successful no-op updates do **not** change `ContentVersion`, `ContentLastModifiedAt`, `IdentityVersion`, or `IdentityLastModifiedAt`.
+- Identity projection changes update `ContentVersion` and `ContentLastModifiedAt` when they change
+  stored resource state; no separate document-level identity tracking columns are maintained.
+- Successful no-op updates do **not** change `ContentVersion` or `ContentLastModifiedAt`.
 - FK-cascade updates to propagated identity columns cause the same stamping behavior as direct writes.
 - **ODS watermark-only compatibility**: when one statement/trigger stamps N distinct `DocumentId`s, it allocates N distinct `ContentVersion` values (no “one version per statement” stamping).
 

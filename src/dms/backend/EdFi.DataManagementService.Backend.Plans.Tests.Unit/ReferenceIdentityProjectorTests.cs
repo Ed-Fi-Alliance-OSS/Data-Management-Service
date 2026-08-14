@@ -870,33 +870,9 @@ public class Given_ProjectPage_With_Root_Table_Projections
             TotalCount: null,
             DocumentMetadata:
             [
-                new DocumentMetadataRow(
-                    1L,
-                    Guid.NewGuid(),
-                    1,
-                    1,
-                    DateTimeOffset.UtcNow,
-                    DateTimeOffset.UtcNow,
-                    1
-                ),
-                new DocumentMetadataRow(
-                    2L,
-                    Guid.NewGuid(),
-                    1,
-                    1,
-                    DateTimeOffset.UtcNow,
-                    DateTimeOffset.UtcNow,
-                    1
-                ),
-                new DocumentMetadataRow(
-                    3L,
-                    Guid.NewGuid(),
-                    1,
-                    1,
-                    DateTimeOffset.UtcNow,
-                    DateTimeOffset.UtcNow,
-                    1
-                ),
+                new DocumentMetadataRow(1L, Guid.NewGuid(), 1, DateTimeOffset.UtcNow, 1),
+                new DocumentMetadataRow(2L, Guid.NewGuid(), 1, DateTimeOffset.UtcNow, 1),
+                new DocumentMetadataRow(3L, Guid.NewGuid(), 1, DateTimeOffset.UtcNow, 1),
             ],
             TableRowsInDependencyOrder: [hydratedRows],
             DescriptorRowsInPlanOrder: []
@@ -1015,18 +991,7 @@ public class Given_ProjectPage_With_No_Projection_Plans
 
         var page = new HydratedPage(
             TotalCount: null,
-            DocumentMetadata:
-            [
-                new DocumentMetadataRow(
-                    1L,
-                    Guid.NewGuid(),
-                    1,
-                    1,
-                    DateTimeOffset.UtcNow,
-                    DateTimeOffset.UtcNow,
-                    1
-                ),
-            ],
+            DocumentMetadata: [new DocumentMetadataRow(1L, Guid.NewGuid(), 1, DateTimeOffset.UtcNow, 1)],
             TableRowsInDependencyOrder: [new HydratedTableRows(rootTableModel, [new object?[] { 1L }])],
             DescriptorRowsInPlanOrder: []
         );
@@ -1207,18 +1172,7 @@ public class Given_ProjectPage_With_Mixed_Root_And_Collection_Plans
 
         var page = new HydratedPage(
             TotalCount: null,
-            DocumentMetadata:
-            [
-                new DocumentMetadataRow(
-                    1L,
-                    Guid.NewGuid(),
-                    1,
-                    1,
-                    DateTimeOffset.UtcNow,
-                    DateTimeOffset.UtcNow,
-                    1
-                ),
-            ],
+            DocumentMetadata: [new DocumentMetadataRow(1L, Guid.NewGuid(), 1, DateTimeOffset.UtcNow, 1)],
             TableRowsInDependencyOrder: [rootHydratedRows, collectionHydratedRows],
             DescriptorRowsInPlanOrder: []
         );

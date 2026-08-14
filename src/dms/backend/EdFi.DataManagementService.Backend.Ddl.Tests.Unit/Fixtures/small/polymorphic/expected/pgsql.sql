@@ -277,9 +277,7 @@ CREATE TABLE IF NOT EXISTS "dms"."Document"
     "ResourceKeyId" smallint NOT NULL,
     "CreatedByOwnershipTokenId" smallint NULL,
     "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
-    "IdentityVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
-    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_Document" PRIMARY KEY ("DocumentId")
 );
@@ -1197,11 +1195,6 @@ BEGIN
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
-    IF TG_OP = 'UPDATE' AND (OLD."LocalEducationAgencyId" IS DISTINCT FROM NEW."LocalEducationAgencyId") THEN
-        UPDATE "dms"."Document"
-        SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId";
-    END IF;
     RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;
@@ -1324,11 +1317,6 @@ BEGIN
         RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
-    END IF;
-    IF TG_OP = 'UPDATE' AND (OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
-        UPDATE "dms"."Document"
-        SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId";
     END IF;
     RETURN NEW;
 END;

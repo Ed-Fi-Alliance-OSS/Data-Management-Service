@@ -192,9 +192,7 @@ internal sealed record GuardedNoOpDocumentRow(
     Guid DocumentUuid,
     short ResourceKeyId,
     long ContentVersion,
-    long IdentityVersion,
     DateTimeOffset ContentLastModifiedAt,
-    DateTimeOffset IdentityLastModifiedAt,
     DateTimeOffset CreatedAt
 );
 
@@ -384,9 +382,7 @@ file static class GuardedNoOpIntegrationTestSupport
                 state.Document.DocumentUuid,
                 state.Document.ResourceKeyId,
                 state.Document.ContentVersion,
-                state.Document.IdentityVersion,
                 state.Document.ContentLastModifiedAt,
-                state.Document.IdentityLastModifiedAt,
                 state.Document.CreatedAt
             ),
             new NoProfileGuardedNoOpScenarios.SchoolRow(
@@ -569,8 +565,8 @@ file static class GuardedNoOpIntegrationTestSupport
     {
         var rows = await database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion", "IdentityVersion",
-                "ContentLastModifiedAt", "IdentityLastModifiedAt", "CreatedAt"
+            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion",
+                "ContentLastModifiedAt", "CreatedAt"
             FROM "dms"."Document"
             WHERE "DocumentUuid" = @documentUuid;
             """,
@@ -583,9 +579,7 @@ file static class GuardedNoOpIntegrationTestSupport
                 GetGuid(rows[0], "DocumentUuid"),
                 GetInt16(rows[0], "ResourceKeyId"),
                 GetInt64(rows[0], "ContentVersion"),
-                GetInt64(rows[0], "IdentityVersion"),
                 GetDateTimeOffset(rows[0], "ContentLastModifiedAt"),
-                GetDateTimeOffset(rows[0], "IdentityLastModifiedAt"),
                 GetDateTimeOffset(rows[0], "CreatedAt")
             )
             : throw new InvalidOperationException(

@@ -146,9 +146,7 @@ public class Given_A_Postgresql_DescriptorRead_Test_Support
         GetRequiredGuid(documentRow, "DocumentUuid").Should().Be(seed.DocumentUuid.Value);
         GetRequiredInt16(documentRow, "ResourceKeyId").Should().Be(expectedResourceKeyId);
         GetRequiredInt64(documentRow, "ContentVersion").Should().BeGreaterThan(0);
-        GetRequiredInt64(documentRow, "IdentityVersion").Should().BeGreaterThan(0);
         documentRow["ContentLastModifiedAt"].Should().NotBeNull();
-        documentRow["IdentityLastModifiedAt"].Should().NotBeNull();
         documentRow["CreatedAt"].Should().NotBeNull();
 
         GetRequiredString(descriptorRow, "Namespace").Should().Be(seed.Namespace);

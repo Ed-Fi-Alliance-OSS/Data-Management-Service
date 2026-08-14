@@ -120,15 +120,6 @@ BEGIN
         FROM [edfi].[CourseRegistration] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([SchoolId_Unified]) OR UPDATE([CourseOffering_LocalCourseCode]) OR UPDATE([RegistrationDate]))
-    BEGIN
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL)) OR (CAST(i.[CourseOffering_LocalCourseCode] AS varbinary(max)) <> CAST(del.[CourseOffering_LocalCourseCode] AS varbinary(max)) OR (i.[CourseOffering_LocalCourseCode] IS NULL AND del.[CourseOffering_LocalCourseCode] IS NOT NULL) OR (i.[CourseOffering_LocalCourseCode] IS NOT NULL AND del.[CourseOffering_LocalCourseCode] IS NULL)) OR (i.[RegistrationDate] <> del.[RegistrationDate] OR (i.[RegistrationDate] IS NULL AND del.[RegistrationDate] IS NOT NULL) OR (i.[RegistrationDate] IS NOT NULL AND del.[RegistrationDate] IS NULL));
-    END
 END;
 GO
 
@@ -205,15 +196,6 @@ BEGIN
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
         FROM [edfi].[School] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([SchoolId]))
-    BEGIN
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL));
     END
 END;
 GO

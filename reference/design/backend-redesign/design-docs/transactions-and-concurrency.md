@@ -285,7 +285,7 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
      recompute).
    - Generated triggers maintain abstract identity tables on identity-projection value-diff changes.
      `DbTriggerInfo.IdentityProjectionColumns` are null-safe compare inputs, not `UPDATE(column)` gates.
-   - The `*_Stamp` triggers stamp `dms.Document.ContentVersion` / `ContentLastModifiedAt` and `IdentityVersion` / `IdentityLastModifiedAt`, mirror `ContentVersion` / `ContentLastModifiedAt` onto the resource root (or `dms.Descriptor`) via `MirrorStampTargetTable`, and append tombstone / key-change rows to the corresponding `tracked_changes_*` table when applicable (see [update-tracking.md](update-tracking.md) for stamping rules and [change-queries.md](change-queries.md) for the mirror and tracked-change tables).
+   - The `*_Stamp` triggers stamp `dms.Document.ContentVersion` / `ContentLastModifiedAt`, mirror `ContentVersion` / `ContentLastModifiedAt` onto the resource root (or `dms.Descriptor`) via `MirrorStampTargetTable`, and append tombstone / key-change rows to the corresponding `tracked_changes_*` table when applicable (see [update-tracking.md](update-tracking.md) for stamping rules and [change-queries.md](change-queries.md) for the mirror and tracked-change tables).
    - The set-based `dms.Document` projection-enqueue trigger observes every insert and
      every real `ContentVersion` change. In lifecycle `Tracking`, `Resetting`, or
      `Rebuilding`, it inserts or advances the coalesced
@@ -377,7 +377,7 @@ identity rows and stamps), and is handled in the database:
 - **Identity/URI change on a document itself** (e.g., `StudentUniqueId` update)
   - Propagation updates canonical/storage identity columns in all direct referrers (identity-component and non-identity references).
   - Referrers’ `dms.Document.ContentVersion` stamps update because their full resource-state representation changes (the embedded reference identity changed).
-  - For identity-component referrers, triggers also update `dms.Document.IdentityVersion` for the referrer and any affected abstract identity rows (and this may cascade further).
+  - For identity-component referrers, triggers also update any affected abstract identity rows (and this may cascade further).
 
 - **Outgoing reference changes on a document** (`..._DocumentId` value changes)
   - Relational writes update the FK columns (`..._DocumentId`) and the canonical/storage identity-part columns (plus any

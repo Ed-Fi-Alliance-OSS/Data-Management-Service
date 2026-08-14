@@ -66,7 +66,7 @@ internal static class ProfileGuardedNoOpIntegrationTestSupport
                 """
                 SELECT "DocumentId", "DocumentUuid", "ResourceKeyId",
                        "ContentVersion", "ContentLastModifiedAt",
-                       "IdentityVersion", "IdentityLastModifiedAt", "CreatedAt"
+                       "CreatedAt"
                 FROM "dms"."Document"
                 WHERE "DocumentUuid" = @documentUuid;
                 """,
@@ -708,20 +708,6 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Root
     }
 
     [Test]
-    public void It_does_not_change_identity_version()
-    {
-        _stateAfterUpdate.Document.IdentityVersion.Should().Be(_stateBeforeUpdate.Document.IdentityVersion);
-    }
-
-    [Test]
-    public void It_does_not_change_identity_last_modified_at()
-    {
-        _stateAfterUpdate
-            .Document.IdentityLastModifiedAt.Should()
-            .Be(_stateBeforeUpdate.Document.IdentityLastModifiedAt);
-    }
-
-    [Test]
     public void It_does_not_change_created_at()
     {
         _stateAfterUpdate.Document.CreatedAt.Should().Be(_stateBeforeUpdate.Document.CreatedAt);
@@ -823,22 +809,6 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Post_As_Updat
         _stateAfterPostAsUpdate
             .Document.ContentLastModifiedAt.Should()
             .Be(_stateBeforePostAsUpdate.Document.ContentLastModifiedAt);
-    }
-
-    [Test]
-    public void It_does_not_change_identity_version()
-    {
-        _stateAfterPostAsUpdate
-            .Document.IdentityVersion.Should()
-            .Be(_stateBeforePostAsUpdate.Document.IdentityVersion);
-    }
-
-    [Test]
-    public void It_does_not_change_identity_last_modified_at()
-    {
-        _stateAfterPostAsUpdate
-            .Document.IdentityLastModifiedAt.Should()
-            .Be(_stateBeforePostAsUpdate.Document.IdentityLastModifiedAt);
     }
 
     [Test]
@@ -952,20 +922,6 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Sepa
         _stateAfterUpdate
             .Document.ContentLastModifiedAt.Should()
             .Be(_stateBeforeUpdate.Document.ContentLastModifiedAt);
-    }
-
-    [Test]
-    public void It_does_not_change_identity_version()
-    {
-        _stateAfterUpdate.Document.IdentityVersion.Should().Be(_stateBeforeUpdate.Document.IdentityVersion);
-    }
-
-    [Test]
-    public void It_does_not_change_identity_last_modified_at()
-    {
-        _stateAfterUpdate
-            .Document.IdentityLastModifiedAt.Should()
-            .Be(_stateBeforeUpdate.Document.IdentityLastModifiedAt);
     }
 
     /// <summary>
@@ -1098,19 +1054,5 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Top_
         _stateAfterUpdate
             .Document.ContentLastModifiedAt.Should()
             .Be(_stateBeforeUpdate.Document.ContentLastModifiedAt);
-    }
-
-    [Test]
-    public void It_does_not_change_identity_version()
-    {
-        _stateAfterUpdate.Document.IdentityVersion.Should().Be(_stateBeforeUpdate.Document.IdentityVersion);
-    }
-
-    [Test]
-    public void It_does_not_change_identity_last_modified_at()
-    {
-        _stateAfterUpdate
-            .Document.IdentityLastModifiedAt.Should()
-            .Be(_stateBeforeUpdate.Document.IdentityLastModifiedAt);
     }
 }

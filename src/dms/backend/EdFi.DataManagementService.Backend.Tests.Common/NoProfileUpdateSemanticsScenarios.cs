@@ -21,7 +21,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Common;
 /// upsert/update request types are constructed in each provider adapter. The update-tracking proof
 /// here is the ContentVersion bump by design: the response ETag is composed from ContentVersion
 /// (see reference/adr-etag-from-content-version.md), and the full stored stamp surface —
-/// ContentLastModifiedAt, the identity stamps, and the root table's replicated stamp columns — is
+/// ContentLastModifiedAt and the root table's replicated stamp columns — is
 /// owned by the guarded no-op and ETag/If-Match families on either engine, so this changed-PUT
 /// family does not re-assert it.
 /// </summary>

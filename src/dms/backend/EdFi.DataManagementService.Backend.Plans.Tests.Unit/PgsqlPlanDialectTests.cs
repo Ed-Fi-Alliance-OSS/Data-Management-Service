@@ -66,9 +66,7 @@ public class Given_PgsqlPlanDialect
                     d."DocumentId",
                     d."DocumentUuid",
                     d."ContentVersion",
-                    d."IdentityVersion",
                     d."ContentLastModifiedAt",
-                    d."IdentityLastModifiedAt",
                     d."ResourceKeyId"
                 FROM "dms"."Document" d
                 INNER JOIN "page" k ON d."DocumentId" = k."DocumentId"
@@ -95,9 +93,7 @@ public class Given_PgsqlPlanDialect
                     d."DocumentId",
                     d."DocumentUuid",
                     d."ContentVersion",
-                    d."IdentityVersion",
                     d."ContentLastModifiedAt",
-                    d."IdentityLastModifiedAt",
                     d."ResourceKeyId"
                 FROM "dms"."Document" d
                 WHERE d."DocumentId" = @DocumentId

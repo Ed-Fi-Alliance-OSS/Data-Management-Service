@@ -33,12 +33,7 @@ internal sealed record AuthoritativeSampleSmokeSeedData(
 
 internal sealed record ExecutedPlanStatement(int ParentObjectId, string StatementText);
 
-internal sealed record DocumentStampState(
-    long ContentVersion,
-    long IdentityVersion,
-    DateTimeOffset ContentLastModifiedAt,
-    DateTimeOffset IdentityLastModifiedAt
-);
+internal sealed record DocumentStampState(long ContentVersion, DateTimeOffset ContentLastModifiedAt);
 
 internal sealed record CourseOfferingSessionReferenceState(
     long SessionDocumentId,
@@ -396,7 +391,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     }
 
     [Test]
-    public async Task It_should_stamp_content_only_root_changes_without_touching_identity_stamps()
+    public async Task It_should_stamp_content_only_root_changes()
     {
         var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
 
@@ -415,12 +410,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
         after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
-        after.IdentityVersion.Should().Be(before.IdentityVersion);
-        after.IdentityLastModifiedAt.Should().Be(before.IdentityLastModifiedAt);
     }
 
     [Test]
-    public async Task It_should_stamp_child_representation_changes_without_touching_identity_stamps()
+    public async Task It_should_stamp_child_representation_changes()
     {
         var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
 
@@ -441,12 +434,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
         after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
-        after.IdentityVersion.Should().Be(before.IdentityVersion);
-        after.IdentityLastModifiedAt.Should().Be(before.IdentityLastModifiedAt);
     }
 
     [Test]
-    public async Task It_should_stamp_child_inserts_without_touching_identity_stamps()
+    public async Task It_should_stamp_child_inserts()
     {
         var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
         var addressTypeDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
@@ -473,8 +464,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
         after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
-        after.IdentityVersion.Should().Be(before.IdentityVersion);
-        after.IdentityLastModifiedAt.Should().Be(before.IdentityLastModifiedAt);
     }
 
     [Test]
@@ -852,7 +841,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     }
 
     [Test]
-    public async Task It_should_stamp_extension_scope_representation_changes_without_touching_identity_stamps()
+    public async Task It_should_stamp_extension_scope_representation_changes()
     {
         var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
 
@@ -873,8 +862,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
         after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
-        after.IdentityVersion.Should().Be(before.IdentityVersion);
-        after.IdentityLastModifiedAt.Should().Be(before.IdentityLastModifiedAt);
     }
 
     [Test]
@@ -905,7 +892,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     }
 
     [Test]
-    public async Task It_should_stamp_root_extension_inserts_without_touching_identity_stamps()
+    public async Task It_should_stamp_root_extension_inserts()
     {
         var contactResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Contact");
         var documentId = await InsertDocumentAsync(
@@ -923,12 +910,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
         after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
-        after.IdentityVersion.Should().Be(before.IdentityVersion);
-        after.IdentityLastModifiedAt.Should().Be(before.IdentityLastModifiedAt);
     }
 
     [Test]
-    public async Task It_should_stamp_root_identity_changes_as_both_content_and_identity_updates()
+    public async Task It_should_stamp_root_identity_changes_as_content_updates()
     {
         var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
 
@@ -947,8 +932,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
         after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
-        after.IdentityVersion.Should().BeGreaterThan(before.IdentityVersion);
-        after.IdentityLastModifiedAt.Should().BeAfter(before.IdentityLastModifiedAt);
     }
 
     [Test]
@@ -1016,13 +999,13 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     }
 
     [Test]
-    public async Task It_should_not_stamp_identity_when_scalar_identity_column_is_self_assigned_alongside_content_change()
+    public async Task It_should_avoid_referential_identity_rewrites_when_scalar_identity_column_is_self_assigned_alongside_content_change()
     {
         // The pure same-value test above is filtered out before the inner identity-only
         // gate runs. This test sends a content change AND a same-value self-assignment
         // of the identity column in one UPDATE — UPDATE([ContactUniqueId]) returns true
         // (the column appeared in SET), so the inner null-safe value-diff predicate is
-        // what must keep IdentityVersion and dms.ReferentialIdentity untouched.
+        // what must keep dms.ReferentialIdentity untouched.
         var contactResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Contact");
         var expectedRiRows = SortReferentialIdentityRows(
             new[]
@@ -1058,14 +1041,12 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         afterStamps.ContentVersion.Should().BeGreaterThan(beforeStamps.ContentVersion);
         afterStamps.ContentLastModifiedAt.Should().BeAfter(beforeStamps.ContentLastModifiedAt);
-        afterStamps.IdentityVersion.Should().Be(beforeStamps.IdentityVersion);
-        afterStamps.IdentityLastModifiedAt.Should().Be(beforeStamps.IdentityLastModifiedAt);
         afterRiRows.Should().Equal(beforeRiRows);
         auditOps.Should().Be(0);
     }
 
     [Test]
-    public async Task It_should_not_stamp_identity_for_content_only_updates_on_identity_propagation_tables()
+    public async Task It_should_stamp_content_only_updates_on_identity_propagation_tables()
     {
         var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
         var schoolDocumentId = await InsertDocumentAsync(
@@ -1095,8 +1076,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
         after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
-        after.IdentityVersion.Should().Be(before.IdentityVersion);
-        after.IdentityLastModifiedAt.Should().Be(before.IdentityLastModifiedAt);
     }
 
     [Test]
@@ -1185,24 +1164,16 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         afterSession.ContentVersion.Should().BeGreaterThan(beforeSession.ContentVersion);
         afterSession.ContentLastModifiedAt.Should().BeAfter(beforeSession.ContentLastModifiedAt);
-        afterSession.IdentityVersion.Should().BeGreaterThan(beforeSession.IdentityVersion);
-        afterSession.IdentityLastModifiedAt.Should().BeAfter(beforeSession.IdentityLastModifiedAt);
 
         afterCourseOffering.ContentVersion.Should().BeGreaterThan(beforeCourseOffering.ContentVersion);
         afterCourseOffering
             .ContentLastModifiedAt.Should()
             .BeAfter(beforeCourseOffering.ContentLastModifiedAt);
-        afterCourseOffering.IdentityVersion.Should().BeGreaterThan(beforeCourseOffering.IdentityVersion);
-        afterCourseOffering
-            .IdentityLastModifiedAt.Should()
-            .BeAfter(beforeCourseOffering.IdentityLastModifiedAt);
 
         afterSurvey.ContentVersion.Should().BeGreaterThan(beforeSurvey.ContentVersion);
         afterSurvey.ContentLastModifiedAt.Should().BeAfter(beforeSurvey.ContentLastModifiedAt);
         // Survey's identity is Namespace + SurveyIdentifier only; Session_SessionName is a reference
-        // field, not part of Survey's identity, so IdentityVersion must not change here.
-        afterSurvey.IdentityVersion.Should().Be(beforeSurvey.IdentityVersion);
-        afterSurvey.IdentityLastModifiedAt.Should().Be(beforeSurvey.IdentityLastModifiedAt);
+        // field, not part of Survey's identity. The cascade still changes its stored representation.
 
         AssertMirrorContentMatchesDocument(afterSessionMirror, afterSession);
         AssertMirrorContentMatchesDocument(afterCourseOfferingMirror, afterCourseOffering);
@@ -1364,7 +1335,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         // CourseOffering's INSTEAD OF UPDATE rewrites every column unconditionally, so the
         // AFTER stamp/RI triggers see UPDATE([Session_SessionName]) = true even though the
         // user-issued UPDATE was a same-value self-assignment. Only the null-safe value diff
-        // in the trigger body should prevent a false content/identity stamp bump and a
+        // in the trigger body should prevent a false content stamp bump and a
         // redundant RI row rewrite.
         var courseOfferingResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "CourseOffering");
         var expectedRiRows = SortReferentialIdentityRows(
@@ -1430,14 +1401,13 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     }
 
     [Test]
-    public async Task It_should_not_stamp_identity_when_propagated_identity_reference_is_self_assigned_alongside_content_change()
+    public async Task It_should_avoid_referential_identity_rewrites_when_propagated_identity_reference_is_self_assigned_alongside_content_change()
     {
         // Mixed-write counterpart for the propagated identity-source reference column:
         // a non-identity content column changes while the propagated identity column is
         // self-assigned to the same value. UPDATE([Session_SessionName]) returns true
         // (and CourseOffering's INSTEAD OF UPDATE rewrites every column anyway), so the
-        // null-safe value-diff predicate is the sole protection against false
-        // IdentityVersion bumps and redundant RI rewrites.
+        // null-safe value-diff predicate is the sole protection against redundant RI rewrites.
         var courseOfferingResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "CourseOffering");
         var expectedRiRows = SortReferentialIdentityRows(
             new[]
@@ -1487,8 +1457,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         afterStamps.ContentVersion.Should().BeGreaterThan(beforeStamps.ContentVersion);
         afterStamps.ContentLastModifiedAt.Should().BeAfter(beforeStamps.ContentLastModifiedAt);
-        afterStamps.IdentityVersion.Should().Be(beforeStamps.IdentityVersion);
-        afterStamps.IdentityLastModifiedAt.Should().Be(beforeStamps.IdentityLastModifiedAt);
         afterRiRows.Should().Equal(beforeRiRows);
         auditOps.Should().Be(0);
     }
@@ -1514,10 +1482,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var afterOtherContact = await GetDocumentStampStateAsync(_seedData.OtherContactDocumentId);
 
         afterContact.ContentVersion.Should().BeGreaterThan(beforeContact.ContentVersion);
+        afterContact.ContentLastModifiedAt.Should().BeAfter(beforeContact.ContentLastModifiedAt);
         afterOtherContact.ContentVersion.Should().BeGreaterThan(beforeOtherContact.ContentVersion);
+        afterOtherContact.ContentLastModifiedAt.Should().BeAfter(beforeOtherContact.ContentLastModifiedAt);
         afterContact.ContentVersion.Should().NotBe(afterOtherContact.ContentVersion);
-        afterContact.IdentityVersion.Should().Be(beforeContact.IdentityVersion);
-        afterOtherContact.IdentityVersion.Should().Be(beforeOtherContact.IdentityVersion);
     }
 
     [Test]
@@ -1556,7 +1524,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         var afterUpdate = await GetDocumentStampStateAsync(busDocumentId);
         afterUpdate.ContentVersion.Should().BeGreaterThan(afterInsert.ContentVersion);
-        afterUpdate.IdentityVersion.Should().BeGreaterThan(afterInsert.IdentityVersion);
+        afterUpdate.ContentLastModifiedAt.Should().BeAfter(afterInsert.ContentLastModifiedAt);
         await AssertRootMirrorMatchesDocumentAsync("sample", "Bus", busDocumentId);
 
         var beforeNoOpMirror = await GetRootMirrorStampStateAsync("sample", "Bus", busDocumentId);
@@ -1746,7 +1714,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var after = await GetDocumentStampStateAsync(seed.AssociationDocumentId);
 
         after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
-        after.IdentityVersion.Should().Be(before.IdentityVersion);
+        after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
         (
             await CountTrackedChangeRowsAsync(
                 "tracked_changes_edfi",
@@ -1973,7 +1941,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var unchangedAfter = await GetDocumentStampStateAsync(unchangedDocumentId);
 
         changedAfter.ContentVersion.Should().BeGreaterThan(changedBefore.ContentVersion);
-        changedAfter.IdentityVersion.Should().BeGreaterThan(changedBefore.IdentityVersion);
+        changedAfter.ContentLastModifiedAt.Should().BeAfter(changedBefore.ContentLastModifiedAt);
         // The self-assigned row is a stored-value no-op: no stamps at all.
         unchangedAfter.Should().Be(unchangedBefore);
 
@@ -2068,7 +2036,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         var after = await GetDocumentStampStateAsync(gradingPeriodDocumentId);
         after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
-        after.IdentityVersion.Should().BeGreaterThan(before.IdentityVersion);
+        after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
 
         (
             await CountTrackedChangeRowsAsync(
@@ -2169,7 +2137,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         var after = await GetDocumentStampStateAsync(studentAssessmentDocumentId);
         after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
-        after.IdentityVersion.Should().BeGreaterThan(before.IdentityVersion);
+        after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
 
         (
             await CountTrackedChangeRowsAsync(
@@ -2199,6 +2167,41 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             .ToInt64(trackedRow["ChangeVersion"], CultureInfo.InvariantCulture)
             .Should()
             .Be(after.ContentVersion);
+
+        await DelayForDistinctTimestampsAsync();
+        rowsAffected = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[StudentAssessment]
+            SET [StudentAssessmentIdentifier] = @clearedIdentifier,
+                [ReportedSchool_DocumentId] = NULL,
+                [ReportedSchool_SchoolId] = NULL
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@clearedIdentifier", "SA-001-cleared"),
+            new SqlParameter("@documentId", studentAssessmentDocumentId)
+        );
+        rowsAffected.Should().Be(1);
+
+        var afterClear = await GetDocumentStampStateAsync(studentAssessmentDocumentId);
+        afterClear.ContentVersion.Should().BeGreaterThan(after.ContentVersion);
+        afterClear.ContentLastModifiedAt.Should().BeAfter(after.ContentLastModifiedAt);
+
+        trackedRow = await GetLatestTrackedChangeRowAsync(
+            "tracked_changes_edfi",
+            "StudentAssessment",
+            studentAssessmentDocumentUuid
+        );
+        trackedRow["OldStudentAssessmentIdentifier"].Should().Be("SA-001-renamed");
+        trackedRow["NewStudentAssessmentIdentifier"].Should().Be("SA-001-cleared");
+        Convert
+            .ToInt64(trackedRow["OldReportedSchool_SchoolId"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(seededSchoolId);
+        trackedRow["NewReportedSchool_SchoolId"].Should().BeNull();
+        Convert
+            .ToInt64(trackedRow["ChangeVersion"], CultureInfo.InvariantCulture)
+            .Should()
+            .Be(afterClear.ContentVersion);
     }
 
     [Test]
@@ -2323,6 +2326,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         (await CountDocumentRowsAsync(seed.AssociationDocumentId)).Should().Be(1);
         var afterResourceDelete = await GetDocumentStampStateAsync(seed.AssociationDocumentId);
         afterResourceDelete.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+        afterResourceDelete.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
 
         (
             await CountTrackedChangeRowsAsync(
@@ -2417,6 +2421,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         (await CountDocumentRowsAsync(descriptorDocumentId)).Should().Be(1);
         var afterResourceDelete = await GetDocumentStampStateAsync(descriptorDocumentId);
         afterResourceDelete.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+        afterResourceDelete.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
 
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "Descriptor", descriptorDocumentUuid))
             .Should()
@@ -2484,6 +2489,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         (await CountDocumentRowsAsync(schoolDocumentId)).Should().Be(1);
         var afterResourceDelete = await GetDocumentStampStateAsync(schoolDocumentId);
         afterResourceDelete.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+        afterResourceDelete.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
 
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
             .Should()
@@ -2543,7 +2549,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var before = await GetDocumentStampStateAsync(schoolDocumentId);
 
         // A successful identity-value change on a concrete-abstract resource must bump
-        // IdentityVersion but never insert a key-change row: deletes are the only writes
+        // ContentVersion but never insert a key-change row: deletes are the only writes
         // that land in tracked_changes for concrete-abstract resources.
         await DelayForDistinctTimestampsAsync();
         var rowsAffected = await _database.ExecuteNonQueryAsync(
@@ -2560,7 +2566,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var after = await GetDocumentStampStateAsync(schoolDocumentId);
 
         after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
-        after.IdentityVersion.Should().BeGreaterThan(before.IdentityVersion);
+        after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
             .Should()
             .Be(0);
@@ -4245,9 +4251,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 """
                 SELECT
                     [ContentVersion],
-                    [IdentityVersion],
-                    [ContentLastModifiedAt],
-                    [IdentityLastModifiedAt]
+                    [ContentLastModifiedAt]
                 FROM [dms].[Document]
                 WHERE [DocumentId] = @documentId;
                 """,
@@ -4257,9 +4261,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         return new(
             Convert.ToInt64(row["ContentVersion"], CultureInfo.InvariantCulture),
-            Convert.ToInt64(row["IdentityVersion"], CultureInfo.InvariantCulture),
-            ReadDateTimeOffset(row["ContentLastModifiedAt"]),
-            ReadDateTimeOffset(row["IdentityLastModifiedAt"])
+            ReadDateTimeOffset(row["ContentLastModifiedAt"])
         );
     }
 
@@ -4284,9 +4286,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         return new(
             Convert.ToInt64(row["ContentVersion"], CultureInfo.InvariantCulture),
-            IdentityVersion: 0,
-            ReadDateTimeOffset(row["ContentLastModifiedAt"]),
-            IdentityLastModifiedAt: DateTimeOffset.UnixEpoch
+            ReadDateTimeOffset(row["ContentLastModifiedAt"])
         );
     }
 

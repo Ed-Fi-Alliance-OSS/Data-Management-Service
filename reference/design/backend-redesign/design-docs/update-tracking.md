@@ -79,14 +79,12 @@ API `_etag` is derived from `dms.Document.ContentVersion` and the response `vari
 specified in "Serving API metadata (normative)" below. It is **not** a hash of the resource-state
 JSON.
 
-### Identity stamps (supporting internal semantics)
+### Content stamps and identity-projection changes
 
-Each persisted document also maintains an **identity projection stamp**:
-
-- `IdentityVersion`
-- `IdentityLastModifiedAt`
-
-These are updated only when the document’s own identity/URI projection changes (including via cascaded updates to identity-component reference identity storage columns; see [key-unification.md](key-unification.md)). Identity stamps are not required to serve `_etag/_lastModifiedDate/ChangeVersion`, but are useful for diagnostics and future features.
+There is no separate document-level stamp for identity projection changes. When those changes
+alter the stored representation, including changes caused by cascaded updates to
+identity-component reference identity storage columns (see [key-unification.md](key-unification.md)),
+the same `ContentVersion` and `ContentLastModifiedAt` stamps are updated.
 
 ### Global sequence
 
@@ -123,19 +121,17 @@ When a document’s **representation changes**, in the same transaction:
 - set `dms.Document.ContentVersion = next ChangeVersionSequence value`
 - set `dms.Document.ContentLastModifiedAt = now (UTC)`
 
-When a document’s **identity projection changes**, in the same transaction:
+When a document’s **identity projection changes**, the change is stamped through the representation
+rules above when it changes stored resource state. No additional `dms.Document` columns are written
+for identity tracking.
 
-- set `dms.Document.IdentityVersion = next ChangeVersionSequence value`
-- set `dms.Document.IdentityLastModifiedAt = now (UTC)`
-- and also treat it as a representation change (update `ContentVersion`/`ContentLastModifiedAt`)
 
 ### Initialization on insert (normative)
 
 Inserting a new document is a representation change (and also an identity projection change). Therefore, on `INSERT` of a new `dms.Document` row, the inserted row MUST have:
 
 - `ContentVersion` set to a newly allocated `dms.ChangeVersionSequence` value (unique per inserted document),
-- `IdentityVersion` set to a newly allocated `dms.ChangeVersionSequence` value (unique per inserted document),
-- `ContentLastModifiedAt` and `IdentityLastModifiedAt` set to the insert time (UTC).
+- `ContentLastModifiedAt` set to the insert time (UTC).
 
 Implementation options:
 
@@ -149,7 +145,7 @@ Notes:
 
 - Multiple updates to the same `DocumentId` in one transaction may allocate multiple sequence values; the only required property is that the final committed stamps are monotonic and correct.
 - FK-cascade updates to reference identity storage columns MUST cause stamping (the database update itself triggers the same table triggers as a direct UPDATE; under key unification, per-site binding aliases recompute automatically).
-- A successful no-op update path (request accepted, but no stored/writable row values changed) MUST NOT allocate new content or identity stamps.
+- A successful no-op update path (request accepted, but no stored/writable row values changed) MUST NOT allocate new content stamps.
 - For watermark-only compatibility, allocating stamps must be **per-document**, not “one stamp for the whole statement”:
   - when a trigger stamps N `dms.Document` rows, it MUST allocate N distinct `ChangeVersionSequence` values (one per affected `DocumentId`).
   - SQL Server: do **not** assign `NEXT VALUE FOR dms.ChangeVersionSequence` to a variable and reuse it; use `NEXT VALUE FOR dms.ChangeVersionSequence` directly in the set-based `UPDATE` that stamps `dms.Document` (and dedupe `DocumentId`s so each document is updated once per trigger execution).

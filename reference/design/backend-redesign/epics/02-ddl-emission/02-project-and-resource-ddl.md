@@ -18,7 +18,7 @@ Generate deterministic DDL for per-project schemas and schema-derived objects fr
   - identity table `{schema}.{AbstractResource}Identity`
   - union view `{schema}.{AbstractResource}_View`
 - Emit required per-table triggers derived from the model set (see `reference/design/backend-redesign/design-docs/ddl-generation.md` “Triggers (required)”):
-  - representation/identity stamping triggers,
+  - representation stamping triggers,
   - `dms.ReferentialIdentity` maintenance triggers, and
   - `{schema}.{AbstractResource}Identity` maintenance triggers.
 - Apply FK index policy (supporting indexes for all FKs).

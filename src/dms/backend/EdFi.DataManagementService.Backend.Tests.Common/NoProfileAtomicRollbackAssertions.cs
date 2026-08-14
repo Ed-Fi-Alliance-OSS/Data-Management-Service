@@ -129,9 +129,7 @@ public static class NoProfileAtomicRollbackAssertions
         Guid DocumentUuid,
         short ResourceKeyId,
         long ContentVersion,
-        long IdentityVersion,
         DateTimeOffset ContentLastModifiedAt,
-        DateTimeOffset IdentityLastModifiedAt,
         DateTimeOffset CreatedAt
     );
 

@@ -16,11 +16,7 @@ internal sealed record MssqlGeneratedDdlBackupMutableCounts(
     long SchoolAddressCount
 );
 
-internal sealed record MssqlGeneratedDdlBackupDocumentState(
-    long DocumentId,
-    long ContentVersion,
-    long IdentityVersion
-);
+internal sealed record MssqlGeneratedDdlBackupDocumentState(long DocumentId, long ContentVersion);
 
 [TestFixture]
 [Category(MssqlCiShards.Shard4)]
@@ -265,7 +261,7 @@ public class Given_MssqlGeneratedDdlBackupBaselineDatabase
 
         var documentRows = await database.QueryRowsAsync(
             """
-            SELECT [DocumentId], [ContentVersion], [IdentityVersion]
+            SELECT [DocumentId], [ContentVersion]
             FROM [dms].[Document]
             WHERE [DocumentUuid] = @documentUuid;
             """,
@@ -274,8 +270,7 @@ public class Given_MssqlGeneratedDdlBackupBaselineDatabase
         var documentRow = documentRows.Should().ContainSingle().Which;
         var documentState = new MssqlGeneratedDdlBackupDocumentState(
             Convert.ToInt64(documentRow["DocumentId"]),
-            Convert.ToInt64(documentRow["ContentVersion"]),
-            Convert.ToInt64(documentRow["IdentityVersion"])
+            Convert.ToInt64(documentRow["ContentVersion"])
         );
 
         await database.ExecuteNonQueryAsync(

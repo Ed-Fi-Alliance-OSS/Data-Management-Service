@@ -326,8 +326,6 @@ public class Given_RelationalCurrentEtagPreconditionChecker
                 DocumentId,
                 _documentUuid.Value,
                 contentVersion,
-                contentVersion,
-                new DateTimeOffset(2026, 4, 11, 17, 30, 45, TimeSpan.Zero),
                 new DateTimeOffset(2026, 4, 11, 17, 30, 45, TimeSpan.Zero),
                 1
             ),

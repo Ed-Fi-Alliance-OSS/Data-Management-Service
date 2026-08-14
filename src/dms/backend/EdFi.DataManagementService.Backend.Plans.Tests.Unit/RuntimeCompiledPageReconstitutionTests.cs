@@ -181,9 +181,7 @@ file static class RuntimeCompiledPageReconstitutionTestData
                     DocumentId: 1L,
                     DocumentUuid: Guid.Parse("11111111-1111-1111-1111-111111111111"),
                     ContentVersion: 1L,
-                    IdentityVersion: 1L,
                     ContentLastModifiedAt: new DateTimeOffset(2026, 4, 19, 12, 0, 0, TimeSpan.Zero),
-                    IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 19, 12, 0, 0, TimeSpan.Zero),
                     ResourceKeyId: 1
                 ),
             ],

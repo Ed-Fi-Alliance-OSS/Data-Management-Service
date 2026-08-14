@@ -255,9 +255,7 @@ CREATE TABLE [dms].[Document]
     [ResourceKeyId] smallint NOT NULL,
     [CreatedByOwnershipTokenId] smallint NULL,
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Document_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
-    [IdentityVersion] bigint NOT NULL CONSTRAINT [DF_Document_IdentityVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Document_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
-    [IdentityLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Document_IdentityLastModifiedAt] DEFAULT (sysutcdatetime()),
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Document_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_Document] PRIMARY KEY CLUSTERED ([DocumentId])
 );
@@ -798,14 +796,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[PersonId] <> del.[PersonId] OR (i.[PersonId] IS NULL AND del.[PersonId] IS NOT NULL) OR (i.[PersonId] IS NOT NULL AND del.[PersonId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[PersonId] <> d.[PersonId] OR (i.[PersonId] IS NULL AND d.[PersonId] IS NOT NULL) OR (i.[PersonId] IS NOT NULL AND d.[PersonId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[Person] (
             [OldPersonId],
             [NewPersonId],
@@ -816,9 +811,9 @@ BEGIN
             del.[PersonId],
             i.[PersonId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END

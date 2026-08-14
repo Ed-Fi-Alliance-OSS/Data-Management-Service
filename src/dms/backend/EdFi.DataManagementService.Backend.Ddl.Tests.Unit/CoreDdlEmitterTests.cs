@@ -342,6 +342,19 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
+    public void It_should_create_document_without_identity_stamps()
+    {
+        _ddl.Should().NotContain("IdentityVersion");
+        _ddl.Should().NotContain("IdentityLastModifiedAt");
+
+        var start = _ddl.IndexOf("CREATE TABLE IF NOT EXISTS \"dms\".\"Document\"", StringComparison.Ordinal);
+        var end = _ddl.IndexOf(";", start, StringComparison.Ordinal);
+        var document = _ddl[start..end];
+
+        document.Split("ChangeVersionSequence", StringSplitOptions.None).Length.Should().Be(2);
+    }
+
+    [Test]
     public void It_should_create_document_cache_table()
     {
         _ddl.Should().Contain("CREATE TABLE IF NOT EXISTS \"dms\".\"DocumentCache\"");
@@ -1575,18 +1588,26 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
-    public void It_should_keep_document_defaults_compatible_with_later_same_transaction_restamping()
+    public void It_should_keep_document_content_defaults_compatible_with_later_same_transaction_restamping()
     {
         _ddl.Should()
             .Contain(
                 "CONSTRAINT [DF_Document_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence])"
             );
-        _ddl.Should()
-            .Contain(
-                "CONSTRAINT [DF_Document_IdentityVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence])"
-            );
         _ddl.Should().Contain("CONSTRAINT [DF_Document_ContentLastModifiedAt] DEFAULT (sysutcdatetime())");
-        _ddl.Should().Contain("CONSTRAINT [DF_Document_IdentityLastModifiedAt] DEFAULT (sysutcdatetime())");
+    }
+
+    [Test]
+    public void It_should_create_document_without_identity_stamps()
+    {
+        _ddl.Should().NotContain("IdentityVersion");
+        _ddl.Should().NotContain("IdentityLastModifiedAt");
+
+        var start = _ddl.IndexOf("CREATE TABLE [dms].[Document]", StringComparison.Ordinal);
+        var end = _ddl.IndexOf(";", start, StringComparison.Ordinal);
+        var document = _ddl[start..end];
+
+        document.Split("ChangeVersionSequence", StringSplitOptions.None).Length.Should().Be(2);
     }
 
     [Test]
@@ -1604,21 +1625,9 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
-    public void It_should_have_named_default_for_document_identity_version()
-    {
-        _ddl.Should().Contain("CONSTRAINT [DF_Document_IdentityVersion] DEFAULT");
-    }
-
-    [Test]
     public void It_should_have_named_default_for_document_content_last_modified_at()
     {
         _ddl.Should().Contain("CONSTRAINT [DF_Document_ContentLastModifiedAt] DEFAULT");
-    }
-
-    [Test]
-    public void It_should_have_named_default_for_document_identity_last_modified_at()
-    {
-        _ddl.Should().Contain("CONSTRAINT [DF_Document_IdentityLastModifiedAt] DEFAULT");
     }
 
     [Test]

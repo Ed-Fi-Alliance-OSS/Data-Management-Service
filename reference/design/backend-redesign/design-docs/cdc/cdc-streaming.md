@@ -1168,7 +1168,7 @@ The offline operation follows this sequence:
    document, allocate a fresh unique value from the normal change-version sequence, update
    `dms.Document.ContentVersion` and `ContentLastModifiedAt`, and update the concrete
    resource-root or `dms.Descriptor` content-stamp mirror in the same provider transaction.
-   Do not change domain fields, identity stamps, keys, or deletion history. The utility uses
+Do not change domain fields, keys, or deletion history. The utility only refreshes the stored change-tracking columns.
    a captured pre-restamp version boundary so a retry resumes without stamping an already
    completed document again. In projection/publication mode, the existing enqueue trigger
    records the required version in that same transaction, and an enqueue failure rolls back
