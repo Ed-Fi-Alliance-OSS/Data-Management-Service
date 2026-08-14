@@ -465,8 +465,25 @@ internal sealed record RelationshipAuthorizationVolumeCounts
 {
     private RelationshipAuthorizationVolumeCounts(int authorizedRowsPerRoot, int unauthorizedRowsPerRoot)
     {
+        if (unauthorizedRowsPerRoot <= 0)
+        {
+            throw new InvalidOperationException(
+                $"Volume counts need unauthorized rows to interleave with: got {unauthorizedRowsPerRoot}."
+            );
+        }
+
+        var totalRowsPerRoot = authorizedRowsPerRoot + unauthorizedRowsPerRoot;
+
+        if (totalRowsPerRoot % unauthorizedRowsPerRoot != 0)
+        {
+            throw new InvalidOperationException(
+                $"Volume counts must interleave evenly: total {totalRowsPerRoot} is not a multiple of the unauthorized count {unauthorizedRowsPerRoot}."
+            );
+        }
+
         AuthorizedRowsPerRoot = authorizedRowsPerRoot;
         UnauthorizedRowsPerRoot = unauthorizedRowsPerRoot;
+        Stride = totalRowsPerRoot / unauthorizedRowsPerRoot;
     }
 
     /// <summary>
@@ -501,12 +518,14 @@ internal sealed record RelationshipAuthorizationVolumeCounts
     /// populations across the DocumentId ordering is what makes authorized and unauthorized rows alternate
     /// across page boundaries instead of partitioning into a reachable prefix and an unreachable suffix.
     /// </summary>
-    public int Stride =>
-        TotalRowsPerRoot % UnauthorizedRowsPerRoot == 0
-            ? TotalRowsPerRoot / UnauthorizedRowsPerRoot
-            : throw new InvalidOperationException(
-                $"Volume counts must interleave evenly: total {TotalRowsPerRoot} is not a multiple of the unauthorized count {UnauthorizedRowsPerRoot}."
-            );
+    /// <remarks>
+    /// Computed in the constructor rather than on each read, so a preset that cannot interleave evenly — or that
+    /// leaves no unauthorized rows to interleave with — fails at its own declaration with the message written for
+    /// it, instead of from inside generation after the baseline and singleton rows are already written. Guarding
+    /// the denominator separately matters: evaluating <c>% 0</c> first would raise
+    /// <see cref="DivideByZeroException"/> and lose the diagnostic entirely.
+    /// </remarks>
+    public int Stride { get; }
 }
 
 /// <summary>

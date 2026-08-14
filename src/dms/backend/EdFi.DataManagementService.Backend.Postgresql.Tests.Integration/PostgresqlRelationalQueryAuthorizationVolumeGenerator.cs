@@ -868,9 +868,12 @@ internal static class PostgresqlRelationalQueryAuthorizationVolumeGenerator
             """
             SELECT count(DISTINCT authView."Student_DocumentId")
             FROM "auth"."EducationOrganizationIdToStudentDocumentId" authView
-            WHERE authView."SourceEducationOrganizationId" = @claimEducationOrganizationId;
+            INNER JOIN "edfi"."Student" student ON student."DocumentId" = authView."Student_DocumentId"
+            WHERE authView."SourceEducationOrganizationId" = @claimEducationOrganizationId
+              AND student."StudentUniqueId" LIKE @studentUniqueIdPattern;
             """,
-            ClaimEducationOrganizationIdParameter()
+            ClaimEducationOrganizationIdParameter(),
+            StudentUniqueIdPatternParameter()
         );
 
         var unauthorizedStudentCount = await database.ExecuteScalarAsync<long>(
@@ -886,10 +889,7 @@ internal static class PostgresqlRelationalQueryAuthorizationVolumeGenerator
               );
             """,
             ClaimEducationOrganizationIdParameter(),
-            new NpgsqlParameter(
-                "studentUniqueIdPattern",
-                RelationshipAuthorizationVolumeIdentifiers.StudentUniqueIdPrefix + "%"
-            )
+            StudentUniqueIdPatternParameter()
         );
 
         return new RelationshipAuthorizationVolumeGenerationResult(
@@ -936,6 +936,14 @@ internal static class PostgresqlRelationalQueryAuthorizationVolumeGenerator
 
     private static NpgsqlParameter StudentUniqueIdPrefixParameter() =>
         new("studentUniqueIdPrefix", RelationshipAuthorizationVolumeIdentifiers.StudentUniqueIdPrefix);
+
+    /// <summary>
+    /// Restricts a count to the students this generator wrote. Both halves of the reported result use it, so the
+    /// authorized and unauthorized numbers describe the same population — otherwise a student seeded outside the
+    /// generator would move one half and not the other.
+    /// </summary>
+    private static NpgsqlParameter StudentUniqueIdPatternParameter() =>
+        new("studentUniqueIdPattern", RelationshipAuthorizationVolumeIdentifiers.StudentUniqueIdPrefix + "%");
 
     private static NpgsqlParameter ReachableSchoolIdParameter() =>
         new("reachableSchoolId", (long)RelationshipAuthorizationVolumeIdentifiers.ReachableSchoolId);

@@ -740,16 +740,23 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         await SeedNamedDescriptorAsync(documentUuid, "AttendanceEventCategoryDescriptor", descriptor);
     }
 
+    /// <summary>
+    /// Splits the descriptor URI once on its fragment separator: namespace before it, code value after. Callers
+    /// pass the <c>uri://ed-fi.org/&lt;Name&gt;#&lt;Code&gt;</c> constants from
+    /// <c>RelationshipAuthorizationVolumeIdentifiers</c>, so the separator is a precondition rather than optional —
+    /// hence one lookup shared by both slices instead of two that could disagree about a URI without one.
+    /// </summary>
     private async Task SeedNamedDescriptorAsync(Guid documentUuid, string resourceName, string descriptorUri)
     {
-        var codeValue = descriptorUri[(descriptorUri.LastIndexOf('#') + 1)..];
+        var fragmentIndex = descriptorUri.LastIndexOf('#');
+        var codeValue = descriptorUri[(fragmentIndex + 1)..];
 
         await SeedDescriptorAsync(
             documentUuid,
             resourceName,
             $"Ed-Fi:{resourceName}",
             descriptorUri,
-            descriptorUri[..descriptorUri.LastIndexOf('#')],
+            descriptorUri[..fragmentIndex],
             codeValue,
             codeValue
         );

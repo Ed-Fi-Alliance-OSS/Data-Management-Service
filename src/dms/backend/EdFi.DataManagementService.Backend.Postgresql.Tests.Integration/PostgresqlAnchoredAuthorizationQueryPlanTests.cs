@@ -108,9 +108,20 @@ internal static class AnchoredAuthorizationPlanSupport
     }
 
     /// <summary>
-    /// The two structural claims AC3 makes about the anchored shape: the root relation is read once, and nothing
-    /// on a join's inner side or inside a subplan reads it.
+    /// AC3's structural claim about the anchored shape: the page plan reads the root relation exactly once.
     /// </summary>
+    /// <remarks>
+    /// One scan is the whole claim, and deliberately the only thing asserted. It already carries AC3's second
+    /// clause: a plan that reads the root once cannot reopen it anywhere, and cannot build a hash over
+    /// root-derived DocumentIds either. A companion assertion about <em>where</em> that scan sits would reintroduce
+    /// a planner-choice coupling of the same kind as a node-type list. PostgreSQL plans <c>IN (subquery)</c> either
+    /// as a semi-join, whose outer is the row-preserving root, or as a uniquified inner join with the sublink side
+    /// as the outer and the root as the inner. Both read the root once and both satisfy the ticket; only the second
+    /// puts that single scan on an inner side, and which one wins is a cost decision. Position is therefore
+    /// evidence about the planner rather than about the SQL the compiler emitted.
+    /// <see cref="FindReopenedRootRelationReads"/> is kept for the legacy control, where the assertion runs the
+    /// other way and a second scan genuinely exists.
+    /// </remarks>
     public static void AssertAnchoredShape(JsonElement plan, string rootRelationName, string context)
     {
         PostgresqlQueryPlanNavigator
@@ -119,14 +130,6 @@ internal static class AnchoredAuthorizationPlanSupport
             .ContainSingle(
                 $"the anchored predicate reads '{rootRelationName}' from the root row, so the page plan scans it "
                     + $"exactly once ({context})"
-            );
-
-        FindReopenedRootRelationReads(plan, rootRelationName)
-            .Should()
-            .BeEmpty(
-                $"nothing on a join's inner side or inside a subplan may read '{rootRelationName}' — reopening it "
-                    + $"there to derive every authorized DocumentId on every page is what DMS-1331 removes "
-                    + $"({context})"
             );
     }
 
@@ -140,15 +143,16 @@ internal static class AnchoredAuthorizationPlanSupport
     /// with row count, <c>work_mem</c>, cost settings and server version — the legacy plans observed here use a
     /// <c>Sort</c> under a merge semi-join where the ticket's prototype rig reported a hash, and a nested-loop
     /// semi-join would carry a bare index scan holding nothing at all. Asserting on a list of set-holding node
-    /// types would therefore both fail on legacy plans that are exactly the pathology and pass on anchored plans
-    /// that reprobe the root per row.
+    /// types would therefore fail on legacy plans that are exactly the pathology.
     /// </para>
     /// <para>
-    /// The position, unlike the operator, follows from semi-join semantics rather than from cost: the root's page
-    /// scan is the row-preserving side, so it is always the outer, and any second read of the root is therefore
-    /// either the semi-join's inner side or — when the sublink is not pulled up — a subplan. That is what makes
-    /// this the same claim as before without the coupling, and it is also what separates a reopened read from the
-    /// page's own keyset ordering on the outer path, which is the legitimate cost of ordering a page.
+    /// Used only by the legacy non-vacuity control, which requires a non-empty result, and it is that direction
+    /// that makes the positional test sound. The legacy shape reads the root twice; whichever of the two is not the
+    /// page's own row-preserving scan is reached either through a join's inner side or — when the sublink is not
+    /// pulled up — through a subplan, so a plan carrying the pathology always has something to report here. The
+    /// converse does not hold: a correct anchored plan may put its single root scan on an inner side when the
+    /// planner uniquifies the sublink and joins it as the outer, which is why <see cref="AssertAnchoredShape"/>
+    /// asserts the scan count instead.
     /// </para>
     /// </remarks>
     public static IReadOnlyList<JsonElement> FindReopenedRootRelationReads(
@@ -203,8 +207,8 @@ internal static class AnchoredAuthorizationPlanSupport
 
 /// <summary>
 /// AC3 plan shape, at CI scale, on every pull request. EXPLAINs the page SQL the production compiler emits and
-/// asserts the anchored predicate reads the root relation once and never reopens it on a join's inner side or in
-/// a subplan.
+/// asserts the anchored predicate reads the root relation exactly once, paired with the legacy shape at the same
+/// offset so the count still discriminates.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -269,9 +273,8 @@ public class Given_A_Postgresql_Anchored_Authorization_Query_Plan
     }
 
     /// <summary>
-    /// AC3 on production's own SQL: the root relation is read once, nothing reopens it on a join's inner side or
-    /// in a subplan, and both the person and the claim predicate reached the plan as conditions rather than being
-    /// applied above a materialized intermediate.
+    /// AC3 on production's own SQL: the root relation is read exactly once, and both the person and the claim
+    /// predicate reached the plan as conditions rather than being applied above a materialized intermediate.
     /// </summary>
     [TestCaseSource(nameof(SubjectResourceNames))]
     public async Task It_should_read_the_root_relation_once_in_the_anchored_page_plan(string resourceName)
@@ -313,10 +316,10 @@ public class Given_A_Postgresql_Anchored_Authorization_Query_Plan
     }
 
     /// <summary>
-    /// The non-vacuity control. Both structural claims above are run against the primary-key self-join DMS-1331
-    /// replaces, and both must come out the other way there: the root relation appears twice, and the second read
-    /// sits on a join's inner side or in a subplan. Without this, a plan-shape assertion that no plan could fail
-    /// would read as evidence.
+    /// The non-vacuity control, run against the primary-key self-join DMS-1331 replaces. The scan count above must
+    /// come out the other way here — the root relation appears twice — and the second read must sit on a join's
+    /// inner side or in a subplan, which is the pathology itself: a set of every authorized DocumentId, rebuilt per
+    /// page. Without this, a plan-shape assertion that no plan could fail would read as evidence.
     /// </summary>
     [TestCaseSource(nameof(SubjectResourceNames))]
     public async Task It_should_read_the_root_relation_twice_in_the_legacy_page_plan(string resourceName)
@@ -392,8 +395,8 @@ public class Given_A_Postgresql_Anchored_Authorization_Query_Plan
 /// </para>
 /// <para>
 /// Absolute times are hardware-dependent and are reported as evidence, never asserted. The only assertions here
-/// are the direction that must hold at any offset: the anchored shape adds no second root scan and holds no set
-/// drawn from the root relation. Times come from the server's own <c>Execution Time</c> rather than client
+/// are the direction that must hold at any offset: the anchored shape adds no second root scan. Times come from
+/// the server's own <c>Execution Time</c> rather than client
 /// wall-clock, so they exclude round-trip; they are also statement-level numbers over rows with no JSON payload,
 /// so they exclude hydration and reconstitution entirely.
 /// </para>
