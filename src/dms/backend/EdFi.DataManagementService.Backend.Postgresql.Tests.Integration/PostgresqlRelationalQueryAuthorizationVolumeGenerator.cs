@@ -60,6 +60,15 @@ internal static class PostgresqlRelationalQueryAuthorizationVolumeGenerator
 {
     private const int StudentUniqueIdOrdinalOffset = 5;
 
+    /// <summary>
+    /// Generation runs with a longer statement timeout than the harness default. One set-based INSERT per table
+    /// is still one statement, but it fires the referential-identity and stamp triggers once per row, so at the
+    /// [Explicit] 150,000-row scale a single statement runs well past the shared 300-second default. The
+    /// timeout is restored afterwards, so every other statement against this database keeps the shorter one
+    /// that makes a genuinely hung statement fail fast.
+    /// </summary>
+    private const int VolumeGenerationCommandTimeoutSeconds = 3600;
+
     public static async Task<RelationshipAuthorizationVolumeGenerationResult> GenerateAsync(
         PostgresqlRelationalQueryAuthorizationTestContext context,
         RelationshipAuthorizationVolumeCounts counts
@@ -68,16 +77,26 @@ internal static class PostgresqlRelationalQueryAuthorizationVolumeGenerator
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(counts);
 
-        await SeedBaselinePrerequisitesAsync(context);
-        await SeedSingletonParentsAsync(context.Database);
-        await context.InsertAuthEdgeAsync(
-            RelationshipAuthorizationVolumeIdentifiers.ClaimEducationOrganizationId,
-            RelationshipAuthorizationVolumeIdentifiers.ReachableSchoolId
-        );
-        await GenerateVolumeRowsAsync(context.Database, counts);
-        await AnalyzeGeneratedTablesAsync(context.Database);
+        var previousCommandTimeoutSeconds = context.Database.CommandTimeoutSeconds;
+        context.Database.CommandTimeoutSeconds = VolumeGenerationCommandTimeoutSeconds;
 
-        return await ReadGenerationResultAsync(context.Database, counts);
+        try
+        {
+            await SeedBaselinePrerequisitesAsync(context);
+            await SeedSingletonParentsAsync(context.Database);
+            await context.InsertAuthEdgeAsync(
+                RelationshipAuthorizationVolumeIdentifiers.ClaimEducationOrganizationId,
+                RelationshipAuthorizationVolumeIdentifiers.ReachableSchoolId
+            );
+            await GenerateVolumeRowsAsync(context.Database, counts);
+            await AnalyzeGeneratedTablesAsync(context.Database);
+
+            return await ReadGenerationResultAsync(context.Database, counts);
+        }
+        finally
+        {
+            context.Database.CommandTimeoutSeconds = previousCommandTimeoutSeconds;
+        }
     }
 
     /// <summary>
