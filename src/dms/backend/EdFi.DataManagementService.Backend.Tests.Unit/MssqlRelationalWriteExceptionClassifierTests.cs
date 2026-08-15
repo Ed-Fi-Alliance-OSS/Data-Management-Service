@@ -151,6 +151,7 @@ public class Given_MssqlRelationalWriteExceptionClassifier
             .BeSameAs(RelationalWriteExceptionClassification.UnrecognizedWriteFailure.Instance);
     }
 
+    [TestCase(-2)]
     [TestCase(1205)]
     [TestCase(1222)]
     [TestCase(3960)]
@@ -179,6 +180,7 @@ public class Given_MssqlRelationalWriteExceptionClassifier
         classification.Should().BeNull();
     }
 
+    [TestCase(-2)]
     [TestCase(1205)]
     [TestCase(1222)]
     [TestCase(3960)]

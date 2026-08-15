@@ -282,7 +282,7 @@ public class QueryRequestHandlerTests
         {
             _requestInfo.FrontendResponse.StatusCode.Should().Be(500);
 
-            var expected = ToJsonError("FailureMessage", new TraceId(_traceId));
+            var expected = FailureResponse.ForSystemError(new TraceId(_traceId));
 
             _requestInfo.FrontendResponse.Body.Should().NotBeNull();
             JsonNode

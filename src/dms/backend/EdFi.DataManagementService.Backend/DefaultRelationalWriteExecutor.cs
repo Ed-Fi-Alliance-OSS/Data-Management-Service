@@ -91,7 +91,8 @@ internal sealed class DefaultRelationalWriteExecutor(
 
     private readonly RelationalWriteDatabaseFailureResultMapper _databaseFailureResultMapper = new(
         writeExceptionClassifier,
-        writeConstraintResolver
+        writeConstraintResolver,
+        logger
     );
 
     public Task<RelationalWriteExecutorResult> ExecuteAsync(
@@ -114,9 +115,26 @@ internal sealed class DefaultRelationalWriteExecutor(
         // every handler that rolls back.
         RelationalWriteExecutorResult? committedResult = null;
 
-        await using var writeSession = await _writeSessionFactory
-            .CreateAsync(cancellationToken)
-            .ConfigureAwait(false);
+        IRelationalWriteSession createdSession;
+        try
+        {
+            createdSession = await _writeSessionFactory.CreateAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (DbException ex)
+            when (_databaseFailureResultMapper.TryBuildTransient(
+                    input.OperationKind,
+                    ex,
+                    out var sessionFailureResult
+                )
+            )
+        {
+            // Acquiring the connection and beginning the transaction fail transiently for the same
+            // reasons the statements inside them do, so the attempt is retryable exactly as a
+            // deadlocked statement is. There is no session to roll back: nothing was opened.
+            return sessionFailureResult!;
+        }
+
+        await using var writeSession = createdSession;
 
         try
         {
@@ -412,10 +430,25 @@ internal sealed class DefaultRelationalWriteExecutor(
             // A failure inside the first phase has no resolved request to attribute a write failure
             // to, and the phase's read-only statements cannot violate a write constraint — its
             // authorization denials were already mapped there — so it stays an unmapped fault exactly
-            // as the pre-adoption target lookup was.
+            // as the pre-adoption target lookup was. A transient failure is the exception: the phase
+            // locks the target, so a deadlock victim is at least as likely here as in the write, and
+            // transience depends on the exception alone rather than on a resolved request. Mapping it
+            // hands the retry pipeline the same write conflict a second-phase deadlock produces.
             if (executionRequest is null)
             {
+                bool isTransientFirstPhaseFailure = _databaseFailureResultMapper.TryBuildTransient(
+                    input.OperationKind,
+                    ex,
+                    out var transientFailureResult
+                );
+
                 await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+
+                if (isTransientFirstPhaseFailure)
+                {
+                    return transientFailureResult!;
+                }
+
                 throw;
             }
 

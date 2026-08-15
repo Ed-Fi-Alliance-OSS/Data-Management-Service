@@ -195,10 +195,10 @@ internal class UpdateByIdHandler(ILogger _logger, ResiliencePipeline _resilience
                 ),
                 Headers: []
             ),
-            UnknownFailure failure => new FrontendResponse(
-                StatusCode: 500,
-                Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
-                Headers: []
+            UnknownFailure failure => CreateUnknownFailureResponse(
+                _logger,
+                requestInfo,
+                failure.FailureMessage
             ),
             _ => new FrontendResponse(
                 StatusCode: 500,

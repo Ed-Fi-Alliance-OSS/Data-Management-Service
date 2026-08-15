@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Net;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -11,16 +12,18 @@ using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
 using Microsoft.Extensions.Logging;
+using Polly.CircuitBreaker;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
 /// <summary>
 /// Converts exceptions escaping the core pipeline into error responses: 403 for
-/// authorization failures, 500 otherwise. The 500-path exception is captured on the
-/// request so the outer request logging middleware attaches it to the structured
-/// request-failure event; this middleware does not log it.
+/// authorization failures, 503 when the backend circuit is open, 500 otherwise. The 500-path
+/// exception is captured on the request so the outer request logging middleware attaches it to the
+/// structured request-failure event; this middleware does not log it.
 /// </summary>
-internal class CoreExceptionLoggingMiddleware(ILogger _logger) : IPipelineStep
+internal class CoreExceptionLoggingMiddleware(ILogger _logger, TimeSpan? _circuitBreakDuration = null)
+    : IPipelineStep
 {
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
@@ -49,6 +52,21 @@ internal class CoreExceptionLoggingMiddleware(ILogger _logger) : IPipelineStep
             requestInfo.CaughtException = ex;
             requestInfo.FrontendResponse = CreateSystemErrorResponse(requestInfo.FrontendRequest.TraceId);
         }
+        catch (BrokenCircuitException ex)
+        {
+            // The circuit is open because the backend is shedding load, so the request never reached
+            // the database and is safe to replay. Serving it as a retriable 503 with the break
+            // duration as Retry-After is what keeps a client from treating a transient outage as a
+            // permanent rejection and dropping the document. The exception is captured rather than
+            // disclosed: its message names an internal resilience component.
+            requestInfo.CaughtException = ex;
+            requestInfo.FrontendResponse = new FrontendResponse(
+                StatusCode: 503,
+                Body: FailureResponse.ForServiceUnavailable(requestInfo.FrontendRequest.TraceId),
+                Headers: RetryAfterHeaderFor(_circuitBreakDuration),
+                ContentType: "application/problem+json"
+            );
+        }
         catch (OperationCanceledException) when (requestInfo.RequestCancellationToken.IsCancellationRequested)
         {
             throw;
@@ -67,6 +85,23 @@ internal class CoreExceptionLoggingMiddleware(ILogger _logger) : IPipelineStep
             );
         }
     }
+
+    /// <summary>
+    /// Formats the configured break duration as whole seconds per RFC 9110 delta-seconds, rounding
+    /// up so the hint never expires before the circuit does. It is the full break rather than the
+    /// remaining break, which errs late by design: a client that waits too long merely retries
+    /// later, while one that returns early adds load to a backend that is still shedding it.
+    /// Omitted when no duration is configured, since a header is better absent than guessed.
+    /// </summary>
+    private static Dictionary<string, string> RetryAfterHeaderFor(TimeSpan? retryAfter) =>
+        retryAfter is { } delay && delay > TimeSpan.Zero
+            ? new Dictionary<string, string>
+            {
+                ["Retry-After"] = ((int)Math.Ceiling(delay.TotalSeconds)).ToString(
+                    CultureInfo.InvariantCulture
+                ),
+            }
+            : [];
 
     // ForSystemError emits a ProblemDetails body, so it must be served as problem+json rather than
     // inheriting FrontendResponse's application/json default. The generic 500 above is deliberately

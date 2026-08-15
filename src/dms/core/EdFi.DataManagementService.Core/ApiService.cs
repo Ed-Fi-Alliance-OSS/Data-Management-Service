@@ -42,6 +42,7 @@ internal class ApiService : IApiService
     private readonly ILogger<RequestResponseLoggingMiddleware> _requestResponseLogger;
     private readonly IOptions<AppSettings> _appSettings;
     private readonly ResiliencePipeline _resiliencePipeline;
+    private readonly CircuitBreakerSettings _circuitBreakerSettings;
     private readonly ResourceLoadOrderCalculator _resourceLoadCalculator;
     private readonly IServiceProvider _serviceProvider;
     private readonly IServiceScopeFactory _serviceScopeFactory;
@@ -132,9 +133,14 @@ internal class ApiService : IApiService
         IServiceScopeFactory serviceScopeFactory,
         CachedClaimSetProvider cachedClaimSetProvider,
         IResourceDependencyGraphMLFactory resourceDependencyGraphMLFactory,
-        IProfileService profileService
+        IProfileService profileService,
+        // Registered by AddDmsDefaultConfiguration; optional so the many pipeline-construction tests
+        // that build this service directly keep compiling. Its only use is the Retry-After hint on a
+        // circuit-open 503, and the default of zero simply omits that header.
+        CircuitBreakerSettings? circuitBreakerSettings = null
     )
     {
+        _circuitBreakerSettings = circuitBreakerSettings ?? new CircuitBreakerSettings();
         _apiSchemaProvider = apiSchemaProvider;
         _effectiveApiSchemaProvider = effectiveApiSchemaProvider;
         _claimSetProvider = claimSetProvider;
@@ -178,7 +184,10 @@ internal class ApiService : IApiService
         return
         [
             new RequestResponseLoggingMiddleware(_requestResponseLogger),
-            new CoreExceptionLoggingMiddleware(_logger),
+            new CoreExceptionLoggingMiddleware(
+                _logger,
+                TimeSpan.FromSeconds(_circuitBreakerSettings.BreakDurationSeconds)
+            ),
             new TenantValidationMiddleware(_appSettings.Value.MultiTenancy, _logger),
             _serviceProvider.GetRequiredService<JwtAuthenticationMiddleware>(),
             _serviceProvider.GetRequiredService<ResolveDataStoreMiddleware>(),

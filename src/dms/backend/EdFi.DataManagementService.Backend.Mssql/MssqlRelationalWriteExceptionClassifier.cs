@@ -24,6 +24,13 @@ internal sealed partial class MssqlRelationalWriteExceptionClassifier : IRelatio
     private const int UpdateConflictNumber = 41302;
     private const int DependencyFailureNumber = 41301;
 
+    // SqlClient reports a client-side command timeout as -2. Under write contention that is a
+    // symptom of the same lock waits that produce deadlock victims, so it is retried with them.
+    // Note the asymmetry with a server-raised error: the timeout expires on the client while the
+    // server may still be running the statement, so the replay can contend with its own
+    // predecessor until that transaction is rolled back.
+    private const int CommandTimeoutNumber = -2;
+
     public bool TryClassify(
         DbException exception,
         [NotNullWhen(true)] out RelationalWriteExceptionClassification? classification
@@ -60,7 +67,8 @@ internal sealed partial class MssqlRelationalWriteExceptionClassifier : IRelatio
                     constraintName
                 )
             ),
-            DeadlockVictimNumber
+            CommandTimeoutNumber
+            or DeadlockVictimNumber
             or LockRequestTimeoutNumber
             or SnapshotIsolationUpdateConflictNumber
             or SerializableValidationFailureNumber
@@ -103,7 +111,8 @@ internal sealed partial class MssqlRelationalWriteExceptionClassifier : IRelatio
 
         return exception is SqlException sqlException
             && sqlException.Number
-                is DeadlockVictimNumber
+                is CommandTimeoutNumber
+                    or DeadlockVictimNumber
                     or LockRequestTimeoutNumber
                     or SnapshotIsolationUpdateConflictNumber
                     or SerializableValidationFailureNumber

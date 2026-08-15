@@ -50,6 +50,12 @@ public static class DmsCoreServiceExtensions
         deadlockRetryConfiguration.Bind(retrySettings);
         ValidateDeadlockRetrySettings(retrySettings);
 
+        // Bound once and registered so the pipeline that opens the circuit and the middleware that
+        // reports it as a retriable 503 quote the same break duration.
+        CircuitBreakerSettings breakerSettings = new();
+        circuitBreakerConfiguration.Bind(breakerSettings);
+        services.AddSingleton(breakerSettings);
+
         services
             // API Schema services
             .AddSingleton<IApiSchemaValidator, ApiSchemaValidator>()
@@ -124,9 +130,6 @@ public static class DmsCoreServiceExtensions
 
         void backendResiliencePipeline(ResiliencePipelineBuilder builder)
         {
-            CircuitBreakerSettings breakerSettings = new();
-            circuitBreakerConfiguration.Bind(breakerSettings);
-
             var loggerFactory = LoggerFactory.Create(loggingBuilder => loggingBuilder.AddSerilog(logger));
             var cbFailureLogger = loggerFactory.CreateLogger("CircuitBreakerFailureDetection");
             var cbLogger = loggerFactory.CreateLogger("CircuitBreaker");

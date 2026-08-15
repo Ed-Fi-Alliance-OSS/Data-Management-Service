@@ -17,6 +17,7 @@ using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using Polly;
@@ -153,10 +154,8 @@ public class Given_Relational_Write_Seam
         );
 
         requestInfo.FrontendResponse.StatusCode.Should().Be(500);
-        requestInfo.FrontendResponse.Body!["error"]!
-            .GetValue<string>()
-            .Should()
-            .Be(ProfilePersistPendingMessage);
+        requestInfo.FrontendResponse.Body!["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:system");
+        harness.Logger.JoinedMessages().Should().Contain(ProfilePersistPendingMessage);
         harness.WriteExecutor.Requests.Should().ContainSingle();
     }
 
@@ -212,10 +211,8 @@ public class Given_Relational_Write_Seam
         );
 
         requestInfo.FrontendResponse.StatusCode.Should().Be(500);
-        requestInfo.FrontendResponse.Body!["error"]!
-            .GetValue<string>()
-            .Should()
-            .Be(ProfilePersistPendingMessage);
+        requestInfo.FrontendResponse.Body!["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:system");
+        harness.Logger.JoinedMessages().Should().Contain(ProfilePersistPendingMessage);
         harness.WriteExecutor.Requests.Should().ContainSingle();
     }
 
@@ -454,7 +451,9 @@ public class Given_Relational_Write_Seam
 
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
-    public async Task It_preserves_unknown_failure_payloads_for_executor_owned_failures(SqlDialect dialect)
+    public async Task It_logs_rather_than_serves_unknown_failure_payloads_for_executor_owned_failures(
+        SqlDialect dialect
+    )
     {
         var harness = RelationalWriteSeamHarness.Create(
             resourceInfo: _fixture.ResourceInfo,
@@ -483,8 +482,13 @@ public class Given_Relational_Write_Seam
 
         var expected = """
 {
-  "error": "Unexpected write-executor test fallback.",
-  "correlationId": "relational-write-seam"
+  "detail": "An unexpected problem has occurred.",
+  "type": "urn:ed-fi:api:system",
+  "title": "System Error",
+  "status": 500,
+  "correlationId": "relational-write-seam",
+  "validationErrors": {},
+  "errors": []
 }
 """;
 
@@ -498,6 +502,8 @@ expected: {expected}
 actual: {requestInfo.FrontendResponse.Body}
 """
             );
+
+        harness.Logger.JoinedMessages().Should().Contain("Unexpected write-executor test fallback.");
         harness.WriteExecutor.Requests.Should().ContainSingle();
     }
 
@@ -613,8 +619,9 @@ actual: {requestInfo.FrontendResponse.Body}
         );
 
         requestInfo.FrontendResponse.StatusCode.Should().Be(500);
-        requestInfo.FrontendResponse.Body!["error"]!
-            .GetValue<string>()
+        requestInfo.FrontendResponse.Body!["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:system");
+        harness
+            .Logger.JoinedMessages()
             .Should()
             .Contain("Write plan lookup failed for resource 'Ed-Fi.Student'");
         harness.WriteExecutor.Requests.Should().BeEmpty();
@@ -670,11 +677,40 @@ actual: {requestInfo.FrontendResponse.Body}
             _resourceInfo = resourceInfo;
             WriteExecutor = writeExecutor;
             _serviceProvider = new RepositoryServiceProvider(repository);
-            _upsertHandler = new UpsertHandler(NullLogger.Instance, ResiliencePipeline.Empty);
-            _updateHandler = new UpdateByIdHandler(NullLogger.Instance, ResiliencePipeline.Empty);
+            _upsertHandler = new UpsertHandler(Logger, ResiliencePipeline.Empty);
+            _updateHandler = new UpdateByIdHandler(Logger, ResiliencePipeline.Empty);
         }
 
         public CapturingWriteExecutor WriteExecutor { get; }
+
+        /// <summary>
+        /// An unknown backend failure is logged rather than served, so the diagnostic text the seam
+        /// produces is asserted here instead of in the response body.
+        /// </summary>
+        public CapturingSeamLogger Logger { get; } = new();
+
+        public sealed class CapturingSeamLogger : ILogger
+        {
+            private readonly List<string> _messages = [];
+
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            )
+            {
+                _messages.Add(formatter(state, exception));
+            }
+
+            public string JoinedMessages() => string.Join('\n', _messages);
+        }
 
         private sealed class ThrowingDescriptorWriteHandler : IDescriptorWriteHandler
         {

@@ -103,10 +103,10 @@ internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePip
                 Headers: [],
                 ContentType: "application/problem+json"
             ),
-            UnknownFailure failure => new FrontendResponse(
-                StatusCode: 500,
-                Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
-                Headers: []
+            UnknownFailure failure => CreateUnknownFailureResponse(
+                _logger,
+                requestInfo,
+                failure.FailureMessage
             ),
             _ => new(
                 StatusCode: 500,

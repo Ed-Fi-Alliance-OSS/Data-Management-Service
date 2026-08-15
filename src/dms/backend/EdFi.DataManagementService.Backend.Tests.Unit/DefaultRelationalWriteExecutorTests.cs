@@ -2914,6 +2914,34 @@ public class Given_Default_Relational_Write_Executor
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
+    /// <summary>
+    /// An unrecognized write failure is shaped into a generic message, so unless the provider
+    /// exception is logged here the engine's own error number and text are lost and the only way to
+    /// learn why a write failed is to attach a debugger to a production incident.
+    /// </summary>
+    [Test]
+    public async Task It_logs_the_provider_exception_behind_an_unrecognized_write_failure()
+    {
+        CapturingLogger<DefaultRelationalWriteExecutor> logger = new();
+        _sut = CreateExecutor(logger: logger);
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException("provider write failure");
+        _writeExceptionClassifier.ClassificationToReturn = RelationalWriteExceptionClassification
+            .UnrecognizedWriteFailure
+            .Instance;
+
+        await _sut.ExecuteAsync(request);
+
+        logger.JoinedMessages().Should().Contain("provider write failure");
+    }
+
     [Test]
     public async Task It_maps_unrecognized_final_db_write_failures_to_unknown_failures()
     {
@@ -2993,6 +3021,138 @@ public class Given_Default_Relational_Write_Executor
         _writeExceptionClassifier.TryClassifyCallCount.Should().Be(0);
         _writeConstraintResolver.ResolveCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// The first phase captures and locks the target, so a deadlock victim is at least as likely
+    /// there as in the write itself. No execution request is resolved yet, but transience does not
+    /// depend on one, so the failure maps to the same retryable write conflict a second-phase
+    /// failure produces rather than escaping the executor as an unhandled exception.
+    /// </summary>
+    [TestCase(RelationalWriteOperationKind.Post)]
+    [TestCase(RelationalWriteOperationKind.Put)]
+    public async Task It_maps_transient_first_phase_db_failures_to_retryable_write_conflicts(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        var request = CreateRequest(operationKind);
+        _writeExceptionClassifier.IsTransientFailureToReturn = true;
+        _targetLookupResolver.ExceptionToThrow = new StubDbException(
+            "Transaction (Process ID 112) was deadlocked on lock resources with another process "
+                + "and has been chosen as the deadlock victim. Rerun the transaction."
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        switch (operationKind)
+        {
+            case RelationalWriteOperationKind.Post:
+                result
+                    .Should()
+                    .BeEquivalentTo(
+                        new RelationalWriteExecutorResult.Upsert(
+                            new UpsertResult.UpsertFailureWriteConflict()
+                        )
+                    );
+                break;
+            case RelationalWriteOperationKind.Put:
+                result
+                    .Should()
+                    .BeEquivalentTo(
+                        new RelationalWriteExecutorResult.Update(
+                            new UpdateResult.UpdateFailureWriteConflict()
+                        )
+                    );
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null);
+        }
+
+        _writeExceptionClassifier.IsTransientFailureCallCount.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// Opening the session is where the connection is acquired and the transaction begins, so it
+    /// fails transiently for the same reasons the statements inside it do - a pool timeout, a lock
+    /// wait, a dropped connection. The delete path already maps that to a retryable conflict; the
+    /// write path must not leave it as an unhandled exception just because it happens before the
+    /// first statement runs.
+    /// </summary>
+    [TestCase(RelationalWriteOperationKind.Post)]
+    [TestCase(RelationalWriteOperationKind.Put)]
+    public async Task It_maps_transient_write_session_creation_failures_to_retryable_write_conflicts(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        var request = CreateRequest(operationKind);
+        _writeExceptionClassifier.IsTransientFailureToReturn = true;
+        _writeSessionFactory.ExceptionToThrow = new StubDbException(
+            "Timeout expired. The timeout period elapsed prior to obtaining a connection from the pool."
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        switch (operationKind)
+        {
+            case RelationalWriteOperationKind.Post:
+                result
+                    .Should()
+                    .BeEquivalentTo(
+                        new RelationalWriteExecutorResult.Upsert(
+                            new UpsertResult.UpsertFailureWriteConflict()
+                        )
+                    );
+                break;
+            case RelationalWriteOperationKind.Put:
+                result
+                    .Should()
+                    .BeEquivalentTo(
+                        new RelationalWriteExecutorResult.Update(
+                            new UpdateResult.UpdateFailureWriteConflict()
+                        )
+                    );
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null);
+        }
+
+        _writeExceptionClassifier.IsTransientFailureCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    /// <summary>
+    /// A session-creation failure the classifier does not call transient has no session to roll back
+    /// and no request to attribute a write failure to, so it stays an unmapped fault.
+    /// </summary>
+    [Test]
+    public async Task It_rethrows_a_non_transient_write_session_creation_failure()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+        _writeExceptionClassifier.IsTransientFailureToReturn = false;
+        _writeSessionFactory.ExceptionToThrow = new StubDbException("login failed");
+
+        var act = () => _sut.ExecuteAsync(request);
+
+        await act.Should().ThrowAsync<StubDbException>().WithMessage("login failed");
+    }
+
+    /// <summary>
+    /// A first-phase failure the classifier does not call transient still has no execution request
+    /// to attribute a write failure to, so it stays an unmapped fault.
+    /// </summary>
+    [Test]
+    public async Task It_rethrows_a_non_transient_first_phase_db_exception()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+        _writeExceptionClassifier.IsTransientFailureToReturn = false;
+        _targetLookupResolver.ExceptionToThrow = new StubDbException("connection reset");
+
+        var act = () => _sut.ExecuteAsync(request);
+
+        await act.Should().ThrowAsync<StubDbException>().WithMessage("connection reset");
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
@@ -8385,6 +8545,12 @@ public class Given_Default_Relational_Write_Executor
             _defaultPostResult = lookupResult;
         }
 
+        /// <summary>
+        /// Raised in place of a lookup result, standing in for a provider failure on the first
+        /// phase's target capture statement.
+        /// </summary>
+        public Exception? ExceptionToThrow { get; set; }
+
         public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
             MappingSet mappingSet,
             QualifiedResourceName resource,
@@ -8397,6 +8563,11 @@ public class Given_Default_Relational_Write_Executor
             cancellationToken.ThrowIfCancellationRequested();
             ResolveForPostCallCount++;
             CapturedCommandExecutor = commandExecutor;
+
+            if (ExceptionToThrow is not null)
+            {
+                throw ExceptionToThrow;
+            }
 
             return Task.FromResult(
                 PostResults.Count > 0
@@ -8417,6 +8588,11 @@ public class Given_Default_Relational_Write_Executor
             cancellationToken.ThrowIfCancellationRequested();
             ResolveForPutCallCount++;
             CapturedCommandExecutor = commandExecutor;
+
+            if (ExceptionToThrow is not null)
+            {
+                throw ExceptionToThrow;
+            }
 
             return Task.FromResult(
                 PutResults.Count > 0
@@ -8728,10 +8904,22 @@ public class Given_Default_Relational_Write_Executor
 
         public int CreateAsyncCallCount { get; private set; }
 
+        /// <summary>
+        /// Raised instead of returning a session, standing in for a provider failure while opening
+        /// the connection or beginning the transaction.
+        /// </summary>
+        public Exception? ExceptionToThrow { get; set; }
+
         public Task<IRelationalWriteSession> CreateAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
             CreateAsyncCallCount++;
+
+            if (ExceptionToThrow is not null)
+            {
+                throw ExceptionToThrow;
+            }
+
             return Task.FromResult<IRelationalWriteSession>(Session);
         }
     }
@@ -9036,6 +9224,30 @@ public class Given_Default_Relational_Write_Executor
         public override void Commit() => throw new NotSupportedException();
 
         public override void Rollback() => throw new NotSupportedException();
+    }
+
+    /// <summary>Captures formatted log messages together with the exception each carried.</summary>
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        private readonly List<string> _messages = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            _messages.Add($"{formatter(state, exception)} {exception?.Message}");
+        }
+
+        public string JoinedMessages() => string.Join('\n', _messages);
     }
 
     private sealed class RecordingRelationalWriteExceptionClassifier : IRelationalWriteExceptionClassifier

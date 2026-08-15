@@ -9,6 +9,8 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using JsonObject = System.Text.Json.Nodes.JsonObject;
 using JsonValue = System.Text.Json.Nodes.JsonValue;
 
@@ -16,7 +18,8 @@ namespace EdFi.DataManagementService.Backend;
 
 internal sealed class RelationalWriteDatabaseFailureResultMapper(
     IRelationalWriteExceptionClassifier writeExceptionClassifier,
-    IRelationalWriteConstraintResolver writeConstraintResolver
+    IRelationalWriteConstraintResolver writeConstraintResolver,
+    ILogger? logger = null
 )
 {
     private readonly IRelationalWriteExceptionClassifier _writeExceptionClassifier =
@@ -24,6 +27,27 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
 
     private readonly IRelationalWriteConstraintResolver _writeConstraintResolver =
         writeConstraintResolver ?? throw new ArgumentNullException(nameof(writeConstraintResolver));
+
+    private readonly ILogger _logger = logger ?? NullLogger.Instance;
+
+    /// <summary>
+    /// Shapes a transient provider failure that arrives before an execution request is resolved -
+    /// the first phase's target capture, stored authorization, reference resolution and hydration.
+    /// Transience is a property of the exception alone, so a deadlock victim there is as retryable
+    /// as one raised by the write itself; only the operation kind is needed to shape the result.
+    /// </summary>
+    public bool TryBuildTransient(
+        RelationalWriteOperationKind operationKind,
+        DbException exception,
+        out RelationalWriteExecutorResult? result
+    )
+    {
+        result = _writeExceptionClassifier.IsTransientFailure(exception)
+            ? BuildTransientWriteConflictResult(operationKind)
+            : null;
+
+        return result is not null;
+    }
 
     public bool TryBuild(
         RelationalWriteExecutorRequest request,
@@ -35,7 +59,7 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
 
         if (_writeExceptionClassifier.IsTransientFailure(exception))
         {
-            result = BuildTransientWriteConflictResult(request);
+            result = BuildTransientWriteConflictResult(request.OperationKind);
             return true;
         }
 
@@ -49,10 +73,7 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
             RelationalWriteExceptionClassification.ConstraintViolation violation =>
                 BuildConstraintViolationFailureResult(request, violation),
             RelationalWriteExceptionClassification.UnrecognizedWriteFailure =>
-                RelationalWriteExecutorResults.BuildUnknownFailureResult(
-                    request.OperationKind,
-                    BuildUnrecognizedDatabaseWriteFailureMessage(request.WritePlan.Model.Resource)
-                ),
+                BuildUnrecognizedWriteFailureResult(request, exception),
             _ => throw new InvalidOperationException(
                 $"Unsupported relational write exception classification '{classification.GetType().Name}'."
             ),
@@ -62,9 +83,9 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
     }
 
     private static RelationalWriteExecutorResult BuildTransientWriteConflictResult(
-        RelationalWriteExecutorRequest request
+        RelationalWriteOperationKind operationKind
     ) =>
-        request.OperationKind switch
+        operationKind switch
         {
             RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
                 new UpsertResult.UpsertFailureWriteConflict()
@@ -72,8 +93,30 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
             RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
                 new UpdateResult.UpdateFailureWriteConflict()
             ),
-            _ => throw new ArgumentOutOfRangeException(nameof(request), request.OperationKind, null),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
         };
+
+    /// <summary>
+    /// The client-facing message is deliberately generic, which would otherwise discard the only
+    /// record of what the engine actually reported. Logging the provider exception here keeps the
+    /// error number and text available for diagnosis without disclosing them.
+    /// </summary>
+    private RelationalWriteExecutorResult BuildUnrecognizedWriteFailureResult(
+        RelationalWriteExecutorRequest request,
+        DbException exception
+    )
+    {
+        _logger.LogError(
+            exception,
+            "Relational write for resource {Resource} failed with an unrecognized database error.",
+            RelationalWriteSupport.FormatResource(request.WritePlan.Model.Resource)
+        );
+
+        return RelationalWriteExecutorResults.BuildUnknownFailureResult(
+            request.OperationKind,
+            BuildUnrecognizedDatabaseWriteFailureMessage(request.WritePlan.Model.Resource)
+        );
+    }
 
     private RelationalWriteExecutorResult BuildConstraintViolationFailureResult(
         RelationalWriteExecutorRequest request,

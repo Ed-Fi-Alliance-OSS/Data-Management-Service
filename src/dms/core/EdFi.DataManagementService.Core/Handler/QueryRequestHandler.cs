@@ -78,10 +78,10 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
                 Headers: []
             ),
             QueryFailureKnownError => new FrontendResponse(StatusCode: 400, Body: null, Headers: []),
-            UnknownFailure failure => new FrontendResponse(
-                StatusCode: 500,
-                Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
-                Headers: []
+            UnknownFailure failure => CreateUnknownFailureResponse(
+                _logger,
+                requestInfo,
+                failure.FailureMessage
             ),
             _ => new FrontendResponse(
                 StatusCode: 500,

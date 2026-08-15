@@ -46,6 +46,7 @@ public static class FailureResponse
         $"{_badRequestTypePrefix}:parameter-validation-failed";
     private static readonly string _unsupportedMediaTypeType = $"{_typePrefix}:unsupported-media-type";
     private static readonly string _tooManyRequestsType = $"{_typePrefix}:too-many-requests";
+    private static readonly string _serviceUnavailableType = $"{_typePrefix}:service-unavailable";
 
     internal static JsonObject CreateBaseJsonObject(
         string detail,
@@ -248,6 +249,23 @@ public static class FailureResponse
             correlationId: traceId.Value,
             validationErrors: [],
             errors: errors
+        );
+
+    /// <summary>
+    /// Produces the 503 problem details served when the backend is shedding load, so a client reads
+    /// the failure as retriable rather than as a rejected request. Retry timing is carried by the
+    /// Retry-After response header when it is known, so the body stays constant either way, and the
+    /// internal reason is logged rather than disclosed.
+    /// </summary>
+    public static JsonNode ForServiceUnavailable(TraceId traceId) =>
+        CreateBaseJsonObject(
+            detail: "The service is temporarily unable to handle the request. Retry the request later.",
+            type: _serviceUnavailableType,
+            title: "Service Unavailable",
+            status: 503,
+            correlationId: traceId.Value,
+            validationErrors: [],
+            errors: []
         );
 
     /// <summary>
