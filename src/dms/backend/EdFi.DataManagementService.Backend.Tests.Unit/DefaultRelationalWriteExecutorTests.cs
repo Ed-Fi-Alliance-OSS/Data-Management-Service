@@ -21,6 +21,7 @@ using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Profile;
 using FakeItEasy;
 using FluentAssertions;
+using FluentAssertions.Execution;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
@@ -2672,6 +2673,63 @@ public class Given_Default_Relational_Write_Executor
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
     }
 
+    /// <summary>
+    /// A commit that fails on the client - a command timeout, a connection lost waiting for the
+    /// acknowledgement - may have been applied in full by the server. Handing the retry pipeline a
+    /// write conflict would replay it, and a replayed write answers for the state the first attempt
+    /// already produced: a re-run DELETE reads as 404, a re-run conditional write as 412. Reporting
+    /// a transient database condition as a client error is the defect this whole change exists to
+    /// remove, so an indeterminate commit must stay off the retry path.
+    /// </summary>
+    [TestCase(RelationalWriteOperationKind.Post)]
+    [TestCase(RelationalWriteOperationKind.Put)]
+    public async Task It_does_not_retry_a_commit_whose_outcome_is_indeterminate(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        var request = CreateRequest(
+            operationKind,
+            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _writeExceptionClassifier.IsTransientFailureToReturn = false;
+        _writeExceptionClassifier.ClassificationToReturn = RelationalWriteExceptionClassification
+            .IndeterminateOutcomeFailure
+            .Instance;
+        _writeSessionFactory.Session.CommitExceptionToThrow = new StubDbException(
+            "Execution Timeout Expired."
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        using (new AssertionScope())
+        {
+            switch (operationKind)
+            {
+                case RelationalWriteOperationKind.Post:
+                    var upsert = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
+                    upsert.Result.Should().BeOfType<UpsertResult.UnknownFailure>();
+                    upsert.Result.Should().NotBeOfType<UpsertResult.UpsertFailureWriteConflict>();
+                    break;
+                case RelationalWriteOperationKind.Put:
+                    var update = result.Should().BeOfType<RelationalWriteExecutorResult.Update>().Subject;
+                    update.Result.Should().BeOfType<UpdateResult.UnknownFailure>();
+                    update.Result.Should().NotBeOfType<UpdateResult.UpdateFailureWriteConflict>();
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null);
+            }
+
+            _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        }
+    }
+
     [Test]
     public async Task It_does_not_roll_back_a_guarded_no_op_whose_commit_fails()
     {
@@ -3076,10 +3134,12 @@ public class Given_Default_Relational_Write_Executor
 
     /// <summary>
     /// Opening the session is where the connection is acquired and the transaction begins, so it
-    /// fails transiently for the same reasons the statements inside it do - a pool timeout, a lock
-    /// wait, a dropped connection. The delete path already maps that to a retryable conflict; the
-    /// write path must not leave it as an unhandled exception just because it happens before the
-    /// first statement runs.
+    /// fails transiently for the same reasons the statements inside it do - a lock wait on the
+    /// first statement of the transaction, a dropped connection. The delete path already maps that
+    /// to a retryable conflict; the write path must not leave it as an unhandled exception just
+    /// because it happens before the first statement runs. Note that connection-pool exhaustion is
+    /// not among these: SqlClient raises it as an InvalidOperationException rather than a
+    /// DbException, so it does not reach this catch at all.
     /// </summary>
     [TestCase(RelationalWriteOperationKind.Post)]
     [TestCase(RelationalWriteOperationKind.Put)]
@@ -3090,7 +3150,7 @@ public class Given_Default_Relational_Write_Executor
         var request = CreateRequest(operationKind);
         _writeExceptionClassifier.IsTransientFailureToReturn = true;
         _writeSessionFactory.ExceptionToThrow = new StubDbException(
-            "Timeout expired. The timeout period elapsed prior to obtaining a connection from the pool."
+            "A transport-level error has occurred when sending the request to the server."
         );
 
         var result = await _sut.ExecuteAsync(request);

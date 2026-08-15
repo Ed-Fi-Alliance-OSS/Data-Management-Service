@@ -135,7 +135,8 @@ internal class UpdateByIdHandler(ILogger _logger, ResiliencePipeline _resilience
             UpdateFailureWriteConflict => new FrontendResponse(
                 StatusCode: 500,
                 Body: FailureResponse.ForSystemError(requestInfo.FrontendRequest.TraceId),
-                Headers: []
+                Headers: [],
+                ContentType: "application/problem+json"
             ),
             UpdateFailureImmutableIdentity failure => new FrontendResponse(
                 StatusCode: 400,

@@ -54,6 +54,7 @@ public static class DmsCoreServiceExtensions
         // reports it as a retriable 503 quote the same break duration.
         CircuitBreakerSettings breakerSettings = new();
         circuitBreakerConfiguration.Bind(breakerSettings);
+        breakerSettings.Validate();
         services.AddSingleton(breakerSettings);
 
         services

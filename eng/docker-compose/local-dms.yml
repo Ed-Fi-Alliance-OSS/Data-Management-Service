@@ -45,7 +45,7 @@ services:
       RateLimit__QueueLimit: ${DMS_RATE_LIMIT_QUEUE_LIMIT:-0}
       RateLimit__Window: ${DMS_RATE_LIMIT_WINDOW:-10}
       CircuitBreaker__FailureRatio: ${FAILURE_RATIO:-0.1}
-      CircuitBreaker__SamplingDurationSeconds: ${SAMPLING_DURATION_SECONDS:-10}
+      CircuitBreaker__SamplingDurationSeconds: ${SAMPLING_DURATION_SECONDS:-120}
       CircuitBreaker__MinimumThroughput: ${MINIMUM_THROUGHPUT:-20}
       CircuitBreaker__BreakDurationSeconds: ${BREAK_DURATION_SECONDS:-30}
       ConfigurationServiceSettings__BaseUrl: ${CONFIG_SERVICE_URL:-http://ed-fi-api-config:8081}

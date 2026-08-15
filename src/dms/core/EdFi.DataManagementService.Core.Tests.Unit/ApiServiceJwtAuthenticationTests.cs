@@ -145,7 +145,8 @@ public class ApiServiceJwtAuthenticationTests
             A.Fake<IServiceScopeFactory>(),
             A.Fake<CachedClaimSetProvider>(),
             A.Fake<IResourceDependencyGraphMLFactory>(),
-            A.Fake<IProfileService>()
+            A.Fake<IProfileService>(),
+            new CircuitBreakerSettings()
         );
 
         // Act - Use reflection to call the private GetCommonInitialSteps method
@@ -197,7 +198,8 @@ public class ApiServiceJwtAuthenticationTests
             A.Fake<IServiceScopeFactory>(),
             A.Fake<CachedClaimSetProvider>(),
             A.Fake<IResourceDependencyGraphMLFactory>(),
-            A.Fake<IProfileService>()
+            A.Fake<IProfileService>(),
+            new CircuitBreakerSettings()
         );
 
         // Act & Assert - Should throw InvalidOperationException

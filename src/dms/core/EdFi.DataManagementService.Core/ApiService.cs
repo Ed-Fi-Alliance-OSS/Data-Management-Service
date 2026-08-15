@@ -134,13 +134,14 @@ internal class ApiService : IApiService
         CachedClaimSetProvider cachedClaimSetProvider,
         IResourceDependencyGraphMLFactory resourceDependencyGraphMLFactory,
         IProfileService profileService,
-        // Registered by AddDmsDefaultConfiguration; optional so the many pipeline-construction tests
-        // that build this service directly keep compiling. Its only use is the Retry-After hint on a
-        // circuit-open 503, and the default of zero simply omits that header.
-        CircuitBreakerSettings? circuitBreakerSettings = null
+        // Registered by AddDmsDefaultConfiguration. Required rather than optional: its only use is
+        // the Retry-After hint on a circuit-open 503, and a defaulted instance would carry a zero
+        // break duration that silently drops the header instead of failing where it was forgotten.
+        CircuitBreakerSettings circuitBreakerSettings
     )
     {
-        _circuitBreakerSettings = circuitBreakerSettings ?? new CircuitBreakerSettings();
+        _circuitBreakerSettings =
+            circuitBreakerSettings ?? throw new ArgumentNullException(nameof(circuitBreakerSettings));
         _apiSchemaProvider = apiSchemaProvider;
         _effectiveApiSchemaProvider = effectiveApiSchemaProvider;
         _claimSetProvider = claimSetProvider;

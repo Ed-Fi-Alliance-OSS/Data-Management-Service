@@ -37,7 +37,7 @@ services:
       # "DATABASE_CONNECTION_STRING_ADMIN" can have alternate credentials with elevated permissions for creating database objects
       DATABASE_CONNECTION_STRING_ADMIN: ${DATABASE_CONNECTION_STRING_ADMIN:-host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};}
       CircuitBreaker__FailureRatio: ${FAILURE_RATIO:-0.1}
-      CircuitBreaker__SamplingDurationSeconds: ${SAMPLING_DURATION_SECONDS:-10}
+      CircuitBreaker__SamplingDurationSeconds: ${SAMPLING_DURATION_SECONDS:-120}
       CircuitBreaker__MinimumThroughput: ${MINIMUM_THROUGHPUT:-20}
       CircuitBreaker__BreakDurationSeconds: ${BREAK_DURATION_SECONDS:-30}
       RateLimit__PermitLimit: ${DMS_RATE_LIMIT_PERMIT_LIMIT:-20000}

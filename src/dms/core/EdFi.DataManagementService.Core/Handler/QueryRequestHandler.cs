@@ -75,7 +75,8 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
             QueryFailureRetryable => new FrontendResponse(
                 StatusCode: 500,
                 Body: FailureResponse.ForSystemError(requestInfo.FrontendRequest.TraceId),
-                Headers: []
+                Headers: [],
+                ContentType: "application/problem+json"
             ),
             QueryFailureKnownError => new FrontendResponse(StatusCode: 400, Body: null, Headers: []),
             UnknownFailure failure => CreateUnknownFailureResponse(

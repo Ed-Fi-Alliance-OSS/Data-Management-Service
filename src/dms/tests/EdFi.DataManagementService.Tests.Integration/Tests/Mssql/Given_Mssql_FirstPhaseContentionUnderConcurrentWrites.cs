@@ -5,11 +5,6 @@
 
 using System.Collections.Concurrent;
 using System.Net;
-using System.Text;
-using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Backend.Tests.Integration.Common;
-using EdFi.DataManagementService.Tests.Integration.Fixtures;
-using EdFi.DataManagementService.Tests.Integration.Mssql;
 using FluentAssertions;
 using FluentAssertions.Execution;
 
@@ -17,17 +12,17 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests.Mssql;
 
 /// <summary>
 /// Targets the write executor's first phase specifically. The first phase captures and locks the
-/// target, runs stored authorization, resolves references and hydrates state; a DbException raised
-/// there is rethrown unmapped (RelationalWriteFirstPhase rethrows anything that is not an
-/// authorization failure, and DefaultRelationalWriteExecutor rethrows it again because no
-/// executionRequest is resolved yet), unlike a second-phase failure which maps to a write-conflict
-/// result. This drives contention onto first-phase statements by mixing updates of a shared
-/// referenced document with inserts that resolve a reference to it.
+/// target, runs stored authorization, resolves references and hydrates state, and it reaches the
+/// database before any execution request has been resolved - so a DbException raised there has no
+/// resolved request to attribute a write failure to. Transient failures are mapped to the same
+/// write conflict a second-phase deadlock produces and retried; failures whose outcome is
+/// indeterminate are reported as server errors; anything else still surfaces unmapped. This drives
+/// contention onto first-phase statements by mixing updates of a shared referenced document with
+/// inserts that resolve a reference to it, and asserts that none of those paths can hand the client
+/// a 4xx or raw engine text.
 /// </summary>
-public sealed class Given_Mssql_FirstPhaseContentionUnderConcurrentWrites : MssqlApiIntegrationTestBase
+public sealed class Given_Mssql_FirstPhaseContentionUnderConcurrentWrites : MssqlConcurrentWriteLoadTestBase
 {
-    private const string Json = "application/json";
-
     // Overridable so the contention shape can be tuned without a rebuild: a deep queue on one hot
     // row produces lock-wait timeouts, while a shallow one lets genuine cycles form.
     private static readonly int UpdateWorkers = Tunable("DMS1400_UPDATE_WORKERS", 6);
@@ -39,24 +34,17 @@ public sealed class Given_Mssql_FirstPhaseContentionUnderConcurrentWrites : Mssq
     private static int Tunable(string name, int fallback) =>
         int.TryParse(Environment.GetEnvironmentVariable(name), out int value) && value > 0 ? value : fallback;
 
-    protected override FixtureKey Fixture => FixtureKey.AuthoritativeDs52;
-
     [Test]
     [Explicit("Concurrency load reproduction; drives a deliberate deadlock storm.")]
     public async Task It_never_reports_a_first_phase_database_failure_as_a_client_error()
     {
-        await MatchProductionIsolationAsync();
-
-        // The load deliberately starves the server, so a single request can outlast the default
-        // 100-second client timeout while it waits on locks and replays deadlocks. A client-side
-        // cancellation would be indistinguishable from the failure under test.
-        Harness.HttpClient.Timeout = TimeSpan.FromMinutes(10);
+        AllowRequestsToOutlastDefaultClientTimeout();
 
         string suffix = Guid.NewGuid().ToString("N")[..8];
         long schoolId = 1_000_000_000L + (Convert.ToInt64(suffix, 16) % 1_000_000_000L);
         string ns = $"uri://ed-fi.org/Dms1400First/{suffix}";
 
-        await SeedDescriptorsAsync(ns);
+        await SeedCoreDescriptorsAsync(ns);
         string schoolPath = await CreateSchoolAsync(ns, schoolId, suffix);
         string[] childPaths = await CreateSharedChildrenAsync(ns, schoolId, suffix);
 
@@ -137,7 +125,7 @@ public sealed class Given_Mssql_FirstPhaseContentionUnderConcurrentWrites : Mssq
 
         var failures = responses.Where(response => response.Status is not (200 or 201 or 204)).ToArray();
 
-        await ReportAsync(responses.Count, failures);
+        await ReportFailuresAsync($"=== {responses.Count} attempts, {failures.Length} failed ===", failures);
 
         var engineTextLeaks = failures
             .Where(failure =>
@@ -150,6 +138,18 @@ public sealed class Given_Mssql_FirstPhaseContentionUnderConcurrentWrites : Mssq
 
         using (new AssertionScope())
         {
+            // Without this the reproduction proves nothing: a run whose workers never collided
+            // satisfies both assertions below exactly as a fully fixed one does. Contention here
+            // surfaces as retry-exhausted server errors rather than as recorded deadlock graphs,
+            // because RCSI turns first-phase contention into lock convoys more often than cycles.
+            failures
+                .Should()
+                .NotBeEmpty(
+                    "the load must actually produce first-phase contention for the absence of client "
+                        + "errors to mean anything; every request succeeding means the workers never "
+                        + "collided and the code path under test was not reached"
+                );
+
             engineTextLeaks
                 .Should()
                 .BeEmpty("the raw database error text must never reach the client response body");
@@ -169,69 +169,6 @@ public sealed class Given_Mssql_FirstPhaseContentionUnderConcurrentWrites : Mssq
 
     private static (int Status, string Body) Tuple((HttpStatusCode Status, string Body) response) =>
         ((int)response.Status, response.Body);
-
-    private static async Task ReportAsync(
-        int attempts,
-        IReadOnlyCollection<(int Status, string Body)> failures
-    )
-    {
-        await TestContext.Out.WriteLineAsync($"=== {attempts} attempts, {failures.Count} failed ===");
-
-        foreach (
-            var group in failures
-                .GroupBy(failure => (failure.Status, Signature: SignatureOf(failure)))
-                .OrderByDescending(group => group.Count())
-        )
-        {
-            await TestContext.Out.WriteLineAsync(
-                $"--- status {group.Key.Status} x{group.Count()} --- {group.Key.Signature}"
-            );
-            await TestContext.Out.WriteLineAsync($"    {group.First().Body}");
-        }
-    }
-
-    private static string SignatureOf((int Status, string Body) failure)
-    {
-        JsonNode? body = TryParse(failure.Body);
-        if (body is null)
-        {
-            return failure.Body;
-        }
-
-        string type = body["type"]?.GetValue<string>() ?? "(no type)";
-        string errors = string.Join(
-            "; ",
-            (body["validationErrors"] as JsonObject ?? []).Select(pair =>
-                $"{pair.Key}={pair.Value?.ToJsonString()}"
-            )
-        );
-
-        return errors.Length == 0 ? type : $"{type} {errors}";
-    }
-
-    private static JsonNode? TryParse(string body)
-    {
-        try
-        {
-            return JsonNode.Parse(body);
-        }
-        catch (System.Text.Json.JsonException)
-        {
-            return null;
-        }
-    }
-
-    private async Task MatchProductionIsolationAsync()
-    {
-        string quoted = MssqlTestDatabaseHelper.QuoteIdentifier(Harness.DbConnection.Database);
-
-        await MssqlTestDatabaseHelper.ExecuteAdminNonQueryAsync(
-            $"ALTER DATABASE {quoted} SET READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE;"
-        );
-        await MssqlTestDatabaseHelper.ExecuteAdminNonQueryAsync(
-            $"ALTER DATABASE {quoted} SET ALLOW_SNAPSHOT_ISOLATION ON;"
-        );
-    }
 
     private async Task<string> CreateSchoolAsync(string ns, long schoolId, string suffix)
     {
@@ -260,128 +197,5 @@ public sealed class Given_Mssql_FirstPhaseContentionUnderConcurrentWrites : Mssq
         }
 
         return [.. paths];
-    }
-
-    private static JsonObject BuildSchool(string ns, long schoolId, string name, string? documentPath)
-    {
-        var school = new JsonObject
-        {
-            ["schoolId"] = schoolId,
-            ["nameOfInstitution"] = $"DMS-1400 School {name}",
-            ["educationOrganizationCategories"] = new JsonArray(
-                new JsonObject
-                {
-                    ["educationOrganizationCategoryDescriptor"] =
-                        $"{ns}/EducationOrganizationCategoryDescriptor#School",
-                }
-            ),
-            ["gradeLevels"] = new JsonArray(
-                new JsonObject { ["gradeLevelDescriptor"] = $"{ns}/GradeLevelDescriptor#Tenth grade" }
-            ),
-        };
-
-        AddIdFromPath(school, documentPath);
-        return school;
-    }
-
-    private static JsonObject BuildChartOfAccount(
-        string ns,
-        long schoolId,
-        string accountIdentifier,
-        int worker,
-        int index,
-        string? documentPath = null
-    )
-    {
-        var chartOfAccount = new JsonObject
-        {
-            ["accountIdentifier"] = accountIdentifier,
-            ["fiscalYear"] = 2024,
-            ["educationOrganizationReference"] = new JsonObject { ["educationOrganizationId"] = schoolId },
-            ["accountTypeDescriptor"] = $"{ns}/AccountTypeDescriptor#Revenue",
-            ["accountName"] = $"Account {worker}-{index}",
-            ["reportingTags"] = new JsonArray(
-                new JsonObject
-                {
-                    ["reportingTagDescriptor"] = $"{ns}/ReportingTagDescriptor#ESSA",
-                    ["tagValue"] = $"tag-{worker}-{index}",
-                }
-            ),
-        };
-
-        AddIdFromPath(chartOfAccount, documentPath);
-        return chartOfAccount;
-    }
-
-    /// <summary>PUT requires the document id in the body; it is the last path segment.</summary>
-    private static void AddIdFromPath(JsonObject document, string? documentPath)
-    {
-        if (documentPath is not null)
-        {
-            document["id"] = documentPath[(documentPath.LastIndexOf('/') + 1)..];
-        }
-    }
-
-    private async Task SeedDescriptorsAsync(string ns)
-    {
-        await SeedDescriptorAsync(
-            "/data/ed-fi/educationOrganizationCategoryDescriptors",
-            $"{ns}/EducationOrganizationCategoryDescriptor",
-            "School"
-        );
-        await SeedDescriptorAsync(
-            "/data/ed-fi/gradeLevelDescriptors",
-            $"{ns}/GradeLevelDescriptor",
-            "Tenth grade"
-        );
-        await SeedDescriptorAsync(
-            "/data/ed-fi/accountTypeDescriptors",
-            $"{ns}/AccountTypeDescriptor",
-            "Revenue"
-        );
-        await SeedDescriptorAsync(
-            "/data/ed-fi/reportingTagDescriptors",
-            $"{ns}/ReportingTagDescriptor",
-            "ESSA"
-        );
-    }
-
-    private Task SeedDescriptorAsync(string endpoint, string namespaceUri, string codeValue) =>
-        PostAsync(
-            endpoint,
-            new JsonObject
-            {
-                ["namespace"] = namespaceUri,
-                ["codeValue"] = codeValue,
-                ["shortDescription"] = codeValue,
-            }
-        );
-
-    private async Task<(HttpStatusCode Status, string Body)> PostAsync(string endpoint, JsonObject payload)
-    {
-        var (status, body, _) = await PostWithLocationAsync(endpoint, payload);
-        return (status, body);
-    }
-
-    private async Task<(HttpStatusCode Status, string Body, string? Location)> PostWithLocationAsync(
-        string endpoint,
-        JsonObject payload
-    )
-    {
-        using var content = new StringContent(payload.ToJsonString(), Encoding.UTF8, Json);
-        using HttpResponseMessage response = await Harness.HttpClient.PostAsync(endpoint, content);
-        return (
-            response.StatusCode,
-            await response.Content.ReadAsStringAsync(),
-            response.Headers.Location?.ToString()
-        );
-    }
-
-    private async Task<(HttpStatusCode Status, string Body)> PutAsync(string path, JsonObject payload)
-    {
-        using var content = new StringContent(payload.ToJsonString(), Encoding.UTF8, Json);
-        using var request = new HttpRequestMessage(HttpMethod.Put, path) { Content = content };
-        using HttpResponseMessage response = await Harness.HttpClient.SendAsync(request);
-        return (response.StatusCode, await response.Content.ReadAsStringAsync());
     }
 }

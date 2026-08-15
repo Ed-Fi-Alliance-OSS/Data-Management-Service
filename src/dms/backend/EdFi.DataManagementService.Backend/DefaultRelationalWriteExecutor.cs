@@ -121,7 +121,7 @@ internal sealed class DefaultRelationalWriteExecutor(
             createdSession = await _writeSessionFactory.CreateAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (DbException ex)
-            when (_databaseFailureResultMapper.TryBuildTransient(
+            when (_databaseFailureResultMapper.TryBuildWithoutResolvedRequest(
                     input.OperationKind,
                     ex,
                     out var sessionFailureResult
@@ -430,23 +430,25 @@ internal sealed class DefaultRelationalWriteExecutor(
             // A failure inside the first phase has no resolved request to attribute a write failure
             // to, and the phase's read-only statements cannot violate a write constraint — its
             // authorization denials were already mapped there — so it stays an unmapped fault exactly
-            // as the pre-adoption target lookup was. A transient failure is the exception: the phase
-            // locks the target, so a deadlock victim is at least as likely here as in the write, and
-            // transience depends on the exception alone rather than on a resolved request. Mapping it
-            // hands the retry pipeline the same write conflict a second-phase deadlock produces.
+            // as the pre-adoption target lookup was. Transient and indeterminate failures are the
+            // exception: the phase locks the target, so a deadlock victim is at least as likely here
+            // as in the write, and both properties depend on the exception alone rather than on a
+            // resolved request. Mapping a transient one hands the retry pipeline the same write
+            // conflict a second-phase deadlock produces; an indeterminate one is reported as a server
+            // error, never retried.
             if (executionRequest is null)
             {
-                bool isTransientFirstPhaseFailure = _databaseFailureResultMapper.TryBuildTransient(
+                bool isMappedFirstPhaseFailure = _databaseFailureResultMapper.TryBuildWithoutResolvedRequest(
                     input.OperationKind,
                     ex,
-                    out var transientFailureResult
+                    out var firstPhaseFailureResult
                 );
 
                 await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
 
-                if (isTransientFirstPhaseFailure)
+                if (isMappedFirstPhaseFailure)
                 {
-                    return transientFailureResult!;
+                    return firstPhaseFailureResult!;
                 }
 
                 throw;

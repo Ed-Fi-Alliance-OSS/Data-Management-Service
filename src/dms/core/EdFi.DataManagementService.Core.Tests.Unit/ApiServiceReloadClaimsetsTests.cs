@@ -90,7 +90,8 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
             A.Fake<IServiceScopeFactory>(),
             cachedClaimSetProvider, // Use as CachedClaimSetProvider
             fakeResourceDependencyGraphMLFactory,
-            A.Fake<IProfileService>()
+            A.Fake<IProfileService>(),
+            new CircuitBreakerSettings()
         );
     }
 
@@ -244,7 +245,8 @@ public class Given_ClaimsetReloadIsDisabled_When_ReloadClaimsetsAsyncIsCalled
             A.Fake<IServiceScopeFactory>(),
             cachedClaimSetProvider,
             fakeResourceDependencyGraphMLFactory,
-            A.Fake<IProfileService>()
+            A.Fake<IProfileService>(),
+            new CircuitBreakerSettings()
         );
     }
 

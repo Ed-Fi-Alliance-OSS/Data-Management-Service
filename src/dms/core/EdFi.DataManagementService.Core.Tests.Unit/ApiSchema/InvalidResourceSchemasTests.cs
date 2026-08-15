@@ -194,7 +194,8 @@ public class InvalidResourceSchemasTests
                 A.Fake<IServiceScopeFactory>(),
                 A.Fake<CachedClaimSetProvider>(),
                 A.Fake<IResourceDependencyGraphMLFactory>(),
-                A.Fake<IProfileService>()
+                A.Fake<IProfileService>(),
+                new CircuitBreakerSettings()
             );
         }
 

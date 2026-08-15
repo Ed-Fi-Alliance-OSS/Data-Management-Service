@@ -124,7 +124,8 @@ public class PipelineOrderingTests
                 A.Fake<IServiceScopeFactory>(),
                 A.Fake<CachedClaimSetProvider>(),
                 A.Fake<IResourceDependencyGraphMLFactory>(),
-                A.Fake<IProfileService>()
+                A.Fake<IProfileService>(),
+                new CircuitBreakerSettings()
             );
 
             _stepTypes = GetStepTypes(apiService, "CreateQueryPipeline");
@@ -317,7 +318,8 @@ public class PipelineOrderingTests
                 A.Fake<IServiceScopeFactory>(),
                 A.Fake<CachedClaimSetProvider>(),
                 A.Fake<IResourceDependencyGraphMLFactory>(),
-                A.Fake<IProfileService>()
+                A.Fake<IProfileService>(),
+                new CircuitBreakerSettings()
             );
 
             _stepTypes = GetStepTypes(apiService, "CreateGetTrackedChangesPipeline");
@@ -465,7 +467,8 @@ public class PipelineOrderingTests
                 A.Fake<IServiceScopeFactory>(),
                 A.Fake<CachedClaimSetProvider>(),
                 A.Fake<IResourceDependencyGraphMLFactory>(),
-                A.Fake<IProfileService>()
+                A.Fake<IProfileService>(),
+                new CircuitBreakerSettings()
             );
 
             return GetStepTypes(apiService, factoryMethodName);
@@ -580,7 +583,8 @@ public class PipelineOrderingTests
                 A.Fake<IServiceScopeFactory>(),
                 A.Fake<CachedClaimSetProvider>(),
                 A.Fake<IResourceDependencyGraphMLFactory>(),
-                profileService
+                profileService,
+                new CircuitBreakerSettings()
             );
 
             _stepTypes = GetStepTypes(apiService, "CreateGetTokenInfoPipeline");
@@ -747,7 +751,8 @@ public class PipelineOrderingTests
                 A.Fake<IServiceScopeFactory>(),
                 A.Fake<CachedClaimSetProvider>(),
                 A.Fake<IResourceDependencyGraphMLFactory>(),
-                A.Fake<IProfileService>()
+                A.Fake<IProfileService>(),
+                new CircuitBreakerSettings()
             );
 
             return apiService;

@@ -74,7 +74,8 @@ internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePip
             GetFailureRetryable => new FrontendResponse(
                 StatusCode: 500,
                 Body: FailureResponse.ForSystemError(requestInfo.FrontendRequest.TraceId),
-                Headers: []
+                Headers: [],
+                ContentType: "application/problem+json"
             ),
             GetFailureNotAuthorized notAuthorized => new FrontendResponse(
                 StatusCode: 403,

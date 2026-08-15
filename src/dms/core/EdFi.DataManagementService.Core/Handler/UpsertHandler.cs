@@ -135,7 +135,8 @@ internal class UpsertHandler(ILogger _logger, ResiliencePipeline _resiliencePipe
             UpsertFailureWriteConflict => new(
                 StatusCode: 500,
                 Body: ForSystemError(requestInfo.FrontendRequest.TraceId),
-                Headers: []
+                Headers: [],
+                ContentType: "application/problem+json"
             ),
             UpsertFailureETagMisMatch mismatch => new(
                 StatusCode: 412,

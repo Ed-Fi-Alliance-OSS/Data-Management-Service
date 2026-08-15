@@ -116,7 +116,8 @@ internal class DeleteByIdHandler(ILogger _logger, ResiliencePipeline _resilience
             DeleteFailureWriteConflict => new FrontendResponse(
                 StatusCode: 500,
                 Body: FailureResponse.ForSystemError(requestInfo.FrontendRequest.TraceId),
-                Headers: []
+                Headers: [],
+                ContentType: "application/problem+json"
             ),
             DeleteFailureETagMisMatch mismatch => new FrontendResponse(
                 StatusCode: 412,
