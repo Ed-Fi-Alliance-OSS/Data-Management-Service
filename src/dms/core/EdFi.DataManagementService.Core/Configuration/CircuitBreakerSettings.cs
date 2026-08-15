@@ -29,11 +29,11 @@ internal class CircuitBreakerSettings
     public double BreakDurationSeconds { get; set; } = 30;
 
     /// <summary>
-    /// Rejects the two misconfigurations that leave the breaker unable to do its job in opposite
-    /// directions: thresholds so low that one anomalous failure opens the circuit, and a throughput
-    /// floor so high relative to the sampling window that the circuit can never open at all. Both
-    /// are silent at runtime - the first sheds traffic nothing was wrong with, the second sheds
-    /// nothing while the backend is down - so they are caught at startup instead.
+    /// Rejects only values the resilience pipeline itself cannot accept, so the failure names the
+    /// setting here instead of surfacing later as a pipeline-construction error. Values that are
+    /// merely badly tuned are reported by <see cref="GetTuningWarnings"/> rather than thrown:
+    /// startup is the wrong place to refuse a configuration that works, and a deployment carrying
+    /// thresholds from an earlier release must be able to upgrade and then retune.
     /// </summary>
     public void Validate()
     {
@@ -57,17 +57,40 @@ internal class CircuitBreakerSettings
             throw new InvalidOperationException("CircuitBreaker:MinimumThroughput must be >= 2");
         }
 
-        if (BreakDurationSeconds <= 0)
-        {
-            throw new InvalidOperationException("CircuitBreaker:BreakDurationSeconds must be > 0");
-        }
-
-        if (FailureRatio * MinimumThroughput <= 1)
+        // Polly's own lower bound, matched here so an invalid value is rejected with a named setting
+        // rather than surfacing later as a pipeline-construction failure.
+        if (BreakDurationSeconds <= 0.5)
         {
             throw new InvalidOperationException(
-                "CircuitBreaker:FailureRatio multiplied by CircuitBreaker:MinimumThroughput must be "
-                    + "greater than 1, otherwise a single failure opens the circuit"
+                "CircuitBreaker:BreakDurationSeconds must be greater than 0.5"
             );
+        }
+    }
+
+    /// <summary>
+    /// Configurations the pipeline accepts but that leave the breaker unable to do its job. Both
+    /// are silent at runtime, which is why they are worth saying out loud at startup: the first
+    /// sheds all traffic over a single anomaly, the second sheds nothing at all while the backend
+    /// is down. Reported rather than thrown so an upgrade never fails on a working deployment.
+    /// </summary>
+    public IEnumerable<string> GetTuningWarnings()
+    {
+        if (FailureRatio * MinimumThroughput <= 1)
+        {
+            yield return $"FailureRatio ({FailureRatio}) multiplied by MinimumThroughput "
+                + $"({MinimumThroughput}) is {FailureRatio * MinimumThroughput}, so a single failed "
+                + "request can open the circuit and refuse all traffic for "
+                + $"{BreakDurationSeconds}s. Raise either value so the product exceeds 1.";
+        }
+
+        double throughputFloorPerSecond = MinimumThroughput / SamplingDurationSeconds;
+        if (throughputFloorPerSecond > 1)
+        {
+            yield return $"MinimumThroughput ({MinimumThroughput}) over SamplingDurationSeconds "
+                + $"({SamplingDurationSeconds}) requires a sustained {throughputFloorPerSecond:0.##} "
+                + "requests per second before the circuit can open at all; below that rate it stays "
+                + "closed even while the backend is failing every request. Lengthen the sampling "
+                + "window or lower the throughput floor.";
         }
     }
 }

@@ -60,7 +60,7 @@ public sealed class Given_Mssql_ConcurrentCreatesUnderDeadlockPressure : MssqlCo
 
         int accepted = responses.Count(response => response.Status is 200 or 201);
         var failures = responses.Where(response => response.Status is not (200 or 201)).ToArray();
-        long persisted = await CountPersistedChartOfAccountsAsync();
+        long persisted = await CountPersistedChartOfAccountsAsync(suffix);
         int deadlockGraphs = await CountDeadlockGraphsAsync() - deadlockGraphsBefore;
 
         await ReportFailuresAsync(
@@ -108,10 +108,21 @@ public sealed class Given_Mssql_ConcurrentCreatesUnderDeadlockPressure : MssqlCo
         }
     }
 
-    private async Task<long> CountPersistedChartOfAccountsAsync()
+    /// <summary>
+    /// Scoped to this run's identifier prefix rather than counting the whole table, so the count
+    /// compares against this load's accepted responses without depending on the leased database
+    /// holding no ChartOfAccount rows of its own.
+    /// </summary>
+    private async Task<long> CountPersistedChartOfAccountsAsync(string suffix)
     {
         await using var command = Harness.DbConnection.CreateCommand();
-        command.CommandText = "SELECT COUNT_BIG(1) FROM [edfi].[ChartOfAccount];";
+        command.CommandText =
+            "SELECT COUNT_BIG(1) FROM [edfi].[ChartOfAccount] WHERE [AccountIdentifier] LIKE @prefix;";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "@prefix";
+        parameter.Value = $"{suffix}-%";
+        command.Parameters.Add(parameter);
+
         return Convert.ToInt64(await command.ExecuteScalarAsync());
     }
 

@@ -121,17 +121,26 @@ internal sealed class DefaultRelationalWriteExecutor(
             createdSession = await _writeSessionFactory.CreateAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (DbException ex)
-            when (_databaseFailureResultMapper.TryBuildWithoutResolvedRequest(
+        {
+            // Acquiring the connection and beginning the transaction fail transiently for the same
+            // reasons the statements inside them do, so the attempt is retryable exactly as a
+            // deadlocked statement is. There is no session to roll back: nothing was opened.
+            //
+            // Mapped in the catch body rather than in an exception filter: the mapper logs, and an
+            // exception thrown inside a filter is swallowed by the CLR, which would silently turn
+            // the mapping into "no match" and rethrow the original with no record of why.
+            if (
+                _databaseFailureResultMapper.TryBuildWithoutResolvedRequest(
                     input.OperationKind,
                     ex,
                     out var sessionFailureResult
                 )
             )
-        {
-            // Acquiring the connection and beginning the transaction fail transiently for the same
-            // reasons the statements inside them do, so the attempt is retryable exactly as a
-            // deadlocked statement is. There is no session to roll back: nothing was opened.
-            return sessionFailureResult!;
+            {
+                return sessionFailureResult!;
+            }
+
+            throw;
         }
 
         await using var writeSession = createdSession;
@@ -438,11 +447,25 @@ internal sealed class DefaultRelationalWriteExecutor(
             // error, never retried.
             if (executionRequest is null)
             {
-                bool isMappedFirstPhaseFailure = _databaseFailureResultMapper.TryBuildWithoutResolvedRequest(
-                    input.OperationKind,
-                    ex,
-                    out var firstPhaseFailureResult
-                );
+                bool isMappedFirstPhaseFailure;
+                RelationalWriteExecutorResult? firstPhaseFailureResult;
+
+                try
+                {
+                    isMappedFirstPhaseFailure = _databaseFailureResultMapper.TryBuildWithoutResolvedRequest(
+                        input.OperationKind,
+                        ex,
+                        out firstPhaseFailureResult
+                    );
+                }
+                catch
+                {
+                    // Matches the resolved-request path below: a mapper fault must not cost the
+                    // rollback, or the session would be disposed with the transaction still pending
+                    // and the original failure replaced by an unrelated one.
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    throw;
+                }
 
                 await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
 

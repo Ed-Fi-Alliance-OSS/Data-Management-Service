@@ -33,8 +33,8 @@ ALLOW_IDENTITY_UPDATE_OVERRIDES=<Comma separated list of resource names that all
 USE_LEGACY_DOCUMENT_ID_ORDERING_FOR_CHANGE_QUERIES=<Boolean, restores legacy DocumentId ordering for change-version-filtered queries (maps to AppSettings__UseLegacyDocumentIdOrderingForChangeQueries). Default: false>
 FAILURE_RATIO=<decimal between 0 and 1 indicating the failure to success ratio at which the backend circuit breaker will break. Eg. 0.1 represents 10%>
 SAMPLING_DURATION_SECONDS=<This is the duration in seconds of the sampling over which failure ratios are assessed. It must be long enough to accumulate MINIMUM_THROUGHPUT calls at the deployment's quietest sustained request rate, or the circuit can never open. Eg. 120>
-MINIMUM_THROUGHPUT=<Integer, this many actions or more must pass through the circuit in the time-slice, for statistics to be considered significant and the circuit-breaker to come into action. The minimum value is 2.>
-BREAK_DURATION_SECONDS=<The number of seconds a broken circuit will stay open before resetting. Eg. 30>
+MINIMUM_THROUGHPUT=<Integer, this many actions or more must pass through the circuit in the time-slice, for statistics to be considered significant and the circuit-breaker to come into action. The minimum accepted value is 2, but keep FAILURE_RATIO multiplied by MINIMUM_THROUGHPUT above 1 so a single failed request cannot open the circuit.>
+BREAK_DURATION_SECONDS=<The number of seconds a broken circuit will stay open before resetting. Must be greater than 0.5. Eg. 30>
 ```
 
 OTLP log export is also available, disabled by default, through the

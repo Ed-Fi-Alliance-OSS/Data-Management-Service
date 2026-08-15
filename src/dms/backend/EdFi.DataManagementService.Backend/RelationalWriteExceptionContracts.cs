@@ -40,9 +40,12 @@ public interface IRelationalWriteExceptionClassifier
     /// Reports whether the exception represents a transient, retry-eligible database failure
     /// (deadlock victim, serialization failure, lock-request timeout). Every such failure must be
     /// one the server raised, because that is what proves the transaction did not commit and makes
-    /// replaying the whole operation safe. A failure whose outcome the client cannot determine -
-    /// a command timeout, a connection lost mid-commit - must be classified as
-    /// <see cref="RelationalWriteExceptionClassification.IndeterminateOutcomeFailure"/> instead.
+    /// replaying the whole operation safe. A failure raised on the client side leaves the outcome
+    /// unknown and must be excluded, whether or not the provider also classifies it: a provider that
+    /// recognizes such a failure should report
+    /// <see cref="RelationalWriteExceptionClassification.IndeterminateOutcomeFailure"/>, and one
+    /// that does not leaves it unrecognized. Both are reported as server errors and neither is
+    /// retried, so the distinction is one of diagnosis, not of safety.
     /// </summary>
     bool IsTransientFailure(DbException exception);
 }

@@ -48,6 +48,8 @@ public sealed class Given_Mssql_FirstPhaseContentionUnderConcurrentWrites : Mssq
         string schoolPath = await CreateSchoolAsync(ns, schoolId, suffix);
         string[] childPaths = await CreateSharedChildrenAsync(ns, schoolId, suffix);
 
+        long lockWaitsBefore = await CountLockWaitsAsync();
+
         ConcurrentBag<(int Status, string Body)> responses = [];
 
         var updateSchool = Enumerable
@@ -124,8 +126,12 @@ public sealed class Given_Mssql_FirstPhaseContentionUnderConcurrentWrites : Mssq
         await Task.WhenAll(updateSchool.Concat(insertChildren).Concat(updateChildren));
 
         var failures = responses.Where(response => response.Status is not (200 or 201 or 204)).ToArray();
+        long lockWaits = await CountLockWaitsAsync() - lockWaitsBefore;
 
-        await ReportFailuresAsync($"=== {responses.Count} attempts, {failures.Length} failed ===", failures);
+        await ReportFailuresAsync(
+            $"=== {responses.Count} attempts, {failures.Length} failed; {lockWaits} lock wait(s) ===",
+            failures
+        );
 
         var engineTextLeaks = failures
             .Where(failure =>
@@ -139,15 +145,15 @@ public sealed class Given_Mssql_FirstPhaseContentionUnderConcurrentWrites : Mssq
         using (new AssertionScope())
         {
             // Without this the reproduction proves nothing: a run whose workers never collided
-            // satisfies both assertions below exactly as a fully fixed one does. Contention here
-            // surfaces as retry-exhausted server errors rather than as recorded deadlock graphs,
-            // because RCSI turns first-phase contention into lock convoys more often than cycles.
-            failures
+            // satisfies both assertions below exactly as a fully fixed one does. Measured on the
+            // server rather than inferred from responses, so it neither passes on an unrelated
+            // failure nor fails when the retry pipeline absorbs the contention into successes.
+            lockWaits
                 .Should()
-                .NotBeEmpty(
-                    "the load must actually produce first-phase contention for the absence of client "
-                        + "errors to mean anything; every request succeeding means the workers never "
-                        + "collided and the code path under test was not reached"
+                .BeGreaterThan(
+                    0,
+                    "the load must actually make writers wait on each other's locks for the absence "
+                        + "of client errors to mean anything"
                 );
 
             engineTextLeaks

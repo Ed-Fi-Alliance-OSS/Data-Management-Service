@@ -52,14 +52,19 @@ internal class CoreExceptionLoggingMiddleware(ILogger _logger, TimeSpan? _circui
             requestInfo.CaughtException = ex;
             requestInfo.FrontendResponse = CreateSystemErrorResponse(requestInfo.FrontendRequest.TraceId);
         }
-        catch (BrokenCircuitException ex)
+        catch (BrokenCircuitException)
         {
             // The circuit is open because the backend is shedding load, so the request never reached
             // the database and is safe to replay. Serving it as a retriable 503 with the break
             // duration as Retry-After is what keeps a client from treating a transient outage as a
-            // permanent rejection and dropping the document. The exception is captured rather than
-            // disclosed: its message names an internal resilience component.
-            requestInfo.CaughtException = ex;
+            // permanent rejection and dropping the document.
+            //
+            // Deliberately not recorded as a caught exception. This is the designed outcome of a
+            // mechanism that already announced itself: the breaker logs the transition once when it
+            // opens, and each refusal is visible as a 503 in the request log. Attaching the
+            // exception would instead emit one error-level entry carrying a full stack trace for
+            // every request refused during the break - under bulk load, thousands of copies of a
+            // fact already reported.
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 503,
                 Body: FailureResponse.ForServiceUnavailable(requestInfo.FrontendRequest.TraceId),

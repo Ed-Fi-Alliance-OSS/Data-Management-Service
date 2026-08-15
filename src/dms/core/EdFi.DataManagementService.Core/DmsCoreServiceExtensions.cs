@@ -55,6 +55,11 @@ public static class DmsCoreServiceExtensions
         CircuitBreakerSettings breakerSettings = new();
         circuitBreakerConfiguration.Bind(breakerSettings);
         breakerSettings.Validate();
+        foreach (string tuningWarning in breakerSettings.GetTuningWarnings())
+        {
+            logger.Warning("Circuit breaker configuration: {TuningWarning}", tuningWarning);
+        }
+
         services.AddSingleton(breakerSettings);
 
         services

@@ -353,10 +353,19 @@ selection the API's other error responses use.
 
 DMS wraps every backend call in a Polly resilience pipeline whose outermost
 strategy is a circuit breaker.
-It counts only backend failures DMS could not classify - the ones that
-indicate the backend itself is unhealthy rather than the request being wrong.
+It counts backend calls that *return* an unknown-failure result - the outcome
+DMS uses for a failure it cannot turn into a specific answer for the client.
 Recognized outcomes such as a deadlock victim, a constraint violation or a
-validation failure never count toward it.
+validation failure never count toward it, because each maps to its own result.
+Two consequences are worth knowing:
+
+- A database failure whose outcome is indeterminate, such as a command timeout,
+  is recognized by the classifier yet still reported as an unknown failure, so
+  it does count toward the breaker.
+  That is deliberate: a sustained run of them is the signal that the backend is
+  unhealthy.
+- A failure that escapes as an exception rather than a result does not count.
+  The breaker's predicate inspects returned results only.
 
 When the breaker opens, every request that would reach the backend is refused
 for `BreakDurationSeconds`.
@@ -370,8 +379,16 @@ DELETE alike, so an open breaker is a whole-API pause, not a write-only one.
 | MinimumThroughput       | Minimum number of calls that must occur inside the sampling window before the breaker may open at all. Polly requires at least 2.                                |
 | BreakDurationSeconds    | How long the breaker stays open before it admits a trial call.                                                                                                   |
 
-Two independent rules bound these values, and the shipped defaults
-(`0.1` / `120` / `20` / `30`) satisfy both:
+`FailureRatio` must be within `(0, 1]`, `MinimumThroughput` at least 2, and both
+duration values greater than 0.5 seconds; DMS refuses to start otherwise,
+naming the offending setting rather than letting the resilience pipeline fail
+later.
+
+Beyond those hard bounds, two independent rules bound these values, and the
+shipped defaults (`0.1` / `120` / `20` / `30`) satisfy both.
+A configuration that violates either still starts and still works - it is
+logged as a warning at startup, not rejected - but the breaker will not behave
+usefully:
 
 - `FailureRatio * MinimumThroughput` must exceed 1.
   Otherwise a single anomalous failure satisfies the ratio and opens the
@@ -392,8 +409,11 @@ as `application/problem+json`.
 `Retry-After` carries the configured `BreakDurationSeconds`, rounded up to
 whole seconds.
 It is the full break duration rather than the time remaining in the current
-break, so it is always a safe lower bound on when the backend will next
-accept work.
+break, so a client that is refused partway through a break is told to wait
+longer than it strictly needs to.
+That errs deliberately: the value can never send a client back early, and
+retrying early is what turns one break into a queue of retries arriving the
+moment it lifts.
 The request never reached the backend, so it is safe for a client to reissue
 it unchanged.
 

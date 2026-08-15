@@ -122,6 +122,29 @@ public abstract class MssqlConcurrentWriteLoadTestBase : MssqlApiIntegrationTest
         return Convert.ToInt32(await command.ExecuteScalarAsync());
     }
 
+    /// <summary>
+    /// Counts tasks that have waited on a lock, server-wide and cumulative. A delta across a load
+    /// proves the workers actually contended, and it says so independently of what any request
+    /// returned: contention that the retry pipeline absorbed into successful responses still shows
+    /// up here, while a run whose workers never collided cannot fake it. That independence is what
+    /// makes it usable as the precondition for an assertion about response status.
+    /// </summary>
+    protected static async Task<long> CountLockWaitsAsync()
+    {
+        await using var connection = new SqlConnection(
+            MssqlTestDatabaseHelper.BuildConnectionString("master")
+        );
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT ISNULL(SUM(waiting_tasks_count), 0)
+            FROM sys.dm_os_wait_stats
+            WHERE wait_type LIKE 'LCK[_]%';
+            """;
+
+        return Convert.ToInt64(await command.ExecuteScalarAsync());
+    }
+
     protected async Task SeedCoreDescriptorsAsync(string ns)
     {
         await SeedDescriptorAsync(

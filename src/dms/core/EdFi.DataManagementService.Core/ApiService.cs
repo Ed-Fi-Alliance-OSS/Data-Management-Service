@@ -134,9 +134,9 @@ internal class ApiService : IApiService
         CachedClaimSetProvider cachedClaimSetProvider,
         IResourceDependencyGraphMLFactory resourceDependencyGraphMLFactory,
         IProfileService profileService,
-        // Registered by AddDmsDefaultConfiguration. Required rather than optional: its only use is
-        // the Retry-After hint on a circuit-open 503, and a defaulted instance would carry a zero
-        // break duration that silently drops the header instead of failing where it was forgotten.
+        // Registered by AddDmsDefaultConfiguration. Required rather than optional so the break
+        // duration behind the circuit-open 503's Retry-After is always the one the breaker was
+        // actually built with, rather than whatever a defaulted instance happens to carry.
         CircuitBreakerSettings circuitBreakerSettings
     )
     {
