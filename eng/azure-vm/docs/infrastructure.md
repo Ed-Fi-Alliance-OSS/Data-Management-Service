@@ -203,10 +203,12 @@ Order used to stand the environment up (and that a re-deploy should follow):
    exits fatally (crash-loop, e.g. "Realm does not exist"). This is intentional fail-fast
    (upstream `DMS-1093` / `DMS-1109` surface the failing phase to a status file). Always run
    `bootstrap.ps1` before starting `st-dms` / `mt-dms`.
-4. **Bulk-load tuning.** A parallel BulkLoadClient trips the DMS rate limiter (429) and the
-   resilience circuit breaker (`FAILURE_RATIO=0.01`), which can silently corrupt a partial
-   load. Load **descriptors first**, then resources, and raise the rate limit before a
-   parallel run. (The clone / template-restore paths avoid this entirely.)
+4. **Bulk-load tuning.** A parallel BulkLoadClient trips the DMS rate limiter (429) and can
+   still trip the resilience circuit breaker (`FAILURE_RATIO=0.1`, `MINIMUM_THROUGHPUT=20`).
+   Load **descriptors first**, then resources, and raise the rate limit before a parallel run.
+   (The clone / template-restore paths avoid this entirely.) A break is now reported as 503
+   with `Retry-After` instead of a 400, so it no longer silently corrupts a partial load for a
+   client that retries 5xx.
 5. **`api-schema-tools` distribution.** The SchemaTools CLI (formerly `dms-schema`) is published
    as the `EdFi.Api.SchemaTools` .NET tool on the Ed-Fi Azure Artifacts feed (`DMS-1242`):
    `dotnet tool install --global EdFi.Api.SchemaTools --source <Ed-Fi feed>` — this needs a
