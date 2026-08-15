@@ -92,9 +92,11 @@ namespace EdFi.DataManagementService.Core.Middleware
                     return;
                 }
 
-                // Only the parse itself is guarded. A failure raised by a later step is not a
-                // client validation error and its message is internal, so it must travel on to
-                // the pipeline's exception handler instead of being answered as a 400 here.
+                // Only the parse itself is guarded, and only for the one exception that means the
+                // body was malformed. A failure raised by a later step, or by anything other than
+                // the JSON grammar, is not a client validation error and its message is internal,
+                // so it must travel on to the pipeline's exception handler instead of being
+                // answered as a 400 here.
                 try
                 {
                     JsonNode? body = JsonNode.Parse(requestInfo.FrontendRequest.Body);
@@ -103,7 +105,7 @@ namespace EdFi.DataManagementService.Core.Middleware
 
                     requestInfo.ParsedBody = body;
                 }
-                catch (Exception ex)
+                catch (System.Text.Json.JsonException ex)
                 {
                     _logger.LogDebug(
                         ex,

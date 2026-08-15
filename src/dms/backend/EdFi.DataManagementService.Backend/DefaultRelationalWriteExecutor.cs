@@ -122,9 +122,14 @@ internal sealed class DefaultRelationalWriteExecutor(
         }
         catch (DbException ex)
         {
-            // Acquiring the connection and beginning the transaction fail transiently for the same
-            // reasons the statements inside them do, so the attempt is retryable exactly as a
-            // deadlocked statement is. There is no session to roll back: nothing was opened.
+            // Session creation sits outside the main try below, so a provider failure here took a
+            // different path from an identical failure one statement later: it escaped the executor
+            // entirely. It is routed through the same mapper instead, and there is no session to
+            // roll back because nothing was opened.
+            //
+            // Of the mapper's outcomes, the one reachable here today is the indeterminate timeout.
+            // Neither shipped classifier calls a connection-open failure transient, so the retryable
+            // branch is a property of the mapper rather than a path this catch is known to produce.
             //
             // Mapped in the catch body rather than in an exception filter: the mapper logs, and an
             // exception thrown inside a filter is swallowed by the CLR, which would silently turn

@@ -299,6 +299,11 @@ public class ParseBodyMiddlewareTests
     /// The middleware owns body parsing only. A failure raised further down the pipeline is not a
     /// client validation error, and its message is internal, so the exception must travel on to the
     /// pipeline's exception handler rather than being answered here.
+    ///
+    /// Only the pre-parsed case below is a regression guard. The middleware-parsed case passed
+    /// before the fix too, because on that path the downstream call already sat outside the guarded
+    /// block; the pre-parsed path is the one that ran the whole pipeline inside it, and the one the
+    /// production frontend always takes.
     /// </summary>
     [TestFixture]
     [Parallelizable]

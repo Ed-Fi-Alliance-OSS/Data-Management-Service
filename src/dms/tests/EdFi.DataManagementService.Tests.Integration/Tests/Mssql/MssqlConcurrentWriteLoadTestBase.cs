@@ -98,7 +98,9 @@ public abstract class MssqlConcurrentWriteLoadTestBase : MssqlApiIntegrationTest
 
     /// <summary>
     /// The system_health ring buffer is server-wide and survives across tests, so only the growth
-    /// over a load is attributable to it.
+    /// over a load is attributable to it. That growth is a lower bound: the buffer is bounded and
+    /// evicts oldest-first, so a storm large enough to fill it under-reports itself. Useful for
+    /// "did deadlocks happen at all", not for counting them.
     /// </summary>
     protected static async Task<int> CountDeadlockGraphsAsync()
     {
@@ -123,11 +125,16 @@ public abstract class MssqlConcurrentWriteLoadTestBase : MssqlApiIntegrationTest
     }
 
     /// <summary>
-    /// Counts tasks that have waited on a lock, server-wide and cumulative. A delta across a load
-    /// proves the workers actually contended, and it says so independently of what any request
-    /// returned: contention that the retry pipeline absorbed into successful responses still shows
-    /// up here, while a run whose workers never collided cannot fake it. That independence is what
-    /// makes it usable as the precondition for an assertion about response status.
+    /// Counts tasks that have waited on a lock. Its value over a load is a contention signal
+    /// independent of what any request returned: contention the retry pipeline absorbed into
+    /// successful responses still shows up here, which is what makes it usable as the precondition
+    /// for an assertion about response status.
+    ///
+    /// Read it as a floor, not as attribution. The counter is instance-wide and cumulative across
+    /// every database on the server, so a delta is only this load's work when nothing else is
+    /// running against the instance - true for these reproductions, which are
+    /// <see cref="ExplicitAttribute"/> and driven one at a time, but not a property the query can
+    /// enforce.
     /// </summary>
     protected static async Task<long> CountLockWaitsAsync()
     {

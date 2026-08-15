@@ -3133,13 +3133,13 @@ public class Given_Default_Relational_Write_Executor
     }
 
     /// <summary>
-    /// Opening the session is where the connection is acquired and the transaction begins, so it
-    /// fails transiently for the same reasons the statements inside it do - a lock wait on the
-    /// first statement of the transaction, a dropped connection. The delete path already maps that
-    /// to a retryable conflict; the write path must not leave it as an unhandled exception just
-    /// because it happens before the first statement runs. Note that connection-pool exhaustion is
-    /// not among these: SqlClient raises it as an InvalidOperationException rather than a
-    /// DbException, so it does not reach this catch at all.
+    /// Session creation sits outside the executor's main try, so a provider failure there took a
+    /// different path from an identical failure one statement later. This pins the wiring: whatever
+    /// the provider's classifier calls transient at session creation maps to the same retryable
+    /// conflict it would produce inside the transaction, rather than escaping unhandled. Which
+    /// engine codes qualify is the classifier's business and is asserted against the real
+    /// classifier in MssqlRelationalWriteExceptionClassifierTests; the stub here only supplies a
+    /// DbException the fake classifier has been told to treat as transient.
     /// </summary>
     [TestCase(RelationalWriteOperationKind.Post)]
     [TestCase(RelationalWriteOperationKind.Put)]
@@ -3150,7 +3150,7 @@ public class Given_Default_Relational_Write_Executor
         var request = CreateRequest(operationKind);
         _writeExceptionClassifier.IsTransientFailureToReturn = true;
         _writeSessionFactory.ExceptionToThrow = new StubDbException(
-            "A transport-level error has occurred when sending the request to the server."
+            "Provider failure the classifier reports as transient."
         );
 
         var result = await _sut.ExecuteAsync(request);

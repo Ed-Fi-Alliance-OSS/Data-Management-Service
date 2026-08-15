@@ -55,11 +55,13 @@ public class Given_CircuitBreakerSettings_Are_Validated
     }
 
     /// <summary>
-    /// The resilience pipeline rejects a duration of half a second or less, so validating it here
-    /// is what makes the failure name the setting instead of surfacing later as a pipeline error.
+    /// The resilience pipeline declares both durations as an inclusive range from half a second to
+    /// one day, and rejects anything outside it. Validating the same range here is what makes the
+    /// failure name the setting instead of surfacing later as a pipeline-construction error.
     /// </summary>
-    [TestCase(0.5)]
-    [TestCase(0.1)]
+    [TestCase(0.4)]
+    [TestCase(0)]
+    [TestCase(86401)]
     public void It_rejects_durations_the_resilience_pipeline_will_not_accept(double seconds)
     {
         var samplingSettings = Valid();
@@ -74,6 +76,56 @@ public class Given_CircuitBreakerSettings_Are_Validated
             .WithMessage("*SamplingDurationSeconds*");
         breakSettings
             .Invoking(settings => settings.Validate())
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*BreakDurationSeconds*");
+    }
+
+    /// <summary>
+    /// Both ends of the pipeline's range are inclusive. Its prose says "greater than 0.5 seconds"
+    /// while the range attribute it enforces accepts exactly 0.5, and validating against the prose
+    /// would refuse a configuration the pipeline runs happily.
+    /// </summary>
+    [TestCase(0.5)]
+    [TestCase(86400)]
+    public void It_accepts_the_durations_at_the_edges_of_the_pipeline_range(double seconds)
+    {
+        var samplingSettings = Valid();
+        samplingSettings.SamplingDurationSeconds = seconds;
+        var breakSettings = Valid();
+        breakSettings.BreakDurationSeconds = seconds;
+
+        samplingSettings.Invoking(settings => settings.Validate()).Should().NotThrow();
+        breakSettings.Invoking(settings => settings.Validate()).Should().NotThrow();
+    }
+
+    /// <summary>
+    /// Every ordered comparison against NaN is false, so a non-finite value passes range checks
+    /// written the obvious way and fails later inside TimeSpan or the strategy builder - the
+    /// deferred, unnamed failure this validation exists to prevent.
+    /// </summary>
+    [Test]
+    public void It_rejects_non_finite_values()
+    {
+        var ratio = Valid();
+        ratio.FailureRatio = double.NaN;
+        var sampling = Valid();
+        sampling.SamplingDurationSeconds = double.PositiveInfinity;
+        var breakDuration = Valid();
+        breakDuration.BreakDurationSeconds = double.NaN;
+
+        ratio
+            .Invoking(s => s.Validate())
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*FailureRatio*");
+        sampling
+            .Invoking(s => s.Validate())
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*SamplingDurationSeconds*");
+        breakDuration
+            .Invoking(s => s.Validate())
             .Should()
             .Throw<InvalidOperationException>()
             .WithMessage("*BreakDurationSeconds*");

@@ -359,11 +359,16 @@ Recognized outcomes such as a deadlock victim, a constraint violation or a
 validation failure never count toward it, because each maps to its own result.
 Two consequences are worth knowing:
 
-- A database failure whose outcome is indeterminate, such as a command timeout,
-  is recognized by the classifier yet still reported as an unknown failure, so
-  it does count toward the breaker.
+- On SQL Server, a write failure whose outcome is indeterminate - a command
+  timeout, which expires on the client and leaves it unknown whether the server
+  applied the write - is recognized by the classifier yet still reported as an
+  unknown failure, so it does count toward the breaker.
   That is deliberate: a sustained run of them is the signal that the backend is
   unhealthy.
+  The PostgreSQL classifier does not currently recognize this case; an Npgsql
+  client-side timeout is not a `PostgresException`, so it escapes as an
+  exception instead and falls under the next point.
+  Either way it is never retried and never answered as a client error.
 - A failure that escapes as an exception rather than a result does not count.
   The breaker's predicate inspects returned results only.
 
@@ -386,9 +391,8 @@ later.
 
 Beyond those hard bounds, two independent rules bound these values, and the
 shipped defaults (`0.1` / `120` / `20` / `30`) satisfy both.
-A configuration that violates either still starts and still works - it is
-logged as a warning at startup, not rejected - but the breaker will not behave
-usefully:
+A configuration that violates either still starts and still works, but the
+breaker will not behave usefully:
 
 - `FailureRatio * MinimumThroughput` must exceed 1.
   Otherwise a single anomalous failure satisfies the ratio and opens the
@@ -400,6 +404,13 @@ usefully:
   them failed, so a value set too high silently disables load shedding for a
   low-traffic deployment even when its database is completely down.
   At the defaults that floor is 20 / 120 = 0.17 requests per second.
+
+DMS logs a startup warning when the first rule is violated, and when the
+throughput floor exceeds one request per second.
+It cannot check the second rule properly: only the operator knows the
+deployment's quietest sustained rate, so the warning fires on an obviously
+high floor rather than on a genuinely unreachable one.
+Compare the floor against your own traffic.
 
 ### Rejection response
 

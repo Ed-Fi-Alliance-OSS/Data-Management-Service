@@ -144,10 +144,16 @@ public sealed class Given_Mssql_FirstPhaseContentionUnderConcurrentWrites : Mssq
 
         using (new AssertionScope())
         {
-            // Without this the reproduction proves nothing: a run whose workers never collided
-            // satisfies both assertions below exactly as a fully fixed one does. Measured on the
-            // server rather than inferred from responses, so it neither passes on an unrelated
-            // failure nor fails when the retry pipeline absorbs the contention into successes.
+            // A floor on contention, not proof of it. Without this a run whose workers never
+            // collided satisfies both assertions below exactly as a fully fixed one does. Measured
+            // on the server rather than inferred from responses, so it neither passes on an
+            // unrelated failure nor fails when the retry pipeline absorbs contention into
+            // successes.
+            //
+            // What it does not establish: that any first-phase statement actually raised a
+            // DbException. Writers can wait on locks and every one of them still succeed, and no
+            // signal visible to an HTTP client separates that from a run where the mapping under
+            // test was exercised. Read the printed report, not just the green result.
             lockWaits
                 .Should()
                 .BeGreaterThan(
