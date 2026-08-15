@@ -87,8 +87,10 @@ public static class Utility
     /// Shapes the response for a backend failure the backend itself could not classify. The failure
     /// message is written for diagnosis and names internal components, so it is logged rather than
     /// served; several producers build it from a caught exception and log nothing else, which makes
-    /// this the only record of what went wrong. The client receives the same problem-details
-    /// envelope every other server-side failure uses.
+    /// this the only record of what went wrong. The client receives the standard problem-details
+    /// envelope in its place. Note that a failure escaping as an exception instead of a result is
+    /// answered by <c>CoreExceptionLoggingMiddleware</c>, whose generic 500 deliberately carries a
+    /// different, non-problem-details body, so the two shapes both exist for server-side failures.
     /// </summary>
     internal static FrontendResponse CreateUnknownFailureResponse(
         ILogger logger,

@@ -22,7 +22,13 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// exception is captured on the request so the outer request logging middleware attaches it to the
 /// structured request-failure event; this middleware does not log it.
 /// </summary>
-internal class CoreExceptionLoggingMiddleware(ILogger _logger, TimeSpan? _circuitBreakDuration = null)
+/// <param name="_circuitBreakDuration">
+/// Break duration quoted as <c>Retry-After</c> on a circuit-open 503. Required rather than
+/// defaulted: a construction site that forgot it would silently serve the 503 with no retry hint,
+/// which is the difference between telling a client when to come back and telling it nothing. Pass
+/// null only where the circuit-open path is genuinely out of scope for the caller.
+/// </param>
+internal class CoreExceptionLoggingMiddleware(ILogger _logger, TimeSpan? _circuitBreakDuration)
     : IPipelineStep
 {
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)

@@ -206,7 +206,7 @@ public class Given_RequestResponseLoggingMiddleware
         var requestInfo = No.RequestInfo("core-trace-id");
         requestInfo.FrontendRequest = requestInfo.FrontendRequest with { Path = "/ed-fi/students" };
         var requestLogging = new RequestResponseLoggingMiddleware(_logger);
-        var coreExceptionLogging = new CoreExceptionLoggingMiddleware(_logger);
+        var coreExceptionLogging = new CoreExceptionLoggingMiddleware(_logger, null);
 
         await requestLogging.Execute(
             requestInfo,
@@ -233,7 +233,7 @@ public class Given_RequestResponseLoggingMiddleware
         var requestInfo = No.RequestInfo("trace\r\nid\twith{unsafe}");
         requestInfo.FrontendRequest = requestInfo.FrontendRequest with { Path = "/ed-fi/student\r\ns/{id}" };
         var requestLogging = new RequestResponseLoggingMiddleware(_logger);
-        var coreExceptionLogging = new CoreExceptionLoggingMiddleware(_logger);
+        var coreExceptionLogging = new CoreExceptionLoggingMiddleware(_logger, null);
 
         await coreExceptionLogging.Execute(
             requestInfo,

@@ -183,7 +183,7 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
                     )
                 );
 
-            var exceptionLoggingMiddleware = new CoreExceptionLoggingMiddleware(_exceptionLogger);
+            var exceptionLoggingMiddleware = new CoreExceptionLoggingMiddleware(_exceptionLogger, null);
 
             await exceptionLoggingMiddleware.Execute(
                 _requestInfo,
@@ -539,7 +539,7 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
                     )
                 );
 
-            var exceptionLoggingMiddleware = new CoreExceptionLoggingMiddleware(_exceptionLogger);
+            var exceptionLoggingMiddleware = new CoreExceptionLoggingMiddleware(_exceptionLogger, null);
 
             await exceptionLoggingMiddleware.Execute(
                 _requestInfo,
@@ -625,7 +625,7 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
             _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
             _exceptionLogger = new CapturingLogger();
 
-            var exceptionLoggingMiddleware = new CoreExceptionLoggingMiddleware(_exceptionLogger);
+            var exceptionLoggingMiddleware = new CoreExceptionLoggingMiddleware(_exceptionLogger, null);
 
             await exceptionLoggingMiddleware.Execute(
                 _requestInfo,

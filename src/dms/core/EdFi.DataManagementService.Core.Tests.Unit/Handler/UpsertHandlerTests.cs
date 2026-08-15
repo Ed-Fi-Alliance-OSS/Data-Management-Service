@@ -719,6 +719,16 @@ public class UpsertHandlerTests
             requestInfo.FrontendResponse.Headers.Should().BeEmpty();
             requestInfo.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }
+
+        /// <summary>
+        /// The body is problem details, so the content type has to say so; serving it as plain
+        /// application/json leaves a client content-negotiating on the wrong media type.
+        /// </summary>
+        [Test]
+        public void It_serves_the_problem_details_content_type()
+        {
+            requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+        }
     }
 
     [TestFixture]

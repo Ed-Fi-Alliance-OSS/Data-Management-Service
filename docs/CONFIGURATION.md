@@ -351,8 +351,12 @@ selection the API's other error responses use.
 
 ## CircuitBreaker
 
-DMS wraps every backend call in a Polly resilience pipeline whose outermost
+DMS routes its document CRUD calls - GET by id, query, POST, PUT, DELETE, and
+tracked-change queries - through a Polly resilience pipeline whose outermost
 strategy is a circuit breaker.
+Endpoints that do not read or write documents, such as
+`availableChangeVersions`, bypass the pipeline and keep answering while the
+breaker is open.
 It counts backend calls that *return* an unknown-failure result - the outcome
 DMS uses for a failure it cannot turn into a specific answer for the client.
 Recognized outcomes such as a deadlock victim, a constraint violation or a
@@ -372,22 +376,25 @@ Two consequences are worth knowing:
 - A failure that escapes as an exception rather than a result does not count.
   The breaker's predicate inspects returned results only.
 
-When the breaker opens, every request that would reach the backend is refused
-for `BreakDurationSeconds`.
+When the breaker opens, every request that reaches the pipeline is refused for
+`BreakDurationSeconds`.
 That includes reads: the pipeline is shared by GET, query, POST, PUT and
-DELETE alike, so an open breaker is a whole-API pause, not a write-only one.
+DELETE alike, so an open breaker pauses document reads as well as writes.
 
-| Parameter               | Description                                                                                                                                                     |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| FailureRatio            | Fraction of sampled calls that must fail before the breaker opens, between 0 and 1. `0.1` means 10%.                                                             |
-| SamplingDurationSeconds | Length of the rolling window over which the failure ratio is assessed. Must be greater than 0.5.                                                                 |
-| MinimumThroughput       | Minimum number of calls that must occur inside the sampling window before the breaker may open at all. Polly requires at least 2.                                |
-| BreakDurationSeconds    | How long the breaker stays open before it admits a trial call.                                                                                                   |
+| Parameter               | Description                                                                                                                                                                  |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| FailureRatio            | Fraction of sampled calls that must fail before the breaker opens. Greater than 0 and at most 1; `0.1` means 10%.                                                             |
+| SamplingDurationSeconds | Length of the rolling window over which the failure ratio is assessed. From 0.5 to 86400 (one day), inclusive.                                                                |
+| MinimumThroughput       | Minimum number of calls that must occur inside the sampling window before the breaker may open at all. At least 2.                                                            |
+| BreakDurationSeconds    | How long the breaker stays open before it admits a trial call. From 0.5 to 86400 (one day), inclusive.                                                                        |
 
-`FailureRatio` must be within `(0, 1]`, `MinimumThroughput` at least 2, and both
-duration values greater than 0.5 seconds; DMS refuses to start otherwise,
-naming the offending setting rather than letting the resilience pipeline fail
-later.
+DMS refuses to start when a value falls outside those bounds, naming the
+offending setting rather than letting the resilience pipeline fail later.
+The duration bounds are inclusive at both ends, matching the range the pipeline
+enforces rather than its prose, which describes the lower bound as exclusive.
+`FailureRatio` is the one place DMS is stricter than the pipeline: a ratio of
+exactly `0` is accepted there but rejected here, because it asks the breaker to
+open on a window containing no failures at all.
 
 Beyond those hard bounds, two independent rules bound these values, and the
 shipped defaults (`0.1` / `120` / `20` / `30`) satisfy both.
@@ -439,6 +446,32 @@ it unchanged.
   "errors": []
 }
 ```
+
+### Unclassified backend failure response
+
+A document request whose backend failure DMS could not turn into a specific
+answer receives a `500 Internal Server Error` carrying the standard Ed-Fi
+problem-details envelope as `application/problem+json`, on every verb:
+
+```json
+{
+  "detail": "An unexpected problem has occurred.",
+  "type": "urn:ed-fi:api:system",
+  "title": "System Error",
+  "status": 500,
+  "correlationId": "0HNCTN1IRQMDG:00000001",
+  "validationErrors": {},
+  "errors": []
+}
+```
+
+Earlier releases answered this case with `{"error": "...", "correlationId": "..."}`
+as `application/json`, where the `error` value was an internal diagnostic
+message naming DMS components.
+That message is now written to the log instead of the response, so a client
+parsing the old `error` field will no longer find it.
+Failures that escape as exceptions rather than results are answered by a
+separate generic 500 that still uses a `{"message", "traceId"}` body.
 
 ## OtlpLogging
 

@@ -26,7 +26,7 @@ public class CoreExceptionLoggingMiddlewareTests
         await cancellationSource.CancelAsync();
         var requestInfo = No.RequestInfo("traceId");
         requestInfo.RequestCancellationToken = cancellationSource.Token;
-        var middleware = new CoreExceptionLoggingMiddleware(NullLogger.Instance);
+        var middleware = new CoreExceptionLoggingMiddleware(NullLogger.Instance, null);
 
         Func<Task> act = async () =>
             await middleware.Execute(
@@ -140,7 +140,7 @@ public class CoreExceptionLoggingMiddlewareTests
         public async Task Setup()
         {
             var requestInfo = No.RequestInfo("traceId");
-            var middleware = new CoreExceptionLoggingMiddleware(NullLogger.Instance);
+            var middleware = new CoreExceptionLoggingMiddleware(NullLogger.Instance, null);
 
             await middleware.Execute(
                 requestInfo,
@@ -171,7 +171,7 @@ public class CoreExceptionLoggingMiddlewareTests
         public async Task Setup()
         {
             var requestInfo = No.RequestInfo("custom-view-trace-id");
-            var middleware = new CoreExceptionLoggingMiddleware(NullLogger.Instance);
+            var middleware = new CoreExceptionLoggingMiddleware(NullLogger.Instance, null);
 
             await middleware.Execute(
                 requestInfo,

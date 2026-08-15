@@ -25,11 +25,11 @@ public sealed class Given_Mssql_FirstPhaseContentionUnderConcurrentWrites : Mssq
 {
     // Overridable so the contention shape can be tuned without a rebuild: a deep queue on one hot
     // row produces lock-wait timeouts, while a shallow one lets genuine cycles form.
-    private static readonly int UpdateWorkers = Tunable("DMS1400_UPDATE_WORKERS", 6);
-    private static readonly int InsertWorkers = Tunable("DMS1400_INSERT_WORKERS", 6);
-    private static readonly int ChildUpdateWorkers = Tunable("DMS1400_CHILD_UPDATE_WORKERS", 4);
-    private static readonly int Iterations = Tunable("DMS1400_ITERATIONS", 30);
-    private static readonly int SharedChildCount = Tunable("DMS1400_SHARED_CHILDREN", 4);
+    private static readonly int UpdateWorkers = Tunable("DMS_CONTENTION_UPDATE_WORKERS", 6);
+    private static readonly int InsertWorkers = Tunable("DMS_CONTENTION_INSERT_WORKERS", 6);
+    private static readonly int ChildUpdateWorkers = Tunable("DMS_CONTENTION_CHILD_UPDATE_WORKERS", 4);
+    private static readonly int Iterations = Tunable("DMS_CONTENTION_ITERATIONS", 30);
+    private static readonly int SharedChildCount = Tunable("DMS_CONTENTION_SHARED_CHILDREN", 4);
 
     private static int Tunable(string name, int fallback) =>
         int.TryParse(Environment.GetEnvironmentVariable(name), out int value) && value > 0 ? value : fallback;
