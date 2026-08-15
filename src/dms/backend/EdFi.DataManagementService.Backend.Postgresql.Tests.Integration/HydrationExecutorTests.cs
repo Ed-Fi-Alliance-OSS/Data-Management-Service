@@ -1565,3 +1565,274 @@ public class Given_Two_Postgresql_Hydration_Batches_On_The_Same_Transaction
         return result is true;
     }
 }
+
+/// <summary>
+/// The keyset materialization's <c>RETURNING</c> clause carries the selected page keyset out of
+/// hydration on the same command that hydrates it. These cases run the real batch against PostgreSQL,
+/// because the clause is only valid if the server accepts it.
+/// </summary>
+[TestFixture]
+[NonParallelizable]
+public class Given_A_Pgsql_Query_Keyset_That_Returns_Its_Selected_Ids
+{
+    private NpgsqlDataSource _dataSource = null!;
+
+    private const string TestSchema = "hydselected";
+
+    /// <summary>
+    /// Sparse ids, so a maximum cannot be confused with a count or a row position.
+    /// </summary>
+    private const long FirstDocumentId = 501L;
+    private const long SecondDocumentId = 509L;
+    private const long ThirdDocumentId = 517L;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        _dataSource = NpgsqlDataSource.Create(Configuration.DatabaseConnectionString);
+
+        await using var connection = await _dataSource.OpenConnectionAsync();
+
+        await ExecuteSql(
+            connection,
+            """
+            DROP SCHEMA IF EXISTS hydselected CASCADE;
+            CREATE SCHEMA hydselected;
+            CREATE SCHEMA IF NOT EXISTS dms;
+
+            CREATE TABLE IF NOT EXISTS dms."Document" (
+                "DocumentId" bigint PRIMARY KEY,
+                "DocumentUuid" uuid NOT NULL,
+                "ResourceKeyId" smallint NOT NULL DEFAULT 0,
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "IdentityVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
+                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
+                "CreatedAt" timestamptz NOT NULL DEFAULT now()
+            );
+
+            CREATE TABLE hydselected."School" (
+                "DocumentId" bigint PRIMARY KEY,
+                "SchoolId" integer NOT NULL
+            );
+
+            CREATE TABLE hydselected."SchoolAddress" (
+                "CollectionItemId" bigint PRIMARY KEY,
+                "School_DocumentId" bigint NOT NULL REFERENCES hydselected."School"("DocumentId"),
+                "Ordinal" integer NOT NULL,
+                "City" varchar(100) NOT NULL
+            );
+
+            CREATE TABLE hydselected."SchoolAddressPeriod" (
+                "CollectionItemId" bigint PRIMARY KEY,
+                "School_DocumentId" bigint NOT NULL,
+                "ParentCollectionItemId" bigint NOT NULL REFERENCES hydselected."SchoolAddress"("CollectionItemId"),
+                "Ordinal" integer NOT NULL,
+                "BeginDate" varchar(10) NOT NULL
+            );
+            """
+        );
+    }
+
+    [SetUp]
+    public async Task Setup()
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync();
+
+        await ExecuteSql(
+            connection,
+            """
+            DELETE FROM hydselected."SchoolAddressPeriod";
+            DELETE FROM hydselected."SchoolAddress";
+            DELETE FROM hydselected."School";
+            DELETE FROM dms."Document" WHERE "DocumentId" IN (501, 509, 517);
+
+            INSERT INTO dms."Document" ("DocumentId", "DocumentUuid")
+            VALUES
+                (501, '22222222-8888-8888-8888-222222222222'),
+                (509, '33333333-9999-9999-9999-333333333333'),
+                (517, '44444444-aaaa-aaaa-aaaa-444444444444');
+
+            INSERT INTO hydselected."School" ("DocumentId", "SchoolId")
+            VALUES (501, 910001), (509, 910002), (517, 910003);
+            """
+        );
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_dataSource is not null)
+        {
+            await using var connection = await _dataSource.OpenConnectionAsync();
+            await ExecuteSql(
+                connection,
+                """
+                DROP SCHEMA IF EXISTS hydselected CASCADE;
+                DELETE FROM dms."Document" WHERE "DocumentId" IN (501, 509, 517);
+                """
+            );
+            await _dataSource.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public async Task It_returns_the_maximum_selected_document_id_for_a_cursor_page()
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync();
+
+        var result = await HydrationExecutor.ExecuteAsync(
+            connection,
+            HydrationTestHelper.BuildSchoolReadPlan(TestSchema, SqlDialect.Pgsql),
+            CreateCursorKeyset(pageSize: 2L),
+            SqlDialect.Pgsql,
+            CancellationToken.None
+        );
+
+        result.HighestSelectedDocumentId.Should().Be(SecondDocumentId);
+        result
+            .DocumentMetadata.Select(static documentMetadata => documentMetadata.DocumentId)
+            .Should()
+            .Equal(FirstDocumentId, SecondDocumentId);
+    }
+
+    [Test]
+    public async Task It_returns_no_maximum_for_a_zero_size_cursor_page()
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync();
+
+        var result = await HydrationExecutor.ExecuteAsync(
+            connection,
+            HydrationTestHelper.BuildSchoolReadPlan(TestSchema, SqlDialect.Pgsql),
+            CreateCursorKeyset(pageSize: 0L),
+            SqlDialect.Pgsql,
+            CancellationToken.None
+        );
+
+        result.HighestSelectedDocumentId.Should().BeNull();
+        result.DocumentMetadata.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_returns_no_maximum_when_the_range_selects_nothing()
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync();
+
+        var result = await HydrationExecutor.ExecuteAsync(
+            connection,
+            HydrationTestHelper.BuildSchoolReadPlan(TestSchema, SqlDialect.Pgsql),
+            CreateCursorKeyset(pageSize: 25L, inclusiveMinimum: 600L, inclusiveMaximum: 700L),
+            SqlDialect.Pgsql,
+            CancellationToken.None
+        );
+
+        result.HighestSelectedDocumentId.Should().BeNull();
+        result.DocumentMetadata.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Deletes every selected row inside the hydration batch, between the materialization that
+    /// selected them and the hydration selects that follow it. This is a deterministic stand-in for a
+    /// delete that commits in that same window — not a separate concurrent transaction — and it is the
+    /// case a body-derived boundary would answer wrongly by stalling the walk.
+    /// </summary>
+    [Test]
+    public async Task It_returns_the_maximum_when_every_selected_row_was_deleted_before_hydration()
+    {
+        const string SpliceAfter = "SELECT \"DocumentId\" FROM page_ids RETURNING \"DocumentId\";";
+        const string DeleteEverySelectedRow = """
+
+            DELETE FROM hydselected."SchoolAddressPeriod";
+            DELETE FROM hydselected."SchoolAddress";
+            DELETE FROM hydselected."School";
+            DELETE FROM dms."Document" WHERE "DocumentId" IN (501, 509, 517);
+            """;
+
+        await using var connection = await _dataSource.OpenConnectionAsync();
+        var splicedBatches = new List<string>();
+
+        var result = await HydrationExecutor.ExecuteAsync(
+            batchSql =>
+            {
+                CountOccurrences(batchSql, SpliceAfter)
+                    .Should()
+                    .Be(
+                        1,
+                        "the materialization statement is the splice point, so it must appear exactly once"
+                    );
+
+                var splicedBatch = batchSql.Replace(
+                    SpliceAfter,
+                    SpliceAfter + DeleteEverySelectedRow,
+                    StringComparison.Ordinal
+                );
+                splicedBatches.Add(splicedBatch);
+
+                var command = connection.CreateCommand();
+                command.CommandText = splicedBatch;
+                return command;
+            },
+            HydrationTestHelper.BuildSchoolReadPlan(TestSchema, SqlDialect.Pgsql),
+            CreateCursorKeyset(pageSize: 25L),
+            SqlDialect.Pgsql,
+            new HydrationExecutionOptions(),
+            CancellationToken.None
+        );
+
+        splicedBatches.Should().ContainSingle();
+        result.HighestSelectedDocumentId.Should().Be(ThirdDocumentId);
+        result.DocumentMetadata.Should().BeEmpty();
+        result.TableRowsInDependencyOrder.Should().OnlyContain(tableRows => tableRows.Rows.Count == 0);
+    }
+
+    private static PageKeysetSpec.Query CreateCursorKeyset(
+        object pageSize,
+        long inclusiveMinimum = 1L,
+        long inclusiveMaximum = long.MaxValue
+    ) =>
+        new(
+            new PageDocumentIdSqlPlan(
+                PageDocumentIdSql: """
+                SELECT "DocumentId" FROM hydselected."School"
+                WHERE "DocumentId" >= @cursorMin
+                  AND "DocumentId" <= @cursorMax
+                ORDER BY "DocumentId"
+                LIMIT @pageSize
+                """,
+                TotalCountSql: null,
+                PageParametersInOrder:
+                [
+                    new QuerySqlParameter(QuerySqlParameterRole.CursorInclusiveMinimum, "cursorMin"),
+                    new QuerySqlParameter(QuerySqlParameterRole.CursorInclusiveMaximum, "cursorMax"),
+                    new QuerySqlParameter(QuerySqlParameterRole.PageSize, "pageSize"),
+                ],
+                TotalCountParametersInOrder: null
+            ),
+            new Dictionary<string, object?>
+            {
+                ["cursorMin"] = inclusiveMinimum,
+                ["cursorMax"] = inclusiveMaximum,
+                ["pageSize"] = pageSize,
+            }
+        );
+
+    private static int CountOccurrences(string text, string value)
+    {
+        var occurrences = 0;
+        var searchIndex = text.IndexOf(value, StringComparison.Ordinal);
+
+        while (searchIndex >= 0)
+        {
+            occurrences++;
+            searchIndex = text.IndexOf(value, searchIndex + value.Length, StringComparison.Ordinal);
+        }
+
+        return occurrences;
+    }
+
+    private static async Task ExecuteSql(NpgsqlConnection connection, string sql)
+    {
+        await using var cmd = new NpgsqlCommand(sql, connection);
+        await cmd.ExecuteNonQueryAsync();
+    }
+}

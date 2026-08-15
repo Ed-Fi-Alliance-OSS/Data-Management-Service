@@ -114,6 +114,13 @@ public record UpdateResult
         : UpdateResult();
 
     /// <summary>
+    /// A failure because stored or proposed custom view-based authorization denied the PUT/update. Carries
+    /// the custom-view failure metadata so Core can build the §2.4/§2.7/§2.8 ProblemDetails response.
+    /// </summary>
+    public record UpdateFailureCustomViewNotAuthorized(CustomViewAuthorizationFailure CustomViewFailure)
+        : UpdateResult();
+
+    /// <summary>
     /// A failure because the requested PUT/update operation is intentionally not implemented.
     /// </summary>
     /// <param name="FailureMessage">A message providing failure information</param>

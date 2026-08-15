@@ -20,14 +20,18 @@ public abstract record RelationalAuthorizationAuth1DispatchResult
     public sealed record Namespace(NamespaceAuthorizationAuth1FailurePayload Payload)
         : RelationalAuthorizationAuth1DispatchResult;
 
+    public sealed record CustomView(CustomViewAuthorizationAuth1FailurePayload Payload)
+        : RelationalAuthorizationAuth1DispatchResult;
+
     public sealed record InvalidPayload(string RawPayload) : RelationalAuthorizationAuth1DispatchResult;
 }
 
 /// <summary>
-/// Routes an AUTH1 provider failure to either the relationship or namespace payload codec based on the
-/// payload's leading discriminator. Relationship payloads start with <c>1|</c>; namespace payloads start
-/// with <c>ns1|</c>. Any other payload returns <see cref="RelationalAuthorizationAuth1DispatchResult.InvalidPayload"/>
-/// so the caller can log and fall through to a generic security failure.
+/// Routes an AUTH1 provider failure to the relationship, namespace, or custom-view payload codec based on
+/// the payload's leading discriminator. Relationship payloads start with <c>1|</c>; namespace payloads start
+/// with <c>ns1|</c>; custom view-based payloads start with <c>cv1|</c>. Any other payload returns
+/// <see cref="RelationalAuthorizationAuth1DispatchResult.InvalidPayload"/> so the caller can log and fall
+/// through to a generic security failure.
 /// </summary>
 public static class RelationalAuthorizationAuth1Dispatcher
 {
@@ -35,6 +39,8 @@ public static class RelationalAuthorizationAuth1Dispatcher
         RelationshipAuthorizationAuth1FailurePayloadCodec.PayloadVersion + "|";
     private const string NamespaceDiscriminatorPrefix =
         NamespaceAuthorizationAuth1FailurePayloadCodec.PayloadDiscriminator + "|";
+    private const string CustomViewDiscriminatorPrefix =
+        CustomViewAuthorizationAuth1FailurePayloadCodec.PayloadDiscriminator + "|";
 
     /// <summary>
     /// Attempts to extract and dispatch an AUTH1 payload from a provider exception.
@@ -83,6 +89,19 @@ public static class RelationalAuthorizationAuth1Dispatcher
         )
         {
             result = new RelationalAuthorizationAuth1DispatchResult.Namespace(namespacePayload);
+            return true;
+        }
+
+        if (
+            payloadText.StartsWith(CustomViewDiscriminatorPrefix, StringComparison.Ordinal)
+            && CustomViewAuthorizationAuth1FailurePayloadCodec.TryParsePayload(
+                payloadText,
+                out var customViewPayload
+            )
+            && customViewPayload is not null
+        )
+        {
+            result = new RelationalAuthorizationAuth1DispatchResult.CustomView(customViewPayload);
             return true;
         }
 

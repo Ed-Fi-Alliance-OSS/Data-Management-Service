@@ -53,6 +53,19 @@ internal sealed record StoredNamespaceStatementPlan(
     NamespacePrefixParameterization PrefixParameterization
 );
 
+/// <summary>
+/// What emitted stored custom-view checks need in order to map their provider failure back.
+/// </summary>
+/// <remarks>
+/// Holds the request's whole planned list rather than the appended runs. A request can append custom views
+/// both before and after the namespace statement, and every statement in the command shares one provider
+/// exception, so a <c>cv1</c> index is resolved against the full list — which is exactly what keeps the two
+/// runs' indexes from colliding.
+/// </remarks>
+internal sealed record StoredCustomViewStatementPlan(
+    IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> PlannedChecks
+);
+
 /// <summary>The stored relationship check's decoded success row.</summary>
 internal sealed record StoredRelationshipAuthorizationRow(int AuthorizationResult, long ContentVersion);
 
@@ -69,6 +82,9 @@ internal abstract record StoredAuthorizationDenial
     public sealed record StaleTarget : StoredAuthorizationDenial;
 
     public sealed record NamespaceNotAuthorized(NamespaceAuthorizationFailure Failure)
+        : StoredAuthorizationDenial;
+
+    public sealed record CustomViewNotAuthorized(CustomViewAuthorizationFailure Failure)
         : StoredAuthorizationDenial;
 
     public sealed record RelationshipNotAuthorized(RelationshipAuthorizationFailure Failure)
@@ -101,6 +117,7 @@ internal abstract record StoredAuthorizationDenial
 internal static class RelationalCompositeStoredAuthorization
 {
     public const string NamespaceLabel = "stored-namespace-authorization";
+    public const string CustomViewLabel = "stored-custom-view-authorization";
     public const string RelationshipLabel = "stored-relationship-authorization";
 
     /// <summary>
@@ -247,6 +264,97 @@ internal static class RelationalCompositeStoredAuthorization
     }
 
     /// <summary>
+    /// Appends one run of stored custom-view checks behind the carrier's row guard.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Callers append up to two runs — the custom views the CMS configured before <c>NamespaceBased</c> and
+    /// those configured after — so that the AND filters execute in configured order and the first failure is
+    /// the one reported. Both runs carry indexes from the request's single planned list, so the
+    /// <see cref="StoredCustomViewStatementPlan"/> a caller keeps is the same regardless of how many runs
+    /// were appended.
+    /// </para>
+    /// <para>
+    /// No parameter-budget fallback exists, and none is reachable: a stored custom-view statement's only
+    /// parameter is the target <c>DocumentId</c>, which the carrier substitutes away, leaving the statement
+    /// with none. A run that did not fit would have to become an ordered segment running <em>after</em> this
+    /// command, which would place it after the namespace check it may be configured before — silently
+    /// inverting the order that decides which denial the caller sees. So a non-fit throws instead: it is a
+    /// defect in the budget accounting, not a case to degrade into.
+    /// </para>
+    /// </remarks>
+    public static void AppendCustomViewRun(
+        RelationalCompositeCommandBuilder builder,
+        IRelationalCompositeTargetCarrier carrier,
+        MappingSet mappingSet,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> runChecks
+    )
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(carrier);
+        ArgumentNullException.ThrowIfNull(mappingSet);
+        ArgumentNullException.ThrowIfNull(runChecks);
+
+        if (runChecks.Count == 0)
+        {
+            return;
+        }
+
+        var sqlPlan = new SingleRecordCustomViewAuthorizationSqlCompiler(mappingSet.Key.Dialect).Compile(
+            new SingleRecordCustomViewAuthorizationSqlSpec(
+                runChecks,
+                CustomViewAuthorizationSqlSpecDefaults.DocumentIdParameterName,
+                RowGuardPredicateSql: carrier.CapturedTargetPresentPredicate
+            )
+        );
+
+        if (sqlPlan.EmittedCheckIndexesInOrder.Count == 0)
+        {
+            // Every check in the run is decided in C# — only reachable for a proposed self-basis check, which
+            // a stored run never contains.
+            return;
+        }
+
+        var command = CustomViewAuthorizationExecutor.BuildCommand(
+            sqlPlan,
+            new CustomViewAuthorizationExecutionRequest(mappingSet, DocumentId: 0L, runChecks)
+        );
+        var parametersAfterSubstitution = CountParametersAfterSubstitution(
+            command,
+            CustomViewAuthorizationSqlSpecDefaults.DocumentIdParameterName
+        );
+
+        if (parametersAfterSubstitution != 0 || !builder.Fits(parametersAfterSubstitution))
+        {
+            throw new InvalidOperationException(
+                $"Stored custom view authorization statements must bind no parameters after carrier substitution, but {parametersAfterSubstitution} remained; a run that cannot be co-batched would have to execute after the namespace check it may precede."
+            );
+        }
+
+        var rewritten = RelationalCompositeStatementRewriter.Rewrite(
+            command,
+            builder.Allocator,
+            builder.NextOrdinal,
+            BuildCarrierSubstitutions(
+                carrier,
+                CustomViewAuthorizationSqlSpecDefaults.DocumentIdParameterName,
+                carrier.CapturedTargetIdExpression
+            )
+        );
+        var resultSetCount = sqlPlan.EmittedCheckIndexesInOrder.Count;
+
+        builder.Append(
+            CustomViewLabel,
+            rewritten.Sql,
+            rewritten.Parameters,
+            RelationalCompositeResultShape.Rows,
+            (reader, readCancellation) =>
+                RelationalCompositeResultSetSpan.ConsumeAsync(reader, resultSetCount, readCancellation),
+            resultSetCount
+        );
+    }
+
+    /// <summary>
     /// Appends the stored relationship check when its disposition is
     /// <see cref="StoredRelationshipDisposition.Emitted"/> and it fits, and reports whether it did.
     /// </summary>
@@ -374,12 +482,62 @@ internal static class RelationalCompositeStoredAuthorization
         StoredRelationshipStatementPlan? relationshipPlan,
         int emittedAuth1Index,
         IRelationshipAuthorizationProviderFailureExtractor providerFailureExtractor,
-        ILogger logger
+        ILogger logger,
+        StoredCustomViewStatementPlan? customViewPlan = null
     )
     {
         ArgumentNullException.ThrowIfNull(exception);
         ArgumentNullException.ThrowIfNull(providerFailureExtractor);
         ArgumentNullException.ThrowIfNull(logger);
+
+        // Which family raised the abort is decided by the payload's discriminator, not by the order these
+        // arms are tried: each family yields on a payload it does not own. Statement order in the command is
+        // what enforces the configured AND precedence, and the command aborts at its first failure, so only
+        // one family can ever have a payload to claim.
+        if (customViewPlan is not null)
+        {
+            if (
+                CustomViewAuthorizationProviderFailureMapper.IsStaleStoredTargetFailure(
+                    dialect,
+                    exception,
+                    providerFailureExtractor,
+                    customViewPlan.PlannedChecks
+                )
+            )
+            {
+                return new StoredAuthorizationDenial.StaleTarget();
+            }
+
+            if (
+                CustomViewAuthorizationProviderFailureMapper.TryMapCustomViewAuthorizationFailure(
+                    dialect,
+                    exception,
+                    providerFailureExtractor,
+                    customViewPlan.PlannedChecks,
+                    out var customViewFailure
+                )
+            )
+            {
+                return new StoredAuthorizationDenial.CustomViewNotAuthorized(customViewFailure!);
+            }
+
+            if (
+                CustomViewAuthorizationProviderFailureMapper.IsUnmappableCustomViewPayload(
+                    dialect,
+                    exception,
+                    providerFailureExtractor,
+                    customViewPlan.PlannedChecks
+                )
+            )
+            {
+                return new StoredAuthorizationDenial.SecurityConfiguration(
+                    [CustomViewAuthorizationSecurityConfigurationMessages.InvalidAuthorizationMetadata],
+                    AuthorizationSecurityConfigurationDiagnostics.ForCustomViewAuthorizationAuth1(
+                        customViewPlan.PlannedChecks
+                    )
+                );
+            }
+        }
 
         if (namespacePlan is not null)
         {

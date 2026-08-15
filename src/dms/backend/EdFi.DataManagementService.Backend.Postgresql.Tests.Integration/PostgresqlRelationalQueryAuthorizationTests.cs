@@ -1097,6 +1097,32 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
     }
 
     /// <summary>
+    /// Creates a custom authorization view over descriptor storage, authorizing the supplied code values.
+    /// Every descriptor resource shares one root table, so a descriptor basis filters that table rather than
+    /// a per-resource one.
+    /// </summary>
+    public async Task CreateDescriptorCustomAuthViewAsync(
+        string strategyName,
+        IReadOnlyList<string> authorizedCodeValues
+    )
+    {
+        var codeValueList = string.Join(
+            ", ",
+            authorizedCodeValues.Select(codeValue => $"'{codeValue.Replace("'", "''")}'")
+        );
+
+        await DropCustomAuthViewAsync(strategyName);
+        await Database.ExecuteNonQueryAsync(
+            $"""
+            CREATE VIEW "auth"."{strategyName}" AS
+            SELECT "DocumentId"
+            FROM "dms"."Descriptor"
+            WHERE "CodeValue" IN ({codeValueList});
+            """
+        );
+    }
+
+    /// <summary>
     /// Creates the custom authorization view with an <em>unquoted</em> name, which PostgreSQL folds to
     /// lower case: the object lands as <c>auth.{lowercased}</c> while the configured strategy name stays
     /// PascalCase. This is the mistake hand-written DDL actually makes, as opposed to simulating the

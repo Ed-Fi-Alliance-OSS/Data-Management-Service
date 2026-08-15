@@ -365,6 +365,14 @@ public enum RelationshipAuthorizationFailureKind
     ProposedValueMissing,
     MissingPeopleAuthViewAssociations,
     NoCustomViewJoinPath,
+
+    /// <summary>
+    /// A custom view's basis resource is reachable only through a child collection table, so a write's
+    /// proposed-value check has no root-table value to bind. Stored-value-only operations can still walk
+    /// such a path; an operation that must authorize proposed data fails closed instead of skipping the
+    /// strategy, because auth.md restricts authorization checks to the resource or descriptor root table.
+    /// </summary>
+    MissingProposedCustomViewRootBinding,
 }
 
 public sealed record RelationshipAuthorizationFailureLocation(

@@ -937,7 +937,7 @@ public class Given_HydrationBatchBuilder_With_Query_Keyset
                 SELECT r."DocumentId" FROM "edfi"."School" r ORDER BY r."DocumentId" LIMIT @limit OFFSET @offset
                 )
                 INSERT INTO "page" ("DocumentId")
-                SELECT "DocumentId" FROM page_ids;
+                SELECT "DocumentId" FROM page_ids RETURNING "DocumentId";
 
                 SELECT COUNT(*) AS TotalCount FROM "edfi"."School" r;
 
@@ -1010,7 +1010,7 @@ public class Given_HydrationBatchBuilder_With_Compiled_Query_Keyset
     public void It_should_emit_valid_cte_structure()
     {
         _pgsqlBatch.Should().Contain("WITH page_ids AS (");
-        _pgsqlBatch.Should().Contain("FROM page_ids;");
+        _pgsqlBatch.Should().Contain("FROM page_ids RETURNING \"DocumentId\";");
         _mssqlBatch.Should().Contain("WITH page_ids AS (");
         _mssqlBatch.Should().Contain("FROM page_ids;");
     }

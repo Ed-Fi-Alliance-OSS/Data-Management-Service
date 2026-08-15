@@ -39,6 +39,39 @@ public static class HydrationReader
     }
 
     /// <summary>
+    /// Reads the selected page keyset ids from the current result set and returns the maximum, or
+    /// <see langword="null"/> when the selection was empty.
+    /// </summary>
+    /// <remarks>
+    /// Neither <c>RETURNING</c> nor <c>OUTPUT</c> promises an order, so the maximum is taken across
+    /// every returned row rather than from the first or last one.
+    /// </remarks>
+    /// <param name="reader">The data reader positioned at the selected keyset result set.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The maximum selected <c>DocumentId</c>, or null when no id was selected.</returns>
+    public static async Task<long?> ReadSelectedDocumentIdMaximumAsync(
+        DbDataReader reader,
+        CancellationToken ct
+    )
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+
+        long? selectedMaximum = null;
+
+        while (await reader.ReadAsync(ct))
+        {
+            var selectedDocumentId = reader.GetInt64(0);
+
+            if (selectedMaximum is null || selectedDocumentId > selectedMaximum)
+            {
+                selectedMaximum = selectedDocumentId;
+            }
+        }
+
+        return selectedMaximum;
+    }
+
+    /// <summary>
     /// Expected column count for the document metadata result set, defined by
     /// <see cref="DocumentMetadataColumns.ColumnsInOrdinalOrder"/>.
     /// </summary>

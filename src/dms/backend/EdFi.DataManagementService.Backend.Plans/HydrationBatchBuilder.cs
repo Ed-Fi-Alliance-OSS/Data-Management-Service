@@ -21,6 +21,11 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// <remarks>
 /// The keyset batch emits result sets in a deterministic sequence:
 /// <list type="number">
+/// <item>
+/// Selected page keyset ids, for a <see cref="PageKeysetSpec.Query"/> keyset only. Always present for
+/// that keyset, with no rows when the selection was empty, so the positions below do not move with
+/// selection size.
+/// </item>
 /// <item>Optional <c>TotalCount</c> (single row, single column)</item>
 /// <item><c>dms.Document</c> metadata joined to the page keyset</item>
 /// <item>Root table rows (from <c>TablePlansInDependencyOrder[0]</c>)</item>
@@ -121,7 +126,10 @@ public static class HydrationBatchBuilder
         planDialect.AppendCreateKeysetTempTable(writer, plan.KeysetTable);
         writer.AppendLine();
 
-        AppendKeysetMaterialization(writer, plan.KeysetTable, keyset);
+        // The selected ids are returned even though this batch's candidates come from the metadata
+        // rows: the page's continuation boundary describes the keys selection chose, and a row deleted
+        // between materialization and the metadata select below would otherwise lower or erase it.
+        AppendKeysetMaterialization(writer, planDialect, plan.KeysetTable, keyset);
         writer.AppendLine();
 
         if (keyset.Plan.TotalCountSql is not null)
@@ -243,8 +251,15 @@ public static class HydrationBatchBuilder
         planDialect.AppendCreateKeysetTempTable(writer, plan.KeysetTable);
         writer.AppendLine();
 
-        // 2. Materialize keyset
-        AppendKeysetMaterialization(writer, plan.KeysetTable, keyset, singleRowGuardPredicateSql);
+        // 2. Materialize keyset. A query keyset also returns the ids it inserted as the batch's first
+        //    result set, which is what carries the selected-keyset boundary out of hydration.
+        AppendKeysetMaterialization(
+            writer,
+            planDialect,
+            plan.KeysetTable,
+            keyset,
+            singleRowGuardPredicateSql
+        );
         writer.AppendLine();
 
         // 3. Optional total count
@@ -427,8 +442,14 @@ public static class HydrationBatchBuilder
         }
     }
 
+    /// <summary>
+    /// Materializes the page keyset. A query keyset also returns the ids it inserted as a result set,
+    /// which is what carries the page's continuation boundary out of hydration; the other keysets are
+    /// handed the ids to materialize, so they perform no page selection and have no boundary to report.
+    /// </summary>
     private static void AppendKeysetMaterialization(
         SqlWriter writer,
+        IPlanSqlDialect planDialect,
         KeysetTableContract keyset,
         PageKeysetSpec spec,
         string? singleRowGuardPredicateSql = null
@@ -465,20 +486,22 @@ public static class HydrationBatchBuilder
                     .AppendLine(");");
                 break;
 
+            // A selected-page keyset supplies its own ids, so hydration reads no selected-id result set
+            // for it and GetResultSetCount counts none.
             case PageKeysetSpec.SelectedPage { DocumentIds.Count: 0 }:
-                AppendEmptyKeysetMaterialization(writer, keyset, quotedDocIdCol);
+                AppendEmptyKeysetMaterialization(writer, keyset, quotedDocIdCol, selectedIdDialect: null);
                 break;
 
             case PageKeysetSpec.SelectedPage selectedPage:
                 AppendSelectedPageKeysetMaterialization(writer, keyset, selectedPage, quotedDocIdCol);
                 break;
 
-            case PageKeysetSpec.Query query when HasZeroLimit(query):
-                AppendEmptyKeysetMaterialization(writer, keyset, quotedDocIdCol);
+            case PageKeysetSpec.Query query when HasZeroPageSelectionSize(query):
+                AppendEmptyKeysetMaterialization(writer, keyset, quotedDocIdCol, planDialect);
                 break;
 
             case PageKeysetSpec.Query query:
-                AppendQueryKeysetMaterialization(writer, keyset, query, quotedDocIdCol);
+                AppendQueryKeysetMaterialization(writer, planDialect, keyset, query, quotedDocIdCol);
                 break;
 
             default:
@@ -490,8 +513,13 @@ public static class HydrationBatchBuilder
         }
     }
 
+    /// <summary>
+    /// Materializes the planned page keyset, returning the ids it inserted so the page's continuation
+    /// boundary describes the keys selection chose.
+    /// </summary>
     private static void AppendQueryKeysetMaterialization(
         SqlWriter writer,
+        IPlanSqlDialect planDialect,
         KeysetTableContract keyset,
         PageKeysetSpec.Query query,
         string quotedDocIdCol
@@ -505,16 +533,24 @@ public static class HydrationBatchBuilder
             .AppendRelation(keyset.Table)
             .Append(" (")
             .Append(quotedDocIdCol)
-            .AppendLine(")")
-            .Append("SELECT ")
-            .Append(quotedDocIdCol)
-            .AppendLine(" FROM page_ids;");
+            .AppendLine(")");
+        planDialect.AppendKeysetSelectedIdOutputClause(writer, keyset);
+        writer.Append("SELECT ").Append(quotedDocIdCol).Append(" FROM page_ids");
+        planDialect.AppendKeysetSelectedIdReturningClause(writer, keyset);
+        writer.AppendLine(";");
     }
 
+    /// <summary>
+    /// Materializes no keyset row. Returns the (empty) selected-id result set only when
+    /// <paramref name="selectedIdDialect"/> is supplied, so a zero-size query page occupies the same
+    /// result-set positions as any other query keyset in the hydration batch, while a keyset whose
+    /// reader has no position for that result set does not gain one it would never consume.
+    /// </summary>
     private static void AppendEmptyKeysetMaterialization(
         SqlWriter writer,
         KeysetTableContract keyset,
-        string quotedDocIdCol
+        string quotedDocIdCol,
+        IPlanSqlDialect? selectedIdDialect
     )
     {
         writer
@@ -522,10 +558,11 @@ public static class HydrationBatchBuilder
             .AppendRelation(keyset.Table)
             .Append(" (")
             .Append(quotedDocIdCol)
-            .AppendLine(")")
-            .Append("SELECT CAST(NULL AS bigint) AS ")
-            .Append(quotedDocIdCol)
-            .AppendLine(" WHERE 1 = 0;");
+            .AppendLine(")");
+        selectedIdDialect?.AppendKeysetSelectedIdOutputClause(writer, keyset);
+        writer.Append("SELECT CAST(NULL AS bigint) AS ").Append(quotedDocIdCol).Append(" WHERE 1 = 0");
+        selectedIdDialect?.AppendKeysetSelectedIdReturningClause(writer, keyset);
+        writer.AppendLine(";");
     }
 
     private static void AppendSelectedPageKeysetMaterialization(
@@ -597,23 +634,28 @@ public static class HydrationBatchBuilder
             .AppendLine(") selected_document_ids;");
     }
 
-    private static bool HasZeroLimit(PageKeysetSpec.Query query)
+    /// <summary>
+    /// Whether the planned page selection can select nothing because its size is zero. Traditional
+    /// paging carries that size as a limit and cursor paging as a page size; both mean the same thing
+    /// here, so both skip candidate selection entirely rather than executing it for zero rows.
+    /// </summary>
+    private static bool HasZeroPageSelectionSize(PageKeysetSpec.Query query)
     {
         foreach (var parameter in query.Plan.PageParametersInOrder)
         {
-            if (parameter.Role is not QuerySqlParameterRole.Limit)
+            if (parameter.Role is not QuerySqlParameterRole.Limit and not QuerySqlParameterRole.PageSize)
             {
                 continue;
             }
 
-            return query.ParameterValues.TryGetValue(parameter.ParameterName, out var limitValue)
-                && IsZeroLimitValue(limitValue);
+            return query.ParameterValues.TryGetValue(parameter.ParameterName, out var pageSelectionSize)
+                && IsZeroPageSelectionSizeValue(pageSelectionSize);
         }
 
         return false;
     }
 
-    private static bool IsZeroLimitValue(object? value)
+    private static bool IsZeroPageSelectionSizeValue(object? value)
     {
         return value switch
         {

@@ -53,6 +53,50 @@ internal static class CustomViewAuthorizationValidator
         }
     }
 
+    /// <summary>
+    /// Validates the views behind single-record checks. Used where a check's answer is decided in C# and no
+    /// membership statement will run: without this, a misconfigured view would be reported as the denial that
+    /// decision produces instead of the documented <c>urn:ed-fi:api:system</c> 500.
+    /// </summary>
+    public static Task ValidateSingleRecordAsync(
+        IRelationalCommandExecutor commandExecutor,
+        SqlDialect dialect,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec>? checks,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (checks is null || checks.Count == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        return ValidateAsync(
+            commandExecutor,
+            dialect,
+            [.. checks.Select(AdaptForValidation)],
+            cancellationToken
+        );
+    }
+
+    private static PageDocumentIdAuthorizationCustomViewCheck AdaptForValidation(
+        SingleRecordCustomViewAuthorizationCheckSpec check
+    )
+    {
+        // The first path step starts at the subject's root row, so it names the root table and the column the
+        // walk begins from — which is what the validation join needs.
+        var firstStep = check.PathToBasisResource[0];
+
+        return new PageDocumentIdAuthorizationCustomViewCheck(
+            check.ConfiguredStrategy.StrategyName,
+            check.ConfiguredStrategy.RawConfiguredIndex,
+            check.AuthView,
+            check.AuthViewDocumentIdColumn,
+            check.PathToBasisResource,
+            firstStep.SourceTable,
+            firstStep.SourceColumnName
+        );
+    }
+
     internal static string BuildCommandText(
         SqlDialect dialect,
         IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck> customViewChecks

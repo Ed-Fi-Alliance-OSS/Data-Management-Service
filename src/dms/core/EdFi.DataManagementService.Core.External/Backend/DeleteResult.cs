@@ -49,6 +49,13 @@ public abstract record DeleteResult
         : DeleteResult();
 
     /// <summary>
+    /// A failure because stored custom view-based authorization denied the delete. Carries the custom-view
+    /// failure metadata so Core can build the §2.4/§2.7/§2.8 ProblemDetails response.
+    /// </summary>
+    public record DeleteFailureCustomViewNotAuthorized(CustomViewAuthorizationFailure CustomViewFailure)
+        : DeleteResult();
+
+    /// <summary>
     /// A failure because the requested delete operation is intentionally not implemented.
     /// </summary>
     /// <param name="FailureMessage">A message providing failure information</param>

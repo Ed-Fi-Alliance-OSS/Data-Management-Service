@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Paging;
@@ -25,11 +26,12 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 /// </para>
 ///
 /// <para>
-/// No documents are seeded. The Change Query requests pass through query validation, which excludes
-/// the cursor parameter names, and are answered by the Change Query validation step that follows it;
-/// the accepted cursor request is answered by the read path's cursor guard. All of that is before any
-/// candidate selection. The leased database is still required because these pipelines resolve the
-/// database fingerprint, resource key seed, and mapping set before query validation runs.
+/// The Change Query requests seed nothing: they pass through query validation, which excludes the
+/// cursor parameter names, and are answered by the Change Query validation step that follows it,
+/// before any candidate selection. The accepted cursor request seeds one school through the same
+/// pipeline, because what it pins is the page the read path actually serves. The leased database is
+/// required either way, since these pipelines resolve the database fingerprint, resource key seed, and
+/// mapping set before query validation runs.
 /// </para>
 /// </summary>
 internal static class CursorPagingOperationScopeScenario
@@ -91,10 +93,9 @@ internal static class CursorPagingOperationScopeScenario
 
     /// <summary>
     /// A collection read carrying a decodable token and a page size is not rejected during query
-    /// validation. It passes through to the read path, which does not yet select cursor pages and says
-    /// so. HTTP 501 with that message is the current boundary of cursor paging support, and the
-    /// request having reached it is the fact this pins: the request was accepted as a cursor request,
-    /// carried typed cursor paging to the repository contract, and was answered there.
+    /// validation: it reaches the read path, which selects the page and hands back a continuation. This
+    /// is where the accepted cursor request lands, observed on the assembled host rather than inferred
+    /// from a handler double.
     /// </summary>
     public static async Task It_carries_an_accepted_cursor_request_to_the_read_path(
         ApiIntegrationHarness harness
@@ -102,25 +103,111 @@ internal static class CursorPagingOperationScopeScenario
     {
         ArgumentNullException.ThrowIfNull(harness);
 
+        await SeedSchoolAsync(harness);
+
         // Encoded by the codec that decodes it, so the token is decodable by construction rather than
-        // by a transcription of the transport encoding happening to stay in step with it.
-        string pageToken = PageTokenCodec.Encode(new CursorRange(1, 100));
+        // by a transcription of the transport encoding happening to stay in step with it. The upper
+        // bound is open, so the seeded school is inside the range whatever identity it received.
+        string pageToken = PageTokenCodec.Encode(CursorRange.From(1));
 
         var response = await harness.HttpClient.GetAsync(
-            $"{SchoolsEndpoint}?pageToken={pageToken}&pageSize={WellFormedPageSize}"
+            $"{SchoolsEndpoint}?pageToken={Uri.EscapeDataString(pageToken)}&pageSize={WellFormedPageSize}"
         );
 
         string content = await response.Content.ReadAsStringAsync();
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented, content);
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        JsonNode.Parse(content)!.AsArray().Should().NotBeEmpty("the seeded school is inside the range");
 
-        JsonNode body = JsonNode.Parse(content)!;
-
-        body["error"]!
-            .GetValue<string>()
+        response
+            .Headers.TryGetValues("Next-Page-Token", out var nextPageTokenValues)
             .Should()
-            .Be("Cursor paging is not yet supported for relational queries.");
-        body["correlationId"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
+            .BeTrue("a page that selected keys must carry a continuation");
+
+        PageTokenCodec
+            .TryDecode(nextPageTokenValues!.Single(), out var nextRange)
+            .Should()
+            .BeTrue("the emitted continuation must decode through the codec that produced it");
+
+        // The request carried no upper bound, so the walk it starts is unbounded above, and it resumes
+        // after the keys this page already delivered.
+        nextRange!.InclusiveMaximum.Should().Be(long.MaxValue);
+        nextRange.InclusiveMinimum.Should().BePositive();
+    }
+
+    /// <summary>
+    /// Seeds one school through the same HTTP pipeline the read under test uses, with per-run unique
+    /// values so the scenario stays isolated from anything else bound to this fixture.
+    /// </summary>
+    private static async Task SeedSchoolAsync(ApiIntegrationHarness harness)
+    {
+        string suffix = Guid.NewGuid().ToString("N")[..8];
+        string namespaceUri = $"uri://ed-fi.org/CursorPaging/{suffix}";
+        long schoolId = 1_386_000L + Math.Abs(suffix.GetHashCode(StringComparison.Ordinal) % 100_000);
+
+        await SeedDescriptorAsync(
+            harness,
+            "/data/ed-fi/educationOrganizationCategoryDescriptors",
+            $"{namespaceUri}/EducationOrganizationCategoryDescriptor",
+            "School"
+        );
+        await SeedDescriptorAsync(
+            harness,
+            "/data/ed-fi/gradeLevelDescriptors",
+            $"{namespaceUri}/GradeLevelDescriptor",
+            "Tenth grade"
+        );
+
+        var schoolPayload = new JsonObject
+        {
+            ["schoolId"] = schoolId,
+            ["nameOfInstitution"] = $"CursorPaging School {suffix}",
+            ["educationOrganizationCategories"] = new JsonArray(
+                new JsonObject
+                {
+                    ["educationOrganizationCategoryDescriptor"] =
+                        $"{namespaceUri}/EducationOrganizationCategoryDescriptor#School",
+                }
+            ),
+            ["gradeLevels"] = new JsonArray(
+                new JsonObject
+                {
+                    ["gradeLevelDescriptor"] = $"{namespaceUri}/GradeLevelDescriptor#Tenth grade",
+                }
+            ),
+        };
+
+        await PostJsonAsync(harness, SchoolsEndpoint, schoolPayload);
+    }
+
+    private static async Task SeedDescriptorAsync(
+        ApiIntegrationHarness harness,
+        string endpoint,
+        string namespaceUri,
+        string codeValue
+    ) =>
+        await PostJsonAsync(
+            harness,
+            endpoint,
+            new JsonObject
+            {
+                ["namespace"] = namespaceUri,
+                ["codeValue"] = codeValue,
+                ["shortDescription"] = codeValue,
+            }
+        );
+
+    private static async Task PostJsonAsync(
+        ApiIntegrationHarness harness,
+        string endpoint,
+        JsonObject payload
+    )
+    {
+        using var content = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json");
+        using HttpResponseMessage response = await harness.HttpClient.PostAsync(endpoint, content);
+        string body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created, $"POST {endpoint} body: {body}");
     }
 
     /// <summary>

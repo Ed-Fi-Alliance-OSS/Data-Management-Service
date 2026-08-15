@@ -70,6 +70,25 @@ internal interface IPlanSqlDialect
     void AppendCreateKeysetTempTable(SqlWriter writer, KeysetTableContract keyset);
 
     /// <summary>
+    /// Appends a dialect-specific clause that returns the <c>DocumentId</c> values a query keyset
+    /// materialization inserted, positioned between the insert column list and the row source. SQL
+    /// Server emits <c>OUTPUT INSERTED.[DocumentId]</c> here; PostgreSQL returns them from a trailing
+    /// clause and emits nothing.
+    /// </summary>
+    /// <param name="writer">The SQL writer to append to.</param>
+    /// <param name="keyset">The keyset table contract specifying table and column names.</param>
+    void AppendKeysetSelectedIdOutputClause(SqlWriter writer, KeysetTableContract keyset);
+
+    /// <summary>
+    /// Appends a dialect-specific trailing clause that returns the <c>DocumentId</c> values a query
+    /// keyset materialization inserted. PostgreSQL emits <c>RETURNING "DocumentId"</c>; SQL Server has
+    /// already returned them from the insert's <c>OUTPUT</c> clause and emits nothing.
+    /// </summary>
+    /// <param name="writer">The SQL writer to append to.</param>
+    /// <param name="keyset">The keyset table contract specifying table and column names.</param>
+    void AppendKeysetSelectedIdReturningClause(SqlWriter writer, KeysetTableContract keyset);
+
+    /// <summary>
     /// Appends a <c>SELECT</c> statement that joins <c>dms.Document</c> metadata to the
     /// materialized keyset table, returning document metadata columns for the page,
     /// ordered by selected-page ordinal when available, otherwise deterministically by

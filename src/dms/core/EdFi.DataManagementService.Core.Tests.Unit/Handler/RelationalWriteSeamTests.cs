@@ -755,6 +755,7 @@ actual: {requestInfo.FrontendResponse.Body}
                 ),
                 A.Fake<ISingleRecordRelationshipAuthorizationExecutor>(),
                 A.Fake<INamespaceAuthorizationExecutor>(),
+                A.Fake<ICustomViewAuthorizationExecutor>(),
                 A.Fake<IRelationalCommandExecutor>(),
                 A.Fake<IDocumentCacheReadAccelerationCoordinator>()
             );

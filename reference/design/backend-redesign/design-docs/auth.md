@@ -377,6 +377,51 @@ DMS matches `auth.{StrategyName}` case-sensitively on both engines, emitting the
 CREATE OR REPLACE VIEW "auth"."StudentWithCTECourseEnrollments" AS ...
 ```
 
+#### Single-record operations
+
+GET-by-id, POST, PUT, and DELETE authorize against the same views as GET-many, but they check one document
+rather than filtering a page, so the check is a membership test on that document's DocumentId.
+
+For a regular resource the check rides the `AUTH1` abort device alongside the other strategies. Custom-view
+payloads use the `cv1|{index}|{kind}` prefix, an index space independent of the relationship (`1|`) and
+namespace (`ns1|`) families, so a failure is always mapped back to the request's own planned custom-view
+list and cannot be misread as another family's check. Indexes are request-wide, which lets several emitted
+checks share one command without colliding.
+
+Each operation checks the values it actually has:
+
+* GET-by-id and DELETE check the **stored** value — the document as it exists.
+* PUT checks the stored value and then the **proposed** value, in that order, so a client cannot move a
+  document out of its authorized set, nor edit one it could not read.
+* POST-create has no stored value, so it checks only the proposed value.
+
+When the basis resource *is* the resource being written, a create can never satisfy the view: the view
+returns DocumentIds of rows that already exist, and the row being created does not exist yet. A POST-create
+under a self-basis custom view is therefore always denied with the 2.4 ProblemDetails, even when the view
+would authorize the identity being created once it exists. This is a property of the strategy, not a
+defect — a self-basis custom view is only meaningful for operations on existing documents.
+
+Descriptors have no `AUTH1` statement to carry checks: descriptor GET-by-id reads the row and evaluates
+namespace in memory, and descriptor DELETE authorizes inside the locked-target boundary. Their custom-view
+checks therefore execute as their own membership query, sequenced in C# by CMS-configured index rather than
+by position within a statement. Two consequences follow from the locked boundary. The check must run on the
+**write session's** command executor, because a fresh connection would either block on the lock the session
+holds or read uncommitted state. And it runs ahead of the precondition outcome, so a request that both
+fails `If-Match` and fails the view reports the authorization denial, not the etag mismatch.
+
+Descriptor writes handle a self-basis proposed check fully. A proposed check whose basis is some other
+resource would require reading a reference value out of the descriptor body, which no shipped descriptor
+has — descriptors declare no document references — so rather than infer that from the ApiSchema, the write
+fails closed with a security-configuration 500 if one is ever planned.
+
+Validation keeps the GET-many contract and the GET-many attribution rule: only the views configured ahead of
+the failing terminal are validated, so an earlier missing or non-conforming view keeps its own 500 instead
+of being masked. On the write paths this happens lazily, after a provider failure has already aborted the
+write transaction, which is why validation always takes a fresh `IRelationalCommandExecutor` — those
+implementations open a new connection per command — rather than the aborted session. Only the views the
+failing command actually emitted are probed; a view that was planned but never emitted is not blamed for a
+failure it could not have caused.
+
 ### Relationship-based direct EdOrg claim match
 
 The relationship authorization plan must explicitly identify EdOrg-to-EdOrg subjects that allow direct claim match. A planner/check-spec flag such as `AllowDirectClaimMatch` should be set only when the subject is an EducationOrganization id relationship check that uses `auth.EducationOrganizationIdToEducationOrganizationId`.
@@ -1550,7 +1595,9 @@ These indicate a misconfiguration in the security metadata and should not occur 
 | Resource has no security metadata | `No security metadata has been configured for this resource.` |
 | No authorization strategies defined for the matching claim | `No authorization strategies were defined for the requested action '{action}' against resource URIs ['{uri1}', '{uri2}'] matched by the caller's claim '{claimName}'.` |
 | Authorization strategy implementation not found | `Could not find authorization strategy implementations for the following strategy names: '{strategyName1}', '{strategyName2}'.` |
-| Custom view basis entity property not found on the target entity | `Unable to find a property on the authorization subject entity type '{targetEntityName}' corresponding to the '{propertyName}' property on the custom authorization view's basis entity type '{basisEntityName}' in order to perform authorization. Should a different authorization strategy be used?` |
+| No DocumentId join path from the subject resource to the custom view basis resource | `Relational {operation} authorization metadata is invalid for resource '{project}.{resource}'. Strategy '{strategyName}' uses custom auth view 'auth.{strategyName}'. No DocumentId join path could be resolved from subject resource '{project}.{subjectResource}' to custom view basis resource '{project}.{basisResource}'. Should a different authorization strategy be used?` |
+
+> ODS words this failure as a missing basis-entity *property* on the subject entity, because it joins custom views on natural keys. DMS joins on DocumentId, so there is no single missing property to name — the failure is that no reference path reaches the basis resource. The DMS wording states that, and keeps ODS's closing question. The diagnostic kind is `RelationshipAuthorization.NoCustomViewJoinPath`.
 
 ### Extensions
 

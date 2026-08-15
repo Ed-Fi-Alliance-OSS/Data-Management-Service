@@ -167,7 +167,9 @@ internal sealed class CompositeRelationalWriteFirstPhase(
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
         null,
     ILogger? logger = null,
-    RelationalCommandBudget? commandBudget = null
+    RelationalCommandBudget? commandBudget = null,
+    IRelationalCommandExecutor? customViewValidationCommandExecutor = null,
+    IRelationalWriteExceptionClassifier? writeExceptionClassifier = null
 ) : IRelationalWriteFirstPhase
 {
     private const string ReferenceResolutionLabel = "reference-resolution";
@@ -188,13 +190,42 @@ internal sealed class CompositeRelationalWriteFirstPhase(
 
     private readonly RelationalCommandBudget? _commandBudget = commandBudget;
 
+    /// <summary>
+    /// The fresh-connection executor the custom-view catalog validation runs on, or <see langword="null"/> to
+    /// skip validation. Never the write session's: the probe reads the catalog, and issuing it on the session
+    /// would run inside the transaction holding the target lock and consume that command's results.
+    /// </summary>
+    private readonly IRelationalCommandExecutor? _customViewValidationCommandExecutor =
+        customViewValidationCommandExecutor;
+
+    /// <summary>
+    /// Keeps transient provider failures (deadlock victim, lock timeout) out of the custom-view attribution:
+    /// they say nothing about the view's contract and must keep their retryable write-conflict classification.
+    /// </summary>
+    private readonly IRelationalWriteExceptionClassifier _writeExceptionClassifier =
+        writeExceptionClassifier ?? new NoOpRelationalWriteExceptionClassifier();
+
     private sealed record CompositeFirstPhasePlan(
         RelationalCompositeCommand Command,
         StoredNamespaceStatementPlan? NamespacePlan,
         StoredRelationshipStatementPlan RelationshipPlan,
         ReferenceStatementPlan? ReferencePlan,
         HydrationStatementPlan? HydrationPlan
-    );
+    )
+    {
+        /// <summary>
+        /// The custom-view checks the command carried, or <see langword="null"/> when it carried none — so a
+        /// provider failure is mapped only against checks that command actually sent.
+        /// </summary>
+        public StoredCustomViewStatementPlan? CustomViewPlan { get; init; }
+
+        /// <summary>
+        /// Exactly the custom-view checks the command carries statements for, so their views are validated
+        /// before it runs and no other view's contract can preempt what it decides.
+        /// </summary>
+        public IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> CustomViewCommandChecks { get; init; } =
+        [];
+    }
 
     public async Task<RelationalWriteFirstPhaseResolution> ResolveAsync(
         RelationalWriteExecutorInput input,
@@ -250,6 +281,25 @@ internal sealed class CompositeRelationalWriteFirstPhase(
 
         AppendCaptureTarget(builder, input);
 
+        // Custom views and NamespaceBased are AND filters executing in CMS-configured order, and the command
+        // aborts at its first failure, so only the views configured before the namespace statement can ride it.
+        // A run configured after that check owes its own ordered segment, because its views may be validated
+        // only once the check has passed — so the whole request takes the ordered-segments path, where every run
+        // is already executed and validated in configured order.
+        var (customViewsBeforeNamespace, customViewsAfterNamespace) = PartitionCustomViewRuns(input);
+
+        if (customViewsAfterNamespace.Count > 0)
+        {
+            return null;
+        }
+
+        RelationalCompositeStoredAuthorization.AppendCustomViewRun(
+            builder,
+            carrier,
+            input.MappingSet,
+            customViewsBeforeNamespace
+        );
+
         if (
             !RelationalCompositeStoredAuthorization.TryAppendNamespace(
                 builder,
@@ -262,6 +312,14 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         {
             return null;
         }
+
+        // Mapping uses the request's full planned list, never the emitted slice, so a payload resolves to the
+        // check the planner assigned that index to.
+        var customViewPlan =
+            input.CustomViewAuthorization is { } customViewAuthorization
+            && customViewsBeforeNamespace.Count > 0
+                ? new StoredCustomViewStatementPlan(customViewAuthorization.Checks)
+                : null;
 
         if (
             !RelationalCompositeStoredAuthorization.TryAppendRelationship(
@@ -291,7 +349,11 @@ internal sealed class CompositeRelationalWriteFirstPhase(
             relationshipPlan,
             referencePlan,
             hydrationPlan
-        );
+        )
+        {
+            CustomViewPlan = customViewPlan,
+            CustomViewCommandChecks = customViewsBeforeNamespace,
+        };
     }
 
     private async Task<RelationalWriteFirstPhaseResolution> ExecuteSingleCompositePlanAsync(
@@ -306,17 +368,43 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         var referencePlan = plan.ReferencePlan;
         var hydrationPlan = plan.HydrationPlan;
 
+        // Ahead of the command, because the views it carries run ahead of the namespace check inside it: a table
+        // masquerading as auth.{StrategyName} answers the membership SQL without raising anything, so nothing
+        // later in the command would reveal it.
+        if (_customViewValidationCommandExecutor is not null)
+        {
+            await CustomViewAuthorizationValidator
+                .ValidateSingleRecordAsync(
+                    _customViewValidationCommandExecutor,
+                    input.MappingSet.Key.Dialect,
+                    plan.CustomViewCommandChecks,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+
         IReadOnlyList<RelationalCompositeStatementOutcome> outcomes;
+        var execution = new RelationalCompositeCommandExecution();
 
         try
         {
-            outcomes = await new RelationalCompositeCommandExecution()
+            outcomes = await execution
                 .ExecuteAsync(writeSession, plan.Command, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (DbException exception)
         {
-            if (TryMapAuthorizationFailure(input, namespacePlan, relationshipPlan, exception) is { } mapped)
+            if (
+                TryMapAuthorizationFailure(
+                    input,
+                    namespacePlan,
+                    plan.CustomViewPlan,
+                    relationshipPlan,
+                    exception,
+                    execution.Failure
+                ) is
+                { } mapped
+            )
             {
                 return RelationalWriteFirstPhaseResolution.Immediate(mapped);
             }
@@ -448,6 +536,25 @@ internal sealed class CompositeRelationalWriteFirstPhase(
 
         if (capturedTarget is not null)
         {
+            // Same configured order the co-batched path emits, now as separate segments: the views
+            // configured before NamespaceBased, then the namespace check, then the views configured after it.
+            var (segmentedViewsBefore, segmentedViewsAfter) = PartitionCustomViewRuns(input);
+
+            if (
+                await ExecuteStandaloneStoredCustomViewAsync(
+                        executionRequest,
+                        segmentedViewsBefore,
+                        capturedTarget.DocumentId,
+                        writeSession,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false) is
+                { } customViewBeforeResult
+            )
+            {
+                return RelationalWriteFirstPhaseResolution.Immediate(customViewBeforeResult);
+            }
+
             var storedNamespaceResult = await ExecuteStandaloneStoredNamespaceAsync(
                     executionRequest,
                     capturedTarget.DocumentId,
@@ -459,6 +566,21 @@ internal sealed class CompositeRelationalWriteFirstPhase(
             if (storedNamespaceResult is not null)
             {
                 return RelationalWriteFirstPhaseResolution.Immediate(storedNamespaceResult);
+            }
+
+            if (
+                await ExecuteStandaloneStoredCustomViewAsync(
+                        executionRequest,
+                        segmentedViewsAfter,
+                        capturedTarget.DocumentId,
+                        writeSession,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false) is
+                { } customViewAfterResult
+            )
+            {
+                return RelationalWriteFirstPhaseResolution.Immediate(customViewAfterResult);
             }
 
             var storedRelationshipResult = await ResolveStandaloneStoredRelationshipDispositionAsync(
@@ -528,6 +650,64 @@ internal sealed class CompositeRelationalWriteFirstPhase(
             ),
             null
         );
+    }
+
+    /// <summary>
+    /// Runs one custom-view run as its own ordered segment on the write session, for the ordered-segments
+    /// path. Mapping uses the request's full planned list so a run carrying request-wide indexes still
+    /// resolves its payload to the right check.
+    /// </summary>
+    private async Task<RelationalWriteExecutorResult?> ExecuteStandaloneStoredCustomViewAsync(
+        RelationalWriteExecutorRequest executionRequest,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> segmentChecks,
+        long targetDocumentId,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        if (segmentChecks.Count == 0 || executionRequest.CustomViewAuthorization is null)
+        {
+            return null;
+        }
+
+        var executionResult = await new CustomViewAuthorizationExecutor(
+            writeSession.CreateCommandExecutor(),
+            _providerFailureExtractor,
+            _customViewValidationCommandExecutor,
+            _writeExceptionClassifier
+        )
+            .ExecuteAsync(
+                new CustomViewAuthorizationExecutionRequest(
+                    executionRequest.MappingSet,
+                    targetDocumentId,
+                    segmentChecks,
+                    executionRequest.CustomViewAuthorization.Checks
+                ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return executionResult switch
+        {
+            CustomViewAuthorizationExecutionResult.Authorized => null,
+            CustomViewAuthorizationExecutionResult.NotAuthorized notAuthorized =>
+                RelationalWriteExecutorResults.BuildCustomViewAuthorizationFailureResult(
+                    executionRequest.OperationKind,
+                    notAuthorized.Failure
+                ),
+            CustomViewAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
+                RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
+                    executionRequest.OperationKind,
+                    [invalidFailure.FailureMessage],
+                    invalidFailure.Diagnostics
+                ),
+            // Unreachable while the capture lock holds; the same defensive mapping the namespace segment uses.
+            CustomViewAuthorizationExecutionResult.StaleTarget =>
+                RelationalWriteExecutorResults.BuildStaleTargetResult(executionRequest.OperationKind),
+            _ => throw new InvalidOperationException(
+                $"Unsupported custom view authorization execution result '{executionResult.GetType().Name}'."
+            ),
+        };
     }
 
     private async Task<RelationalWriteExecutorResult?> ExecuteStandaloneStoredNamespaceAsync(
@@ -783,8 +963,10 @@ internal sealed class CompositeRelationalWriteFirstPhase(
     private RelationalWriteExecutorResult? TryMapAuthorizationFailure(
         RelationalWriteExecutorInput input,
         StoredNamespaceStatementPlan? namespacePlan,
+        StoredCustomViewStatementPlan? customViewPlan,
         StoredRelationshipStatementPlan relationshipPlan,
-        DbException exception
+        DbException exception,
+        RelationalCompositeFailureContext? failureContext
     ) =>
         RelationalCompositeStoredAuthorization.TryClassifyDenial(
             input.MappingSet.Key.Dialect,
@@ -793,7 +975,8 @@ internal sealed class CompositeRelationalWriteFirstPhase(
             relationshipPlan,
             RelationalWriteExecutorResults.GetRelationshipAuthorizationAuth1Index(input.OperationKind),
             _providerFailureExtractor,
-            _logger
+            _logger,
+            customViewPlan
         ) switch
         {
             // Stale is unreachable while the capture lock holds; kept as the same defensive mapping the
@@ -803,6 +986,11 @@ internal sealed class CompositeRelationalWriteFirstPhase(
             ),
             StoredAuthorizationDenial.NamespaceNotAuthorized(var failure) =>
                 RelationalWriteExecutorResults.BuildNamespaceAuthorizationFailureResult(
+                    input.OperationKind,
+                    failure
+                ),
+            StoredAuthorizationDenial.CustomViewNotAuthorized(var failure) =>
+                RelationalWriteExecutorResults.BuildCustomViewAuthorizationFailureResult(
                     input.OperationKind,
                     failure
                 ),
@@ -817,8 +1005,87 @@ internal sealed class CompositeRelationalWriteFirstPhase(
                     messages,
                     diagnostics
                 ),
+            // A failure with no authorization payload in a command carrying custom-view statements is
+            // attributed to the configured view, so a dropped or revoked auth.{StrategyName} keeps the
+            // documented urn:ed-fi:api:system 500 rather than escaping as an unhandled provider error. The
+            // statement label alone cannot decide it: PostgreSQL prepares the whole batch before executing
+            // any of it, so a missing view surfaces at reader-open nominally against statement 0. A transient
+            // provider failure (deadlock victim, lock timeout) proves nothing about the view's contract, so it
+            // maps to the same retryable write-conflict result the executor's failure mapper would produce.
+            _ when IsAttributableToCustomView(customViewPlan, failureContext) =>
+                _writeExceptionClassifier.IsTransientFailure(exception)
+                    ? BuildTransientWriteConflictResult(input.OperationKind)
+                    : throw new CustomViewAuthorizationValidationException(exception),
             _ => null,
         };
+
+    /// <summary>
+    /// The transient-failure result for the operation, mirroring the write executor's database failure
+    /// mapping so a deadlock in the opening command answers the same retryable 409 as one in the DML.
+    /// </summary>
+    private static RelationalWriteExecutorResult BuildTransientWriteConflictResult(
+        RelationalWriteOperationKind operationKind
+    ) =>
+        operationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureWriteConflict()
+            ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureWriteConflict()
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
+
+    private static bool IsAttributableToCustomView(
+        StoredCustomViewStatementPlan? customViewPlan,
+        RelationalCompositeFailureContext? failureContext
+    )
+    {
+        if (customViewPlan is null)
+        {
+            return false;
+        }
+
+        if (
+            string.Equals(
+                failureContext?.Label,
+                RelationalCompositeStoredAuthorization.CustomViewLabel,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return true;
+        }
+
+        return failureContext?.Stage
+            is RelationalCompositeFailureStage.OpeningReader
+                or RelationalCompositeFailureStage.Unattributable;
+    }
+
+    /// <summary>
+    /// Splits the planned custom-view checks around the configured position of <c>NamespaceBased</c>. With no
+    /// namespace check every view runs ahead of the relationship group, so the whole list is the first run.
+    /// </summary>
+    private static (
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> Before,
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> After
+    ) PartitionCustomViewRuns(RelationalWriteExecutorInput input)
+    {
+        if (input.CustomViewAuthorization is not { } customViewAuthorization)
+        {
+            return ([], []);
+        }
+
+        // Only the stored source belongs in this phase; the proposed source runs after merge finalizes the
+        // root row.
+        return input.StoredNamespaceAuthorization is { } storedNamespaceAuthorization
+            ? CustomViewAuthorizationCheckSplitter.PartitionByConfiguredIndex(
+                customViewAuthorization.StoredChecks,
+                storedNamespaceAuthorization.Checks[0].RawConfiguredIndex
+            )
+            : (customViewAuthorization.StoredChecks, []);
+    }
 
     /// <summary>
     /// Shapes a PUT whose in-transaction target observation found nothing. RFC 9110 §13.1.1 If-Match:

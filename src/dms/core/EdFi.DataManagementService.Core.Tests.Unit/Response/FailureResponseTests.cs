@@ -290,20 +290,4 @@ public class Given_FailureResponse_For_Security_Configuration
                 "Could not find authorization strategy implementations for the following strategy names: 'StudentScope', 'CalendarScope'."
             );
     }
-
-    [Test]
-    public void It_formats_the_canonical_custom_view_basis_property_message()
-    {
-        string message = SecurityConfigurationFailureMessages.CustomViewBasisPropertyUnavailable(
-            "edfi.CourseTranscript",
-            "StudentUniqueId",
-            "edfi.Student"
-        );
-
-        message
-            .Should()
-            .Be(
-                "Unable to find a property on the authorization subject entity type 'edfi.CourseTranscript' corresponding to the 'StudentUniqueId' property on the custom authorization view's basis entity type 'edfi.Student' in order to perform authorization. Should a different authorization strategy be used?"
-            );
-    }
 }

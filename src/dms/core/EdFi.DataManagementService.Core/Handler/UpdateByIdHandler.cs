@@ -173,6 +173,15 @@ internal class UpdateByIdHandler(ILogger _logger, ResiliencePipeline _resilience
                 Headers: [],
                 ContentType: "application/problem+json"
             ),
+            UpdateFailureCustomViewNotAuthorized notAuthorized => new FrontendResponse(
+                StatusCode: 403,
+                Body: CustomViewAuthorizationFailureResponse.ForFailure(
+                    notAuthorized.CustomViewFailure,
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: [],
+                ContentType: "application/problem+json"
+            ),
             UpdateFailureNotImplemented failure => new FrontendResponse(
                 StatusCode: 501,
                 Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
