@@ -19,11 +19,20 @@ public interface ICdcConnectorTemplateService
     );
 
     CdcConnectorTemplateResult Render(CdcConnectorTemplateRequest request);
+
+    CdcConnectorTemplateResult ValidateRegistrationPreflight(
+        CdcConnectorTemplateEffectiveConfigValidationRequest request
+    );
+
+    CdcConnectorTemplateResult ValidateLiveReadBack(
+        CdcConnectorTemplateEffectiveConfigValidationRequest request
+    );
 }
 
 internal sealed class CdcConnectorTemplateService(
     ICdcConnectorTemplateInputValidator inputValidator,
-    ICdcConnectorTemplateRenderer renderer
+    ICdcConnectorTemplateRenderer renderer,
+    ICdcConnectorTemplateEffectiveConfigValidator effectiveConfigValidator
 ) : ICdcConnectorTemplateService
 {
     public CdcProviderSetupReadiness GetProviderSetupReadiness(CdcProviderSetupResult providerSetupResult)
@@ -45,6 +54,22 @@ internal sealed class CdcConnectorTemplateService(
     ) => inputValidator.ValidateRequest(request, sourcePhase);
 
     public CdcConnectorTemplateResult Render(CdcConnectorTemplateRequest request) => renderer.Render(request);
+
+    public CdcConnectorTemplateResult ValidateRegistrationPreflight(
+        CdcConnectorTemplateEffectiveConfigValidationRequest request
+    ) =>
+        effectiveConfigValidator.ValidateEffectiveConfig(
+            request,
+            CdcConnectorTemplateSourcePhase.RegistrationPreflight
+        );
+
+    public CdcConnectorTemplateResult ValidateLiveReadBack(
+        CdcConnectorTemplateEffectiveConfigValidationRequest request
+    ) =>
+        effectiveConfigValidator.ValidateEffectiveConfig(
+            request,
+            CdcConnectorTemplateSourcePhase.LiveReadBack
+        );
 }
 
 public sealed record CdcProviderSetupReadiness(
@@ -67,6 +92,12 @@ public static class CdcConnectorTemplateServiceCollectionExtensions
         );
         services.TryAdd(
             ServiceDescriptor.Scoped<ICdcConnectorTemplateRenderer, CdcConnectorTemplateRenderer>()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<
+                ICdcConnectorTemplateEffectiveConfigValidator,
+                CdcConnectorTemplateEffectiveConfigValidator
+            >()
         );
         services.TryAdd(
             ServiceDescriptor.Scoped<ICdcConnectorTemplateService, CdcConnectorTemplateService>()
