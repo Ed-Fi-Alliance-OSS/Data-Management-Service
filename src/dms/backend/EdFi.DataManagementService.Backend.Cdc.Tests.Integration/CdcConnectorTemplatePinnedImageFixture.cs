@@ -33,6 +33,27 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
     private static readonly TimeSpan ConnectorRunningTimeout = TimeSpan.FromMinutes(3);
     private static readonly TimeSpan ProviderHeartbeatTimeout = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan OffsetCommitTimeout = TimeSpan.FromMinutes(4);
+    private static readonly IReadOnlyList<SqlServerCaptureInstanceDefinition> SqlServerCaptureInstances =
+    [
+        new(
+            CdcSourceTableKind.DocumentCache,
+            "DocumentCache",
+            new CdcSafeName("dms_binding_document_cache_capture"),
+            "document_cache"
+        ),
+        new(
+            CdcSourceTableKind.Document,
+            "Document",
+            new CdcSafeName("dms_binding_document_capture"),
+            "document"
+        ),
+        new(
+            CdcSourceTableKind.CdcHeartbeat,
+            "CdcHeartbeat",
+            new CdcSafeName("dms_binding_cdc_heartbeat_capture"),
+            "cdc_heartbeat"
+        ),
+    ];
 
     private readonly CdcConnectorTemplateSmokeSettings _settings;
     private readonly HttpClient _httpClient;
@@ -980,6 +1001,11 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 
     private async Task CreateMinimalSqlServerObjectsAsync(CancellationToken cancellationToken)
     {
+        string enableCaptureInstancesSql = string.Join(
+            Environment.NewLine,
+            SqlServerCaptureInstances.Select(EnableSqlServerCaptureInstanceSql)
+        );
+
         string sql = $$"""
             IF DB_ID(N'{{SqlServerDatabaseName}}') IS NULL
                 CREATE DATABASE [{{SqlServerDatabaseName}}];
@@ -1005,30 +1031,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
                 VALUES (1, 0, SYSDATETIMEOFFSET());
             IF (SELECT is_cdc_enabled FROM sys.databases WHERE name = DB_NAME()) = 0
                 EXEC sys.sp_cdc_enable_db;
-            IF NOT EXISTS (
-                SELECT 1 FROM cdc.change_tables WHERE capture_instance = N'dms_DocumentCache'
-            )
-                EXEC sys.sp_cdc_enable_table
-                    @source_schema = N'dms',
-                    @source_name = N'DocumentCache',
-                    @role_name = NULL,
-                    @supports_net_changes = 0;
-            IF NOT EXISTS (
-                SELECT 1 FROM cdc.change_tables WHERE capture_instance = N'dms_Document'
-            )
-                EXEC sys.sp_cdc_enable_table
-                    @source_schema = N'dms',
-                    @source_name = N'Document',
-                    @role_name = NULL,
-                    @supports_net_changes = 0;
-            IF NOT EXISTS (
-                SELECT 1 FROM cdc.change_tables WHERE capture_instance = N'dms_CdcHeartbeat'
-            )
-                EXEC sys.sp_cdc_enable_table
-                    @source_schema = N'dms',
-                    @source_name = N'CdcHeartbeat',
-                    @role_name = NULL,
-                    @supports_net_changes = 0;
+            {{enableCaptureInstancesSql}}
             """;
 
         await _docker.RunAsync(
@@ -1052,6 +1055,72 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             ],
             cancellationToken
         );
+
+        await AssertSqlServerCaptureInstancesMatchProviderSetupEvidenceAsync(cancellationToken);
+    }
+
+    private static string EnableSqlServerCaptureInstanceSql(SqlServerCaptureInstanceDefinition definition)
+    {
+        string captureInstanceName = SqlServerLiteralValue(definition.CaptureInstanceName.Value);
+        string sourceTableName = SqlServerLiteralValue(definition.SourceTableName);
+
+        return $$"""
+            IF NOT EXISTS (
+                SELECT 1 FROM cdc.change_tables WHERE capture_instance = N'{{captureInstanceName}}'
+            )
+                EXEC sys.sp_cdc_enable_table
+                    @source_schema = N'dms',
+                    @source_name = N'{{sourceTableName}}',
+                    @role_name = NULL,
+                    @supports_net_changes = 0,
+                    @capture_instance = N'{{captureInstanceName}}';
+            """;
+    }
+
+    private async Task AssertSqlServerCaptureInstancesMatchProviderSetupEvidenceAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        string sourceNameList = string.Join(
+            ", ",
+            SqlServerCaptureInstances.Select(definition =>
+                $"N'{SqlServerLiteralValue(definition.SourceTableName)}'"
+            )
+        );
+        string output = await ReadSqlServerScalarAsync(
+            $$"""
+            SELECT
+                change_table.capture_instance
+                + N'|' + SCHEMA_NAME(source_table.schema_id)
+                + N'|' + source_table.name
+            FROM cdc.change_tables AS change_table
+            INNER JOIN sys.tables AS source_table
+                ON source_table.object_id = change_table.source_object_id
+            WHERE source_table.schema_id = SCHEMA_ID(N'dms')
+                AND source_table.name IN ({{sourceNameList}})
+            ORDER BY change_table.capture_instance;
+            """,
+            cancellationToken
+        );
+
+        string[] actualCaptureInstances = output
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .ToArray();
+        string[] advertisedCaptureInstances = BuildArtifactInventory(CdcProvider.SqlServer)
+            .Where(artifact => artifact.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance)
+            .Select(artifact =>
+                $"{artifact.SafeArtifactName.Value}|dms|{SqlServerSourceTableNameFromKindToken(artifact.SafeObservedValues["source_table_kind"])}"
+            )
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .ToArray();
+
+        actualCaptureInstances
+            .Should()
+            .Equal(
+                advertisedCaptureInstances,
+                "SQL Server pinned-image fixture CDC capture instances should match the provider setup evidence advertised to the template service"
+            );
     }
 
     private async Task<long> ReadProviderHeartbeatSequenceAsync(CancellationToken cancellationToken)
@@ -1488,6 +1557,16 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
     private static string EscapeSingleQuotedShell(string value) =>
         value.Replace("'", "'\"'\"'", StringComparison.Ordinal);
 
+    private static string SqlServerLiteralValue(string value) =>
+        value.Replace("'", "''", StringComparison.Ordinal);
+
+    private static string SqlServerSourceTableNameFromKindToken(string tableKindToken) =>
+        SqlServerCaptureInstances
+            .Single(definition =>
+                string.Equals(definition.SourceTableKindToken, tableKindToken, StringComparison.Ordinal)
+            )
+            .SourceTableName;
+
     private static CdcConnectorTemplateBindingIdentity BuildBinding(CdcProvider provider) =>
         new(
             provider,
@@ -1554,45 +1633,29 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
                     new Dictionary<string, string>()
                 ),
             ],
-            CdcProvider.SqlServer =>
-            [
-                new(
-                    CdcProviderArtifactKind.SqlServerCaptureInstance,
-                    new CdcSafeName("dms_binding_document_cache_capture"),
-                    CdcProviderArtifactState.Matched,
-                    new Dictionary<string, string>
-                    {
-                        ["capture_instance"] = "dms_binding_document_cache_capture",
-                        ["source_table_kind"] = "document_cache",
-                    }
-                ),
-                new(
-                    CdcProviderArtifactKind.SqlServerCaptureInstance,
-                    new CdcSafeName("dms_binding_document_capture"),
-                    CdcProviderArtifactState.Matched,
-                    new Dictionary<string, string>
-                    {
-                        ["capture_instance"] = "dms_binding_document_capture",
-                        ["source_table_kind"] = "document",
-                    }
-                ),
-                new(
-                    CdcProviderArtifactKind.SqlServerCaptureInstance,
-                    new CdcSafeName("dms_binding_cdc_heartbeat_capture"),
-                    CdcProviderArtifactState.Matched,
-                    new Dictionary<string, string>
-                    {
-                        ["capture_instance"] = "dms_binding_cdc_heartbeat_capture",
-                        ["source_table_kind"] = "cdc_heartbeat",
-                    }
-                ),
-            ],
+            CdcProvider.SqlServer => SqlServerCaptureInstances
+                .Select(BuildSqlServerCaptureInstanceArtifact)
+                .ToArray(),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(provider),
                 provider,
                 "Unsupported CDC provider."
             ),
         };
+
+    private static CdcProviderArtifactObservation BuildSqlServerCaptureInstanceArtifact(
+        SqlServerCaptureInstanceDefinition definition
+    ) =>
+        new(
+            CdcProviderArtifactKind.SqlServerCaptureInstance,
+            definition.CaptureInstanceName,
+            CdcProviderArtifactState.Matched,
+            new Dictionary<string, string>
+            {
+                ["capture_instance"] = definition.CaptureInstanceName.Value,
+                ["source_table_kind"] = definition.SourceTableKindToken,
+            }
+        );
 
     private static IReadOnlyList<CdcSourceTableInventory> BuildRequiredSourceTableInventory(
         CdcProvider provider
@@ -1672,6 +1735,13 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 
         return new CdcConnectorTemplateSourcePartitionEvidence(properties);
     }
+
+    private sealed record SqlServerCaptureInstanceDefinition(
+        CdcSourceTableKind TableKind,
+        string SourceTableName,
+        CdcSafeName CaptureInstanceName,
+        string SourceTableKindToken
+    );
 
     private sealed record CdcConnectorSourceOffsetSnapshot(
         string CanonicalOffsetJson,
