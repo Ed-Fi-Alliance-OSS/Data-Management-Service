@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Serialization;
 using EdFi.DataManagementService.Backend.Ddl;
 
 namespace EdFi.DataManagementService.Backend.Cdc;
@@ -519,12 +520,14 @@ public sealed record CdcKafkaConnectRegistrationPayload
 {
     public CdcKafkaConnectRegistrationPayload(CdcSafeName name, IReadOnlyDictionary<string, string> config)
     {
-        Name = name;
+        Name = name.Value;
         Config = CdcConnectorTemplateContractValidation.NormalizeStringProperties(config, nameof(config));
     }
 
-    public CdcSafeName Name { get; }
+    [JsonPropertyName("name")]
+    public string Name { get; }
 
+    [JsonPropertyName("config")]
     public IReadOnlyDictionary<string, string> Config { get; }
 }
 
@@ -609,7 +612,13 @@ public sealed record CdcConnectorTemplateResult
             return;
         }
 
-        if (!registrationPayload.Name.Equals(bindingIdentity.ConnectorName))
+        if (
+            !string.Equals(
+                registrationPayload.Name,
+                bindingIdentity.ConnectorName.Value,
+                StringComparison.Ordinal
+            )
+        )
         {
             throw new ArgumentException(
                 "CDC connector template registration payload name must match the binding connector name.",

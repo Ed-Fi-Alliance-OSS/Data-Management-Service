@@ -50,7 +50,7 @@ public class Given_CdcConnectorTemplateIntegrationBoundaries
         using var _ = new AssertionScope();
         result.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
         result.RegistrationPayload.Should().NotBeNull();
-        result.RegistrationPayload!.Name.Should().Be(request.ConnectorName);
+        result.RegistrationPayload!.Name.Should().Be(request.ConnectorName.Value);
         result.RegistrationPayload.Config.Should().Equal(result.Config);
         result.RedactedArtifactPayload.Should().NotBeNull();
         result

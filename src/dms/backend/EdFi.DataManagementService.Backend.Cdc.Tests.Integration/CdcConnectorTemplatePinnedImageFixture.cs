@@ -8,7 +8,6 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
@@ -355,9 +354,9 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             .StatusCode.Should()
             .BeOneOf(HttpStatusCode.NoContent, HttpStatusCode.NotFound, HttpStatusCode.Accepted);
 
-        var payload = new CdcConnectorRegistrationDocument(connectorName, rendered.Config);
+        rendered.RegistrationPayload.Should().NotBeNull();
         using var content = new StringContent(
-            JsonSerializer.Serialize(payload),
+            JsonSerializer.Serialize(rendered.RegistrationPayload),
             Encoding.UTF8,
             "application/json"
         );
@@ -1601,11 +1600,6 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 
         return new CdcConnectorTemplateSourcePartitionEvidence(properties);
     }
-
-    private sealed record CdcConnectorRegistrationDocument(
-        [property: JsonPropertyName("name")] string Name,
-        [property: JsonPropertyName("config")] IReadOnlyDictionary<string, string> Config
-    );
 
     private sealed record CdcConnectorSourceOffsetSnapshot(string CanonicalOffsetJson);
 }
