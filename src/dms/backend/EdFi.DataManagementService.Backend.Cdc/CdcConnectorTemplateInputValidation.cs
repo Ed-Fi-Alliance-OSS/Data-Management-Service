@@ -80,6 +80,7 @@ public sealed class CdcConnectorTemplateValidationException : Exception
 public static class CdcConnectorTemplateDiagnosticCodes
 {
     public const string ReservedKey = "CDC_TEMPLATE_RESERVED_KEY";
+    public const string ConnectionPropertyRequired = "CDC_TEMPLATE_CONNECTION_PROPERTY_REQUIRED";
     public const string ConnectionPropertyNotAllowed = "CDC_TEMPLATE_CONNECTION_PROPERTY_NOT_ALLOWED";
     public const string KafkaSecurityPropertyNotAllowed = "CDC_TEMPLATE_KAFKA_SECURITY_PROPERTY_NOT_ALLOWED";
     public const string ExternalizedSecretReferenceRequired =
@@ -166,6 +167,27 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
         "ssl.endpoint.identification.algorithm",
         "ssl.protocol",
         "ssl.enabled.protocols",
+    };
+
+    private static readonly IReadOnlyDictionary<
+        CdcProvider,
+        IReadOnlyList<string>
+    > _requiredConnectionPropertiesByProvider = new Dictionary<CdcProvider, IReadOnlyList<string>>
+    {
+        [CdcProvider.Postgresql] =
+        [
+            "database.hostname",
+            "database.user",
+            "database.password",
+            "database.dbname",
+        ],
+        [CdcProvider.SqlServer] =
+        [
+            "database.hostname",
+            "database.user",
+            "database.password",
+            "database.names",
+        ],
     };
 
     private static readonly IReadOnlySet<string> _secretPropertyNames = new HashSet<string>(
@@ -305,6 +327,8 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
     {
         IReadOnlySet<string> allowList = _connectionAllowListByProvider[request.Provider];
 
+        AddMissingRequiredConnectionPropertyDiagnostics(request, sourcePhase, diagnostics);
+
         foreach (var property in request.ProviderConnectionProperties.Properties)
         {
             if (AddReservedKeyDiagnosticIfNeeded(request, sourcePhase, diagnostics, property.Key))
@@ -341,6 +365,42 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
         if (request.Provider == CdcProvider.SqlServer)
         {
             ValidateSqlServerDatabaseNames(request, sourcePhase, diagnostics);
+        }
+    }
+
+    private static void AddMissingRequiredConnectionPropertyDiagnostics(
+        CdcConnectorTemplateRequest request,
+        CdcConnectorTemplateSourcePhase sourcePhase,
+        List<CdcConnectorTemplateDiagnostic> diagnostics
+    )
+    {
+        foreach (string propertyName in _requiredConnectionPropertiesByProvider[request.Provider])
+        {
+            if (
+                request.Provider == CdcProvider.SqlServer
+                && string.Equals(propertyName, "database.names", StringComparison.Ordinal)
+            )
+            {
+                continue;
+            }
+
+            if (request.ProviderConnectionProperties.Properties.ContainsKey(propertyName))
+            {
+                continue;
+            }
+
+            diagnostics.Add(
+                BuildDiagnostic(
+                    CdcConnectorTemplateDiagnosticCodes.ConnectionPropertyRequired,
+                    CdcConnectorTemplateDiagnosticCategory.MissingInput,
+                    propertyName,
+                    RequiredConnectionPropertyMessage(request.Provider),
+                    null,
+                    request,
+                    sourcePhase,
+                    RedactionClassificationForConnectionProperty(propertyName)
+                )
+            );
         }
     }
 
@@ -508,6 +568,35 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
     internal static bool IsReservedKey(string propertyName) =>
         _reservedExactKeys.Contains(propertyName)
         || _reservedKeyPrefixes.Any(prefix => propertyName.StartsWith(prefix, StringComparison.Ordinal));
+
+    private static string RequiredConnectionPropertyMessage(CdcProvider provider) =>
+        provider switch
+        {
+            CdcProvider.Postgresql => "required PostgreSQL connection property",
+            CdcProvider.SqlServer => "required SQL Server connection property",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(provider),
+                provider,
+                "Unsupported CDC provider."
+            ),
+        };
+
+    private static CdcConnectorTemplateRedactionClassification RedactionClassificationForConnectionProperty(
+        string propertyName
+    )
+    {
+        if (_secretPropertyNames.Contains(propertyName))
+        {
+            return CdcConnectorTemplateRedactionClassification.SecretValue;
+        }
+
+        if (propertyName.StartsWith("database.", StringComparison.Ordinal))
+        {
+            return CdcConnectorTemplateRedactionClassification.PhysicalIdentifier;
+        }
+
+        return CdcConnectorTemplateRedactionClassification.Safe;
+    }
 
     private static bool IsExternalizedSecretReference(string value) =>
         IsEnvironmentSecretReference(value) || IsFileSecretReference(value);

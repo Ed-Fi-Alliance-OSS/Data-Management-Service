@@ -281,6 +281,7 @@ public class Given_CdcConnectorTemplateSqlServerRendering
                 providerConnectionProperties: new Dictionary<string, string>
                 {
                     ["database.hostname"] = "sqlserver.internal",
+                    ["database.user"] = "connector_user",
                     ["database.names"] = "edfi_datastore, other_datastore",
                     ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
                 }
@@ -352,6 +353,7 @@ public class Given_CdcConnectorTemplateSqlServerRendering
                 providerConnectionProperties: new Dictionary<string, string>
                 {
                     ["database.hostname"] = "sqlserver.internal",
+                    ["database.user"] = "connector_user",
                     ["database.names"] = "edfi_datastore",
                     ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
                     ["time.precision.mode"] = "isostring",
