@@ -130,6 +130,12 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
         if (request.Provider == CdcProvider.Postgresql)
         {
             AddPostgresqlConfig(request, config);
+            return;
+        }
+
+        if (request.Provider == CdcProvider.SqlServer)
+        {
+            AddSqlServerConfig(request, config);
         }
     }
 
@@ -167,31 +173,80 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
         config["unavailable.value.placeholder"] = "__debezium_unavailable_value";
     }
 
+    private static void AddSqlServerConfig(
+        CdcConnectorTemplateRequest request,
+        SortedDictionary<string, string> config
+    )
+    {
+        config["table.include.list"] = string.Join(
+            ",",
+            OrderedSourceTables(request).Select(table => table.EmittedQuotedTableName)
+        );
+        config["message.key.columns"] = string.Join(
+            ";",
+            OrderedMessageKeyColumns(request)
+                .Select(messageKeyColumns =>
+                {
+                    CdcSourceTableInventory table = SourceTable(request, messageKeyColumns.TableKind);
+                    return $"{table.EmittedQuotedTableName}:{EmittedKeyColumnList(table, messageKeyColumns)}";
+                })
+        );
+        config["time.precision.mode"] = "isostring";
+        config["unavailable.value.placeholder"] = "__debezium_unavailable_value";
+
+        if (request.DeploymentPolicy.SqlServerPollInterval is not null)
+        {
+            config["poll.interval.ms"] = PollIntervalMilliseconds(request).ToString();
+        }
+
+        config["schema.history.internal.kafka.bootstrap.servers"] = request
+            .DeploymentPolicy
+            .KafkaBootstrapServers;
+        config["schema.history.internal.kafka.topic"] =
+            request.SchemaHistoryTopicName
+            ?? throw new InvalidOperationException(
+                "CDC connector template SQL Server schema-history topic was not derived."
+            );
+        config["schema.history.internal.producer.enable.idempotence"] = "true";
+        config["schema.history.internal.producer.acks"] = "all";
+        config["schema.history.internal.producer.retries"] = int.MaxValue.ToString();
+        config["schema.history.internal.producer.max.in.flight.requests.per.connection"] = "1";
+        config["include.schema.changes"] = "false";
+
+        foreach (var property in request.KafkaClientSecurityProperties.Properties)
+        {
+            config[$"schema.history.internal.producer.{property.Key}"] = property.Value;
+            config[$"schema.history.internal.consumer.{property.Key}"] = property.Value;
+        }
+    }
+
     private static IReadOnlyList<CdcConnectorTemplateDiagnostic> ValidateProviderSpecificInput(
         CdcConnectorTemplateRequest request
     )
     {
-        if (request.Provider != CdcProvider.Postgresql)
-        {
-            return [];
-        }
-
         List<CdcConnectorTemplateDiagnostic> diagnostics = [];
 
-        AddMissingArtifactDiagnosticIfNeeded(
-            request,
-            diagnostics,
-            CdcProviderArtifactKind.PostgresqlPublication,
-            CdcConnectorTemplateDiagnosticCodes.PostgresqlPublicationMetadataRequired,
-            "publication.name"
-        );
-        AddMissingArtifactDiagnosticIfNeeded(
-            request,
-            diagnostics,
-            CdcProviderArtifactKind.PostgresqlReplicationSlot,
-            CdcConnectorTemplateDiagnosticCodes.PostgresqlReplicationSlotMetadataRequired,
-            "slot.name"
-        );
+        if (request.Provider == CdcProvider.Postgresql)
+        {
+            AddMissingArtifactDiagnosticIfNeeded(
+                request,
+                diagnostics,
+                CdcProviderArtifactKind.PostgresqlPublication,
+                CdcConnectorTemplateDiagnosticCodes.PostgresqlPublicationMetadataRequired,
+                "publication.name"
+            );
+            AddMissingArtifactDiagnosticIfNeeded(
+                request,
+                diagnostics,
+                CdcProviderArtifactKind.PostgresqlReplicationSlot,
+                CdcConnectorTemplateDiagnosticCodes.PostgresqlReplicationSlotMetadataRequired,
+                "slot.name"
+            );
+        }
+        else if (request.Provider == CdcProvider.SqlServer)
+        {
+            AddSqlServerPollIntervalDiagnosticIfNeeded(request, diagnostics);
+        }
 
         foreach (CdcSourceTableInventory sourceTable in OrderedSourceTables(request))
         {
@@ -218,6 +273,37 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
         }
 
         return diagnostics;
+    }
+
+    private static void AddSqlServerPollIntervalDiagnosticIfNeeded(
+        CdcConnectorTemplateRequest request,
+        List<CdcConnectorTemplateDiagnostic> diagnostics
+    )
+    {
+        if (request.DeploymentPolicy.SqlServerPollInterval is null)
+        {
+            return;
+        }
+
+        long heartbeatMilliseconds = HeartbeatIntervalMilliseconds(request);
+        long pollMilliseconds = PollIntervalMilliseconds(request);
+        if (pollMilliseconds <= heartbeatMilliseconds)
+        {
+            return;
+        }
+
+        diagnostics.Add(
+            BuildDiagnostic(
+                CdcConnectorTemplateDiagnosticCodes.SqlServerPollIntervalExceedsHeartbeatInterval,
+                CdcConnectorTemplateDiagnosticCategory.Heartbeat,
+                "poll.interval.ms",
+                $"<= heartbeat.interval.ms ({heartbeatMilliseconds})",
+                pollMilliseconds.ToString(),
+                request,
+                CdcConnectorTemplateSourcePhase.Rendering,
+                CdcConnectorTemplateRedactionClassification.Safe
+            )
+        );
     }
 
     private static void AddMissingArtifactDiagnosticIfNeeded(
@@ -397,6 +483,29 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
             throw new ArgumentOutOfRangeException(
                 nameof(request),
                 "CDC connector template heartbeat interval must render to a positive millisecond value."
+            );
+        }
+
+        return Convert.ToInt64(milliseconds);
+    }
+
+    private static long PollIntervalMilliseconds(CdcConnectorTemplateRequest request)
+    {
+        if (request.DeploymentPolicy.SqlServerPollInterval is null)
+        {
+            throw new InvalidOperationException(
+                "CDC connector template SQL Server poll interval was not supplied."
+            );
+        }
+
+        double milliseconds = Math.Ceiling(
+            request.DeploymentPolicy.SqlServerPollInterval.Value.TotalMilliseconds
+        );
+        if (milliseconds is < 1 or > long.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(request),
+                "CDC connector template SQL Server poll interval must render to a positive millisecond value."
             );
         }
 
