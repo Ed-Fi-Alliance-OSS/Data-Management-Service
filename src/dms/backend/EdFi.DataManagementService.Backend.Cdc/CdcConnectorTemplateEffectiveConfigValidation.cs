@@ -207,7 +207,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
             );
         }
 
-        if (!HasRequiredSourceInventory(result.SourceTableInventory))
+        if (!CdcConnectorTemplateSharedRules.HasRequiredSourceInventory(result.SourceTableInventory))
         {
             diagnostics.Add(
                 BuildDiagnostic(
@@ -223,7 +223,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
             );
         }
 
-        if (!HasExpectedMessageKeyColumns(result.ExpectedMessageKeyColumns))
+        if (!CdcConnectorTemplateSharedRules.HasExpectedMessageKeyColumns(result.ExpectedMessageKeyColumns))
         {
             diagnostics.Add(
                 BuildDiagnostic(
@@ -254,43 +254,6 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
                 )
             );
         }
-    }
-
-    private static bool HasRequiredSourceInventory(
-        IReadOnlyList<CdcSourceTableInventory> sourceTableInventory
-    )
-    {
-        CdcSourceTableKind[] requiredKinds =
-        [
-            CdcSourceTableKind.DocumentCache,
-            CdcSourceTableKind.Document,
-            CdcSourceTableKind.CdcHeartbeat,
-        ];
-        CdcSourceTableKind[] observedKinds = sourceTableInventory.Select(table => table.TableKind).ToArray();
-
-        return sourceTableInventory.Count == requiredKinds.Length
-            && !requiredKinds.Except(observedKinds).Any()
-            && !observedKinds.Except(requiredKinds).Any()
-            && !observedKinds.GroupBy(kind => kind).Any(group => group.Count() > 1);
-    }
-
-    private static bool HasExpectedMessageKeyColumns(
-        IReadOnlyList<CdcExpectedMessageKeyColumns> expectedMessageKeyColumns
-    )
-    {
-        CdcSourceTableKind[] requiredKinds = [CdcSourceTableKind.DocumentCache, CdcSourceTableKind.Document];
-        CdcSourceTableKind[] observedKinds = expectedMessageKeyColumns
-            .Select(columns => columns.TableKind)
-            .ToArray();
-
-        return expectedMessageKeyColumns.Count == requiredKinds.Length
-            && !requiredKinds.Except(observedKinds).Any()
-            && !observedKinds.Except(requiredKinds).Any()
-            && !observedKinds.GroupBy(kind => kind).Any(group => group.Count() > 1)
-            && expectedMessageKeyColumns.All(columns =>
-                columns.KeyColumns.Count == 1
-                && string.Equals(columns.KeyColumns[0].Value, "DocumentUuid", StringComparison.Ordinal)
-            );
     }
 
     private static void AddEffectiveConfigDiagnostics(

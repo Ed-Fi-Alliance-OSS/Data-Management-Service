@@ -439,22 +439,7 @@ public sealed record CdcConnectorTemplateRequest
         string parameterName
     )
     {
-        ArgumentNullException.ThrowIfNull(sourceTableInventory);
-
-        var requiredKinds = new[]
-        {
-            CdcSourceTableKind.DocumentCache,
-            CdcSourceTableKind.Document,
-            CdcSourceTableKind.CdcHeartbeat,
-        };
-        var observedKinds = sourceTableInventory.Select(table => table.TableKind).ToArray();
-
-        if (
-            sourceTableInventory.Count != requiredKinds.Length
-            || requiredKinds.Except(observedKinds).Any()
-            || observedKinds.Except(requiredKinds).Any()
-            || observedKinds.GroupBy(kind => kind).Any(group => group.Count() > 1)
-        )
+        if (!CdcConnectorTemplateSharedRules.HasRequiredSourceInventory(sourceTableInventory))
         {
             throw new ArgumentException(
                 "CDC provider setup result source inventory must contain exactly dms.DocumentCache, dms.Document, and dms.CdcHeartbeat.",
@@ -471,10 +456,11 @@ public sealed record CdcConnectorTemplateRequest
         ArgumentNullException.ThrowIfNull(expectedMessageKeyColumns);
 
         var observedKinds = expectedMessageKeyColumns.Select(columns => columns.TableKind).ToArray();
-        var requiredKinds = new[] { CdcSourceTableKind.DocumentCache, CdcSourceTableKind.Document };
+        IReadOnlyList<CdcSourceTableKind> requiredKinds =
+            CdcConnectorTemplateSharedRules.OrderedRequiredMessageKeyTableKinds;
 
         if (
-            expectedMessageKeyColumns.Count != requiredKinds.Length
+            expectedMessageKeyColumns.Count != requiredKinds.Count
             || requiredKinds.Except(observedKinds).Any()
             || observedKinds.Except(requiredKinds).Any()
             || observedKinds.GroupBy(kind => kind).Any(group => group.Count() > 1)
