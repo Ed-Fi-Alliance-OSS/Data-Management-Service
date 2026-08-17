@@ -441,6 +441,49 @@ public sealed record CdcConnectorTemplateRequest
     }
 }
 
+public sealed record CdcConnectorTemplateSourcePartitionEvidence
+{
+    public CdcConnectorTemplateSourcePartitionEvidence(IReadOnlyDictionary<string, string> properties)
+    {
+        Properties = CdcConnectorTemplateContractValidation.NormalizeStringPropertiesAllowingEmptyValues(
+            properties,
+            nameof(properties)
+        );
+    }
+
+    public IReadOnlyDictionary<string, string> Properties { get; }
+}
+
+public sealed record CdcConnectorTemplateEffectiveConfigValidationRequest
+{
+    public CdcConnectorTemplateEffectiveConfigValidationRequest(
+        CdcConnectorTemplateRequest templateRequest,
+        IReadOnlyDictionary<string, string> effectiveConfig,
+        CdcConnectorProviderSetupEvidence providerSetupEvidence,
+        CdcConnectorTemplateSourcePartitionEvidence? sourcePartitionEvidence = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(templateRequest);
+        ArgumentNullException.ThrowIfNull(providerSetupEvidence);
+
+        TemplateRequest = templateRequest;
+        EffectiveConfig = CdcConnectorTemplateContractValidation.NormalizeStringPropertiesAllowingEmptyValues(
+            effectiveConfig,
+            nameof(effectiveConfig)
+        );
+        ProviderSetupEvidence = providerSetupEvidence;
+        SourcePartitionEvidence = sourcePartitionEvidence;
+    }
+
+    public CdcConnectorTemplateRequest TemplateRequest { get; }
+
+    public IReadOnlyDictionary<string, string> EffectiveConfig { get; }
+
+    public CdcConnectorProviderSetupEvidence ProviderSetupEvidence { get; }
+
+    public CdcConnectorTemplateSourcePartitionEvidence? SourcePartitionEvidence { get; }
+}
+
 public sealed record CdcKafkaConnectRegistrationPayload
 {
     public CdcKafkaConnectRegistrationPayload(CdcSafeName name, IReadOnlyDictionary<string, string> config)
@@ -684,6 +727,22 @@ internal static class CdcConnectorTemplateContractValidation
             );
     }
 
+    public static IReadOnlyDictionary<string, string> NormalizeStringPropertiesAllowingEmptyValues(
+        IReadOnlyDictionary<string, string> properties,
+        string parameterName
+    )
+    {
+        ArgumentNullException.ThrowIfNull(properties);
+
+        return properties
+            .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+            .ToDictionary(
+                pair => ValidateRequiredSafeText(pair.Key, $"{parameterName}.Key"),
+                pair => ValidateSafeTextAllowingEmptyValues(pair.Value, $"{parameterName}[{pair.Key}]"),
+                StringComparer.Ordinal
+            );
+    }
+
     public static string ValidateRequiredSafeText(string value, string parameterName)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -692,6 +751,24 @@ internal static class CdcConnectorTemplateContractValidation
                 "CDC connector template text values must be supplied.",
                 parameterName
             );
+        }
+
+        if (value.Any(char.IsControl))
+        {
+            throw new ArgumentException(
+                "CDC connector template text values must not contain control characters.",
+                parameterName
+            );
+        }
+
+        return value;
+    }
+
+    private static string ValidateSafeTextAllowingEmptyValues(string? value, string parameterName)
+    {
+        if (value is null)
+        {
+            throw new ArgumentNullException(parameterName);
         }
 
         if (value.Any(char.IsControl))

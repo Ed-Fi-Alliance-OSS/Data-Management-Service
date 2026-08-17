@@ -93,6 +93,14 @@ public static class CdcConnectorTemplateDiagnosticCodes
     public const string SourceTableInventoryMismatch = "CDC_TEMPLATE_SOURCE_TABLE_INVENTORY_MISMATCH";
     public const string SqlServerPollIntervalExceedsHeartbeatInterval =
         "CDC_TEMPLATE_SQLSERVER_POLL_INTERVAL_EXCEEDS_HEARTBEAT_INTERVAL";
+    public const string LiveReadBackProviderSetupMismatch =
+        "CDC_TEMPLATE_LIVE_READBACK_PROVIDER_SETUP_MISMATCH";
+    public const string LiveReadBackPropertyMissing = "CDC_TEMPLATE_LIVE_READBACK_PROPERTY_MISSING";
+    public const string LiveReadBackPropertyMismatch = "CDC_TEMPLATE_LIVE_READBACK_PROPERTY_MISMATCH";
+    public const string LiveReadBackUnexpectedProperty = "CDC_TEMPLATE_LIVE_READBACK_UNEXPECTED_PROPERTY";
+    public const string LiveReadBackSecretMismatch = "CDC_TEMPLATE_LIVE_READBACK_SECRET_MISMATCH";
+    public const string LiveReadBackSourcePartitionMismatch =
+        "CDC_TEMPLATE_LIVE_READBACK_SOURCE_PARTITION_MISMATCH";
 }
 
 internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplateInputValidator
@@ -264,6 +272,9 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
 
         return prefix.Length == 0 ? null : propertyName[prefix.Length..];
     }
+
+    internal static bool IsKafkaClientSecurityProperty(string propertyName) =>
+        _kafkaSecurityAllowList.Contains(propertyName);
 
     public CdcConnectorTemplateValidationResult ValidateRequest(
         CdcConnectorTemplateRequest request,
