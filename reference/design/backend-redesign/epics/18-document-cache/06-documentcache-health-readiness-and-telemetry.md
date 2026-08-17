@@ -83,6 +83,13 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   health module at `GET /health/document-cache`. Do not make projection state part of the
   existing `/health` pass/fail result, and do not register an `IHealthCheck` whose
   unhealthy result can remove a normal API replica from service.
+- Intentionally exclude `GET /health/document-cache` from OpenAPI and discovery metadata,
+  matching the existing health-module pattern. Do not add a discovery URL, generated
+  OpenAPI path, metadata specification, or Swagger entry in 18-06. If endpoint discovery
+  tooling would otherwise include minimal API handlers, explicitly exclude this route from
+  description. Operator documentation and the later CLI story may document the endpoint and
+  JSON contract, but the runtime discovery surface remains for public API metadata, not this
+  authorized operator-grade status payload.
 - Require authorization for `GET /health/document-cache` because the operator-grade payload
   includes target keys, `DocumentId` diagnostics, opaque physical-source fingerprints,
   effective settings, lifecycle/admin state, queue state, and sanitized diagnostic
@@ -128,9 +135,17 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   remains implementation-local once serialized by this endpoint.
 - Set top-level `observedAt` to the UTC time when the status service captures the immutable
   registry/runtime snapshot for the request, immediately before bounded-parallel target
-  evaluation starts. Each target entry carries `processObservedAt` for the process-local
-  registry/runtime observation and `durableObservedAt` for the provider current-source
-  statement when that statement succeeds.
+  evaluation starts. Set each target's `processObservedAt` to the UTC instant when the
+  status service captures the immutable process-local snapshot used for that target
+  evaluation. In the normal endpoint path this is the same value as top-level `observedAt`
+  for every target in the response. Keep older 18-01 registry observation times and 18-04
+  runtime observation times only inside their component objects, such as
+  `resolution.observedAt`, `inventory.observedAt`, `providerPrerequisites.observedAt`, and
+  `executionState.observedAt`. If the current-generation runtime observation is missing,
+  `processObservedAt` still records the status snapshot time while
+  `executionState.status` is `notObserved` and `executionState.observedAt` is `null`.
+  `durableObservedAt` is populated only from a successful provider current-source
+  statement.
 - Sort target entries deterministically by normalized tenant key and `DataStoreId` so
   tests, operators, and E19 consumers can compare output without relying on dictionary
   order.
@@ -139,9 +154,17 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   - `caughtUp.status`: `caughtUp`, `notCaughtUp`, or `unknown`.
   Each field also carries a bounded reason/category string from a fixed enum and a
   sanitized diagnostic message when useful.
-- Target output includes, when available: resolution and eligibility state, generation,
-  provider, opaque physical-source fingerprint, inventory and enqueue-trigger validation
-  statuses, SQL Server prerequisite statuses, lifecycle, cache-ahead latch state,
+- Serialize the target context generation as a target-level `targetGeneration` JSON number.
+  Use the current 18-01 process-local target-context generation for a resolved target and
+  `null` when no resolved current generation exists. This field is operator correlation for
+  the current target object only; it is not durable binding generation and it must not be
+  copied into `activeCommand`, `lastEndedDiagnostic`, or retained command observations.
+  Command objects are already filtered to the current generation, so the prohibited
+  `currentTargetGeneration` and `isCurrentGeneration` command fields remain out of v1.
+- Target output includes, when available: resolution and eligibility state,
+  `targetGeneration`, provider, opaque physical-source fingerprint, inventory and
+  enqueue-trigger validation statuses, SQL Server prerequisite statuses, lifecycle,
+  cache-ahead latch state,
   operational health, caught-up status, queue summary, execution state, active
   administrative command, last ended target diagnostic, bounded document diagnostics,
   bounded target diagnostics, and effective projection/read/status settings.
@@ -151,9 +174,27 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   arrays for bounded diagnostic collections when there are no entries. Use explicit
   lower-camel enum values for component availability and success: `operationalHealth.reason`
   and `caughtUp.reason` are `none` on successful `operational` or `caughtUp` states and
-  otherwise carry the selected fixed reason; skipped or failed queue observation uses
-  `queueSummary.presence: "unknown"`. Always include `backlogEstimate` as an object; v1
-  emits `kind: "unavailable"` and `value: null`.
+  otherwise carry the selected fixed reason. Always include `backlogEstimate` as an object;
+  v1 emits `kind: "unavailable"` and `value: null`.
+- Use `unavailable` only when the durable current-source statement is intentionally skipped
+  because process eligibility has already failed or is unknown. In that case set
+  `durableObservedAt: null`, `lifecycle.state: "unknown"`,
+  `lifecycle.availability: "unavailable"`, `lifecycle.message: null`,
+  `cacheAhead.state: "unknown"`, `cacheAhead.recoveryRequired: null`,
+  `cacheAhead.message: null`, `queueSummary.presence: "unavailable"`, null oldest-work
+  fields, and unavailable backlog. The selected process-eligibility reason belongs in
+  `operationalHealth` and `caughtUp`, not as a stale durable diagnostic.
+- Use `unknown` when process eligibility passed but authoritative durable facts were not
+  obtained because the per-target timeout fired, the provider statement failed, or the
+  endpoint budget prevented the target from starting or completing. In those cases set
+  `durableObservedAt: null`, `lifecycle.state: "unknown"`,
+  `lifecycle.availability: "unknown"`, `cacheAhead.state: "unknown"`,
+  `cacheAhead.recoveryRequired: null`, `queueSummary.presence: "unknown"`, null oldest-work
+  fields, and unavailable backlog. Component `message` values use the same bounded,
+  sanitized diagnostic as the selected public reason: `statusObservationTimeout`,
+  `providerObservationFailed`, or `statusEndpointTimeout`. Never set
+  `cacheAhead.recoveryRequired` to `false` unless the provider statement actually observed
+  a clear latch.
 - Serialize timestamps as UTC ISO 8601 strings with a `Z` offset using `System.Text.Json`
   `DateTimeOffset` values normalized to UTC. Serialize public JSON durations, ages, and
   timeout/settings values as numeric seconds with fractional values allowed, using property
@@ -162,9 +203,183 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   and `endpointTimeoutSeconds`. Do not use .NET `TimeSpan` strings or ISO 8601 duration
   strings in the status contract.
 - Include status tuning values in `effectiveSettings`, including the per-target
-  status-observation timeout and top-level endpoint timeout. Omit
-  `Status:RequiredRole` entirely from public `effectiveSettings`; it is authorization
-  configuration, not projection behavior.
+  status-observation timeout and top-level endpoint timeout. Serialize exactly the settings
+  needed to interpret projection execution, read acceleration, and status evaluation:
+  `projector`, `readAcceleration`, and `status`. Omit `Status:RequiredRole` entirely from
+  public `effectiveSettings`; it is authorization configuration, not projection behavior.
+  Do not serialize an `administration` object in v1; administrative workflow timeouts and
+  command-runner settings belong to the shared administrative command contracts and the
+  later CLI.
+- A representative populated target fixture pins this v1 target shape, omitting only
+  comments and replacing example values:
+
+  ```json
+  {
+    "targetKey": { "tenantKey": "", "dataStoreId": 1 },
+    "targetGeneration": 3,
+    "processObservedAt": "2026-08-16T12:34:56.789Z",
+    "durableObservedAt": "2026-08-16T12:34:56.900Z",
+    "provider": "postgresql",
+    "physicalSourceFingerprint": "opaque-fingerprint",
+    "resolution": {
+      "status": "resolved",
+      "reason": "none",
+      "observedAt": "2026-08-16T12:34:55Z",
+      "message": null
+    },
+    "eligibility": {
+      "status": "eligible",
+      "reason": "none",
+      "message": null
+    },
+    "inventory": {
+      "observedAt": "2026-08-16T12:34:55Z",
+      "state": { "status": "valid", "reason": "none", "message": null },
+      "work": { "status": "valid", "reason": "none", "message": null },
+      "cache": { "status": "valid", "reason": "none", "message": null },
+      "dataStoreIdentity": { "status": "valid", "reason": "none", "message": null },
+      "enqueueTrigger": { "status": "enabled", "reason": "none", "message": null }
+    },
+    "providerPrerequisites": {
+      "status": "satisfied",
+      "reason": "none",
+      "observedAt": "2026-08-16T12:34:55Z",
+      "sqlServerReadCommittedSnapshot": {
+        "status": "notApplicable",
+        "reason": "none",
+        "message": null
+      },
+      "sqlServerNestedTriggers": {
+        "status": "notApplicable",
+        "reason": "none",
+        "message": null
+      }
+    },
+    "lifecycle": {
+      "state": "tracking",
+      "availability": "available",
+      "message": null
+    },
+    "cacheAhead": {
+      "state": "clear",
+      "recoveryRequired": false,
+      "message": null
+    },
+    "operationalHealth": {
+      "status": "operational",
+      "reason": "none",
+      "message": null
+    },
+    "caughtUp": {
+      "status": "caughtUp",
+      "reason": "none",
+      "message": null
+    },
+    "queueSummary": {
+      "presence": "empty",
+      "oldestWorkFirstEnqueuedAt": null,
+      "oldestWorkAgeSeconds": null,
+      "backlogEstimate": { "kind": "unavailable", "value": null }
+    },
+    "executionState": {
+      "status": "waitingForPoll",
+      "observedAt": "2026-08-16T12:34:55Z",
+      "activeWorkers": 0,
+      "concurrencySlotsUsed": 0,
+      "targetBackoffUntil": null,
+      "lastSuccessfulWorkAt": "2026-08-16T12:34:40Z",
+      "lastFailureAt": null,
+      "message": null
+    },
+    "activeCommand": null,
+    "lastEndedDiagnostic": null,
+    "targetDiagnostics": { "recentEvents": [], "evictedCount": 0 },
+    "documentDiagnostics": { "recentEvents": [], "evictedCount": 0 },
+    "poisonTraversalDiagnostics": { "recentEvents": [], "evictedCount": 0 },
+    "effectiveSettings": {
+      "projector": {
+        "pollIntervalSeconds": 5,
+        "pageSize": 100,
+        "maxConcurrentTargets": 4,
+        "failureBackoffSeconds": 30,
+        "baselineHighWaterMark": 10000
+      },
+      "readAcceleration": {
+        "enabled": true,
+        "directFillTimeoutSeconds": 2
+      },
+      "status": {
+        "statusObservationTimeoutSeconds": 5,
+        "endpointTimeoutSeconds": 30
+      }
+    },
+    "enqueueFailures": {
+      "recentEvents": [],
+      "byCategory": [],
+      "evictedCount": 0
+    }
+  }
+  ```
+
+- Use lower-camel enum strings only. `resolution.status` is `resolved`, `unresolved`, or
+  `unknown`; `resolution.reason` is `none`, `targetNotFound`, `cmsUnavailable`,
+  `cmsUnauthorized`, `cmsTimeout`, `invalidCmsResponse`, `providerMetadataMissing`,
+  `providerMetadataUnknown`, `providerMismatch`, `connectionInputMissing`,
+  `physicalSourceFingerprintFailure`, `targetRemoved`, or `targetReplaced`.
+  `eligibility.status` is `eligible`, `ineligible`, or `unknown`; its reasons are the
+  operational-health reason enum. Inventory component `status` is `valid`, `invalid`,
+  `unknown`, or `notObserved`, except `enqueueTrigger.status`, which is `enabled`,
+  `disabled`, `invalid`, `unknown`, or `notObserved`; inventory reasons are `none`,
+  `missing`, `disabled`, `invalid`, `unreadable`, `legacyArtifactPresent`, or
+  `privilegeFailure`. `providerPrerequisites.status` is `satisfied`, `unsatisfied`,
+  `unsupportedIncident`, `unknown`, or `notApplicable`. `lifecycle.state` is `tracking`,
+  `disabled`, `resetting`, `rebuilding`, `invalid`, or `unknown`;
+  `lifecycle.availability` is `available`, `unavailable`, or `unknown`.
+  `cacheAhead.state` is `clear`, `recoveryRequired`, or `unknown`.
+  `queueSummary.presence` is `empty`, `notEmpty`, `unknown`, or `unavailable`.
+  `executionState.status` is `notObserved`, `starting`, `idle`, `waitingForPoll`,
+  `waitingForConcurrency`, `active`, `targetBackoff`, `cancelling`, `cancelled`,
+  `faulted`, or `stopped`.
+- When present, `activeCommand` has `command`, `phase`, `status`, `startedAt`,
+  `observedAt`, `message`, and `phaseDiagnostics`. Command values reuse the shared
+  administrative command JSON enum values, not status-only aliases:
+  `guardedNewEmptyActivation`, `offlineActivation`, `offlineDeactivation`,
+  `onlineCacheRebuild`, `explicitIntegrityScrub`, `internalOnlyCacheAheadRecovery`, and,
+  when 18-08 adds it to the same shared administrative observation contract,
+  `representationRestamp`. Do not serialize `activateNewEmpty`, `offlineActivate`,
+  `offlineDeactivate`, `onlineRebuild`, `cacheAheadRecovery`, or `integrityScrub` as v1
+  status-command values. Active-command status values are `running` and `cancelling`.
+  Command phase values reuse the shared administrative phase JSON enum values, including
+  `resolveTarget`, `acquireMutex`, `preflight`, `enterResetting`, `clearCache`,
+  `clearWork`, `enterRebuilding`, `captureBoundary`, `seedBaseline`, `drainWork`,
+  `enterTracking`, `enterDisabled`, `scrubScan`, `setCacheAheadLatch`, and `complete`.
+  `phaseDiagnostics` entries have `currentPhase`, `lastCompletedPhase`, `retryable`,
+  `diagnosticCategory`, `affectedDocumentIds`, and `message`; `diagnosticCategory` values
+  reuse the shared administrative diagnostic category JSON enum values.
+- When present, `lastEndedDiagnostic` has `command`, `phase`, `outcome`, `startedAt`,
+  `endedAt`, `observedAt`, and `message`; `command` and `phase` use the same shared enum
+  values as `activeCommand`, and outcome values are `succeeded`, `failed`, `cancelled`,
+  `rejected`, and `timedOut`.
+- `targetDiagnostics.recentEvents` entries have `observedAt`, `category`, and `message`;
+  categories are `targetResolution`, `inventory`, `providerPrerequisite`, `runtimeFault`,
+  `targetBackoff`, `targetInvariant`, `providerObservationFailed`,
+  `statusObservationTimeout`, `statusEndpointTimeout`, `directFillInvariant`, and
+  `administrativeCommand`. `documentDiagnostics.recentEvents` entries have `documentId`,
+  `observedAt`, `category`, `nextRetryAt`, and `message`; categories are
+  `materializationFailed`, `writerFailed`, `sourceChanged`, `missingSource`,
+  `cacheAheadSuspected`, and `poisonRetryScheduled`. `poisonTraversalDiagnostics`
+  `recentEvents` entries have `documentId`, `observedAt`, `category`, `nextRetryAt`, and
+  `message`; categories are `retryScheduled`, `pageCapacityExhausted`, and
+  `skippedUntilRetry`.
+- `enqueueFailures` uses `recentEvents`, `byCategory`, and `evictedCount`. Categories are
+  `stateMissingOrInvalid`, `enqueueTriggerUnavailable`, `workPersistenceFailed`,
+  `providerTimeout`, `providerUnavailable`, and `unclassifiedProviderFailure`.
+  `recentEvents` entries have `observedAt`, `category`, `canonicalOperation`,
+  `resourceKind`, and `message`; `canonicalOperation` is `insert` or `update`, and
+  `resourceKind` is `resource` or `descriptor`. `byCategory` entries have `category` and
+  `count`; include only categories present in the retained process-local window, with
+  `count > 0`, ordered by the fixed category order listed above. Empty state remains
+  `recentEvents: []`, `byCategory: []`, and `evictedCount: 0`.
 - E19 consumes this per-target output as an input. This story does not add
   `canRegisterConnector`, expected-source comparison, source-drift retention,
   binding-generation fields, connector status, Kafka lag, or a deployment aggregate.
@@ -192,8 +407,11 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   `unknown` with reason `providerObservationFailed` and sanitized diagnostics. Peer targets
   continue and the endpoint still returns a successful response when serialization itself
   succeeds. If the endpoint budget expires before some targets start or finish, serialize
-  those targets as `unknown` with reason `statusEndpointTimeout`; caller cancellation still
-  follows the normal request-cancellation path.
+  those targets as `unknown` with reason `statusEndpointTimeout`; if the budget expires
+  before the work item starts, use a sanitized message indicating that status evaluation did
+  not start for the target, and if it expires after start but before the provider statement
+  completes, indicate that status evaluation timed out before durable observation
+  completed. Caller cancellation still follows the normal request-cancellation path.
 - Skip the provider current-source statement unless process eligibility is otherwise
   satisfied for the current target generation: resolved target, compatible provider
   metadata, valid inventory and enqueue-trigger observation, satisfied provider
@@ -247,11 +465,14 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   `inventoryInvalid`, `enqueueTriggerUnavailable`, SQL Server prerequisite reasons
   `sqlServerPrerequisiteFailed` then `unsupportedPrerequisiteIncident`, `targetRemoved`,
   `targetReplaced`, `runtimeNotObserved`, `runtimeCancelled`, `runtimeFaulted`,
-  `targetBackoff`, then `statusObservationTimeout` as `unknown` when process eligibility
-  otherwise passed but the per-target status-observation timeout expired, then
-  `providerObservationFailed` as `unknown` when process eligibility otherwise passed but
-  durable facts could not be read, then durable-state reasons `stateMissingOrInvalid`,
-  `lifecycleDisabled`, `lifecycleResetting`, `lifecycleRebuilding`, and
+  `targetBackoff`, then `statusEndpointTimeout` as `unknown` when process eligibility
+  otherwise passed but the endpoint budget prevented the target's durable observation from
+  starting or completing, then `statusObservationTimeout` as `unknown` when process
+  eligibility otherwise passed but the per-target status-observation timeout expired while
+  the endpoint budget was still available, then `providerObservationFailed` as `unknown`
+  when process eligibility otherwise passed but durable facts could not be read, then
+  durable-state reasons `stateMissingOrInvalid`, `lifecycleDisabled`,
+  `lifecycleResetting`, `lifecycleRebuilding`, and
   `cacheAheadRecoveryRequired`. Map 18-01 lifecycle-observation failures that prevent
   target eligibility to `stateMissingOrInvalid` when they are known missing or invalid
   state observations, and to `providerObservationFailed` when the state row is unreadable
@@ -296,6 +517,20 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   cap string length. Cap target diagnostics, administrative phase diagnostics, poison
   traversal diagnostics, and document-scoped failure diagnostics by the effective projector
   page size.
+- For target, document, and poison-traversal diagnostics, retain only current-generation
+  observations for the current normalized target key. Each bounded component uses
+  `recentEvents` ordered oldest-to-newest within the retained window plus `evictedCount`.
+  Retain at most the effective `Projector:PageSize` entries per component per target; when
+  a new event exceeds the bound, evict the oldest entry and increment that component's
+  `evictedCount`. If the target is replaced, removed, or unresolved with no current
+  generation, do not carry prior-generation diagnostics into the target status; report empty
+  arrays and zero eviction counts except for current resolution/inventory component
+  messages.
+- Administrative phase diagnostics are only the `phaseDiagnostics` arrays on
+  current-generation command observations. They reuse the shared administrative phase
+  diagnostic item shape, are ordered oldest-to-newest within the retained command
+  diagnostic window, are capped at the effective `Projector:PageSize`, and do not add a
+  second nested `evictedCount` field in v1.
 - Bounded document-scoped diagnostics may include `DocumentId`, category, observed time,
   and next retry time. Do not include `DocumentUuid`, document JSON, request bodies,
   authorization subjects, connection strings, tenant display names, physical server or
@@ -325,6 +560,23 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   `edfi.dms.document_cache.enqueue.failures`. Provider-observation duration and oldest-work
   age histograms use seconds with unit `s`; counters use unit `{observation}`,
   `{success}`, or `{failure}` as appropriate.
+- Use lower-snake metric tag keys and lower-camel bounded values. The new instruments emit:
+  - `edfi.dms.document_cache.status.observations`: `provider`, `target`, `lifecycle`,
+    `queue_presence`, `operational_health_status`, `operational_health_reason`,
+    `caught_up_status`, and `caught_up_reason`.
+  - `edfi.dms.document_cache.status.provider_observation.duration`: `provider`, `target`,
+    `outcome`, and `reason`, where `outcome` is `succeeded`, `timedOut`, or `failed`, and
+    `reason` is `none`, `statusObservationTimeout`, `providerObservationFailed`, or
+    `statusEndpointTimeout`. Record this histogram only for provider observation work items
+    that actually start.
+  - `edfi.dms.document_cache.status.oldest_work.age`: `provider`, `target`, and
+    `lifecycle`. Record it only when the current-source statement observes work and returns
+    an oldest-work age.
+  - `edfi.dms.document_cache.enqueue.successes`: `provider`, `target`,
+    `canonical_operation`, `resource_kind`, and `outcome`, with `outcome` fixed to
+    `committed`.
+  - `edfi.dms.document_cache.enqueue.failures`: `provider`, `target`,
+    `canonical_operation`, `resource_kind`, and `category`.
 - Metric labels are limited to bounded values such as provider, target surrogate,
   lifecycle, operational-health status, caught-up status, bounded reason/category, command,
   phase, canonical operation, resource kind (`resource` or `descriptor`), and enqueue
@@ -344,13 +596,19 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   invalid, or unreadable enqueue-trigger inventory observed by 18-01 remains
   non-operational status data; it is not an enqueue-failure event unless a canonical write
   actually raises a provider exception and rolls back because of that enqueue artifact.
-- Emit enqueue-success telemetry from the same canonical write/provider boundary after the
-  complete canonical transaction commits for a supported `dms.Document` insert or real
-  `ContentVersion` update that reached the transactional enqueue mechanism and did not
-  raise a classified enqueue exception. Do not perform an extra status-path or provider
-  observation read to classify success, and do not add enqueue-success events to the status
-  JSON sink. Use bounded labels only: `provider`, surrogate `target`,
-  `canonicalOperation`, `resourceKind`, and fixed `outcome` value `committed`; use
+- Emit enqueue-success telemetry from the same canonical write/provider boundary after a
+  supported `dms.Document` insert or real `ContentVersion` update reaches the transactional
+  enqueue mechanism and the complete canonical transaction commits. Count only
+  enqueue-enabled transactions where the mechanism inserted work, advanced work, or observed
+  existing durable work already satisfying the required content version. Do not count
+  `Disabled` lifecycle commits that intentionally record no work, and do not count
+  unchanged-version updates. Disabled no-work commits are neither enqueue successes nor
+  enqueue failures. Do not emit enqueue success or failure telemetry with
+  `canonicalOperation: "delete"` in v1; deletes remove obsolete work through
+  `ON DELETE CASCADE` and do not enqueue durable work. Do not perform an extra status-path
+  or provider observation read to classify success, and do not add enqueue-success events to
+  the status JSON sink. Use bounded labels only: `provider`, surrogate `target`,
+  `canonical_operation`, `resource_kind`, and fixed `outcome` value `committed`; use
   `target="unknown"` when the logical target key is not available.
 - Use fixed public enqueue-failure categories: `stateMissingOrInvalid` for missing,
   unreadable, or invalid `DocumentCacheState`; `enqueueTriggerUnavailable` for
@@ -364,9 +622,15 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
 - 18-06 owns a process-local bounded enqueue-failure observation sink. Canonical
   write/provider-exception handling publishes classified enqueue failures to that sink and
   emits the matching log/metric from the same boundary. `GET /health/document-cache` reads
-  the sink for current configured targets only. Do not derive status diagnostics from logs
-  or metrics, and do not add durable enqueue-failure storage in v1; restart or replica
-  changes may lose these recent process-local diagnostics.
+  the sink for current configured targets only. Retain at most `Projector:PageSize` events
+  per current configured normalized target key, including configured targets that are
+  unresolved, removed, or replaced. Do not create retained status buckets for unconfigured
+  target keys or for `target="unknown"`; those failures still emit the required structured
+  logs and metrics from the canonical write boundary. On a configuration rollout, drop
+  buckets for removed targets and start empty buckets for newly configured targets. Later
+  configuring a target must not expose pre-configuration process-local failures. Do not
+  derive status diagnostics from logs or metrics, and do not add durable enqueue-failure
+  storage in v1; restart or replica changes may lose these recent process-local diagnostics.
 - Expose retained enqueue failures in one stable `enqueueFailures` component on each
   target. The component contains `recentEvents`, a bounded latest-event array,
   `byCategory`, an aggregate computed only from retained process-local events, and
@@ -376,8 +640,10 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   SQLSTATE, SQL Server error numbers, connection strings, lifecycle values, and physical
   identifiers. Retain the latest `Projector:PageSize` enqueue-failure events per
   normalized target key in memory, ordered oldest-to-newest within the retained window.
-  Empty state is `recentEvents: []`, `byCategory: []`, and `evictedCount: 0`. Counts are
-  retained-window process observations, not durable or lifetime totals.
+  `byCategory` includes only categories present in the retained process-local window, with
+  `count > 0`, ordered by the fixed enqueue-failure category order. Empty state is
+  `recentEvents: []`, `byCategory: []`, and `evictedCount: 0`. Counts are retained-window
+  process observations, not durable or lifetime totals.
 - Emit canonical write-path enqueue-failure logs and metrics for any classified enqueue
   exception that rolls back a canonical write, even when the affected data store is not
   configured in `DocumentCache:Targets` or the local projection target is unresolved,
@@ -401,7 +667,8 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
 - Endpoint authorization tests prove missing or invalid token returns `401`, a valid token
   without the configured role returns `403`, a valid token with the exact configured role
   can reach the status service, no projection status payload is serialized on auth
-  failures, and missing or invalid `Status:RequiredRole` leaves the endpoint unmapped.
+  failures, missing or invalid `Status:RequiredRole` leaves the endpoint unmapped, and
+  `GET /health/document-cache` is excluded from OpenAPI/discovery metadata.
 - Metric and structured-log tests prove every E18 DocumentCache metric target label uses
   the `t1_` surrogate or `unknown`, enqueue success/failure telemetry uses only bounded
   labels, and required structured-log property keys are present and sanitized.
@@ -415,325 +682,7 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   E19.
 - External dashboards are deployment work.
 
-## Clarifying Questions and Answers
+## Clarification History
 
-### Questions 1
-
-1. What exact v1 JSON shape should a populated target use for the component objects not yet explicitly shaped, including property names and lower-camel enum values for resolution, eligibility, inventory, provider prerequisites, queue summary, execution state, active command, last-ended diagnostic, target diagnostics, document diagnostics, effective settings, and enqueue failures?
-2. What is the authoritative source for `processObservedAt` when the 18-01 target-registry observation and 18-04 runtime observation have separate observation times, or when a current-generation runtime observation is missing?
-3. Should target context generation be serialized as a target-level v1 status field; if so, should it be a numeric generation, opaque string, or other stable value, and how does that differ from the prohibited `currentTargetGeneration` command fields?
-4. For bounded target, document, administrative phase, and poison-traversal diagnostics other than the already-defined enqueue-failure window, what ordering, eviction-count behavior, and current-generation filtering should the status JSON expose?
-5. Should `edfi.dms.document_cache.enqueue.successes` count `Disabled` lifecycle canonical commits where the enqueue trigger intentionally records no work, or only enqueue-enabled transactions that insert, advance, or observe durable projection work?
-6. Should `GET /health/document-cache` be intentionally excluded from OpenAPI/discovery metadata like ordinary `/health`, or should 18-06 add a documented operator-facing OpenAPI/metadata entry for the authorized status endpoint?
-
-### Answers 1
-
-1. Use one stable v1 target DTO with all component objects present. A populated target
-   should serialize this shape, omitting only comments and replacing example values:
-
-   ```json
-   {
-     "targetKey": { "tenantKey": "", "dataStoreId": 1 },
-     "targetGeneration": 3,
-     "processObservedAt": "2026-08-16T12:34:56.789Z",
-     "durableObservedAt": "2026-08-16T12:34:56.900Z",
-     "provider": "postgresql",
-     "physicalSourceFingerprint": "opaque-fingerprint",
-     "resolution": {
-       "status": "resolved",
-       "reason": "none",
-       "observedAt": "2026-08-16T12:34:55Z",
-       "message": null
-     },
-     "eligibility": {
-       "status": "eligible",
-       "reason": "none",
-       "message": null
-     },
-     "inventory": {
-       "observedAt": "2026-08-16T12:34:55Z",
-       "state": { "status": "valid", "reason": "none", "message": null },
-       "work": { "status": "valid", "reason": "none", "message": null },
-       "cache": { "status": "valid", "reason": "none", "message": null },
-       "dataStoreIdentity": { "status": "valid", "reason": "none", "message": null },
-       "enqueueTrigger": { "status": "enabled", "reason": "none", "message": null }
-     },
-     "providerPrerequisites": {
-       "status": "satisfied",
-       "reason": "none",
-       "observedAt": "2026-08-16T12:34:55Z",
-       "sqlServerReadCommittedSnapshot": {
-         "status": "notApplicable",
-         "reason": "none",
-         "message": null
-       },
-       "sqlServerNestedTriggers": {
-         "status": "notApplicable",
-         "reason": "none",
-         "message": null
-       }
-     },
-     "lifecycle": {
-       "state": "tracking",
-       "availability": "available",
-       "message": null
-     },
-     "cacheAhead": {
-       "state": "clear",
-       "recoveryRequired": false,
-       "message": null
-     },
-     "operationalHealth": {
-       "status": "operational",
-       "reason": "none",
-       "message": null
-     },
-     "caughtUp": {
-       "status": "caughtUp",
-       "reason": "none",
-       "message": null
-     },
-     "queueSummary": {
-       "presence": "empty",
-       "oldestWorkFirstEnqueuedAt": null,
-       "oldestWorkAgeSeconds": null,
-       "backlogEstimate": { "kind": "unavailable", "value": null }
-     },
-     "executionState": {
-       "status": "waitingForPoll",
-       "observedAt": "2026-08-16T12:34:55Z",
-       "activeWorkers": 0,
-       "concurrencySlotsUsed": 0,
-       "targetBackoffUntil": null,
-       "lastSuccessfulWorkAt": "2026-08-16T12:34:40Z",
-       "lastFailureAt": null,
-       "message": null
-     },
-     "activeCommand": null,
-     "lastEndedDiagnostic": null,
-     "targetDiagnostics": { "recentEvents": [], "evictedCount": 0 },
-     "documentDiagnostics": { "recentEvents": [], "evictedCount": 0 },
-     "poisonTraversalDiagnostics": { "recentEvents": [], "evictedCount": 0 },
-     "effectiveSettings": {
-       "projector": {
-         "pollIntervalSeconds": 5,
-         "pageSize": 100,
-         "maxConcurrentTargets": 4,
-         "failureBackoffSeconds": 30,
-         "baselineHighWaterMark": 10000
-       },
-       "readAcceleration": {
-         "enabled": true,
-         "directFillTimeoutSeconds": 2
-       },
-       "status": {
-         "statusObservationTimeoutSeconds": 5,
-         "endpointTimeoutSeconds": 30
-       }
-     },
-     "enqueueFailures": {
-       "recentEvents": [],
-       "byCategory": [],
-       "evictedCount": 0
-     }
-   }
-   ```
-
-   Use lower-camel enum strings only. `resolution.status` is `resolved`,
-   `unresolved`, or `unknown`; `resolution.reason` is `none`, `targetNotFound`,
-   `cmsUnavailable`, `cmsUnauthorized`, `cmsTimeout`, `invalidCmsResponse`,
-   `providerMetadataMissing`, `providerMetadataUnknown`, `providerMismatch`,
-   `connectionInputMissing`, `physicalSourceFingerprintFailure`, `targetRemoved`, or
-   `targetReplaced`. `eligibility.status` is `eligible`, `ineligible`, or `unknown`;
-   its reasons are the operational-health reason enum. Inventory component `status` is
-   `valid`, `invalid`, `unknown`, or `notObserved`, except `enqueueTrigger.status`,
-   which is `enabled`, `disabled`, `invalid`, `unknown`, or `notObserved`; inventory
-   reasons are `none`, `missing`, `disabled`, `invalid`, `unreadable`,
-   `legacyArtifactPresent`, or `privilegeFailure`. `providerPrerequisites.status` is
-   `satisfied`, `unsatisfied`, `unsupportedIncident`, `unknown`, or `notApplicable`.
-   `lifecycle.state` is `tracking`, `disabled`, `resetting`, `rebuilding`, `invalid`,
-   or `unknown`; `lifecycle.availability` is `available`, `unavailable`, or `unknown`.
-   `cacheAhead.state` is `clear`, `recoveryRequired`, or `unknown`.
-   `queueSummary.presence` is `empty`, `notEmpty`, `unknown`, or `unavailable`.
-   `executionState.status` is `notObserved`, `starting`, `idle`, `waitingForPoll`,
-   `waitingForConcurrency`, `active`, `targetBackoff`, `cancelling`, `cancelled`,
-   `faulted`, or `stopped`. When present, `activeCommand` has `command`, `phase`,
-   `status`, `startedAt`, `observedAt`, `message`, and `phaseDiagnostics`. Command
-   values reuse the shared administrative command JSON enum values, not status-only
-   aliases: `guardedNewEmptyActivation`, `offlineActivation`, `offlineDeactivation`,
-   `onlineCacheRebuild`, `explicitIntegrityScrub`,
-   `internalOnlyCacheAheadRecovery`, and, when 18-08 adds it to the same shared
-   administrative observation contract, `representationRestamp`. Do not serialize
-   `activateNewEmpty`, `offlineActivate`, `offlineDeactivate`, `onlineRebuild`,
-   `cacheAheadRecovery`, or `integrityScrub` as v1 status-command values.
-   Active-command status values are `running` and `cancelling`. Command phase values
-   reuse the shared administrative phase JSON enum values, including `resolveTarget`,
-   `acquireMutex`, `preflight`, `enterResetting`, `clearCache`, `clearWork`,
-   `enterRebuilding`, `captureBoundary`, `seedBaseline`, `drainWork`,
-   `enterTracking`, `enterDisabled`, `scrubScan`, `setCacheAheadLatch`, and
-   `complete`. `phaseDiagnostics` entries have `currentPhase`,
-   `lastCompletedPhase`, `retryable`, `diagnosticCategory`, `affectedDocumentIds`,
-   and `message`; `diagnosticCategory` values reuse the shared administrative
-   diagnostic category JSON enum values. When present, `lastEndedDiagnostic` has
-   `command`, `phase`, `outcome`, `startedAt`, `endedAt`, `observedAt`, and
-   `message`; `command` and `phase` use the same shared enum values as
-   `activeCommand`, and outcome values are `succeeded`, `failed`, `cancelled`,
-   `rejected`, and `timedOut`.
-
-   `targetDiagnostics.recentEvents` entries have `observedAt`, `category`, and
-   `message`; categories are `targetResolution`, `inventory`, `providerPrerequisite`,
-   `runtimeFault`, `targetBackoff`, `targetInvariant`, `providerObservationFailed`,
-   `statusObservationTimeout`, `statusEndpointTimeout`, `directFillInvariant`, and
-   `administrativeCommand`. `documentDiagnostics.recentEvents` entries have
-   `documentId`, `observedAt`, `category`, `nextRetryAt`, and `message`; categories are
-   `materializationFailed`, `writerFailed`, `sourceChanged`, `missingSource`,
-   `cacheAheadSuspected`, and `poisonRetryScheduled`. `poisonTraversalDiagnostics`
-   entries have `documentId`, `observedAt`, `category`, `nextRetryAt`, and `message`;
-   categories are `retryScheduled`, `pageCapacityExhausted`, and `skippedUntilRetry`.
-   `enqueueFailures` uses the shape already described by the story: `recentEvents`,
-   `byCategory`, and `evictedCount`, with categories `stateMissingOrInvalid`,
-   `enqueueTriggerUnavailable`, `workPersistenceFailed`, `providerTimeout`,
-   `providerUnavailable`, and `unclassifiedProviderFailure`. `recentEvents` entries
-   have `observedAt`, `category`, `canonicalOperation`, `resourceKind`, and
-   `message`; `canonicalOperation` is `insert` or `update`, and
-   `resourceKind` is `resource` or `descriptor`. `byCategory` entries have
-   `category` and `count`; include only categories present in the retained
-   process-local window, with `count > 0`, ordered by the fixed category order
-   listed above. Empty state remains `recentEvents: []`, `byCategory: []`, and
-   `evictedCount: 0`.
-   `Status:RequiredRole` is never serialized in `effectiveSettings`.
-2. Set `processObservedAt` to the UTC instant when the status service captures the
-   immutable process-local snapshot used for that target evaluation. In the normal
-   endpoint path this is the same value as top-level `observedAt` for every target in
-   the response. Keep the older 18-01 registry observation time and 18-04 runtime
-   observation time only inside their component objects, such as `resolution.observedAt`,
-   `inventory.observedAt`, `providerPrerequisites.observedAt`, and
-   `executionState.observedAt`. If the current-generation runtime observation is
-   missing, `processObservedAt` still records the status snapshot time while
-   `executionState.status` is `notObserved` and `executionState.observedAt` is `null`.
-3. Serialize the target context generation as a target-level `targetGeneration` JSON
-   number. Use the current 18-01 process-local target-context generation for a resolved
-   target and `null` when no resolved current generation exists. This field is operator
-   correlation for the current target object only; it is not durable binding generation
-   and it must not be copied into `activeCommand`, `lastEndedDiagnostic`, or retained
-   command observations. Command objects are already filtered to the current generation,
-   which is why the prohibited `currentTargetGeneration` and `isCurrentGeneration`
-   command fields remain out of v1.
-4. For target, document, and poison-traversal diagnostics, retain only
-   current-generation observations for the current normalized target key. Each bounded
-   component uses `recentEvents` ordered oldest-to-newest within the retained window plus
-   `evictedCount`. Retain at most the effective `Projector:PageSize` entries per
-   component per target; when a new event exceeds the bound, evict the oldest entry and
-   increment that component's `evictedCount`. Administrative phase diagnostics are only
-   the `phaseDiagnostics` arrays on current-generation command observations. They reuse
-   the shared administrative phase diagnostic item shape, are ordered oldest-to-newest
-   within the retained command diagnostic window, are capped at the effective
-   `Projector:PageSize`, and do not add a second nested `evictedCount` field in v1.
-   If the target is replaced, removed, or unresolved with no current generation, do not
-   carry prior-generation diagnostics into the target status; report empty arrays and
-   zero eviction counts except for current resolution/inventory component messages.
-5. `edfi.dms.document_cache.enqueue.successes` should count only enqueue-enabled
-   canonical transactions for supported `dms.Document` inserts or real `ContentVersion`
-   updates where the transactional enqueue mechanism inserted work, advanced work, or
-   observed existing durable work already satisfying the required content version and the
-   complete canonical transaction committed. Do not count `Disabled` lifecycle commits
-   that intentionally record no work, and do not count unchanged-version updates. Disabled
-   no-work commits are neither enqueue successes nor enqueue failures.
-6. Intentionally exclude `GET /health/document-cache` from OpenAPI and discovery
-   metadata, matching the existing health-module pattern. Do not add a discovery URL,
-   generated OpenAPI path, metadata specification, or Swagger entry in 18-06. If endpoint
-   discovery tooling would otherwise include minimal API handlers, explicitly exclude
-   this route from description. Operator documentation and the later CLI story may
-   document the endpoint and JSON contract, but the runtime discovery surface remains for
-   public API metadata, not this authorized operator-grade status payload.
-
-### Questions 2
-
-1. For targets whose durable observation is skipped, times out, fails, or is never started before `EndpointTimeout`, what exact v1 values should `lifecycle`, `cacheAhead`, `queueSummary`, `durableObservedAt`, and related messages use, especially `unknown` versus `unavailable` and `cacheAhead.recoveryRequired: null` versus `false`?
-2. Should v1 serialize an `administration` object such as `workflowTimeoutSeconds`, or should admin settings be omitted from the `effectiveSettings` contract?
-3. Where does `statusEndpointTimeout` fit in deterministic reason precedence for `operationalHealth.reason` and `caughtUp.reason`, relative to `statusObservationTimeout`, `providerObservationFailed`, and durable-state reasons, and is it a public reason enum value for both fields?
-4. Should the process-local enqueue-failure observation sink retain events for target keys not currently configured in `DocumentCache:Targets`; if so, what global bound or eviction policy limits distinct target keys, and should later configuring a target expose retained pre-configuration events?
-5. Should enqueue-failure telemetry ever emit `canonicalOperation: "delete"`, or are enqueue-failure events limited to insert/update because deletes do not use the transactional enqueue mechanism?
-6. What exact metric tag keys should each new 18-06 status/enqueue instrument emit, and should existing E18 metrics replace the current target-key tag with `target` only or temporarily emit both old and new target tags?
-
-### Answers 2
-
-1. Use `unavailable` only when the durable current-source statement is intentionally
-   skipped because process eligibility has already failed or is unknown. In that case set
-   `durableObservedAt: null`, `lifecycle: { "state": "unknown", "availability":
-   "unavailable", "message": null }`, `cacheAhead: { "state": "unknown",
-   "recoveryRequired": null, "message": null }`, and `queueSummary.presence:
-   "unavailable"` with `oldestWorkFirstEnqueuedAt: null`,
-   `oldestWorkAgeSeconds: null`, and `backlogEstimate: { "kind": "unavailable",
-   "value": null }`. The selected process-eligibility reason belongs in
-   `operationalHealth` and `caughtUp`, not as a stale durable diagnostic.
-
-   Use `unknown` when process eligibility passed but authoritative durable facts were
-   not obtained because the per-target timeout fired, the provider statement failed, or
-   the endpoint budget prevented the target from starting or completing. In those cases
-   set `durableObservedAt: null`, `lifecycle.state: "unknown"`,
-   `lifecycle.availability: "unknown"`, `cacheAhead.state: "unknown"`,
-   `cacheAhead.recoveryRequired: null`, `queueSummary.presence: "unknown"`, null oldest
-   work fields, and unavailable backlog. The component `message` values should be the
-   same bounded sanitized diagnostic used for the selected public reason:
-   `statusObservationTimeout`, `providerObservationFailed`, or
-   `statusEndpointTimeout`. If the endpoint budget expires before the work item starts,
-   use a sanitized message indicating that status evaluation did not start for the target;
-   if it expires after start but before the provider statement completes, indicate that
-   status evaluation timed out before durable observation completed. Never set
-   `cacheAhead.recoveryRequired` to `false` unless the provider statement actually
-   observed a clear latch.
-2. Omit an `administration` object from the 18-06 v1 `effectiveSettings` contract. The
-   v1 status payload should serialize exactly the settings needed to interpret projection
-   execution, read acceleration, and status evaluation: `projector`,
-   `readAcceleration`, and `status`. Administrative workflow timeouts and command-runner
-   settings belong to the shared administrative command contracts and the later CLI, not
-   to this read-only health/status endpoint.
-3. Add `statusEndpointTimeout` as a public reason enum value for both
-   `operationalHealth.reason` and `caughtUp.reason`. In deterministic precedence it
-   comes after all process-eligibility reasons, including `targetBackoff`, and before
-   `statusObservationTimeout`, `providerObservationFailed`, and durable-state reasons.
-   After process eligibility passes, choose `statusEndpointTimeout` when the endpoint
-   budget prevents the target's durable observation from starting or from completing;
-   choose `statusObservationTimeout` when the per-target observation budget expires while
-   the endpoint budget is still available; choose `providerObservationFailed` for a
-   provider exception or failed status statement; then apply readable durable-state
-   reasons only when the provider statement returned authoritative lifecycle, latch, and
-   queue facts.
-4. Keep the process-local enqueue-failure observation sink bounded to the current
-   configured `DocumentCache:Targets` membership. Retain at most `Projector:PageSize`
-   events per current configured normalized target key, including configured targets that
-   are unresolved, removed, or replaced. Do not create retained status buckets for
-   unconfigured target keys or for `target="unknown"`; those failures still emit the
-   required structured logs and metrics from the canonical write boundary. On a
-   configuration rollout, drop buckets for removed targets and start empty buckets for
-   newly configured targets. Later configuring a target must not expose pre-configuration
-   process-local failures.
-5. Do not emit enqueue success or failure telemetry with `canonicalOperation: "delete"`
-   in v1. The transactional enqueue mechanism covers supported `dms.Document` inserts
-   and real `ContentVersion` updates; deletes remove obsolete work through
-   `ON DELETE CASCADE` and do not enqueue durable work. Keep the status contract narrowed
-   to `insert` and `update` for enqueue success/failure events.
-6. Use lower-snake metric tag keys and lower-camel bounded values. The new instruments
-   should emit:
-
-   - `edfi.dms.document_cache.status.observations`: `provider`, `target`, `lifecycle`,
-     `queue_presence`, `operational_health_status`, `operational_health_reason`,
-     `caught_up_status`, and `caught_up_reason`.
-   - `edfi.dms.document_cache.status.provider_observation.duration`: `provider`,
-     `target`, `outcome`, and `reason`, where `outcome` is `succeeded`, `timedOut`, or
-     `failed`, and `reason` is `none`, `statusObservationTimeout`,
-     `providerObservationFailed`, or `statusEndpointTimeout`. Record this histogram only
-     for provider observation work items that actually start.
-   - `edfi.dms.document_cache.status.oldest_work.age`: `provider`, `target`, and
-     `lifecycle`. Record it only when the current-source statement observes work and
-     returns an oldest-work age.
-   - `edfi.dms.document_cache.enqueue.successes`: `provider`, `target`,
-     `canonical_operation`, `resource_kind`, and `outcome`, with `outcome` fixed to
-     `committed`.
-   - `edfi.dms.document_cache.enqueue.failures`: `provider`, `target`,
-     `canonical_operation`, `resource_kind`, and `category`.
-
-   Existing E18 DocumentCache metrics must replace any raw target-key, tenant-key, or
-   data-store-id metric tags with the single surrogate `target` tag in the same 18-06
-   work. Do not temporarily emit both old and new target tags.
+Earlier clarification questions have been incorporated into the canonical scope sections
+above. The body of this story is the authoritative v1 implementation contract.
