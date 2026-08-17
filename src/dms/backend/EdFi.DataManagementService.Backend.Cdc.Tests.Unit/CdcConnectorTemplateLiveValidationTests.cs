@@ -232,6 +232,67 @@ public class Given_CdcConnectorTemplateLiveValidation
     }
 
     [Test]
+    public void It_rejects_arbitrary_unexpected_read_back_properties_without_an_allow_list()
+    {
+        const string rawPhysicalIdentifier = "Server=unsafe-prod;Password=should-not-leak;Tenant=GrandBend";
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(CdcProvider.Postgresql);
+        CdcConnectorTemplateResult rendered = service.Render(request);
+        Dictionary<string, string> effectiveConfig = CopyConfig(rendered.Config);
+        effectiveConfig["skipped.operations"] = "d";
+        effectiveConfig["decimal.handling.mode"] = "double";
+        effectiveConfig["signal.data.collection"] = "dms.CdcSignal";
+        effectiveConfig["database.connection.string"] = rawPhysicalIdentifier;
+
+        CdcConnectorTemplateResult result = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                effectiveConfig,
+                new CdcConnectorProviderSetupEvidence(
+                    bindingGeneration: 7,
+                    BuildProviderSetupResult(CdcProvider.Postgresql)
+                )
+            )
+        );
+
+        using var _ = new AssertionScope();
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackUnexpectedProperty
+                && diagnostic.PropertyName == "skipped.operations"
+                && diagnostic.ExpectedValue == "absent"
+                && diagnostic.ObservedValue == "d"
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.LiveReadBack
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackUnexpectedProperty
+                && diagnostic.PropertyName == "decimal.handling.mode"
+                && diagnostic.ObservedValue == "double"
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.LiveReadBack
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackUnexpectedProperty
+                && diagnostic.PropertyName == "signal.data.collection"
+                && diagnostic.ObservedValue == "dms.CdcSignal"
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.LiveReadBack
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackUnexpectedProperty
+                && diagnostic.PropertyName == "database.connection.string"
+                && diagnostic.ExpectedValue == "[redacted]"
+                && diagnostic.ObservedValue == "[redacted]"
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ConnectionProperty
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            );
+        result.ToString().Contains(rawPhysicalIdentifier, StringComparison.Ordinal).Should().BeFalse();
+    }
+
+    [Test]
     public void It_rejects_provider_setup_evidence_that_no_longer_matches_the_binding()
     {
         using ServiceProvider serviceProvider = BuildServiceProvider();

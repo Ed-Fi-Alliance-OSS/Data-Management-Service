@@ -171,6 +171,11 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         CdcConnectorProviderSetupEvidence providerSetupEvidence = BuildProviderSetupEvidence(
             request.Provider
         );
+        CdcConnectorTemplateResult rendered = service.Render(request);
+
+        rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        rendered.Diagnostics.Should().BeEmpty();
+        AssertReadBackContainsOnlyRenderedProperties(rendered.Config, effectiveConfig);
 
         CdcConnectorTemplateResult preflight = service.ValidateRegistrationPreflight(
             new CdcConnectorTemplateEffectiveConfigValidationRequest(
@@ -193,6 +198,30 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         preflight.Diagnostics.Should().BeEmpty();
         liveReadBack.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
         liveReadBack.Diagnostics.Should().BeEmpty();
+    }
+
+    private static void AssertReadBackContainsOnlyRenderedProperties(
+        IReadOnlyDictionary<string, string> renderedConfig,
+        IReadOnlyDictionary<string, string> effectiveConfig
+    )
+    {
+        string[] unexpectedKeys = effectiveConfig
+            .Where(property =>
+                !renderedConfig.ContainsKey(property.Key)
+                && !(
+                    string.Equals(property.Key, "topic.heartbeat.name", StringComparison.Ordinal)
+                    && property.Value.Length == 0
+                )
+            )
+            .Select(property => property.Key)
+            .OrderBy(key => key, StringComparer.Ordinal)
+            .ToArray();
+
+        unexpectedKeys
+            .Should()
+            .BeEmpty(
+                "qualified Kafka Connect read-back should not contain properties outside the rendered template except empty topic.heartbeat.name"
+            );
     }
 
     public async Task CreateMinimalTopicsAndProviderObjectsAsync(

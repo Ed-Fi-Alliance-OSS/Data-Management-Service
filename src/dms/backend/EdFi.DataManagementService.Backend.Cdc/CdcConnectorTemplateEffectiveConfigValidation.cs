@@ -359,11 +359,6 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
                 continue;
             }
 
-            if (!IsUnexpectedContractProperty(observedProperty.Key))
-            {
-                continue;
-            }
-
             diagnostics.Add(
                 BuildPropertyDiagnostic(
                     CdcConnectorTemplateDiagnosticCodes.LiveReadBackUnexpectedProperty,
@@ -376,12 +371,6 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
             );
         }
     }
-
-    private static bool IsUnexpectedContractProperty(string propertyName) =>
-        CdcConnectorTemplateInputValidator.IsReservedKey(propertyName)
-        || CdcConnectorTemplateInputValidator.IsKafkaClientSecurityProperty(propertyName)
-        || CdcConnectorTemplateInputValidator.IsSecretBearingRenderedProperty(propertyName)
-        || propertyName.StartsWith("database.", StringComparison.Ordinal);
 
     private static bool IsAcceptedSecretReadBack(string expectedValue, string observedValue) =>
         observedValue.Length > 0
