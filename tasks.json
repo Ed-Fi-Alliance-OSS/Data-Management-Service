@@ -51,7 +51,7 @@
       "Review the representative populated target JSON fixture against reference/design/backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md.",
       "Run dotnet csharpier format on the changed status DTO and test files."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Provider Observation",

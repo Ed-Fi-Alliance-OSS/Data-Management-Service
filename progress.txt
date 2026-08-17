@@ -12,3 +12,10 @@
 - Added status timeouts to target effective settings and startup diagnostics; appsettings sample has Status timing only.
 - Files changed: DocumentCacheOptions.cs, DocumentCacheTargetContracts.cs, DocumentCacheStartupDiagnostics.cs, appsettings.json, DocumentCacheOptionsTests.cs, DocumentCacheTargetContractTests.cs, DocumentCacheOptionsBindingTests.cs, WebApplicationBuilderExtensionsTests.cs, tasks.json.
 - Verified: frontend DocumentCacheOptionsBindingTests, frontend WebApplicationBuilderExtensionsTests, core FullyQualifiedName~DocumentCache, appsettings status example inspection.
+
+2026-08-17 - Completed Status Contract for reference/design/backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md
+- Added public v1 status DTOs in core, separate from internal diagnostic snapshot and backend projection observations.
+- Kept provider/fingerprint as public strings; used lower-camel enum converters, UTC Z timestamp converters, numeric seconds helpers/settings.
+- Response sorts targets by normalized tenant key then DataStoreId; command DTOs omit generation fields and reuse shared administrative command/phase enums.
+- Files changed: DocumentCacheStatusContracts.cs, DocumentCacheStatusContractTests.cs, tasks.json.
+- Verified: dotnet csharpier format status contract/test files; dotnet test core unit --filter FullyQualifiedName~DocumentCacheStatus.
