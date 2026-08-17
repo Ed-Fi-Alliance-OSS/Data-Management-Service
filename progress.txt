@@ -1,0 +1,97 @@
+2026-08-17
+
+- Completed project-structure for reference/design/backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md.
+- Decision: new Backend.Cdc library depends on existing Backend.Ddl CDC provider setup contracts; no duplicate provider/setup/source inventory/safe-name models.
+- Decision: added minimal AddCdcConnectorTemplates DI entry point and provider setup readiness boundary only; renderer/request/result contracts left for contracts task.
+- Files changed: src/dms/EdFi.DataManagementService.sln; src/dms/backend/EdFi.DataManagementService.Backend.Cdc* projects, source, tests, lock files; tasks.json; progress.txt.
+- Verification: csharpier format new CDC projects; CDC unit tests pass 3/3; CDC integration project passes 1/1; full DMS solution build passed 0 warnings/errors.
+- Next: implement typed connector-template contracts and diagnostics; replace readiness placeholder with render-facing request/result surface.
+
+- Completed contracts for reference/design/backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md.
+- Decision: added public request/result model layer in Backend.Cdc; binding identity owns connector/public/progress/schema-history topic derivation so request has no raw JSON or topic override inputs.
+- Decision: provider setup freshness carried by CdcConnectorProviderSetupEvidence binding generation plus shared DMS-1320 CdcProviderSetupResult; constructor enforces success outcome, provider/fingerprint match, required source inventory, DocumentUuid key inventory, heartbeat query.
+- Decision: deployment policy, provider connection, Kafka security, artifact output, registration payload, result, and diagnostic contracts are typed now; allow-list/secret validation remains next validation task.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcConnectorTemplateContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcConnectorTemplateContractTests.cs; tasks.json; progress.txt.
+- Verification: csharpier format CDC library/unit tests; contract filter passed 9/9; CDC unit tests passed 12/12; CDC integration project passed 1/1; full DMS solution build passed 0 warnings/errors.
+- Next: implement validation task for reserved keys, provider/Kafka allow-lists, externalized secret refs, and redaction-safe diagnostics.
+
+- Completed validation for reference/design/backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md.
+- Decision: added shared DI-registered ICdcConnectorTemplateInputValidator so rendering, preflight, and live read-back can reuse the same request-fragment guardrails.
+- Decision: provider/Kafka allow-lists are exact ordinal key sets; renderer-owned keys/prefixes fail as reserved even when values match; SQL Server database.names must be exactly one comma-free value.
+- Decision: secret-bearing inputs require ${env:NAME} or ${file:/absolute/path:property}; diagnostics/exceptions carry only stable codes and redacted observed values for raw secrets/physical identifiers.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcConnectorTemplateInputValidation.cs; src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcConnectorTemplateService.cs; src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcConnectorTemplateValidationTests.cs; tasks.json; progress.txt.
+- Verification: csharpier format CDC library/unit tests; CDC unit tests passed 18/18; CDC integration project passed 1/1; full DMS solution build passed 0 warnings/errors.
+- Next: implement provider-neutral rendering-common builder that calls validation before emitting deterministic connector config.
+
+- Completed rendering-common for reference/design/backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md.
+- Decision: exposed public ICdcConnectorTemplateService.Render and kept renderer implementation internal/DI-registered; render path returns ValidationFailed result with diagnostics instead of emitting partial config when request fragments are invalid.
+- Decision: common renderer emits sorted flat config with connector/name/topic/transform/converter/producer/heartbeat/topic-naming/default metrics/error/snapshot settings, provider connection fragments, and unprefixed Kafka security only as generated producer.override.* keys.
+- Decision: configSha256 is computed from ordinal-key compact System.Text.Json over the unredacted rendered map; artifact payload/redaction remains for artifacts task.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcConnectorTemplateRenderer.cs; src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcConnectorTemplateService.cs; src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcConnectorTemplateRenderingCommonTests.cs; tasks.json; progress.txt.
+- Verification: csharpier format CDC library/unit tests; CDC unit tests passed 22/22; CDC integration project passed 1/1; common rendering filter passed twice 4/4 each; full DMS solution build passed 0 warnings/errors.
+- Next: implement PostgreSQL renderer details for publication/slot, exact include list, DocumentUuid message keys, and unavailable-value placeholder.
+
+- Completed rendering-postgresql for reference/design/backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md.
+- Decision: PostgreSQL renderer consumes successful provider setup artifact observations for publication/slot names; missing or duplicate usable metadata returns ValidationFailed diagnostics and no partial config.
+- Decision: source include list and message.key.columns are derived from provider setup source/key inventory in contract order using emitted quoted table/column identifiers; physical table drift, including work-table capture, is rejected with sanitized diagnostics.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcConnectorTemplateRenderer.cs; src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcConnectorTemplateInputValidation.cs; src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcConnectorTemplateRenderingCommonTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcConnectorTemplateRenderingPostgresqlTests.cs; tasks.json; progress.txt.
+- Verification: csharpier format CDC library/unit tests; PostgreSQL renderer filter passed 5/5; CDC unit tests passed 27/27; CDC integration project passed 1/1; full DMS solution build passed 0 warnings/errors.
+- Next: implement SQL Server renderer details for exact include list, DocumentUuid message keys, poll interval, unavailable/time settings, schema history, and history Kafka security propagation.
+
+- Completed rendering-sqlserver for reference/design/backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md.
+- Decision: SQL Server renderer now emits provider-inventory table includes/message keys directly, plus time precision, unavailable placeholder, optional poll interval, and required schema-history config from binding/deployment policy.
+- Decision: Kafka security stays unprefixed at request boundary, then renderer emits producer.override plus SQL Server schema-history producer/consumer copies; capture-instance metadata remains validation evidence only, not connector mapping config.
+- Decision: source inventory validation now applies to both providers; SQL Server poll interval greater than heartbeat returns a stable redacted diagnostic and no partial config.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcConnectorTemplateRenderer.cs; src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcConnectorTemplateInputValidation.cs; src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcConnectorTemplateRenderingSqlServerTests.cs; tasks.json; progress.txt.
+- Verification: csharpier format CDC library/unit tests; SQL Server renderer filter passed 8/8; CDC unit tests passed 35/35; CDC integration project passed 1/1; full DMS solution build passed 0 warnings/errors.
+- Next: implement deterministic artifact payloads/manifests and redaction-safe template artifact output.
+
+- Completed artifacts for reference/design/backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md.
+- Decision: successful render computes configSha256 from unredacted config first, then builds optional deterministic manifest with generatedAt omitted.
+- Decision: redactedConfig preserves safe generated values but redacts provider database properties, heartbeat SQL, secret-bearing rendered properties, Kafka credential refs, cert/file material, and schema-history bootstrap endpoint.
+- Decision: manifest reservedKeys come from the same validator reserved exact/prefix set so artifact evidence tracks override guardrails.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcConnectorTemplateRenderer.cs; src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcConnectorTemplateInputValidation.cs; src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcConnectorTemplateArtifactTests.cs; tasks.json; progress.txt.
+- Verification: csharpier format CDC library/unit tests; artifact filter passed 4/4; CDC unit tests passed 39/39; CDC integration project passed 1/1; full DMS solution build passed 0 warnings/errors.
+- Next: implement live-validation using generated expected config, masked-secret acceptance, include/key/topic/source-partition read-back checks.
+
+- Completed live-validation for reference/design/backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md.
+- Decision: added public effective-config validation request with optional source-partition evidence; service exposes registration preflight and live read-back methods while still avoiding Connect REST/provider inspection.
+- Decision: live validator renders expected config from fresh provider setup evidence, rejects provider/setup drift before comparison, accepts exact or masked secret evidence only, and redacts secrets/physical identifiers in diagnostics.
+- Decision: unexpected story-owned/reserved read-back keys fail; empty topic.heartbeat.name remains accepted because the connector contract allows unset/empty.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcConnectorTemplateContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcConnectorTemplateEffectiveConfigValidation.cs; src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcConnectorTemplateInputValidation.cs; src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcConnectorTemplateService.cs; src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcConnectorTemplateLiveValidationTests.cs; tasks.json; progress.txt.
+- Verification: csharpier format CDC library/unit tests; live-validation filter passed 6/6; CDC unit tests passed 45/45; CDC integration project passed 1/1; full DMS solution build passed 0 warnings/errors.
+- Next: implement focused/golden unit-test task or pinned-image fixture foundation depending on desired risk reduction.
+
+- Completed integration-boundaries for reference/design/backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md.
+- Decision: added consumer-facing boundary tests through ICdcConnectorTemplateService for render/registration/artifact evidence and supplied effective-config preflight/live read-back evidence; no internal renderer or provider inspection coupling.
+- Decision: added source-scope guardrail test for Connect REST, provider mutation, topic/ACL, and offset lifecycle drift; allows only topic.creation reserved-key detection. Documented DMS-1322 owns KafkaMurmur2V1Partitioner runtime class, DMS-1321 emits class name only.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcConnectorTemplateIntegrationBoundaryTests.cs; tasks.json; progress.txt.
+- Verification: csharpier format CDC library/unit tests; integration-boundaries filter passed 4/4; CDC unit tests passed 49/49; CDC integration project passed 1/1; scope rg only found allowed topic.creation guardrail; full DMS solution build passed 0 warnings/errors.
+- Next: implement pinned-image fixture foundation or remaining focused/golden unit-test task.
+
+- Completed pinned-image-fixture for reference/design/backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md.
+- Decision: added Docker CLI based integration fixture gated by immutable Connect image digest and provider/broker image env vars; local runs skip with actionable missing-prerequisite diagnostics, qualification lane can fail fast with CDC_CONNECTOR_TEMPLATE_FAIL_FAST=true.
+- Decision: fixture starts broker, selected provider, and qualified Connect image; renders through public ICdcConnectorTemplateService, validates required runtime classes/config, proves KafkaMurmur2V1 partition vectors, registers rendered payload directly, then live-validates Connect read-back without production Connect REST code.
+- Decision: offline provider-specific smoke assertions cover reusable render/preflight/live-validation handoff when runtime prerequisites are absent; later provider-smoke task owns heartbeat/offset progress assertions.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcConnectorTemplatePinnedImageFixture.cs; src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcConnectorTemplatePinnedImageSmokeTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.csproj; src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/packages.lock.json; tasks.json; progress.txt.
+- Verification: csharpier format CDC integration project; pinned-image filter passed 2/2 with runtime tests skipped 2/2 for missing env; CDC integration project passed 3/3 with runtime tests skipped 2/2; CDC unit tests passed 49/49; full DMS solution build passed 0 warnings/errors.
+- Next: implement provider-smoke-and-restart on top of the pinned-image fixture, or fill remaining focused/golden unit-test coverage.
+
+- Completed provider-smoke-and-restart for reference/design/backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md.
+- Decision: added fixture assertions for RUNNING task status, provider heartbeat-sequence advance, committed source-offset progress from GET /connectors/{connector}/offsets, restart, retained offset presence, and read-back validation of the same rendered template.
+- Decision: SQL Server smoke container enables SQL Server Agent for CDC capture; Connect smoke worker uses 1s offset flush interval to make offset progress observable without offset lifecycle management.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcConnectorTemplatePinnedImageFixture.cs; src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcConnectorTemplatePinnedImageSmokeTests.cs; tasks.json; progress.txt.
+- Verification: csharpier format CDC integration project; pinned-image smoke filter passed 2/2 with runtime tests skipped 4/4 for missing env; CDC integration project passed 3/3 with runtime tests skipped 4/4; CDC unit tests passed 49/49; full DMS solution build passed 0 warnings/errors.
+- Next: implement remaining unit-tests/golden snapshot task, then final verification.
+
+- Completed unit-tests for reference/design/backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md.
+- Decision: added public-service golden snapshot tests for full PostgreSQL and SQL Server flat configs instead of internal renderer tests; snapshots lock ordinal key ordering, generated connector categories, provider include/key syntax, SQL Server schema-history propagation, and absence of topic/dead-letter/offset lifecycle config.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/CdcConnectorTemplateGoldenSnapshotTests.cs; tasks.json; progress.txt.
+- Verification: csharpier format CDC library/unit tests; golden snapshot filter passed 2/2; CDC unit tests passed 51/51; CDC integration project passed 3/3 with runtime tests skipped 4/4 for missing env; full DMS solution build passed 0 warnings/errors.
+- Next: run final verification task only; all implementation tasks are complete.
+
+- Completed verification for reference/design/backend-redesign/epics/19-cdc-kafka/02-connector-template-generation.md.
+- Decision: final evidence records local smoke runtime skips as prerequisite gaps, not full connector qualification success; qualification lane needs pinned image env vars.
+- Files changed: tasks.json; progress.txt.
+- Verification: csharpier format CDC library/unit/integration projects; CDC unit tests passed 51/51; CDC smoke filter passed 2/2 with runtime tests skipped 4/4 for missing CDC_CONNECTOR_TEMPLATE_* image env vars; full DMS solution build passed 0 warnings/errors.
+- Next: all DMS-1321 tasks complete.
