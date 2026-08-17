@@ -52,6 +52,12 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   current-source observation adapter described below. The exact type names may follow local
   conventions, but the boundary is one status pipeline, not separate endpoint, CLI, and
   E19 models with duplicate classifiers.
+- 18-04 must expose the current-generation projection observation as a typed immutable
+  snapshot before 18-06 tasking depends on it. If the observation store does not cover
+  execution state, target-level backoff, current-generation active and last-ended
+  administrative command observations, and bounded target-fatal diagnostics, amend 18-04
+  rather than adding a parallel observation store in 18-06. 18-06 composes and serializes
+  those observations; it does not own their runtime capture model.
 - Do not serialize the existing internal 18-01 diagnostic snapshot directly. It is
   intentionally an internal domain snapshot. This story owns the stable JSON-facing status
   DTOs and maps internal registry/projection observations into that contract.
@@ -84,12 +90,17 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   health, and existing operational probes.
 - Use the existing OAuth/JWT validation path, not a new authorization system. Configure
   `DataManagement:DocumentCache:Status:RequiredRole`, with
-  `dms-document-cache-operator` as the recommended value, and authorize a valid bearer
-  token by checking the configured `JwtAuthentication:RoleClaimType` claim type for that
-  role value. Implement this as a dedicated status-endpoint role check or policy; do not
-  reuse the normal API `JwtAuthentication:ClientRole` gate unless that code path is
-  refactored to accept an explicit required role and to honor
-  `JwtAuthentication:RoleClaimType` end to end.
+  `dms-document-cache-operator` as the recommended value. The configured role must be a
+  single literal role token: trimming must not change it, it must not contain ASCII
+  whitespace, comma, semicolon, quote, bracket, brace, or control characters, and it must
+  not exceed 256 characters. Authorize a valid bearer token by exact ordinal match against
+  at least one already-materialized claim whose type equals the configured
+  `JwtAuthentication:RoleClaimType`. Do not split space-delimited or comma-delimited claim
+  values, parse JSON-array-looking claim values, lowercase either side, use Ed-Fi
+  claim-set authorization, or fall back to `JwtAuthentication:ClientRole`. Implement this
+  as a dedicated status-endpoint role check or policy; do not reuse the normal API
+  `JwtAuthentication:ClientRole` gate unless that code path is refactored to accept an
+  explicit required role and to honor `JwtAuthentication:RoleClaimType` end to end.
 - A missing or invalid token returns `401`, and a valid token without the configured role
   returns `403`. Treat a missing, empty, whitespace-only, or invalid
   `DataManagement:DocumentCache:Status:RequiredRole` as fail-closed by leaving
@@ -100,6 +111,11 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   use Ed-Fi claim sets, resource claims, education organization IDs, namespace prefixes,
   data store IDs, CMS admin permissions, database tables, or a new policy store as the v1
   operator contract.
+- Only the `401` and `403` status codes are part of the v1
+  `GET /health/document-cache` endpoint contract for authentication and authorization
+  failures. Reuse the existing JWT validation/challenge path, but do not pin the endpoint
+  contract to the current DMS problem-details body or exact `WWW-Authenticate` header
+  text.
 - The endpoint returns a successful HTTP response when the status request itself can be
   evaluated and serialized. Target-level `nonOperational`, `notCaughtUp`, or `unknown`
   states are data in the response body, not endpoint failures. Use ordinary request
@@ -159,8 +175,14 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   observation. It should be separate from the 18-04 work pager because polling status is
   not queue processing and must not advance cursors or apply poison traversal behavior.
 - Evaluate targets with bounded parallelism capped by the effective
-  `Projector:MaxConcurrentTargets`. Add a per-target status-observation timeout setting
-  defaulting to five seconds and a top-level endpoint budget defaulting to 30 seconds. The
+  `Projector:MaxConcurrentTargets`. Add
+  `DataManagement:DocumentCache:Status:StatusObservationTimeout`, defaulting to five
+  seconds, and `DataManagement:DocumentCache:Status:EndpointTimeout`, defaulting to 30
+  seconds. Missing timeout keys use the defaults. An omitted `Status` section leaves
+  `Status:RequiredRole` missing and the endpoint unmapped, but does not make timeout
+  values malformed. Explicitly malformed timeout values, zero or negative timeout values,
+  an explicitly null or malformed `Status` section, or values too large for `CancelAfter`
+  are malformed `DocumentCache` configuration and must fail startup validation. The
   endpoint budget starts when the status service captures the request snapshot; each
   target's per-target timeout starts when its bounded-parallel evaluation work item begins
   and is linked to the endpoint budget and caller cancellation.
@@ -288,20 +310,32 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   `SHA-256(UTF8("document-cache-target-v1\0" + normalizedTenantKey + "\0" + dataStoreId decimal))`.
   Use that value in the metric `target` label and never use the raw JSON target key as a
   metric label.
+- 18-06 owns converting every DocumentCache metric target label introduced by E18 to the
+  `t1_` target surrogate, not only the new status and enqueue-failure instruments. Add one
+  shared surrogate-label helper, use the metric label name `target`, and emit `unknown`
+  when a logical target key cannot be determined. This does not change the public JSON
+  `targetKey` shape or sanitized structured-log context where the status contract already
+  exposes the target key.
 - Extend the existing DocumentCache projection meter rather than creating an unrelated
   observability namespace. Add and test status instruments
   `edfi.dms.document_cache.status.observations`,
   `edfi.dms.document_cache.status.provider_observation.duration`,
   `edfi.dms.document_cache.status.oldest_work.age`, and
-  `edfi.dms.document_cache.enqueue.failures`. Provider-observation duration and
-  oldest-work age histograms use seconds with unit `s`; counters use unit `{observation}`
-  or `{failure}` as appropriate.
+  canonical write-path instruments `edfi.dms.document_cache.enqueue.successes` and
+  `edfi.dms.document_cache.enqueue.failures`. Provider-observation duration and oldest-work
+  age histograms use seconds with unit `s`; counters use unit `{observation}`,
+  `{success}`, or `{failure}` as appropriate.
 - Metric labels are limited to bounded values such as provider, target surrogate,
   lifecycle, operational-health status, caught-up status, bounded reason/category, command,
   phase, canonical operation, resource kind (`resource` or `descriptor`), and enqueue
-  failure category. Pin structured-log event names and property keys for status
-  observations and enqueue failures; numeric `EventId` allocation may follow repository
-  conventions and is not an external contract.
+  failure category. Pin semantic structured-log event names
+  `DocumentCacheStatusObserved`, `DocumentCacheStatusProviderObservationFailed`,
+  `DocumentCacheEnqueueSucceeded`, and `DocumentCacheEnqueueFailed`; numeric `EventId`
+  values, log levels, and message-template prose may follow repository conventions. Status
+  logs include bounded `target`, `provider`, `operationalHealthStatus`, `caughtUpStatus`,
+  `reason`, `lifecycle`, `queuePresence`, and duration/age fields when applicable. Enqueue
+  logs include bounded `target`, `provider`, `canonicalOperation`, `resourceKind`,
+  `category` or `outcome`, and sanitized `message` only for failures.
 - Keep enqueue-failure telemetry at the canonical write/provider-exception boundary, not
   in the projector loop. A classified enqueue failure records a distinct enqueue-failure
   log/metric and rejects the complete canonical transaction; it does not create a
@@ -310,6 +344,14 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   invalid, or unreadable enqueue-trigger inventory observed by 18-01 remains
   non-operational status data; it is not an enqueue-failure event unless a canonical write
   actually raises a provider exception and rolls back because of that enqueue artifact.
+- Emit enqueue-success telemetry from the same canonical write/provider boundary after the
+  complete canonical transaction commits for a supported `dms.Document` insert or real
+  `ContentVersion` update that reached the transactional enqueue mechanism and did not
+  raise a classified enqueue exception. Do not perform an extra status-path or provider
+  observation read to classify success, and do not add enqueue-success events to the status
+  JSON sink. Use bounded labels only: `provider`, surrogate `target`,
+  `canonicalOperation`, `resourceKind`, and fixed `outcome` value `committed`; use
+  `target="unknown"` when the logical target key is not available.
 - Use fixed public enqueue-failure categories: `stateMissingOrInvalid` for missing,
   unreadable, or invalid `DocumentCacheState`; `enqueueTriggerUnavailable` for
   canonical-write failures caused by missing, disabled, invalid, or privilege-broken
@@ -319,6 +361,23 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   lifecycle value, `DocumentId`, `DocumentUuid`, resource names, request bodies, subjects,
   connection strings, or physical identifiers in enqueue-failure metric labels or
   structured-log properties.
+- 18-06 owns a process-local bounded enqueue-failure observation sink. Canonical
+  write/provider-exception handling publishes classified enqueue failures to that sink and
+  emits the matching log/metric from the same boundary. `GET /health/document-cache` reads
+  the sink for current configured targets only. Do not derive status diagnostics from logs
+  or metrics, and do not add durable enqueue-failure storage in v1; restart or replica
+  changes may lose these recent process-local diagnostics.
+- Expose retained enqueue failures in one stable `enqueueFailures` component on each
+  target. The component contains `recentEvents`, a bounded latest-event array,
+  `byCategory`, an aggregate computed only from retained process-local events, and
+  `evictedCount`. Each event includes `observedAt`, fixed lower-camel `category`,
+  lower-camel `canonicalOperation`, lower-camel `resourceKind`, and a sanitized bounded
+  `message`; omit `DocumentId`, `DocumentUuid`, resource names, request bodies, subjects,
+  SQLSTATE, SQL Server error numbers, connection strings, lifecycle values, and physical
+  identifiers. Retain the latest `Projector:PageSize` enqueue-failure events per
+  normalized target key in memory, ordered oldest-to-newest within the retained window.
+  Empty state is `recentEvents: []`, `byCategory: []`, and `evictedCount: 0`. Counts are
+  retained-window process observations, not durable or lifetime totals.
 - Emit canonical write-path enqueue-failure logs and metrics for any classified enqueue
   exception that rolls back a canonical write, even when the affected data store is not
   configured in `DocumentCache:Targets` or the local projection target is unresolved,
@@ -332,8 +391,20 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
 
 - Status-model tests cover every projection state and transition defined by the referenced
   design sections.
+- Serialization tests include canonical v1 JSON fixtures for an empty-targets payload and
+  a representative populated target payload. The fixtures pin property names, lower-camel
+  enum strings, UTC timestamps, numeric seconds, null scalars, empty arrays, unavailable
+  backlog shape, deterministic target-key shape, stable component objects, and retained
+  enqueue-failure component shape.
 - Provider and API integration tests cover observation behavior, target isolation, and
   sanitization.
+- Endpoint authorization tests prove missing or invalid token returns `401`, a valid token
+  without the configured role returns `403`, a valid token with the exact configured role
+  can reach the status service, no projection status payload is serialized on auth
+  failures, and missing or invalid `Status:RequiredRole` leaves the endpoint unmapped.
+- Metric and structured-log tests prove every E18 DocumentCache metric target label uses
+  the `t1_` surrogate or `unknown`, enqueue success/failure telemetry uses only bounded
+  labels, and required structured-log property keys are present and sanitized.
 - Polling tests verify the health surface independently from background work execution.
 - Scale tests prove health/caught-up/oldest-work polling performs no source/cache scan and
   remains independent of total document cardinality.
@@ -343,45 +414,3 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
 - Durable connector binding, connector status, and deployment aggregation are assigned to
   E19.
 - External dashboards are deployment work.
-
-## Clarifying Questions and Answers
-
-### Questions 1
-
-1. Should 18-06 own a process-local bounded observation sink for recent classified enqueue failures that canonical write paths publish to and `GET /health/document-cache` reads, or are enqueue-failure diagnostics in status JSON intended to come only from logs, metrics, or existing durable provider state?
-2. When a target's per-target status-observation timeout expires while the top-level endpoint budget remains, should `operationalHealth.reason` and `caughtUp.reason` use existing `providerObservationFailed`, a distinct `statusObservationTimeout`, or another fixed reason value?
-3. If the 18-04 projection observation store does not already expose current-generation execution state, target-level backoff, active and last-ended administrative command observations, and target-fatal diagnostics as a typed immutable snapshot, does 18-06 own extending that store or must 18-04 be amended before 18-06 tasking?
-4. Does 18-06 own checking in a canonical v1 status-response contract fixture or JSON schema that pins every component property name, enum string, null field, and empty-array behavior for E19 and the follow-on CLI, or should implementation tasks derive the exact DTO shape from the narrative bullets?
-
-### Answers 1
-
-1. 18-06 should own a process-local bounded enqueue-failure observation sink. Canonical write/provider-exception handling publishes classified enqueue failures to that sink and emits the matching log/metric from the same boundary. `GET /health/document-cache` reads the sink for current configured targets only. Do not derive status diagnostics from logs or metrics, and do not add durable enqueue-failure storage in v1; restart or replica changes may lose these recent process-local diagnostics.
-2. Add a distinct fixed reason value `statusObservationTimeout`. When process eligibility otherwise passed but the per-target status-observation timeout expires, set both `operationalHealth.status` and `caughtUp.status` to `unknown` with reason `statusObservationTimeout`, set durable fields and queue presence to unavailable/unknown, and do not reuse earlier durable observations. Keep `providerObservationFailed` for provider exceptions or failed status statements, and keep `statusEndpointTimeout` for the top-level endpoint budget.
-3. 18-04 must expose the typed immutable current-generation projection snapshot before 18-06 tasking depends on it. If it is missing, amend 18-04 rather than adding a parallel observation store in 18-06. The snapshot should cover execution state, target-level backoff, current-generation active and last-ended administrative command observations, and bounded target-fatal diagnostics; 18-06 only composes and serializes those observations.
-4. 18-06 owns checked-in canonical v1 status-response JSON contract fixtures and serialization tests. Include at least an empty-targets payload and a representative populated target payload that pins property names, lower-camel enum strings, UTC timestamps, numeric seconds, null scalars, empty arrays, unavailable backlog shape, deterministic target-key shape, and stable component objects. E19 and the follow-on CLI should consume that fixture contract rather than deriving DTO shape from narrative bullets.
-
-### Questions 2
-
-1. What exact configuration keys should 18-06 add for the per-target status-observation timeout and top-level endpoint timeout, and should invalid or nonpositive values fail startup validation, fall back to defaults, or leave `GET /health/document-cache` unmapped?
-2. What public JSON shape and retention policy should the process-local enqueue-failure observation sink use in the v1 status response: a bounded recent-event array under target diagnostics, an aggregate-by-category component, or both?
-3. Does 18-06 own converting all DocumentCache metric target labels introduced by earlier E18 stories to the `t1_` target surrogate, or only the new status and enqueue-failure instruments added by this story?
-
-### Answers 2
-
-1. Add `DataManagement:DocumentCache:Status:StatusObservationTimeout` with a default of five seconds and `DataManagement:DocumentCache:Status:EndpointTimeout` with a default of 30 seconds. They are independent positive `TimeSpan` options under the same `Status` section as `RequiredRole`; missing timeout keys use the defaults. An omitted `Status` section therefore leaves `RequiredRole` missing and the endpoint unmapped, but does not make the timeout values malformed. Explicitly malformed timeout values, zero or negative timeout values, an explicitly null or malformed `Status` section, or values too large for `CancelAfter` are malformed `DocumentCache` configuration and must fail startup validation. The fail-closed unmapped-endpoint behavior is only for missing, empty, whitespace-only, or invalid `Status:RequiredRole`, not for invalid timeout values.
-2. Use both, in one stable `enqueueFailures` component on each target. The component contains `recentEvents`, a bounded latest-event array, and `byCategory`, an aggregate computed only from the retained process-local events. Each event includes `observedAt`, fixed lower-camel `category`, lower-camel `canonicalOperation`, lower-camel `resourceKind`, and a sanitized bounded `message`; omit `DocumentId`, `DocumentUuid`, resource names, request bodies, subjects, SQLSTATE, SQL Server error numbers, connection strings, lifecycle values, and physical identifiers. Retain the latest `Projector:PageSize` enqueue-failure events per normalized target key in memory, ordered oldest-to-newest within the retained window, and track an `evictedCount` for events dropped from that per-target buffer. The status endpoint serializes this component only for current configured targets whose normalized target key matches retained events; empty state is `recentEvents: []`, `byCategory: []`, and `evictedCount: 0`. Counts are retained-window process observations, not durable or lifetime totals.
-3. 18-06 owns converting every DocumentCache metric target label introduced by E18 to the `t1_` target surrogate, not only the new status and enqueue-failure instruments. Add one shared surrogate-label helper, use the metric label name `target`, emit `unknown` when a logical target key cannot be determined, and update existing projection, writer, read-acceleration, administrative, status, and enqueue-failure metric tests to prove no metric uses raw target keys, tenant display names, physical identifiers, or document identifiers. This does not change the public JSON `targetKey` shape or sanitized structured-log context where the status contract already exposes the target key.
-
-### Questions 3
-
-1. The integration design says telemetry covers enqueue successes and failures, but 18-06 currently pins only `edfi.dms.document_cache.enqueue.failures`; does 18-06 also own enqueue-success telemetry, and if so at what canonical write-path boundary and with which bounded labels should it be emitted without adding status-path reads?
-2. What concretely makes `DataManagement:DocumentCache:Status:RequiredRole` invalid beyond missing, empty, or whitespace-only, and should authorization require exact case-sensitive equality against at least one claim of the configured `JwtAuthentication:RoleClaimType` with no parsing of space-delimited, comma-delimited, or JSON-array values beyond claims already materialized by JWT validation?
-3. Should 18-06 pin exact structured-log event names and property keys for status observations and enqueue failures as part of its contract evidence, or may implementation choose repository-conventional names as long as they are sanitized and covered by tests?
-4. For `GET /health/document-cache` authentication and authorization failures, should tests assert the existing DMS JWT problem-details and `WWW-Authenticate` response shape, or are only the `401` and `403` status codes part of the v1 status endpoint contract?
-
-### Answers 3
-
-1. Yes. 18-06 owns enqueue-success telemetry by adding `edfi.dms.document_cache.enqueue.successes` at the same canonical write/provider boundary as enqueue failures. Emit it after the complete canonical transaction commits for a supported `dms.Document` insert or real `ContentVersion` update that reached the transactional enqueue mechanism and did not raise a classified enqueue exception. Do not perform an extra status-path or provider observation read just to classify the success, and do not add enqueue-success events to the status JSON sink. Use bounded labels only: `provider`, surrogate `target`, `canonicalOperation`, `resourceKind`, and fixed `outcome` value `committed`; use `target="unknown"` when the logical target key is not available.
-2. Treat `RequiredRole` as invalid when the configured value is not a single literal role token: trimming changes it, it contains ASCII whitespace, comma, semicolon, quote, bracket, brace, control characters, or it exceeds 256 characters. A valid value is mapped endpoint-local with exact ordinal matching against claims whose type equals the configured `JwtAuthentication:RoleClaimType`. Authorization succeeds only when at least one already-materialized claim has `Claim.Value` exactly equal to the configured role. Do not split space-delimited or comma-delimited claim values, parse JSON-array-looking claim values, lowercase either side, use Ed-Fi claim-set authorization, or fall back to `JwtAuthentication:ClientRole`.
-3. 18-06 should pin semantic structured-log event names and required property keys for status observations and enqueue success/failure evidence. Use stable event names `DocumentCacheStatusObserved`, `DocumentCacheStatusProviderObservationFailed`, `DocumentCacheEnqueueSucceeded`, and `DocumentCacheEnqueueFailed`; numeric `EventId` values, log levels, and message-template prose may follow repository conventions. Tests should assert the required property keys and sanitizer behavior: status logs include bounded `target`, `provider`, `operationalHealthStatus`, `caughtUpStatus`, `reason`, `lifecycle`, `queuePresence`, and duration/age fields when applicable; enqueue logs include bounded `target`, `provider`, `canonicalOperation`, `resourceKind`, `category` or `outcome`, and sanitized `message` only for failures.
-4. Only the `401` and `403` status codes are part of the v1 `GET /health/document-cache` endpoint contract for authentication and authorization failures. Reuse the existing JWT validation/challenge path, but do not pin the endpoint contract to the current DMS problem-details body or exact `WWW-Authenticate` header text. Endpoint tests should prove missing or invalid token returns `401`, valid token without the configured role returns `403`, valid token with the exact configured role can reach the status service, and no projection status payload is serialized on auth failures.
