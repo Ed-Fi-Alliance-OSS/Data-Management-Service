@@ -246,5 +246,170 @@
       "Run `dotnet build src/dms/EdFi.DataManagementService.sln`."
     ],
     "completed": true
+  },
+  {
+    "category": "rendering-debezium-identifiers",
+    "description": "High: Render Debezium source table filters and message-key selectors with Debezium fully-qualified regular-expression syntax instead of provider SQL-quoted identifiers.",
+    "acceptance-criteria": [
+      "PostgreSQL `table.include.list` renders the three DMS source tables as Debezium fully-qualified table regexes such as `dms.DocumentCache`, `dms.Document`, and `dms.CdcHeartbeat`, not SQL-quoted strings such as `\"dms\".\"DocumentCache\"`.",
+      "PostgreSQL `message.key.columns` renders document table selectors and `DocumentUuid` column names in Debezium selector syntax, not SQL-quoted identifier syntax.",
+      "SQL Server `table.include.list` and `message.key.columns` render Debezium selector syntax such as `dms.DocumentCache:DocumentUuid`, not bracket-quoted SQL Server identifiers such as `[dms].[DocumentCache]:[DocumentUuid]`.",
+      "Identifier escaping is implemented explicitly for Debezium regex selector syntax and does not reuse emitted SQL DDL identifier strings.",
+      "Golden snapshots, renderer tests, live-validation tests, and pinned-image smoke expectations lock the corrected selector values."
+    ],
+    "steps-to-verify": [
+      "Run CDC unit tests covering PostgreSQL and SQL Server renderer snapshots and live validation.",
+      "Run the pinned-image smoke tests when CDC connector image prerequisites are available to prove the corrected include list and message keys register with Debezium.",
+      "Review `CdcConnectorTemplateRenderer` to confirm provider SQL quoted names are not used for `table.include.list` or `message.key.columns`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "producer-policy",
+    "description": "Medium: Reject deployment policies where `producerBufferBytes` is smaller than `maxRecordBytes` in `CdcConnectorTemplateDeploymentPolicy` construction before a request can render connector configs.",
+    "acceptance-criteria": [
+      "Constructing `CdcConnectorTemplateDeploymentPolicy` with explicit `producerBufferBytes < maxRecordBytes` throws `ArgumentOutOfRangeException` before any rendered config can be returned.",
+      "The exception message identifies that `producerBufferBytes` must be greater than or equal to `maxRecordBytes` and does not include secrets, connection strings, tenant display names, document payloads, or physical identifiers.",
+      "When `producerBufferBytes` is omitted, `producer.override.buffer.memory` continues to default to `max(33554432, maxRecordBytes)`.",
+      "When `producerBufferBytes` is supplied and is greater than or equal to `maxRecordBytes`, the renderer emits the supplied value.",
+      "Unit tests cover omitted, equal, larger, and smaller producer buffer values."
+    ],
+    "steps-to-verify": [
+      "Run the CDC unit tests for deployment-policy contracts and common rendering.",
+      "Inspect rendered common connector config tests to confirm no case can emit `producer.override.buffer.memory` below `producer.override.max.request.size`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "validation",
+    "description": "Medium: Require the minimum provider connection properties needed by each Debezium connector instead of allowing incomplete rendered templates.",
+    "acceptance-criteria": [
+      "PostgreSQL validation rejects missing required connection properties before rendering. The exact required PostgreSQL keys are `database.hostname`, `database.user`, `database.password`, and `database.dbname`.",
+      "SQL Server validation rejects missing required connection properties before rendering. The exact required SQL Server keys are `database.hostname`, `database.user`, `database.password`, and `database.names`.",
+      "No other provider connection property is made required by this task.",
+      "Missing required connection-property diagnostics use stable codes/categories and redact physical identifiers and secrets.",
+      "Tests that currently render with partial provider connection maps are updated to either supply complete required inputs or assert validation failure."
+    ],
+    "steps-to-verify": [
+      "Run CDC validation and common renderer unit tests.",
+      "Review `CdcConnectorTemplateInputValidation` to confirm allow-list validation and required-key validation are both applied before rendering.",
+      "Review negative tests for missing PostgreSQL and SQL Server required connection properties."
+    ],
+    "completed": false
+  },
+  {
+    "category": "contracts",
+    "description": "Low: Enforce positive CDC binding generations in connector-template binding identity and provider setup evidence contracts.",
+    "acceptance-criteria": [
+      "`CdcConnectorTemplateBindingIdentity` rejects binding generation `0` and negative values.",
+      "`CdcConnectorProviderSetupEvidence` rejects binding generation `0` and negative values.",
+      "Exception messages and contract tests align with the design language that immutable connector/topic generations are positive integers.",
+      "Existing same-generation mismatch validation continues to work for positive generations."
+    ],
+    "steps-to-verify": [
+      "Run CDC contract unit tests.",
+      "Review constructor validation in `CdcConnectorTemplateContracts.cs` to confirm both generation values require `> 0`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "live-validation",
+    "description": "Medium: Reject unexpected Kafka Connect read-back properties that are outside the rendered config and the single allowed empty heartbeat-name exception.",
+    "acceptance-criteria": [
+      "Live read-back validation fails for any observed connector config property that is not present in the expected rendered config, except `topic.heartbeat.name` when its value is empty.",
+      "Validation diagnostics for unexpected properties use stable codes/categories and redact secret or physical-identifier values according to the existing redaction rules.",
+      "Tests prove drift properties such as `skipped.operations`, `decimal.handling.mode`, and arbitrary Debezium tuning keys cannot be added through direct Kafka Connect updates without validation failure.",
+      "The validator does not expose an operator-configurable unexpected-property allow-list.",
+      "Pinned-image read-back tests continue to pass. If the pinned Kafka Connect runtime injects a benign read-back property, add only a hard-coded validator exception for that exact property/value shape with a unit test and an integration-smoke assertion."
+    ],
+    "steps-to-verify": [
+      "Run CDC live-validation unit tests.",
+      "Run pinned-image read-back smoke tests when CDC connector image prerequisites are available.",
+      "Review `CdcConnectorTemplateEffectiveConfigValidation` to confirm unexpected-property validation is not limited only to reserved, security, secret, or `database.*` keys."
+    ],
+    "completed": false
+  },
+  {
+    "category": "registration-payload",
+    "description": "Medium: Make `CdcKafkaConnectRegistrationPayload` serialize directly to the Kafka Connect REST registration shape returned by the renderer.",
+    "acceptance-criteria": [
+      "`System.Text.Json.JsonSerializer.Serialize(rendered.RegistrationPayload)` produces a top-level `name` string property whose value is the binding connector name.",
+      "The serialized registration payload produces a top-level `config` object containing the exact deterministic rendered flat config map.",
+      "The payload does not serialize `CdcSafeName` as an object and does not rely on caller-specific serializer naming policies to produce lowercase property names.",
+      "The pinned-image fixture registers the connector using `rendered.RegistrationPayload` rather than a parallel private registration DTO.",
+      "Unit tests cover the serialized payload shape and integration smoke read-back still validates the registered config."
+    ],
+    "steps-to-verify": [
+      "Run CDC contract and common rendering unit tests.",
+      "Review `CdcKafkaConnectRegistrationPayload` for explicit `System.Text.Json` property names or string-valued DTO properties.",
+      "Review `CdcConnectorTemplatePinnedImageFixture.RegisterRenderedConnectorConfigDirectlyAsync` to confirm it serializes the returned registration payload."
+    ],
+    "completed": false
+  },
+  {
+    "category": "provider-setup-validation",
+    "description": "Medium: Validate provider setup source-column inventory before rendering message-key selectors so malformed evidence returns stable diagnostics instead of throwing during config construction.",
+    "acceptance-criteria": [
+      "A provider setup result whose `dms.DocumentCache` source inventory lacks `DocumentUuid` is rejected before rendering with a stable diagnostic.",
+      "A provider setup result whose `dms.Document` source inventory lacks `DocumentUuid` is rejected before rendering with a stable diagnostic.",
+      "Message-key rendering never indexes directly into the source-column inventory without prior validation that every expected key column has a matching emitted column.",
+      "Diagnostics for missing source columns use stable codes/categories and redact physical identifiers and raw provider details.",
+      "Tests cover missing key columns, duplicate key-column source entries if possible through the public contracts, and the successful path for both providers."
+    ],
+    "steps-to-verify": [
+      "Run CDC contract, PostgreSQL renderer, SQL Server renderer, and live-validation unit tests.",
+      "Review `CdcConnectorTemplateRequest` and `CdcConnectorTemplateRenderer` to confirm invalid provider setup evidence cannot produce `KeyNotFoundException` or `ArgumentException` from `ToDictionary` during rendering.",
+      "Review diagnostics to confirm missing source-column evidence is reported through the template validation result."
+    ],
+    "completed": false
+  },
+  {
+    "category": "test-simplicity",
+    "description": "Low: Replace duplicated CDC connector-template unit-test request and provider setup builders with one shared test data builder.",
+    "acceptance-criteria": [
+      "The repeated `BuildRequest`, `BuildProviderSetupResult`, `BuildRequiredSourceTableInventory`, `BuildSourceTable`, and `BuildExpectedMessageKeyColumns` helpers are centralized in a single unit-test fixture or builder.",
+      "Provider-specific tests can still customize source inventories, artifact inventories, connection properties, policy values, and expected message-key evidence without copying whole builder implementations.",
+      "Golden snapshot, renderer, validation, contract, artifact, live-validation, and integration-boundary tests use the shared builder where it fits.",
+      "The shared builder defaults match the corrected Debezium selector contract and make provider SQL-quoted identifier usage explicit only in tests that intentionally exercise provider metadata.",
+      "No production code changes are required for this cleanup."
+    ],
+    "steps-to-verify": [
+      "Run the full CDC unit test project.",
+      "Run `rg \"private static CdcProviderSetupResult BuildProviderSetupResult|private static IReadOnlyList<CdcSourceTableInventory> BuildRequiredSourceTableInventory|private static CdcSourceTableInventory BuildSourceTable\" src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit` and confirm only the shared builder remains.",
+      "Review changed tests to confirm behavior assertions, not copied setup code, carry the test intent."
+    ],
+    "completed": false
+  },
+  {
+    "category": "binding-partitioner-contract",
+    "description": "Medium: Carry and validate the immutable CDC binding `partitionerAlgorithm` token before rendering connector templates.",
+    "acceptance-criteria": [
+      "`CdcConnectorTemplateBindingIdentity` includes the binding's `partitionerAlgorithm` value as an immutable constructor input.",
+      "Connector-template contract validation rejects missing, empty, or non-`kafka-murmur2-v1` partitioner algorithm values before any connector config can be rendered.",
+      "The renderer maps the accepted `kafka-murmur2-v1` token through one explicit helper or mapping to `producer.override.partitioner.class=org.edfi.kafka.connect.partitioner.KafkaMurmur2V1Partitioner`.",
+      "Operator connection properties and Kafka security/material inputs still cannot override the partitioner algorithm or rendered partitioner class.",
+      "Contract, rendering, golden snapshot, and live-validation tests prove valid bindings render the pinned-image partitioner class while invalid binding tokens cannot render."
+    ],
+    "steps-to-verify": [
+      "Run CDC contract, common rendering, golden snapshot, and live-validation unit tests.",
+      "Review `CdcConnectorTemplateBindingIdentity` to confirm the binding partitioner algorithm is required and stored with the binding identity.",
+      "Review `CdcConnectorTemplateRenderer` to confirm the producer partitioner class is derived from the accepted binding token instead of being emitted independently of binding state.",
+      "Run the pinned-image partitioner-vector smoke test when CDC connector image prerequisites are available."
+    ],
+    "completed": false
+  },
+  {
+    "category": "repository-hygiene",
+    "description": "Low: Remove the tracked `progress.txt` scratch log from the branch because it is ignored repository-local progress state, not DMS-1321 implementation or review evidence.",
+    "acceptance-criteria": [
+      "`progress.txt` is no longer tracked or present in the branch diff.",
+      "No implementation, test, design, or task evidence is lost when the scratch log is removed.",
+      "The existing `.gitignore` `/progress.txt` entry continues to keep local progress logs out of future diffs."
+    ],
+    "steps-to-verify": [
+      "Run `git diff --name-status b4256c960a3fd7629dd1f3a67927576fd4fe25ff..HEAD -- progress.txt` and confirm it reports no tracked file change.",
+      "Run `git status --short --ignored progress.txt` and confirm any local `progress.txt` is ignored rather than tracked."
+    ],
+    "completed": false
   }
 ]
