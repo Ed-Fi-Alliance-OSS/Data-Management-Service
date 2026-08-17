@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
@@ -48,7 +49,7 @@ public class Given_CdcConnectorTemplateCommonRendering
         using var _ = new AssertionScope();
         result.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
         result.RegistrationPayload.Should().NotBeNull();
-        result.RegistrationPayload!.Name.Should().Be(new CdcSafeName("dms_binding_connector"));
+        result.RegistrationPayload!.Name.Should().Be("dms_binding_connector");
         result.RegistrationPayload.Config.Should().Equal(result.Config);
         result.ConfigSha256.Should().MatchRegex("^sha256:[0-9a-f]{64}$");
         result.Diagnostics.Should().BeEmpty();
@@ -110,6 +111,38 @@ public class Given_CdcConnectorTemplateCommonRendering
             .Config.Keys.Should()
             .NotContain(key => key.Contains("offset.storage", StringComparison.Ordinal));
         result.Config.Keys.Should().NotContain(key => key.Contains("ACL", StringComparison.Ordinal));
+    }
+
+    [Test]
+    public void It_serializes_the_registration_payload_to_the_kafka_connect_rest_shape()
+    {
+        CdcConnectorTemplateResult result = Render(
+            BuildRequest(
+                CdcProvider.Postgresql,
+                new CdcConnectorTemplateDeploymentPolicy(
+                    "broker-1:9092,broker-2:9092",
+                    maxRecordBytes: 1_048_576
+                ),
+                new Dictionary<string, string>
+                {
+                    ["database.hostname"] = "postgresql.internal",
+                    ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
+                }
+            )
+        );
+
+        string json = JsonSerializer.Serialize(result.RegistrationPayload);
+        using JsonDocument document = JsonDocument.Parse(json);
+        JsonElement root = document.RootElement;
+        Dictionary<string, string> serializedConfig = root.GetProperty("config")
+            .EnumerateObject()
+            .ToDictionary(property => property.Name, property => property.Value.GetString()!);
+
+        using var _ = new AssertionScope();
+        root.EnumerateObject().Select(property => property.Name).Should().Equal("name", "config");
+        root.GetProperty("name").ValueKind.Should().Be(JsonValueKind.String);
+        root.GetProperty("name").GetString().Should().Be("dms_binding_connector");
+        serializedConfig.Should().Equal(result.Config);
     }
 
     [Test]
