@@ -60,6 +60,32 @@ public class Given_CdcConnectorTemplateInputValidation
     }
 
     [Test]
+    public void It_accepts_allow_listed_sqlserver_driver_connection_properties()
+    {
+        CdcConnectorTemplateValidationResult result = Validate(
+            CdcProvider.SqlServer,
+            new Dictionary<string, string>
+            {
+                ["database.hostname"] = "sqlserver.internal",
+                ["database.port"] = "1433",
+                ["database.user"] = "connector_user",
+                ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
+                ["database.names"] = "edfi_datastore",
+                ["driver.encrypt"] = "true",
+                ["driver.trustServerCertificate"] = "false",
+                ["driver.trustStore"] = "/connect/secrets/sqlserver.truststore.p12",
+                ["driver.trustStorePassword"] = "${env:CDC_SQLSERVER_TRUSTSTORE_PASSWORD}",
+                ["driver.trustStoreType"] = "PKCS12",
+                ["driver.hostNameInCertificate"] = "sqlserver.internal",
+            }
+        );
+
+        using var _ = new AssertionScope();
+        result.IsValid.Should().BeTrue();
+        result.Diagnostics.Should().BeEmpty();
+    }
+
+    [Test]
     public void It_rejects_missing_required_provider_connection_properties()
     {
         CdcConnectorTemplateValidationResult postgresqlResult = Validate(
@@ -172,6 +198,54 @@ public class Given_CdcConnectorTemplateInputValidation
                 && diagnostic.PropertyName == "ssl.unknown"
                 && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.KafkaSecurityProperty
             );
+    }
+
+    [Test]
+    public void It_rejects_obsolete_sqlserver_database_tls_connection_properties()
+    {
+        string[] obsoleteSqlServerProperties =
+        [
+            "database.encrypt",
+            "database.trustServerCertificate",
+            "database.ssl.truststore",
+            "database.ssl.truststore.password",
+            "database.ssl.truststore.type",
+            "database.ssl.hostnameInCertificate",
+        ];
+        CdcConnectorTemplateValidationResult result = Validate(
+            CdcProvider.SqlServer,
+            new Dictionary<string, string>
+            {
+                ["database.hostname"] = "sqlserver.internal",
+                ["database.port"] = "1433",
+                ["database.user"] = "connector_user",
+                ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
+                ["database.names"] = "edfi_datastore",
+                ["database.encrypt"] = "true",
+                ["database.trustServerCertificate"] = "true",
+                ["database.ssl.truststore"] = "/connect/secrets/sqlserver.truststore.p12",
+                ["database.ssl.truststore.password"] = "${env:CDC_SQLSERVER_TRUSTSTORE_PASSWORD}",
+                ["database.ssl.truststore.type"] = "PKCS12",
+                ["database.ssl.hostnameInCertificate"] = "sqlserver.internal",
+            }
+        );
+
+        using var _ = new AssertionScope();
+        result.IsValid.Should().BeFalse();
+        result
+            .Diagnostics.Where(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.ConnectionPropertyNotAllowed
+            )
+            .Select(diagnostic => diagnostic.PropertyName)
+            .Should()
+            .BeEquivalentTo(obsoleteSqlServerProperties);
+        result
+            .Diagnostics.Should()
+            .AllSatisfy(diagnostic =>
+            {
+                diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.ConnectionProperty);
+                diagnostic.ObservedValue.Should().BeNull();
+            });
     }
 
     [Test]
@@ -290,6 +364,44 @@ public class Given_CdcConnectorTemplateInputValidation
             .Where(value => value is not null)
             .Should()
             .NotContain(value => value!.Contains(rawSecret, StringComparison.Ordinal));
+        act.Should()
+            .Throw<CdcConnectorTemplateValidationException>()
+            .Where(exception => !exception.ToString().Contains(rawSecret, StringComparison.Ordinal));
+    }
+
+    [Test]
+    public void It_requires_externalized_sqlserver_driver_truststore_password()
+    {
+        const string rawSecret =
+            "Server=unsafe-prod;Password=should-not-leak;Tenant=GrandBend;{\"documentUuid\":\"abc\"}";
+        CdcConnectorTemplateValidationResult result = Validate(
+            CdcProvider.SqlServer,
+            new Dictionary<string, string>
+            {
+                ["database.hostname"] = "sqlserver.internal",
+                ["database.user"] = "connector_user",
+                ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
+                ["database.names"] = "edfi_datastore",
+                ["driver.trustStorePassword"] = rawSecret,
+            }
+        );
+        Action act = () => result.ThrowIfInvalid();
+
+        CdcConnectorTemplateDiagnostic diagnostic = result.Diagnostics.Should().ContainSingle().Subject;
+
+        using var _ = new AssertionScope();
+        result.IsValid.Should().BeFalse();
+        diagnostic.Code.Should().Be(CdcConnectorTemplateDiagnosticCodes.ExternalizedSecretReferenceRequired);
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.SecretRedactionFailure);
+        diagnostic.PropertyName.Should().Be("driver.trustStorePassword");
+        diagnostic.ObservedValue.Should().Be("[redacted]");
+        diagnostic
+            .RedactionClassification.Should()
+            .Be(CdcConnectorTemplateRedactionClassification.SecretValue);
+        result
+            .Diagnostics.SelectMany(DiagnosticText)
+            .Should()
+            .NotContain(value => value.Contains(rawSecret, StringComparison.Ordinal));
         act.Should()
             .Throw<CdcConnectorTemplateValidationException>()
             .Where(exception => !exception.ToString().Contains(rawSecret, StringComparison.Ordinal));

@@ -728,6 +728,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
 
         if (
             propertyName.StartsWith("database.", StringComparison.Ordinal)
+            || propertyName.StartsWith("driver.", StringComparison.Ordinal)
             || propertyName
                 is "table.include.list"
                     or "message.key.columns"

@@ -132,6 +132,13 @@ public class Given_CdcConnectorTemplateArtifacts
                     includeRedactedArtifactPayload: false,
                     manifestOutputDirectoryPath: artifactDirectory
                 ),
+                providerConnectionProperties: new Dictionary<string, string>(
+                    BuildSqlServerConnectionProperties()
+                )
+                {
+                    ["driver.trustServerCertificate"] = "true",
+                    ["driver.trustStorePassword"] = "${env:CDC_SQLSERVER_TRUSTSTORE_PASSWORD}",
+                },
                 kafkaSecurityProperties: new Dictionary<string, string>
                 {
                     ["security.protocol"] = "SASL_SSL",
@@ -154,6 +161,8 @@ public class Given_CdcConnectorTemplateArtifacts
         File.ReadAllText(manifestPath).Should().Be(payload.Json);
         root.GetProperty("provider").GetString().Should().Be("sqlserver");
         root.GetProperty("schemaHistoryTopicName").GetString().Should().Be("edfi.documents.schema-history");
+        redactedConfig.GetProperty("driver.trustServerCertificate").GetString().Should().Be("[redacted]");
+        redactedConfig.GetProperty("driver.trustStorePassword").GetString().Should().Be("[redacted]");
         redactedConfig
             .GetProperty("schema.history.internal.kafka.bootstrap.servers")
             .GetString()

@@ -98,6 +98,10 @@ public class Given_CdcConnectorTemplateLiveValidation
             serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
         CdcConnectorTemplateRequest request = BuildRequest(
             CdcProvider.SqlServer,
+            providerConnectionProperties: new Dictionary<string, string>(BuildSqlServerConnectionProperties())
+            {
+                ["driver.trustStorePassword"] = "${env:CDC_SQLSERVER_TRUSTSTORE_PASSWORD}",
+            },
             kafkaSecurityProperties: new Dictionary<string, string>
             {
                 ["security.protocol"] = "SASL_SSL",
@@ -107,6 +111,7 @@ public class Given_CdcConnectorTemplateLiveValidation
         CdcConnectorTemplateResult rendered = service.Render(request);
         Dictionary<string, string> effectiveConfig = CopyConfig(rendered.Config);
         effectiveConfig["database.password"] = "[hidden]";
+        effectiveConfig["driver.trustStorePassword"] = "[hidden]";
         effectiveConfig["producer.override.sasl.jaas.config"] = "********";
         effectiveConfig["schema.history.internal.producer.sasl.jaas.config"] = "[hidden]";
         effectiveConfig["schema.history.internal.consumer.sasl.jaas.config"] = "***";

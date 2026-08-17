@@ -99,8 +99,8 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
                 ["database.user"] = "sa",
                 ["database.password"] = $"${{env:{ConnectorPasswordEnvironmentVariable}}}",
                 ["database.names"] = SqlServerDatabaseName,
-                ["database.encrypt"] = "true",
-                ["database.trustServerCertificate"] = "true",
+                ["driver.encrypt"] = "true",
+                ["driver.trustServerCertificate"] = "true",
             },
             _ => throw new InvalidOperationException("Unsupported CDC provider."),
         };
