@@ -164,12 +164,14 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   endpoint budget starts when the status service captures the request snapshot; each
   target's per-target timeout starts when its bounded-parallel evaluation work item begins
   and is linked to the endpoint budget and caller cancellation.
-- A target timeout, provider-observation exception, or status statement failure serializes
-  that target's required current-source facts as `unknown` with sanitized diagnostics; peer
-  targets continue and the endpoint still returns a successful response when serialization
-  itself succeeds. If the endpoint budget expires before some targets start or finish,
-  serialize those targets as `unknown` with reason `statusEndpointTimeout`; caller
-  cancellation still follows the normal request-cancellation path.
+- A target status-observation timeout serializes that target's required current-source
+  facts as `unknown` with reason `statusObservationTimeout` and sanitized diagnostics. A
+  provider-observation exception or status statement failure serializes those facts as
+  `unknown` with reason `providerObservationFailed` and sanitized diagnostics. Peer targets
+  continue and the endpoint still returns a successful response when serialization itself
+  succeeds. If the endpoint budget expires before some targets start or finish, serialize
+  those targets as `unknown` with reason `statusEndpointTimeout`; caller cancellation still
+  follows the normal request-cancellation path.
 - Skip the provider current-source statement unless process eligibility is otherwise
   satisfied for the current target generation: resolved target, compatible provider
   metadata, valid inventory and enqueue-trigger observation, satisfied provider
@@ -223,9 +225,11 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   `inventoryInvalid`, `enqueueTriggerUnavailable`, SQL Server prerequisite reasons
   `sqlServerPrerequisiteFailed` then `unsupportedPrerequisiteIncident`, `targetRemoved`,
   `targetReplaced`, `runtimeNotObserved`, `runtimeCancelled`, `runtimeFaulted`,
-  `targetBackoff`, then `providerObservationFailed` as `unknown` when process eligibility
-  otherwise passed but durable facts could not be read, then durable-state reasons
-  `stateMissingOrInvalid`, `lifecycleDisabled`, `lifecycleResetting`, `lifecycleRebuilding`, and
+  `targetBackoff`, then `statusObservationTimeout` as `unknown` when process eligibility
+  otherwise passed but the per-target status-observation timeout expired, then
+  `providerObservationFailed` as `unknown` when process eligibility otherwise passed but
+  durable facts could not be read, then durable-state reasons `stateMissingOrInvalid`,
+  `lifecycleDisabled`, `lifecycleResetting`, `lifecycleRebuilding`, and
   `cacheAheadRecoveryRequired`. Map 18-01 lifecycle-observation failures that prevent
   target eligibility to `stateMissingOrInvalid` when they are known missing or invalid
   state observations, and to `providerObservationFailed` when the state row is unreadable
@@ -339,3 +343,19 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
 - Durable connector binding, connector status, and deployment aggregation are assigned to
   E19.
 - External dashboards are deployment work.
+
+## Clarifying Questions and Answers
+
+### Questions 1
+
+1. Should 18-06 own a process-local bounded observation sink for recent classified enqueue failures that canonical write paths publish to and `GET /health/document-cache` reads, or are enqueue-failure diagnostics in status JSON intended to come only from logs, metrics, or existing durable provider state?
+2. When a target's per-target status-observation timeout expires while the top-level endpoint budget remains, should `operationalHealth.reason` and `caughtUp.reason` use existing `providerObservationFailed`, a distinct `statusObservationTimeout`, or another fixed reason value?
+3. If the 18-04 projection observation store does not already expose current-generation execution state, target-level backoff, active and last-ended administrative command observations, and target-fatal diagnostics as a typed immutable snapshot, does 18-06 own extending that store or must 18-04 be amended before 18-06 tasking?
+4. Does 18-06 own checking in a canonical v1 status-response contract fixture or JSON schema that pins every component property name, enum string, null field, and empty-array behavior for E19 and the follow-on CLI, or should implementation tasks derive the exact DTO shape from the narrative bullets?
+
+### Answers 1
+
+1. 18-06 should own a process-local bounded enqueue-failure observation sink. Canonical write/provider-exception handling publishes classified enqueue failures to that sink and emits the matching log/metric from the same boundary. `GET /health/document-cache` reads the sink for current configured targets only. Do not derive status diagnostics from logs or metrics, and do not add durable enqueue-failure storage in v1; restart or replica changes may lose these recent process-local diagnostics.
+2. Add a distinct fixed reason value `statusObservationTimeout`. When process eligibility otherwise passed but the per-target status-observation timeout expires, set both `operationalHealth.status` and `caughtUp.status` to `unknown` with reason `statusObservationTimeout`, set durable fields and queue presence to unavailable/unknown, and do not reuse earlier durable observations. Keep `providerObservationFailed` for provider exceptions or failed status statements, and keep `statusEndpointTimeout` for the top-level endpoint budget.
+3. 18-04 must expose the typed immutable current-generation projection snapshot before 18-06 tasking depends on it. If it is missing, amend 18-04 rather than adding a parallel observation store in 18-06. The snapshot should cover execution state, target-level backoff, current-generation active and last-ended administrative command observations, and bounded target-fatal diagnostics; 18-06 only composes and serializes those observations.
+4. 18-06 owns checked-in canonical v1 status-response JSON contract fixtures and serialization tests. Include at least an empty-targets payload and a representative populated target payload that pins property names, lower-camel enum strings, UTC timestamps, numeric seconds, null scalars, empty arrays, unavailable backlog shape, deterministic target-key shape, and stable component objects. E19 and the follow-on CLI should consume that fixture contract rather than deriving DTO shape from narrative bullets.
