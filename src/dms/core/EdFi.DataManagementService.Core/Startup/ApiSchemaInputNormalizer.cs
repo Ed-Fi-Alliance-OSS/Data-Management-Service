@@ -17,7 +17,6 @@ namespace EdFi.DataManagementService.Core.Startup;
 ///
 /// Normalization includes:
 /// - Stripping OpenAPI payloads (not needed for hashing/model derivation)
-/// - Removing non-root-scope Namespace securable elements that older ApiSchema artifacts emit
 /// - Sorting extensions by projectEndpointName (ordinal) for determinism
 /// - Validating inputs and failing fast with actionable errors
 /// </summary>
@@ -81,21 +80,12 @@ public class ApiSchemaInputNormalizer(ILogger<ApiSchemaInputNormalizer> _logger)
             return collisionResult;
         }
 
-        // Step 4: Strip OpenAPI payloads, drop non-root-scope Namespace securables, sort extensions.
-        // The securable filter also runs at ApiSchemaProvider load; repeating it here keeps inputs
-        // that bypass the provider (e.g. explicit schema files fed to the CLI file loader) on the
-        // same effective schema content and hash. The filter is idempotent.
+        // Step 4: Strip OpenAPI payloads and sort extensions
         var strippedCoreNode = StripOpenApiPayloads(nodes.CoreApiSchemaRootNode);
-        NamespaceSecurableElementsFilter.RemoveNonRootScopePaths(strippedCoreNode);
 
         var sortedExtensions = extensionSchemas
             .OrderBy(x => x.EndpointName, StringComparer.Ordinal)
-            .Select(x =>
-            {
-                var strippedExtensionNode = StripOpenApiPayloads(x.Node);
-                NamespaceSecurableElementsFilter.RemoveNonRootScopePaths(strippedExtensionNode);
-                return strippedExtensionNode;
-            })
+            .Select(x => StripOpenApiPayloads(x.Node))
             .ToArray();
 
         _logger.LogDebug(

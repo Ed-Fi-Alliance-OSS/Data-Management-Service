@@ -63,8 +63,6 @@ internal class ApiSchemaProvider(
                     return (null, failure);
                 }
 
-                NamespaceSecurableElementsFilter.RemoveNonRootScopePaths(parsedFileContent);
-
                 return (parsedFileContent, null);
             }
             catch (Exception ex)
