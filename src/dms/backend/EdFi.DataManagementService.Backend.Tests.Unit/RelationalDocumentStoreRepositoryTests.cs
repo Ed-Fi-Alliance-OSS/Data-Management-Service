@@ -25,7 +25,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 
 [TestFixture]
 [Parallelizable]
-public class Given_RelationalDocumentStoreRepositoryTests
+public partial class Given_RelationalDocumentStoreRepositoryTests
 {
     public enum RelationshipAuthorizationEndpoint
     {

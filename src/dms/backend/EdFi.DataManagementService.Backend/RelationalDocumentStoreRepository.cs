@@ -43,7 +43,7 @@ public sealed class RelationalDocumentStoreRepository(
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
         null,
     ChangeQueryPageOrderingPolicy? orderingPolicy = null
-) : IDocumentStoreRepository, IQueryHandler
+) : IDocumentStoreRepository, IQueryHandler, IPartitionQueryHandler
 {
     private const int GetByIdRelationshipAuthorizationAuth1Index = 0;
     internal const int PostRelationshipAuthorizationAuth1Index = 0;
@@ -125,6 +125,25 @@ public sealed class RelationalDocumentStoreRepository(
 
         public sealed record Prepared(RelationalQueryPreparation Preparation)
             : RelationalQueryPreparationResult;
+    }
+
+    /// <param name="Authorization">
+    /// Carried so the custom-view relabel around execution can tell whether any view participated,
+    /// exactly as the page path does.
+    /// </param>
+    private sealed record RelationalPartitionPreparation(
+        PartitionWindowPlan PartitionPlan,
+        PageDocumentIdAuthorizationSpec? Authorization
+    );
+
+    private abstract record RelationalPartitionPreparationResult
+    {
+        private RelationalPartitionPreparationResult() { }
+
+        public sealed record Complete(PartitionResult Result) : RelationalPartitionPreparationResult;
+
+        public sealed record Prepared(RelationalPartitionPreparation Preparation)
+            : RelationalPartitionPreparationResult;
     }
 
     public async Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
@@ -1453,6 +1472,333 @@ public sealed class RelationalDocumentStoreRepository(
                 pageQueryAuthorization,
                 orderingMode
             )
+        );
+    }
+
+    public Task<PartitionResult> QueryPartitions(
+        IPartitionRequest partitionRequest,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(partitionRequest);
+
+        var mappingSet = partitionRequest.MappingSet;
+        var resource = RelationalWriteSupport.ToQualifiedResourceName(partitionRequest.ResourceInfo);
+
+        _logger.LogDebug(
+            "Entering RelationalDocumentStoreRepository.QueryPartitions - {TraceId}",
+            LoggingSanitizer.SanitizeForLogging(partitionRequest.TraceId.Value)
+        );
+
+        // Read acceleration is not consulted on this path, for either resource kind. The cache holds
+        // hydrated documents and the candidate pages that selected them; a boundary calculation ranges
+        // over the whole authorized candidate relation and hydrates nothing, so there is no cached
+        // artifact it could be served from and no candidate page for it to admit.
+        if (mappingSet.TryGetDescriptorResourceModel(resource, out _))
+        {
+            return _descriptorReadHandler.HandlePartitionsAsync(
+                new DescriptorPartitionRequest(
+                    mappingSet,
+                    resource,
+                    partitionRequest.QueryElements,
+                    partitionRequest.AuthorizationStrategyEvaluators,
+                    partitionRequest.RequestedPartitionCount,
+                    partitionRequest.MinimumPartitionSize,
+                    partitionRequest.TraceId,
+                    partitionRequest.AuthorizationContext,
+                    partitionRequest.ChangeVersionRange,
+                    partitionRequest.TenantKey
+                ),
+                cancellationToken
+            );
+        }
+
+        return QueryPartitionsRelationalAsync(partitionRequest, mappingSet, resource, cancellationToken);
+    }
+
+    private async Task<PartitionResult> QueryPartitionsRelationalAsync(
+        IPartitionRequest partitionRequest,
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        CancellationToken cancellationToken
+    )
+    {
+        RelationalPartitionPreparationResult preparationResult = await PreparePartitionReadAsync(
+                partitionRequest,
+                mappingSet,
+                resource,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (preparationResult is RelationalPartitionPreparationResult.Complete complete)
+        {
+            return complete.Result;
+        }
+
+        var preparation = ((RelationalPartitionPreparationResult.Prepared)preparationResult).Preparation;
+
+        IReadOnlyList<long> ascendingStarts;
+
+        try
+        {
+            ascendingStarts = await ExecutePartitionBoundaryCommandAsync(
+                    preparation.PartitionPlan,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        // Trade-off: a provider error raised while executing a custom-view boundary statement is
+        // intentionally relabeled as a custom-view validation failure, even though not every such error
+        // originates in the view. This mirrors the page path so the two operations report the same public
+        // urn:ed-fi:api:system contract for the same condition.
+        catch (DbException ex) when (preparation.Authorization?.CustomViewChecks is { Count: > 0 })
+        {
+            throw new CustomViewAuthorizationValidationException(ex);
+        }
+
+        try
+        {
+            return new PartitionResult.PartitionSuccess(
+                PartitionRangeAssembler.ToInclusiveRanges(ascendingStarts)
+            );
+        }
+        // Non-ascending starts mean the compiled statement changed, not that a client sent something
+        // unusual. Reporting it keeps a corrupted boundary set from reaching a client as a walkable one.
+        catch (ArgumentException ex)
+        {
+            return new PartitionResult.UnknownPartitionFailure(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Resolves capability and authorization, preprocesses the filter, plans the authorized candidate
+    /// relation, and compiles the boundary statement over it — or reports the outcome that stops the
+    /// request.
+    /// </summary>
+    /// <remarks>
+    /// Every seam is the one <see cref="PrepareQueryReadAsync" /> uses, in the same order, so a boundary
+    /// set is calculated over exactly the rows the equivalent GET-many would page: the same capability
+    /// lookup, the same authorization resolution and its custom-view ordering, the same preprocessor, the
+    /// same page keyset planner, and the same command parameter budget. The planner is asked for the
+    /// unpaged candidate relation rather than a page, which is the only difference.
+    /// </remarks>
+    private async Task<RelationalPartitionPreparationResult> PreparePartitionReadAsync(
+        IPartitionRequest partitionRequest,
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        CancellationToken cancellationToken
+    )
+    {
+        RelationalQueryCapability queryCapability;
+
+        try
+        {
+            queryCapability = mappingSet.GetQueryCapabilityOrThrow(resource);
+        }
+        catch (NotSupportedException ex)
+        {
+            return PartitionComplete(new PartitionResult.PartitionFailureNotImplemented(ex.Message));
+        }
+        catch (MissingQueryCapabilityLookupGuardRailException ex)
+        {
+            return PartitionComplete(new PartitionResult.UnknownPartitionFailure(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return PartitionComplete(new PartitionResult.UnknownPartitionFailure(ex.Message));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return PartitionComplete(new PartitionResult.UnknownPartitionFailure(ex.Message));
+        }
+
+        var configuredAuthorizationStrategies = ConfiguredAuthorizationStrategyAdapter.Adapt(
+            partitionRequest.AuthorizationStrategyEvaluators
+        );
+        var authorizationResolution = await ResolveQueryAuthorization(
+            mappingSet,
+            resource,
+            configuredAuthorizationStrategies,
+            partitionRequest.AuthorizationContext,
+            // A boundary set carries no count, so the shared resolution's empty terminals must not be
+            // asked to produce one.
+            totalCount: false,
+            cancellationToken
+        );
+
+        PageDocumentIdAuthorizationSpec? partitionAuthorization;
+
+        switch (authorizationResolution)
+        {
+            case QueryAuthorizationResolution.Complete complete:
+                return PartitionComplete(RelationalPartitionResultMapping.FromQueryResult(complete.Result));
+
+            case QueryAuthorizationResolution.Proceed proceed:
+                partitionAuthorization = proceed.Authorization;
+                break;
+
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported query authorization resolution '{authorizationResolution.GetType().Name}'."
+                );
+        }
+
+        RelationalQueryPreprocessingResult preprocessingResult;
+
+        try
+        {
+            preprocessingResult = await RelationalQueryRequestPreprocessor
+                .PreprocessAsync(
+                    mappingSet,
+                    resource,
+                    partitionRequest.QueryElements,
+                    queryCapability,
+                    _referenceResolver,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return PartitionComplete(new PartitionResult.UnknownPartitionFailure(ex.Message));
+        }
+
+        if (preprocessingResult.Outcome is RelationalQueryPreprocessingOutcome.EmptyPage)
+        {
+            await ValidateAdaptedCustomViewsAsync(
+                    mappingSet,
+                    partitionAuthorization?.CustomViewChecks,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            return PartitionComplete(new PartitionResult.PartitionSuccess([]));
+        }
+
+        ResourceReadPlan readPlan;
+
+        try
+        {
+            readPlan = mappingSet.GetReadPlanOrThrow(resource);
+        }
+        catch (NotSupportedException ex)
+        {
+            return PartitionComplete(new PartitionResult.UnknownPartitionFailure(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return PartitionComplete(new PartitionResult.UnknownPartitionFailure(ex.Message));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return PartitionComplete(new PartitionResult.UnknownPartitionFailure(ex.Message));
+        }
+
+        PartitionWindowPlan partitionPlan;
+
+        try
+        {
+            var planner = new RelationalQueryPageKeysetPlanner(mappingSet.Key.Dialect);
+
+            if (
+                !planner.TryPlanCandidates(
+                    readPlan.Model.Root,
+                    preprocessingResult,
+                    out var plannedCandidates,
+                    out _,
+                    comparisonOperatorResolver: null,
+                    authorization: partitionAuthorization,
+                    changeVersionRange: partitionRequest.ChangeVersionRange
+                ) || plannedCandidates is null
+            )
+            {
+                await ValidateAdaptedCustomViewsAsync(
+                        mappingSet,
+                        partitionAuthorization?.CustomViewChecks,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                return PartitionComplete(new PartitionResult.PartitionSuccess([]));
+            }
+
+            partitionPlan = new PartitionWindowPlanner(mappingSet.Key.Dialect).Plan(
+                plannedCandidates,
+                partitionRequest.RequestedPartitionCount,
+                partitionRequest.MinimumPartitionSize
+            );
+        }
+        catch (NotSupportedException ex)
+        {
+            return PartitionComplete(new PartitionResult.UnknownPartitionFailure(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return PartitionComplete(new PartitionResult.UnknownPartitionFailure(ex.Message));
+        }
+        catch (ArgumentException ex)
+        {
+            return PartitionComplete(new PartitionResult.UnknownPartitionFailure(ex.Message));
+        }
+
+        // Keyed off the compiled statement's own parameter values, so the budget reflects the exact
+        // command rather than an estimate, including the two the boundary statement adds.
+        var nonAuthorizationParameterCount =
+            partitionPlan.ParameterValues.Count
+            - AuthorizationParameterBudget.CountAuthorizationParameters(
+                partitionAuthorization?.NamespacePrefixParameterization,
+                partitionAuthorization?.ClaimEducationOrganizationIdParameterization
+            );
+
+        await ValidateAdaptedCustomViewsAsync(
+                mappingSet,
+                partitionAuthorization?.CustomViewChecks,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (
+            BuildQueryParameterBudgetFailure(
+                mappingSet.Key.Dialect,
+                resource,
+                partitionAuthorization?.NamespacePrefixParameterization,
+                partitionAuthorization?.ClaimEducationOrganizationIdParameterization,
+                nonAuthorizationParameterCount
+            ) is
+            { } parameterBudgetFailure
+        )
+        {
+            return PartitionComplete(
+                RelationalPartitionResultMapping.FromQueryResult(parameterBudgetFailure)
+            );
+        }
+
+        return new RelationalPartitionPreparationResult.Prepared(
+            new RelationalPartitionPreparation(partitionPlan, partitionAuthorization)
+        );
+    }
+
+    private static RelationalPartitionPreparationResult PartitionComplete(PartitionResult result) =>
+        new RelationalPartitionPreparationResult.Complete(result);
+
+    /// <summary>
+    /// Executes the single identifiers-only boundary statement and reads the ordered starting ids.
+    /// </summary>
+    private Task<IReadOnlyList<long>> ExecutePartitionBoundaryCommandAsync(
+        PartitionWindowPlan partitionPlan,
+        CancellationToken cancellationToken
+    )
+    {
+        var command = new RelationalCommand(
+            partitionPlan.Plan.PageDocumentIdSql,
+            PartitionBoundaryParameterBinding.Bind(partitionPlan, "Partition boundary selection")
+        );
+
+        return _commandExecutor.ExecuteReaderAsync(
+            command,
+            PartitionBoundaryReader.ReadAscendingStartsAsync,
+            cancellationToken
         );
     }
 
