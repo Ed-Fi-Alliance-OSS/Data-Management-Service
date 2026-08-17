@@ -320,6 +320,168 @@ public class Given_CdcConnectorTemplateInputValidation
         diagnostic.Severity.Should().Be(CdcConnectorTemplateDiagnosticSeverity.Error);
     }
 
+    [Test]
+    public void It_rejects_missing_postgresql_provider_artifacts_during_public_request_validation()
+    {
+        CdcConnectorTemplateValidationResult result = Validate(
+            BuildRequest(CdcProvider.Postgresql, artifactInventory: [])
+        );
+
+        using var _ = new AssertionScope();
+        result.IsValid.Should().BeFalse();
+        result
+            .Diagnostics.Select(diagnostic => diagnostic.Code)
+            .Should()
+            .BeEquivalentTo(
+                CdcConnectorTemplateDiagnosticCodes.PostgresqlPublicationMetadataRequired,
+                CdcConnectorTemplateDiagnosticCodes.PostgresqlReplicationSlotMetadataRequired
+            );
+        result
+            .Diagnostics.Should()
+            .OnlyContain(diagnostic =>
+                diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.RequestValidation
+                && diagnostic.ExpectedValue == "one matched provider setup artifact"
+            );
+    }
+
+    [Test]
+    public void It_rejects_provider_setup_source_table_name_drift_during_public_request_validation()
+    {
+        CdcConnectorTemplateValidationResult result = Validate(
+            BuildRequest(
+                CdcProvider.Postgresql,
+                sourceTableInventory: BuildSourceInventoryReplacing(
+                    CdcProvider.Postgresql,
+                    BuildSourceTable(
+                        CdcProvider.Postgresql,
+                        CdcSourceTableKind.Document,
+                        "DocumentProjectionWork;DROP TABLE",
+                        [BuildColumn(CdcProvider.Postgresql, "DocumentUuid")]
+                    )
+                )
+            )
+        );
+
+        CdcConnectorTemplateDiagnostic diagnostic = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceTableInventoryMismatch
+            )
+            .Subject;
+
+        using var _ = new AssertionScope();
+        result.IsValid.Should().BeFalse();
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.IncludeList);
+        diagnostic.PropertyName.Should().Be("table.include.list");
+        diagnostic.ExpectedValue.Should().Be("dms.Document");
+        diagnostic.ObservedValue.Should().Be("dms.DocumentProjectionWork_DROP_TABLE");
+        diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.RequestValidation);
+        diagnostic
+            .RedactionClassification.Should()
+            .Be(CdcConnectorTemplateRedactionClassification.PhysicalIdentifier);
+    }
+
+    [Test]
+    public void It_rejects_message_key_source_column_drift_during_public_request_validation()
+    {
+        CdcConnectorTemplateValidationResult result = Validate(
+            BuildRequest(
+                CdcProvider.Postgresql,
+                sourceTableInventory:
+                [
+                    BuildSourceTable(
+                        CdcProvider.Postgresql,
+                        CdcSourceTableKind.DocumentCache,
+                        "DocumentCache",
+                        [BuildColumn(CdcProvider.Postgresql, "DocumentUuid;DROP_TABLE")]
+                    ),
+                    BuildSourceTable(
+                        CdcProvider.Postgresql,
+                        CdcSourceTableKind.Document,
+                        "Document",
+                        [
+                            BuildColumn(CdcProvider.Postgresql, "DocumentUuid"),
+                            BuildColumn(CdcProvider.Postgresql, "DocumentUuid", 2),
+                        ]
+                    ),
+                    BuildSourceTable(
+                        CdcProvider.Postgresql,
+                        CdcSourceTableKind.CdcHeartbeat,
+                        "CdcHeartbeat",
+                        [
+                            BuildColumn(CdcProvider.Postgresql, "HeartbeatId"),
+                            BuildColumn(CdcProvider.Postgresql, "HeartbeatSequence", 2),
+                            BuildColumn(CdcProvider.Postgresql, "HeartbeatAt", 3),
+                        ]
+                    ),
+                ]
+            )
+        );
+
+        using var _ = new AssertionScope();
+        result.IsValid.Should().BeFalse();
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.MessageKey
+                && diagnostic.PropertyName == "message.key.columns"
+                && diagnostic.ExpectedValue == "source column DocumentUuid for dms.DocumentCache"
+                && diagnostic.ObservedValue == "missing"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.RequestValidation
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.MessageKey
+                && diagnostic.PropertyName == "message.key.columns"
+                && diagnostic.ExpectedValue == "unique source column names for dms.Document"
+                && diagnostic.ObservedValue == "duplicate"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.RequestValidation
+            );
+        result
+            .Diagnostics.Should()
+            .OnlyContain(diagnostic =>
+                diagnostic.RedactionClassification
+                == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            );
+        string.Join("|", result.Diagnostics.SelectMany(DiagnosticText))
+            .Should()
+            .NotContain("DROP_TABLE", because: "raw source column names are redacted");
+    }
+
+    [Test]
+    public void It_rejects_sqlserver_poll_interval_greater_than_heartbeat_during_public_request_validation()
+    {
+        CdcConnectorTemplateValidationResult result = Validate(
+            BuildRequest(
+                CdcProvider.SqlServer,
+                deploymentPolicy: new CdcConnectorTemplateDeploymentPolicy(
+                    "broker:9092",
+                    maxRecordBytes: 1_048_576,
+                    heartbeatInterval: TimeSpan.FromSeconds(5),
+                    sqlServerPollInterval: TimeSpan.FromSeconds(6)
+                )
+            )
+        );
+
+        CdcConnectorTemplateDiagnostic diagnostic = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code
+                == CdcConnectorTemplateDiagnosticCodes.SqlServerPollIntervalExceedsHeartbeatInterval
+            )
+            .Subject;
+
+        using var _ = new AssertionScope();
+        result.IsValid.Should().BeFalse();
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.Heartbeat);
+        diagnostic.PropertyName.Should().Be("poll.interval.ms");
+        diagnostic.ExpectedValue.Should().Be("<= heartbeat.interval.ms (5000)");
+        diagnostic.ObservedValue.Should().Be("6000");
+        diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.RequestValidation);
+    }
+
     private static CdcConnectorTemplateValidationResult Validate(
         CdcProvider provider,
         IReadOnlyDictionary<string, string>? providerConnectionProperties = null,
@@ -343,4 +505,22 @@ public class Given_CdcConnectorTemplateInputValidation
             sourcePhase
         );
     }
+
+    private static CdcConnectorTemplateValidationResult Validate(
+        CdcConnectorTemplateRequest request,
+        CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.RequestValidation
+    )
+    {
+        using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddCdcConnectorTemplates()
+            .BuildServiceProvider();
+
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+
+        return service.ValidateRequest(request, sourcePhase);
+    }
+
+    private static IEnumerable<string> DiagnosticText(CdcConnectorTemplateDiagnostic diagnostic) =>
+        [diagnostic.ExpectedValue ?? string.Empty, diagnostic.ObservedValue ?? string.Empty];
 }
