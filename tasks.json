@@ -104,7 +104,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCacheStatus",
       "Review classifier tests for all reason-precedence entries listed in the story."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Status Composition",

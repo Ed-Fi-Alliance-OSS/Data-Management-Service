@@ -26,3 +26,10 @@
 - Added SQL guard/unit tests, DI registration, and PostgreSQL integration evidence including lifecycle states, latch, queue, missing state, timeout, cancel, provider failure, and index plan.
 - Files changed: DocumentCacheStatusCurrentSourceObservation.cs, PostgresqlDocumentCacheStatusCurrentSourceObserver.cs, PostgresqlReferenceResolverServiceCollectionExtensions.cs, DocumentCacheServiceRegistrationTests.cs, DocumentCacheStatusCurrentSourceObservationTests.cs, PostgresqlDocumentCacheStatusCurrentSourceObserverTests.cs, tasks.json.
 - Verified: backend unit --filter FullyQualifiedName~DocumentCacheStatus; PostgreSQL integration --filter FullyQualifiedName~DocumentCacheStatus.
+
+2026-08-17 - Completed Status Composition classifier for reference/design/backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md
+- Added pure core classifier with process eligibility, durable success/unknown/state-missing outcomes, unavailable-vs-unknown component shaping, and queue-only caught-up handling.
+- Kept provider result adaptation out of core; backend service can map provider observations into core durable observations later.
+- Pinned full process reason precedence from unresolvedTarget through targetBackoff and durable timeout/failure/lifecycle/cache-ahead/queue outcomes.
+- Files changed: DocumentCacheStatusClassifier.cs, DocumentCacheStatusClassifierTests.cs, tasks.json, progress.txt.
+- Verified: core unit --filter FullyQualifiedName~DocumentCacheStatusClassifier; backend unit --filter FullyQualifiedName~DocumentCacheStatus.
