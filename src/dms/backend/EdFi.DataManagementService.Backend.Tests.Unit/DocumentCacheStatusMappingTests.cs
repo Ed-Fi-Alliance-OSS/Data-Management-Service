@@ -1,0 +1,427 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Collections.Concurrent;
+using System.Collections.Immutable;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
+using FluentAssertions;
+using NUnit.Framework;
+
+namespace EdFi.DataManagementService.Backend.Tests.Unit;
+
+[TestFixture]
+[Parallelizable]
+[Category("DocumentCacheStatusMapping")]
+public class Given_DocumentCacheStatusMapping
+{
+    private static readonly DateTimeOffset RegistryObservedAt = new(2026, 8, 17, 14, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset ProcessObservedAt = new(2026, 8, 17, 14, 0, 1, TimeSpan.Zero);
+    private static readonly DateTimeOffset RuntimeObservedAt = new(2026, 8, 17, 14, 0, 2, TimeSpan.Zero);
+    private static readonly DateTimeOffset DurableObservedAt = new(2026, 8, 17, 14, 0, 3, TimeSpan.Zero);
+    private static readonly DocumentCacheTargetKey TargetKey = DocumentCacheTargetKey.Create("", 1);
+
+    [Test]
+    public async Task It_maps_projection_diagnostics_to_public_categories()
+    {
+        DocumentCacheTargetObservation target = ResolvedTarget(generation: 3, pageSize: 10);
+        DocumentCacheProjectionObservationStore observationStore = new(
+            new FixedTimeProvider(ProcessObservedAt)
+        );
+        observationStore.ObserveTarget(
+            TargetHealth(
+                target,
+                targetDiagnostics:
+                [
+                    TargetDiagnostic(target, DocumentCacheTargetDiagnosticCategory.ProviderMetadataMissing),
+                    TargetDiagnostic(target, DocumentCacheTargetDiagnosticCategory.EnqueueTriggerFailure),
+                    TargetDiagnostic(
+                        target,
+                        DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed
+                    ),
+                    TargetDiagnostic(target, DocumentCacheTargetDiagnosticCategory.UnexpectedProviderFailure),
+                    TargetDiagnostic(target, DocumentCacheTargetDiagnosticCategory.CacheAheadLatchSet),
+                ],
+                documentDiagnostics:
+                [
+                    DocumentDiagnostic(
+                        101,
+                        DocumentCacheProjectionDocumentDiagnosticCategory.PossibleUnseededBaseline
+                    ),
+                    DocumentDiagnostic(102, DocumentCacheProjectionDocumentDiagnosticCategory.WorkAnomaly),
+                    DocumentDiagnostic(103, DocumentCacheProjectionDocumentDiagnosticCategory.WriterOutcome),
+                    DocumentDiagnostic(
+                        104,
+                        DocumentCacheProjectionDocumentDiagnosticCategory.ProviderFailure
+                    ),
+                    DocumentDiagnostic(
+                        105,
+                        DocumentCacheProjectionDocumentDiagnosticCategory.PoisonSuppressed
+                    ),
+                ],
+                suppressedDocumentCount: 3,
+                suppressedDocumentIds: [201, 202],
+                targetDiagnosticEvictionCount: 2,
+                documentDiagnosticEvictionCount: 3
+            )
+        );
+        DocumentCacheStatusService service = CreateService(
+            new StaticTargetRegistry([target], [ExecutionContext(target)]),
+            observationStore
+        );
+
+        DocumentCacheStatusTarget statusTarget = (await service.GetStatusAsync()).Targets.Single();
+
+        statusTarget
+            .TargetDiagnostics.RecentEvents.Select(diagnostic => diagnostic.Category)
+            .Should()
+            .Equal(
+                DocumentCacheStatusTargetDiagnosticCategory.TargetResolution,
+                DocumentCacheStatusTargetDiagnosticCategory.Inventory,
+                DocumentCacheStatusTargetDiagnosticCategory.ProviderPrerequisite,
+                DocumentCacheStatusTargetDiagnosticCategory.ProviderObservationFailed,
+                DocumentCacheStatusTargetDiagnosticCategory.TargetInvariant
+            );
+        statusTarget.TargetDiagnostics.EvictedCount.Should().Be(2);
+        statusTarget
+            .DocumentDiagnostics.RecentEvents.Select(diagnostic => diagnostic.Category)
+            .Should()
+            .Equal(
+                DocumentCacheStatusDocumentDiagnosticCategory.CacheAheadSuspected,
+                DocumentCacheStatusDocumentDiagnosticCategory.SourceChanged,
+                DocumentCacheStatusDocumentDiagnosticCategory.WriterFailed,
+                DocumentCacheStatusDocumentDiagnosticCategory.MaterializationFailed,
+                DocumentCacheStatusDocumentDiagnosticCategory.PoisonRetryScheduled
+            );
+        statusTarget.DocumentDiagnostics.EvictedCount.Should().Be(3);
+        statusTarget
+            .PoisonTraversalDiagnostics.RecentEvents.Select(diagnostic => diagnostic.DocumentId)
+            .Should()
+            .Equal(201, 202);
+        statusTarget
+            .PoisonTraversalDiagnostics.RecentEvents.Should()
+            .OnlyContain(diagnostic =>
+                diagnostic.Category == DocumentCacheStatusPoisonTraversalDiagnosticCategory.SkippedUntilRetry
+            );
+        statusTarget.PoisonTraversalDiagnostics.EvictedCount.Should().Be(1);
+        statusTarget.EnqueueFailures.RecentEvents.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_maps_only_current_generation_commands_without_generation_fields()
+    {
+        DocumentCacheTargetObservation oldTarget = ResolvedTarget(generation: 1);
+        DocumentCacheTargetObservation currentTarget = ResolvedTarget(generation: 2);
+        DocumentCacheProjectionObservationStore observationStore = new(
+            new FixedTimeProvider(ProcessObservedAt)
+        );
+        DocumentCacheAdministrativeCommandExecutionId oldExecutionId = new(
+            Guid.Parse("11111111-2222-3333-4444-555555555555")
+        );
+        DocumentCacheAdministrativeCommandExecutionId endedExecutionId = new(
+            Guid.Parse("22222222-3333-4444-5555-666666666666")
+        );
+        DocumentCacheAdministrativeCommandExecutionId activeExecutionId = new(
+            Guid.Parse("33333333-4444-5555-6666-777777777777")
+        );
+
+        observationStore.ObserveTarget(TargetHealth(oldTarget));
+        observationStore.ObserveAdministrativeCommand(
+            CommandObservation(
+                oldExecutionId,
+                oldTarget,
+                DocumentCacheAdministrativeCommand.OfflineActivation
+            )
+        );
+        observationStore.ObserveTarget(TargetHealth(currentTarget));
+        observationStore.ObserveAdministrativeCommand(
+            CommandObservation(
+                endedExecutionId,
+                currentTarget,
+                DocumentCacheAdministrativeCommand.OnlineCacheRebuild
+            )
+        );
+        observationStore.EndAdministrativeCommand(
+            endedExecutionId,
+            CommandResult(currentTarget, DocumentCacheAdministrativeCommand.OnlineCacheRebuild),
+            RuntimeObservedAt.AddSeconds(10)
+        );
+        observationStore.ObserveAdministrativeCommand(
+            CommandObservation(
+                activeExecutionId,
+                currentTarget,
+                DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation,
+                cancellationRequested: true
+            )
+        );
+        DocumentCacheStatusService service = CreateService(
+            new StaticTargetRegistry([currentTarget], [ExecutionContext(currentTarget)]),
+            observationStore
+        );
+
+        DocumentCacheStatusTarget statusTarget = (await service.GetStatusAsync()).Targets.Single();
+        JsonObject root = JsonNode.Parse(JsonSerializer.Serialize(statusTarget))!.AsObject();
+        string json = root.ToJsonString();
+
+        root["activeCommand"]!["command"]!.GetValue<string>().Should().Be("guardedNewEmptyActivation");
+        root["activeCommand"]!["status"]!.GetValue<string>().Should().Be("cancelling");
+        root["activeCommand"]!["phase"]!.GetValue<string>().Should().Be("drainWork");
+        root["activeCommand"]!["phaseDiagnostics"]![0]!["diagnosticCategory"]!
+            .GetValue<string>()
+            .Should()
+            .Be("providerCommandTimeout");
+        root["activeCommand"]!["phaseDiagnostics"]![0]!.AsObject().Should().NotContainKey("evictedCount");
+        root["lastEndedDiagnostic"]!["command"]!.GetValue<string>().Should().Be("onlineCacheRebuild");
+        root["lastEndedDiagnostic"]!["outcome"]!.GetValue<string>().Should().Be("succeeded");
+
+        json.Should().NotContain("offlineActivation");
+        json.Should().NotContain("currentTargetGeneration");
+        json.Should().NotContain("isCurrentGeneration");
+        json.Should().NotContain("activateNewEmpty");
+        json.Should().NotContain("offlineActivate");
+        json.Should().NotContain("offlineDeactivate");
+        json.Should().NotContain("onlineRebuild");
+        json.Should().NotContain("cacheAheadRecovery");
+        json.Should().NotContain("integrityScrub");
+    }
+
+    private static DocumentCacheStatusService CreateService(
+        StaticTargetRegistry registry,
+        DocumentCacheProjectionObservationStore observationStore
+    ) =>
+        new(
+            registry,
+            observationStore,
+            [new ScriptedStatusObserver()],
+            new FixedTimeProvider(ProcessObservedAt)
+        );
+
+    private static DocumentCacheProjectionTargetHealthSnapshot TargetHealth(
+        DocumentCacheTargetObservation target,
+        ImmutableArray<DocumentCacheTargetDiagnostic> targetDiagnostics = default,
+        ImmutableArray<DocumentCacheProjectionDocumentDiagnostic> documentDiagnostics = default,
+        int suppressedDocumentCount = 0,
+        ImmutableArray<long> suppressedDocumentIds = default,
+        long targetDiagnosticEvictionCount = 0,
+        long documentDiagnosticEvictionCount = 0
+    ) =>
+        new(
+            target.TargetKey,
+            target.Generation!,
+            target.EffectiveSettings.ProjectorPageSize,
+            RuntimeObservedAt,
+            target.ProviderToken,
+            target.PhysicalSourceFingerprint,
+            executionState: new DocumentCacheProjectionExecutionStateSnapshot(
+                isRunning: true,
+                isActivelyProcessing: false,
+                isWaitingForWorkerGate: false,
+                isInBackoff: false,
+                backoffUntil: null,
+                cancellationRequested: false,
+                cancellationObservedAt: null
+            ),
+            lastSuccess: new DocumentCacheProjectionSuccessSnapshot(
+                documentId: 11,
+                contentVersion: 12,
+                completedAt: RuntimeObservedAt.AddSeconds(-1)
+            ),
+            poisonTraversal: new DocumentCacheProjectionPoisonTraversalSnapshot(
+                target.EffectiveSettings.ProjectorPageSize,
+                suppressedDocumentCount,
+                RuntimeObservedAt.AddSeconds(30),
+                suppressedDocumentIds.IsDefault ? [] : suppressedDocumentIds
+            ),
+            failureDiagnostics: new DocumentCacheProjectionFailureDiagnostics(
+                target.EffectiveSettings.ProjectorPageSize,
+                documentDiagnostics.IsDefault ? 0 : documentDiagnostics.Length,
+                RuntimeObservedAt.AddSeconds(30),
+                documentDiagnosticEvictionCount,
+                documentDiagnostics.IsDefault ? [] : documentDiagnostics
+            ),
+            targetDiagnostics: targetDiagnostics.IsDefault ? [] : targetDiagnostics,
+            targetDiagnosticEvictionCount: targetDiagnosticEvictionCount
+        );
+
+    private static DocumentCacheTargetDiagnostic TargetDiagnostic(
+        DocumentCacheTargetObservation target,
+        DocumentCacheTargetDiagnosticCategory category
+    ) =>
+        new(
+            target.TargetKey,
+            DocumentCacheTargetResolutionState.Resolved,
+            target.ProviderToken,
+            target.Generation,
+            target.PhysicalSourceFingerprint,
+            target.Lifecycle,
+            target.Inventory,
+            target.EnqueueTrigger,
+            target.SqlServerPrerequisites,
+            retryState: null,
+            category,
+            $"Diagnostic {category}\r\n{{unsafe}}"
+        );
+
+    private static DocumentCacheProjectionDocumentDiagnostic DocumentDiagnostic(
+        long documentId,
+        DocumentCacheProjectionDocumentDiagnosticCategory category
+    ) =>
+        new(
+            documentId,
+            category,
+            $"Document diagnostic {category}\r\n{{unsafe}}",
+            RuntimeObservedAt,
+            RuntimeObservedAt.AddSeconds(30)
+        );
+
+    private static DocumentCacheAdministrativeCommandObservationSnapshot CommandObservation(
+        DocumentCacheAdministrativeCommandExecutionId executionId,
+        DocumentCacheTargetObservation target,
+        DocumentCacheAdministrativeCommand command,
+        bool cancellationRequested = false
+    ) =>
+        new(
+            executionId,
+            command,
+            target.TargetKey,
+            target.Generation!,
+            target.EffectiveSettings.ProjectorPageSize,
+            effectiveWorkflowTimeout: TimeSpan.FromHours(1),
+            startedAt: RuntimeObservedAt.AddMinutes(-5),
+            observedAt: RuntimeObservedAt,
+            currentPhase: DocumentCacheAdministrativeCommandPhase.DrainWork,
+            lastCompletedPhase: DocumentCacheAdministrativeCommandPhase.SeedBaseline,
+            mutated: true,
+            physicalSourceFingerprint: target.PhysicalSourceFingerprint,
+            lifecycle: DocumentCacheLifecycleState.Rebuilding,
+            cacheAheadRecoveryRequired: false,
+            phaseDiagnostics:
+            [
+                new DocumentCacheAdministrativePhaseDiagnostic(
+                    DocumentCacheAdministrativeCommandPhase.DrainWork,
+                    DocumentCacheAdministrativeCommandPhase.SeedBaseline,
+                    retryable: true,
+                    DocumentCacheAdministrativeDiagnosticCategory.ProviderCommandTimeout,
+                    affectedDocumentIds: [99],
+                    "provider timeout"
+                ),
+            ],
+            cancellationRequested: cancellationRequested
+        );
+
+    private static DocumentCacheAdministrativeCommandResult CommandResult(
+        DocumentCacheTargetObservation target,
+        DocumentCacheAdministrativeCommand command
+    ) =>
+        new(
+            command,
+            DocumentCacheAdministrativeTargetKey.FromTargetKey(target.TargetKey),
+            DocumentCacheAdministrativeCommandStatus.Completed,
+            DocumentCacheAdministrativeCommandClassification.Succeeded,
+            mutated: true,
+            targetGeneration: target.Generation!.Value,
+            physicalSourceFingerprint: target.PhysicalSourceFingerprint,
+            lifecycle: DocumentCacheLifecycleState.Tracking,
+            cacheAheadRecoveryRequired: false,
+            phaseDiagnostics: []
+        );
+
+    private static DocumentCacheTargetObservation ResolvedTarget(long generation, int pageSize = 10) =>
+        DocumentCacheTargetObservation.ResolvedEligible(
+            TargetKey,
+            new DocumentCacheTargetEffectiveSettings(
+                readAccelerationEnabled: true,
+                directFillTimeout: TimeSpan.FromSeconds(2),
+                projectorPollInterval: TimeSpan.FromSeconds(5),
+                projectorPageSize: pageSize,
+                projectorMaxConcurrentTargets: 4,
+                projectorFailureBackoff: TimeSpan.FromSeconds(30),
+                projectorBaselineHighWaterMark: 10000,
+                administrationWorkflowTimeout: TimeSpan.FromMinutes(10),
+                statusObservationTimeout: TimeSpan.FromSeconds(5),
+                statusEndpointTimeout: TimeSpan.FromSeconds(30)
+            ),
+            new DocumentCacheTargetContextGeneration(generation),
+            RelationalProviderToken.Postgresql,
+            new DocumentCachePhysicalSourceFingerprint("sha256:" + new string('a', 64)),
+            new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false),
+            new DocumentCacheInventoryValidationResult(
+                DocumentCacheInventoryStatus.Satisfied,
+                "Inventory satisfied."
+            ),
+            new DocumentCacheEnqueueTriggerValidationResult(
+                DocumentCacheEnqueueTriggerStatus.Satisfied,
+                "Enqueue trigger satisfied."
+            ),
+            DocumentCacheSqlServerPrerequisiteDetails.NotApplicable()
+        );
+
+    private static DocumentCacheTargetExecutionContext ExecutionContext(
+        DocumentCacheTargetObservation targetObservation
+    ) =>
+        new(
+            targetObservation.TargetKey,
+            targetObservation.Generation!,
+            targetObservation.EffectiveSettings,
+            new DocumentCacheTargetDataStoreMetadata(targetObservation.TargetKey.DataStoreId, "PostgreSQL"),
+            new DocumentCacheTargetConnectionInput(RelationalProviderToken.Postgresql, "Host=localhost"),
+            targetObservation.PhysicalSourceFingerprint!,
+            targetObservation.Lifecycle!,
+            targetObservation.Inventory!,
+            targetObservation.EnqueueTrigger!,
+            targetObservation.SqlServerPrerequisites
+        );
+
+    private sealed class StaticTargetRegistry(
+        IEnumerable<DocumentCacheTargetObservation> targets,
+        IEnumerable<DocumentCacheTargetExecutionContext> executionContexts
+    ) : IDocumentCacheTargetRegistry
+    {
+        public DocumentCacheTargetRegistrySnapshot CurrentSnapshot { get; } =
+            new(targets, RegistryObservedAt);
+
+        public DocumentCacheTargetRuntimeSnapshot CurrentRuntimeSnapshot { get; } =
+            new(executionContexts, RegistryObservedAt);
+
+        public Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
+            DocumentCacheTargetRefreshReason reason,
+            CancellationToken cancellationToken = default
+        ) => throw new InvalidOperationException("Status mapping must not refresh DocumentCache targets.");
+    }
+
+    private sealed class ScriptedStatusObserver : IDocumentCacheStatusCurrentSourceObserver
+    {
+        public RelationalProviderToken ProviderToken => RelationalProviderToken.Postgresql;
+
+        public ConcurrentQueue<DocumentCacheTargetKey> StartedKeys { get; } = new();
+
+        public Task<DocumentCacheStatusCurrentSourceObservationResult> ObserveAsync(
+            DocumentCacheStatusCurrentSourceObservationRequest request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            StartedKeys.Enqueue(request.TargetExecutionContext.TargetKey);
+
+            return Task.FromResult(
+                DocumentCacheStatusCurrentSourceObservationResult.Success(
+                    DocumentCacheLifecycleState.Tracking,
+                    cacheAheadRecoveryRequired: false,
+                    DocumentCacheStatusDurableQueuePresence.Empty,
+                    oldestWorkFirstEnqueuedAt: null,
+                    oldestWorkAgeSeconds: null,
+                    DurableObservedAt
+                )
+            );
+        }
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
+    }
+}

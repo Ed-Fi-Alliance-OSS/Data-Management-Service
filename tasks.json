@@ -178,7 +178,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCacheStatusMapping",
       "Review the populated and unavailable/unknown status fixtures for absence of prohibited fields and internal enum names."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Enqueue Telemetry",

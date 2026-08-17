@@ -970,9 +970,19 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         {
             DocumentCacheTargetDiagnosticCategory.TargetNotConfigured
             or DocumentCacheTargetDiagnosticCategory.TargetUnresolved
-            or DocumentCacheTargetDiagnosticCategory.TransientCmsRefreshFailure =>
+            or DocumentCacheTargetDiagnosticCategory.ProviderMetadataMissing
+            or DocumentCacheTargetDiagnosticCategory.ProviderMetadataUnknown
+            or DocumentCacheTargetDiagnosticCategory.ProviderMismatch
+            or DocumentCacheTargetDiagnosticCategory.ConnectionInputMissing
+            or DocumentCacheTargetDiagnosticCategory.PhysicalSourceFingerprintFailure
+            or DocumentCacheTargetDiagnosticCategory.TransientCmsRefreshFailure
+            or DocumentCacheTargetDiagnosticCategory.TargetReplaced
+            or DocumentCacheTargetDiagnosticCategory.ExpectedSourceMismatch =>
                 DocumentCacheStatusTargetDiagnosticCategory.TargetResolution,
-            DocumentCacheTargetDiagnosticCategory.InventoryFailure =>
+            DocumentCacheTargetDiagnosticCategory.InventoryFailure
+            or DocumentCacheTargetDiagnosticCategory.EnqueueTriggerFailure
+            or DocumentCacheTargetDiagnosticCategory.EffectiveSchemaCompatibilityFailure
+            or DocumentCacheTargetDiagnosticCategory.ResourceKeyCompatibilityFailure =>
                 DocumentCacheStatusTargetDiagnosticCategory.Inventory,
             DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed
             or DocumentCacheTargetDiagnosticCategory.UnsupportedPrerequisiteIncident =>
@@ -980,8 +990,13 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             DocumentCacheTargetDiagnosticCategory.LifecycleObservationFailure
             or DocumentCacheTargetDiagnosticCategory.UnexpectedProviderFailure =>
                 DocumentCacheStatusTargetDiagnosticCategory.ProviderObservationFailed,
-            DocumentCacheTargetDiagnosticCategory.CacheAheadLatchSet =>
-                DocumentCacheStatusTargetDiagnosticCategory.TargetBackoff,
+            DocumentCacheTargetDiagnosticCategory.LifecycleMismatch
+            or DocumentCacheTargetDiagnosticCategory.ResettingRequiresExplicitOperatorRecovery
+            or DocumentCacheTargetDiagnosticCategory.CacheAheadLatchSet
+            or DocumentCacheTargetDiagnosticCategory.NonemptyGuardedActivationState
+            or DocumentCacheTargetDiagnosticCategory.DownstreamPublicationHistoryPresentOrUnknown
+            or DocumentCacheTargetDiagnosticCategory.DeterministicInvariantFailure =>
+                DocumentCacheStatusTargetDiagnosticCategory.TargetInvariant,
             _ => DocumentCacheStatusTargetDiagnosticCategory.TargetInvariant,
         };
 
@@ -992,10 +1007,14 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         {
             DocumentCacheProjectionDocumentDiagnosticCategory.PoisonSuppressed =>
                 DocumentCacheStatusDocumentDiagnosticCategory.PoisonRetryScheduled,
+            DocumentCacheProjectionDocumentDiagnosticCategory.WorkAnomaly =>
+                DocumentCacheStatusDocumentDiagnosticCategory.SourceChanged,
             DocumentCacheProjectionDocumentDiagnosticCategory.WriterOutcome =>
                 DocumentCacheStatusDocumentDiagnosticCategory.WriterFailed,
             DocumentCacheProjectionDocumentDiagnosticCategory.ProviderFailure =>
                 DocumentCacheStatusDocumentDiagnosticCategory.MaterializationFailed,
+            DocumentCacheProjectionDocumentDiagnosticCategory.PossibleUnseededBaseline =>
+                DocumentCacheStatusDocumentDiagnosticCategory.CacheAheadSuspected,
             _ => DocumentCacheStatusDocumentDiagnosticCategory.MaterializationFailed,
         };
 

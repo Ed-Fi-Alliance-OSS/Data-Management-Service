@@ -60,3 +60,10 @@
 - Added frontend and integration endpoint auth evidence with fake JWT principals and no status-service invocation on failures.
 - Files changed: DocumentCacheStatusAuthorization.cs, DmsCoreServiceExtensions.cs, HealthCheckEndpointModule.cs, DocumentCacheStatusAuthorizationTests.cs, HealthCheckEndpointModuleTests.cs, Given_DocumentCacheStatusEndpointAuthorization.cs, tasks.json, progress.txt.
 - Verified: core --filter FullyQualifiedName~DocumentCacheStatusAuthorization; frontend --filter FullyQualifiedName~DocumentCacheStatusAuthorization; frontend --filter FullyQualifiedName~HealthCheckEndpointModule; integration --filter FullyQualifiedName~DocumentCacheStatusEndpointAuthorization; jq empty tasks.json.
+
+2026-08-17 - Completed Diagnostics Mapping for reference/design/backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md
+- Mapped more target/process diagnostics to public v1 buckets instead of leaking internal categories; cache-ahead latch now reports targetInvariant, not runtime targetBackoff.
+- Mapped projection WorkAnomaly to sourceChanged and possible unseeded baseline to cacheAheadSuspected.
+- Added serialization/mapping tests for lower-camel public values, current-generation commands, prohibited fields/aliases, sanitized bounded messages, diagnostic windows, and empty enqueue failures until telemetry task owns the sink.
+- Files changed: DocumentCacheStatusService.cs, DocumentCacheStatusSerializationTests.cs, DocumentCacheStatusMappingTests.cs, tasks.json, progress.txt.
+- Verified: core --filter FullyQualifiedName~DocumentCacheStatusSerialization; backend --filter FullyQualifiedName~DocumentCacheStatusMapping; core/backend --filter FullyQualifiedName~DocumentCacheStatus; production status source scan for prohibited status fields/aliases.
