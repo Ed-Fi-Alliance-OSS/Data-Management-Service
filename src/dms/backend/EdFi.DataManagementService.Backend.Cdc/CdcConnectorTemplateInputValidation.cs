@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.Ddl;
+using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Cdc;
 
@@ -310,6 +311,7 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
 
         ValidateProviderConnectionProperties(request, sourcePhase, diagnostics);
         ValidateKafkaSecurityProperties(request, sourcePhase, diagnostics);
+        ValidateProviderPrerequisites(request, sourcePhase, diagnostics);
 
         return new CdcConnectorTemplateValidationResult(diagnostics);
     }
@@ -318,6 +320,183 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
         CdcConnectorTemplateRequest request,
         CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.RequestValidation
     ) => ValidateRequest(request, sourcePhase).ThrowIfInvalid();
+
+    private static void ValidateProviderPrerequisites(
+        CdcConnectorTemplateRequest request,
+        CdcConnectorTemplateSourcePhase sourcePhase,
+        List<CdcConnectorTemplateDiagnostic> diagnostics
+    )
+    {
+        if (request.Provider == CdcProvider.Postgresql)
+        {
+            AddMissingArtifactDiagnosticIfNeeded(
+                request,
+                sourcePhase,
+                diagnostics,
+                CdcProviderArtifactKind.PostgresqlPublication,
+                CdcConnectorTemplateDiagnosticCodes.PostgresqlPublicationMetadataRequired,
+                "publication.name"
+            );
+            AddMissingArtifactDiagnosticIfNeeded(
+                request,
+                sourcePhase,
+                diagnostics,
+                CdcProviderArtifactKind.PostgresqlReplicationSlot,
+                CdcConnectorTemplateDiagnosticCodes.PostgresqlReplicationSlotMetadataRequired,
+                "slot.name"
+            );
+        }
+        else if (request.Provider == CdcProvider.SqlServer)
+        {
+            AddSqlServerPollIntervalDiagnosticIfNeeded(request, sourcePhase, diagnostics);
+        }
+
+        foreach (CdcSourceTableInventory sourceTable in OrderedSourceTables(request))
+        {
+            DbTableName expectedTableName = ExpectedSourceTableName(sourceTable.TableKind);
+            if (sourceTable.TableName.Equals(expectedTableName))
+            {
+                continue;
+            }
+
+            diagnostics.Add(
+                BuildDiagnostic(
+                    CdcConnectorTemplateDiagnosticCodes.SourceTableInventoryMismatch,
+                    CdcConnectorTemplateDiagnosticCategory.IncludeList,
+                    "table.include.list",
+                    $"{expectedTableName.Schema.Value}.{expectedTableName.Name}",
+                    SanitizePhysicalIdentifier(
+                        $"{sourceTable.TableName.Schema.Value}.{sourceTable.TableName.Name}"
+                    ),
+                    request,
+                    sourcePhase,
+                    CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+                )
+            );
+        }
+
+        AddSourceColumnInventoryDiagnostics(request, sourcePhase, diagnostics);
+    }
+
+    private static void AddSourceColumnInventoryDiagnostics(
+        CdcConnectorTemplateRequest request,
+        CdcConnectorTemplateSourcePhase sourcePhase,
+        List<CdcConnectorTemplateDiagnostic> diagnostics
+    )
+    {
+        foreach (CdcExpectedMessageKeyColumns messageKeyColumns in OrderedMessageKeyColumns(request))
+        {
+            CdcSourceTableInventory sourceTable = SourceTable(request, messageKeyColumns.TableKind);
+
+            if (HasDuplicateColumnNames(sourceTable))
+            {
+                diagnostics.Add(
+                    BuildDiagnostic(
+                        CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch,
+                        CdcConnectorTemplateDiagnosticCategory.MessageKey,
+                        "message.key.columns",
+                        $"unique source column names for {ExpectedSourceTableName(sourceTable.TableKind)}",
+                        "duplicate",
+                        request,
+                        sourcePhase,
+                        CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+                    )
+                );
+            }
+
+            foreach (DbColumnName keyColumn in messageKeyColumns.KeyColumns)
+            {
+                if (CountSourceColumns(sourceTable, keyColumn) > 0)
+                {
+                    continue;
+                }
+
+                diagnostics.Add(
+                    BuildDiagnostic(
+                        CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch,
+                        CdcConnectorTemplateDiagnosticCategory.MessageKey,
+                        "message.key.columns",
+                        $"source column {keyColumn.Value} for {ExpectedSourceTableName(sourceTable.TableKind)}",
+                        "missing",
+                        request,
+                        sourcePhase,
+                        CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+                    )
+                );
+            }
+        }
+    }
+
+    private static bool HasDuplicateColumnNames(CdcSourceTableInventory sourceTable) =>
+        sourceTable
+            .Columns.GroupBy(column => column.ColumnName.Value, StringComparer.Ordinal)
+            .Any(group => group.Count() > 1);
+
+    private static int CountSourceColumns(CdcSourceTableInventory sourceTable, DbColumnName columnName) =>
+        sourceTable.Columns.Count(column =>
+            string.Equals(column.ColumnName.Value, columnName.Value, StringComparison.Ordinal)
+        );
+
+    private static void AddSqlServerPollIntervalDiagnosticIfNeeded(
+        CdcConnectorTemplateRequest request,
+        CdcConnectorTemplateSourcePhase sourcePhase,
+        List<CdcConnectorTemplateDiagnostic> diagnostics
+    )
+    {
+        if (request.DeploymentPolicy.SqlServerPollInterval is null)
+        {
+            return;
+        }
+
+        long heartbeatMilliseconds = HeartbeatIntervalMilliseconds(request);
+        long pollMilliseconds = PollIntervalMilliseconds(request);
+        if (pollMilliseconds <= heartbeatMilliseconds)
+        {
+            return;
+        }
+
+        diagnostics.Add(
+            BuildDiagnostic(
+                CdcConnectorTemplateDiagnosticCodes.SqlServerPollIntervalExceedsHeartbeatInterval,
+                CdcConnectorTemplateDiagnosticCategory.Heartbeat,
+                "poll.interval.ms",
+                $"<= heartbeat.interval.ms ({heartbeatMilliseconds})",
+                pollMilliseconds.ToString(),
+                request,
+                sourcePhase,
+                CdcConnectorTemplateRedactionClassification.Safe
+            )
+        );
+    }
+
+    private static void AddMissingArtifactDiagnosticIfNeeded(
+        CdcConnectorTemplateRequest request,
+        CdcConnectorTemplateSourcePhase sourcePhase,
+        List<CdcConnectorTemplateDiagnostic> diagnostics,
+        CdcProviderArtifactKind artifactKind,
+        string code,
+        string propertyName
+    )
+    {
+        CdcProviderArtifactObservation[] artifacts = MatchingUsableArtifacts(request, artifactKind);
+        if (artifacts.Length == 1)
+        {
+            return;
+        }
+
+        diagnostics.Add(
+            BuildDiagnostic(
+                code,
+                CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult,
+                propertyName,
+                "one matched provider setup artifact",
+                artifacts.Length == 0 ? "missing" : artifacts.Length.ToString(),
+                request,
+                sourcePhase,
+                CdcConnectorTemplateRedactionClassification.Safe
+            )
+        );
+    }
 
     private static void ValidateProviderConnectionProperties(
         CdcConnectorTemplateRequest request,
@@ -564,6 +743,123 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
             sourcePhase,
             redactionClassification
         );
+
+    private static CdcProviderArtifactObservation[] MatchingUsableArtifacts(
+        CdcConnectorTemplateRequest request,
+        CdcProviderArtifactKind artifactKind
+    ) =>
+        request
+            .ProviderSetupEvidence.Result.ArtifactInventory.Where(artifact =>
+                artifact.ArtifactKind == artifactKind
+                && artifact.State is CdcProviderArtifactState.Created or CdcProviderArtifactState.Matched
+            )
+            .ToArray();
+
+    private static IReadOnlyList<CdcSourceTableInventory> OrderedSourceTables(
+        CdcConnectorTemplateRequest request
+    ) =>
+        [
+            SourceTable(request, CdcSourceTableKind.DocumentCache),
+            SourceTable(request, CdcSourceTableKind.Document),
+            SourceTable(request, CdcSourceTableKind.CdcHeartbeat),
+        ];
+
+    private static CdcSourceTableInventory SourceTable(
+        CdcConnectorTemplateRequest request,
+        CdcSourceTableKind tableKind
+    ) =>
+        request.ProviderSetupEvidence.Result.SourceTableInventory.Single(table =>
+            table.TableKind == tableKind
+        );
+
+    private static IReadOnlyList<CdcExpectedMessageKeyColumns> OrderedMessageKeyColumns(
+        CdcConnectorTemplateRequest request
+    ) =>
+        [
+            MessageKeyColumns(request, CdcSourceTableKind.DocumentCache),
+            MessageKeyColumns(request, CdcSourceTableKind.Document),
+        ];
+
+    private static CdcExpectedMessageKeyColumns MessageKeyColumns(
+        CdcConnectorTemplateRequest request,
+        CdcSourceTableKind tableKind
+    ) =>
+        request.ProviderSetupEvidence.Result.ExpectedMessageKeyColumns.Single(columns =>
+            columns.TableKind == tableKind
+        );
+
+    private static DbTableName ExpectedSourceTableName(CdcSourceTableKind tableKind) =>
+        tableKind switch
+        {
+            CdcSourceTableKind.DocumentCache => new(new DbSchemaName("dms"), "DocumentCache"),
+            CdcSourceTableKind.Document => new(new DbSchemaName("dms"), "Document"),
+            CdcSourceTableKind.CdcHeartbeat => new(new DbSchemaName("dms"), "CdcHeartbeat"),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(tableKind),
+                tableKind,
+                "Unsupported CDC source table kind."
+            ),
+        };
+
+    private static long HeartbeatIntervalMilliseconds(CdcConnectorTemplateRequest request)
+    {
+        if (request.DeploymentPolicy.HeartbeatInterval is null)
+        {
+            return 5000;
+        }
+
+        double milliseconds = Math.Ceiling(
+            request.DeploymentPolicy.HeartbeatInterval.Value.TotalMilliseconds
+        );
+        if (milliseconds is < 1 or > long.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(request),
+                "CDC connector template heartbeat interval must render to a positive millisecond value."
+            );
+        }
+
+        return Convert.ToInt64(milliseconds);
+    }
+
+    private static long PollIntervalMilliseconds(CdcConnectorTemplateRequest request)
+    {
+        if (request.DeploymentPolicy.SqlServerPollInterval is null)
+        {
+            throw new InvalidOperationException(
+                "CDC connector template SQL Server poll interval was not supplied."
+            );
+        }
+
+        double milliseconds = Math.Ceiling(
+            request.DeploymentPolicy.SqlServerPollInterval.Value.TotalMilliseconds
+        );
+        if (milliseconds is < 1 or > long.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(request),
+                "CDC connector template SQL Server poll interval must render to a positive millisecond value."
+            );
+        }
+
+        return Convert.ToInt64(milliseconds);
+    }
+
+    private static string SanitizePhysicalIdentifier(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return RedactedValue;
+        }
+
+        return new string(
+            value
+                .Select(character =>
+                    char.IsLetterOrDigit(character) || character is '_' or '.' ? character : '_'
+                )
+                .ToArray()
+        );
+    }
 
     internal static bool IsReservedKey(string propertyName) =>
         _reservedExactKeys.Contains(propertyName)
