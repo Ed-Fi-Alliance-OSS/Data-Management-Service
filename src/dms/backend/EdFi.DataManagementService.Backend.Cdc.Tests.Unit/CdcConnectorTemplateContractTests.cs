@@ -98,6 +98,61 @@ public class Given_CdcConnectorTemplateContracts
     }
 
     [Test]
+    public void It_requires_positive_binding_generations()
+    {
+        Action zeroBindingGeneration = () =>
+            new CdcConnectorTemplateBindingIdentity(
+                CdcProvider.Postgresql,
+                new CdcSafeName("dms_binding_connector"),
+                "edfi.documents",
+                bindingGeneration: 0,
+                partitionerAlgorithm: "kafka-murmur2-v1",
+                SourceFingerprint
+            );
+        Action negativeBindingGeneration = () =>
+            new CdcConnectorTemplateBindingIdentity(
+                CdcProvider.Postgresql,
+                new CdcSafeName("dms_binding_connector"),
+                "edfi.documents",
+                bindingGeneration: -1,
+                partitionerAlgorithm: "kafka-murmur2-v1",
+                SourceFingerprint
+            );
+        Action zeroProviderSetupGeneration = () =>
+            new CdcConnectorProviderSetupEvidence(
+                bindingGeneration: 0,
+                BuildProviderSetupResult(CdcProvider.Postgresql)
+            );
+        Action negativeProviderSetupGeneration = () =>
+            new CdcConnectorProviderSetupEvidence(
+                bindingGeneration: -1,
+                BuildProviderSetupResult(CdcProvider.Postgresql)
+            );
+
+        using var _ = new AssertionScope();
+        zeroBindingGeneration
+            .Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("bindingGeneration")
+            .WithMessage("*positive integer*");
+        negativeBindingGeneration
+            .Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("bindingGeneration")
+            .WithMessage("*positive integer*");
+        zeroProviderSetupGeneration
+            .Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("bindingGeneration")
+            .WithMessage("*positive integer*");
+        negativeProviderSetupGeneration
+            .Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("bindingGeneration")
+            .WithMessage("*positive integer*");
+    }
+
+    [Test]
     public void It_rejects_explicit_producer_buffer_bytes_below_max_record_bytes()
     {
         Action act = () =>

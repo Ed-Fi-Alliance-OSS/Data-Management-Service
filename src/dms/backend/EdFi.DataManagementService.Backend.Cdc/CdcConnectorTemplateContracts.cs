@@ -85,12 +85,12 @@ public sealed record CdcConnectorTemplateBindingIdentity
             nameof(publicTopicName)
         );
         BindingGeneration =
-            bindingGeneration >= 0
+            bindingGeneration > 0
                 ? bindingGeneration
                 : throw new ArgumentOutOfRangeException(
                     nameof(bindingGeneration),
                     bindingGeneration,
-                    "CDC binding generation must be zero or greater."
+                    "CDC binding generation must be a positive integer."
                 );
         PartitionerAlgorithm = ValidatePartitionerAlgorithm(
             partitionerAlgorithm,
@@ -149,12 +149,12 @@ public sealed record CdcConnectorProviderSetupEvidence
         ArgumentNullException.ThrowIfNull(result);
 
         BindingGeneration =
-            bindingGeneration >= 0
+            bindingGeneration > 0
                 ? bindingGeneration
                 : throw new ArgumentOutOfRangeException(
                     nameof(bindingGeneration),
                     bindingGeneration,
-                    "CDC provider setup binding generation must be zero or greater."
+                    "CDC provider setup binding generation must be a positive integer."
                 );
         Result = result;
     }
