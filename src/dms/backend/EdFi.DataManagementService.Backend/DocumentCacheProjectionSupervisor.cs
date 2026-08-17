@@ -290,7 +290,7 @@ public sealed class DocumentCacheProjectionFailureBackoffState
 
         lock (_sync)
         {
-            _lastSuppressedDocumentIds = materializedDocumentIds.Take(Capacity).ToImmutableArray();
+            _lastSuppressedDocumentIds = materializedDocumentIds.TakeLast(Capacity).ToImmutableArray();
             _lastSuppressedDocumentCount = materializedDocumentIds.Length;
             _lastSuppressedEarliestRetryAt = materializedDocumentIds
                 .Select(documentId =>

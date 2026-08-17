@@ -1,0 +1,261 @@
+[
+  {
+    "category": "Observation Model",
+    "description": "Audit the existing 18-04 DocumentCache projection observation store and fill only the gaps needed by the 18-06 status surface. The status implementation must consume one typed immutable current-generation projection observation snapshot for execution state, target-level backoff, current-generation active administrative command, current-generation last-ended command diagnostic, bounded target diagnostics, bounded document diagnostics, and poison traversal diagnostics. If a required projector runtime fact is missing, extend the existing observation store and its append/eviction APIs rather than creating a second 18-06 runtime observation store. Keep enqueue-failure retention out of this projector runtime store; it is owned by the separate 18-06 canonical write-boundary sink.",
+    "acceptance-criteria": [
+      "The status pipeline consumes a single current-generation projection observation snapshot exposed by the existing DocumentCache observation infrastructure.",
+      "Runtime observations include execution state, active worker/concurrency/backoff details, last successful work, last failure, current-generation active command, current-generation last-ended diagnostic, bounded target diagnostics, bounded document diagnostics, and poison traversal diagnostics needed by the v1 JSON contract.",
+      "Active administrative command and last-ended command diagnostics remain process-local current-replica observations; 18-06 does not add durable command-phase persistence or cross-replica sharing.",
+      "The projector runtime observation store does not own enqueue-failure retention; status reads enqueue failures from the 18-06 process-local sink added at the canonical write/provider boundary.",
+      "Observation retention is scoped to the current normalized target key and current target generation; replaced, removed, or unresolved targets do not leak prior-generation diagnostics into the public status response.",
+      "Bounded diagnostic collections retain at most the effective projector page size, order retained events oldest-to-newest, and track evicted counts.",
+      "The internal 18-01 diagnostic snapshot remains non-serializable and is not exposed directly by the public status endpoint."
+    ],
+    "steps-to-verify": [
+      "Review src/dms/backend/EdFi.DataManagementService.Backend/DocumentCacheProjectionObservation.cs and related observation tests for all status-required facts.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter Category=DocumentCacheProjectionObservation",
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCacheDiagnostics"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Configuration",
+    "description": "Add DocumentCache status configuration under DataManagement:DocumentCache:Status and wire startup validation for status observation timeout, endpoint timeout, and required endpoint role. Missing timeout values should use design defaults, while an omitted Status section should leave RequiredRole missing and therefore leave the endpoint unmapped. Explicitly malformed, null, zero, negative, or CancelAfter-incompatible timeout values must fail startup validation. RequiredRole validation must accept one exact literal role token and reject missing, empty, whitespace-only, trimmed, whitespace-containing, delimiter-containing, quote/bracket/brace-containing, control-character, or over-256-character values for endpoint mapping.",
+    "acceptance-criteria": [
+      "DocumentCacheOptions exposes Status settings with StatusObservationTimeout defaulting to 5 seconds and EndpointTimeout defaulting to 30 seconds.",
+      "Malformed status timeout values fail DocumentCache options validation, including explicit null Status section, zero or negative timeouts, and values too large for CancellationTokenSource.CancelAfter.",
+      "A missing or invalid RequiredRole does not fail startup but is represented so the /health/document-cache endpoint remains unmapped.",
+      "A valid RequiredRole is preserved exactly as configured; validation does not trim, split, normalize case, or reinterpret role text.",
+      "Status effective settings can be serialized without exposing Status:RequiredRole."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCacheOptionsBindingTests",
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCache",
+      "Inspect appsettings examples to ensure any status examples use DataManagement:DocumentCache:Status and do not imply RequiredRole is public effective settings."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Status Contract",
+    "description": "Define the stable v1 public DocumentCache status DTOs, lower-camel JSON enum string converters, timestamp/duration formatting helpers, and representative fixture tests for GET /health/document-cache. The DTOs must map internal registry and projection observations into the public contract instead of serializing existing internal diagnostic snapshots. The contract must include contractVersion, observedAt, deterministic target entries, targetKey, targetGeneration, processObservedAt, durableObservedAt, component objects, operationalHealth, caughtUp, queueSummary, executionState, activeCommand, lastEndedDiagnostic, diagnostics, enqueueFailures, and effectiveSettings exactly within the story's v1 scope.",
+    "acceptance-criteria": [
+      "System.Text.Json serializes the status response with lower-camel property names, lower-camel enum strings, UTC DateTimeOffset values with Z offsets, and numeric seconds for public durations and ages.",
+      "The top-level response always includes contractVersion 1, observedAt, and targets; an empty configured target list serializes as targets: [].",
+      "Stable component objects are present, unavailable scalar values are null, diagnostic collections are empty arrays when empty, and backlogEstimate is always an object with kind unavailable and value null in v1.",
+      "Target entries are sorted by normalized tenant key and DataStoreId, and targetKey uses the nested shape { tenantKey, dataStoreId } with default tenant serialized as an empty string.",
+      "targetGeneration serializes the current 18-01 target-context generation as a JSON number for resolved current-generation targets and null when no resolved current generation exists.",
+      "The DTOs exclude E19 deployment aggregate fields, connector/Kafka fields, expected-source comparison, binding-generation fields, currentTargetGeneration/isCurrentGeneration command fields, Status:RequiredRole, and an administration effective-settings object."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCacheStatus",
+      "Review the representative populated target JSON fixture against reference/design/backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md.",
+      "Run dotnet csharpier format on the changed status DTO and test files."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Provider Observation",
+    "description": "Add the PostgreSQL current-source status observation adapter that executes one read-only provider-consistent statement per eligible target. The statement must observe DocumentCacheState lifecycle, CacheAheadRecoveryRequired, indexed queue presence, oldest work FirstEnqueuedAt, provider-computed oldest-work age, and durableObservedAt from the same database UTC timestamp. The status adapter must stay separate from the 18-04 work pager and must not advance queue cursors, apply poison traversal behavior, scan dms.Document, scan dms.DocumentCache, or calculate an exact backlog count.",
+    "acceptance-criteria": [
+      "The PostgreSQL adapter returns typed durable status observations for tracking, disabled, resetting, rebuilding, missing/invalid state, cache-ahead latch, empty queue, non-empty queue, oldest work timestamp, oldest work age seconds, and durableObservedAt.",
+      "Lifecycle, latch, queue presence, oldest work, oldest-work age, and durableObservedAt are read by one provider-consistent statement and not stitched together from multiple commands.",
+      "Queue presence uses indexed existence and oldest-work selection uses IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId ordering with a single-row limit.",
+      "Routine exact backlog counts are not executed and v1 backlog estimates remain unavailable.",
+      "Provider timeout, cancellation, and provider statement failure are surfaced in typed outcomes for the status composition layer without reusing previous durable observations."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheStatus",
+      "Add focused PostgreSQL provider evidence proving the status observation statement uses ordered single-row oldest-work access and does not scan dms.Document or dms.DocumentCache.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCacheStatus"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Provider Observation",
+    "description": "Add the SQL Server current-source status observation adapter with provider-equivalent behavior to PostgreSQL. The adapter must execute one read-only, provider-consistent statement per eligible target to observe lifecycle, cache-ahead latch, queue presence, oldest work, provider-computed oldest-work age, and durableObservedAt. It must remain independent of queue processing and avoid exact backlog counts or source/cache scans.",
+    "acceptance-criteria": [
+      "The SQL Server adapter returns typed durable status observations for tracking, disabled, resetting, rebuilding, missing/invalid state, cache-ahead latch, empty queue, non-empty queue, oldest work timestamp, oldest work age seconds, and durableObservedAt.",
+      "Lifecycle, latch, queue presence, oldest work, oldest-work age, and durableObservedAt are read by one provider-consistent statement and not combined from separate database moments.",
+      "Queue presence and oldest-work checks use the DocumentProjectionWork oldest-work access path with ordered single-row oldest-work selection.",
+      "Routine exact backlog counts are not executed and v1 backlog estimates remain unavailable.",
+      "Provider timeout, cancellation, and provider statement failure are surfaced in typed outcomes for the status composition layer without reusing previous durable observations."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheStatus",
+      "Add focused SQL Server provider evidence proving the status observation statement uses ordered single-row oldest-work access and does not scan dms.Document or dms.DocumentCache.",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCacheStatus"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Status Composition",
+    "description": "Implement the pure status classification layer that composes process eligibility, durable lifecycle facts, cache-ahead state, queue presence, operationalHealth, and caughtUp. The classifier must apply the story's deterministic reason precedence, keep operational health separate from caught-up status, treat queue presence as a caught-up fact rather than an operational-health fact, and distinguish unavailable durable facts from unknown durable facts.",
+    "acceptance-criteria": [
+      "Operational health status is operational, nonOperational, or unknown with reason none only for operational success and a single fixed reason otherwise.",
+      "Caught-up status is caughtUp, notCaughtUp, or unknown with reason none only for caught-up success and a single fixed reason otherwise.",
+      "Process eligibility failures from target resolution, provider metadata, connection input, fingerprint, effective schema/resource-key compatibility, inventory, enqueue trigger, SQL Server prerequisites, target removal/replacement, runtime not observed/cancelled/faulted, and target backoff follow the design precedence.",
+      "Disabled, Resetting, Rebuilding, missing/invalid state, and a set cache-ahead latch are known non-operational durable states; an unreadable or failed durable statement produces unknown rather than stale success.",
+      "Idle, waitingForPoll, waitingForConcurrency, active processing, and document-scoped poison/backoff diagnostics do not by themselves make a target non-operational; target-fatal diagnostics from direct fill or cache reads affect operational health only when the current-generation runtime observation is cancelled, faulted, or in target-level backoff.",
+      "When process eligibility fails or is unknown before durable observation, lifecycle/cacheAhead/queue/durableObservedAt fields serialize as unavailable, and the selected process reason appears in operationalHealth and caughtUp.",
+      "When process eligibility passes but durable observation times out, fails, or is skipped by endpoint budget, lifecycle/cacheAhead/queue/durableObservedAt fields serialize as unknown with the appropriate public reason and sanitized message."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCacheStatusClassifier",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCacheStatus",
+      "Review classifier tests for all reason-precedence entries listed in the story."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Status Composition",
+    "description": "Implement the request-scoped DocumentCache projection status service that captures a registry/runtime snapshot, evaluates every explicit configured target with bounded parallelism, applies endpoint and per-target timeouts, invokes the provider current-source adapter only for process-eligible targets, and maps all component observations into the v1 DTOs. The service must observe current configured target state only and must not refresh CMS, resolve targets, start workers, wait for draining, run direct fill, inspect Kafka/provider CDC artifacts, read cache rows, or calculate deployment readiness.",
+    "acceptance-criteria": [
+      "Top-level observedAt is captured immediately before bounded-parallel target evaluation, and normal endpoint responses use that same value for each target processObservedAt.",
+      "Every explicit DocumentCache:Targets entry is reported; unconfigured databases are omitted even if loaded or serving API traffic.",
+      "Provider current-source observation is skipped unless the current target generation is resolved, provider-compatible, inventory-valid, enqueue-trigger-valid, provider-prerequisite-satisfied, running/unfaulted, and not in target-level backoff.",
+      "Bounded parallelism is capped by the effective Projector:MaxConcurrentTargets; each target has a linked StatusObservationTimeout and the whole request has a linked EndpointTimeout.",
+      "Per-target status observation timeout, provider observation failure, and endpoint budget expiration serialize peer-isolated unknown target results while allowing the endpoint to return a successful response when serialization succeeds.",
+      "Endpoint budget diagnostics distinguish targets whose status evaluation did not start from targets whose evaluation started but timed out before durable observation completed.",
+      "Caller cancellation follows the normal request-cancellation path rather than being serialized as a target-level status value.",
+      "Effective settings include projector, readAcceleration, and status timing values, and omit RequiredRole and administration settings."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCacheStatusService",
+      "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheStatus",
+      "Inspect tests that prove the service does not call target refresh, lifecycle command, worker, direct-fill, cache-read, Kafka, or CDC readiness services during a status request."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Endpoint and Authorization",
+    "description": "Add GET /health/document-cache under the existing health module as a read-only operator status endpoint. The route must be excluded from OpenAPI/discovery metadata, must not be registered as an IHealthCheck, and must not affect the existing anonymous /health pass/fail result or normal API routing. Mapping must fail closed by omitting the route when RequiredRole is missing or invalid, producing the ordinary 404 fallback.",
+    "acceptance-criteria": [
+      "GET /health/document-cache is mapped only when DataManagement:DocumentCache:Status:RequiredRole is valid.",
+      "The endpoint returns HTTP 200 with the v1 status body when the status request can be evaluated and serialized, even when target-level statuses are nonOperational, notCaughtUp, or unknown.",
+      "The endpoint is excluded from OpenAPI, Swagger, discovery metadata, generated OpenAPI paths, and IHealthCheck registration.",
+      "The existing GET /health endpoint remains anonymous, minimal, and independent from projection status.",
+      "Projection status failures do not make the canonical relational API unhealthy or remove the replica from normal API routing."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter FullyQualifiedName~HealthCheckEndpointModule",
+      "Run dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter FullyQualifiedName~OpenApi",
+      "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheStatusEndpoint"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Endpoint and Authorization",
+    "description": "Implement the dedicated status-endpoint role check using the existing OAuth/JWT validation path and configured JwtAuthentication:RoleClaimType. Authorization must require an exact ordinal match against an already-materialized claim value and must not use Ed-Fi claim-set authorization, resource claims, ClientRole fallback, tenant/data-store permissions, namespace prefixes, education organization IDs, database tables, or a new policy store.",
+    "acceptance-criteria": [
+      "A missing token, malformed token, or token rejected by the existing JWT validation path returns 401 for GET /health/document-cache.",
+      "A valid token without the exact configured RequiredRole in a claim whose type equals JwtAuthentication:RoleClaimType returns 403.",
+      "A valid token with at least one exact ordinal matching role claim returns the status response.",
+      "Role comparison does not trim, lowercase, split space-delimited values, split comma-delimited values, parse JSON-array-looking values, or fall back to JwtAuthentication:ClientRole.",
+      "Authentication and authorization failures do not invoke the projection status service and do not serialize any projection status payload.",
+      "Only 401 and 403 are pinned as v1 authentication/authorization failure status codes; tests do not depend on exact problem-details body text or WWW-Authenticate header prose."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCacheStatusAuthorization",
+      "Run dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCacheStatusAuthorization",
+      "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheStatusEndpointAuthorization"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Diagnostics Mapping",
+    "description": "Map target registry observations and projection runtime observations into the public status component objects. This includes resolution, eligibility, targetGeneration, provider, physical source fingerprint, inventory, enqueue-trigger validation, SQL Server prerequisites, lifecycle, cache-ahead latch, queue summary, execution state, active command, last-ended diagnostic, target diagnostics, document diagnostics, poison traversal diagnostics, enqueueFailures, and sanitized messages. The mapping must use fixed public enum values and bounded diagnostics from the story rather than leaking internal enum names or raw provider text.",
+    "acceptance-criteria": [
+      "Resolution, eligibility, inventory, providerPrerequisites, lifecycle, cacheAhead, queueSummary, executionState, command, diagnostic, and enqueue-failure fields use the v1 lower-camel enum values listed in the story.",
+      "Current-generation activeCommand and lastEndedDiagnostic are included only when tied to the current target generation; non-current command observations are not exposed through isCurrentGeneration or currentTargetGeneration fields.",
+      "Administrative command fields reuse the shared command, phase, status, phase-diagnostic, and ended-outcome enum values; prohibited status-only command aliases such as activateNewEmpty, offlineActivate, offlineDeactivate, onlineRebuild, cacheAheadRecovery, and integrityScrub are never serialized.",
+      "Administrative phaseDiagnostics arrays use the shared item shape ordered oldest-to-newest and do not add a nested evictedCount field in v1.",
+      "Execution state maps no runtime snapshot to notObserved with null executionState.observedAt and processObservedAt still populated.",
+      "Diagnostic messages are sanitized and length-capped; bounded document diagnostics may include DocumentId but never DocumentUuid, document JSON, request bodies, subjects, connection strings, tenant display names, physical server or database names, query parameter values, profile payloads, or unsanitized provider text.",
+      "Target, document, poison traversal, and enqueue diagnostic arrays are ordered and bounded according to the retained observation windows."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCacheStatusSerialization",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCacheStatusMapping",
+      "Review the populated and unavailable/unknown status fixtures for absence of prohibited fields and internal enum names."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Enqueue Telemetry",
+    "description": "Instrument the canonical write/provider boundary for DocumentCache enqueue successes and failures, and expose retained enqueue-failure diagnostics through status JSON. Enqueue failure must remain distinct from projector-processing failure: a classified enqueue failure rejects the complete canonical transaction and does not create a durable work row or processing diagnostic. Enqueue success must be emitted only after an enqueue-enabled insert or real ContentVersion update reaches transactional enqueue and the complete canonical transaction commits.",
+    "acceptance-criteria": [
+      "Enqueue failures are classified into stateMissingOrInvalid, enqueueTriggerUnavailable, workPersistenceFailed, providerTimeout, providerUnavailable, or unclassifiedProviderFailure with sanitized diagnostic text.",
+      "Enqueue success telemetry counts only enqueue-enabled committed transactions that inserted work, advanced work, or observed existing durable work already satisfying the required content version.",
+      "Enqueue success classification is emitted from the canonical write/provider boundary without an extra status-path read or provider observation query.",
+      "Disabled no-work commits, unchanged-version updates, and v1 deletes are not counted as enqueue successes or enqueue failures.",
+      "The process-local enqueue-failure sink retains at most Projector:PageSize latest events per current configured normalized target key, including configured targets whose resolved context is unresolved, removed, or replaced; it creates no retained buckets for unconfigured target keys or target=unknown, drops removed configuration buckets on rollout, and starts newly configured targets empty.",
+      "Classified enqueue failures still emit required logs and metrics when the affected data store is unconfigured, unresolved, removed, or replaced; status JSON reports them only when they can be associated with a current configured target.",
+      "Status JSON includes enqueueFailures with recentEvents, byCategory, and evictedCount; byCategory contains only retained categories with count > 0 ordered by fixed category order.",
+      "Enqueue failure logs/metrics do not include SQLSTATE, SQL Server error number, lifecycle value, DocumentId, DocumentUuid, resource names, request bodies, subjects, connection strings, or physical identifiers as labels or unsanitized text."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCacheEnqueueTelemetry",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheEnqueueTelemetry",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheEnqueueTelemetry"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Metrics and Logs",
+    "description": "Extend the existing DocumentCache projection meter and structured logging with the 18-06 status and enqueue instruments. Add one shared deterministic target-surrogate label helper and convert every DocumentCache metric target label introduced by E18 to use label key target and value t1_<first 24 lowercase hex SHA-256 chars> or unknown. Keep full targetKey only in status JSON and sanitized structured logs where the contract already exposes it.",
+    "acceptance-criteria": [
+      "A shared helper computes target labels as t1_ plus the first 24 lowercase hex characters of SHA-256 over UTF8(\"document-cache-target-v1\\0\" + normalizedTenantKey + \"\\0\" + decimal DataStoreId), and emits unknown when a logical target key cannot be determined.",
+      "Existing and new DocumentCache metrics use label key target instead of raw target_key or raw target-key-derived text.",
+      "The existing DocumentCache projection meter includes edfi.dms.document_cache.status.observations, edfi.dms.document_cache.status.provider_observation.duration, edfi.dms.document_cache.status.oldest_work.age, edfi.dms.document_cache.enqueue.successes, and edfi.dms.document_cache.enqueue.failures with the story's units and lower-snake tag keys.",
+      "Status observation metrics include provider, target, lifecycle, queue_presence, operational_health_status, operational_health_reason, caught_up_status, and caught_up_reason.",
+      "Provider-observation duration is recorded only for provider observation work items that actually start, and oldest-work age is recorded only when work exists and the provider statement returns an age.",
+      "Status and enqueue logs/metrics do not expose document bodies, raw student data, credentials, connection strings, tenant display names, physical server or database names, raw physical source identifiers, unbounded resource names, or unsanitized provider text.",
+      "Structured log event names include DocumentCacheStatusObserved, DocumentCacheStatusProviderObservationFailed, DocumentCacheEnqueueSucceeded, and DocumentCacheEnqueueFailed with bounded labels and sanitized messages."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCacheProjectionTelemetry",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCacheStatusTelemetry",
+      "Search changed telemetry code for target_key and raw DocumentCacheTargetKey.ToString() metric labels; verify only allowed structured-log/status contexts retain raw target key."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Integration Evidence",
+    "description": "Add only the focused 18-06 endpoint, serialization, and provider integration evidence required for the v1 status contract. Keep this task limited to authorization, route mapping, OpenAPI exclusion, empty configured targets, deterministic ordering, operational/non-operational/unknown and caught-up/not-caught-up/unknown shapes, durable observation skip/failure/timeout behavior, provider lifecycle/queue parity, and independence from normal API routing.",
+    "acceptance-criteria": [
+      "Endpoint tests cover unmapped 404 when RequiredRole is missing or invalid, 401 for missing/invalid token, 403 for valid token without role, and 200 for exact matching role.",
+      "Endpoint tests prove /health remains anonymous and projection target status does not alter the /health pass/fail result.",
+      "Serialization tests pin empty targets, populated target, process-ineligible unavailable durable fields, durable-observation unknown fields, queue not empty, lifecycle disabled/resetting/rebuilding, cache-ahead latch, runtime not observed, target backoff, and provider observation failure shapes.",
+      "Provider tests for PostgreSQL and SQL Server prove lifecycle/latch/queue/oldest-work/durableObservedAt facts are read provider-consistently and that peer targets continue after one target fails or times out.",
+      "Focused no-scan provider evidence proves operational-health, caught-up, and oldest-work observation paths are independent of total document/cache cardinality without expanding into the 18-07 performance matrix.",
+      "Polling tests prove status requests observe current state only and do not start workers, wait for drains, refresh targets, run lifecycle commands, or run direct fill.",
+      "OpenAPI/discovery tests prove /health/document-cache is not emitted in generated metadata.",
+      "Tests do not assert E19 connector aggregation, Kafka lag, source-position barrier, deployment readiness, CLI behavior, or 18-07 runbook behavior."
+    ],
+    "steps-to-verify": [
+      "Run dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCacheStatus",
+      "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheStatus",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheStatus",
+      "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheStatus"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Validation",
+    "description": "Run final formatting, JSON validation, and focused build/test validation for the 18-06 implementation plan. This task is only for validating the completed implementation work for this story; it should not add new behavior beyond resolving issues found by formatter, compiler, or focused tests.",
+    "acceptance-criteria": [
+      "All changed C# files are formatted with csharpier.",
+      "tasks.json remains valid JSON and every task object preserves category, description, acceptance-criteria, steps-to-verify, and completed fields.",
+      "The DMS solution or affected projects compile without warnings introduced by the 18-06 changes.",
+      "Focused unit and integration tests for status contract, composition, endpoint authorization, provider observation, enqueue telemetry, and metrics pass.",
+      "Any skipped provider tests are documented with the missing environment prerequisite, not treated as passing evidence."
+    ],
+    "steps-to-verify": [
+      "jq empty tasks.json",
+      "dotnet csharpier format src/dms/core src/dms/backend src/dms/frontend src/dms/tests",
+      "dotnet build src/dms/EdFi.DataManagementService.sln",
+      "Run the focused DocumentCacheStatus, DocumentCacheStatusEndpoint, DocumentCacheEnqueueTelemetry, and DocumentCacheStatusTelemetry test filters in the affected unit and integration projects."
+    ],
+    "completed": false
+  }
+]

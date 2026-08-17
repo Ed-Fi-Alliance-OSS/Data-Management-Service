@@ -1177,6 +1177,7 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             executionContext,
             observationStore
         );
+        observationStore.ObserveTarget(TargetHealth(executionContext));
         TaskCompletionSource diagnosticsAdded = new(TaskCreationOptions.RunContinuationsAsynchronously);
         TaskCompletionSource releaseCommand = new(TaskCreationOptions.RunContinuationsAsynchronously);
         var workflow = new DelegatingWorkflow(
@@ -1242,6 +1243,15 @@ public class Given_DocumentCacheAdministrativeCommandRunner
                 "Backpressure observation 4.",
                 "Backpressure observation 5."
             );
+
+        DocumentCacheProjectionObservationSnapshot snapshot = observationStore.CurrentSnapshot;
+        snapshot.ActiveAdministrativeCommands.Should().BeEmpty();
+        DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot endedDiagnostic =
+            snapshot.GetCurrentGenerationLastEndedAdministrativeCommandDiagnostic(TargetKey)!;
+        endedDiagnostic.Should().NotBeNull();
+        endedDiagnostic.Outcome.Should().Be(DocumentCacheAdministrativeCommandEndedOutcome.Succeeded);
+        endedDiagnostic.Phase.Should().Be(DocumentCacheAdministrativeCommandPhase.Complete);
+        endedDiagnostic.Message.Should().Be("Backpressure observation 5.");
     }
 
     [Test]

@@ -1,0 +1,7 @@
+2026-08-17 - Completed Observation Model for reference/design/backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md
+- Extended existing DocumentCacheProjectionObservationStore, no parallel 18-06 runtime store.
+- Added current-generation target-keyed active command view and current-generation last-ended command diagnostics from admin command cleanup result.
+- Added eviction counts for target diagnostics and poison traversal; document/target/poison retained windows now evict oldest and keep retained events oldest-to-newest.
+- Kept enqueue-failure retention out of projection observation store.
+- Files changed: DocumentCacheProjectionObservation.cs, DocumentCacheAdministrativeCommandRunner.cs, DocumentCacheProjectionSupervisor.cs, DocumentCacheProjectionObservationTests.cs, DocumentCacheAdministrativeCommandRunnerTests.cs, tasks.json.
+- Verified: backend DocumentCacheProjectionObservation, core DocumentCacheDiagnostics, backend DocumentCacheAdministrativeCommandRunner, backend DocumentCacheProjectionFailureBackoff, backend DocumentCacheProjectionTelemetry.

@@ -11,6 +11,14 @@ using DocumentCacheActiveAdministrativeCommandSnapshots = System.Collections.Imm
     EdFi.DataManagementService.Backend.DocumentCacheAdministrativeCommandExecutionId,
     EdFi.DataManagementService.Backend.DocumentCacheAdministrativeCommandObservationSnapshot
 >;
+using DocumentCacheCurrentGenerationActiveAdministrativeCommandSnapshots = System.Collections.Immutable.ImmutableDictionary<
+    EdFi.DataManagementService.Core.Configuration.DocumentCacheTargetKey,
+    EdFi.DataManagementService.Backend.DocumentCacheAdministrativeCommandObservationSnapshot
+>;
+using DocumentCacheCurrentGenerationEndedAdministrativeCommandDiagnosticSnapshots = System.Collections.Immutable.ImmutableDictionary<
+    EdFi.DataManagementService.Core.Configuration.DocumentCacheTargetKey,
+    EdFi.DataManagementService.Backend.DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot
+>;
 using DocumentCacheCurrentTargetHealthSnapshots = System.Collections.Immutable.ImmutableDictionary<
     EdFi.DataManagementService.Backend.DocumentCacheProjectionTargetContextKey,
     EdFi.DataManagementService.Backend.DocumentCacheProjectionTargetHealthSnapshot
@@ -90,6 +98,15 @@ public enum DocumentCacheProjectionTargetEndReason
     Shutdown = 4,
     Faulted = 5,
     Ineligible = 6,
+}
+
+public enum DocumentCacheAdministrativeCommandEndedOutcome
+{
+    Succeeded = 1,
+    Failed = 2,
+    Cancelled = 3,
+    Rejected = 4,
+    TimedOut = 5,
 }
 
 public sealed record DocumentCacheProjectionExecutionStateSnapshot
@@ -273,8 +290,12 @@ public sealed record DocumentCacheProjectionFailureDiagnostics
             nameof(evictionCount)
         );
         EarliestRetryAt = earliestRetryAt;
-        DocumentDiagnostics = DocumentCacheProjectionObservationBounds.Cap(
-            documentDiagnostics,
+        ImmutableArray<DocumentCacheProjectionDocumentDiagnostic> documentDiagnosticItems = (
+            documentDiagnostics ?? []
+        ).ToImmutableArray();
+        EvictionCount += Math.Max(0, documentDiagnosticItems.Length - EffectiveProjectorPageSize);
+        DocumentDiagnostics = DocumentCacheProjectionObservationBounds.CapLatest(
+            documentDiagnosticItems,
             EffectiveProjectorPageSize
         );
         DocumentIds = DocumentDiagnostics.Select(diagnostic => diagnostic.DocumentId).ToImmutableArray();
@@ -320,11 +341,12 @@ public sealed record DocumentCacheProjectionPoisonTraversalSnapshot
             nameof(suppressedDocumentCount)
         );
         EarliestRetryAt = earliestRetryAt;
-        SuppressedDocumentIds = DocumentCacheProjectionObservationBounds.CapPositiveIds(
+        SuppressedDocumentIds = DocumentCacheProjectionObservationBounds.CapLatestPositiveIds(
             suppressedDocumentIds,
             EffectiveProjectorPageSize,
             nameof(suppressedDocumentIds)
         );
+        EvictionCount = Math.Max(0, SuppressedDocumentCount - SuppressedDocumentIds.Length);
     }
 
     public int EffectiveProjectorPageSize { get; }
@@ -334,6 +356,8 @@ public sealed record DocumentCacheProjectionPoisonTraversalSnapshot
     public DateTimeOffset? EarliestRetryAt { get; }
 
     public ImmutableArray<long> SuppressedDocumentIds { get; }
+
+    public long EvictionCount { get; }
 
     public static DocumentCacheProjectionPoisonTraversalSnapshot Empty(int effectiveProjectorPageSize) =>
         new(
@@ -404,7 +428,8 @@ public sealed record DocumentCacheProjectionTargetHealthSnapshot
         DocumentCacheAdministrativeCommandExecutionId? activeCommandExecutionId = null,
         DocumentCacheAdministrativeCommand? activeAdministrativeCommand = null,
         DocumentCacheAdministrativeCommandPhase? activeAdministrativePhase = null,
-        IEnumerable<DocumentCacheTargetDiagnostic>? targetDiagnostics = null
+        IEnumerable<DocumentCacheTargetDiagnostic>? targetDiagnostics = null,
+        long targetDiagnosticEvictionCount = 0
     )
     {
         EffectiveProjectorPageSize = DocumentCacheProjectionObservationGuard.RequirePositive(
@@ -451,8 +476,19 @@ public sealed record DocumentCacheProjectionTargetHealthSnapshot
         ActiveCommandExecutionId = activeCommandExecutionId;
         ActiveAdministrativeCommand = activeAdministrativeCommand;
         ActiveAdministrativePhase = activeAdministrativePhase;
+        TargetDiagnosticEvictionCount = DocumentCacheProjectionObservationGuard.RequireNonNegative(
+            targetDiagnosticEvictionCount,
+            nameof(targetDiagnosticEvictionCount)
+        );
+        ImmutableArray<DocumentCacheTargetDiagnostic> targetDiagnosticItems = (
+            targetDiagnostics ?? []
+        ).ToImmutableArray();
+        TargetDiagnosticEvictionCount += Math.Max(
+            0,
+            targetDiagnosticItems.Length - EffectiveProjectorPageSize
+        );
         TargetDiagnostics = DocumentCacheProjectionObservationBounds.CapLatest(
-            targetDiagnostics,
+            targetDiagnosticItems,
             EffectiveProjectorPageSize
         );
     }
@@ -491,11 +527,14 @@ public sealed record DocumentCacheProjectionTargetHealthSnapshot
 
     public DocumentCacheAdministrativeCommandPhase? ActiveAdministrativePhase { get; }
 
+    public long TargetDiagnosticEvictionCount { get; }
+
     public ImmutableArray<DocumentCacheTargetDiagnostic> TargetDiagnostics { get; }
 
     internal DocumentCacheProjectionTargetHealthSnapshot WithTargetDiagnostics(
         IEnumerable<DocumentCacheTargetDiagnostic> targetDiagnostics,
-        DateTimeOffset observedAt
+        DateTimeOffset observedAt,
+        long? targetDiagnosticEvictionCount = null
     ) =>
         new(
             TargetKey,
@@ -514,7 +553,8 @@ public sealed record DocumentCacheProjectionTargetHealthSnapshot
             activeCommandExecutionId: ActiveCommandExecutionId,
             activeAdministrativeCommand: ActiveAdministrativeCommand,
             activeAdministrativePhase: ActiveAdministrativePhase,
-            targetDiagnostics: targetDiagnostics
+            targetDiagnostics: targetDiagnostics,
+            targetDiagnosticEvictionCount: targetDiagnosticEvictionCount ?? TargetDiagnosticEvictionCount
         );
 
     private static DocumentCacheProjectionPoisonTraversalSnapshot EnsureMatchingPageSize(
@@ -727,12 +767,98 @@ public sealed record DocumentCacheAdministrativeCommandObservationSnapshot
         );
 }
 
+public sealed record DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot
+{
+    public DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot(
+        DocumentCacheAdministrativeCommandExecutionId executionId,
+        DocumentCacheAdministrativeCommand command,
+        DocumentCacheTargetKey targetKey,
+        DocumentCacheTargetContextGeneration targetGeneration,
+        DateTimeOffset startedAt,
+        DateTimeOffset endedAt,
+        DateTimeOffset observedAt,
+        DocumentCacheAdministrativeCommandPhase phase,
+        DocumentCacheAdministrativeCommandEndedOutcome outcome,
+        DocumentCacheAdministrativeCommandStatus status,
+        DocumentCacheAdministrativeCommandClassification classification,
+        bool mutated,
+        string message,
+        DocumentCachePhysicalSourceFingerprint? physicalSourceFingerprint = null
+    )
+    {
+        ExecutionId = executionId ?? throw new ArgumentNullException(nameof(executionId));
+        Command = DocumentCacheProjectionObservationGuard.RequireDefined(
+            command,
+            nameof(command),
+            "Unsupported administrative command."
+        );
+        TargetKey = targetKey ?? throw new ArgumentNullException(nameof(targetKey));
+        TargetGeneration = targetGeneration ?? throw new ArgumentNullException(nameof(targetGeneration));
+        StartedAt = startedAt;
+        EndedAt = endedAt;
+        ObservedAt = observedAt;
+        Phase = DocumentCacheProjectionObservationGuard.RequireDefined(
+            phase,
+            nameof(phase),
+            "Unsupported administrative command phase."
+        );
+        Outcome = DocumentCacheProjectionObservationGuard.RequireDefined(
+            outcome,
+            nameof(outcome),
+            "Unsupported administrative command ended outcome."
+        );
+        Status = DocumentCacheProjectionObservationGuard.RequireDefined(
+            status,
+            nameof(status),
+            "Unsupported administrative command status."
+        );
+        Classification = DocumentCacheProjectionObservationGuard.RequireDefined(
+            classification,
+            nameof(classification),
+            "Unsupported administrative command classification."
+        );
+        Mutated = mutated;
+        Message = DocumentCacheProjectionObservationText.Sanitize(message);
+        PhysicalSourceFingerprint = physicalSourceFingerprint;
+    }
+
+    public DocumentCacheAdministrativeCommandExecutionId ExecutionId { get; }
+
+    public DocumentCacheAdministrativeCommand Command { get; }
+
+    public DocumentCacheTargetKey TargetKey { get; }
+
+    public DocumentCacheTargetContextGeneration TargetGeneration { get; }
+
+    public DateTimeOffset StartedAt { get; }
+
+    public DateTimeOffset EndedAt { get; }
+
+    public DateTimeOffset ObservedAt { get; }
+
+    public DocumentCacheAdministrativeCommandPhase Phase { get; }
+
+    public DocumentCacheAdministrativeCommandEndedOutcome Outcome { get; }
+
+    public DocumentCacheAdministrativeCommandStatus Status { get; }
+
+    public DocumentCacheAdministrativeCommandClassification Classification { get; }
+
+    public bool Mutated { get; }
+
+    public string Message { get; }
+
+    public DocumentCachePhysicalSourceFingerprint? PhysicalSourceFingerprint { get; }
+}
+
 public sealed record DocumentCacheProjectionObservationSnapshot
 {
     public DocumentCacheProjectionObservationSnapshot(
         DocumentCacheCurrentTargetHealthSnapshots currentTargetHealth,
         DocumentCacheLastEndedTargetDiagnosticSnapshots lastEndedTargetDiagnostics,
         DocumentCacheActiveAdministrativeCommandSnapshots activeAdministrativeCommands,
+        DocumentCacheCurrentGenerationActiveAdministrativeCommandSnapshots currentGenerationActiveAdministrativeCommands,
+        DocumentCacheCurrentGenerationEndedAdministrativeCommandDiagnosticSnapshots currentGenerationLastEndedAdministrativeCommandDiagnostics,
         DateTimeOffset observedAt
     )
     {
@@ -743,6 +869,14 @@ public sealed record DocumentCacheProjectionObservationSnapshot
         ActiveAdministrativeCommands =
             activeAdministrativeCommands
             ?? throw new ArgumentNullException(nameof(activeAdministrativeCommands));
+        CurrentGenerationActiveAdministrativeCommands =
+            currentGenerationActiveAdministrativeCommands
+            ?? throw new ArgumentNullException(nameof(currentGenerationActiveAdministrativeCommands));
+        CurrentGenerationLastEndedAdministrativeCommandDiagnostics =
+            currentGenerationLastEndedAdministrativeCommandDiagnostics
+            ?? throw new ArgumentNullException(
+                nameof(currentGenerationLastEndedAdministrativeCommandDiagnostics)
+            );
         ObservedAt = observedAt;
     }
 
@@ -751,6 +885,10 @@ public sealed record DocumentCacheProjectionObservationSnapshot
     public DocumentCacheLastEndedTargetDiagnosticSnapshots LastEndedTargetDiagnostics { get; }
 
     public DocumentCacheActiveAdministrativeCommandSnapshots ActiveAdministrativeCommands { get; }
+
+    public DocumentCacheCurrentGenerationActiveAdministrativeCommandSnapshots CurrentGenerationActiveAdministrativeCommands { get; }
+
+    public DocumentCacheCurrentGenerationEndedAdministrativeCommandDiagnosticSnapshots CurrentGenerationLastEndedAdministrativeCommandDiagnostics { get; }
 
     public DateTimeOffset ObservedAt { get; }
 
@@ -788,6 +926,34 @@ public sealed record DocumentCacheProjectionObservationSnapshot
             ? snapshot
             : null;
     }
+
+    public DocumentCacheAdministrativeCommandObservationSnapshot? GetCurrentGenerationActiveCommand(
+        DocumentCacheTargetKey targetKey
+    )
+    {
+        ArgumentNullException.ThrowIfNull(targetKey);
+
+        return CurrentGenerationActiveAdministrativeCommands.TryGetValue(
+            targetKey,
+            out DocumentCacheAdministrativeCommandObservationSnapshot? snapshot
+        )
+            ? snapshot
+            : null;
+    }
+
+    public DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot? GetCurrentGenerationLastEndedAdministrativeCommandDiagnostic(
+        DocumentCacheTargetKey targetKey
+    )
+    {
+        ArgumentNullException.ThrowIfNull(targetKey);
+
+        return CurrentGenerationLastEndedAdministrativeCommandDiagnostics.TryGetValue(
+            targetKey,
+            out DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot? snapshot
+        )
+            ? snapshot
+            : null;
+    }
 }
 
 public interface IDocumentCacheProjectionObservationProvider
@@ -808,6 +974,17 @@ public interface IDocumentCacheProjectionObservationSink
     void ObserveAdministrativeCommand(DocumentCacheAdministrativeCommandObservationSnapshot snapshot);
 
     void EndAdministrativeCommand(DocumentCacheAdministrativeCommandExecutionId executionId);
+
+    void EndAdministrativeCommand(
+        DocumentCacheAdministrativeCommandExecutionId executionId,
+        DocumentCacheAdministrativeCommandResult result,
+        DateTimeOffset? endedAt = null
+    )
+    {
+        EndAdministrativeCommand(executionId);
+        _ = result;
+        _ = endedAt;
+    }
 }
 
 internal interface IDocumentCacheProjectionCurrentTargetHealthSink
@@ -860,8 +1037,19 @@ public sealed class DocumentCacheProjectionObservationStore
     private DocumentCachePendingTargetDiagnostics _pendingTargetDiagnostics =
         DocumentCachePendingTargetDiagnostics.Empty;
 
+    private ImmutableDictionary<
+        DocumentCacheProjectionTargetContextKey,
+        long
+    > _pendingTargetDiagnosticEvictionCounts = ImmutableDictionary<
+        DocumentCacheProjectionTargetContextKey,
+        long
+    >.Empty;
+
     private DocumentCacheActiveAdministrativeCommandSnapshots _activeCommands =
         DocumentCacheActiveAdministrativeCommandSnapshots.Empty;
+
+    private DocumentCacheCurrentGenerationEndedAdministrativeCommandDiagnosticSnapshots _lastEndedCommands =
+        DocumentCacheCurrentGenerationEndedAdministrativeCommandDiagnosticSnapshots.Empty;
 
     public DocumentCacheProjectionObservationStore()
         : this(TimeProvider.System) { }
@@ -901,7 +1089,28 @@ public sealed class DocumentCacheProjectionObservationStore
                         AttachGenerationCurrency
                     );
 
-                return new(currentTargetHealth, _lastEndedTargets, activeCommands, _timeProvider.GetUtcNow());
+                DocumentCacheCurrentGenerationActiveAdministrativeCommandSnapshots currentGenerationActiveCommands =
+                    activeCommands
+                        .Values.Where(snapshot => snapshot.IsCurrentGeneration)
+                        .GroupBy(snapshot => snapshot.TargetKey)
+                        .ToImmutableDictionary(
+                            group => group.Key,
+                            group => group.OrderByDescending(snapshot => snapshot.ObservedAt).First()
+                        );
+
+                DocumentCacheCurrentGenerationEndedAdministrativeCommandDiagnosticSnapshots currentGenerationLastEndedCommands =
+                    _lastEndedCommands
+                        .Values.Where(IsCurrentGenerationEndedCommand)
+                        .ToImmutableDictionary(snapshot => snapshot.TargetKey);
+
+                return new(
+                    currentTargetHealth,
+                    _lastEndedTargets,
+                    activeCommands,
+                    currentGenerationActiveCommands,
+                    currentGenerationLastEndedCommands,
+                    _timeProvider.GetUtcNow()
+                );
             }
         }
     }
@@ -945,6 +1154,7 @@ public sealed class DocumentCacheProjectionObservationStore
                         snapshot.ObservedAt
                     )
                 );
+                _lastEndedCommands = _lastEndedCommands.Remove(snapshot.TargetKey);
             }
             else if (currentSnapshot is not null)
             {
@@ -1012,13 +1222,32 @@ public sealed class DocumentCacheProjectionObservationStore
             }
             else if (!hasCurrentTarget)
             {
-                ImmutableArray<DocumentCacheTargetDiagnostic> pendingDiagnostics =
-                    _pendingTargetDiagnostics.TryGetValue(contextKey, out var existingDiagnostics)
-                        ? DocumentCacheProjectionObservationBounds.CapLatest(
-                            existingDiagnostics.Add(diagnostic),
-                            _pendingTargetDiagnosticLimit
-                        )
-                        : [diagnostic];
+                bool hasPendingDiagnostics = _pendingTargetDiagnostics.TryGetValue(
+                    contextKey,
+                    out ImmutableArray<DocumentCacheTargetDiagnostic> existingDiagnostics
+                );
+
+                ImmutableArray<DocumentCacheTargetDiagnostic> pendingDiagnostics = hasPendingDiagnostics
+                    ? DocumentCacheProjectionObservationBounds.CapLatest(
+                        existingDiagnostics.Add(diagnostic),
+                        _pendingTargetDiagnosticLimit
+                    )
+                    : [diagnostic];
+
+                if (hasPendingDiagnostics && existingDiagnostics.Length >= _pendingTargetDiagnosticLimit)
+                {
+                    long existingEvictionCount = _pendingTargetDiagnosticEvictionCounts.TryGetValue(
+                        contextKey,
+                        out long pendingEvictionCount
+                    )
+                        ? pendingEvictionCount
+                        : 0;
+
+                    _pendingTargetDiagnosticEvictionCounts = _pendingTargetDiagnosticEvictionCounts.SetItem(
+                        contextKey,
+                        existingEvictionCount + 1
+                    );
+                }
 
                 _pendingTargetDiagnostics = _pendingTargetDiagnostics.SetItem(contextKey, pendingDiagnostics);
             }
@@ -1066,6 +1295,9 @@ public sealed class DocumentCacheProjectionObservationStore
         lock (_sync)
         {
             _pendingTargetDiagnostics = _pendingTargetDiagnostics.Remove(contextKey);
+            _pendingTargetDiagnosticEvictionCounts = _pendingTargetDiagnosticEvictionCounts.Remove(
+                contextKey
+            );
 
             if (
                 _currentTargets.TryGetValue(
@@ -1076,6 +1308,7 @@ public sealed class DocumentCacheProjectionObservationStore
             )
             {
                 _currentTargets = _currentTargets.Remove(contextKey.TargetKey);
+                RemoveLastEndedAdministrativeCommandIfGeneration(contextKey);
                 _lastEndedTargets = _lastEndedTargets.SetItem(
                     contextKey.TargetKey,
                     new DocumentCacheProjectionTargetEndedDiagnosticSnapshot(
@@ -1093,6 +1326,7 @@ public sealed class DocumentCacheProjectionObservationStore
             }
 
             _noncurrentTargets = _noncurrentTargets.Remove(contextKey);
+            RemoveLastEndedAdministrativeCommandIfGeneration(contextKey);
             _lastEndedTargets = _lastEndedTargets.SetItem(
                 contextKey.TargetKey,
                 new DocumentCacheProjectionTargetEndedDiagnosticSnapshot(
@@ -1124,6 +1358,46 @@ public sealed class DocumentCacheProjectionObservationStore
         }
     }
 
+    public void EndAdministrativeCommand(
+        DocumentCacheAdministrativeCommandExecutionId executionId,
+        DocumentCacheAdministrativeCommandResult result,
+        DateTimeOffset? endedAt = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(executionId);
+        ArgumentNullException.ThrowIfNull(result);
+
+        lock (_sync)
+        {
+            if (!_activeCommands.TryGetValue(executionId, out var activeCommand))
+            {
+                _activeCommands = _activeCommands.Remove(executionId);
+                return;
+            }
+
+            _activeCommands = _activeCommands.Remove(executionId);
+
+            if (
+                !activeCommand.TargetKey.Equals(result.TargetKey.TargetKey)
+                || activeCommand.Command != result.Command
+                || result.TargetGeneration != activeCommand.TargetGeneration.Value
+            )
+            {
+                return;
+            }
+
+            DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot endedDiagnostic =
+                CreateEndedCommandDiagnostic(
+                    activeCommand,
+                    result,
+                    endedAt ?? _timeProvider.GetUtcNow(),
+                    _timeProvider.GetUtcNow()
+                );
+
+            _lastEndedCommands = _lastEndedCommands.SetItem(endedDiagnostic.TargetKey, endedDiagnostic);
+        }
+    }
+
     private DocumentCacheAdministrativeCommandObservationSnapshot AttachGenerationCurrency(
         DocumentCacheAdministrativeCommandObservationSnapshot commandSnapshot
     )
@@ -1141,6 +1415,93 @@ public sealed class DocumentCacheProjectionObservationStore
         return commandSnapshot.WithGenerationCurrency(isCurrentGeneration, currentGeneration);
     }
 
+    private void RemoveLastEndedAdministrativeCommandIfGeneration(
+        DocumentCacheProjectionTargetContextKey contextKey
+    )
+    {
+        if (
+            _lastEndedCommands.TryGetValue(
+                contextKey.TargetKey,
+                out DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot? endedCommand
+            )
+            && endedCommand.TargetGeneration == contextKey.Generation
+        )
+        {
+            _lastEndedCommands = _lastEndedCommands.Remove(contextKey.TargetKey);
+        }
+    }
+
+    private bool IsCurrentGenerationEndedCommand(
+        DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot commandSnapshot
+    ) =>
+        _currentTargets.TryGetValue(
+            commandSnapshot.TargetKey,
+            out DocumentCacheProjectionTargetHealthSnapshot? currentTarget
+        )
+        && currentTarget.Generation == commandSnapshot.TargetGeneration;
+
+    private static DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot CreateEndedCommandDiagnostic(
+        DocumentCacheAdministrativeCommandObservationSnapshot activeCommand,
+        DocumentCacheAdministrativeCommandResult result,
+        DateTimeOffset endedAt,
+        DateTimeOffset observedAt
+    )
+    {
+        DocumentCacheAdministrativePhaseDiagnostic? latestDiagnostic =
+            result.PhaseDiagnostics.LastOrDefault();
+
+        return new(
+            activeCommand.ExecutionId,
+            activeCommand.Command,
+            activeCommand.TargetKey,
+            activeCommand.TargetGeneration,
+            activeCommand.StartedAt,
+            endedAt,
+            observedAt,
+            activeCommand.LastCompletedPhase ?? activeCommand.CurrentPhase,
+            SelectEndedOutcome(result),
+            result.Status,
+            result.Classification,
+            result.Mutated,
+            latestDiagnostic?.Message ?? SelectEndedMessage(result),
+            activeCommand.PhysicalSourceFingerprint
+        );
+    }
+
+    private static DocumentCacheAdministrativeCommandEndedOutcome SelectEndedOutcome(
+        DocumentCacheAdministrativeCommandResult result
+    ) =>
+        result.Status switch
+        {
+            DocumentCacheAdministrativeCommandStatus.Completed
+                when result.Classification == DocumentCacheAdministrativeCommandClassification.Succeeded =>
+                DocumentCacheAdministrativeCommandEndedOutcome.Succeeded,
+            DocumentCacheAdministrativeCommandStatus.RejectedNoMutation =>
+                DocumentCacheAdministrativeCommandEndedOutcome.Rejected,
+            _ when result.Classification
+                    is DocumentCacheAdministrativeCommandClassification.CancellationBeforeMutation
+                        or DocumentCacheAdministrativeCommandClassification.CancellationAfterMutation
+                        or DocumentCacheAdministrativeCommandClassification.MutexAcquisitionCancelled =>
+                DocumentCacheAdministrativeCommandEndedOutcome.Cancelled,
+            _ when result.Classification
+                    is DocumentCacheAdministrativeCommandClassification.WorkflowTimeout
+                        or DocumentCacheAdministrativeCommandClassification.ProviderCommandTimeout =>
+                DocumentCacheAdministrativeCommandEndedOutcome.TimedOut,
+            _ => DocumentCacheAdministrativeCommandEndedOutcome.Failed,
+        };
+
+    private static string SelectEndedMessage(DocumentCacheAdministrativeCommandResult result) =>
+        SelectEndedOutcome(result) switch
+        {
+            DocumentCacheAdministrativeCommandEndedOutcome.Succeeded => "Administrative command succeeded.",
+            DocumentCacheAdministrativeCommandEndedOutcome.Rejected =>
+                "Administrative command was rejected before mutation.",
+            DocumentCacheAdministrativeCommandEndedOutcome.Cancelled =>
+                "Administrative command was cancelled.",
+            DocumentCacheAdministrativeCommandEndedOutcome.TimedOut => "Administrative command timed out.",
+            _ => $"Administrative command ended with {result.Classification}.",
+        };
+
     private DocumentCacheProjectionTargetHealthSnapshot MergePendingTargetDiagnostics(
         DocumentCacheProjectionTargetHealthSnapshot snapshot
     )
@@ -1156,12 +1517,26 @@ public sealed class DocumentCacheProjectionObservationStore
         }
 
         _pendingTargetDiagnostics = _pendingTargetDiagnostics.Remove(snapshot.ContextKey);
+        long pendingEvictionCount = _pendingTargetDiagnosticEvictionCounts.TryGetValue(
+            snapshot.ContextKey,
+            out long evictionCount
+        )
+            ? evictionCount
+            : 0;
+        _pendingTargetDiagnosticEvictionCounts = _pendingTargetDiagnosticEvictionCounts.Remove(
+            snapshot.ContextKey
+        );
 
         return snapshot.TargetDiagnostics.IsEmpty
-            ? snapshot.WithTargetDiagnostics(pendingDiagnostics, snapshot.ObservedAt)
+            ? snapshot.WithTargetDiagnostics(
+                pendingDiagnostics,
+                snapshot.ObservedAt,
+                snapshot.TargetDiagnosticEvictionCount + pendingEvictionCount
+            )
             : snapshot.WithTargetDiagnostics(
                 [.. pendingDiagnostics, .. snapshot.TargetDiagnostics],
-                snapshot.ObservedAt
+                snapshot.ObservedAt,
+                snapshot.TargetDiagnosticEvictionCount + pendingEvictionCount
             );
     }
 
@@ -1178,6 +1553,9 @@ public sealed class DocumentCacheProjectionObservationStore
         )
         {
             _pendingTargetDiagnostics = _pendingTargetDiagnostics.Remove(pendingContextKey);
+            _pendingTargetDiagnosticEvictionCounts = _pendingTargetDiagnosticEvictionCounts.Remove(
+                pendingContextKey
+            );
         }
     }
 
@@ -1195,13 +1573,16 @@ public sealed class DocumentCacheProjectionObservationStore
         {
             return incomingSnapshot.WithTargetDiagnostics(
                 existingSnapshot.TargetDiagnostics,
-                incomingSnapshot.ObservedAt
+                incomingSnapshot.ObservedAt,
+                existingSnapshot.TargetDiagnosticEvictionCount
+                    + incomingSnapshot.TargetDiagnosticEvictionCount
             );
         }
 
         return incomingSnapshot.WithTargetDiagnostics(
             [.. existingSnapshot.TargetDiagnostics, .. incomingSnapshot.TargetDiagnostics],
-            incomingSnapshot.ObservedAt
+            incomingSnapshot.ObservedAt,
+            existingSnapshot.TargetDiagnosticEvictionCount + incomingSnapshot.TargetDiagnosticEvictionCount
         );
     }
 
@@ -1227,6 +1608,21 @@ internal static class DocumentCacheProjectionObservationBounds
     )
     {
         ImmutableArray<long> cappedValues = Cap(values, maximumCount);
+        if (cappedValues.Any(documentId => documentId <= 0))
+        {
+            throw new ArgumentOutOfRangeException(parameterName, "Document ids must be positive.");
+        }
+
+        return cappedValues;
+    }
+
+    public static ImmutableArray<long> CapLatestPositiveIds(
+        IEnumerable<long>? values,
+        int maximumCount,
+        string parameterName
+    )
+    {
+        ImmutableArray<long> cappedValues = CapLatest(values, maximumCount);
         if (cappedValues.Any(documentId => documentId <= 0))
         {
             throw new ArgumentOutOfRangeException(parameterName, "Document ids must be positive.");
