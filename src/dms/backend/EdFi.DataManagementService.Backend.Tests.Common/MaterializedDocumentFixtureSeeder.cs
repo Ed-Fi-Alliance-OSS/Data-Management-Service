@@ -415,7 +415,7 @@ public sealed class MaterializedDocumentFixtureSeeder(
                     $"""
                     UPDATE {_dialect.QualifiedTable("dms", "Document")}
                     SET {_dialect.Quote("ContentVersion")} = {parameters[0].Name},
-                        {_dialect.Quote("ContentLastModifiedAt")} = {parameters[1].Name},
+                        {_dialect.Quote("ContentLastModifiedAt")} = {parameters[1].Name}
                     WHERE {_dialect.Quote("DocumentId")} = {parameters[2].Name}
                     """,
                     parameters

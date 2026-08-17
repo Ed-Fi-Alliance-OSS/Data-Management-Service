@@ -323,7 +323,7 @@ public class Given_DescriptorQueryPageKeysetPlanner
             .ParameterValues["maxChangeVersion_2"]
             .Should()
             .Be(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"));
-        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" > @minChangeVersion");
         keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" <= @maxChangeVersion");
         keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"Description\" = @minChangeVersion_2");
         keyset.Plan.PageDocumentIdSql.Should().Contain("doc.\"DocumentUuid\" = @maxChangeVersion_2");
@@ -731,12 +731,12 @@ public class Given_DescriptorQueryPageKeysetPlanner
     [Test]
     [TestCase(
         SqlDialect.Pgsql,
-        "r.\"ContentVersion\" >= @minChangeVersion",
+        "r.\"ContentVersion\" > @minChangeVersion",
         "r.\"ContentVersion\" <= @maxChangeVersion"
     )]
     [TestCase(
         SqlDialect.Mssql,
-        "r.[ContentVersion] >= @minChangeVersion",
+        "r.[ContentVersion] > @minChangeVersion",
         "r.[ContentVersion] <= @maxChangeVersion"
     )]
     public void It_should_filter_the_content_version_mirror_alongside_the_resource_key_predicate(
@@ -784,7 +784,7 @@ public class Given_DescriptorQueryPageKeysetPlanner
             changeVersionRange: new ChangeVersionRange(100L, null)
         );
 
-        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" > @minChangeVersion");
         keyset.Plan.PageDocumentIdSql.Should().NotContain("@maxChangeVersion");
         keyset.ParameterValues["minChangeVersion"].Should().Be(100L);
         keyset.ParameterValues.Keys.Should().NotContain("maxChangeVersion");
@@ -858,7 +858,7 @@ public class Given_DescriptorQueryPageKeysetPlanner
             new ChangeVersionRange(100L, 200L)
         );
 
-        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" > @minChangeVersion");
         keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" <= @maxChangeVersion");
         keyset
             .Plan.PageDocumentIdSql.Should()
@@ -950,7 +950,7 @@ public class Given_DescriptorQueryPageKeysetPlanner
             plan.PageDocumentIdSql.Should().Contain("FROM \"dms\".\"Descriptor\" r");
             plan.PageDocumentIdSql.Should().Contain("r.\"ResourceKeyId\" = @resourceKeyId");
             plan.PageDocumentIdSql.Should().Contain("r.\"Namespace\"");
-            plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
+            plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" > @minChangeVersion");
             plan.PageDocumentIdSql.Should().NotContain("DISTINCT");
         }
     }

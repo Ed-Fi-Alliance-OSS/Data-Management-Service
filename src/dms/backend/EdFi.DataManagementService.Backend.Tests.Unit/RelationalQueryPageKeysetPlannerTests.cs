@@ -435,7 +435,7 @@ public class Given_RelationalQueryPageKeysetPlanner
         result.ParameterValues["maxChangeVersion"].Should().Be(200L);
         result.ParameterValues["minChangeVersion_2"].Should().Be("min collision");
         result.ParameterValues["maxChangeVersion_2"].Should().Be("max collision");
-        result.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
+        result.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" > @minChangeVersion");
         result.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" <= @maxChangeVersion");
         result
             .Plan.PageDocumentIdSql.Should()
@@ -640,7 +640,7 @@ public class Given_RelationalQueryPageKeysetPlanner
         // Every mode compiles the same change-version window against the same mirrored root column.
         foreach (var sql in new[] { traditional.Plan, cursor.Plan, unpaged.Plan })
         {
-            sql.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
+            sql.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" > @minChangeVersion");
             sql.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" <= @maxChangeVersion");
             sql.PageDocumentIdSql.Should().Contain("r.\"SchoolId\" = @schoolId");
             sql.PageDocumentIdSql.Should().NotContain("DISTINCT");
@@ -956,12 +956,12 @@ public class Given_RelationalQueryPageKeysetPlanner
     [Test]
     [TestCase(
         SqlDialect.Pgsql,
-        "r.\"ContentVersion\" >= @minChangeVersion",
+        "r.\"ContentVersion\" > @minChangeVersion",
         "r.\"ContentVersion\" <= @maxChangeVersion"
     )]
     [TestCase(
         SqlDialect.Mssql,
-        "r.[ContentVersion] >= @minChangeVersion",
+        "r.[ContentVersion] > @minChangeVersion",
         "r.[ContentVersion] <= @maxChangeVersion"
     )]
     public void It_should_filter_the_root_mirrored_content_version_when_both_change_version_bounds_are_supplied(
@@ -1015,7 +1015,7 @@ public class Given_RelationalQueryPageKeysetPlanner
             changeVersionRange: new ChangeVersionRange(100L, null)
         );
 
-        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" > @minChangeVersion");
         keyset.Plan.PageDocumentIdSql.Should().NotContain("@maxChangeVersion");
         keyset.ParameterValues["minChangeVersion"].Should().Be(100L);
         keyset.ParameterValues.Keys.Should().NotContain("maxChangeVersion");
@@ -1119,7 +1119,7 @@ public class Given_RelationalQueryPageKeysetPlanner
         );
 
         keyset.Plan.PageDocumentIdSql.Should().Contain("r.[SchoolId] = @schoolId");
-        keyset.Plan.PageDocumentIdSql.Should().Contain("r.[ContentVersion] >= @minChangeVersion");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.[ContentVersion] > @minChangeVersion");
         keyset.Plan.PageDocumentIdSql.Should().Contain("r.[ContentVersion] <= @maxChangeVersion");
         keyset.Plan.PageDocumentIdSql.Should().Contain("@ClaimEducationOrganizationIds_0");
         keyset.ParameterValues["schoolId"].Should().Be(456);

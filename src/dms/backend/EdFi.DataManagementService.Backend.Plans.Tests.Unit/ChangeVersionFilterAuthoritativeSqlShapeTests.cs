@@ -95,11 +95,11 @@ public class Given_ChangeVersionFilters_Over_Authoritative_MappingSets
 
         keyset.Plan.PageDocumentIdSql.Should().Contain("FROM \"dms\".\"Descriptor\" r");
         keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ResourceKeyId\" = @resourceKeyId");
-        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" > @minChangeVersion");
         keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" <= @maxChangeVersion");
         keyset.Plan.TotalCountSql.Should().NotBeNull();
         keyset.Plan.TotalCountSql.Should().Contain("r.\"ResourceKeyId\" = @resourceKeyId");
-        keyset.Plan.TotalCountSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
+        keyset.Plan.TotalCountSql.Should().Contain("r.\"ContentVersion\" > @minChangeVersion");
         keyset.Plan.TotalCountSql.Should().Contain("r.\"ContentVersion\" <= @maxChangeVersion");
         keyset
             .ParameterValues["resourceKeyId"]
@@ -260,12 +260,12 @@ public class Given_ChangeVersionFilters_Over_Authoritative_MappingSets
         );
 
         keyset.Plan.PageDocumentIdSql.Should().Contain($"FROM {expectedRootFromFragment}");
-        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" > @minChangeVersion");
         keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" <= @maxChangeVersion");
         keyset.Plan.PageDocumentIdSql.Should().NotContain("\"dms\".\"Document\"");
         keyset.Plan.TotalCountSql.Should().NotBeNull();
         keyset.Plan.TotalCountSql.Should().Contain($"FROM {expectedRootFromFragment}");
-        keyset.Plan.TotalCountSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
+        keyset.Plan.TotalCountSql.Should().Contain("r.\"ContentVersion\" > @minChangeVersion");
         keyset.Plan.TotalCountSql.Should().Contain("r.\"ContentVersion\" <= @maxChangeVersion");
         keyset.Plan.TotalCountSql.Should().NotContain("\"dms\".\"Document\"");
         keyset.ParameterValues["minChangeVersion"].Should().Be(100L);

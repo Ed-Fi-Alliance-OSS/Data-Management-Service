@@ -285,6 +285,30 @@ public class Given_MaterializedDocumentFixtureSeeder
     }
 
     [Test]
+    public void It_generates_a_valid_mssql_document_stamp_update_without_a_trailing_comma()
+    {
+        var commands = new MaterializedDocumentFixtureSeeder(
+            MaterializedDocumentFixtureSqlDialect.Mssql,
+            new MaterializedDocumentFixtureSeederOptions { CreateSchemasAndTables = false }
+        ).BuildSetupCommands(_failureFixture);
+
+        var stampUpdate = commands.Single(command =>
+            command.CommandText.StartsWith("UPDATE [dms].[Document]", StringComparison.Ordinal)
+        );
+
+        stampUpdate
+            .CommandText.Should()
+            .Be(
+                """
+                UPDATE [dms].[Document]
+                SET [ContentVersion] = @p0,
+                    [ContentLastModifiedAt] = @p1
+                WHERE [DocumentId] = @p2
+                """
+            );
+    }
+
+    [Test]
     public void It_wraps_document_identity_insert_when_targeting_an_existing_mssql_generated_schema()
     {
         var commands = new MaterializedDocumentFixtureSeeder(
