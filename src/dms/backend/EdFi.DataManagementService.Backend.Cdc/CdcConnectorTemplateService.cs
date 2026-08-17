@@ -12,9 +12,15 @@ namespace EdFi.DataManagementService.Backend.Cdc;
 public interface ICdcConnectorTemplateService
 {
     CdcProviderSetupReadiness GetProviderSetupReadiness(CdcProviderSetupResult providerSetupResult);
+
+    CdcConnectorTemplateValidationResult ValidateRequest(
+        CdcConnectorTemplateRequest request,
+        CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.RequestValidation
+    );
 }
 
-internal sealed class CdcConnectorTemplateService : ICdcConnectorTemplateService
+internal sealed class CdcConnectorTemplateService(ICdcConnectorTemplateInputValidator inputValidator)
+    : ICdcConnectorTemplateService
 {
     public CdcProviderSetupReadiness GetProviderSetupReadiness(CdcProviderSetupResult providerSetupResult)
     {
@@ -28,6 +34,11 @@ internal sealed class CdcConnectorTemplateService : ICdcConnectorTemplateService
                     or CdcProviderSetupOutcome.ExactMatch
         );
     }
+
+    public CdcConnectorTemplateValidationResult ValidateRequest(
+        CdcConnectorTemplateRequest request,
+        CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.RequestValidation
+    ) => inputValidator.ValidateRequest(request, sourcePhase);
 }
 
 public sealed record CdcProviderSetupReadiness(
@@ -42,6 +53,12 @@ public static class CdcConnectorTemplateServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
+        services.TryAdd(
+            ServiceDescriptor.Scoped<
+                ICdcConnectorTemplateInputValidator,
+                CdcConnectorTemplateInputValidator
+            >()
+        );
         services.TryAdd(
             ServiceDescriptor.Scoped<ICdcConnectorTemplateService, CdcConnectorTemplateService>()
         );
