@@ -9,6 +9,7 @@ using FluentAssertions;
 using FluentAssertions.Execution;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Backend.Cdc.Tests.Unit.CdcConnectorTemplateTestData;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 
@@ -17,16 +18,12 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 [Category("CdcConnectorTemplateRenderingSqlServer")]
 public class Given_CdcConnectorTemplateSqlServerRendering
 {
-    private static readonly CdcSourceFingerprint SourceFingerprint = new(
-        "cdc-source-fingerprint-v1",
-        "physical-source-fingerprint"
-    );
-
     [Test]
     public void It_renders_the_sqlserver_connector_contract_from_provider_setup_metadata()
     {
         CdcConnectorTemplateResult result = Render(
             BuildRequest(
+                CdcProvider.SqlServer,
                 deploymentPolicy: new CdcConnectorTemplateDeploymentPolicy(
                     "broker-1:9092,broker-2:9092",
                     maxRecordBytes: 67_108_864,
@@ -115,22 +112,30 @@ public class Given_CdcConnectorTemplateSqlServerRendering
     {
         CdcConnectorTemplateResult result = Render(
             BuildRequest(
+                CdcProvider.SqlServer,
                 sourceTableInventory:
                 [
                     BuildSourceTable(
+                        CdcProvider.SqlServer,
                         CdcSourceTableKind.CdcHeartbeat,
                         "CdcHeartbeat",
                         [
-                            BuildColumn("HeartbeatId"),
-                            BuildColumn("HeartbeatSequence", 2),
-                            BuildColumn("HeartbeatAt", 3),
+                            BuildColumn(CdcProvider.SqlServer, "HeartbeatId"),
+                            BuildColumn(CdcProvider.SqlServer, "HeartbeatSequence", 2),
+                            BuildColumn(CdcProvider.SqlServer, "HeartbeatAt", 3),
                         ]
                     ),
-                    BuildSourceTable(CdcSourceTableKind.Document, "Document", [BuildColumn("DocumentUuid")]),
                     BuildSourceTable(
+                        CdcProvider.SqlServer,
+                        CdcSourceTableKind.Document,
+                        "Document",
+                        [BuildColumn(CdcProvider.SqlServer, "DocumentUuid")]
+                    ),
+                    BuildSourceTable(
+                        CdcProvider.SqlServer,
                         CdcSourceTableKind.DocumentCache,
                         "DocumentCache",
-                        [BuildColumn("DocumentUuid")]
+                        [BuildColumn(CdcProvider.SqlServer, "DocumentUuid")]
                     ),
                 ],
                 expectedMessageKeyColumns:
@@ -155,25 +160,29 @@ public class Given_CdcConnectorTemplateSqlServerRendering
     {
         CdcConnectorTemplateResult result = Render(
             BuildRequest(
+                CdcProvider.SqlServer,
                 sourceTableInventory:
                 [
                     BuildSourceTable(
+                        CdcProvider.SqlServer,
                         CdcSourceTableKind.DocumentCache,
                         "DocumentCache",
-                        [BuildColumn("DocumentUuid")]
+                        [BuildColumn(CdcProvider.SqlServer, "DocumentUuid")]
                     ),
                     BuildSourceTable(
+                        CdcProvider.SqlServer,
                         CdcSourceTableKind.Document,
                         "DocumentProjectionWork;DROP TABLE",
-                        [BuildColumn("DocumentUuid")]
+                        [BuildColumn(CdcProvider.SqlServer, "DocumentUuid")]
                     ),
                     BuildSourceTable(
+                        CdcProvider.SqlServer,
                         CdcSourceTableKind.CdcHeartbeat,
                         "CdcHeartbeat",
                         [
-                            BuildColumn("HeartbeatId"),
-                            BuildColumn("HeartbeatSequence", 2),
-                            BuildColumn("HeartbeatAt", 3),
+                            BuildColumn(CdcProvider.SqlServer, "HeartbeatId"),
+                            BuildColumn(CdcProvider.SqlServer, "HeartbeatSequence", 2),
+                            BuildColumn(CdcProvider.SqlServer, "HeartbeatAt", 3),
                         ]
                     ),
                 ]
@@ -211,8 +220,15 @@ public class Given_CdcConnectorTemplateSqlServerRendering
     {
         CdcConnectorTemplateResult result = Render(
             BuildRequest(
+                CdcProvider.SqlServer,
                 sourceTableInventory: BuildSourceInventoryReplacing(
-                    BuildSourceTable(tableKind, tableName, [BuildColumn("DocumentUuid;DROP_TABLE")])
+                    CdcProvider.SqlServer,
+                    BuildSourceTable(
+                        CdcProvider.SqlServer,
+                        tableKind,
+                        tableName,
+                        [BuildColumn(CdcProvider.SqlServer, "DocumentUuid;DROP_TABLE")]
+                    )
                 )
             )
         );
@@ -244,11 +260,17 @@ public class Given_CdcConnectorTemplateSqlServerRendering
     {
         CdcConnectorTemplateResult result = Render(
             BuildRequest(
+                CdcProvider.SqlServer,
                 sourceTableInventory: BuildSourceInventoryReplacing(
+                    CdcProvider.SqlServer,
                     BuildSourceTable(
+                        CdcProvider.SqlServer,
                         CdcSourceTableKind.Document,
                         "Document",
-                        [BuildColumn("DocumentUuid"), BuildColumn("DocumentUuid", 2)]
+                        [
+                            BuildColumn(CdcProvider.SqlServer, "DocumentUuid"),
+                            BuildColumn(CdcProvider.SqlServer, "DocumentUuid", 2),
+                        ]
                     )
                 )
             )
@@ -278,6 +300,7 @@ public class Given_CdcConnectorTemplateSqlServerRendering
     {
         CdcConnectorTemplateResult result = Render(
             BuildRequest(
+                CdcProvider.SqlServer,
                 providerConnectionProperties: new Dictionary<string, string>
                 {
                     ["database.hostname"] = "sqlserver.internal",
@@ -306,6 +329,7 @@ public class Given_CdcConnectorTemplateSqlServerRendering
     {
         CdcConnectorTemplateResult result = Render(
             BuildRequest(
+                CdcProvider.SqlServer,
                 deploymentPolicy: new CdcConnectorTemplateDeploymentPolicy(
                     "broker:9092",
                     maxRecordBytes: 1_048_576,
@@ -350,6 +374,7 @@ public class Given_CdcConnectorTemplateSqlServerRendering
     {
         CdcConnectorTemplateResult result = Render(
             BuildRequest(
+                CdcProvider.SqlServer,
                 providerConnectionProperties: new Dictionary<string, string>
                 {
                     ["database.hostname"] = "sqlserver.internal",
@@ -380,7 +405,7 @@ public class Given_CdcConnectorTemplateSqlServerRendering
     [Test]
     public void It_rejects_missing_message_key_inventory_before_rendering()
     {
-        Action act = () => BuildRequest(expectedMessageKeyColumns: []);
+        Action act = () => BuildRequest(CdcProvider.SqlServer, expectedMessageKeyColumns: []);
 
         act.Should().Throw<ArgumentException>().WithMessage("*message-key inventory*");
     }
@@ -396,153 +421,6 @@ public class Given_CdcConnectorTemplateSqlServerRendering
 
         return service.Render(request);
     }
-
-    private static CdcConnectorTemplateRequest BuildRequest(
-        CdcConnectorTemplateDeploymentPolicy? deploymentPolicy = null,
-        IReadOnlyList<CdcProviderArtifactObservation>? artifactInventory = null,
-        IReadOnlyList<CdcSourceTableInventory>? sourceTableInventory = null,
-        IReadOnlyList<CdcExpectedMessageKeyColumns>? expectedMessageKeyColumns = null,
-        IReadOnlyDictionary<string, string>? providerConnectionProperties = null,
-        IReadOnlyDictionary<string, string>? kafkaSecurityProperties = null
-    ) =>
-        new(
-            BuildBinding(),
-            new CdcConnectorProviderSetupEvidence(
-                bindingGeneration: 7,
-                BuildProviderSetupResult(artifactInventory, sourceTableInventory, expectedMessageKeyColumns)
-            ),
-            deploymentPolicy
-                ?? new CdcConnectorTemplateDeploymentPolicy(
-                    "broker-1:9092,broker-2:9092",
-                    maxRecordBytes: 67_108_864
-                ),
-            new CdcProviderConnectionProperties(
-                CdcProvider.SqlServer,
-                providerConnectionProperties
-                    ?? new Dictionary<string, string>
-                    {
-                        ["database.hostname"] = "sqlserver.internal",
-                        ["database.port"] = "1433",
-                        ["database.user"] = "connector_user",
-                        ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
-                        ["database.names"] = "edfi_datastore",
-                    }
-            ),
-            new CdcKafkaClientSecurityProperties(kafkaSecurityProperties ?? new Dictionary<string, string>())
-        );
-
-    private static CdcConnectorTemplateBindingIdentity BuildBinding() =>
-        new(
-            CdcProvider.SqlServer,
-            new CdcSafeName("dms_binding_connector"),
-            "edfi.documents",
-            bindingGeneration: 7,
-            partitionerAlgorithm: "kafka-murmur2-v1",
-            SourceFingerprint
-        );
-
-    private static CdcProviderSetupResult BuildProviderSetupResult(
-        IReadOnlyList<CdcProviderArtifactObservation>? artifactInventory,
-        IReadOnlyList<CdcSourceTableInventory>? sourceTableInventory,
-        IReadOnlyList<CdcExpectedMessageKeyColumns>? expectedMessageKeyColumns
-    ) =>
-        new(
-            Provider: CdcProvider.SqlServer,
-            Mode: CdcProviderSetupMode.InitialCreateOrExactMatch,
-            Outcome: CdcProviderSetupOutcome.CreatedOrMatched,
-            BoundPhysicalSourceFingerprint: SourceFingerprint,
-            ObservedSourceFingerprint: SourceFingerprint,
-            ArtifactInventory: artifactInventory ?? BuildSqlServerArtifactInventory(),
-            GrantInventory: [],
-            SourceTableInventory: sourceTableInventory ?? BuildRequiredSourceTableInventory(),
-            ExpectedMessageKeyColumns: expectedMessageKeyColumns ?? BuildExpectedMessageKeyColumns(),
-            HeartbeatActionQuery: new CdcHeartbeatActionQuery("select 1", "sha256-safe"),
-            ProviderHistoryObservations: BuildSqlServerProviderHistoryObservations(),
-            ManifestPayload: null,
-            Diagnostics: []
-        );
-
-    private static IReadOnlyList<CdcProviderArtifactObservation> BuildSqlServerArtifactInventory() =>
-        [
-            new(
-                CdcProviderArtifactKind.SqlServerCaptureInstance,
-                new CdcSafeName("dms_binding_document_cache_capture"),
-                CdcProviderArtifactState.Matched,
-                new Dictionary<string, string>()
-            ),
-            new(
-                CdcProviderArtifactKind.SqlServerCaptureInstance,
-                new CdcSafeName("dms_binding_document_capture"),
-                CdcProviderArtifactState.Matched,
-                new Dictionary<string, string>()
-            ),
-            new(
-                CdcProviderArtifactKind.SqlServerCaptureInstance,
-                new CdcSafeName("dms_binding_cdc_heartbeat_capture"),
-                CdcProviderArtifactState.Matched,
-                new Dictionary<string, string>()
-            ),
-        ];
-
-    private static IReadOnlyList<CdcProviderHistoryObservation> BuildSqlServerProviderHistoryObservations() =>
-        [
-            new(
-                CdcProviderArtifactKind.SqlServerCaptureInstance,
-                new CdcSafeName("dms_binding_document_cache_capture"),
-                new Dictionary<string, string>
-                {
-                    ["capture_instance"] = "dms_binding_document_cache_capture",
-                },
-                CdcProviderRetryContinuityClassification.None
-            ),
-            new(
-                CdcProviderArtifactKind.SqlServerCaptureInstance,
-                new CdcSafeName("dms_binding_document_capture"),
-                new Dictionary<string, string> { ["capture_instance"] = "dms_binding_document_capture" },
-                CdcProviderRetryContinuityClassification.None
-            ),
-        ];
-
-    private static IReadOnlyList<CdcSourceTableInventory> BuildRequiredSourceTableInventory() =>
-        [
-            BuildSourceTable(
-                CdcSourceTableKind.DocumentCache,
-                "DocumentCache",
-                [BuildColumn("DocumentUuid")]
-            ),
-            BuildSourceTable(CdcSourceTableKind.Document, "Document", [BuildColumn("DocumentUuid")]),
-            BuildSourceTable(
-                CdcSourceTableKind.CdcHeartbeat,
-                "CdcHeartbeat",
-                [
-                    BuildColumn("HeartbeatId"),
-                    BuildColumn("HeartbeatSequence", 2),
-                    BuildColumn("HeartbeatAt", 3),
-                ]
-            ),
-        ];
-
-    private static CdcSourceTableInventory BuildSourceTable(
-        CdcSourceTableKind tableKind,
-        string tableName,
-        IReadOnlyList<CdcSourceColumnInventory> columns
-    ) => new(tableKind, new DbTableName(new DbSchemaName("dms"), tableName), $"[dms].[{tableName}]", columns);
-
-    private static CdcSourceColumnInventory BuildColumn(string columnName, int ordinal = 1) =>
-        new(new DbColumnName(columnName), $"[{columnName}]", ordinal, "nvarchar(max)", IsNullable: false);
-
-    private static IReadOnlyList<CdcSourceTableInventory> BuildSourceInventoryReplacing(
-        CdcSourceTableInventory replacement
-    ) =>
-        BuildRequiredSourceTableInventory()
-            .Select(table => table.TableKind == replacement.TableKind ? replacement : table)
-            .ToArray();
-
-    private static IReadOnlyList<CdcExpectedMessageKeyColumns> BuildExpectedMessageKeyColumns() =>
-        [
-            new(CdcSourceTableKind.DocumentCache, [new DbColumnName("DocumentUuid")]),
-            new(CdcSourceTableKind.Document, [new DbColumnName("DocumentUuid")]),
-        ];
 
     private static IEnumerable<string> DiagnosticText(CdcConnectorTemplateDiagnostic diagnostic) =>
         [diagnostic.ExpectedValue ?? string.Empty, diagnostic.ObservedValue ?? string.Empty];

@@ -4,11 +4,11 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.Ddl;
-using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using FluentAssertions.Execution;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Backend.Cdc.Tests.Unit.CdcConnectorTemplateTestData;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 
@@ -17,11 +17,6 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 [Category("CdcConnectorTemplateIntegrationBoundaries")]
 public class Given_CdcConnectorTemplateIntegrationBoundaries
 {
-    private static readonly CdcSourceFingerprint SourceFingerprint = new(
-        "cdc-source-fingerprint-v1",
-        "physical-source-fingerprint"
-    );
-
     private static readonly IReadOnlyList<ForbiddenSourceToken> ForbiddenSourceTokens =
     [
         new("HttpClient", IsNeverAllowed),
@@ -42,7 +37,9 @@ public class Given_CdcConnectorTemplateIntegrationBoundaries
             serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
         CdcConnectorTemplateRequest request = BuildRequest(
             CdcProvider.SqlServer,
-            new CdcConnectorTemplateArtifactOutputRequest(includeRedactedArtifactPayload: true)
+            artifactOutput: new CdcConnectorTemplateArtifactOutputRequest(
+                includeRedactedArtifactPayload: true
+            )
         );
 
         CdcConnectorTemplateResult result = service.Render(request);
@@ -149,187 +146,6 @@ public class Given_CdcConnectorTemplateIntegrationBoundaries
 
     private static ServiceProvider BuildServiceProvider() =>
         new ServiceCollection().AddCdcConnectorTemplates().BuildServiceProvider();
-
-    private static CdcConnectorTemplateRequest BuildRequest(
-        CdcProvider provider,
-        CdcConnectorTemplateArtifactOutputRequest? artifactOutput = null
-    ) =>
-        new(
-            BuildBinding(provider),
-            new CdcConnectorProviderSetupEvidence(bindingGeneration: 7, BuildProviderSetupResult(provider)),
-            new CdcConnectorTemplateDeploymentPolicy(
-                "broker-1:9092,broker-2:9092",
-                maxRecordBytes: 67_108_864,
-                heartbeatInterval: TimeSpan.FromSeconds(5),
-                sqlServerPollInterval: provider == CdcProvider.SqlServer ? TimeSpan.FromSeconds(2) : null
-            ),
-            new CdcProviderConnectionProperties(provider, BuildProviderConnectionProperties(provider)),
-            CdcKafkaClientSecurityProperties.Empty,
-            artifactOutput
-        );
-
-    private static CdcConnectorTemplateBindingIdentity BuildBinding(CdcProvider provider) =>
-        new(
-            provider,
-            new CdcSafeName("dms_binding_connector"),
-            "edfi.documents",
-            bindingGeneration: 7,
-            partitionerAlgorithm: "kafka-murmur2-v1",
-            SourceFingerprint
-        );
-
-    private static IReadOnlyDictionary<string, string> BuildProviderConnectionProperties(
-        CdcProvider provider
-    ) =>
-        provider switch
-        {
-            CdcProvider.Postgresql => new Dictionary<string, string>
-            {
-                ["database.hostname"] = "postgresql.internal",
-                ["database.port"] = "5432",
-                ["database.user"] = "connector_user",
-                ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
-                ["database.dbname"] = "edfi_datastore",
-            },
-            CdcProvider.SqlServer => new Dictionary<string, string>
-            {
-                ["database.hostname"] = "sqlserver.internal",
-                ["database.port"] = "1433",
-                ["database.user"] = "connector_user",
-                ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
-                ["database.names"] = "edfi_datastore",
-            },
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(provider),
-                provider,
-                "Unsupported CDC provider."
-            ),
-        };
-
-    private static CdcProviderSetupResult BuildProviderSetupResult(CdcProvider provider) =>
-        new(
-            Provider: provider,
-            Mode: CdcProviderSetupMode.InitialCreateOrExactMatch,
-            Outcome: CdcProviderSetupOutcome.CreatedOrMatched,
-            BoundPhysicalSourceFingerprint: SourceFingerprint,
-            ObservedSourceFingerprint: SourceFingerprint,
-            ArtifactInventory: BuildArtifactInventory(provider),
-            GrantInventory: [],
-            SourceTableInventory: BuildRequiredSourceTableInventory(provider),
-            ExpectedMessageKeyColumns: BuildExpectedMessageKeyColumns(),
-            HeartbeatActionQuery: new CdcHeartbeatActionQuery("select 1", "sha256-safe"),
-            ProviderHistoryObservations: [],
-            ManifestPayload: null,
-            Diagnostics: []
-        );
-
-    private static IReadOnlyList<CdcProviderArtifactObservation> BuildArtifactInventory(
-        CdcProvider provider
-    ) =>
-        provider switch
-        {
-            CdcProvider.Postgresql =>
-            [
-                new(
-                    CdcProviderArtifactKind.PostgresqlPublication,
-                    new CdcSafeName("dms_binding_publication"),
-                    CdcProviderArtifactState.Matched,
-                    new Dictionary<string, string>()
-                ),
-                new(
-                    CdcProviderArtifactKind.PostgresqlReplicationSlot,
-                    new CdcSafeName("dms_binding_slot"),
-                    CdcProviderArtifactState.Matched,
-                    new Dictionary<string, string>()
-                ),
-            ],
-            CdcProvider.SqlServer =>
-            [
-                new(
-                    CdcProviderArtifactKind.SqlServerCaptureInstance,
-                    new CdcSafeName("dms_binding_document_cache_capture"),
-                    CdcProviderArtifactState.Matched,
-                    new Dictionary<string, string>()
-                ),
-                new(
-                    CdcProviderArtifactKind.SqlServerCaptureInstance,
-                    new CdcSafeName("dms_binding_document_capture"),
-                    CdcProviderArtifactState.Matched,
-                    new Dictionary<string, string>()
-                ),
-                new(
-                    CdcProviderArtifactKind.SqlServerCaptureInstance,
-                    new CdcSafeName("dms_binding_cdc_heartbeat_capture"),
-                    CdcProviderArtifactState.Matched,
-                    new Dictionary<string, string>()
-                ),
-            ],
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(provider),
-                provider,
-                "Unsupported CDC provider."
-            ),
-        };
-
-    private static IReadOnlyList<CdcSourceTableInventory> BuildRequiredSourceTableInventory(
-        CdcProvider provider
-    ) =>
-        [
-            BuildSourceTable(
-                provider,
-                CdcSourceTableKind.DocumentCache,
-                "DocumentCache",
-                [BuildColumn(provider, "DocumentUuid")]
-            ),
-            BuildSourceTable(
-                provider,
-                CdcSourceTableKind.Document,
-                "Document",
-                [BuildColumn(provider, "DocumentUuid")]
-            ),
-            BuildSourceTable(
-                provider,
-                CdcSourceTableKind.CdcHeartbeat,
-                "CdcHeartbeat",
-                [
-                    BuildColumn(provider, "HeartbeatId"),
-                    BuildColumn(provider, "HeartbeatSequence", 2),
-                    BuildColumn(provider, "HeartbeatAt", 3),
-                ]
-            ),
-        ];
-
-    private static CdcSourceTableInventory BuildSourceTable(
-        CdcProvider provider,
-        CdcSourceTableKind tableKind,
-        string tableName,
-        IReadOnlyList<CdcSourceColumnInventory> columns
-    ) =>
-        new(
-            tableKind,
-            new DbTableName(new DbSchemaName("dms"), tableName),
-            provider == CdcProvider.Postgresql ? $"\"dms\".\"{tableName}\"" : $"[dms].[{tableName}]",
-            columns
-        );
-
-    private static CdcSourceColumnInventory BuildColumn(
-        CdcProvider provider,
-        string columnName,
-        int ordinal = 1
-    ) =>
-        new(
-            new DbColumnName(columnName),
-            provider == CdcProvider.Postgresql ? $"\"{columnName}\"" : $"[{columnName}]",
-            ordinal,
-            provider == CdcProvider.Postgresql ? "text" : "nvarchar(max)",
-            IsNullable: false
-        );
-
-    private static IReadOnlyList<CdcExpectedMessageKeyColumns> BuildExpectedMessageKeyColumns() =>
-        [
-            new(CdcSourceTableKind.DocumentCache, [new DbColumnName("DocumentUuid")]),
-            new(CdcSourceTableKind.Document, [new DbColumnName("DocumentUuid")]),
-        ];
 
     private static IReadOnlyList<SourceTokenMatch> EnumerateCdcSourceTokenMatches() =>
         CdcSourceFiles()

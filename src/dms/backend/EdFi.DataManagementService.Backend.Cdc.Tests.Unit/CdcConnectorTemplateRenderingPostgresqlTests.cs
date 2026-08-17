@@ -9,6 +9,7 @@ using FluentAssertions;
 using FluentAssertions.Execution;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Backend.Cdc.Tests.Unit.CdcConnectorTemplateTestData;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 
@@ -17,15 +18,10 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 [Category("CdcConnectorTemplateRenderingPostgresql")]
 public class Given_CdcConnectorTemplatePostgresqlRendering
 {
-    private static readonly CdcSourceFingerprint SourceFingerprint = new(
-        "cdc-source-fingerprint-v1",
-        "physical-source-fingerprint"
-    );
-
     [Test]
     public void It_renders_the_postgresql_connector_contract_from_provider_setup_metadata()
     {
-        CdcConnectorTemplateResult result = Render(BuildRequest());
+        CdcConnectorTemplateResult result = Render(BuildRequest(CdcProvider.Postgresql));
 
         using var _ = new AssertionScope();
         result.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
@@ -70,22 +66,30 @@ public class Given_CdcConnectorTemplatePostgresqlRendering
     {
         CdcConnectorTemplateResult result = Render(
             BuildRequest(
+                CdcProvider.Postgresql,
                 sourceTableInventory:
                 [
                     BuildSourceTable(
+                        CdcProvider.Postgresql,
                         CdcSourceTableKind.CdcHeartbeat,
                         "CdcHeartbeat",
                         [
-                            BuildColumn("HeartbeatId"),
-                            BuildColumn("HeartbeatSequence", 2),
-                            BuildColumn("HeartbeatAt", 3),
+                            BuildColumn(CdcProvider.Postgresql, "HeartbeatId"),
+                            BuildColumn(CdcProvider.Postgresql, "HeartbeatSequence", 2),
+                            BuildColumn(CdcProvider.Postgresql, "HeartbeatAt", 3),
                         ]
                     ),
-                    BuildSourceTable(CdcSourceTableKind.Document, "Document", [BuildColumn("DocumentUuid")]),
                     BuildSourceTable(
+                        CdcProvider.Postgresql,
+                        CdcSourceTableKind.Document,
+                        "Document",
+                        [BuildColumn(CdcProvider.Postgresql, "DocumentUuid")]
+                    ),
+                    BuildSourceTable(
+                        CdcProvider.Postgresql,
                         CdcSourceTableKind.DocumentCache,
                         "DocumentCache",
-                        [BuildColumn("DocumentUuid")]
+                        [BuildColumn(CdcProvider.Postgresql, "DocumentUuid")]
                     ),
                 ],
                 expectedMessageKeyColumns:
@@ -108,7 +112,9 @@ public class Given_CdcConnectorTemplatePostgresqlRendering
     [Test]
     public void It_returns_diagnostics_without_rendering_when_publication_or_slot_metadata_is_missing()
     {
-        CdcConnectorTemplateResult result = Render(BuildRequest(artifactInventory: []));
+        CdcConnectorTemplateResult result = Render(
+            BuildRequest(CdcProvider.Postgresql, artifactInventory: [])
+        );
 
         using var _ = new AssertionScope();
         result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
@@ -134,25 +140,29 @@ public class Given_CdcConnectorTemplatePostgresqlRendering
     {
         CdcConnectorTemplateResult result = Render(
             BuildRequest(
+                CdcProvider.Postgresql,
                 sourceTableInventory:
                 [
                     BuildSourceTable(
+                        CdcProvider.Postgresql,
                         CdcSourceTableKind.DocumentCache,
                         "DocumentCache",
-                        [BuildColumn("DocumentUuid")]
+                        [BuildColumn(CdcProvider.Postgresql, "DocumentUuid")]
                     ),
                     BuildSourceTable(
+                        CdcProvider.Postgresql,
                         CdcSourceTableKind.Document,
                         "DocumentProjectionWork;DROP TABLE",
-                        [BuildColumn("DocumentUuid")]
+                        [BuildColumn(CdcProvider.Postgresql, "DocumentUuid")]
                     ),
                     BuildSourceTable(
+                        CdcProvider.Postgresql,
                         CdcSourceTableKind.CdcHeartbeat,
                         "CdcHeartbeat",
                         [
-                            BuildColumn("HeartbeatId"),
-                            BuildColumn("HeartbeatSequence", 2),
-                            BuildColumn("HeartbeatAt", 3),
+                            BuildColumn(CdcProvider.Postgresql, "HeartbeatId"),
+                            BuildColumn(CdcProvider.Postgresql, "HeartbeatSequence", 2),
+                            BuildColumn(CdcProvider.Postgresql, "HeartbeatAt", 3),
                         ]
                     ),
                 ]
@@ -190,8 +200,15 @@ public class Given_CdcConnectorTemplatePostgresqlRendering
     {
         CdcConnectorTemplateResult result = Render(
             BuildRequest(
+                CdcProvider.Postgresql,
                 sourceTableInventory: BuildSourceInventoryReplacing(
-                    BuildSourceTable(tableKind, tableName, [BuildColumn("DocumentUuid;DROP_TABLE")])
+                    CdcProvider.Postgresql,
+                    BuildSourceTable(
+                        CdcProvider.Postgresql,
+                        tableKind,
+                        tableName,
+                        [BuildColumn(CdcProvider.Postgresql, "DocumentUuid;DROP_TABLE")]
+                    )
                 )
             )
         );
@@ -223,11 +240,17 @@ public class Given_CdcConnectorTemplatePostgresqlRendering
     {
         CdcConnectorTemplateResult result = Render(
             BuildRequest(
+                CdcProvider.Postgresql,
                 sourceTableInventory: BuildSourceInventoryReplacing(
+                    CdcProvider.Postgresql,
                     BuildSourceTable(
+                        CdcProvider.Postgresql,
                         CdcSourceTableKind.Document,
                         "Document",
-                        [BuildColumn("DocumentUuid"), BuildColumn("DocumentUuid", 2)]
+                        [
+                            BuildColumn(CdcProvider.Postgresql, "DocumentUuid"),
+                            BuildColumn(CdcProvider.Postgresql, "DocumentUuid", 2),
+                        ]
                     )
                 )
             )
@@ -257,6 +280,7 @@ public class Given_CdcConnectorTemplatePostgresqlRendering
     {
         CdcConnectorTemplateResult result = Render(
             BuildRequest(
+                CdcProvider.Postgresql,
                 providerConnectionProperties: new Dictionary<string, string>
                 {
                     ["database.hostname"] = "postgresql.internal",
@@ -295,131 +319,6 @@ public class Given_CdcConnectorTemplatePostgresqlRendering
 
         return service.Render(request);
     }
-
-    private static CdcConnectorTemplateRequest BuildRequest(
-        IReadOnlyList<CdcProviderArtifactObservation>? artifactInventory = null,
-        IReadOnlyList<CdcSourceTableInventory>? sourceTableInventory = null,
-        IReadOnlyList<CdcExpectedMessageKeyColumns>? expectedMessageKeyColumns = null,
-        IReadOnlyDictionary<string, string>? providerConnectionProperties = null
-    ) =>
-        new(
-            BuildBinding(),
-            new CdcConnectorProviderSetupEvidence(
-                bindingGeneration: 7,
-                BuildProviderSetupResult(artifactInventory, sourceTableInventory, expectedMessageKeyColumns)
-            ),
-            new CdcConnectorTemplateDeploymentPolicy(
-                "broker-1:9092,broker-2:9092",
-                maxRecordBytes: 67_108_864
-            ),
-            new CdcProviderConnectionProperties(
-                CdcProvider.Postgresql,
-                providerConnectionProperties
-                    ?? new Dictionary<string, string>
-                    {
-                        ["database.hostname"] = "postgresql.internal",
-                        ["database.port"] = "5432",
-                        ["database.user"] = "connector_user",
-                        ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
-                        ["database.dbname"] = "edfi_datastore",
-                    }
-            ),
-            CdcKafkaClientSecurityProperties.Empty
-        );
-
-    private static CdcConnectorTemplateBindingIdentity BuildBinding() =>
-        new(
-            CdcProvider.Postgresql,
-            new CdcSafeName("dms_binding_connector"),
-            "edfi.documents",
-            bindingGeneration: 7,
-            partitionerAlgorithm: "kafka-murmur2-v1",
-            SourceFingerprint
-        );
-
-    private static CdcProviderSetupResult BuildProviderSetupResult(
-        IReadOnlyList<CdcProviderArtifactObservation>? artifactInventory,
-        IReadOnlyList<CdcSourceTableInventory>? sourceTableInventory,
-        IReadOnlyList<CdcExpectedMessageKeyColumns>? expectedMessageKeyColumns
-    ) =>
-        new(
-            Provider: CdcProvider.Postgresql,
-            Mode: CdcProviderSetupMode.InitialCreateOrExactMatch,
-            Outcome: CdcProviderSetupOutcome.CreatedOrMatched,
-            BoundPhysicalSourceFingerprint: SourceFingerprint,
-            ObservedSourceFingerprint: SourceFingerprint,
-            ArtifactInventory: artifactInventory ?? BuildPostgresqlArtifactInventory(),
-            GrantInventory: [],
-            SourceTableInventory: sourceTableInventory ?? BuildRequiredSourceTableInventory(),
-            ExpectedMessageKeyColumns: expectedMessageKeyColumns ?? BuildExpectedMessageKeyColumns(),
-            HeartbeatActionQuery: new CdcHeartbeatActionQuery("select 1", "sha256-safe"),
-            ProviderHistoryObservations: [],
-            ManifestPayload: null,
-            Diagnostics: []
-        );
-
-    private static IReadOnlyList<CdcProviderArtifactObservation> BuildPostgresqlArtifactInventory() =>
-        [
-            new(
-                CdcProviderArtifactKind.PostgresqlPublication,
-                new CdcSafeName("dms_binding_publication"),
-                CdcProviderArtifactState.Matched,
-                new Dictionary<string, string>()
-            ),
-            new(
-                CdcProviderArtifactKind.PostgresqlReplicationSlot,
-                new CdcSafeName("dms_binding_slot"),
-                CdcProviderArtifactState.Matched,
-                new Dictionary<string, string>()
-            ),
-        ];
-
-    private static IReadOnlyList<CdcSourceTableInventory> BuildRequiredSourceTableInventory() =>
-        [
-            BuildSourceTable(
-                CdcSourceTableKind.DocumentCache,
-                "DocumentCache",
-                [BuildColumn("DocumentUuid")]
-            ),
-            BuildSourceTable(CdcSourceTableKind.Document, "Document", [BuildColumn("DocumentUuid")]),
-            BuildSourceTable(
-                CdcSourceTableKind.CdcHeartbeat,
-                "CdcHeartbeat",
-                [
-                    BuildColumn("HeartbeatId"),
-                    BuildColumn("HeartbeatSequence", 2),
-                    BuildColumn("HeartbeatAt", 3),
-                ]
-            ),
-        ];
-
-    private static CdcSourceTableInventory BuildSourceTable(
-        CdcSourceTableKind tableKind,
-        string tableName,
-        IReadOnlyList<CdcSourceColumnInventory> columns
-    ) =>
-        new(
-            tableKind,
-            new DbTableName(new DbSchemaName("dms"), tableName),
-            $"\"dms\".\"{tableName}\"",
-            columns
-        );
-
-    private static CdcSourceColumnInventory BuildColumn(string columnName, int ordinal = 1) =>
-        new(new DbColumnName(columnName), $"\"{columnName}\"", ordinal, "text", IsNullable: false);
-
-    private static IReadOnlyList<CdcSourceTableInventory> BuildSourceInventoryReplacing(
-        CdcSourceTableInventory replacement
-    ) =>
-        BuildRequiredSourceTableInventory()
-            .Select(table => table.TableKind == replacement.TableKind ? replacement : table)
-            .ToArray();
-
-    private static IReadOnlyList<CdcExpectedMessageKeyColumns> BuildExpectedMessageKeyColumns() =>
-        [
-            new(CdcSourceTableKind.DocumentCache, [new DbColumnName("DocumentUuid")]),
-            new(CdcSourceTableKind.Document, [new DbColumnName("DocumentUuid")]),
-        ];
 
     private static IEnumerable<string> DiagnosticText(CdcConnectorTemplateDiagnostic diagnostic) =>
         [diagnostic.ExpectedValue ?? string.Empty, diagnostic.ObservedValue ?? string.Empty];
