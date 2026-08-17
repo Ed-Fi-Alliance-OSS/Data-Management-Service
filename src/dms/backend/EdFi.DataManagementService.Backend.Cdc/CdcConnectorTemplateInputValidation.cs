@@ -227,6 +227,44 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
         "topic.creation.",
     ];
 
+    private static readonly IReadOnlyList<string> _generatedKafkaSecurityPrefixes =
+    [
+        "producer.override.",
+        "schema.history.internal.producer.",
+        "schema.history.internal.consumer.",
+    ];
+
+    internal static IReadOnlyList<string> ReservedManifestKeys { get; } =
+        _reservedExactKeys
+            .Concat(_reservedKeyPrefixes.Select(prefix => $"{prefix}*"))
+            .OrderBy(key => key, StringComparer.Ordinal)
+            .ToArray();
+
+    internal static bool IsSecretBearingRenderedProperty(string propertyName)
+    {
+        if (_secretPropertyNames.Contains(propertyName))
+        {
+            return true;
+        }
+
+        string? suffix = GeneratedKafkaSecurityPropertySuffix(propertyName);
+        return suffix is not null
+            && (
+                _secretPropertyNames.Contains(suffix)
+                || suffix.EndsWith(".password", StringComparison.Ordinal)
+            );
+    }
+
+    internal static string? GeneratedKafkaSecurityPropertySuffix(string propertyName)
+    {
+        string prefix =
+            _generatedKafkaSecurityPrefixes.FirstOrDefault(prefix =>
+                propertyName.StartsWith(prefix, StringComparison.Ordinal)
+            ) ?? string.Empty;
+
+        return prefix.Length == 0 ? null : propertyName[prefix.Length..];
+    }
+
     public CdcConnectorTemplateValidationResult ValidateRequest(
         CdcConnectorTemplateRequest request,
         CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.RequestValidation
@@ -455,7 +493,7 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
             redactionClassification
         );
 
-    private static bool IsReservedKey(string propertyName) =>
+    internal static bool IsReservedKey(string propertyName) =>
         _reservedExactKeys.Contains(propertyName)
         || _reservedKeyPrefixes.Any(prefix => propertyName.StartsWith(prefix, StringComparison.Ordinal));
 

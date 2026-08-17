@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
@@ -20,6 +21,9 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
 {
     private const int DefaultHeartbeatIntervalMilliseconds = 5000;
     private const int DefaultProducerBufferBytes = 33_554_432;
+    private const string RedactedArtifactValue = "[redacted]";
+
+    private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
     public CdcConnectorTemplateResult Render(CdcConnectorTemplateRequest request)
     {
@@ -58,14 +62,20 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
 
         IReadOnlyDictionary<string, string> config = BuildConfig(request);
         var registrationPayload = new CdcKafkaConnectRegistrationPayload(request.ConnectorName, config);
+        string configSha256 = ComputeCanonicalConfigSha256(config);
+        CdcConnectorTemplateArtifactPayload? artifactPayload = BuildArtifactPayloadIfRequested(
+            request,
+            config,
+            configSha256
+        );
 
         return new CdcConnectorTemplateResult(
             request.BindingIdentity,
             CdcConnectorTemplateOutcome.Rendered,
             config,
             registrationPayload,
-            redactedArtifactPayload: null,
-            ComputeCanonicalConfigSha256(config),
+            artifactPayload,
+            configSha256,
             diagnostics
         );
     }
@@ -535,6 +545,130 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
                 "Unsupported CDC provider."
             ),
         };
+
+    private static CdcConnectorTemplateArtifactPayload? BuildArtifactPayloadIfRequested(
+        CdcConnectorTemplateRequest request,
+        IReadOnlyDictionary<string, string> config,
+        string configSha256
+    )
+    {
+        if (request.ArtifactOutput is not { IncludeRedactedArtifactPayload: true } artifactOutput)
+        {
+            return null;
+        }
+
+        CdcSafeName fileName = ManifestFileName(request.Provider);
+        string json = SerializeManifest(request, config, configSha256);
+        var payload = new CdcConnectorTemplateArtifactPayload(fileName, json);
+
+        if (artifactOutput.ManifestOutputDirectoryPath is not null)
+        {
+            Directory.CreateDirectory(artifactOutput.ManifestOutputDirectoryPath);
+            File.WriteAllText(
+                Path.Combine(artifactOutput.ManifestOutputDirectoryPath, fileName.Value),
+                json,
+                Utf8NoBom
+            );
+        }
+
+        return payload;
+    }
+
+    private static CdcSafeName ManifestFileName(CdcProvider provider) =>
+        new($"cdc-connector-template.{ProviderToken(provider)}.manifest.json");
+
+    private static string SerializeManifest(
+        CdcConnectorTemplateRequest request,
+        IReadOnlyDictionary<string, string> config,
+        string configSha256
+    )
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WriteNumber("version", 1);
+            writer.WriteString("provider", ProviderToken(request.Provider));
+            writer.WriteString("connectorName", request.ConnectorName.Value);
+            writer.WriteString("publicTopicName", request.PublicTopicName);
+            writer.WriteString("progressTopicName", request.ProgressTopicName);
+
+            if (request.SchemaHistoryTopicName is null)
+            {
+                writer.WriteNull("schemaHistoryTopicName");
+            }
+            else
+            {
+                writer.WriteString("schemaHistoryTopicName", request.SchemaHistoryTopicName);
+            }
+
+            writer.WriteString("configSha256", configSha256);
+            writer.WritePropertyName("redactedConfig");
+            WriteStringMap(writer, BuildRedactedConfig(config));
+            writer.WritePropertyName("reservedKeys");
+            WriteStringArray(writer, CdcConnectorTemplateInputValidator.ReservedManifestKeys);
+            writer.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static IReadOnlyDictionary<string, string> BuildRedactedConfig(
+        IReadOnlyDictionary<string, string> config
+    )
+    {
+        var redactedConfig = new SortedDictionary<string, string>(StringComparer.Ordinal);
+
+        foreach (var property in config)
+        {
+            redactedConfig[property.Key] = RedactArtifactValue(property.Key, property.Value);
+        }
+
+        return redactedConfig;
+    }
+
+    private static string RedactArtifactValue(string propertyName, string value) =>
+        IsArtifactRedactedProperty(propertyName) ? RedactedArtifactValue : value;
+
+    private static bool IsArtifactRedactedProperty(string propertyName) =>
+        propertyName.StartsWith("database.", StringComparison.Ordinal)
+        || propertyName == "heartbeat.action.query"
+        || propertyName == "schema.history.internal.kafka.bootstrap.servers"
+        || CdcConnectorTemplateInputValidator.IsSecretBearingRenderedProperty(propertyName)
+        || IsKafkaSecurityMaterialReference(propertyName);
+
+    private static bool IsKafkaSecurityMaterialReference(string propertyName)
+    {
+        string? suffix = CdcConnectorTemplateInputValidator.GeneratedKafkaSecurityPropertySuffix(
+            propertyName
+        );
+
+        return suffix
+            is "ssl.truststore.location"
+                or "ssl.truststore.certificates"
+                or "ssl.keystore.location"
+                or "ssl.keystore.certificate.chain";
+    }
+
+    private static void WriteStringMap(Utf8JsonWriter writer, IReadOnlyDictionary<string, string> properties)
+    {
+        writer.WriteStartObject();
+        foreach (var property in properties.OrderBy(property => property.Key, StringComparer.Ordinal))
+        {
+            writer.WriteString(property.Key, property.Value);
+        }
+        writer.WriteEndObject();
+    }
+
+    private static void WriteStringArray(Utf8JsonWriter writer, IReadOnlyList<string> values)
+    {
+        writer.WriteStartArray();
+        foreach (string value in values.OrderBy(value => value, StringComparer.Ordinal))
+        {
+            writer.WriteStringValue(value);
+        }
+        writer.WriteEndArray();
+    }
 
     private static string ComputeCanonicalConfigSha256(IReadOnlyDictionary<string, string> config)
     {
