@@ -98,6 +98,22 @@ public class Given_CdcConnectorTemplateContracts
     }
 
     [Test]
+    public void It_rejects_explicit_producer_buffer_bytes_below_max_record_bytes()
+    {
+        Action act = () =>
+            new CdcConnectorTemplateDeploymentPolicy(
+                kafkaBootstrapServers: "broker:9092",
+                maxRecordBytes: 67_108_864,
+                producerBufferBytes: 33_554_432
+            );
+
+        act.Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("producerBufferBytes")
+            .WithMessage("*producerBufferBytes*greater than or equal to maxRecordBytes*");
+    }
+
+    [Test]
     public void It_requires_the_binding_partitioner_algorithm_contract_token()
     {
         Action missingPartitionerAlgorithm = () =>
