@@ -425,3 +425,50 @@ implements those contracts.
    reservation, topic/ACL provisioning policy, offset-store lifecycle, initial readiness
    sequencing, teardown orchestration, or Connect REST workflow behavior beyond the direct
    registration needed for the smoke path.
+
+### Questions 2
+
+1. Which story and repository own implementing, publishing, and versioning `org.edfi.kafka.connect.partitioner.KafkaMurmur2V1Partitioner`: should DMS-1322's Ed-Fi-Kafka-Connect work be expanded to include it, or does DMS-1321 include a cross-repo plugin change before its pinned-image smoke tests can pass?
+2. For DMS-1321 live validation, should the service accept Kafka Connect read-back config plus a fresh 19-01 `CdcProviderSetupResult` supplied by 19-04, or may it invoke the 19-01 validate-only/provider inspection service itself?
+3. What test project/category and CI gating should own DMS-1321's local Docker pinned-image smoke fixtures, especially when the qualified Ed-Fi Kafka Connect image or SQL Server 2025 provider is unavailable?
+4. What canonical input and serialization produce `configSha256`: the complete generated config map, the redacted config, or the Kafka Connect registration payload, and is the hash computed before or after stable key ordering/redaction?
+
+### Answers 2
+
+1. DMS-1322 in `Ed-Fi-Alliance-OSS/Ed-Fi-Kafka-Connect` should own implementing,
+   publishing, and versioning `org.edfi.kafka.connect.partitioner.KafkaMurmur2V1Partitioner`
+   because the class is part of the qualified connector image alongside
+   `DocumentState` and `DocumentStateJsonConverter`. DMS-1322's story should later be
+   updated to include this partitioner in its plugin/image scope. DMS-1321 should not
+   make a separate cross-repo plugin change; it should consume the qualified image digest,
+   render the explicit `producer.override.partitioner.class` property, and validate the
+   fixed key/partition vectors against that image. If the DMS-1322 image does not contain
+   the class yet, DMS-1321's pinned-image smoke evidence is blocked on that published
+   artifact.
+2. DMS-1321 live validation should accept the Kafka Connect read-back config plus a fresh
+   19-01 `CdcProviderSetupResult` supplied by 19-04. The validator should require that
+   result to be successful, for the same provider, binding generation, physical-source
+   fingerprint, source-table inventory, message-key inventory, and heartbeat action query
+   used to render the expected config. DMS-1321 must not invoke the 19-01 validate-only
+   provider inspection service itself; 19-04 owns orchestration and supplies the observed
+   provider result immediately before registration, restart, or status validation.
+3. Put the Docker pinned-image smoke fixtures in
+   `src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration`, with pure
+   renderer and canonicalization tests remaining in the CDC unit test project. Mark smoke
+   tests with `DatabaseIntegration`, `CdcConnectorTemplateSmoke`, and the provider-specific
+   `PostgresqlIntegration` or `MssqlIntegration` category. Normal PR CI should run the unit
+   and deterministic rendering tests; a separate CDC connector qualification lane should
+   run `CdcConnectorTemplateSmoke` with an explicit qualified Ed-Fi Kafka Connect image
+   digest and the required provider prerequisites. Local runs may `Assert.Ignore` with a
+   clear diagnostic when Docker, the image digest, PostgreSQL logical replication, or SQL
+   Server 2025 is unavailable, but the qualification CI lane must fail fast for those
+   missing prerequisites instead of reporting skipped evidence.
+4. Compute `configSha256` from the complete unredacted generated flat connector config map,
+   exactly as emitted under the Kafka Connect registration payload's `config` object,
+   including the connector `name` entry if the renderer emits it. Exclude the outer
+   registration payload, redacted manifest fields, artifact path, and `generatedAt`.
+   Canonicalize first by ordering keys with ordinal string comparison and serializing the
+   string-only map as compact UTF-8 JSON with `System.Text.Json`; then compute SHA-256 and
+   format it as `sha256:<lowercase-hex>`. Redaction happens only after this canonical hash
+   is computed, so changing an externalized credential reference or any generated value
+   changes the hash even when the manifest redacts that property.

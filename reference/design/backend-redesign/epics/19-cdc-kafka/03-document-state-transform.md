@@ -28,7 +28,8 @@ Connect plugin without changing the completed generic transform.
 ## Dependencies
 
 - Depends on the DMS-1245 design decisions.
-- Supplies the runnable transform artifact to 19-02 and 19-05.
+- Supplies the runnable transform, converter, and partitioner artifacts to 19-02 and
+  19-05.
 
 ## Implementation Scope
 
@@ -41,10 +42,13 @@ Connect plugin without changing the completed generic transform.
 - Add the narrowly scoped `DocumentStateJsonConverter` that passes only that named public
   JSON byte value unchanged and delegates every other record to Kafka Connect 4.3
   `JsonConverter` with the connector-template settings.
+- Add `org.edfi.kafka.connect.partitioner.KafkaMurmur2V1Partitioner`, implementing the
+  binding token used by connector-template generation.
 - Preserve the public transform shape: projection work has no transform record type.
   Provider fixtures fail closed if an unexpected `DocumentProjectionWork` record reaches
   the transform.
-- Package the transform in the qualified Ed-Fi Kafka Connect image.
+- Package the transform, converter, and partitioner in the qualified Ed-Fi Kafka Connect
+  image.
 - Retain regression coverage for the existing generic transform.
 
 ## Implementation Contract
@@ -52,6 +56,10 @@ Connect plugin without changing the completed generic transform.
 - Implement `org.edfi.kafka.connect.transforms.DocumentState` in
   `Ed-Fi-Alliance-OSS/Ed-Fi-Kafka-Connect` against the source mapping, message shape,
   progress routing, diagnostics, and runtime compatibility owned by the design references.
+- Implement `org.edfi.kafka.connect.partitioner.KafkaMurmur2V1Partitioner` in the same
+  plugin/image as the Ed-Fi transform and converter. It must implement the
+  `kafka-murmur2-v1` binding token exactly, while DMS-1321 owns rendering the explicit
+  producer property and validating the mapping against the qualified image.
 - Keep the completed generic `ExpandJson` transform unchanged and keep relational
   `DocumentState` behavior in one Ed-Fi-owned SMT instead of a stock SMT chain.
 - Keep transform-owned provider `SourceRecord` builders and malformed-record builders
@@ -84,9 +92,13 @@ Connect plugin without changing the completed generic transform.
   `DocumentStateJsonConverter`, including collection property absence, exact integer and
   decimal numeric values, and the named `DocumentStateJson` `BYTES` schema/version
   handshake.
+- Add fast fixed-vector tests for `KafkaMurmur2V1Partitioner` so the implementation proves
+  the `kafka-murmur2-v1` token independently of Kafka client defaults.
 - Add plugin-loading and smoke transformation tests in the qualified Ed-Fi Kafka Connect
-  image. Broader serialized-record, broker-backed progress acknowledgement, partitioner,
-  record-size, and consumer-conformance evidence remains assigned to 19-05 and 19-06.
+  image, including class loading for the partitioner. Connector-template rendering and
+  pinned-image partition-vector validation remain assigned to 19-02; broader
+  serialized-record, broker-backed progress acknowledgement, record-size, and
+  consumer-conformance evidence remains assigned to 19-05 and 19-06.
 - Keep regression tests for `ExpandJson$Value` running in the same plugin build so this
   story proves the new DMS-specific transform did not amend or replace the completed
   generic transform.
@@ -104,7 +116,10 @@ Connect plugin without changing the completed generic transform.
   `Float`, string conversion, Schema Registry, Avro, Protobuf, public `Struct`/`Decimal`
   schema inference, homogeneous collection-object requirements, or numeric token-text
   preservation.
-- Plugin-loading tests pass on the qualified connector runtime.
+- Partitioner fixed-vector tests prove `KafkaMurmur2V1Partitioner` implements the
+  `kafka-murmur2-v1` token before the image is consumed by DMS-1321.
+- Plugin-loading tests pass on the qualified connector runtime for the transform,
+  converter, and partitioner.
 - Regression tests cover the unchanged generic transform artifact.
 
 ## Not Assigned to This Story
