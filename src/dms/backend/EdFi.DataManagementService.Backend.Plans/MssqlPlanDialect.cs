@@ -78,6 +78,52 @@ internal sealed class MssqlPlanDialect : IPlanSqlDialect
     }
 
     /// <inheritdoc />
+    public string CandidateCountOverWindowSql => "COUNT_BIG(*) OVER ()";
+
+    /// <summary>
+    /// Appends the SQL Server partition-size expression.
+    /// </summary>
+    /// <remarks>
+    /// <c>CASE</c> rather than <c>GREATEST</c>, which requires SQL Server 2022 or later: nothing in this
+    /// repository establishes that floor for a deployment, and a partition endpoint is not the place to
+    /// introduce a minimum-version requirement. The ceiling expression therefore appears twice, which is
+    /// a scalar recomputation over an already-materialized row rather than a second pass over the
+    /// candidate set.
+    ///
+    /// <c>decimal(28,0) / decimal(10,0)</c> yields <c>decimal(38,11)</c> — 27 integral digits, above the
+    /// 19 a <c>bigint</c> count can need — so the quotient cannot lose an integral digit. Both operands
+    /// are cast explicitly so the result type does not depend on how a driver infers a parameter's type.
+    /// </remarks>
+    /// <param name="writer">The SQL writer to append to.</param>
+    /// <param name="candidateCountExpression">The already-qualified candidate count expression.</param>
+    /// <param name="partitionCountParameterName">The bare requested partition count parameter name.</param>
+    /// <param name="minimumPartitionSizeParameterName">The bare minimum partition size parameter name.</param>
+    public void AppendPartitionSizeExpression(
+        SqlWriter writer,
+        string candidateCountExpression,
+        string partitionCountParameterName,
+        string minimumPartitionSizeParameterName
+    )
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        ArgumentException.ThrowIfNullOrWhiteSpace(candidateCountExpression);
+
+        void AppendCeiling()
+        {
+            writer
+                .Append($"CAST(CEILING(CAST({candidateCountExpression} AS decimal(28,0)) / CAST(")
+                .AppendParameter(partitionCountParameterName)
+                .Append(" AS decimal(10,0))) AS bigint)");
+        }
+
+        writer.Append("CASE WHEN ");
+        AppendCeiling();
+        writer.Append(" > ").AppendParameter(minimumPartitionSizeParameterName).Append(" THEN ");
+        AppendCeiling();
+        writer.Append(" ELSE ").AppendParameter(minimumPartitionSizeParameterName).Append(" END");
+    }
+
+    /// <inheritdoc />
     public void AppendCreateKeysetTempTable(SqlWriter writer, KeysetTableContract keyset)
     {
         ArgumentNullException.ThrowIfNull(writer);
