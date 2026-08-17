@@ -30,6 +30,14 @@ public class Given_CdcConnectorTemplateSqlServerRendering
                     heartbeatInterval: TimeSpan.FromSeconds(5),
                     sqlServerPollInterval: TimeSpan.FromSeconds(2)
                 ),
+                providerConnectionProperties: new Dictionary<string, string>(
+                    BuildSqlServerConnectionProperties()
+                )
+                {
+                    ["driver.encrypt"] = "true",
+                    ["driver.trustServerCertificate"] = "true",
+                    ["driver.trustStorePassword"] = "${env:CDC_SQLSERVER_TRUSTSTORE_PASSWORD}",
+                },
                 kafkaSecurityProperties: new Dictionary<string, string>
                 {
                     ["security.protocol"] = "SASL_SSL",
@@ -54,6 +62,11 @@ public class Given_CdcConnectorTemplateSqlServerRendering
         result.Config.Should().Contain("unavailable.value.placeholder", "__debezium_unavailable_value");
         result.Config.Should().Contain("poll.interval.ms", "2000");
         result.Config.Should().Contain("database.names", "edfi_datastore");
+        result.Config.Should().Contain("driver.encrypt", "true");
+        result.Config.Should().Contain("driver.trustServerCertificate", "true");
+        result
+            .Config.Should()
+            .Contain("driver.trustStorePassword", "${env:CDC_SQLSERVER_TRUSTSTORE_PASSWORD}");
         result
             .Config.Should()
             .Contain("schema.history.internal.kafka.bootstrap.servers", "broker-1:9092,broker-2:9092");

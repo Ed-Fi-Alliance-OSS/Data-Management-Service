@@ -506,6 +506,7 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
 
     private static bool IsArtifactRedactedProperty(string propertyName) =>
         propertyName.StartsWith("database.", StringComparison.Ordinal)
+        || propertyName.StartsWith("driver.", StringComparison.Ordinal)
         || propertyName == "heartbeat.action.query"
         || propertyName == "schema.history.internal.kafka.bootstrap.servers"
         || CdcConnectorTemplateInputValidator.IsSecretBearingRenderedProperty(propertyName)

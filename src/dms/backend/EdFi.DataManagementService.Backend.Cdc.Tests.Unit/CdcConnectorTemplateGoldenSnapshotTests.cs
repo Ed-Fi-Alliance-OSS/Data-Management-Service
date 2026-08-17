@@ -98,6 +98,14 @@ public class Given_CdcConnectorTemplateGoldenSnapshots
         CdcConnectorTemplateResult result = Render(
             BuildRequest(
                 CdcProvider.SqlServer,
+                providerConnectionProperties: new Dictionary<string, string>(
+                    BuildSqlServerConnectionProperties()
+                )
+                {
+                    ["driver.encrypt"] = "true",
+                    ["driver.trustServerCertificate"] = "true",
+                    ["driver.trustStorePassword"] = "${env:CDC_SQLSERVER_TRUSTSTORE_PASSWORD}",
+                },
                 kafkaSecurityProperties: new Dictionary<string, string>
                 {
                     ["security.protocol"] = "SASL_SSL",
@@ -118,6 +126,9 @@ public class Given_CdcConnectorTemplateGoldenSnapshots
                 database.password=${env:CDC_DATABASE_PASSWORD}
                 database.port=1433
                 database.user=connector_user
+                driver.encrypt=true
+                driver.trustServerCertificate=true
+                driver.trustStorePassword=${env:CDC_SQLSERVER_TRUSTSTORE_PASSWORD}
                 errors.tolerance=none
                 heartbeat.action.query=select 1
                 heartbeat.interval.ms=5000

@@ -315,9 +315,9 @@ implements those contracts.
    `database.password`, `database.dbname`, `database.sslmode`, `database.sslrootcert`,
    `database.sslcert`, `database.sslkey`, and `database.sslpassword`. SQL Server:
    `database.hostname`, `database.port`, `database.user`, `database.password`,
-   `database.names`, `database.encrypt`, `database.trustServerCertificate`,
-   `database.ssl.truststore`, `database.ssl.truststore.password`,
-   `database.ssl.truststore.type`, and `database.ssl.hostnameInCertificate`. SQL Server
+   `database.names`, `driver.encrypt`, `driver.trustServerCertificate`,
+   `driver.trustStore`, `driver.trustStorePassword`, `driver.trustStoreType`, and
+   `driver.hostNameInCertificate`. SQL Server
    validation must require `database.names` to contain exactly one database name. Secret
    values must be Kafka Connect config-provider references matching either
    `${env:NAME}` or `${file:/absolute/path:property}`; the renderer must not resolve them.
@@ -403,7 +403,7 @@ implements those contracts.
    prepared input handoff, and `.cdc-state` remains the mutable binding/incident state.
 6. Treat these rendered properties as secret-bearing for live read-back:
    `database.password`, `database.sslpassword`, `database.sslkey`,
-   `database.ssl.truststore.password`, every emitted key ending in `.password`, and every
+   `driver.trustStorePassword`, every emitted key ending in `.password`, and every
    emitted key ending in `sasl.jaas.config`, `ssl.keystore.key`,
    `ssl.keystore.password`, or `ssl.key.password` under `producer.override.`,
    `schema.history.internal.producer.`, or `schema.history.internal.consumer.`. If Kafka

@@ -137,12 +137,12 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
             "database.user",
             "database.password",
             "database.names",
-            "database.encrypt",
-            "database.trustServerCertificate",
-            "database.ssl.truststore",
-            "database.ssl.truststore.password",
-            "database.ssl.truststore.type",
-            "database.ssl.hostnameInCertificate",
+            "driver.encrypt",
+            "driver.trustServerCertificate",
+            "driver.trustStore",
+            "driver.trustStorePassword",
+            "driver.trustStoreType",
+            "driver.hostNameInCertificate",
         },
     };
 
@@ -200,7 +200,7 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
         "database.password",
         "database.sslpassword",
         "database.sslkey",
-        "database.ssl.truststore.password",
+        "driver.trustStorePassword",
         "sasl.jaas.config",
         "ssl.truststore.password",
         "ssl.keystore.password",
@@ -992,7 +992,10 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
             return CdcConnectorTemplateRedactionClassification.SecretValue;
         }
 
-        if (propertyName.StartsWith("database.", StringComparison.Ordinal))
+        if (
+            propertyName.StartsWith("database.", StringComparison.Ordinal)
+            || propertyName.StartsWith("driver.", StringComparison.Ordinal)
+        )
         {
             return CdcConnectorTemplateRedactionClassification.PhysicalIdentifier;
         }
