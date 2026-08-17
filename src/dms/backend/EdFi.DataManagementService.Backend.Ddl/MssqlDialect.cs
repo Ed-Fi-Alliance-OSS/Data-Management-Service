@@ -331,7 +331,7 @@ public sealed class MssqlDialect : SqlDialectBase
         var qualifiedName = $"{QuoteIdentifier(schema.Value)}.{QuoteIdentifier("GetMaxChangeVersion")}";
         var escapedSchema = schema.Value.Replace("'", "''");
 
-        // Reads sys.sequences; cannot use WITH SCHEMABINDING because
+        // Reads sys.sequences.current_value; cannot use WITH SCHEMABINDING because
         // system catalog views are not bindable. CoreDdlEmitter is responsible for
         // wrapping this statement in its own GO batch.
         return $"""
@@ -340,14 +340,7 @@ public sealed class MssqlDialect : SqlDialectBase
             AS
             BEGIN
                 DECLARE @Result bigint;
-                SELECT @Result = CONVERT(
-                    bigint,
-                    CASE
-                        WHEN seq.last_used_value IS NULL THEN seq.current_value - 1
-                        ELSE seq.last_used_value
-                    END
-                )
-                FROM sys.sequences seq
+                SELECT @Result = CONVERT(bigint, seq.current_value) FROM sys.sequences seq
                 INNER JOIN sys.schemas sch
                 ON seq.schema_id = sch.schema_id
                 WHERE seq.name = 'ChangeVersionSequence' AND sch.name = '{escapedSchema}';

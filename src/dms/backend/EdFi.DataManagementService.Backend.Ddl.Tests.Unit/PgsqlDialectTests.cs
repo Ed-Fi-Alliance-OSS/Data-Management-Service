@@ -1169,17 +1169,7 @@ public class Given_PgsqlDialect_Emitting_GetMaxChangeVersion_Function
     [Test]
     public void It_should_select_last_value_into_result_variable()
     {
-        _ddl.Should()
-            .Contain(
-                """
-                SELECT CASE
-                        WHEN is_called THEN last_value
-                        ELSE last_value - 1
-                    END
-                    FROM "dms"."ChangeVersionSequence"
-                    INTO result;
-                """
-            );
+        _ddl.Should().Contain("SELECT last_value FROM \"dms\".\"ChangeVersionSequence\" INTO result;");
     }
 
     [Test]
