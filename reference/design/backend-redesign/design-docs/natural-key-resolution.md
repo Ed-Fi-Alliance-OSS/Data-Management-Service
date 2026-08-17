@@ -1367,6 +1367,140 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
    than normalized differently by different engines or allowed to fail later against PostgreSQL
    `text`/`varchar` storage.
 
+## Open proposal: non-ASCII descriptor URIs (decision pending)
+
+The business requires descriptor `namespace` and `codeValue` values to accept non-ASCII characters.
+That conflicts with the ASCII-only-without-NUL descriptor URI contract this document establishes
+(see "Descriptors", behavioral delta list, and accepted trade-off #8). This section presents two
+candidate designs for lifting the restriction. **No decision has been made.** Until one is, every
+other section of this document — and the dependent write/query contracts in
+[flattening-reconstitution.md](flattening-reconstitution.md), [key-unification.md](key-unification.md),
+and [transactions-and-concurrency.md](transactions-and-concurrency.md) — intentionally still
+describes the ASCII-only contract. After the decision, this section will be folded into the
+affected sections and the dependent documents will be updated.
+
+Both options keep descriptor matching case-insensitive. They differ in **who owns the case-folding
+rules**: the database engines (Option A) or the application (Option B).
+
+### Shared under both options
+
+- **Validation narrows but does not disappear.** The ASCII check is replaced by: reject **NUL**
+  (PostgreSQL `text`/`varchar` cannot store it) and reject **malformed UTF-16** (unpaired
+  surrogates from JSON `\uXXXX` escapes, which PostgreSQL rejects as invalid UTF-8 at write time).
+  Same validation sites, same path-attributed 400s: descriptor writes attribute `$.namespace` /
+  `$.codeValue`, descriptor references attribute the concrete request path, and
+  `RelationalQueryRequestPreprocessor` keeps the query-validation 400 (never `EmptyPage`). The
+  shared "validated ASCII without NUL" helper becomes "validated well-formed without NUL".
+- **No Unicode normalization.** Canonically-equivalent spellings (precomposed `é` vs
+  `e` + combining accent) are **distinct descriptors**. This is deliberate consistency with regular
+  string identity columns, which already store and compare unnormalized values on both engines.
+  Accepted residual: visually identical descriptor pairs can coexist; neither engine's folding nor
+  either option below merges them.
+- **HTTP boundary pin.** Descriptor-valued query parameters are UTF-8 percent-decoded by the
+  framework before validation; a pin proves the decoded value (not the raw encoded form) is what
+  gets validated and folded.
+- **Collection duplicate detection is unaffected.** Descriptor members already compare by resolved
+  `DescriptorId` (the exact tier), which is casing- and encoding-agnostic.
+- **Descriptor POST-as-update casing rules are unchanged** (stored-wins, casing-only re-POST is a
+  true no-op).
+- **Migration backfill is trivial**: all existing descriptor data is ASCII, so both options
+  reproduce today's stored identity exactly at cutover.
+- **Considered and rejected: PostgreSQL nondeterministic ICU collations** (a CI collation on the
+  `Uri` column, no lowering anywhere). It would reimport ambient ICU version drift — folding rules
+  changing under an OS patch, the exact hazard the deterministic-collation contract exists to
+  eliminate.
+
+### Option A — engine-side folding (`pg_c_utf8` + SQL Server CI collation)
+
+Folding moves entirely into SQL; C# never lowercases. Core extraction and the query preprocessor
+pass the raw validated value; every probe folds its parameter with the same expression as the
+index.
+
+- **PostgreSQL**: replace `COLLATE "C"` with the builtin **`pg_c_utf8`** collation (PostgreSQL 17+)
+  in every descriptor lowering expression: index
+  `lower("Uri" COLLATE "pg_c_utf8"), "ResourceKeyId"`, probe predicates
+  `lower($n COLLATE "pg_c_utf8")`, and the Change Query recreated-row probes. The builtin provider
+  folds full Unicode (simple case mapping) with no libc/ICU dependency; rules change **only at
+  PostgreSQL major upgrades**, never via OS updates.
+- **SQL Server**: the designed shape is unchanged (`UriLowered AS LOWER([Uri])` computed column,
+  CI unique index). For non-ASCII, identity verdicts are whatever `SQL_Latin1_General_CP1_CI_AS`
+  says — including width-insensitivity and linguistic equalities (`ß`/`ss`) that cannot be fully
+  specified or emulated in C#.
+- **In-process equality goes ordinal and fails closed.** The structural memo's descriptor key
+  member becomes the raw (unfolded) URI: case-variant spellings of one descriptor reference remain
+  separate memo entries and produce redundant probe rows that the database resolves to the same
+  `DocumentId` — the identical accepted posture SQL Server regular keys already have. Descriptor
+  equality constraints compare ordinally and fail closed with 400 (stricter than today's lowered
+  comparison).
+- **Tracked changes: no schema impact.** `/deletes` recreated-row probes fold tombstoned values in
+  SQL under the same collation.
+- **Versioning cost**: a PostgreSQL major upgrade can change folding for characters present in
+  data, so the descriptor expression index requires `REINDEX` after `pg_upgrade` — and a Unicode
+  revision that makes two stored descriptors newly collide blocks the `REINDEX` until the data is
+  manually resolved. Requires a documented upgrade playbook.
+- **Engines diverge** on which non-ASCII variants match (simple Unicode fold vs legacy CI
+  collation). The "uniform across engines" descriptor claim in the casing table narrows to ASCII
+  input.
+
+### Option B — application-side folding, byte-comparing storage
+
+DMS owns one canonicalization function; the database only ever compares bytes.
+
+- **One folding authority in C#**: validate (as above), then lowercase with `ToLowerInvariant()`.
+  Acknowledged: invariant casing follows the Unicode data of the runtime environment (ICU on
+  modern .NET, so host- and .NET-version-dependent), meaning folding behavior can change when the
+  runtime or host is upgraded. Because the folded value is persisted, such a change surfaces as
+  stored `UriLowered` values disagreeing with newly computed ones — remediated by an `UPDATE`
+  recompute of the folded columns, never index corruption. If this drift risk proves
+  unacceptable, the function can later be hardened by vendoring a pinned Unicode
+  `CaseFolding.txt` mapping into DMS, with no change to schema or probe shapes.
+- **Schema**: `dms.Descriptor.UriLowered` becomes a **persisted, application-written column**
+  (originals keep stored casing — referencing documents reconstitute descriptor strings from
+  `dms.Descriptor`, so the source columns remain the display authority). Unique index on
+  `("UriLowered", "ResourceKeyId")` over plain columns: PostgreSQL `COLLATE "C"`, SQL Server
+  `Latin1_General_100_BIN2`. The PostgreSQL expression index and the SQL Server computed column are
+  not created; **no `lower()` remains in generated descriptor SQL**, retiring the `COLLATE "C"`
+  descriptor-lowering pins.
+- **Tracked changes: one new column.** Descriptor tombstone identity copies gain a folded-URI
+  column stamped at write time, so `/deletes` recreated-row probes stay a byte-compare. This is
+  the schema cost the option pays.
+- **In-process equality is exact.** The memo comparer's descriptor key member and descriptor
+  equality constraints use the same fold function; agreement with the engine verdict is byte
+  equality — exact, not approximate, closing the fail-closed gaps for descriptors.
+- **Cross-engine uniformity survives non-ASCII**: both engines compare identical C#-produced
+  bytes, so descriptor matching and uniqueness behave identically on PostgreSQL and SQL Server for
+  the full input space.
+- **Derived-state cost, named honestly**: `UriLowered` and the tombstone copies are
+  application-derived state stored in the database — the same species this design removes
+  elsewhere. Scope is mild (one column family, one write path, no triggers, no cross-resource
+  coupling), and it takes the standard treatment: a parity pin proving
+  `UriLowered = fold(Uri)` on every descriptor and tombstone row, plus a corruption pin. The
+  parity pin doubles as drift detection: after a runtime upgrade that changed invariant casing,
+  it is what fails first, pointing at the recompute remediation.
+
+### Decision drivers
+
+| Dimension | A: engine-side (`pg_c_utf8`) | B: application-side fold |
+|---|---|---|
+| Folding authority | Two (each engine's own rules) | One (C# `ToLowerInvariant()`) |
+| Rules change when | PostgreSQL major upgrade (ambient for the deployment) | .NET runtime / host ICU upgrade (hardenable later via a vendored fold table) |
+| Remediation on rule change | `REINDEX`; newly-colliding data can block it | `UPDATE` recompute of folded columns |
+| PostgreSQL floor | 17+ | none |
+| Schema additions | none | `UriLowered` + tombstone folded copies (derived state + parity pins) |
+| SQL Server non-ASCII semantics | CI-collation verdicts (width-insensitive, linguistic; not fully speccable) | byte equality of the folded value (exact) |
+| Cross-engine descriptor uniformity | ASCII input only | full input space |
+| In-process (memo/equality-constraint) agreement | approximate, ordinal fail-closed | exact (same function, byte equality) |
+| Generated SQL | collation-pinned `lower()` on every descriptor expression | no folding in SQL |
+
+### After the decision
+
+Within this document: rework "Descriptors", "Query-time descriptor filters", the casing tables and
+behavioral deltas, ticket T5, the descriptor validation/lowering pins, accepted trade-off #8, and
+the ASCII-only bullet under "Out of scope". Then update
+[flattening-reconstitution.md](flattening-reconstitution.md), [key-unification.md](key-unification.md),
+and [transactions-and-concurrency.md](transactions-and-concurrency.md), which consume the
+descriptor validation boundary and lowered-value contracts.
+
 ## Out of scope
 
 - Any change to `dms.Document` (columns, locking, DELETE shape, readers, or its DocumentCache
