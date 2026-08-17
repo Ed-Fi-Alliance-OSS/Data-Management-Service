@@ -181,7 +181,7 @@ public class Given_CdcConnectorTemplateCommonRendering
     }
 
     [TestCaseSource(nameof(ProducerBufferMemoryCases))]
-    public void It_renders_producer_buffer_memory_from_policy_without_dropping_below_max_record_bytes(
+    public void It_renders_producer_buffer_memory_from_policy_without_dropping_below_design_floor(
         int maxRecordBytes,
         int? producerBufferBytes,
         string expectedBufferMemory
@@ -200,7 +200,9 @@ public class Given_CdcConnectorTemplateCommonRendering
         result.Config.Should().Contain("producer.override.buffer.memory", expectedBufferMemory);
         int.Parse(result.Config["producer.override.buffer.memory"])
             .Should()
-            .BeGreaterThanOrEqualTo(maxRecordBytes);
+            .BeGreaterThanOrEqualTo(
+                Math.Max(CdcConnectorTemplateDeploymentPolicy.MinimumProducerBufferBytes, maxRecordBytes)
+            );
     }
 
     [Test]
@@ -298,11 +300,14 @@ public class Given_CdcConnectorTemplateCommonRendering
         yield return new TestCaseData(67_108_864, null, "67108864").SetName(
             "Omitted producer buffer uses max record bytes above default floor"
         );
-        yield return new TestCaseData(1_048_576, 1_048_576, "1048576").SetName(
-            "Explicit producer buffer equal to max record bytes is emitted"
+        yield return new TestCaseData(1_048_576, 33_554_432, "33554432").SetName(
+            "Explicit producer buffer equal to default floor is emitted"
         );
         yield return new TestCaseData(1_048_576, 67_108_864, "67108864").SetName(
-            "Explicit producer buffer above max record bytes is emitted"
+            "Explicit producer buffer above default floor is emitted"
+        );
+        yield return new TestCaseData(67_108_864, 67_108_864, "67108864").SetName(
+            "Explicit producer buffer equal to max record bytes above default floor is emitted"
         );
     }
 }

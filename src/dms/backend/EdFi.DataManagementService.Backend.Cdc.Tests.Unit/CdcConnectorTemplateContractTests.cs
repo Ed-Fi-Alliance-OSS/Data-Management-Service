@@ -147,20 +147,32 @@ public class Given_CdcConnectorTemplateContracts
             .WithMessage("*positive integer*");
     }
 
-    [Test]
-    public void It_rejects_explicit_producer_buffer_bytes_below_max_record_bytes()
+    [TestCase(
+        1_048_576,
+        2_097_152,
+        TestName = "Explicit buffer above max record bytes but below design floor"
+    )]
+    [TestCase(
+        67_108_864,
+        33_554_432,
+        TestName = "Explicit buffer below max record bytes when max record raises floor"
+    )]
+    public void It_rejects_explicit_producer_buffer_bytes_below_design_floor(
+        int maxRecordBytes,
+        int producerBufferBytes
+    )
     {
         Action act = () =>
             new CdcConnectorTemplateDeploymentPolicy(
                 kafkaBootstrapServers: "broker:9092",
-                maxRecordBytes: 67_108_864,
-                producerBufferBytes: 33_554_432
+                maxRecordBytes: maxRecordBytes,
+                producerBufferBytes: producerBufferBytes
             );
 
         act.Should()
             .Throw<ArgumentOutOfRangeException>()
             .WithParameterName("producerBufferBytes")
-            .WithMessage("*producerBufferBytes*greater than or equal to maxRecordBytes*");
+            .WithMessage("*producerBufferBytes*greater than or equal to max(33554432, maxRecordBytes)*");
     }
 
     [Test]

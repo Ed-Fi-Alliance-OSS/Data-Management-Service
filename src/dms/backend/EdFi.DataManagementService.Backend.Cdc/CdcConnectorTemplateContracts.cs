@@ -178,6 +178,8 @@ public sealed record CdcConnectorProviderSetupEvidence
 
 public sealed record CdcConnectorTemplateDeploymentPolicy
 {
+    public const int MinimumProducerBufferBytes = 33_554_432;
+
     public CdcConnectorTemplateDeploymentPolicy(
         string kafkaBootstrapServers,
         int maxRecordBytes,
@@ -194,16 +196,17 @@ public sealed record CdcConnectorTemplateDeploymentPolicy
         int? validatedProducerBufferBytes = producerBufferBytes.HasValue
             ? ValidatePositive(producerBufferBytes.Value, nameof(producerBufferBytes))
             : null;
+        int minimumProducerBufferBytes = Math.Max(MinimumProducerBufferBytes, validatedMaxRecordBytes);
 
         if (
             validatedProducerBufferBytes.HasValue
-            && validatedProducerBufferBytes.Value < validatedMaxRecordBytes
+            && validatedProducerBufferBytes.Value < minimumProducerBufferBytes
         )
         {
             throw new ArgumentOutOfRangeException(
                 nameof(producerBufferBytes),
                 validatedProducerBufferBytes.Value,
-                "CDC connector template producerBufferBytes must be greater than or equal to maxRecordBytes."
+                "CDC connector template producerBufferBytes must be greater than or equal to max(33554432, maxRecordBytes)."
             );
         }
 
