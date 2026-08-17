@@ -7,6 +7,7 @@ using System.Collections.Immutable;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Metrics;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using FluentAssertions;
@@ -242,6 +243,36 @@ public class Given_DocumentCacheEnqueueTelemetry
             .NotContain(TargetKey.ToString());
     }
 
+    [Test]
+    public void It_does_not_record_unclassified_non_enqueue_failures_from_the_write_boundary()
+    {
+        using MetricCollector collector = new();
+        DocumentCacheTargetObservation target = ResolvedTarget(TargetKey);
+        var registry = new StaticTargetRegistry([target], [ExecutionContext(target)]);
+        DocumentCacheEnqueueTelemetry telemetry = CreateTelemetry(
+            pageSize: 10,
+            targetRegistry: registry,
+            meter: collector.Meter
+        );
+
+        DocumentCacheEnqueueTelemetryWriteBoundary.RecordFailureIfClassified(
+            telemetry,
+            new StubWriteExceptionClassifier(
+                RelationalWriteExceptionClassification.UnrecognizedWriteFailure.Instance
+            ),
+            CreateSelectedDataStoreSelection(),
+            registry,
+            TargetKey.TenantKey,
+            SqlDialect.Pgsql,
+            DocumentCacheEnqueueTelemetryCanonicalOperation.Update,
+            DocumentCacheEnqueueTelemetryResourceKind.Resource,
+            new StubDbException("ordinary provider write failure")
+        );
+
+        telemetry.GetFailureSnapshot(TargetKey).RecentEvents.Should().BeEmpty();
+        collector.MeasurementsFor(DocumentCacheEnqueueTelemetry.FailureCounterName).Should().BeEmpty();
+    }
+
     [TestCase(
         "dms.DocumentCacheState singleton row is missing or unreadable for projection enqueue.",
         (int)DocumentCacheEnqueueFailureCategory.StateMissingOrInvalid
@@ -275,6 +306,52 @@ public class Given_DocumentCacheEnqueueTelemetry
         message.Should().NotContain("\r").And.NotContain("\n").And.NotContain("{").And.NotContain("}");
     }
 
+    [Test]
+    public void It_does_not_classify_ordinary_write_provider_failures_as_enqueue_failures()
+    {
+        bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
+            new StubDbException("duplicate key value violates unique constraint"),
+            new StubWriteExceptionClassifier(
+                new RelationalWriteExceptionClassification.UniqueConstraintViolation("UK_School_NaturalKey")
+            ),
+            out DocumentCacheEnqueueFailureCategory category,
+            out _
+        );
+
+        classified.Should().BeFalse();
+        category.Should().Be(default(DocumentCacheEnqueueFailureCategory));
+    }
+
+    [Test]
+    public void It_does_not_classify_unrecognized_non_enqueue_provider_failures()
+    {
+        bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
+            new StubDbException("ordinary provider write failure"),
+            new StubWriteExceptionClassifier(
+                RelationalWriteExceptionClassification.UnrecognizedWriteFailure.Instance
+            ),
+            out DocumentCacheEnqueueFailureCategory category,
+            out _
+        );
+
+        classified.Should().BeFalse();
+        category.Should().Be(default(DocumentCacheEnqueueFailureCategory));
+    }
+
+    [Test]
+    public void It_classifies_known_provider_unavailable_failures()
+    {
+        bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
+            new StubDbException("connection refused while opening the provider connection"),
+            new StubWriteExceptionClassifier(),
+            out DocumentCacheEnqueueFailureCategory category,
+            out _
+        );
+
+        classified.Should().BeTrue();
+        category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderUnavailable);
+    }
+
     private static DocumentCacheEnqueueTelemetry CreateTelemetry(
         int pageSize,
         IDocumentCacheTargetRegistry? targetRegistry = null,
@@ -306,6 +383,24 @@ public class Given_DocumentCacheEnqueueTelemetry
             DocumentCacheEnqueueTelemetryResourceKind.Resource,
             message
         );
+
+    private static IDataStoreSelection CreateSelectedDataStoreSelection()
+    {
+        var selection = new DataStoreSelection();
+        selection.SetSelectedDataStore(
+            new DataStore(
+                TargetKey.DataStoreId,
+                "postgresql",
+                "document-cache-enqueue-telemetry",
+                "Host=localhost;Database=document-cache-enqueue-telemetry",
+                [],
+                RelationalProviderToken.Postgresql,
+                RelationalProviderMetadataStatus.Supported
+            )
+        );
+
+        return selection;
+    }
 
     private static DocumentCacheTargetObservation ResolvedTarget() => ResolvedTarget(TargetKey);
 
@@ -423,22 +518,25 @@ public class Given_DocumentCacheEnqueueTelemetry
 
     private sealed class StubDbException(string message) : DbException(message);
 
-    private sealed class StubWriteExceptionClassifier : IRelationalWriteExceptionClassifier
+    private sealed class StubWriteExceptionClassifier(
+        RelationalWriteExceptionClassification? classificationToReturn = null,
+        bool isTransientFailure = false
+    ) : IRelationalWriteExceptionClassifier
     {
         public bool TryClassify(
             DbException exception,
             [NotNullWhen(true)] out RelationalWriteExceptionClassification? classification
         )
         {
-            classification = RelationalWriteExceptionClassification.UnrecognizedWriteFailure.Instance;
-            return true;
+            classification = classificationToReturn;
+            return classification is not null;
         }
 
         public bool IsForeignKeyViolation(DbException exception) => false;
 
         public bool IsUniqueConstraintViolation(DbException exception) => false;
 
-        public bool IsTransientFailure(DbException exception) => false;
+        public bool IsTransientFailure(DbException exception) => isTransientFailure;
     }
 
     private sealed class MetricCollector : IDisposable

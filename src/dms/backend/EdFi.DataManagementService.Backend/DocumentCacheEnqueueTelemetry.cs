@@ -574,6 +574,21 @@ internal static class DocumentCacheEnqueueFailureClassifier
     private const string DocumentProjectionWorkName = "DocumentProjectionWork";
     private const string EnqueueFunctionPrefix = "TF_Document_EnqueueProjection";
     private const string EnqueueTriggerName = "TR_Document_EnqueueProjectionWork";
+    private static readonly string[] ProviderUnavailableMessageFragments =
+    [
+        "connection refused",
+        "connection reset",
+        "connection closed",
+        "server closed the connection",
+        "could not connect",
+        "could not open a connection",
+        "transport-level error",
+        "broken pipe",
+        "database is unavailable",
+        "server is unavailable",
+        "network error",
+        "network-related",
+    ];
 
     public static bool TryClassify(
         DbException exception,
@@ -622,15 +637,25 @@ internal static class DocumentCacheEnqueueFailureClassifier
             return true;
         }
 
-        if (writeExceptionClassifier.TryClassify(exception, out _))
+        if (IsProviderUnavailable(sanitizedMessage))
         {
-            category = DocumentCacheEnqueueFailureCategory.UnclassifiedProviderFailure;
+            category = DocumentCacheEnqueueFailureCategory.ProviderUnavailable;
             return true;
         }
 
-        category = DocumentCacheEnqueueFailureCategory.ProviderUnavailable;
-        return true;
+        // A provider exception at the canonical write boundary is not automatically an enqueue
+        // failure. Ordinary write-rule failures are mapped by RelationalWriteDatabaseFailureResultMapper
+        // and must not pollute DocumentCache enqueue telemetry unless the provider message names a
+        // known enqueue artifact above.
+        category = default;
+        return false;
     }
+
+    private static bool IsProviderUnavailable(string message) =>
+        Array.Exists(
+            ProviderUnavailableMessageFragments,
+            fragment => message.Contains(fragment, StringComparison.OrdinalIgnoreCase)
+        );
 }
 
 internal static class DocumentCacheEnqueueTelemetryText

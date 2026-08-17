@@ -389,6 +389,49 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_does_not_record_DocumentCacheEnqueueTelemetry_failure_for_mapped_ordinary_write_failures()
+    {
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry()
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException("duplicate key");
+        _writeExceptionClassifier.ClassificationToReturn =
+            new RelationalWriteExceptionClassification.UniqueConstraintViolation("UK_School_NaturalKey");
+        _writeConstraintResolver.ResolutionToReturn =
+            new RelationalWriteConstraintResolution.RootNaturalKeyUnique("UK_School_NaturalKey");
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureIdentityConflict(
+                        new ResourceName("School"),
+                        [new KeyValuePair<string, string>("schoolId", "255901")]
+                    )
+                )
+            );
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        telemetry.Successes.Should().BeEmpty();
+        telemetry.Failures.Should().BeEmpty();
+    }
+
+    [Test]
     public async Task It_records_DocumentCacheEnqueueTelemetry_failure_for_exact_request_tenant_when_targets_share_data_store()
     {
         var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
