@@ -1022,13 +1022,13 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
                 (
                     [HeartbeatId] smallint NOT NULL PRIMARY KEY,
                     [HeartbeatSequence] bigint NOT NULL,
-                    [HeartbeatAt] datetimeoffset NOT NULL,
+                    [HeartbeatAt] datetime2(7) NOT NULL,
                     CONSTRAINT [CK_CdcHeartbeat_Singleton] CHECK ([HeartbeatId] = 1),
                     CONSTRAINT [CK_CdcHeartbeat_Sequence] CHECK ([HeartbeatSequence] >= 0)
                 );
             IF NOT EXISTS (SELECT 1 FROM [dms].[CdcHeartbeat] WHERE [HeartbeatId] = 1)
                 INSERT INTO [dms].[CdcHeartbeat] ([HeartbeatId], [HeartbeatSequence], [HeartbeatAt])
-                VALUES (1, 0, SYSDATETIMEOFFSET());
+                VALUES (1, 0, sysutcdatetime());
             IF (SELECT is_cdc_enabled FROM sys.databases WHERE name = DB_NAME()) = 0
                 EXEC sys.sp_cdc_enable_db;
             {{enableCaptureInstancesSql}}
@@ -1605,7 +1605,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             CdcProvider.Postgresql =>
                 """UPDATE "dms"."CdcHeartbeat" SET "HeartbeatSequence" = "HeartbeatSequence" + 1, "HeartbeatAt" = now() WHERE "HeartbeatId" = 1;""",
             CdcProvider.SqlServer =>
-                "UPDATE [dms].[CdcHeartbeat] SET [HeartbeatSequence] = [HeartbeatSequence] + 1, [HeartbeatAt] = SYSDATETIMEOFFSET() WHERE [HeartbeatId] = 1;",
+                "UPDATE [dms].[CdcHeartbeat] SET [HeartbeatSequence] = [HeartbeatSequence] + 1, [HeartbeatAt] = sysutcdatetime() WHERE [HeartbeatId] = 1",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(provider),
                 provider,

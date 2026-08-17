@@ -75,6 +75,15 @@ public abstract class Given_PinnedImageConnectorTemplateFixture
             .Config["message.key.columns"]
             .Should()
             .Be("dms.DocumentCache:DocumentUuid;dms.Document:DocumentUuid");
+        if (Provider == CdcProvider.SqlServer)
+        {
+            rendered
+                .Config["heartbeat.action.query"]
+                .Should()
+                .Be(
+                    "UPDATE [dms].[CdcHeartbeat] SET [HeartbeatSequence] = [HeartbeatSequence] + 1, [HeartbeatAt] = sysutcdatetime() WHERE [HeartbeatId] = 1"
+                );
+        }
 
         fixture.AssertRenderedTemplateCanBeValidatedFromReadBack(
             request,
