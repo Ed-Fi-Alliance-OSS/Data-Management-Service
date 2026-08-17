@@ -124,7 +124,7 @@
       "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheStatus",
       "Inspect tests that prove the service does not call target refresh, lifecycle command, worker, direct-fill, cache-read, Kafka, or CDC readiness services during a status request."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Endpoint and Authorization",
