@@ -1,0 +1,250 @@
+[
+  {
+    "category": "project-structure",
+    "description": "Create the CDC connector-template implementation home under `src/dms/backend/EdFi.DataManagementService.Backend.Cdc` with matching unit and integration test projects. Wire the projects into `src/dms/EdFi.DataManagementService.sln`, follow the existing backend project conventions, and expose a DI registration entry point such as `AddCdcConnectorTemplates`. Resolve shared CDC contract placement so the template code consumes the single provider setup contract from DMS-1320 without creating parallel copies of provider, source-inventory, diagnostic, binding-name, or safe-name models.",
+    "acceptance-criteria": [
+      "A new CDC backend library builds on `net10.0`, nullable references, implicit usings, and warnings-as-errors like the existing backend libraries.",
+      "Unit and integration test projects exist for connector-template work and use NUnit, FluentAssertions, and the repository's existing test project conventions.",
+      "The DMS solution includes the new library and test projects.",
+      "The CDC library consumes or factors the existing DMS-1320 `CdcProviderSetupResult` and related provider setup models instead of defining duplicate connector-specific copies.",
+      "The CDC library provides a public DI extension for consumers such as DMS-1323 bootstrap orchestration."
+    ],
+    "steps-to-verify": [
+      "Run `dotnet build src/dms/EdFi.DataManagementService.sln`.",
+      "Inspect project references and namespaces to confirm there is one shared provider setup contract surface.",
+      "Run `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/EdFi.DataManagementService.Backend.Cdc.Tests.Unit.csproj` after tests are added."
+    ],
+    "completed": true
+  },
+  {
+    "category": "contracts",
+    "description": "Add typed connector-template request, result, policy, provider connection, Kafka security, artifact output, registration payload, and diagnostic models. The request must separate binding-derived identity, fresh provider setup result, deployment/runtime policy, provider connection properties, Kafka client security properties, and optional artifact output settings. The result must expose provider, connector name, public topic, derived progress topic, SQL Server schema-history topic when applicable, outcome, deterministic config map, optional Kafka Connect registration payload, optional redacted artifact payload, canonical config hash, and diagnostics.",
+    "acceptance-criteria": [
+      "Connector names, public topics, progress topics, SQL Server schema-history topics, and provider artifact names come from binding/provider setup inputs rather than tenant display names, connection strings, raw connector JSON, or operator-configurable topic values.",
+      "The progress topic is always `topicName + \".cdc-progress\"` and the SQL Server schema-history topic is always `topicName + \".schema-history\"`.",
+      "The typed request requires a successful `CreatedOrMatched` or `ExactMatch` provider setup result for the same provider, binding generation, physical-source fingerprint, source inventory, expected `DocumentUuid` key inventory, and heartbeat action query.",
+      "The deployment policy model includes Kafka bootstrap servers, `maxRecordBytes`, optional `producerBufferBytes`, heartbeat interval, and SQL Server poll interval as typed inputs instead of raw connector properties.",
+      "The stable diagnostic shape includes code, category, severity, property name, safe artifact/object name, expected value, observed value, provider, source phase, and redaction classification.",
+      "Diagnostic categories include the categories named by DMS-1321 for binding identity, provider setup result, missing input, reserved key, connection property, Kafka security property, producer policy, heartbeat, topic naming, transform, converter, include list, message key, schema history, live read-back, and secret redaction failures."
+    ],
+    "steps-to-verify": [
+      "Run `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/EdFi.DataManagementService.Backend.Cdc.Tests.Unit.csproj --filter \"FullyQualifiedName~Contract\"`.",
+      "Review the public model constructors/tests to confirm raw connector JSON and operator-supplied topic overrides are not accepted.",
+      "Review compile-check or consumer-facing tests to confirm DMS-1323 can consume the result without depending on internal renderer types."
+    ],
+    "completed": true
+  },
+  {
+    "category": "validation",
+    "description": "Implement the shared reserved-key, connection-property, Kafka-security-property, and secret-reference validator used before rendering, during registration preflight, and during live Kafka Connect config read-back. The validator must enforce allow-listed deployment fragments, reject duplicate or conflicting reserved keys even when the duplicated value matches the generated value, require externalized secret references where required, and sanitize diagnostics.",
+    "acceptance-criteria": [
+      "PostgreSQL provider connection inputs allow only `database.hostname`, `database.port`, `database.user`, `database.password`, `database.dbname`, `database.sslmode`, `database.sslrootcert`, `database.sslcert`, `database.sslkey`, and `database.sslpassword`.",
+      "SQL Server provider connection inputs allow only `database.hostname`, `database.port`, `database.user`, `database.password`, `database.names`, `database.encrypt`, `database.trustServerCertificate`, `database.ssl.truststore`, `database.ssl.truststore.password`, `database.ssl.truststore.type`, and `database.ssl.hostnameInCertificate`, and require exactly one `database.names` value.",
+      "Kafka security inputs are accepted only as an unprefixed map containing `security.protocol`, `sasl.mechanism`, `sasl.jaas.config`, `sasl.client.callback.handler.class`, `sasl.login.callback.handler.class`, `sasl.login.class`, `sasl.kerberos.service.name`, `ssl.truststore.location`, `ssl.truststore.password`, `ssl.truststore.type`, `ssl.truststore.certificates`, `ssl.keystore.location`, `ssl.keystore.password`, `ssl.key.password`, `ssl.keystore.type`, `ssl.keystore.certificate.chain`, `ssl.keystore.key`, `ssl.endpoint.identification.algorithm`, `ssl.protocol`, or `ssl.enabled.protocols`.",
+      "Callers cannot supply prefixed Kafka client property bags such as `producer.override.*`, `schema.history.internal.producer.*`, or `schema.history.internal.consumer.*`; the renderer owns all generated prefixes.",
+      "Secret-bearing provider and Kafka security values require `${env:NAME}` or `${file:/absolute/path:property}` references and are never resolved by the renderer; this includes `database.password`, `database.sslpassword`, `database.sslkey`, `database.ssl.truststore.password`, `sasl.jaas.config`, `ssl.truststore.password`, `ssl.keystore.password`, `ssl.key.password`, and `ssl.keystore.key`.",
+      "Reserved keys and prefixes for connector class, task count, include lists, message keys, transform, converters, producer overrides, heartbeat, topic naming, schema history, errors, and snapshot mode cannot be supplied or overridden by callers.",
+      "Diagnostics, thrown exceptions, snapshots, and test failure messages redact raw secrets, connection strings, document payloads, tenant display names, and unsanitized physical identifiers."
+    ],
+    "steps-to-verify": [
+      "Run the CDC unit tests for reserved-key, allow-list, secret-reference, and redaction cases.",
+      "Add sentinel secret and unsafe physical identifier values to negative tests and confirm they do not appear in assertion output or diagnostics.",
+      "Review generated diagnostics for stable codes/categories instead of provider exception text parsing."
+    ],
+    "completed": true
+  },
+  {
+    "category": "rendering-common",
+    "description": "Implement the provider-neutral deterministic connector config builder. It must produce a stable flat string map plus Kafka Connect registration payload, generate common transform/converter/producer/heartbeat/topic/metrics/error/snapshot settings, apply the `kafka-murmur2-v1` partitioner mapping, compute the canonical config hash, and avoid connector-managed topic policy.",
+    "acceptance-criteria": [
+      "Every rendered config includes `name=<connectorName>`, `tasks.max=1`, the provider-specific Debezium connector class, and `topic.prefix=<connectorName>`.",
+      "Every rendered config sets `transforms=documentState`, `transforms.documentState.type=org.edfi.kafka.connect.transforms.DocumentState`, provider, target topic, and derived progress topic exactly.",
+      "Every rendered config sets `key.converter=org.apache.kafka.connect.storage.StringConverter`, `value.converter=org.edfi.kafka.connect.converters.DocumentStateJsonConverter`, `value.converter.schemas.enable=false`, `value.converter.decimal.format=NUMERIC`, and `tombstones.on.delete=false`.",
+      "Every rendered config sets `errors.tolerance=none`, `statistics.metrics.enabled=true`, `snapshot.mode=initial`, and no dead-letter queue properties.",
+      "Every rendered config sets the required producer durability and sizing overrides, defaults `producer.override.buffer.memory` to `max(33554432, maxRecordBytes)`, and emits `producer.override.partitioner.class=org.edfi.kafka.connect.partitioner.KafkaMurmur2V1Partitioner`.",
+      "For both providers, allowed Kafka client security inputs are emitted only under generated `producer.override.<key>` names and are combined with the required generated producer policy without allowing caller-supplied producer override keys.",
+      "Every rendered config sets positive heartbeat settings, defaulting `heartbeat.interval.ms` to `5000`, and uses the exact provider setup heartbeat action query.",
+      "Every rendered config sets `topic.delimiter=.`, `topic.naming.strategy=io.debezium.schema.SchemaTopicNamingStrategy`, `topic.heartbeat.prefix=__debezium-heartbeat`, and leaves `topic.heartbeat.name` unset or empty.",
+      "The registration payload shape is `{ \"name\": \"<binding.connectorName>\", \"config\": { ... } }` with the same deterministic config map.",
+      "No `topic.creation.*`, dead-letter queue, topic provisioning, ACL, offset-store, or Connect REST lifecycle behavior is implemented in this story."
+    ],
+    "steps-to-verify": [
+      "Run common renderer snapshot tests twice and compare output for stable key order.",
+      "Review the generated config keys to confirm no topic creation, ACL, offset-store, or dead-letter queue properties are present.",
+      "Run unit tests that verify defaults and override rejection for producer, heartbeat, topic naming, transform, converter, and error settings."
+    ],
+    "completed": true
+  },
+  {
+    "category": "rendering-postgresql",
+    "description": "Implement the PostgreSQL connector renderer using DMS-1320 provider setup metadata and the common config builder. It must render the Debezium PostgreSQL connector settings, publication and slot references, exact source include list, `DocumentUuid` message-key columns for document sources, explicit unavailable-value placeholder, and deployment-supplied PostgreSQL connection properties.",
+    "acceptance-criteria": [
+      "PostgreSQL rendering sets `connector.class=io.debezium.connector.postgresql.PostgresConnector`, `plugin.name=pgoutput`, `publication.autocreate.mode=disabled`, the binding-derived `topic.prefix`, and the DMS-1320 publication and replication slot names.",
+      "The include list is derived from the provider setup source-table inventory and contains exactly `dms.DocumentCache`, `dms.Document`, and `dms.CdcHeartbeat` using the pinned Debezium PostgreSQL include-list syntax and emitted quoted identifiers where needed.",
+      "`dms.DocumentProjectionWork` and every other DMS-managed table are rejected if they appear in the rendered or validated effective include list.",
+      "`message.key.columns` is rendered only for `dms.DocumentCache` and `dms.Document`, with `DocumentUuid` as the only key column for each.",
+      "`dms.CdcHeartbeat` does not receive a custom message key.",
+      "`unavailable.value.placeholder=__debezium_unavailable_value` is set explicitly.",
+      "PostgreSQL rendering does not request destructive slot behavior and does not create or validate provider artifacts itself."
+    ],
+    "steps-to-verify": [
+      "Run PostgreSQL renderer unit tests and golden snapshot tests.",
+      "Review test fixtures that use provider setup source-table inventories with quoted PascalCase identifiers.",
+      "Run negative tests for missing slot/publication metadata, unexpected work-table capture, missing `DocumentUuid` key inventory, and conflicting PostgreSQL connector properties."
+    ],
+    "completed": true
+  },
+  {
+    "category": "rendering-sqlserver",
+    "description": "Implement the SQL Server connector renderer using DMS-1320 provider setup metadata and the common config builder. It must render the Debezium SQL Server connector settings, exact source include list, `DocumentUuid` message-key columns for document sources, explicit temporal and unavailable-value settings, single-database enforcement, SQL Server poll interval policy, schema-history store configuration, and deployment-supplied SQL Server connection and Kafka security properties.",
+    "acceptance-criteria": [
+      "SQL Server rendering sets `connector.class=io.debezium.connector.sqlserver.SqlServerConnector`, the binding-derived `topic.prefix`, and deployment-supplied connection properties for exactly one database.",
+      "`database.names` is required to identify one database and requests that configure zero, multiple, or conflicting database names are rejected.",
+      "The include list is derived from provider setup source-table inventory and contains exactly `dms.DocumentCache`, `dms.Document`, and `dms.CdcHeartbeat`.",
+      "`dms.DocumentProjectionWork`, descriptors, authorization tables, tracked-change tables, generated resource tables, and every other DMS-managed table are rejected if present.",
+      "`message.key.columns` is rendered only for `dms.DocumentCache` and `dms.Document`, with `DocumentUuid` as the only key column for each.",
+      "`time.precision.mode=isostring` and `unavailable.value.placeholder=__debezium_unavailable_value` are set explicitly.",
+      "SQL Server rendering emits a positive deployment-supplied `poll.interval.ms` when provided, rejects non-positive poll intervals, and rejects `poll.interval.ms > heartbeat.interval.ms`.",
+      "The schema-history settings exactly match the story contract, including `schema.history.internal.kafka.bootstrap.servers`, `schema.history.internal.kafka.topic=<topicName>.schema-history`, idempotent producer settings, `max.in.flight.requests.per.connection=1`, and `include.schema.changes=false`.",
+      "Kafka security properties are copied to `producer.override.*`, `schema.history.internal.producer.*`, and `schema.history.internal.consumer.*` with no caller-supplied prefixed property bags."
+    ],
+    "steps-to-verify": [
+      "Run SQL Server renderer unit tests and golden snapshot tests.",
+      "Run negative tests for multi-database input, missing schema-history settings, conflicting history properties, missing message-key inventory, work-table include-list drift, and invalid poll/heartbeat intervals.",
+      "Review emitted configs to confirm SQL Server capture-instance names remain validation metadata and are not transformed into a second mapping language."
+    ],
+    "completed": true
+  },
+  {
+    "category": "artifacts",
+    "description": "Implement deterministic canonicalization, hashing, redacted artifact payloads, and optional manifest writing for rendered connector templates. The artifact output must not persist template state and must produce only the story-owned redacted snapshot when explicitly requested.",
+    "acceptance-criteria": [
+      "`configSha256` is computed from the complete unredacted generated flat config map exactly as emitted under the registration payload's `config` object, including `name` if emitted.",
+      "Hash canonicalization orders keys with ordinal string comparison and serializes the string-only map as compact UTF-8 JSON with `System.Text.Json` before SHA-256 formatting as `sha256:<lowercase-hex>`.",
+      "Redaction happens after canonical hashing so changed externalized secret references change the hash even when the manifest redacts the property.",
+      "The optional manifest file is named `cdc-connector-template.<provider>.manifest.json` and contains version, provider, connectorName, publicTopicName, progressTopicName, schemaHistoryTopicName, configSha256, redactedConfig, reservedKeys, and a deterministic or omitted `generatedAt` for snapshot tests.",
+      "The artifact output never writes mutable binding state, `.cdc-state`, bootstrap manifests, Connect lifecycle state, raw secrets, raw connection strings, document payloads, tenant display names, or unsanitized physical identifiers."
+    ],
+    "steps-to-verify": [
+      "Run CDC artifact snapshot tests for PostgreSQL and SQL Server.",
+      "Run hash tests that prove stable ordering and prove secret reference changes alter `configSha256` while the redacted manifest remains safe.",
+      "Inspect manifest-writing tests to confirm artifact output is optional and no template state is persisted outside the requested snapshot."
+    ],
+    "completed": true
+  },
+  {
+    "category": "live-validation",
+    "description": "Implement the registration preflight and live Kafka Connect read-back validator using the same generated expected config and reserved-key rules as rendering. The validator accepts a Kafka Connect effective config plus a fresh DMS-1320 provider setup result supplied by orchestration, compares non-secret values exactly, treats masked secrets as presence evidence, validates source/include/key/topic/source-partition invariants, and returns `CdcConnectorTemplateResult` diagnostics without calling provider inspection itself.",
+    "acceptance-criteria": [
+      "Live validation requires a fresh successful provider setup result for the same provider, binding generation, physical-source fingerprint, source-table inventory, message-key inventory, and heartbeat action query used to render expected config.",
+      "The validator does not invoke DMS-1320 provider inspection or Kafka Connect REST; callers supply read-back config and provider setup evidence.",
+      "Non-secret generated, connection, and Kafka security properties require raw equality with the expected generated config.",
+      "Secret-bearing read-back classification includes `database.password`, `database.sslpassword`, `database.sslkey`, `database.ssl.truststore.password`, every emitted key ending in `.password`, and every emitted key ending in `sasl.jaas.config`, `ssl.keystore.key`, `ssl.keystore.password`, or `ssl.key.password` under `producer.override.`, `schema.history.internal.producer.`, or `schema.history.internal.consumer.`.",
+      "Secret-bearing properties accept exact externalized references or masked values of `[hidden]` or non-empty all-asterisk text as presence/redaction evidence.",
+      "Missing, empty, differently named, or unmasked different secret values fail validation.",
+      "Effective include lists must contain the three and only three source tables and must exclude `dms.DocumentProjectionWork`.",
+      "Expected `DocumentUuid` message-key columns must be present only for `dms.DocumentCache` and `dms.Document`.",
+      "The progress topic and SQL Server schema-history topic must be derived binding topics.",
+      "Source partition shape validation expects PostgreSQL `{ \"server\": <topic.prefix> }` and SQL Server `{ \"server\": <topic.prefix>, \"database\": <single database name> }` when source partition evidence is supplied.",
+      "Live validation rejects missing or conflicting converters, tombstone settings, topic naming, heartbeat, transform, producer, schema-history, metrics, snapshot, and error-tolerance settings."
+    ],
+    "steps-to-verify": [
+      "Run live-validation unit tests with generated expected configs and supplied read-back maps.",
+      "Run redaction tests for exact secret references, `[hidden]`, all-asterisk masks, missing secrets, and unmasked mismatches.",
+      "Run provider setup mismatch tests for provider, fingerprint, source inventory, message-key inventory, heartbeat action query, and binding generation."
+    ],
+    "completed": true
+  },
+  {
+    "category": "unit-tests",
+    "description": "Add focused unit tests and golden snapshots for the typed contracts, validators, canonical config rendering, provider renderers, redaction, manifest output, and deterministic ordering. Tests should be small and provider-specific where possible so failures isolate the exact contract violation.",
+    "acceptance-criteria": [
+      "Tests cover all generated and rejected common connector configuration categories from the story and design references.",
+      "Tests prove renderer inputs come from binding identity, DMS-1320 provider setup result, and deployment policy rather than tenant names, connection strings, raw connector JSON, or duplicate provider inspection.",
+      "Tests require exact `StringConverter`, exact `DocumentStateJsonConverter`, `schemas.enable=false`, `decimal.format=NUMERIC`, and `tombstones.on.delete=false` for both providers.",
+      "Tests reject missing, duplicate, or conflicting topic delimiter, topic naming strategy, heartbeat prefix, non-empty heartbeat name, producer overrides, converters, transforms, metrics, snapshot mode, and error tolerance.",
+      "PostgreSQL tests cover slot/publication use, `publication.autocreate.mode=disabled`, unavailable-value placeholder, exact include lists, exact message-key columns, and work-table exclusion.",
+      "SQL Server tests cover schema-history properties, schema-history security propagation, `time.precision.mode=isostring`, unavailable-value placeholder, exact include lists, exact message-key columns, single-database enforcement, and work-table exclusion.",
+      "Security/redaction tests prove rendered artifacts, diagnostics, and validation failures do not leak credentials, raw connection strings, document payloads, tenant display names, or unsanitized physical identifiers.",
+      "Snapshot tests use stable key ordering and deterministic or omitted timestamps."
+    ],
+    "steps-to-verify": [
+      "Run `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/EdFi.DataManagementService.Backend.Cdc.Tests.Unit.csproj`.",
+      "Run `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Cdc src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit`.",
+      "Review golden snapshots to confirm they contain no raw secrets or unstable timestamps."
+    ],
+    "completed": true
+  },
+  {
+    "category": "pinned-image-fixture",
+    "description": "Add the Docker-backed pinned-image fixture foundation in `src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration`. The fixture should start the qualified Ed-Fi Kafka Connect image by immutable digest with a broker and selected provider, support local prerequisite skipping versus qualification-lane fail-fast behavior, register already-rendered connector configs directly with Kafka Connect, and expose reusable render/live-validation assertions for DMS-1323 without implementing bootstrap orchestration.",
+    "acceptance-criteria": [
+      "Integration tests using the fixture are categorized with `DatabaseIntegration`, `CdcConnectorTemplateSmoke`, and the provider-specific `PostgresqlIntegration` or `MssqlIntegration` category.",
+      "Local fixture setup may `Assert.Ignore` with clear diagnostics when Docker, the qualified image digest, PostgreSQL logical replication, or SQL Server 2025 prerequisites are unavailable.",
+      "The qualification lane can be configured to fail fast instead of skipping when required smoke prerequisites are missing.",
+      "The fixture loads the transform, converter, and partitioner classes from the qualified image.",
+      "The fixture validates rendered PostgreSQL and SQL Server connector configs against the Debezium 3.6/Kafka Connect 4.3 runtime.",
+      "The fixture proves the `kafka-murmur2-v1` partitioner mapping with fixed serialized-key/partition vectors against the image.",
+      "The fixture creates only the minimal topics and provider objects required by an already-rendered config and does not provision binding topics, ACLs, offset stores, or provider artifacts as bootstrap orchestration."
+    ],
+    "steps-to-verify": [
+      "Run `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.csproj --filter \"Category=CdcConnectorTemplateSmoke&FullyQualifiedName~PinnedImage\"` with the required image digest.",
+      "Inspect fixture setup and skipped local smoke output to confirm missing prerequisites are explicit and actionable.",
+      "Review the fixture for absence of binding reservation, topic/ACL policy provisioning, offset-store lifecycle, and provider setup repair behavior."
+    ],
+    "completed": true
+  },
+  {
+    "category": "provider-smoke-and-restart",
+    "description": "Add the narrow provider smoke and restart scenarios on top of the pinned-image fixture. These tests should register rendered PostgreSQL and SQL Server connector configs directly with Kafka Connect, exercise the minimal provider heartbeat path, observe committed source-offset progress, and restart an already-rendered connector only to prove the same template remains valid against retained provider and Connect state.",
+    "acceptance-criteria": [
+      "PostgreSQL smoke tests observe heartbeat and committed offset progress through the rendered template without resetting offsets, recreating slots, or repairing source history.",
+      "SQL Server smoke tests observe heartbeat and committed offset progress on SQL Server 2025 through the rendered template without resetting offsets, recreating capture instances, or repairing source history.",
+      "Restart smoke tests restart an already rendered and registered connector and validate the same expected template against retained Kafka Connect and provider state.",
+      "Smoke tests do not resnapshot an admitted database, clear source-history incident state, test topic/ACL provisioning policy, or implement Connect REST workflow behavior beyond direct registration, restart, status, and config read-back needed for the smoke path.",
+      "Provider smoke tests expose reusable render/live-validation assertions that DMS-1323 can invoke during bootstrap registration and status validation."
+    ],
+    "steps-to-verify": [
+      "Run `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.csproj --filter \"Category=CdcConnectorTemplateSmoke&Category=PostgresqlIntegration\"` when PostgreSQL prerequisites are available.",
+      "Run `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.csproj --filter \"Category=CdcConnectorTemplateSmoke&Category=MssqlIntegration\"` when SQL Server 2025 prerequisites are available.",
+      "Inspect skipped local smoke output and retained fixture artifacts to confirm missing prerequisites or provider failures are explicit and actionable."
+    ],
+    "completed": true
+  },
+  {
+    "category": "integration-boundaries",
+    "description": "Add consumer-facing tests or compile checks that lock the DMS-1321 handoff boundaries for DMS-1323 bootstrap orchestration and DMS-1320 provider setup. The template service should return render, preflight, live-validation, and artifact evidence without mutating binding state, provider artifacts, Kafka topics, ACLs, offsets, or Kafka Connect lifecycle.",
+    "acceptance-criteria": [
+      "A caller can render a connector and obtain a registration payload and optional redacted manifest without invoking Kafka Connect REST.",
+      "A caller can run preflight/live validation by supplying Kafka Connect read-back config and a fresh provider setup result.",
+      "The CDC template service does not create, delete, or repair Kafka topics, Kafka ACLs, Kafka Connect offset stores, PostgreSQL slots/publications, SQL Server capture instances, SQL Server schema-history topics, CDC binding state, or source-history incidents.",
+      "The service exposes reusable assertions/evidence that DMS-1323 can call during bootstrap registration and status validation.",
+      "Tests document the blocked condition when the DMS-1322 qualified image does not yet contain `org.edfi.kafka.connect.partitioner.KafkaMurmur2V1Partitioner` rather than adding cross-repo plugin code in DMS-1321."
+    ],
+    "steps-to-verify": [
+      "Run compile-check or consumer-facing tests that exercise the renderer and validator through public interfaces only.",
+      "Review the CDC library for absence of Kafka Connect REST clients, provider DDL executors, topic/ACL provisioning code, and binding state mutation.",
+      "Run `rg \"HttpClient|connectors/|topic.creation|CREATE PUBLICATION|sp_cdc_enable_table|ALTER PUBLICATION|ACL|offset.storage\" src/dms/backend/EdFi.DataManagementService.Backend.Cdc` and inspect any matches for scope drift."
+    ],
+    "completed": true
+  },
+  {
+    "category": "verification",
+    "description": "Finish repository-level verification for DMS-1321 after implementation. Run formatting, unit tests, integration smoke filters when prerequisites are available, and full solution build. Capture any skipped smoke evidence as environmental prerequisite gaps rather than implementation success.",
+    "acceptance-criteria": [
+      "CDC library and test code are formatted with CSharpier.",
+      "The new CDC unit test project passes.",
+      "The new CDC integration test project builds and its smoke tests either pass with configured prerequisites or skip locally with explicit prerequisite diagnostics.",
+      "The DMS solution builds without warnings.",
+      "No production or test source outside the DMS-1321 scope was changed except necessary shared contract factoring or solution/project wiring.",
+      "Final PR evidence identifies which DMS-1321 acceptance evidence is covered by fast tests and which requires the separate CDC connector qualification lane."
+    ],
+    "steps-to-verify": [
+      "Run `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Cdc src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration`.",
+      "Run `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/EdFi.DataManagementService.Backend.Cdc.Tests.Unit.csproj`.",
+      "Run `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.csproj --filter \"Category=CdcConnectorTemplateSmoke\"` when prerequisites are available.",
+      "Run `dotnet build src/dms/EdFi.DataManagementService.sln`."
+    ],
+    "completed": true
+  }
+]
