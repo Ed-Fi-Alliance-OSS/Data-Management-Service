@@ -18,6 +18,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_DocumentCacheReadTelemetry
 {
     private static readonly DocumentCacheTargetKey TargetKey = DocumentCacheTargetKey.Create("Tenant-A", 7);
+    private const string TargetLabel = "t1_8cd00c0cef8519ef483c8981";
     private static readonly DocumentCachePhysicalSourceFingerprint Fingerprint = new(
         "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     );
@@ -111,7 +112,7 @@ public class Given_DocumentCacheReadTelemetry
             .Which;
         attempt.LongValue.Should().Be(1);
         attempt.Tags["provider"].Should().Be("postgresql");
-        attempt.Tags["target_key"].Should().Be("Tenant-A:7");
+        attempt.Tags["target"].Should().Be(TargetLabel);
         attempt.Tags["effective_target_kind"].Should().Be(DocumentCacheReadTelemetryLabel.Primary);
         attempt.Tags["operation"].Should().Be("getById");
         attempt.Tags["resource_kind"].Should().Be("resource");
@@ -299,7 +300,7 @@ public class Given_DocumentCacheReadTelemetry
             .Tags.Keys.Should()
             .BeEquivalentTo(
                 "provider",
-                "target_key",
+                "target",
                 "effective_target_kind",
                 "operation",
                 "resource_kind",

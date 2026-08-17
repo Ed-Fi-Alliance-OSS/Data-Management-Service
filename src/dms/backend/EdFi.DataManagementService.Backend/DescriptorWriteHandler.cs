@@ -8,7 +8,6 @@ using System.Diagnostics;
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
-using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Utilities;
@@ -30,7 +29,6 @@ internal sealed class DescriptorWriteHandler(
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
         null,
     IDocumentCacheWriterTelemetry? documentCacheWriterTelemetry = null,
-    IDataStoreSelection? dataStoreSelection = null,
     IRelationalCommandExecutor? customViewValidationCommandExecutor = null
 ) : IDescriptorWriteHandler
 {
@@ -60,7 +58,6 @@ internal sealed class DescriptorWriteHandler(
         ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance;
     private readonly IDocumentCacheWriterTelemetry _documentCacheWriterTelemetry =
         documentCacheWriterTelemetry ?? NoOpDocumentCacheWriterTelemetry.Instance;
-    private readonly IDataStoreSelection? _dataStoreSelection = dataStoreSelection;
 
     public async Task<UpsertResult> HandlePostAsync(
         DescriptorWriteRequest request,
@@ -3313,7 +3310,6 @@ internal sealed class DescriptorWriteHandler(
         _documentCacheWriterTelemetry.RecordSameDocumentWait(
             DocumentCacheWriterMetricContext.ForCanonicalWriter(
                 request.MappingSet.Key.Dialect,
-                _dataStoreSelection,
                 DocumentCacheWriterTelemetryLabel.CanonicalWrite,
                 outcome
             ),

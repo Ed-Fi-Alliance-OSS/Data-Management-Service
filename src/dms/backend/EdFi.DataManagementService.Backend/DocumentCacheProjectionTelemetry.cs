@@ -16,8 +16,8 @@ namespace EdFi.DataManagementService.Backend;
 
 internal static class DocumentCacheProjectionTelemetryLabel
 {
-    public const string Unknown = "unknown";
-    public const string None = "none";
+    public const string Unknown = DocumentCacheTelemetryLabel.Unknown;
+    public const string None = DocumentCacheTelemetryLabel.None;
     public const string Active = "Active";
     public const string Backoff = "Backoff";
     public const string Cancelled = "Cancelled";
@@ -78,7 +78,7 @@ internal sealed record DocumentCacheProjectionTelemetryContext
         return
         [
             new("provider", Provider),
-            new("target_key", TargetKey),
+            new("target", TargetKey),
             new("outcome", Outcome),
             new("category", Category),
             new("lifecycle", Lifecycle),
@@ -230,7 +230,7 @@ internal sealed record DocumentCacheProjectionTelemetryContext
     private static string TargetKeyLabel(DocumentCacheTargetKey targetKey)
     {
         ArgumentNullException.ThrowIfNull(targetKey);
-        return targetKey.ToString();
+        return DocumentCacheTelemetryTargetLabel.FromTargetKey(targetKey);
     }
 
     private static string CommandLabel(DocumentCacheAdministrativeCommand? command) =>

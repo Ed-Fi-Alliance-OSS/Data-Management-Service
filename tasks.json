@@ -217,7 +217,7 @@
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCacheStatusTelemetry",
       "Search changed telemetry code for target_key and raw DocumentCacheTargetKey.ToString() metric labels; verify only allowed structured-log/status contexts retain raw target key."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Integration Evidence",

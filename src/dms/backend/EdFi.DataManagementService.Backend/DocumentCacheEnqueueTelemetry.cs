@@ -204,7 +204,8 @@ internal sealed class DocumentCacheEnqueueTelemetry(
     IOptions<DocumentCacheOptions> options,
     TimeProvider timeProvider,
     ILogger<DocumentCacheEnqueueTelemetry>? logger = null,
-    IDocumentCacheTargetRegistry? targetRegistry = null
+    IDocumentCacheTargetRegistry? targetRegistry = null,
+    Meter? meter = null
 ) : IDocumentCacheEnqueueTelemetry, IDocumentCacheEnqueueFailureObservationProvider
 {
     internal const string MeterName = "EdFi.DataManagementService.DocumentCacheProjection";
@@ -224,14 +225,14 @@ internal sealed class DocumentCacheEnqueueTelemetry(
     private readonly IDocumentCacheTargetRegistry? _targetRegistry = targetRegistry;
     private readonly ConcurrentDictionary<DocumentCacheTargetKey, RetainedFailureWindow> _failureWindows =
         new();
-    private readonly Counter<long> _successCounter = SharedMeter.CreateCounter<long>(
+    private readonly Counter<long> _successCounter = (meter ?? SharedMeter).CreateCounter<long>(
         SuccessCounterName,
-        unit: "{enqueue}",
+        unit: "{success}",
         description: "DocumentCache canonical write enqueue successes."
     );
-    private readonly Counter<long> _failureCounter = SharedMeter.CreateCounter<long>(
+    private readonly Counter<long> _failureCounter = (meter ?? SharedMeter).CreateCounter<long>(
         FailureCounterName,
-        unit: "{enqueue}",
+        unit: "{failure}",
         description: "DocumentCache canonical write enqueue failures."
     );
 
@@ -242,11 +243,12 @@ internal sealed class DocumentCacheEnqueueTelemetry(
         _successCounter.Add(1, ToTags(context, category: null));
 
         _logger.LogInformation(
-            "DocumentCacheEnqueueSucceeded provider {Provider} target {Target} canonicalOperation {CanonicalOperation} resourceKind {ResourceKind}",
-            context.ProviderToken?.Value ?? DocumentCacheWriterTelemetryLabel.Unknown,
+            "DocumentCacheEnqueueSucceeded provider {Provider} target {Target} canonicalOperation {CanonicalOperation} resourceKind {ResourceKind} outcome {Outcome}",
+            context.ProviderToken?.Value ?? DocumentCacheTelemetryLabel.Unknown,
             ToLogTarget(context.TargetKey),
-            context.CanonicalOperation,
-            context.ResourceKind
+            DocumentCacheTelemetryLabel.LowerCamel(context.CanonicalOperation),
+            DocumentCacheTelemetryLabel.LowerCamel(context.ResourceKind),
+            "committed"
         );
     }
 
@@ -290,11 +292,11 @@ internal sealed class DocumentCacheEnqueueTelemetry(
 
         _logger.LogWarning(
             "DocumentCacheEnqueueFailed provider {Provider} target {Target} category {Category} canonicalOperation {CanonicalOperation} resourceKind {ResourceKind} message {Message}",
-            context.ProviderToken?.Value ?? DocumentCacheWriterTelemetryLabel.Unknown,
+            context.ProviderToken?.Value ?? DocumentCacheTelemetryLabel.Unknown,
             ToLogTarget(context.TargetKey),
-            category,
-            context.CanonicalOperation,
-            context.ResourceKind,
+            DocumentCacheTelemetryLabel.LowerCamel(category),
+            DocumentCacheTelemetryLabel.LowerCamel(context.CanonicalOperation),
+            DocumentCacheTelemetryLabel.LowerCamel(context.ResourceKind),
             failureEvent.Message
         );
     }
@@ -337,7 +339,7 @@ internal sealed class DocumentCacheEnqueueTelemetry(
     }
 
     private static string ToLogTarget(DocumentCacheTargetKey? targetKey) =>
-        targetKey?.ToString() ?? DocumentCacheWriterTelemetryLabel.Unknown;
+        DocumentCacheTelemetryTargetLabel.FromTargetKey(targetKey);
 
     private static TagList ToTags(
         DocumentCacheEnqueueTelemetryContext context,
@@ -346,15 +348,19 @@ internal sealed class DocumentCacheEnqueueTelemetry(
     {
         TagList tags =
         [
-            new("provider", context.ProviderToken?.Value ?? DocumentCacheWriterTelemetryLabel.Unknown),
-            new("target_key", ToLogTarget(context.TargetKey)),
-            new("canonical_operation", context.CanonicalOperation.ToString()),
-            new("resource_kind", context.ResourceKind.ToString()),
+            new("provider", context.ProviderToken?.Value ?? DocumentCacheTelemetryLabel.Unknown),
+            new("target", DocumentCacheTelemetryTargetLabel.FromTargetKey(context.TargetKey)),
+            new("canonical_operation", DocumentCacheTelemetryLabel.LowerCamel(context.CanonicalOperation)),
+            new("resource_kind", DocumentCacheTelemetryLabel.LowerCamel(context.ResourceKind)),
         ];
 
         if (category is not null)
         {
-            tags.Add("category", category.Value.ToString());
+            tags.Add("category", DocumentCacheTelemetryLabel.LowerCamel(category.Value));
+        }
+        else
+        {
+            tags.Add("outcome", "committed");
         }
 
         return tags;

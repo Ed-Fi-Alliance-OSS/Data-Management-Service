@@ -27,7 +27,7 @@ internal enum DocumentCacheWriterContentionPhase
 
 internal static class DocumentCacheWriterTelemetryLabel
 {
-    public const string Unknown = "unknown";
+    public const string Unknown = DocumentCacheTelemetryLabel.Unknown;
     public const string CanonicalWrite = "CanonicalWrite";
     public const string AppliedWrite = "AppliedWrite";
     public const string Failed = "Failed";
@@ -84,7 +84,7 @@ internal sealed record DocumentCacheWriterMetricContext
     ) =>
         new(
             request.SanitizedProvider,
-            request.SanitizedTargetKey,
+            TargetKeyLabel(request.TargetKey),
             request.Purpose.ToString(),
             LifecycleLabel(lifecycleState),
             outcome.ToString()
@@ -92,13 +92,12 @@ internal sealed record DocumentCacheWriterMetricContext
 
     public static DocumentCacheWriterMetricContext ForCanonicalWriter(
         RelationalProviderToken providerToken,
-        long? dataStoreId,
         string purpose,
         string outcome
     ) =>
         new(
             ProviderLabel(providerToken),
-            SelectedDataStoreTargetKey(dataStoreId),
+            DocumentCacheWriterTelemetryLabel.Unknown,
             purpose,
             DocumentCacheWriterTelemetryLabel.Unknown,
             outcome
@@ -106,23 +105,16 @@ internal sealed record DocumentCacheWriterMetricContext
 
     public static DocumentCacheWriterMetricContext ForCanonicalWriter(
         SqlDialect dialect,
-        IDataStoreSelection? dataStoreSelection,
         string purpose,
         string outcome
-    ) =>
-        ForCanonicalWriter(
-            ProviderTokenForDialect(dialect),
-            TryGetSelectedDataStoreId(dataStoreSelection),
-            purpose,
-            outcome
-        );
+    ) => ForCanonicalWriter(ProviderTokenForDialect(dialect), purpose, outcome);
 
     public TagList ToTags()
     {
         return
         [
             new("provider", Provider),
-            new("target_key", TargetKey),
+            new("target", TargetKey),
             new("purpose", Purpose),
             new("lifecycle", Lifecycle),
             new("outcome", Outcome),
@@ -137,23 +129,7 @@ internal sealed record DocumentCacheWriterMetricContext
     private static string TargetKeyLabel(DocumentCacheProjectionTargetKey targetKey)
     {
         ArgumentNullException.ThrowIfNull(targetKey);
-        string tenant = targetKey.TenantKey.Length == 0 ? "(default)" : targetKey.TenantKey;
-        return LoggingSanitizer.SanitizeForLogging($"{tenant}:{targetKey.DataStoreId.Value}");
-    }
-
-    private static string SelectedDataStoreTargetKey(long? dataStoreId) =>
-        dataStoreId is > 0 ? $"(selected):{dataStoreId.Value}" : DocumentCacheWriterTelemetryLabel.Unknown;
-
-    private static long? TryGetSelectedDataStoreId(IDataStoreSelection? dataStoreSelection)
-    {
-        try
-        {
-            return dataStoreSelection?.IsSet == true ? dataStoreSelection.GetSelectedDataStore().Id : null;
-        }
-        catch (InvalidOperationException)
-        {
-            return null;
-        }
+        return DocumentCacheTelemetryTargetLabel.FromProjectionTargetKey(targetKey);
     }
 
     private static RelationalProviderToken ProviderTokenForDialect(SqlDialect dialect) =>

@@ -29,6 +29,7 @@ public class Given_DocumentCacheServiceRegistration
 
         AssertSingletonFactory<DocumentCacheProjectionObservationStore>(services);
         AssertSingleton<IDocumentCacheProjectionTelemetry, DocumentCacheProjectionTelemetry>(services);
+        AssertSingleton<IDocumentCacheStatusTelemetry, DocumentCacheStatusTelemetry>(services);
         AssertSingleton<
             IDocumentCacheDownstreamPublicationHistoryProvider,
             DocumentCacheUnknownDownstreamPublicationHistoryProvider

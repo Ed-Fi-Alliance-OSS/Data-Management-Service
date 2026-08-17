@@ -6,9 +6,11 @@
 using System.Collections.Immutable;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.Metrics;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
@@ -22,6 +24,7 @@ public class Given_DocumentCacheEnqueueTelemetry
 {
     private static readonly DateTimeOffset ObservedAt = new(2026, 8, 17, 15, 10, 0, TimeSpan.Zero);
     private static readonly DocumentCacheTargetKey TargetKey = DocumentCacheTargetKey.Create("", 1);
+    private const string TargetLabel = "t1_22dea2068aad74fc28655d36";
 
     [Test]
     public void It_retains_bounded_failures_by_current_target_oldest_to_newest()
@@ -147,6 +150,60 @@ public class Given_DocumentCacheEnqueueTelemetry
             );
     }
 
+    [Test]
+    public void It_records_enqueue_metrics_and_structured_logs_with_bounded_target_labels()
+    {
+        using MetricCollector collector = new();
+        var logger = new CapturingLogger<DocumentCacheEnqueueTelemetry>();
+        DocumentCacheEnqueueTelemetry telemetry = CreateTelemetry(
+            pageSize: 10,
+            logger: logger,
+            meter: collector.Meter
+        );
+
+        telemetry.RecordSuccess(
+            Context(TargetKey, DocumentCacheEnqueueTelemetryCanonicalOperation.Insert, "committed")
+        );
+        telemetry.RecordFailure(
+            Context(TargetKey, DocumentCacheEnqueueTelemetryCanonicalOperation.Update, "failed\n{unsafe}"),
+            DocumentCacheEnqueueFailureCategory.ProviderUnavailable
+        );
+
+        MetricMeasurement success = collector
+            .MeasurementsFor(DocumentCacheEnqueueTelemetry.SuccessCounterName)
+            .Should()
+            .ContainSingle()
+            .Which;
+        success.Tags["provider"].Should().Be("postgresql");
+        success.Tags["target"].Should().Be(TargetLabel);
+        success.Tags["canonical_operation"].Should().Be("insert");
+        success.Tags["resource_kind"].Should().Be("resource");
+        success.Tags["outcome"].Should().Be("committed");
+        success.Tags.Should().NotContainKey("target_key");
+
+        MetricMeasurement failure = collector
+            .MeasurementsFor(DocumentCacheEnqueueTelemetry.FailureCounterName)
+            .Should()
+            .ContainSingle()
+            .Which;
+        failure.Tags["target"].Should().Be(TargetLabel);
+        failure.Tags["canonical_operation"].Should().Be("update");
+        failure.Tags["resource_kind"].Should().Be("resource");
+        failure.Tags["category"].Should().Be("providerUnavailable");
+        failure.Tags.Should().NotContainKey("target_key");
+
+        logger
+            .Entries.Select(entry => entry.Message)
+            .Should()
+            .Contain(message => message.Contains("DocumentCacheEnqueueSucceeded", StringComparison.Ordinal))
+            .And.Contain(message => message.Contains("DocumentCacheEnqueueFailed", StringComparison.Ordinal));
+        logger.Entries.Should().OnlyContain(entry => entry.Properties["Target"]!.Equals(TargetLabel));
+        logger
+            .Entries.SelectMany(entry => entry.Properties.Values.OfType<string>())
+            .Should()
+            .NotContain(TargetKey.ToString());
+    }
+
     [TestCase(
         "dms.DocumentCacheState singleton row is missing or unreadable for projection enqueue.",
         (int)DocumentCacheEnqueueFailureCategory.StateMissingOrInvalid
@@ -182,7 +239,9 @@ public class Given_DocumentCacheEnqueueTelemetry
 
     private static DocumentCacheEnqueueTelemetry CreateTelemetry(
         int pageSize,
-        IDocumentCacheTargetRegistry? targetRegistry = null
+        IDocumentCacheTargetRegistry? targetRegistry = null,
+        ILogger<DocumentCacheEnqueueTelemetry>? logger = null,
+        Meter? meter = null
     )
     {
         DocumentCacheOptions options = new();
@@ -191,8 +250,9 @@ public class Given_DocumentCacheEnqueueTelemetry
         return new(
             Options.Create(options),
             new FixedTimeProvider(ObservedAt),
-            NullLogger<DocumentCacheEnqueueTelemetry>.Instance,
-            targetRegistry
+            logger ?? NullLogger<DocumentCacheEnqueueTelemetry>.Instance,
+            targetRegistry,
+            meter
         );
     }
 
@@ -341,5 +401,100 @@ public class Given_DocumentCacheEnqueueTelemetry
         public bool IsUniqueConstraintViolation(DbException exception) => false;
 
         public bool IsTransientFailure(DbException exception) => false;
+    }
+
+    private sealed class MetricCollector : IDisposable
+    {
+        public Meter Meter { get; } = new($"DocumentCacheEnqueueTelemetryTests.{Guid.NewGuid()}");
+
+        private readonly MeterListener _listener = new();
+        private readonly List<MetricMeasurement> _measurements = [];
+
+        public MetricCollector()
+        {
+            _listener.InstrumentPublished = (instrument, listener) =>
+            {
+                if (instrument.Meter.Name == Meter.Name)
+                {
+                    listener.EnableMeasurementEvents(instrument);
+                }
+            };
+            _listener.SetMeasurementEventCallback<long>(
+                (instrument, measurement, tags, _) =>
+                    _measurements.Add(
+                        new MetricMeasurement(instrument.Name, LongValue: measurement, Tags: CopyTags(tags))
+                    )
+            );
+            _listener.Start();
+        }
+
+        public MetricMeasurement[] MeasurementsFor(string instrumentName) =>
+            [.. _measurements.Where(measurement => measurement.InstrumentName == instrumentName)];
+
+        public void Dispose()
+        {
+            _listener.Dispose();
+            Meter.Dispose();
+        }
+
+        private static Dictionary<string, object?> CopyTags(ReadOnlySpan<KeyValuePair<string, object?>> tags)
+        {
+            Dictionary<string, object?> result = [];
+            foreach (KeyValuePair<string, object?> tag in tags)
+            {
+                result[tag.Key] = tag.Value;
+            }
+
+            return result;
+        }
+    }
+
+    private sealed record MetricMeasurement(
+        string InstrumentName,
+        long? LongValue,
+        Dictionary<string, object?> Tags
+    );
+
+    private sealed record CapturedLogEntry(
+        LogLevel Level,
+        string Message,
+        IReadOnlyDictionary<string, object?> Properties
+    );
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<CapturedLogEntry> Entries { get; } = [];
+
+        public IDisposable BeginScope<TState>(TState state)
+            where TState : notnull => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            Dictionary<string, object?> properties = [];
+            if (state is IEnumerable<KeyValuePair<string, object?>> stateProperties)
+            {
+                foreach (KeyValuePair<string, object?> property in stateProperties)
+                {
+                    properties[property.Key] = property.Value;
+                }
+            }
+
+            Entries.Add(new CapturedLogEntry(logLevel, formatter(state, exception), properties));
+        }
+    }
+
+    private sealed class NullScope : IDisposable
+    {
+        public static NullScope Instance { get; } = new();
+
+        public void Dispose() { }
     }
 }
