@@ -286,7 +286,14 @@ internal static class JsonHelpers
     /// </summary>
     public static void TryCoerceToBoolean(this JsonNode jsonNode)
     {
-        var jsonValue = jsonNode.AsValue();
+        // Coercion runs over request-body nodes ahead of document validation, so the node at a typed
+        // path is whatever shape the client sent. An object or array is not something to coerce, and
+        // like a value that will not parse it is left for validation to reject. The same guard opens
+        // each helper below, because throwing here escapes the pipeline as a 500 instead.
+        if (jsonNode is not JsonValue jsonValue)
+        {
+            return;
+        }
 
         if (jsonValue.GetValueKind() == JsonValueKind.String)
         {
@@ -340,7 +347,11 @@ internal static class JsonHelpers
     /// </summary>
     public static void TryCoerceStringToNumber(this JsonNode jsonNode)
     {
-        var jsonValue = jsonNode.AsValue();
+        if (jsonNode is not JsonValue jsonValue)
+        {
+            return;
+        }
+
         if (jsonValue.GetValueKind() == JsonValueKind.String)
         {
             // Numeric value was passed in as string, must fix.
@@ -368,7 +379,11 @@ internal static class JsonHelpers
     /// </summary>
     public static void TryCoerceStringToDecimal(this JsonNode jsonNode)
     {
-        var jsonValue = jsonNode.AsValue();
+        if (jsonNode is not JsonValue jsonValue)
+        {
+            return;
+        }
+
         if (jsonValue.GetValueKind() == JsonValueKind.String)
         {
             string stringValue = jsonValue.GetValue<string>();
@@ -385,7 +400,11 @@ internal static class JsonHelpers
     /// <param name="jsonNode"></param>
     public static void TryNormalizeDateTimeString(this JsonNode jsonNode)
     {
-        var jsonValue = jsonNode.AsValue();
+        if (jsonNode is not JsonValue jsonValue)
+        {
+            return;
+        }
+
         if (jsonValue.GetValueKind() == JsonValueKind.String)
         {
             string stringValue = jsonValue.GetValue<string>();
@@ -414,7 +433,11 @@ internal static class JsonHelpers
     /// </summary>
     public static void TryCoerceSlashDateToIso8601(this JsonNode jsonNode)
     {
-        var jsonValue = jsonNode.AsValue();
+        if (jsonNode is not JsonValue jsonValue)
+        {
+            return;
+        }
+
         if (jsonValue.GetValueKind() == JsonValueKind.String)
         {
             string stringValue = jsonValue.GetValue<string>();

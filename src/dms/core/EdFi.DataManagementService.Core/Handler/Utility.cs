@@ -87,10 +87,12 @@ public static class Utility
     /// Shapes the response for a backend failure the backend itself could not classify. The failure
     /// message is written for diagnosis and names internal components, so it is logged rather than
     /// served; several producers build it from a caught exception and log nothing else, which makes
-    /// this the only record of what went wrong. The client receives the standard problem-details
-    /// envelope in its place. Note that a failure escaping as an exception instead of a result is
-    /// answered by <c>CoreExceptionLoggingMiddleware</c>, whose generic 500 deliberately carries a
-    /// different, non-problem-details body, so the two shapes both exist for server-side failures.
+    /// this the only record of what went wrong. Being exception-derived is also why it is sanitized
+    /// like the request path beside it, at the cost of the punctuation the whitelist drops. The
+    /// client receives the standard problem-details envelope in its place. Note that a failure
+    /// escaping as an exception instead of a result is answered by
+    /// <c>CoreExceptionLoggingMiddleware</c>, whose generic 500 deliberately carries a different,
+    /// non-problem-details body, so the two shapes both exist for server-side failures.
     /// </summary>
     internal static FrontendResponse CreateUnknownFailureResponse(
         ILogger logger,
@@ -102,7 +104,7 @@ public static class Utility
             "Backend reported an unknown failure for {Method} {Path}: {FailureMessage} - {TraceId}",
             requestInfo.Method,
             LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.Path),
-            failureMessage,
+            LoggingSanitizer.SanitizeForLogging(failureMessage),
             requestInfo.FrontendRequest.TraceId.Value
         );
 

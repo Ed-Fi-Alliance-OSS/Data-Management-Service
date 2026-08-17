@@ -620,10 +620,12 @@ actual: {requestInfo.FrontendResponse.Body}
 
         requestInfo.FrontendResponse.StatusCode.Should().Be(500);
         requestInfo.FrontendResponse.Body!["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:system");
+        // Unquoted: the guard-rail message is exception-derived, so the handler logs it through the
+        // sanitizer, whose whitelist drops the quotes the message itself puts around the name.
         harness
             .Logger.JoinedMessages()
             .Should()
-            .Contain("Write plan lookup failed for resource 'Ed-Fi.Student'");
+            .Contain("Write plan lookup failed for resource Ed-Fi.Student");
         harness.WriteExecutor.Requests.Should().BeEmpty();
     }
 
