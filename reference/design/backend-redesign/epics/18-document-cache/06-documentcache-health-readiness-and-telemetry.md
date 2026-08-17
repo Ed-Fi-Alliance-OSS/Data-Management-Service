@@ -56,11 +56,20 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   intentionally an internal domain snapshot. This story owns the stable JSON-facing status
   DTOs and maps internal registry/projection observations into that contract.
 - The status service does not resolve targets, refresh CMS, execute lifecycle commands,
+  refresh inventory, refresh enqueue-trigger validation, refresh SQL Server prerequisites,
   start workers, wait for work to drain, run direct fill, read cache rows, inspect Kafka,
-  inspect provider CDC artifacts, or calculate deployment readiness. It observes the
-  current configured target state only.
+  inspect provider CDC artifacts, or calculate deployment readiness during a status
+  request. It observes the current configured target state only.
+- Active administrative command and last-ended command diagnostics are process-local
+  observations from the 18-04 observation store. 18-06 reports only command observations
+  known to the current DMS process/replica and does not add durable command-phase
+  persistence or cross-replica sharing. Durable lifecycle states such as `Resetting` and
+  `Rebuilding` remain authoritative durable state, but they do not imply a resumable active
+  command name or phase.
 - The status service reports every explicit `DocumentCache:Targets` entry. Unconfigured
-  databases are omitted, even when they are loaded in CMS or are serving API traffic.
+  databases are omitted, even when they are loaded in CMS or are serving API traffic. An
+  authorized request with an empty `DocumentCache:Targets` list returns a successful
+  contract response with `contractVersion: 1`, `observedAt`, and `targets: []`.
 
 ### Status Surface and JSON Contract
 
@@ -68,14 +77,44 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   health module at `GET /health/document-cache`. Do not make projection state part of the
   existing `/health` pass/fail result, and do not register an `IHealthCheck` whose
   unhealthy result can remove a normal API replica from service.
+- Require authorization for `GET /health/document-cache` because the operator-grade payload
+  includes target keys, `DocumentId` diagnostics, opaque physical-source fingerprints,
+  effective settings, lifecycle/admin state, queue state, and sanitized diagnostic
+  messages. Keep ordinary `/health` anonymous and minimal for load balancers, container
+  health, and existing operational probes.
+- Use the existing OAuth/JWT validation path, not a new authorization system. Configure
+  `DataManagement:DocumentCache:Status:RequiredRole`, with
+  `dms-document-cache-operator` as the recommended value, and authorize a valid bearer
+  token by checking the configured `JwtAuthentication:RoleClaimType` claim type for that
+  role value. Implement this as a dedicated status-endpoint role check or policy; do not
+  reuse the normal API `JwtAuthentication:ClientRole` gate unless that code path is
+  refactored to accept an explicit required role and to honor
+  `JwtAuthentication:RoleClaimType` end to end.
+- A missing or invalid token returns `401`, and a valid token without the configured role
+  returns `403`. Treat a missing, empty, whitespace-only, or invalid
+  `DataManagement:DocumentCache:Status:RequiredRole` as fail-closed by leaving
+  `GET /health/document-cache` unmapped so callers receive the ordinary `404` fallback.
+  Apply the same behavior in development, test, and production; tests that exercise the
+  endpoint must configure an explicit valid role. Do not fail application startup, map the
+  endpoint only to return `403`, silently omit fields to make the endpoint anonymous, or
+  use Ed-Fi claim sets, resource claims, education organization IDs, namespace prefixes,
+  data store IDs, CMS admin permissions, database tables, or a new policy store as the v1
+  operator contract.
 - The endpoint returns a successful HTTP response when the status request itself can be
   evaluated and serialized. Target-level `nonOperational`, `notCaughtUp`, or `unknown`
   states are data in the response body, not endpoint failures. Use ordinary request
   failures only for inability to run the status surface itself, such as cancellation or an
   unexpected serialization/programming failure.
-- Use stable `System.Text.Json` DTOs with lower-camel property names and lower-camel enum
-  strings. Do not expose numeric enum values. Reuse the 18-01 nested target-key shape:
-  `"targetKey": { "tenantKey": "", "dataStoreId": 1 }`.
+- Use stable `System.Text.Json` DTOs with lower-camel property names, lower-camel enum
+  strings, top-level `contractVersion: 1`, and top-level `observedAt`. Do not expose
+  numeric enum values. Reuse the 18-01 nested target-key shape:
+  `"targetKey": { "tenantKey": "", "dataStoreId": 1 }`. No public status field or reason
+  remains implementation-local once serialized by this endpoint.
+- Set top-level `observedAt` to the UTC time when the status service captures the immutable
+  registry/runtime snapshot for the request, immediately before bounded-parallel target
+  evaluation starts. Each target entry carries `processObservedAt` for the process-local
+  registry/runtime observation and `durableObservedAt` for the provider current-source
+  statement when that statement succeeds.
 - Sort target entries deterministically by normalized tenant key and `DataStoreId` so
   tests, operators, and E19 consumers can compare output without relying on dictionary
   order.
@@ -90,6 +129,26 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   operational health, caught-up status, queue summary, execution state, active
   administrative command, last ended target diagnostic, bounded document diagnostics,
   bounded target diagnostics, and effective queue/read/admin settings.
+- Keep stable target objects and component objects present in the JSON contract. Use `null`
+  for unavailable scalar values such as `durableObservedAt`, oldest-work timestamp,
+  oldest-work age, diagnostic message, active command, and last-ended diagnostic. Use empty
+  arrays for bounded diagnostic collections when there are no entries. Use explicit
+  lower-camel enum values for component availability and success: `operationalHealth.reason`
+  and `caughtUp.reason` are `none` on successful `operational` or `caughtUp` states and
+  otherwise carry the selected fixed reason; skipped or failed queue observation uses
+  `queueSummary.presence: "unknown"`. Always include `backlogEstimate` as an object; v1
+  emits `kind: "unavailable"` and `value: null`.
+- Serialize timestamps as UTC ISO 8601 strings with a `Z` offset using `System.Text.Json`
+  `DateTimeOffset` values normalized to UTC. Serialize public JSON durations, ages, and
+  timeout/settings values as numeric seconds with fractional values allowed, using property
+  names that include the unit, such as `oldestWorkAgeSeconds`, `pollIntervalSeconds`,
+  `failureBackoffSeconds`, `directFillTimeoutSeconds`, `statusObservationTimeoutSeconds`,
+  and `endpointTimeoutSeconds`. Do not use .NET `TimeSpan` strings or ISO 8601 duration
+  strings in the status contract.
+- Include status tuning values in `effectiveSettings`, including the per-target
+  status-observation timeout and top-level endpoint timeout. Omit
+  `Status:RequiredRole` entirely from public `effectiveSettings`; it is authorization
+  configuration, not projection behavior.
 - E19 consumes this per-target output as an input. This story does not add
   `canRegisterConnector`, expected-source comparison, source-drift retention,
   binding-generation fields, connector status, Kafka lag, or a deployment aggregate.
@@ -99,6 +158,29 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
 - Add one provider adapter per relational provider for current projection status
   observation. It should be separate from the 18-04 work pager because polling status is
   not queue processing and must not advance cursors or apply poison traversal behavior.
+- Evaluate targets with bounded parallelism capped by the effective
+  `Projector:MaxConcurrentTargets`. Add a per-target status-observation timeout setting
+  defaulting to five seconds and a top-level endpoint budget defaulting to 30 seconds. The
+  endpoint budget starts when the status service captures the request snapshot; each
+  target's per-target timeout starts when its bounded-parallel evaluation work item begins
+  and is linked to the endpoint budget and caller cancellation.
+- A target timeout, provider-observation exception, or status statement failure serializes
+  that target's required current-source facts as `unknown` with sanitized diagnostics; peer
+  targets continue and the endpoint still returns a successful response when serialization
+  itself succeeds. If the endpoint budget expires before some targets start or finish,
+  serialize those targets as `unknown` with reason `statusEndpointTimeout`; caller
+  cancellation still follows the normal request-cancellation path.
+- Skip the provider current-source statement unless process eligibility is otherwise
+  satisfied for the current target generation: resolved target, compatible provider
+  metadata, valid inventory and enqueue-trigger observation, satisfied provider
+  prerequisites, and a current running/unfaulted runtime observation with no active
+  target-level backoff. For targets already known non-operational or unknown from 18-01 or
+  18-04 process facts, serialize current durable-state, queue, oldest-work, and
+  `durableObservedAt` fields as unavailable and use the process-eligibility reason for
+  `operationalHealth` and `caughtUp`. Do not reuse an earlier durable success to fill those
+  fields. Previously captured 18-01 validation observations may still appear in their own
+  component fields with their observation time, but they are not the 18-06 current-source
+  observation.
 - The adapter executes one read-only, provider-consistent statement per target to observe
   the durable status facts used for caught-up:
   - `dms.DocumentCacheState(StateId = 1).ProjectionLifecycleState`;
@@ -108,14 +190,18 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
 - The same statement must decide the caught-up predicate. Do not combine a lifecycle read
   from one command with queue emptiness from another command. A statement failure returns
   `unknown`; do not reuse a previous successful caught-up or lifecycle observation.
+- `durableObservedAt` is the provider/database UTC timestamp returned by the same statement
+  that reads lifecycle, latch, queue presence, and oldest work; it is `null` when durable
+  observation is skipped or fails. Queue age values are computed by the provider statement
+  relative to that durable observation time.
 - Oldest-work observation uses `IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId`
   with `ORDER BY FirstEnqueuedAt, DocumentId` and a single-row limit. Queue presence uses
   indexed existence. The status path never scans `dms.Document`, never scans
   `dms.DocumentCache`, and never runs a source/cache/work relationship scan.
-- Routine exact backlog counts are out of scope. If a provider can supply a cheap bounded
-  or catalog-estimated backlog value, expose it with an explicit estimate kind; otherwise
-  report backlog estimate as unavailable. Exact counts belong only to explicit operator
-  diagnostics outside normal health polling.
+- Routine exact backlog counts are out of scope. V1 reports backlog estimates as
+  unavailable for both PostgreSQL and SQL Server while still exposing indexed queue
+  presence and oldest-work timestamp/age. Exact counts and cheap/catalog-estimated values
+  belong only to explicit operator diagnostics or later work outside normal health polling.
 - A missing or invalid `DocumentCacheState` row is a known non-operational durable-state
   observation and makes caught-up `notCaughtUp`. An unreadable state row or failed status
   statement makes caught-up `unknown`. A missing, disabled, invalid, or unreadable enqueue
@@ -127,12 +213,32 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   current-generation 18-04 runtime observation. A resolved target must have satisfied
   inventory, satisfied enqueue-trigger validation, provider-compatible metadata,
   satisfied provider prerequisites, and a current running/unfaulted execution context.
-- If a target is configured but unresolved, provider-mismatched, inventory-invalid,
-  prerequisite-ineligible, removed, replaced, cancelled, or faulted, operational health is
-  `nonOperational` with the corresponding fixed reason. If the adapter or status service
-  cannot determine a required fact, operational health is `unknown`.
+- Keep `operationalHealth.reason` and `caughtUp.reason` as single fixed-enum values
+  selected by deterministic precedence. Additional simultaneous facts belong in bounded
+  diagnostics arrays and component fields, not in multi-reason status values.
+- Use this precedence for operational health: `unresolvedTarget`, provider-metadata
+  reasons `providerMetadataMissing` then `providerMetadataUnknown`, `providerMismatch`,
+  `connectionInputMissing`, `physicalSourceFingerprintFailure`,
+  `effectiveSchemaCompatibilityFailure`, `resourceKeyCompatibilityFailure`,
+  `inventoryInvalid`, `enqueueTriggerUnavailable`, SQL Server prerequisite reasons
+  `sqlServerPrerequisiteFailed` then `unsupportedPrerequisiteIncident`, `targetRemoved`,
+  `targetReplaced`, `runtimeNotObserved`, `runtimeCancelled`, `runtimeFaulted`,
+  `targetBackoff`, then `providerObservationFailed` as `unknown` when process eligibility
+  otherwise passed but durable facts could not be read, then durable-state reasons
+  `stateMissingOrInvalid`, `lifecycleDisabled`, `lifecycleResetting`, `lifecycleRebuilding`, and
+  `cacheAheadRecoveryRequired`. Map 18-01 lifecycle-observation failures that prevent
+  target eligibility to `stateMissingOrInvalid` when they are known missing or invalid
+  state observations, and to `providerObservationFailed` when the state row is unreadable
+  or no authoritative durable fact was observed.
 - `Disabled`, `Resetting`, `Rebuilding`, and a set cache-ahead latch are known
   `nonOperational` durable states. Queue presence does not affect operational health.
+- Represent a current-generation target with no 18-04 runtime health snapshot as a
+  not-yet-observed runtime, not as idle. Add fixed execution-state value `notObserved`;
+  set `operationalHealth.status` and `caughtUp.status` to `unknown` with reason
+  `runtimeNotObserved`. Idle between polls requires an actual current-generation runtime
+  snapshot such as `idle` or `waitingForPoll`, with current generation and no cancellation,
+  fault, or target backoff; that state does not by itself make the target non-operational
+  and allows the durable status statement to run.
 - Waiting for the global concurrency gate, being idle between polls, and document-scoped
   poison/backoff diagnostics do not by themselves make the target non-operational. A
   target-level provider backoff that prevents ordinary work until a retry time is reported
@@ -142,10 +248,21 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   provider statement observes lifecycle `Tracking`, a clear cache-ahead latch, and no
   durable work row. If process eligibility is false for a known reason, caught-up is
   `notCaughtUp` with that reason. If current durable facts cannot be observed, caught-up is
-  `unknown`.
-- Last-ended target diagnostics and active administrative command observations are
-  reported for operator context, but only current-generation target observations
-  contribute to operational health and caught-up status.
+  `unknown`. `caughtUp.reason` uses the same process/durable precedence while the target is
+  not operational or unknown; when operational durable facts are readable, queue presence
+  uses `queueNotEmpty`, and an empty queue uses no failure reason.
+- Target-fatal diagnostics raised outside the projector loop, such as invalid cached JSON
+  from direct fill/cache read or deterministic writer invariant failures, are reported as
+  bounded target diagnostics and metrics, but they do not directly change
+  `operationalHealth.status`. They affect operational health only when the
+  current-generation runtime observation has actually faulted, cancelled, or put the target
+  into target-level provider backoff.
+- Last-ended target diagnostics and active administrative command observations are reported
+  for operator context, but only current-generation target observations contribute to
+  operational health and caught-up status. Public `activeCommand` and last-ended command
+  fields include only observations tied to the current target generation; do not add
+  `isCurrentGeneration` or `currentTargetGeneration` fields to expose retained non-current
+  command observations in v1.
 
 ### Diagnostics, Privacy, and Telemetry
 
@@ -159,18 +276,53 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   database names, query parameter values, profile payloads, or unsanitized provider error
   text.
 - Never use document identifiers, tenant display names, connection strings, raw physical
-  source identifiers, or unbounded resource names as metric labels. Status and metrics may
-  label by provider, sanitized normalized target key, lifecycle, operational-health status,
-  caught-up status, bounded reason/category, command, and phase.
+  source identifiers, raw JSON target keys, or unbounded resource names as metric labels.
+  Metrics use a deterministic bounded surrogate target label. Keep the full nested
+  `targetKey` only in status JSON and sanitized logs where the status contract already
+  exposes it.
+- Pin the target surrogate as `t1_` plus the first 24 lowercase hex characters of
+  `SHA-256(UTF8("document-cache-target-v1\0" + normalizedTenantKey + "\0" + dataStoreId decimal))`.
+  Use that value in the metric `target` label and never use the raw JSON target key as a
+  metric label.
 - Extend the existing DocumentCache projection meter rather than creating an unrelated
-  observability namespace. Add status-observation counters and provider-observation
-  duration histograms; record queue-present/caught-up/operational states as bounded labels
-  on observations and oldest-work age as a histogram when work exists.
+  observability namespace. Add and test status instruments
+  `edfi.dms.document_cache.status.observations`,
+  `edfi.dms.document_cache.status.provider_observation.duration`,
+  `edfi.dms.document_cache.status.oldest_work.age`, and
+  `edfi.dms.document_cache.enqueue.failures`. Provider-observation duration and
+  oldest-work age histograms use seconds with unit `s`; counters use unit `{observation}`
+  or `{failure}` as appropriate.
+- Metric labels are limited to bounded values such as provider, target surrogate,
+  lifecycle, operational-health status, caught-up status, bounded reason/category, command,
+  phase, canonical operation, resource kind (`resource` or `descriptor`), and enqueue
+  failure category. Pin structured-log event names and property keys for status
+  observations and enqueue failures; numeric `EventId` allocation may follow repository
+  conventions and is not an external contract.
 - Keep enqueue-failure telemetry at the canonical write/provider-exception boundary, not
   in the projector loop. A classified enqueue failure records a distinct enqueue-failure
   log/metric and rejects the complete canonical transaction; it does not create a
-  processing-failure diagnostic or durable work row. Provider-specific SQLSTATE or SQL
-  Server error numbers are implementation details, not the public status contract.
+  processing-failure diagnostic or durable work row. Ordinary `Disabled` lifecycle writes
+  are successful no-work observations and are not enqueue failures. Missing, disabled,
+  invalid, or unreadable enqueue-trigger inventory observed by 18-01 remains
+  non-operational status data; it is not an enqueue-failure event unless a canonical write
+  actually raises a provider exception and rolls back because of that enqueue artifact.
+- Use fixed public enqueue-failure categories: `stateMissingOrInvalid` for missing,
+  unreadable, or invalid `DocumentCacheState`; `enqueueTriggerUnavailable` for
+  canonical-write failures caused by missing, disabled, invalid, or privilege-broken
+  enqueue artifacts; `workPersistenceFailed` for failed work-table insert or advance while
+  lifecycle is enqueue-enabled; `providerTimeout`; `providerUnavailable`; and
+  `unclassifiedProviderFailure`. Do not include SQLSTATE, SQL Server error number,
+  lifecycle value, `DocumentId`, `DocumentUuid`, resource names, request bodies, subjects,
+  connection strings, or physical identifiers in enqueue-failure metric labels or
+  structured-log properties.
+- Emit canonical write-path enqueue-failure logs and metrics for any classified enqueue
+  exception that rolls back a canonical write, even when the affected data store is not
+  configured in `DocumentCache:Targets` or the local projection target is unresolved,
+  removed, or replaced. Compute the `t1_` target surrogate from the canonical request's
+  normalized tenant key and `dataStoreId`, not from the current configured target list. If
+  the write fails before a logical target key can be determined, use the bounded literal
+  target label `unknown`. The status endpoint reports enqueue-failure diagnostics under a
+  target only when they can be associated with a current configured target.
 
 ## Acceptance Evidence
 
@@ -187,27 +339,3 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
 - Durable connector binding, connector status, and deployment aggregation are assigned to
   E19.
 - External dashboards are deployment work.
-
-## Clarifying Questions and Answers
-
-### Questions 1
-
-1. Should `GET /health/document-cache` require operator/admin authorization, or remain unauthenticated like ordinary health endpoints; if unauthenticated, which detailed fields such as `DocumentId` diagnostics, physical-source fingerprint, effective settings, and diagnostic messages must be omitted or further redacted?
-2. Should 18-06 define and test an exhaustive stable wire contract for the full status response, including any top-level contract version, observation timestamps, `queueSummary`, `executionState`, settings shapes, and fixed reason/category enum values, or may some fields and reasons remain implementation-local as long as they serialize lower-camel?
-3. What is the multi-target status evaluation policy for `GET /health/document-cache`: sequential or bounded parallel observation, what per-target timeout applies, and should one target's provider timeout or observation exception serialize as that target's `unknown` result while peer targets still return?
-4. Are active administrative command and last-ended command diagnostics process-local observations only, or must 18-04/CLI persist or otherwise share command phase state so a DMS status endpoint can report commands running in another process or replica?
-5. Should target-fatal diagnostics raised outside the projector loop, such as invalid cached JSON from 18-05 direct fill/cache read or deterministic 18-03 writer invariant failures, contribute to `operationalHealth.status`, or should they be reported only as bounded diagnostics while operational health remains based on 18-01 target eligibility, 18-04 runtime state, and durable lifecycle/latch observations?
-6. Does 18-06 own adding canonical write-path enqueue-failure log/metric classification, or only shaping and exposing telemetry emitted by earlier stories; if it owns the write-path instrumentation, which provider error categories and bounded labels are in scope without exposing SQLSTATE or SQL Server error numbers in the public contract?
-7. For backlog estimates, should v1 implement concrete cheap/catalog estimates for PostgreSQL and SQL Server, or should both providers report estimate unavailable until a later explicit operator diagnostic while still exposing queue presence and oldest-work age?
-8. For telemetry labels, should the allowed sanitized normalized target key be the JSON target key value including normalized tenant key and `dataStoreId`, or a bounded/hash/surrogate label to control cardinality and tenant disclosure?
-
-### Answers 1
-
-1. Keep ordinary `/health` anonymous and minimal for load balancers, container health, and existing operational probes. Require authorization for `GET /health/document-cache` because its operator-grade payload includes target keys, `DocumentId` diagnostics, opaque physical-source fingerprints, effective settings, lifecycle/admin state, queue state, and sanitized but still meaningful diagnostic messages. Use the existing OAuth/JWT validation path, not a new authorization system: the endpoint requires a valid bearer token whose JWT contains a configured operator role claim. Add a small dedicated setting such as `DataManagement:DocumentCache:Status:RequiredRole = "dms-document-cache-operator"` and check the configured `JwtAuthentication:RoleClaimType` claim type for that role value. A missing or invalid token returns `401`; a valid token without the configured role returns `403`; when the required role is absent from production configuration, fail closed by not mapping the endpoint or returning `404`/`403`. Do not silently omit fields to make the endpoint anonymous. Do not use Ed-Fi claim sets, resource claims, education organization IDs, namespace prefixes, data store IDs, CMS admin permissions, database tables, or a new policy store as the v1 operator/admin contract.
-2. 18-06 should define and test an exhaustive stable wire contract for the full public status response. Use `System.Text.Json` DTOs with lower-camel property names, explicit lower-camel enum strings, top-level `contractVersion: 1`, top-level `observedAt`, and a deterministic `targets` array sorted by normalized tenant key and `dataStoreId`. Pin the shapes for `targetKey`, resolution/eligibility, inventory, enqueue trigger, SQL Server prerequisites, lifecycle/latch, `operationalHealth`, `caughtUp`, `queueSummary`, `executionState`, active command, last-ended diagnostic, bounded diagnostics, and effective queue/read/admin settings. No public status field or reason should remain implementation-local once serialized by this endpoint.
-3. Evaluate targets with bounded parallelism capped by the effective `Projector:MaxConcurrentTargets`, with each target getting an independent linked cancellation budget from a new effective status-observation timeout setting defaulting to five seconds. A target timeout, provider-observation exception, or status statement failure serializes that target's required facts as `unknown` with sanitized diagnostics; peer targets continue and the endpoint still returns a successful response when serialization itself succeeds.
-4. Active administrative command and last-ended command diagnostics are process-local observations from the 18-04 observation store. 18-06 should report only commands and last-ended target diagnostics known to the current DMS process/replica and must not add durable command-phase persistence or cross-replica sharing. Durable lifecycle states such as `Resetting` and `Rebuilding` remain authoritative state, but they do not imply a resumable active command name or phase.
-5. Target-fatal diagnostics raised outside the projector loop should be reported as bounded target diagnostics and metrics, but should not directly change `operationalHealth.status`. Operational health remains composed from 18-01 target eligibility, current-generation 18-04 runtime state, and the durable lifecycle/latch observation. Such diagnostics affect operational health only when the current-generation runtime observation has actually faulted, cancelled, or put the target into target-level provider backoff.
-6. 18-06 owns adding the canonical write-path enqueue-failure log/metric classification at the provider-exception boundary; it does not own the DDL rollback behavior from 18-00. Classify only actual enqueue exceptions that reject the complete canonical transaction. Ordinary `Disabled` lifecycle writes are successful no-work observations and are not enqueue failures. Use fixed public failure categories: `stateMissingOrInvalid` for missing, unreadable, or invalid `DocumentCacheState`; `enqueueTriggerUnavailable` for missing, disabled, invalid, or privilege-broken enqueue artifacts; `workPersistenceFailed` for failed work-table insert or advance while lifecycle is enqueue-enabled; `providerTimeout`; `providerUnavailable`; and `unclassifiedProviderFailure`. Labels are limited to provider, bounded target label, canonical operation, resource kind (`resource` or `descriptor`), and failure category; do not label or serialize SQLSTATE, SQL Server error number, lifecycle value, `DocumentId`, `DocumentUuid`, resource names, request bodies, subjects, connection strings, or physical identifiers.
-7. V1 should report backlog estimates as unavailable for both PostgreSQL and SQL Server. 18-06 still exposes indexed queue presence and oldest-work timestamp/age, and explicit operator diagnostics can add exact or catalog-estimated backlog later without making routine health polling depend on count-like behavior.
-8. Metrics should use a deterministic bounded surrogate label for the target, not the JSON target key value. Use a stable hash of the normalized tenant key plus `dataStoreId` as the metric `target` label, and keep the full nested `targetKey` only in the status JSON and sanitized logs where the status contract already exposes it. This controls cardinality and avoids tenant-key disclosure in metrics backends.
