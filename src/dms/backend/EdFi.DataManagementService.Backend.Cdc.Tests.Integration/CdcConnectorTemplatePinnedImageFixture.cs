@@ -31,6 +31,9 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         "org.edfi.kafka.connect.partitioner.KafkaMurmur2V1Partitioner";
 
     private static readonly TimeSpan ConnectStartupTimeout = TimeSpan.FromSeconds(90);
+    private static readonly TimeSpan ConnectorRunningTimeout = TimeSpan.FromMinutes(3);
+    private static readonly TimeSpan ProviderHeartbeatTimeout = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan OffsetCommitTimeout = TimeSpan.FromMinutes(4);
 
     private readonly CdcConnectorTemplateSmokeSettings _settings;
     private readonly HttpClient _httpClient;
@@ -373,6 +376,73 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             );
     }
 
+    public async Task AssertRegisteredConnectorReachesRunningStateAsync(
+        CdcConnectorTemplateRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        await WaitForRegisteredConnectorRunningAsync(request.ConnectorName.Value, cancellationToken);
+    }
+
+    public async Task AssertHeartbeatAndCommittedOffsetProgressAsync(
+        CdcConnectorTemplateRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        await WaitForRegisteredConnectorRunningAsync(request.ConnectorName.Value, cancellationToken);
+
+        long startingHeartbeatSequence = await ReadProviderHeartbeatSequenceAsync(cancellationToken);
+        CdcConnectorSourceOffsetSnapshot? startingOffset = await TryReadCommittedSourceOffsetAsync(
+            request,
+            cancellationToken
+        );
+
+        long advancedHeartbeatSequence = await WaitForProviderHeartbeatSequenceGreaterThanAsync(
+            startingHeartbeatSequence,
+            cancellationToken
+        );
+        CdcConnectorSourceOffsetSnapshot committedOffset = await WaitForCommittedSourceOffsetProgressAsync(
+            request,
+            startingOffset,
+            cancellationToken
+        );
+
+        using var _ = new AssertionScope();
+        advancedHeartbeatSequence.Should().BeGreaterThan(startingHeartbeatSequence);
+        committedOffset.CanonicalOffsetJson.Should().NotBeNullOrWhiteSpace();
+    }
+
+    public async Task RestartRegisteredConnectorAndAssertTemplateStillValidAsync(
+        CdcConnectorTemplateRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        string connectorName = request.ConnectorName.Value;
+        using HttpResponseMessage response = await _httpClient.PostAsync(
+            $"/connectors/{Uri.EscapeDataString(connectorName)}/restart?includeTasks=true&onlyFailed=false",
+            content: null,
+            cancellationToken
+        );
+        string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        response
+            .StatusCode.Should()
+            .BeOneOf(
+                [HttpStatusCode.Accepted, HttpStatusCode.NoContent, HttpStatusCode.OK],
+                $"Kafka Connect restart failed: {SanitizeForAssertion(responseBody)}"
+            );
+
+        await WaitForRegisteredConnectorRunningAsync(connectorName, cancellationToken);
+        await AssertKafkaConnectReadBackMatchesExpectedConfigAsync(request, cancellationToken);
+
+        CdcConnectorSourceOffsetSnapshot retainedOffset = await WaitForCommittedSourceOffsetProgressAsync(
+            request,
+            startingOffset: null,
+            cancellationToken
+        );
+        retainedOffset.CanonicalOffsetJson.Should().NotBeNullOrWhiteSpace();
+    }
+
     public async Task AssertKafkaConnectReadBackMatchesExpectedConfigAsync(
         CdcConnectorTemplateRequest request,
         CancellationToken cancellationToken
@@ -512,6 +582,8 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
                 "ACCEPT_EULA=Y",
                 "-e",
                 $"MSSQL_SA_PASSWORD={ConnectorDatabasePassword}",
+                "-e",
+                "MSSQL_AGENT_ENABLED=true",
                 _settings.ProviderImage,
             ],
             cancellationToken
@@ -549,6 +621,8 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
                 "STATUS_STORAGE_REPLICATION_FACTOR=1",
                 "-e",
                 $"CONNECT_REST_ADVERTISED_HOST_NAME={ConnectContainerName}",
+                "-e",
+                "OFFSET_FLUSH_INTERVAL_MS=1000",
                 "-e",
                 $"{ConnectorPasswordEnvironmentVariable}={ConnectorDatabasePassword}",
                 _settings.ConnectImage,
@@ -654,6 +728,107 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         throw new InvalidOperationException(
             $"Kafka Connect REST API did not become ready. Last error: {lastError}"
         );
+    }
+
+    private async Task WaitForRegisteredConnectorRunningAsync(
+        string connectorName,
+        CancellationToken cancellationToken
+    )
+    {
+        DateTimeOffset deadline = DateTimeOffset.UtcNow.Add(ConnectorRunningTimeout);
+        string lastStatus = "not requested";
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            using HttpResponseMessage response = await _httpClient.GetAsync(
+                $"/connectors/{Uri.EscapeDataString(connectorName)}/status",
+                cancellationToken
+            );
+            string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            lastStatus = SanitizeForAssertion(responseBody);
+
+            if (response.IsSuccessStatusCode)
+            {
+                if (ConnectorStatusIsRunning(responseBody))
+                {
+                    return;
+                }
+
+                ConnectorStatusHasFailure(responseBody)
+                    .Should()
+                    .BeFalse($"Kafka Connect task failed before reaching RUNNING: {lastStatus}");
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+        }
+
+        Assert.Fail($"Kafka Connect task did not reach RUNNING. Last status: {lastStatus}");
+    }
+
+    private async Task<long> WaitForProviderHeartbeatSequenceGreaterThanAsync(
+        long startingHeartbeatSequence,
+        CancellationToken cancellationToken
+    )
+    {
+        DateTimeOffset deadline = DateTimeOffset.UtcNow.Add(ProviderHeartbeatTimeout);
+        long observedHeartbeatSequence = startingHeartbeatSequence;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            observedHeartbeatSequence = await ReadProviderHeartbeatSequenceAsync(cancellationToken);
+            if (observedHeartbeatSequence > startingHeartbeatSequence)
+            {
+                return observedHeartbeatSequence;
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+        }
+
+        Assert.Fail(
+            $"Provider heartbeat sequence did not advance from {startingHeartbeatSequence}. Last observed value: {observedHeartbeatSequence}."
+        );
+        return observedHeartbeatSequence;
+    }
+
+    private async Task<CdcConnectorSourceOffsetSnapshot> WaitForCommittedSourceOffsetProgressAsync(
+        CdcConnectorTemplateRequest request,
+        CdcConnectorSourceOffsetSnapshot? startingOffset,
+        CancellationToken cancellationToken
+    )
+    {
+        DateTimeOffset deadline = DateTimeOffset.UtcNow.Add(OffsetCommitTimeout);
+        string? lastObservedOffset = null;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            await WaitForRegisteredConnectorRunningAsync(request.ConnectorName.Value, cancellationToken);
+
+            CdcConnectorSourceOffsetSnapshot? observedOffset = await TryReadCommittedSourceOffsetAsync(
+                request,
+                cancellationToken
+            );
+            if (
+                observedOffset is not null
+                && (
+                    startingOffset is null
+                    || !string.Equals(
+                        observedOffset.CanonicalOffsetJson,
+                        startingOffset.CanonicalOffsetJson,
+                        StringComparison.Ordinal
+                    )
+                )
+            )
+            {
+                return observedOffset;
+            }
+
+            lastObservedOffset = observedOffset?.CanonicalOffsetJson;
+            await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+        }
+
+        string starting = startingOffset?.CanonicalOffsetJson ?? "<none>";
+        string observed = lastObservedOffset ?? "<none>";
+        Assert.Fail(
+            $"Kafka Connect committed source offset did not progress. Starting offset: {starting}. Last observed offset: {observed}."
+        );
+        throw new InvalidOperationException("Kafka Connect committed source offset did not progress.");
     }
 
     private async Task CreateMinimalTopicsAsync(
@@ -828,6 +1003,87 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         );
     }
 
+    private async Task<long> ReadProviderHeartbeatSequenceAsync(CancellationToken cancellationToken)
+    {
+        string output =
+            Provider == CdcProvider.Postgresql
+                ? await ReadPostgresqlScalarAsync(
+                    """
+                    SELECT "HeartbeatSequence" FROM "dms"."CdcHeartbeat" WHERE "HeartbeatId" = 1;
+                    """,
+                    cancellationToken
+                )
+                : await ReadSqlServerScalarAsync(
+                    """
+                    SELECT [HeartbeatSequence] FROM [dms].[CdcHeartbeat] WHERE [HeartbeatId] = 1;
+                    """,
+                    cancellationToken
+                );
+
+        string value =
+            output
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .FirstOrDefault()
+            ?? string.Empty;
+
+        value.Should().NotBeNullOrWhiteSpace("the provider heartbeat singleton should contain one row");
+
+        return long.Parse(value, CultureInfo.InvariantCulture);
+    }
+
+    private async Task<string> ReadPostgresqlScalarAsync(string sql, CancellationToken cancellationToken)
+    {
+        DockerCommandResult result = await _docker.RunAsync(
+            [
+                "exec",
+                "-e",
+                $"PGPASSWORD={ConnectorDatabasePassword}",
+                ProviderContainerName,
+                "psql",
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-Atq",
+                "-U",
+                "postgres",
+                "-d",
+                PostgresqlDatabaseName,
+                "-c",
+                sql,
+            ],
+            cancellationToken
+        );
+
+        return result.StandardOutput;
+    }
+
+    private async Task<string> ReadSqlServerScalarAsync(string sql, CancellationToken cancellationToken)
+    {
+        DockerCommandResult result = await _docker.RunAsync(
+            [
+                "exec",
+                ProviderContainerName,
+                "sh",
+                "-lc",
+                $"""
+                for sqlcmd in /opt/mssql-tools18/bin/sqlcmd /opt/mssql-tools/bin/sqlcmd sqlcmd; do
+                  if command -v "$sqlcmd" >/dev/null 2>&1 || test -x "$sqlcmd"; then
+                    cat >/tmp/cdc-template-scalar.sql <<'SQL'
+                SET NOCOUNT ON;
+                {sql}
+                SQL
+                    "$sqlcmd" -C -S localhost -d '{SqlServerDatabaseName}' -U sa -P '{ConnectorDatabasePassword}' -b -h -1 -W -i /tmp/cdc-template-scalar.sql
+                    exit $?
+                  fi
+                done
+                exit 127
+                """,
+            ],
+            cancellationToken
+        );
+
+        return result.StandardOutput;
+    }
+
     private async Task<string[]> ReadConnectorPluginClassesAsync(CancellationToken cancellationToken)
     {
         using HttpResponseMessage response = await _httpClient.GetAsync(
@@ -925,6 +1181,179 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         return errors;
     }
 
+    private async Task<CdcConnectorSourceOffsetSnapshot?> TryReadCommittedSourceOffsetAsync(
+        CdcConnectorTemplateRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        string connectorName = request.ConnectorName.Value;
+        using HttpResponseMessage response = await _httpClient.GetAsync(
+            $"/connectors/{Uri.EscapeDataString(connectorName)}/offsets",
+            cancellationToken
+        );
+        string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        response
+            .IsSuccessStatusCode.Should()
+            .BeTrue($"Kafka Connect offset read failed: {SanitizeForAssertion(responseBody)}");
+
+        using JsonDocument document = JsonDocument.Parse(responseBody);
+        if (!document.RootElement.TryGetProperty("offsets", out JsonElement offsets))
+        {
+            Assert.Fail("Kafka Connect offset read response did not include an offsets array.");
+            return null;
+        }
+
+        List<CdcConnectorSourceOffsetSnapshot> matchingOffsets = [];
+        foreach (JsonElement offsetDocument in offsets.EnumerateArray())
+        {
+            if (
+                !offsetDocument.TryGetProperty("partition", out JsonElement partition)
+                || !SourcePartitionMatches(request, partition)
+                || !offsetDocument.TryGetProperty("offset", out JsonElement offset)
+                || !ProviderOffsetIsCommittedProgress(request.Provider, offset)
+            )
+            {
+                continue;
+            }
+
+            matchingOffsets.Add(new CdcConnectorSourceOffsetSnapshot(CanonicalizeJson(offset)));
+        }
+
+        matchingOffsets
+            .Should()
+            .HaveCountLessThanOrEqualTo(
+                1,
+                "there should be exactly one committed source offset partition for the rendered connector"
+            );
+
+        return matchingOffsets.SingleOrDefault();
+    }
+
+    private static bool ConnectorStatusIsRunning(string responseBody)
+    {
+        using JsonDocument document = JsonDocument.Parse(responseBody);
+        JsonElement root = document.RootElement;
+        if (
+            !root.TryGetProperty("connector", out JsonElement connector)
+            || !HasState(connector, "RUNNING")
+            || !root.TryGetProperty("tasks", out JsonElement tasks)
+        )
+        {
+            return false;
+        }
+
+        JsonElement[] taskArray = tasks.EnumerateArray().ToArray();
+        return taskArray.Length == 1 && Array.TrueForAll(taskArray, task => HasState(task, "RUNNING"));
+    }
+
+    private static bool ConnectorStatusHasFailure(string responseBody)
+    {
+        using JsonDocument document = JsonDocument.Parse(responseBody);
+        JsonElement root = document.RootElement;
+        if (root.TryGetProperty("connector", out JsonElement connector) && HasState(connector, "FAILED"))
+        {
+            return true;
+        }
+
+        if (!root.TryGetProperty("tasks", out JsonElement tasks))
+        {
+            return false;
+        }
+
+        return tasks.EnumerateArray().Any(task => HasState(task, "FAILED"));
+    }
+
+    private static bool HasState(JsonElement stateContainer, string expectedState) =>
+        stateContainer.TryGetProperty("state", out JsonElement state)
+        && state.ValueKind == JsonValueKind.String
+        && string.Equals(state.GetString(), expectedState, StringComparison.Ordinal);
+
+    private static bool SourcePartitionMatches(CdcConnectorTemplateRequest request, JsonElement partition)
+    {
+        if (
+            partition.ValueKind != JsonValueKind.Object
+            || !JsonStringPropertyEquals(partition, "server", request.ConnectorName.Value)
+        )
+        {
+            return false;
+        }
+
+        return request.Provider != CdcProvider.SqlServer
+            || JsonStringPropertyEquals(
+                partition,
+                "database",
+                request.ProviderConnectionProperties.Properties["database.names"]
+            );
+    }
+
+    private static bool ProviderOffsetIsCommittedProgress(CdcProvider provider, JsonElement offset)
+    {
+        if (offset.ValueKind != JsonValueKind.Object || OffsetIsSnapshot(offset))
+        {
+            return false;
+        }
+
+        return provider switch
+        {
+            CdcProvider.Postgresql => HasNonEmptyJsonProperty(offset, "lsn_proc"),
+            CdcProvider.SqlServer => HasNonEmptyJsonProperty(offset, "commit_lsn")
+                && HasNonEmptyJsonProperty(offset, "change_lsn")
+                && HasNonEmptyJsonProperty(offset, "event_serial_no"),
+            _ => false,
+        };
+    }
+
+    private static bool OffsetIsSnapshot(JsonElement offset)
+    {
+        if (!offset.TryGetProperty("snapshot", out JsonElement snapshot))
+        {
+            return false;
+        }
+
+        return snapshot.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False or JsonValueKind.Null or JsonValueKind.Undefined => false,
+            JsonValueKind.String => !string.Equals(
+                snapshot.GetString(),
+                "false",
+                StringComparison.OrdinalIgnoreCase
+            ),
+            _ => true,
+        };
+    }
+
+    private static bool JsonStringPropertyEquals(
+        JsonElement element,
+        string propertyName,
+        string expectedValue
+    ) =>
+        element.TryGetProperty(propertyName, out JsonElement property)
+        && property.ValueKind == JsonValueKind.String
+        && string.Equals(property.GetString(), expectedValue, StringComparison.Ordinal);
+
+    private static bool HasNonEmptyJsonProperty(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out JsonElement property))
+        {
+            return false;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.String => !string.IsNullOrWhiteSpace(property.GetString()),
+            JsonValueKind.Number => true,
+            JsonValueKind.True or JsonValueKind.False => true,
+            _ => false,
+        };
+    }
+
     private static IReadOnlyDictionary<string, string> ParseStringMap(string json)
     {
         using JsonDocument document = JsonDocument.Parse(json);
@@ -936,6 +1365,63 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
                 property => property.Value.GetString() ?? string.Empty,
                 StringComparer.Ordinal
             );
+    }
+
+    private static string CanonicalizeJson(JsonElement element)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            WriteCanonicalJson(writer, element);
+        }
+
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static void WriteCanonicalJson(Utf8JsonWriter writer, JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                writer.WriteStartObject();
+                foreach (
+                    JsonProperty property in element
+                        .EnumerateObject()
+                        .OrderBy(property => property.Name, StringComparer.Ordinal)
+                )
+                {
+                    writer.WritePropertyName(property.Name);
+                    WriteCanonicalJson(writer, property.Value);
+                }
+
+                writer.WriteEndObject();
+                break;
+            case JsonValueKind.Array:
+                writer.WriteStartArray();
+                foreach (JsonElement item in element.EnumerateArray())
+                {
+                    WriteCanonicalJson(writer, item);
+                }
+
+                writer.WriteEndArray();
+                break;
+            case JsonValueKind.String:
+                writer.WriteStringValue(element.GetString());
+                break;
+            case JsonValueKind.Number:
+                writer.WriteRawValue(element.GetRawText());
+                break;
+            case JsonValueKind.True:
+                writer.WriteBooleanValue(true);
+                break;
+            case JsonValueKind.False:
+                writer.WriteBooleanValue(false);
+                break;
+            case JsonValueKind.Null:
+            case JsonValueKind.Undefined:
+                writer.WriteNullValue();
+                break;
+        }
     }
 
     private static string SanitizeForAssertion(string value) =>
@@ -1119,6 +1605,8 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         [property: JsonPropertyName("name")] string Name,
         [property: JsonPropertyName("config")] IReadOnlyDictionary<string, string> Config
     );
+
+    private sealed record CdcConnectorSourceOffsetSnapshot(string CanonicalOffsetJson);
 }
 
 internal static class CdcConnectorTemplatePinnedImageTestData

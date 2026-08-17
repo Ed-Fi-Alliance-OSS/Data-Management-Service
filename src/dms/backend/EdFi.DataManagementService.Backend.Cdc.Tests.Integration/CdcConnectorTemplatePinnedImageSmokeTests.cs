@@ -33,6 +33,23 @@ public abstract class Given_PinnedImageConnectorTemplateFixture
     }
 
     [Test]
+    public async Task It_observes_provider_smoke_heartbeat_offset_progress_and_restart_validates_retained_template_state()
+    {
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMinutes(8));
+        await using CdcConnectorTemplatePinnedImageFixture fixture =
+            await CdcConnectorTemplatePinnedImageFixture.StartAsync(Provider, cancellation.Token);
+
+        CdcConnectorTemplateRequest request = fixture.BuildRequest();
+        CdcConnectorTemplateResult rendered = fixture.Render(request);
+
+        await fixture.CreateMinimalTopicsAndProviderObjectsAsync(request, cancellation.Token);
+        await fixture.AssertConnectorConfigValidatesAsync(rendered, cancellation.Token);
+        await fixture.RegisterRenderedConnectorConfigDirectlyAsync(rendered, cancellation.Token);
+        await fixture.AssertHeartbeatAndCommittedOffsetProgressAsync(request, cancellation.Token);
+        await fixture.RestartRegisteredConnectorAndAssertTemplateStillValidAsync(request, cancellation.Token);
+    }
+
+    [Test]
     public async Task It_exposes_reusable_render_preflight_and_live_validation_assertions()
     {
         await using CdcConnectorTemplatePinnedImageFixture fixture =
