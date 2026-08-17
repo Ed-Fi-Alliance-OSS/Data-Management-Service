@@ -3,9 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
@@ -20,6 +22,11 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Protocols;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using Microsoft.IdentityModel.Tokens;
 
 namespace EdFi.DataManagementService.Tests.Integration.Tests.DocumentCache;
 
@@ -31,11 +38,14 @@ public class Given_DocumentCacheStatusEndpointAuthorization
     private const string RequiredRole = "dms-document-cache-operator";
     private const string RoleClaimType = "operator_role";
     private const string ValidBearerToken = "valid-token";
+    private const string TestAudience = "ed-fi-ods-api";
+    private const string TestIssuer = "https://keycloak.example.com/realms/edfi";
 
     private static WebApplicationFactory<Program> CreateFactory(
         ScriptedDocumentCacheStatusService documentCacheStatusService,
-        ScriptedJwtValidationService? jwtValidationService = null,
-        string? requiredRole = RequiredRole
+        IJwtValidationService? jwtValidationService = null,
+        string? requiredRole = RequiredRole,
+        string roleClaimType = RoleClaimType
     )
     {
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -47,7 +57,7 @@ public class Given_DocumentCacheStatusEndpointAuthorization
                     configuration.AddInMemoryCollection(
                         new Dictionary<string, string?>
                         {
-                            ["JwtAuthentication:RoleClaimType"] = RoleClaimType,
+                            ["JwtAuthentication:RoleClaimType"] = roleClaimType,
                             ["JwtAuthentication:ClientRole"] = "legacy-service",
                         }
                     );
@@ -87,6 +97,60 @@ public class Given_DocumentCacheStatusEndpointAuthorization
 
     private static ScriptedJwtValidationService ValidJwtWithClaims(params Claim[] claims) =>
         new(new Dictionary<string, ClaimsPrincipal?> { [ValidBearerToken] = Principal(claims) });
+
+    private static (IJwtValidationService JwtValidationService, string Token) RealJwtWithClaims(
+        string roleClaimType,
+        Claim[] claims,
+        Action<JwtSecurityTokenHandler>? configureTokenHandler = null
+    )
+    {
+        var configurationManager = A.Fake<IConfigurationManager<OpenIdConnectConfiguration>>();
+        var signingKey = new RsaSecurityKey(RSA.Create(2048)) { KeyId = "test-key" };
+        OpenIdConnectConfiguration oidcConfig = new() { Issuer = TestIssuer };
+        oidcConfig.SigningKeys.Add(signingKey);
+
+        A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+            .Returns(Task.FromResult(oidcConfig));
+
+        JwtAuthenticationOptions jwtAuthenticationOptions = new()
+        {
+            Audience = TestAudience,
+            RoleClaimType = roleClaimType,
+            ClientRole = "legacy-service",
+            ClockSkewSeconds = 0,
+            ValidatedTokenCacheMaxEntries = 4,
+        };
+        JwtValidationService jwtValidationService = new(
+            configurationManager,
+            Options.Create(jwtAuthenticationOptions),
+            NullLogger<JwtValidationService>.Instance
+        );
+
+        JwtSecurityTokenHandler tokenHandler = new();
+        configureTokenHandler?.Invoke(tokenHandler);
+        string token = CreateSignedToken(claims, signingKey, tokenHandler);
+
+        return (jwtValidationService, token);
+    }
+
+    private static string CreateSignedToken(
+        Claim[] claims,
+        SecurityKey signingKey,
+        JwtSecurityTokenHandler tokenHandler
+    )
+    {
+        DateTime now = DateTime.UtcNow;
+        JwtSecurityToken jwt = new(
+            issuer: TestIssuer,
+            audience: TestAudience,
+            claims: claims,
+            notBefore: now.AddMinutes(-5),
+            expires: now.AddMinutes(10),
+            signingCredentials: new SigningCredentials(signingKey, SecurityAlgorithms.RsaSha256)
+        );
+
+        return tokenHandler.WriteToken(jwt);
+    }
 
     [Test]
     public async Task It_returns_404_when_required_role_is_missing_without_invoking_status_service()
@@ -215,6 +279,73 @@ public class Given_DocumentCacheStatusEndpointAuthorization
         json["contractVersion"]!.GetValue<int>().Should().Be(1);
         jwtValidationService.CallCount.Should().Be(1);
         documentCacheStatusService.CallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_200_for_real_signed_jwt_with_default_role_claim_type()
+    {
+        ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
+        var (jwtValidationService, token) = RealJwtWithClaims("role", [new Claim("role", RequiredRole)]);
+        await using WebApplicationFactory<Program> factory = CreateFactory(
+            documentCacheStatusService,
+            jwtValidationService,
+            roleClaimType: "role"
+        );
+        using HttpClient client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        HttpResponseMessage response = await client.GetAsync("/health/document-cache");
+        JsonNode json = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        json["contractVersion"]!.GetValue<int>().Should().Be(1);
+        documentCacheStatusService.CallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_200_for_real_signed_jwt_with_custom_role_claim_type()
+    {
+        const string customRoleClaimType = "status_role";
+        ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
+        var (jwtValidationService, token) = RealJwtWithClaims(
+            customRoleClaimType,
+            [new Claim(customRoleClaimType, RequiredRole)]
+        );
+        await using WebApplicationFactory<Program> factory = CreateFactory(
+            documentCacheStatusService,
+            jwtValidationService,
+            roleClaimType: customRoleClaimType
+        );
+        using HttpClient client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        HttpResponseMessage response = await client.GetAsync("/health/document-cache");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        documentCacheStatusService.CallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_403_for_real_signed_jwt_with_only_claim_types_role_when_role_claim_type_differs()
+    {
+        ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
+        var (jwtValidationService, token) = RealJwtWithClaims(
+            "status_role",
+            [new Claim(ClaimTypes.Role, RequiredRole)],
+            handler => handler.OutboundClaimTypeMap.Clear()
+        );
+        await using WebApplicationFactory<Program> factory = CreateFactory(
+            documentCacheStatusService,
+            jwtValidationService,
+            roleClaimType: "status_role"
+        );
+        using HttpClient client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        HttpResponseMessage response = await client.GetAsync("/health/document-cache");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        documentCacheStatusService.CallCount.Should().Be(0);
     }
 
     [Test]

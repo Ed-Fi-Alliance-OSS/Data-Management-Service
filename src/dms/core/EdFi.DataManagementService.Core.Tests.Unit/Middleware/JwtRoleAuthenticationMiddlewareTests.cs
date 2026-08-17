@@ -27,11 +27,15 @@ public class JwtRoleAuthenticationMiddlewareTests
         JwtRoleAuthenticationMiddleware middleware,
         IJwtValidationService jwtValidationService,
         IOptions<JwtAuthenticationOptions> options
-    ) CreateMiddleware(string? clientRole = "service")
+    ) CreateMiddleware(string? clientRole = "service", string roleClaimType = "role")
     {
         var jwtValidationService = A.Fake<IJwtValidationService>();
         var logger = A.Fake<ILogger<JwtRoleAuthenticationMiddleware>>();
-        var authOptions = new JwtAuthenticationOptions { ClientRole = clientRole ?? string.Empty };
+        var authOptions = new JwtAuthenticationOptions
+        {
+            ClientRole = clientRole ?? string.Empty,
+            RoleClaimType = roleClaimType,
+        };
         var options = A.Fake<IOptions<JwtAuthenticationOptions>>();
         A.CallTo(() => options.Value).Returns(authOptions);
 
@@ -356,6 +360,79 @@ public class JwtRoleAuthenticationMiddlewareTests
             );
 
             var (middleware, jwtValidationService, _) = CreateMiddleware();
+
+            A.CallTo(() =>
+                    jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
+                        "valid-token",
+                        A<CancellationToken>.Ignored
+                    )
+                )
+                .Returns((principal, clientAuthorizations));
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_calls_the_next_middleware()
+        {
+            _nextCalled.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_does_not_set_a_response()
+        {
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Valid_Token_With_The_Configured_Jwt_Role_Claim_Type
+        : JwtRoleAuthenticationMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private bool _nextCalled = false;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var frontendRequest = new FrontendRequest(
+                Path: "/test",
+                Body: "{}",
+                Form: null,
+                Headers: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["Authorization"] = "Bearer valid-token",
+                },
+                QueryParameters: [],
+                TraceId: new TraceId("trace123"),
+                RouteQualifiers: []
+            );
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, No.ServiceProvider);
+
+            var claims = new List<Claim>
+            {
+                new Claim(ClaimTypes.Name, "test-user"),
+                new Claim("role", "service"),
+            };
+            var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "Test", ClaimTypes.Name, "role"));
+            var clientAuthorizations = new ClientAuthorizations(
+                ClientId: "",
+                TokenId: "token123",
+                ClaimSetName: "test",
+                EducationOrganizationIds: [],
+                NamespacePrefixes: [],
+                DataStoreIds: []
+            );
+
+            var (middleware, jwtValidationService, _) = CreateMiddleware(roleClaimType: "role");
 
             A.CallTo(() =>
                     jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(

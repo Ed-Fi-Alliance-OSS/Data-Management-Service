@@ -3,7 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
@@ -12,6 +14,9 @@ using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Protocols;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using Microsoft.IdentityModel.Tokens;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.DocumentCache;
@@ -23,6 +28,8 @@ public class DocumentCacheStatusAuthorizationTests
     private const string RequiredRole = "dms-document-cache-operator";
     private const string RoleClaimType = "operator_role";
     private const string Token = "valid-token";
+    private const string TestAudience = "ed-fi-ods-api";
+    private const string TestIssuer = "https://keycloak.example.com/realms/edfi";
 
     private static (
         DocumentCacheStatusAuthorizationService Service,
@@ -69,6 +76,76 @@ public class DocumentCacheStatusAuthorizationTests
 
     private static ClaimsPrincipal Principal(params Claim[] claims) =>
         new(new ClaimsIdentity(claims, "test"));
+
+    private static (
+        DocumentCacheStatusAuthorizationService Service,
+        JwtValidationService JwtValidationService,
+        string Token
+    ) CreateServiceWithRealJwtValidation(
+        Claim[] claims,
+        string requiredRole = RequiredRole,
+        string roleClaimType = "role",
+        string clientRole = "legacy-service",
+        Action<JwtSecurityTokenHandler>? configureTokenHandler = null
+    )
+    {
+        var configurationManager = A.Fake<IConfigurationManager<OpenIdConnectConfiguration>>();
+        var signingKey = new RsaSecurityKey(RSA.Create(2048)) { KeyId = "test-key" };
+        OpenIdConnectConfiguration oidcConfig = new() { Issuer = TestIssuer };
+        oidcConfig.SigningKeys.Add(signingKey);
+
+        A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+            .Returns(Task.FromResult(oidcConfig));
+
+        JwtAuthenticationOptions jwtAuthenticationOptions = new()
+        {
+            Audience = TestAudience,
+            RoleClaimType = roleClaimType,
+            ClientRole = clientRole,
+            ClockSkewSeconds = 0,
+            ValidatedTokenCacheMaxEntries = 4,
+        };
+        JwtValidationService jwtValidationService = new(
+            configurationManager,
+            Options.Create(jwtAuthenticationOptions),
+            NullLogger<JwtValidationService>.Instance
+        );
+        DocumentCacheOptions documentCacheOptions = new()
+        {
+            Status = new DocumentCacheStatusOptions { RequiredRole = requiredRole },
+        };
+        DocumentCacheStatusAuthorizationService service = new(
+            jwtValidationService,
+            Options.Create(documentCacheOptions),
+            Options.Create(jwtAuthenticationOptions),
+            NullLogger<DocumentCacheStatusAuthorizationService>.Instance
+        );
+
+        JwtSecurityTokenHandler tokenHandler = new();
+        configureTokenHandler?.Invoke(tokenHandler);
+        string token = CreateSignedToken(claims, signingKey, tokenHandler);
+
+        return (service, jwtValidationService, token);
+    }
+
+    private static string CreateSignedToken(
+        Claim[] claims,
+        SecurityKey signingKey,
+        JwtSecurityTokenHandler tokenHandler
+    )
+    {
+        DateTime now = DateTime.UtcNow;
+        JwtSecurityToken jwt = new(
+            issuer: TestIssuer,
+            audience: TestAudience,
+            claims: claims,
+            notBefore: now.AddMinutes(-5),
+            expires: now.AddMinutes(10),
+            signingCredentials: new SigningCredentials(signingKey, SecurityAlgorithms.RsaSha256)
+        );
+
+        return tokenHandler.WriteToken(jwt);
+    }
 
     [Test]
     public async Task It_returns_unauthorized_when_authorization_header_is_missing()
@@ -136,6 +213,34 @@ public class DocumentCacheStatusAuthorizationTests
     }
 
     [Test]
+    public async Task It_authorizes_default_role_claim_type_from_real_signed_jwt()
+    {
+        var (service, _, token) = CreateServiceWithRealJwtValidation(
+            [new Claim("role", RequiredRole)],
+            roleClaimType: "role"
+        );
+
+        DocumentCacheStatusAuthorizationResult result = await service.AuthorizeAsync($"Bearer {token}");
+
+        result.Outcome.Should().Be(DocumentCacheStatusAuthorizationOutcome.Authorized);
+        result.Message.Should().BeNull();
+    }
+
+    [Test]
+    public async Task It_authorizes_custom_role_claim_type_from_real_signed_jwt()
+    {
+        const string customRoleClaimType = "status_role";
+        var (service, _, token) = CreateServiceWithRealJwtValidation(
+            [new Claim(customRoleClaimType, RequiredRole)],
+            roleClaimType: customRoleClaimType
+        );
+
+        DocumentCacheStatusAuthorizationResult result = await service.AuthorizeAsync($"Bearer {token}");
+
+        result.Outcome.Should().Be(DocumentCacheStatusAuthorizationOutcome.Authorized);
+    }
+
+    [Test]
     public async Task It_authorizes_when_any_configured_role_claim_has_exact_required_role()
     {
         ClaimsPrincipal principal = Principal(
@@ -168,6 +273,20 @@ public class DocumentCacheStatusAuthorizationTests
         var (service, _) = CreateService(principal);
 
         DocumentCacheStatusAuthorizationResult result = await service.AuthorizeAsync($"Bearer {Token}");
+
+        result.Outcome.Should().Be(DocumentCacheStatusAuthorizationOutcome.Forbidden);
+    }
+
+    [Test]
+    public async Task It_rejects_real_signed_jwt_with_only_claim_types_role_when_role_claim_type_differs()
+    {
+        var (service, _, token) = CreateServiceWithRealJwtValidation(
+            [new Claim(ClaimTypes.Role, RequiredRole)],
+            roleClaimType: "status_role",
+            configureTokenHandler: handler => handler.OutboundClaimTypeMap.Clear()
+        );
+
+        DocumentCacheStatusAuthorizationResult result = await service.AuthorizeAsync($"Bearer {token}");
 
         result.Outcome.Should().Be(DocumentCacheStatusAuthorizationOutcome.Forbidden);
     }
