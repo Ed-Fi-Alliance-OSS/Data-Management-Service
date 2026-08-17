@@ -295,10 +295,7 @@ public class Given_CdcConnectorTemplateLiveValidation
             serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
         CdcConnectorTemplateRequest request = BuildRequest(CdcProvider.Postgresql);
         CdcConnectorTemplateResult rendered = service.Render(request);
-        var differentFingerprint = new CdcSourceFingerprint(
-            "cdc-source-fingerprint-v1",
-            "different-physical-source"
-        );
+        CdcSourceFingerprint differentFingerprint = OtherPostgresqlSourceFingerprint;
 
         CdcConnectorTemplateResult result = service.ValidateLiveReadBack(
             new CdcConnectorTemplateEffectiveConfigValidationRequest(

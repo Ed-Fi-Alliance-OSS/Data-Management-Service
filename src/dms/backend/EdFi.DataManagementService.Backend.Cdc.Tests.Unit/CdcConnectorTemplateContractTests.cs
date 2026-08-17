@@ -211,6 +211,75 @@ public class Given_CdcConnectorTemplateContracts
     }
 
     [Test]
+    public void It_requires_the_binding_source_fingerprint_version_and_sha256_shape()
+    {
+        var invalidFingerprints = new[]
+        {
+            new CdcSourceFingerprint("dms-source-fingerprint-v0", ValidFingerprintValue()),
+            new CdcSourceFingerprint(CdcSourceFingerprintMetadata.Version, new string('a', 64)),
+            new CdcSourceFingerprint(CdcSourceFingerprintMetadata.Version, $"sha256:{new string('A', 64)}"),
+            new CdcSourceFingerprint(CdcSourceFingerprintMetadata.Version, $"sha256:{new string('g', 64)}"),
+            new CdcSourceFingerprint(CdcSourceFingerprintMetadata.Version, $"sha256:{new string('a', 63)}"),
+        };
+
+        using var _ = new AssertionScope();
+        foreach (CdcSourceFingerprint invalidFingerprint in invalidFingerprints)
+        {
+            Action act = () =>
+                new CdcConnectorTemplateBindingIdentity(
+                    CdcProvider.Postgresql,
+                    new CdcSafeName("dms_binding_connector"),
+                    "edfi.documents",
+                    bindingGeneration: 7,
+                    partitionerAlgorithm: "kafka-murmur2-v1",
+                    invalidFingerprint
+                );
+
+            act.Should().Throw<ArgumentException>().WithParameterName("boundPhysicalSourceFingerprint");
+        }
+    }
+
+    [Test]
+    public void It_requires_provider_setup_evidence_source_fingerprints_to_have_valid_version_and_sha256_shape()
+    {
+        var malformedBoundFingerprint = new CdcSourceFingerprint(
+            "dms-source-fingerprint-v0",
+            ValidFingerprintValue()
+        );
+        var malformedObservedFingerprint = new CdcSourceFingerprint(
+            CdcSourceFingerprintMetadata.Version,
+            $"sha256:{new string('g', 64)}"
+        );
+
+        Action invalidBound = () =>
+            new CdcConnectorProviderSetupEvidence(
+                BindingGeneration,
+                BuildProviderSetupResult(
+                    CdcProvider.Postgresql,
+                    boundPhysicalSourceFingerprint: malformedBoundFingerprint
+                )
+            );
+        Action invalidObserved = () =>
+            new CdcConnectorProviderSetupEvidence(
+                BindingGeneration,
+                BuildProviderSetupResult(
+                    CdcProvider.Postgresql,
+                    observedSourceFingerprint: malformedObservedFingerprint
+                )
+            );
+
+        using var _ = new AssertionScope();
+        invalidBound
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("result.BoundPhysicalSourceFingerprint");
+        invalidObserved
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("result.ObservedSourceFingerprint");
+    }
+
+    [Test]
     public void It_rejects_failed_provider_setup_results()
     {
         Action act = () =>
@@ -237,10 +306,7 @@ public class Given_CdcConnectorTemplateContracts
             BuildRequest(
                 BuildProviderSetupResult(
                     CdcProvider.Postgresql,
-                    boundPhysicalSourceFingerprint: new CdcSourceFingerprint(
-                        "cdc-source-fingerprint-v1",
-                        "different-physical-source"
-                    )
+                    boundPhysicalSourceFingerprint: OtherPostgresqlSourceFingerprint
                 )
             );
 
@@ -352,6 +418,11 @@ public class Given_CdcConnectorTemplateContracts
             .Be("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         result.Diagnostics.Should().ContainSingle().Which.Should().BeSameAs(diagnostic);
     }
+
+    private static string ValidFingerprintValue() =>
+        CdcSourceFingerprintMetadata
+            .Compute(CdcProvider.Postgresql, "f81d4fae-7dec-11d0-a765-00a0c91e6bf6")
+            .Value;
 
     [Test]
     public void It_rejects_registration_payloads_that_conflict_with_binding_identity_or_result_config()

@@ -11,11 +11,18 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 internal static class CdcConnectorTemplateTestData
 {
     public const long BindingGeneration = 7;
+    private const string SourceIdentity = "f81d4fae-7dec-11d0-a765-00a0c91e6bf6";
+    private const string OtherSourceIdentity = "86a7cc04-64cf-4b34-b66f-a7b9b4f6b6fd";
 
-    public static readonly CdcSourceFingerprint SourceFingerprint = new(
-        "cdc-source-fingerprint-v1",
-        "physical-source-fingerprint"
+    public static readonly CdcSourceFingerprint SourceFingerprint = SourceFingerprintFor(
+        CdcProvider.Postgresql
     );
+
+    public static readonly CdcSourceFingerprint OtherPostgresqlSourceFingerprint =
+        CdcSourceFingerprintMetadata.Compute(CdcProvider.Postgresql, OtherSourceIdentity);
+
+    public static CdcSourceFingerprint SourceFingerprintFor(CdcProvider provider) =>
+        CdcSourceFingerprintMetadata.Compute(provider, SourceIdentity);
 
     public static CdcConnectorTemplateRequest BuildRequest(
         CdcProvider provider,
@@ -29,15 +36,18 @@ internal static class CdcConnectorTemplateTestData
         string heartbeatSql = "select 1",
         CdcProviderSetupOutcome outcome = CdcProviderSetupOutcome.CreatedOrMatched,
         CdcSourceFingerprint? fingerprint = null
-    ) =>
-        new(
-            BuildBinding(provider, fingerprint: fingerprint),
+    )
+    {
+        CdcSourceFingerprint physicalSourceFingerprint = fingerprint ?? SourceFingerprintFor(provider);
+
+        return new CdcConnectorTemplateRequest(
+            BuildBinding(provider, fingerprint: physicalSourceFingerprint),
             new CdcConnectorProviderSetupEvidence(
                 BindingGeneration,
                 BuildProviderSetupResult(
                     provider,
                     outcome: outcome,
-                    boundPhysicalSourceFingerprint: fingerprint,
+                    boundPhysicalSourceFingerprint: physicalSourceFingerprint,
                     artifactInventory: artifactInventory,
                     sourceTableInventory: sourceTableInventory,
                     expectedMessageKeyColumns: expectedMessageKeyColumns,
@@ -52,6 +62,7 @@ internal static class CdcConnectorTemplateTestData
             new CdcKafkaClientSecurityProperties(kafkaSecurityProperties ?? new Dictionary<string, string>()),
             artifactOutput
         );
+    }
 
     public static CdcConnectorTemplateRequest BuildRequest(
         CdcProviderSetupResult providerSetupResult,
@@ -89,7 +100,7 @@ internal static class CdcConnectorTemplateTestData
             "edfi.documents",
             bindingGeneration,
             partitionerAlgorithm,
-            fingerprint ?? SourceFingerprint
+            fingerprint ?? SourceFingerprintFor(provider)
         );
 
     public static CdcConnectorTemplateDeploymentPolicy BuildDeploymentPolicy(CdcProvider provider) =>
@@ -113,7 +124,8 @@ internal static class CdcConnectorTemplateTestData
         IReadOnlyList<CdcProviderHistoryObservation>? providerHistoryObservations = null
     )
     {
-        CdcSourceFingerprint boundFingerprint = boundPhysicalSourceFingerprint ?? SourceFingerprint;
+        CdcSourceFingerprint boundFingerprint =
+            boundPhysicalSourceFingerprint ?? SourceFingerprintFor(provider);
 
         return new CdcProviderSetupResult(
             Provider: provider,
