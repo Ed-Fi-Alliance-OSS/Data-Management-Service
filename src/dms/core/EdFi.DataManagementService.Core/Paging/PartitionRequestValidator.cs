@@ -17,10 +17,11 @@ namespace EdFi.DataManagementService.Core.Paging;
 /// three of them should learn about all three in one response rather than over three round trips.
 /// </param>
 /// <param name="RequestedPartitionCount">
-/// The validated desired partition count, or null when the request omitted it or was rejected. The
-/// partitions pipeline does not exist yet. A caller that comes to serve it must apply the configured
-/// default to a null. It is deliberately null whenever <paramref name="Errors"/> is non-empty, so a
-/// count from a rejected request cannot be used by mistake.
+/// The validated desired partition count, or null when the request omitted it or was rejected.
+/// Applying the configured default to a null belongs to the caller, because the configuration this
+/// validator would have to read is not something a pure validator should know. It is deliberately null
+/// whenever <paramref name="Errors"/> is non-empty, so a count from a rejected request cannot be used
+/// by mistake.
 /// </param>
 internal sealed record PartitionValidationResult(IReadOnlyList<string> Errors, int? RequestedPartitionCount);
 
@@ -94,9 +95,8 @@ internal static class PartitionRequestValidator
         // Phase 2, reserved paging parameters. Reported without parsing their values: the complaint is
         // that the parameter does not apply here at all, so whether its value is well formed is beside
         // the point. Resource-property filters and the change-version filters are not reserved and are
-        // deliberately not reported. The partitions pipeline does not exist yet. Every other unknown
-        // field is left for a caller that comes to serve it to answer with its own
-        // unknown-query-field rule.
+        // deliberately not reported. Every other unknown field is left to the caller's own
+        // unknown-query-field rule, which ValidatePartitionQueryMiddleware applies before this phase.
         string[] errors =
         [
             .. ReservedParameters.Where(queryParameters.ContainsKey).Select(UnsupportedParameter),

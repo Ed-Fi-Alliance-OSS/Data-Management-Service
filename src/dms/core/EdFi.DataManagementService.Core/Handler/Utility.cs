@@ -39,6 +39,7 @@ public static class Utility
         result
             is DeleteResult.DeleteFailureWriteConflict
                 or GetResult.GetFailureRetryable
+                or PartitionResult.PartitionFailureRetryable
                 or QueryResult.QueryFailureRetryable
                 or UpdateResult.UpdateFailureWriteConflict
                 or UpsertResult.UpsertFailureWriteConflict;

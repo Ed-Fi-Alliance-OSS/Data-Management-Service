@@ -1,0 +1,64 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using EdFi.DataManagementService.Tests.Integration.Fixtures;
+using EdFi.DataManagementService.Tests.Integration.Mssql;
+using EdFi.DataManagementService.Tests.Integration.Scenarios;
+
+namespace EdFi.DataManagementService.Tests.Integration.Tests.Mssql;
+
+/// <summary>
+/// SQL Server twin of the partitions endpoint proof. The boundaries come from real SQL Server
+/// execution of the compiled window statement, so what the endpoint hands a client is
+/// provider-specific and is observed on both engines.
+/// </summary>
+/// <remarks>
+/// Leases the descriptor runtime fixture because its ApiSchema declares both the regular resource and
+/// the descriptor these walks partition; the walks seed the documents they assert on themselves.
+/// </remarks>
+public sealed class Given_Mssql_PartitionEndpoint : MssqlApiIntegrationTestBase
+{
+    protected override FixtureKey Fixture => FixtureKey.DescriptorRuntime;
+
+    [Test]
+    public Task It_covers_a_regular_resource_collection_across_its_partitions() =>
+        PartitionEndpointScenario.It_covers_a_regular_resource_collection_across_its_partitions(Harness);
+
+    [Test]
+    public Task It_covers_a_descriptor_collection_across_its_partitions() =>
+        PartitionEndpointScenario.It_covers_a_descriptor_collection_across_its_partitions(Harness);
+
+    [Test]
+    public Task It_never_returns_more_partitions_than_requested() =>
+        PartitionEndpointScenario.It_never_returns_more_partitions_than_requested(Harness);
+
+    [Test]
+    public Task It_partitions_only_the_filtered_candidate_set() =>
+        PartitionEndpointScenario.It_partitions_only_the_filtered_candidate_set(Harness);
+
+    [Test]
+    public Task It_serves_plain_json_without_paging_headers() =>
+        PartitionEndpointScenario.It_serves_plain_json_without_paging_headers(Harness);
+
+    [Test]
+    public Task It_returns_an_empty_token_array_for_a_filter_matching_nothing() =>
+        PartitionEndpointScenario.It_returns_an_empty_token_array_for_a_filter_matching_nothing(Harness);
+
+    [Test]
+    public Task It_refuses_write_methods_with_a_get_only_allow_header() =>
+        PartitionEndpointScenario.It_refuses_write_methods_with_a_get_only_allow_header(Harness);
+
+    [Test]
+    public Task It_refuses_a_reserved_paging_parameter() =>
+        PartitionEndpointScenario.It_refuses_a_reserved_paging_parameter(Harness);
+
+    [Test]
+    public Task It_refuses_a_partition_count_outside_the_supported_range() =>
+        PartitionEndpointScenario.It_refuses_a_partition_count_outside_the_supported_range(Harness);
+
+    [Test]
+    public Task It_leaves_the_neighbouring_route_shapes_unchanged() =>
+        PartitionEndpointScenario.It_leaves_the_neighbouring_route_shapes_unchanged(Harness);
+}

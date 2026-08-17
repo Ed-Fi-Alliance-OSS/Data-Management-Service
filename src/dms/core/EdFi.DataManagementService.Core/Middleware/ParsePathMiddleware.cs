@@ -46,18 +46,11 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
                 return;
 
             case ResourcePathParseResult.Recognized recognized:
+                // Every recognized operation, including partitions, continues into the pipeline that
+                // dispatch selected for it. The invalid-identifier response above is reserved for an
+                // unrecognized third segment, which is what a client that mistyped a document id
+                // supplied.
                 requestInfo.PathComponents = recognized.PathComponents;
-
-                if (recognized.PathComponents.Operation is ResourcePathOperation.Partitions)
-                {
-                    // The partitions pipeline does not exist yet. Until it does, a recognized
-                    // partitions operation is answered exactly as an unrecognized third segment is,
-                    // so no incomplete partitions surface is exposed. The classification is still
-                    // applied to the request above, so the operation this pipeline declines to serve
-                    // is the one recorded in request state.
-                    RespondWithInvalidIdentifier(requestInfo, recognized.SuppliedOperationSegment!);
-                    return;
-                }
 
                 await next();
                 return;

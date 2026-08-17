@@ -411,7 +411,7 @@ public class ParsePathMiddlewareTests
         [TestCase("partitions")]
         [TestCase("PARTITIONS")]
         [TestCase("Partitions")]
-        public async Task It_records_the_partitions_operation_and_declines_to_serve_it(string segment)
+        public async Task It_records_the_partitions_operation_and_continues(string segment)
         {
             FrontendRequest frontendRequest = new(
                 Body: "{}",
@@ -423,22 +423,32 @@ public class ParsePathMiddlewareTests
                 RouteQualifiers: []
             );
             RequestInfo requestInfo = new(frontendRequest, RequestMethod.GET, No.ServiceProvider);
+            var reachedNext = false;
 
-            await Middleware().Execute(requestInfo, NullNext);
-
-            requestInfo
-                .PathComponents.Operation.Should()
-                .BeOfType<ResourcePathOperation.Partitions>(
-                    "the recognized operation belongs in request state even though the pipeline "
-                        + "declines to serve it"
+            await Middleware()
+                .Execute(
+                    requestInfo,
+                    () =>
+                    {
+                        reachedNext = true;
+                        return Task.CompletedTask;
+                    }
                 );
-            requestInfo.PathComponents.EndpointName.Value.Should().Be("endpointName");
-            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
 
-            string response = JsonSerializer.Serialize(requestInfo.FrontendResponse.Body, SerializerOptions);
-            response
+            requestInfo.PathComponents.Operation.Should().BeOfType<ResourcePathOperation.Partitions>();
+            requestInfo.PathComponents.EndpointName.Value.Should().Be("endpointName");
+            reachedNext
                 .Should()
-                .Contain($"\"validationErrors\":{{\"$.id\":[\"The value '{segment}' is not valid.\"]}}");
+                .BeTrue(
+                    "a recognized partitions operation continues into the pipeline dispatch selected "
+                        + "for it rather than being answered here"
+                );
+            requestInfo
+                .FrontendResponse.Should()
+                .Be(
+                    No.FrontendResponse,
+                    "the invalid-identifier response is reserved for an unrecognized third segment"
+                );
         }
     }
 
