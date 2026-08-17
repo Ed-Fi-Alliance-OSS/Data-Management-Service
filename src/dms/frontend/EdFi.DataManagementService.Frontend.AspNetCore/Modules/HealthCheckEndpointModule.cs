@@ -5,6 +5,8 @@
 
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
@@ -43,13 +45,59 @@ public class HealthCheckEndpointModule(IOptions<DocumentCacheOptions> documentCa
 
     internal static async Task GetDocumentCacheStatus(
         HttpContext httpContext,
+        IDocumentCacheStatusAuthorizationService authorizationService,
         IDocumentCacheStatusService documentCacheStatusService
     )
     {
+        DocumentCacheStatusAuthorizationResult authorizationResult =
+            await authorizationService.AuthorizeAsync(
+                GetAuthorizationHeader(httpContext),
+                httpContext.RequestAborted
+            );
+
+        if (!authorizationResult.IsAuthorized)
+        {
+            await WriteAuthorizationFailureAsync(httpContext, authorizationResult);
+            return;
+        }
+
         DocumentCacheStatusResponse status = await documentCacheStatusService.GetStatusAsync(
             httpContext.RequestAborted
         );
 
         await httpContext.Response.WriteAsSerializedJsonAsync(status);
+    }
+
+    private static string? GetAuthorizationHeader(HttpContext httpContext) =>
+        httpContext.Request.Headers.TryGetValue("Authorization", out var authorizationHeader)
+            ? authorizationHeader.ToString()
+            : null;
+
+    private static async Task WriteAuthorizationFailureAsync(
+        HttpContext httpContext,
+        DocumentCacheStatusAuthorizationResult authorizationResult
+    )
+    {
+        TraceId traceId = new(httpContext.TraceIdentifier);
+        httpContext.Response.ContentType = "application/problem+json";
+
+        if (authorizationResult.Outcome == DocumentCacheStatusAuthorizationOutcome.Unauthorized)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            httpContext.Response.Headers.WWWAuthenticate = "Bearer error=\"invalid_token\"";
+            await httpContext.Response.WriteAsync(
+                FailureResponse
+                    .ForAuthenticationFailure(traceId, [authorizationResult.Message ?? "Invalid token"])
+                    .ToJsonString()
+            );
+            return;
+        }
+
+        httpContext.Response.StatusCode = StatusCodes.Status403Forbidden;
+        await httpContext.Response.WriteAsync(
+            FailureResponse
+                .ForForbidden(traceId, [authorizationResult.Message ?? "Insufficient permissions"])
+                .ToJsonString()
+        );
     }
 }

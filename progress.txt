@@ -53,3 +53,10 @@
 - Kept existing /health anonymous/independent and did not register DocumentCache status as IHealthCheck. Exact JWT role enforcement remains next endpoint/auth task.
 - Files changed: HealthCheckEndpointModule.cs, HealthCheckEndpointModuleTests.cs, tasks.json, progress.txt.
 - Verified: frontend --filter FullyQualifiedName~HealthCheckEndpointModule; frontend --filter FullyQualifiedName~OpenApi; integration --filter FullyQualifiedName~DocumentCacheStatusEndpoint (build OK, no matching tests).
+
+2026-08-17 - Completed Endpoint and Authorization dedicated role check for reference/design/backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md
+- Added core DocumentCache status authorization service over existing JWT validation; exact ordinal RoleClaimType/RequiredRole match only, no ClientRole/ClaimTypes.Role fallback or claim-value splitting/normalization.
+- Health endpoint now returns 401/403 before status service on auth failures; route mapping still fail-closed by RequiredRole validity.
+- Added frontend and integration endpoint auth evidence with fake JWT principals and no status-service invocation on failures.
+- Files changed: DocumentCacheStatusAuthorization.cs, DmsCoreServiceExtensions.cs, HealthCheckEndpointModule.cs, DocumentCacheStatusAuthorizationTests.cs, HealthCheckEndpointModuleTests.cs, Given_DocumentCacheStatusEndpointAuthorization.cs, tasks.json, progress.txt.
+- Verified: core --filter FullyQualifiedName~DocumentCacheStatusAuthorization; frontend --filter FullyQualifiedName~DocumentCacheStatusAuthorization; frontend --filter FullyQualifiedName~HealthCheckEndpointModule; integration --filter FullyQualifiedName~DocumentCacheStatusEndpointAuthorization; jq empty tasks.json.

@@ -7,31 +7,33 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Startup;
+using EdFi.DataManagementService.Frontend.AspNetCore.Content;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using NUnit.Framework;
 
-namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
+namespace EdFi.DataManagementService.Tests.Integration.Tests.DocumentCache;
 
 [TestFixture]
 [NonParallelizable]
-public class Given_HealthCheckEndpointModule
+[Category("DocumentCacheStatusEndpointAuthorization")]
+public class Given_DocumentCacheStatusEndpointAuthorization
 {
-    private const string ValidRequiredRole = "dms-document-cache-operator";
+    private const string RequiredRole = "dms-document-cache-operator";
     private const string RoleClaimType = "operator_role";
     private const string ValidBearerToken = "valid-token";
 
     private static WebApplicationFactory<Program> CreateFactory(
         ScriptedDocumentCacheStatusService documentCacheStatusService,
-        string? requiredRole,
         ScriptedJwtValidationService? jwtValidationService = null
     )
     {
@@ -39,21 +41,12 @@ public class Given_HealthCheckEndpointModule
         {
             builder.UseEnvironment("Test");
             builder.ConfigureAppConfiguration(
-                (context, configuration) =>
+                (_, configuration) =>
                 {
-                    if (requiredRole is not null)
-                    {
-                        configuration.AddInMemoryCollection(
-                            new Dictionary<string, string?>
-                            {
-                                ["DataManagement:DocumentCache:Status:RequiredRole"] = requiredRole,
-                            }
-                        );
-                    }
-
                     configuration.AddInMemoryCollection(
                         new Dictionary<string, string?>
                         {
+                            ["DataManagement:DocumentCache:Status:RequiredRole"] = RequiredRole,
                             ["JwtAuthentication:RoleClaimType"] = RoleClaimType,
                             ["JwtAuthentication:ClientRole"] = "legacy-service",
                         }
@@ -62,7 +55,7 @@ public class Given_HealthCheckEndpointModule
             );
             builder.ConfigureServices(services =>
             {
-                TestMockHelper.AddEssentialMocks(services);
+                AddEssentialMocks(services);
                 services.Replace(
                     ServiceDescriptor.Singleton<IJwtValidationService>(
                         jwtValidationService
@@ -86,45 +79,10 @@ public class Given_HealthCheckEndpointModule
         new(new Dictionary<string, ClaimsPrincipal?> { [ValidBearerToken] = Principal(claims) });
 
     [Test]
-    public async Task It_omits_document_cache_status_when_required_role_is_missing()
+    public async Task It_returns_401_for_missing_token_without_invoking_status_service()
     {
         ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
-        await using WebApplicationFactory<Program> factory = CreateFactory(
-            documentCacheStatusService,
-            requiredRole: null
-        );
-        using HttpClient client = factory.CreateClient();
-
-        HttpResponseMessage response = await client.GetAsync("/health/document-cache");
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        documentCacheStatusService.CallCount.Should().Be(0);
-    }
-
-    [Test]
-    public async Task It_omits_document_cache_status_when_required_role_is_invalid()
-    {
-        ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
-        await using WebApplicationFactory<Program> factory = CreateFactory(
-            documentCacheStatusService,
-            requiredRole: "dms document cache operator"
-        );
-        using HttpClient client = factory.CreateClient();
-
-        HttpResponseMessage response = await client.GetAsync("/health/document-cache");
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        documentCacheStatusService.CallCount.Should().Be(0);
-    }
-
-    [Test]
-    public async Task It_returns_DocumentCacheStatusAuthorization_401_when_token_is_missing()
-    {
-        ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
-        await using WebApplicationFactory<Program> factory = CreateFactory(
-            documentCacheStatusService,
-            ValidRequiredRole
-        );
+        await using WebApplicationFactory<Program> factory = CreateFactory(documentCacheStatusService);
         using HttpClient client = factory.CreateClient();
 
         HttpResponseMessage response = await client.GetAsync("/health/document-cache");
@@ -134,30 +92,12 @@ public class Given_HealthCheckEndpointModule
     }
 
     [Test]
-    public async Task It_returns_DocumentCacheStatusAuthorization_401_when_token_is_malformed()
-    {
-        ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
-        await using WebApplicationFactory<Program> factory = CreateFactory(
-            documentCacheStatusService,
-            ValidRequiredRole
-        );
-        using HttpClient client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", "token");
-
-        HttpResponseMessage response = await client.GetAsync("/health/document-cache");
-
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        documentCacheStatusService.CallCount.Should().Be(0);
-    }
-
-    [Test]
-    public async Task It_returns_DocumentCacheStatusAuthorization_401_when_token_is_invalid()
+    public async Task It_returns_401_for_invalid_token_without_invoking_status_service()
     {
         ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
         ScriptedJwtValidationService jwtValidationService = new(new Dictionary<string, ClaimsPrincipal?>());
         await using WebApplicationFactory<Program> factory = CreateFactory(
             documentCacheStatusService,
-            ValidRequiredRole,
             jwtValidationService
         );
         using HttpClient client = factory.CreateClient();
@@ -171,16 +111,15 @@ public class Given_HealthCheckEndpointModule
     }
 
     [Test]
-    public async Task It_returns_DocumentCacheStatusAuthorization_403_when_token_lacks_exact_required_role()
+    public async Task It_returns_403_for_valid_token_without_exact_required_role()
     {
         ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
         ScriptedJwtValidationService jwtValidationService = ValidJwtWithClaims(
             new Claim(RoleClaimType, "other-role"),
-            new Claim(ClaimTypes.Role, ValidRequiredRole)
+            new Claim(ClaimTypes.Role, RequiredRole)
         );
         await using WebApplicationFactory<Program> factory = CreateFactory(
             documentCacheStatusService,
-            ValidRequiredRole,
             jwtValidationService
         );
         using HttpClient client = factory.CreateClient();
@@ -197,15 +136,14 @@ public class Given_HealthCheckEndpointModule
     }
 
     [Test]
-    public async Task It_returns_document_cache_status_after_DocumentCacheStatusAuthorization_succeeds()
+    public async Task It_returns_200_for_valid_token_with_exact_required_role()
     {
         ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
         ScriptedJwtValidationService jwtValidationService = ValidJwtWithClaims(
-            new Claim(RoleClaimType, ValidRequiredRole)
+            new Claim(RoleClaimType, RequiredRole)
         );
         await using WebApplicationFactory<Program> factory = CreateFactory(
             documentCacheStatusService,
-            ValidRequiredRole,
             jwtValidationService
         );
         using HttpClient client = factory.CreateClient();
@@ -215,56 +153,46 @@ public class Given_HealthCheckEndpointModule
         );
 
         HttpResponseMessage response = await client.GetAsync("/health/document-cache");
-        string content = await response.Content.ReadAsStringAsync();
-        JsonNode json = JsonNode.Parse(content)!;
+        JsonNode json = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         json["contractVersion"]!.GetValue<int>().Should().Be(1);
-        json["observedAt"]!.GetValue<string>().Should().Be("2026-08-17T12:34:56Z");
-        json["targets"]!.AsArray().Should().BeEmpty();
         jwtValidationService.CallCount.Should().Be(1);
         documentCacheStatusService.CallCount.Should().Be(1);
     }
 
-    [Test]
-    public async Task It_keeps_the_existing_health_endpoint_independent_from_document_cache_status()
+    private static void AddEssentialMocks(IServiceCollection services)
     {
-        ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
-        await using WebApplicationFactory<Program> factory = CreateFactory(
-            documentCacheStatusService,
-            ValidRequiredRole
-        );
-        using HttpClient client = factory.CreateClient();
+        var claimSetProvider = A.Fake<IClaimSetProvider>();
+        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>._)).Returns([]);
+        services.AddTransient(_ => claimSetProvider);
 
-        HttpResponseMessage response = await client.GetAsync("/health");
-        string content = await response.Content.ReadAsStringAsync();
+        var dataStoreProvider = A.Fake<IDataStoreProvider>();
+        var dataStore = new DataStore(1, "Test", "TestInstance", "test-connection-string", []);
+        A.CallTo(() => dataStoreProvider.LoadDataStores(A<string?>._)).Returns([dataStore]);
+        A.CallTo(() => dataStoreProvider.LoadTenants()).Returns(["TestTenant"]);
+        A.CallTo(() => dataStoreProvider.GetAll(A<string?>._)).Returns([dataStore]);
+        A.CallTo(() => dataStoreProvider.GetById(A<long>._, A<string?>._)).Returns(dataStore);
+        A.CallTo(() => dataStoreProvider.IsLoaded(A<string?>._)).Returns(true);
+        A.CallTo(() => dataStoreProvider.TenantExists(A<string>.That.IsNotNull())).Returns(true);
+        A.CallTo(() => dataStoreProvider.GetLoadedTenantKeys()).Returns(new List<string> { "" }.AsReadOnly());
+        services.AddTransient(_ => dataStoreProvider);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        content.Should().Contain("\"Name\": \"ApplicationHealthCheck\"");
-        content.Should().NotContain("document-cache");
-        documentCacheStatusService.CallCount.Should().Be(0);
-    }
+        var tenantValidator = A.Fake<ITenantValidator>();
+        A.CallTo(() => tenantValidator.ValidateTenantAsync(A<string>.That.IsNotNull())).Returns(true);
+        services.AddTransient(_ => tenantValidator);
 
-    [Test]
-    public void It_excludes_document_cache_status_from_OpenApi_description_metadata()
-    {
-        ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
-        using WebApplicationFactory<Program> factory = CreateFactory(
-            documentCacheStatusService,
-            ValidRequiredRole
-        );
-        using HttpClient client = factory.CreateClient();
+        var connectionStringProvider = A.Fake<IConnectionStringProvider>();
+        A.CallTo(() => connectionStringProvider.GetConnectionString(A<long>._, A<string?>._))
+            .Returns("test-connection-string");
+        A.CallTo(() => connectionStringProvider.GetHealthCheckConnectionString())
+            .Returns("test-connection-string");
+        services.AddTransient(_ => connectionStringProvider);
 
-        RouteEndpoint endpoint = factory
-            .Services.GetServices<EndpointDataSource>()
-            .SelectMany(source => source.Endpoints)
-            .OfType<RouteEndpoint>()
-            .Single(endpoint => endpoint.RoutePattern.RawText == "/health/document-cache");
-
-        endpoint
-            .Metadata.GetMetadata<IExcludeFromDescriptionMetadata>()!
-            .ExcludeFromDescription.Should()
-            .BeTrue();
+        var backendMappingInitializer = A.Fake<IBackendMappingInitializer>();
+        A.CallTo(() => backendMappingInitializer.InitializeAsync(A<CancellationToken>._))
+            .Returns(Task.CompletedTask);
+        services.Replace(ServiceDescriptor.Singleton(backendMappingInitializer));
     }
 
     private sealed class ScriptedDocumentCacheStatusService(DocumentCacheStatusResponse response)
