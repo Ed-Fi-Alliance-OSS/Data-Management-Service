@@ -5,11 +5,11 @@
 
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.Ddl;
-using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using FluentAssertions.Execution;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Backend.Cdc.Tests.Unit.CdcConnectorTemplateTestData;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 
@@ -18,18 +18,15 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 [Category("CdcConnectorTemplateArtifacts")]
 public class Given_CdcConnectorTemplateArtifacts
 {
-    private static readonly CdcSourceFingerprint SourceFingerprint = new(
-        "cdc-source-fingerprint-v1",
-        "physical-source-fingerprint"
-    );
-
     [Test]
     public void It_returns_a_deterministic_postgresql_redacted_manifest_payload_when_requested()
     {
         CdcConnectorTemplateResult result = Render(
             BuildRequest(
                 CdcProvider.Postgresql,
-                new CdcConnectorTemplateArtifactOutputRequest(includeRedactedArtifactPayload: true),
+                artifactOutput: new CdcConnectorTemplateArtifactOutputRequest(
+                    includeRedactedArtifactPayload: true
+                ),
                 providerConnectionProperties: new Dictionary<string, string>
                 {
                     ["database.hostname"] = "postgresql-prod.internal",
@@ -131,7 +128,7 @@ public class Given_CdcConnectorTemplateArtifacts
         CdcConnectorTemplateResult result = Render(
             BuildRequest(
                 CdcProvider.SqlServer,
-                new CdcConnectorTemplateArtifactOutputRequest(
+                artifactOutput: new CdcConnectorTemplateArtifactOutputRequest(
                     includeRedactedArtifactPayload: false,
                     manifestOutputDirectoryPath: artifactDirectory
                 ),
@@ -198,7 +195,9 @@ public class Given_CdcConnectorTemplateArtifacts
         CdcConnectorTemplateResult first = Render(
             BuildRequest(
                 CdcProvider.Postgresql,
-                new CdcConnectorTemplateArtifactOutputRequest(includeRedactedArtifactPayload: true),
+                artifactOutput: new CdcConnectorTemplateArtifactOutputRequest(
+                    includeRedactedArtifactPayload: true
+                ),
                 providerConnectionProperties: BuildPostgresqlConnectionProperties(
                     "${env:CDC_DATABASE_PASSWORD_A}"
                 )
@@ -207,7 +206,9 @@ public class Given_CdcConnectorTemplateArtifacts
         CdcConnectorTemplateResult second = Render(
             BuildRequest(
                 CdcProvider.Postgresql,
-                new CdcConnectorTemplateArtifactOutputRequest(includeRedactedArtifactPayload: true),
+                artifactOutput: new CdcConnectorTemplateArtifactOutputRequest(
+                    includeRedactedArtifactPayload: true
+                ),
                 providerConnectionProperties: BuildPostgresqlConnectionProperties(
                     "${env:CDC_DATABASE_PASSWORD_B}"
                 )
@@ -246,193 +247,4 @@ public class Given_CdcConnectorTemplateArtifacts
 
         return service.Render(request);
     }
-
-    private static CdcConnectorTemplateRequest BuildRequest(
-        CdcProvider provider,
-        CdcConnectorTemplateArtifactOutputRequest? artifactOutput,
-        IReadOnlyDictionary<string, string>? providerConnectionProperties = null,
-        IReadOnlyDictionary<string, string>? kafkaSecurityProperties = null,
-        string heartbeatSql = "select 1"
-    ) =>
-        new(
-            BuildBinding(provider),
-            new CdcConnectorProviderSetupEvidence(
-                bindingGeneration: 7,
-                BuildProviderSetupResult(provider, heartbeatSql)
-            ),
-            new CdcConnectorTemplateDeploymentPolicy(
-                "broker-1:9092,broker-2:9092",
-                maxRecordBytes: 67_108_864
-            ),
-            new CdcProviderConnectionProperties(
-                provider,
-                providerConnectionProperties ?? BuildProviderConnectionProperties(provider)
-            ),
-            new CdcKafkaClientSecurityProperties(kafkaSecurityProperties ?? new Dictionary<string, string>()),
-            artifactOutput
-        );
-
-    private static CdcConnectorTemplateBindingIdentity BuildBinding(CdcProvider provider) =>
-        new(
-            provider,
-            new CdcSafeName("dms_binding_connector"),
-            "edfi.documents",
-            bindingGeneration: 7,
-            partitionerAlgorithm: "kafka-murmur2-v1",
-            SourceFingerprint
-        );
-
-    private static CdcProviderSetupResult BuildProviderSetupResult(
-        CdcProvider provider,
-        string heartbeatSql
-    ) =>
-        new(
-            Provider: provider,
-            Mode: CdcProviderSetupMode.InitialCreateOrExactMatch,
-            Outcome: CdcProviderSetupOutcome.CreatedOrMatched,
-            BoundPhysicalSourceFingerprint: SourceFingerprint,
-            ObservedSourceFingerprint: SourceFingerprint,
-            ArtifactInventory: BuildArtifactInventory(provider),
-            GrantInventory: [],
-            SourceTableInventory: BuildRequiredSourceTableInventory(provider),
-            ExpectedMessageKeyColumns: BuildExpectedMessageKeyColumns(),
-            HeartbeatActionQuery: new CdcHeartbeatActionQuery(heartbeatSql, "sha256-safe"),
-            ProviderHistoryObservations: [],
-            ManifestPayload: null,
-            Diagnostics: []
-        );
-
-    private static IReadOnlyDictionary<string, string> BuildProviderConnectionProperties(
-        CdcProvider provider
-    ) =>
-        provider == CdcProvider.Postgresql
-            ? BuildPostgresqlConnectionProperties("${env:CDC_DATABASE_PASSWORD}")
-            : new Dictionary<string, string>
-            {
-                ["database.hostname"] = "sqlserver.internal",
-                ["database.port"] = "1433",
-                ["database.user"] = "connector_user",
-                ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
-                ["database.names"] = "edfi_datastore",
-            };
-
-    private static IReadOnlyDictionary<string, string> BuildPostgresqlConnectionProperties(
-        string passwordReference
-    ) =>
-        new Dictionary<string, string>
-        {
-            ["database.hostname"] = "postgresql.internal",
-            ["database.port"] = "5432",
-            ["database.user"] = "connector_user",
-            ["database.password"] = passwordReference,
-            ["database.dbname"] = "edfi_datastore",
-        };
-
-    private static IReadOnlyList<CdcProviderArtifactObservation> BuildArtifactInventory(
-        CdcProvider provider
-    ) =>
-        provider switch
-        {
-            CdcProvider.Postgresql =>
-            [
-                new(
-                    CdcProviderArtifactKind.PostgresqlPublication,
-                    new CdcSafeName("dms_binding_publication"),
-                    CdcProviderArtifactState.Matched,
-                    new Dictionary<string, string>()
-                ),
-                new(
-                    CdcProviderArtifactKind.PostgresqlReplicationSlot,
-                    new CdcSafeName("dms_binding_slot"),
-                    CdcProviderArtifactState.Matched,
-                    new Dictionary<string, string>()
-                ),
-            ],
-            CdcProvider.SqlServer =>
-            [
-                new(
-                    CdcProviderArtifactKind.SqlServerCaptureInstance,
-                    new CdcSafeName("dms_binding_document_cache_capture"),
-                    CdcProviderArtifactState.Matched,
-                    new Dictionary<string, string>()
-                ),
-                new(
-                    CdcProviderArtifactKind.SqlServerCaptureInstance,
-                    new CdcSafeName("dms_binding_document_capture"),
-                    CdcProviderArtifactState.Matched,
-                    new Dictionary<string, string>()
-                ),
-                new(
-                    CdcProviderArtifactKind.SqlServerCaptureInstance,
-                    new CdcSafeName("dms_binding_cdc_heartbeat_capture"),
-                    CdcProviderArtifactState.Matched,
-                    new Dictionary<string, string>()
-                ),
-            ],
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(provider),
-                provider,
-                "Unsupported CDC provider."
-            ),
-        };
-
-    private static IReadOnlyList<CdcSourceTableInventory> BuildRequiredSourceTableInventory(
-        CdcProvider provider
-    ) =>
-        [
-            BuildSourceTable(
-                provider,
-                CdcSourceTableKind.DocumentCache,
-                "DocumentCache",
-                [BuildColumn(provider, "DocumentUuid")]
-            ),
-            BuildSourceTable(
-                provider,
-                CdcSourceTableKind.Document,
-                "Document",
-                [BuildColumn(provider, "DocumentUuid")]
-            ),
-            BuildSourceTable(
-                provider,
-                CdcSourceTableKind.CdcHeartbeat,
-                "CdcHeartbeat",
-                [
-                    BuildColumn(provider, "HeartbeatId"),
-                    BuildColumn(provider, "HeartbeatSequence", 2),
-                    BuildColumn(provider, "HeartbeatAt", 3),
-                ]
-            ),
-        ];
-
-    private static CdcSourceTableInventory BuildSourceTable(
-        CdcProvider provider,
-        CdcSourceTableKind tableKind,
-        string tableName,
-        IReadOnlyList<CdcSourceColumnInventory> columns
-    ) =>
-        new(
-            tableKind,
-            new DbTableName(new DbSchemaName("dms"), tableName),
-            provider == CdcProvider.Postgresql ? $"\"dms\".\"{tableName}\"" : $"[dms].[{tableName}]",
-            columns
-        );
-
-    private static CdcSourceColumnInventory BuildColumn(
-        CdcProvider provider,
-        string columnName,
-        int ordinal = 1
-    ) =>
-        new(
-            new DbColumnName(columnName),
-            provider == CdcProvider.Postgresql ? $"\"{columnName}\"" : $"[{columnName}]",
-            ordinal,
-            provider == CdcProvider.Postgresql ? "text" : "nvarchar(max)",
-            IsNullable: false
-        );
-
-    private static IReadOnlyList<CdcExpectedMessageKeyColumns> BuildExpectedMessageKeyColumns() =>
-        [
-            new(CdcSourceTableKind.DocumentCache, [new DbColumnName("DocumentUuid")]),
-            new(CdcSourceTableKind.Document, [new DbColumnName("DocumentUuid")]),
-        ];
 }

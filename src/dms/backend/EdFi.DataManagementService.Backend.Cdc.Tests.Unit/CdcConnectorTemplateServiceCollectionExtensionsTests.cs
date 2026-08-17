@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Backend.Ddl;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Backend.Cdc.Tests.Unit.CdcConnectorTemplateTestData;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 
@@ -40,7 +41,7 @@ public class Given_CdcConnectorTemplateServiceRegistration
             serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
 
         CdcProviderSetupReadiness readiness = service.GetProviderSetupReadiness(
-            BuildProviderSetupResult(CdcProviderSetupOutcome.CreatedOrMatched)
+            BuildProviderSetupResult(CdcProvider.Postgresql, CdcProviderSetupOutcome.CreatedOrMatched)
         );
 
         readiness
@@ -65,26 +66,9 @@ public class Given_CdcConnectorTemplateServiceRegistration
             serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
 
         CdcProviderSetupReadiness readiness = service.GetProviderSetupReadiness(
-            BuildProviderSetupResult(CdcProviderSetupOutcome.Failed)
+            BuildProviderSetupResult(CdcProvider.Postgresql, CdcProviderSetupOutcome.Failed)
         );
 
         readiness.CanRenderTemplate.Should().BeFalse();
     }
-
-    private static CdcProviderSetupResult BuildProviderSetupResult(CdcProviderSetupOutcome outcome) =>
-        new(
-            Provider: CdcProvider.Postgresql,
-            Mode: CdcProviderSetupMode.InitialCreateOrExactMatch,
-            Outcome: outcome,
-            BoundPhysicalSourceFingerprint: new CdcSourceFingerprint("cdc-source-fingerprint-v1", "safe"),
-            ObservedSourceFingerprint: new CdcSourceFingerprint("cdc-source-fingerprint-v1", "safe"),
-            ArtifactInventory: [],
-            GrantInventory: [],
-            SourceTableInventory: [],
-            ExpectedMessageKeyColumns: [],
-            HeartbeatActionQuery: null,
-            ProviderHistoryObservations: [],
-            ManifestPayload: null,
-            Diagnostics: []
-        );
 }

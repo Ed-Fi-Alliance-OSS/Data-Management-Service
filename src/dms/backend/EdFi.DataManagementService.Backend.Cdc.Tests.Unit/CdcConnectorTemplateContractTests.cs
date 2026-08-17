@@ -4,10 +4,10 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.Ddl;
-using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using FluentAssertions.Execution;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Backend.Cdc.Tests.Unit.CdcConnectorTemplateTestData;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 
@@ -16,11 +16,6 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 [Category("CdcConnectorTemplateContract")]
 public class Given_CdcConnectorTemplateContracts
 {
-    private static readonly CdcSourceFingerprint SourceFingerprint = new(
-        "cdc-source-fingerprint-v1",
-        "physical-source-fingerprint"
-    );
-
     [Test]
     public void It_derives_progress_and_sqlserver_schema_history_topics_from_the_binding_topic()
     {
@@ -423,104 +418,4 @@ public class Given_CdcConnectorTemplateContracts
 
         Enum.GetNames<CdcConnectorTemplateDiagnosticCategory>().Should().BeEquivalentTo(expectedCategories);
     }
-
-    private static CdcConnectorTemplateRequest BuildRequest(
-        CdcProviderSetupResult providerSetupResult,
-        CdcConnectorTemplateBindingIdentity? binding = null,
-        long providerSetupBindingGeneration = 7,
-        CdcProviderConnectionProperties? providerConnectionProperties = null
-    )
-    {
-        CdcConnectorTemplateBindingIdentity bindingIdentity =
-            binding ?? BuildBinding(providerSetupResult.Provider);
-
-        return new CdcConnectorTemplateRequest(
-            bindingIdentity,
-            new CdcConnectorProviderSetupEvidence(providerSetupBindingGeneration, providerSetupResult),
-            new CdcConnectorTemplateDeploymentPolicy("broker:9092", maxRecordBytes: 1_048_576),
-            providerConnectionProperties ?? CdcProviderConnectionProperties.Empty(bindingIdentity.Provider),
-            CdcKafkaClientSecurityProperties.Empty
-        );
-    }
-
-    private static CdcConnectorTemplateBindingIdentity BuildBinding(CdcProvider provider) =>
-        new(
-            provider,
-            new CdcSafeName("dms_binding_connector"),
-            "edfi.documents",
-            bindingGeneration: 7,
-            partitionerAlgorithm: "kafka-murmur2-v1",
-            SourceFingerprint
-        );
-
-    private static CdcProviderSetupResult BuildProviderSetupResult(
-        CdcProvider provider,
-        CdcProviderSetupOutcome outcome = CdcProviderSetupOutcome.CreatedOrMatched,
-        CdcSourceFingerprint? boundPhysicalSourceFingerprint = null,
-        IReadOnlyList<CdcSourceTableInventory>? sourceTableInventory = null,
-        IReadOnlyList<CdcExpectedMessageKeyColumns>? expectedMessageKeyColumns = null,
-        CdcHeartbeatActionQuery? heartbeatActionQuery = null,
-        bool omitHeartbeatActionQuery = false
-    )
-    {
-        CdcSourceFingerprint fingerprint = boundPhysicalSourceFingerprint ?? SourceFingerprint;
-
-        return new CdcProviderSetupResult(
-            Provider: provider,
-            Mode: CdcProviderSetupMode.InitialCreateOrExactMatch,
-            Outcome: outcome,
-            BoundPhysicalSourceFingerprint: fingerprint,
-            ObservedSourceFingerprint: fingerprint,
-            ArtifactInventory: [],
-            GrantInventory: [],
-            SourceTableInventory: sourceTableInventory ?? BuildRequiredSourceTableInventory(),
-            ExpectedMessageKeyColumns: expectedMessageKeyColumns ?? BuildExpectedMessageKeyColumns(),
-            HeartbeatActionQuery: omitHeartbeatActionQuery
-                ? null
-                : heartbeatActionQuery ?? new CdcHeartbeatActionQuery("select 1", "sha256-safe"),
-            ProviderHistoryObservations: [],
-            ManifestPayload: null,
-            Diagnostics: []
-        );
-    }
-
-    private static IReadOnlyList<CdcSourceTableInventory> BuildRequiredSourceTableInventory() =>
-        [
-            BuildSourceTable(
-                CdcSourceTableKind.DocumentCache,
-                "DocumentCache",
-                [BuildColumn("DocumentUuid")]
-            ),
-            BuildSourceTable(CdcSourceTableKind.Document, "Document", [BuildColumn("DocumentUuid")]),
-            BuildSourceTable(
-                CdcSourceTableKind.CdcHeartbeat,
-                "CdcHeartbeat",
-                [
-                    BuildColumn("HeartbeatId"),
-                    BuildColumn("HeartbeatSequence", 2),
-                    BuildColumn("HeartbeatAt", 3),
-                ]
-            ),
-        ];
-
-    private static CdcSourceTableInventory BuildSourceTable(
-        CdcSourceTableKind tableKind,
-        string tableName,
-        IReadOnlyList<CdcSourceColumnInventory> columns
-    ) =>
-        new(
-            tableKind,
-            new DbTableName(new DbSchemaName("dms"), tableName),
-            $"\"dms\".\"{tableName}\"",
-            columns
-        );
-
-    private static CdcSourceColumnInventory BuildColumn(string columnName, int ordinal = 1) =>
-        new(new DbColumnName(columnName), $"\"{columnName}\"", ordinal, "text", IsNullable: false);
-
-    private static IReadOnlyList<CdcExpectedMessageKeyColumns> BuildExpectedMessageKeyColumns() =>
-        [
-            new(CdcSourceTableKind.DocumentCache, [new DbColumnName("DocumentUuid")]),
-            new(CdcSourceTableKind.Document, [new DbColumnName("DocumentUuid")]),
-        ];
 }
