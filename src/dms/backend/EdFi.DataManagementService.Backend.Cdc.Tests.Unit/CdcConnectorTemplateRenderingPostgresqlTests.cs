@@ -181,6 +181,77 @@ public class Given_CdcConnectorTemplatePostgresqlRendering
             .Be(CdcConnectorTemplateRedactionClassification.PhysicalIdentifier);
     }
 
+    [TestCase(CdcSourceTableKind.DocumentCache, "DocumentCache")]
+    [TestCase(CdcSourceTableKind.Document, "Document")]
+    public void It_rejects_missing_document_uuid_source_columns_before_rendering(
+        CdcSourceTableKind tableKind,
+        string tableName
+    )
+    {
+        CdcConnectorTemplateResult result = Render(
+            BuildRequest(
+                sourceTableInventory: BuildSourceInventoryReplacing(
+                    BuildSourceTable(tableKind, tableName, [BuildColumn("DocumentUuid;DROP_TABLE")])
+                )
+            )
+        );
+
+        CdcConnectorTemplateDiagnostic diagnostic = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch
+            )
+            .Subject;
+
+        using var _ = new AssertionScope();
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        result.Config.Should().BeEmpty();
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.MessageKey);
+        diagnostic.PropertyName.Should().Be("message.key.columns");
+        diagnostic.ExpectedValue.Should().Be($"source column DocumentUuid for dms.{tableName}");
+        diagnostic.ObservedValue.Should().Be("missing");
+        diagnostic
+            .RedactionClassification.Should()
+            .Be(CdcConnectorTemplateRedactionClassification.PhysicalIdentifier);
+        string.Join("|", result.Diagnostics.SelectMany(DiagnosticText))
+            .Should()
+            .NotContain("DROP_TABLE", because: "raw physical source column names are redacted");
+    }
+
+    [Test]
+    public void It_rejects_duplicate_source_column_names_before_rendering()
+    {
+        CdcConnectorTemplateResult result = Render(
+            BuildRequest(
+                sourceTableInventory: BuildSourceInventoryReplacing(
+                    BuildSourceTable(
+                        CdcSourceTableKind.Document,
+                        "Document",
+                        [BuildColumn("DocumentUuid"), BuildColumn("DocumentUuid", 2)]
+                    )
+                )
+            )
+        );
+
+        CdcConnectorTemplateDiagnostic diagnostic = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch
+            )
+            .Subject;
+
+        using var _ = new AssertionScope();
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        result.Config.Should().BeEmpty();
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.MessageKey);
+        diagnostic.PropertyName.Should().Be("message.key.columns");
+        diagnostic.ExpectedValue.Should().Be("unique source column names for dms.Document");
+        diagnostic.ObservedValue.Should().Be("duplicate");
+        diagnostic
+            .RedactionClassification.Should()
+            .Be(CdcConnectorTemplateRedactionClassification.PhysicalIdentifier);
+    }
+
     [Test]
     public void It_rejects_caller_supplied_postgresql_connector_properties()
     {
@@ -336,9 +407,19 @@ public class Given_CdcConnectorTemplatePostgresqlRendering
     private static CdcSourceColumnInventory BuildColumn(string columnName, int ordinal = 1) =>
         new(new DbColumnName(columnName), $"\"{columnName}\"", ordinal, "text", IsNullable: false);
 
+    private static IReadOnlyList<CdcSourceTableInventory> BuildSourceInventoryReplacing(
+        CdcSourceTableInventory replacement
+    ) =>
+        BuildRequiredSourceTableInventory()
+            .Select(table => table.TableKind == replacement.TableKind ? replacement : table)
+            .ToArray();
+
     private static IReadOnlyList<CdcExpectedMessageKeyColumns> BuildExpectedMessageKeyColumns() =>
         [
             new(CdcSourceTableKind.DocumentCache, [new DbColumnName("DocumentUuid")]),
             new(CdcSourceTableKind.Document, [new DbColumnName("DocumentUuid")]),
         ];
+
+    private static IEnumerable<string> DiagnosticText(CdcConnectorTemplateDiagnostic diagnostic) =>
+        [diagnostic.ExpectedValue ?? string.Empty, diagnostic.ObservedValue ?? string.Empty];
 }

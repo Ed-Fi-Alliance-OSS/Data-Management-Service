@@ -91,6 +91,7 @@ public static class CdcConnectorTemplateDiagnosticCodes
     public const string PostgresqlReplicationSlotMetadataRequired =
         "CDC_TEMPLATE_POSTGRESQL_REPLICATION_SLOT_METADATA_REQUIRED";
     public const string SourceTableInventoryMismatch = "CDC_TEMPLATE_SOURCE_TABLE_INVENTORY_MISMATCH";
+    public const string SourceColumnInventoryMismatch = "CDC_TEMPLATE_SOURCE_COLUMN_INVENTORY_MISMATCH";
     public const string SqlServerPollIntervalExceedsHeartbeatInterval =
         "CDC_TEMPLATE_SQLSERVER_POLL_INTERVAL_EXCEEDS_HEARTBEAT_INTERVAL";
     public const string LiveReadBackProviderSetupMismatch =

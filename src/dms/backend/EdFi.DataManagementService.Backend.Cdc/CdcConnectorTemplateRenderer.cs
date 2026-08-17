@@ -281,8 +281,68 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
             );
         }
 
+        AddSourceColumnInventoryDiagnostics(request, diagnostics);
+
         return diagnostics;
     }
+
+    private static void AddSourceColumnInventoryDiagnostics(
+        CdcConnectorTemplateRequest request,
+        List<CdcConnectorTemplateDiagnostic> diagnostics
+    )
+    {
+        foreach (CdcExpectedMessageKeyColumns messageKeyColumns in OrderedMessageKeyColumns(request))
+        {
+            CdcSourceTableInventory sourceTable = SourceTable(request, messageKeyColumns.TableKind);
+
+            if (HasDuplicateColumnNames(sourceTable))
+            {
+                diagnostics.Add(
+                    BuildDiagnostic(
+                        CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch,
+                        CdcConnectorTemplateDiagnosticCategory.MessageKey,
+                        "message.key.columns",
+                        $"unique source column names for {ExpectedSourceTableName(sourceTable.TableKind)}",
+                        "duplicate",
+                        request,
+                        CdcConnectorTemplateSourcePhase.Rendering,
+                        CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+                    )
+                );
+            }
+
+            foreach (DbColumnName keyColumn in messageKeyColumns.KeyColumns)
+            {
+                if (CountSourceColumns(sourceTable, keyColumn) > 0)
+                {
+                    continue;
+                }
+
+                diagnostics.Add(
+                    BuildDiagnostic(
+                        CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch,
+                        CdcConnectorTemplateDiagnosticCategory.MessageKey,
+                        "message.key.columns",
+                        $"source column {keyColumn.Value} for {ExpectedSourceTableName(sourceTable.TableKind)}",
+                        "missing",
+                        request,
+                        CdcConnectorTemplateSourcePhase.Rendering,
+                        CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+                    )
+                );
+            }
+        }
+    }
+
+    private static bool HasDuplicateColumnNames(CdcSourceTableInventory sourceTable) =>
+        sourceTable
+            .Columns.GroupBy(column => column.ColumnName.Value, StringComparer.Ordinal)
+            .Any(group => group.Count() > 1);
+
+    private static int CountSourceColumns(CdcSourceTableInventory sourceTable, DbColumnName columnName) =>
+        sourceTable.Columns.Count(column =>
+            string.Equals(column.ColumnName.Value, columnName.Value, StringComparison.Ordinal)
+        );
 
     private static void AddSqlServerPollIntervalDiagnosticIfNeeded(
         CdcConnectorTemplateRequest request,
