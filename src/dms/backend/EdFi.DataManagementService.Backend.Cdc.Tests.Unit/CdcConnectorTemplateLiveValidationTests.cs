@@ -451,6 +451,127 @@ public class Given_CdcConnectorTemplateLiveValidation
     }
 
     [Test]
+    public void It_redacts_rendered_kafka_security_material_read_back_mismatches()
+    {
+        string[] generatedPrefixes =
+        [
+            "producer.override.",
+            "schema.history.internal.producer.",
+            "schema.history.internal.consumer.",
+        ];
+        var kafkaMaterialProperties = new Dictionary<string, string>
+        {
+            ["ssl.truststore.location"] = "/unsafe/prod/kafka-truststore-should-not-leak.p12",
+            ["ssl.truststore.certificates"] = "TRUSTSTORE_CERTIFICATE_CHAIN_SHOULD_NOT_LEAK",
+            ["ssl.keystore.location"] = "/unsafe/prod/kafka-keystore-should-not-leak.p12",
+            ["ssl.keystore.certificate.chain"] = "KEYSTORE_CERTIFICATE_CHAIN_SHOULD_NOT_LEAK",
+        };
+        var kafkaSecurityProperties = new Dictionary<string, string>
+        {
+            ["security.protocol"] = "SSL",
+            ["ssl.protocol"] = "TLSv1.3",
+            ["ssl.endpoint.identification.algorithm"] = "https",
+        };
+        foreach (var property in kafkaMaterialProperties)
+        {
+            kafkaSecurityProperties[property.Key] = property.Value;
+        }
+
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(
+            CdcProvider.SqlServer,
+            kafkaSecurityProperties: kafkaSecurityProperties
+        );
+        CdcConnectorTemplateResult rendered = service.Render(request);
+        Dictionary<string, string> effectiveConfig = CopyConfig(rendered.Config);
+        var sentinelValues = new List<string>();
+
+        foreach (string prefix in generatedPrefixes)
+        {
+            foreach (var property in kafkaMaterialProperties)
+            {
+                string observedValue = $"observed-{property.Value}";
+                effectiveConfig[$"{prefix}{property.Key}"] = observedValue;
+                sentinelValues.Add(property.Value);
+                sentinelValues.Add(observedValue);
+            }
+        }
+
+        effectiveConfig["producer.override.ssl.protocol"] = "TLSv1.2";
+        effectiveConfig["schema.history.internal.consumer.ssl.endpoint.identification.algorithm"] =
+            "disabled";
+
+        CdcConnectorTemplateResult result = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                effectiveConfig,
+                new CdcConnectorProviderSetupEvidence(
+                    bindingGeneration: 7,
+                    BuildProviderSetupResult(CdcProvider.SqlServer)
+                ),
+                BuildSourcePartitionEvidence(request)
+            )
+        );
+        var exception = new CdcConnectorTemplateValidationException(result.Diagnostics);
+
+        using var _ = new AssertionScope();
+        rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        foreach (string prefix in generatedPrefixes)
+        {
+            foreach (string suffix in kafkaMaterialProperties.Keys)
+            {
+                CdcConnectorTemplateDiagnostic diagnostic = result
+                    .Diagnostics.Should()
+                    .ContainSingle(diagnostic =>
+                        diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackPropertyMismatch
+                        && diagnostic.PropertyName == $"{prefix}{suffix}"
+                    )
+                    .Which;
+                diagnostic.ExpectedValue.Should().Be("[redacted]");
+                diagnostic.ObservedValue.Should().Be("[redacted]");
+                diagnostic
+                    .RedactionClassification.Should()
+                    .Be(CdcConnectorTemplateRedactionClassification.PhysicalIdentifier);
+            }
+        }
+
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.PropertyName == "producer.override.ssl.protocol"
+                && diagnostic.ExpectedValue == "TLSv1.3"
+                && diagnostic.ObservedValue == "TLSv1.2"
+                && diagnostic.RedactionClassification == CdcConnectorTemplateRedactionClassification.Safe
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.PropertyName
+                    == "schema.history.internal.consumer.ssl.endpoint.identification.algorithm"
+                && diagnostic.ExpectedValue == "https"
+                && diagnostic.ObservedValue == "disabled"
+                && diagnostic.RedactionClassification == CdcConnectorTemplateRedactionClassification.Safe
+            );
+        result
+            .Diagnostics.SelectMany(diagnostic =>
+                new[] { diagnostic.ExpectedValue, diagnostic.ObservedValue }
+            )
+            .Where(value => value is not null)
+            .Should()
+            .NotContain(value =>
+                sentinelValues.Any(sentinel => value!.Contains(sentinel, StringComparison.Ordinal))
+            );
+        result
+            .ToString()
+            .Should()
+            .NotContainAny(sentinelValues.ToArray(), "result text should redact Kafka material");
+        exception
+            .Message.Should()
+            .NotContainAny(sentinelValues.ToArray(), "exception messages should not include raw values");
+    }
+
+    [Test]
     public void It_rejects_provider_setup_evidence_that_no_longer_matches_the_binding()
     {
         using ServiceProvider serviceProvider = BuildServiceProvider();
