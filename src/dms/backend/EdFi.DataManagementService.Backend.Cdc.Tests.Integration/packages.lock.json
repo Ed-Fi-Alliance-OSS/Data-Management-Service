@@ -252,7 +252,7 @@
         "type": "Project",
         "dependencies": {
           "EdFi.DataManagementService.Backend.Ddl": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection": "[10.0.1, )"
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.1, )"
         }
       },
       "edfi.datamanagementservice.backend.ddl": {
