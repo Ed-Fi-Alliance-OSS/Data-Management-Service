@@ -129,6 +129,10 @@ public class Given_DocumentCacheServiceRegistration
         AssertScopedFactory<IDocumentCacheWriter>(services);
         AssertScopedFactory<IDocumentCacheSessionBoundWriter>(services);
         AssertSingleton<IDocumentProjectionWorkPager, PostgresqlDocumentProjectionWorkPager>(services);
+        AssertSingleton<
+            IDocumentCacheStatusCurrentSourceObserver,
+            PostgresqlDocumentCacheStatusCurrentSourceObserver
+        >(services);
         AssertSingleton<IDocumentCacheAdministrativeMutex, PostgresqlDocumentCacheAdministrativeMutex>(
             services
         );

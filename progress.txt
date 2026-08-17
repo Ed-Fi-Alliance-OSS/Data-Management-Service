@@ -19,3 +19,10 @@
 - Response sorts targets by normalized tenant key then DataStoreId; command DTOs omit generation fields and reuse shared administrative command/phase enums.
 - Files changed: DocumentCacheStatusContracts.cs, DocumentCacheStatusContractTests.cs, tasks.json.
 - Verified: dotnet csharpier format status contract/test files; dotnet test core unit --filter FullyQualifiedName~DocumentCacheStatus.
+
+2026-08-17 - Completed PostgreSQL Provider Observation for reference/design/backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md
+- Added backend current-source status observer contract; kept provider result typed and free of stale durable facts on timeout/cancel/failure.
+- PostgreSQL adapter uses one statement with statement_timestamp, DocumentCacheState singleton, ordered LIMIT 1 DocumentProjectionWork access, provider-computed age.
+- Added SQL guard/unit tests, DI registration, and PostgreSQL integration evidence including lifecycle states, latch, queue, missing state, timeout, cancel, provider failure, and index plan.
+- Files changed: DocumentCacheStatusCurrentSourceObservation.cs, PostgresqlDocumentCacheStatusCurrentSourceObserver.cs, PostgresqlReferenceResolverServiceCollectionExtensions.cs, DocumentCacheServiceRegistrationTests.cs, DocumentCacheStatusCurrentSourceObservationTests.cs, PostgresqlDocumentCacheStatusCurrentSourceObserverTests.cs, tasks.json.
+- Verified: backend unit --filter FullyQualifiedName~DocumentCacheStatus; PostgreSQL integration --filter FullyQualifiedName~DocumentCacheStatus.
