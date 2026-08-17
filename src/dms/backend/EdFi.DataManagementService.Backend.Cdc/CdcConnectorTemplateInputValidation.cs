@@ -354,9 +354,15 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
             AddSqlServerPollIntervalDiagnosticIfNeeded(request, sourcePhase, diagnostics);
         }
 
-        foreach (CdcSourceTableInventory sourceTable in OrderedSourceTables(request))
+        foreach (
+            CdcSourceTableInventory sourceTable in CdcConnectorTemplateSharedRules.OrderedSourceTables(
+                request
+            )
+        )
         {
-            DbTableName expectedTableName = ExpectedSourceTableName(sourceTable.TableKind);
+            DbTableName expectedTableName = CdcConnectorTemplateSharedRules.ExpectedSourceTableName(
+                sourceTable.TableKind
+            );
             if (sourceTable.TableName.Equals(expectedTableName))
             {
                 continue;
@@ -393,7 +399,9 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
             )
             .ToArray();
 
-        foreach (CdcSourceTableKind tableKind in RequiredSourceTableKinds())
+        foreach (
+            CdcSourceTableKind tableKind in CdcConnectorTemplateSharedRules.OrderedRequiredSourceTableKinds
+        )
         {
             CdcProviderArtifactObservation[] tableCaptureInstances = captureInstances
                 .Where(artifact => SqlServerCaptureInstanceSourceTableKind(artifact) == tableKind)
@@ -414,7 +422,7 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
                     CdcConnectorTemplateDiagnosticCodes.SqlServerCaptureInstanceMetadataRequired,
                     CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult,
                     "providerSetup.artifactInventory.sqlServerCaptureInstance",
-                    $"one usable SQL Server capture-instance artifact for {ExpectedSourceTableName(tableKind)}",
+                    $"one usable SQL Server capture-instance artifact for {CdcConnectorTemplateSharedRules.ExpectedSourceTableName(tableKind)}",
                     SqlServerCaptureInstanceObservedValue(tableCaptureInstances),
                     request,
                     sourcePhase,
@@ -425,7 +433,7 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
 
         int extraCaptureInstanceCount = captureInstances.Count(artifact =>
             SqlServerCaptureInstanceSourceTableKind(artifact) is not { } tableKind
-            || !RequiredSourceTableKinds().Contains(tableKind)
+            || !CdcConnectorTemplateSharedRules.OrderedRequiredSourceTableKinds.Contains(tableKind)
         );
         if (extraCaptureInstanceCount == 0)
         {
@@ -469,9 +477,16 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
         List<CdcConnectorTemplateDiagnostic> diagnostics
     )
     {
-        foreach (CdcExpectedMessageKeyColumns messageKeyColumns in OrderedMessageKeyColumns(request))
+        foreach (
+            CdcExpectedMessageKeyColumns messageKeyColumns in CdcConnectorTemplateSharedRules.OrderedMessageKeyColumns(
+                request
+            )
+        )
         {
-            CdcSourceTableInventory sourceTable = SourceTable(request, messageKeyColumns.TableKind);
+            CdcSourceTableInventory sourceTable = CdcConnectorTemplateSharedRules.SourceTable(
+                request,
+                messageKeyColumns.TableKind
+            );
 
             if (HasDuplicateColumnNames(sourceTable))
             {
@@ -480,7 +495,7 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
                         CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch,
                         CdcConnectorTemplateDiagnosticCategory.MessageKey,
                         "message.key.columns",
-                        $"unique source column names for {ExpectedSourceTableName(sourceTable.TableKind)}",
+                        $"unique source column names for {CdcConnectorTemplateSharedRules.ExpectedSourceTableName(sourceTable.TableKind)}",
                         "duplicate",
                         request,
                         sourcePhase,
@@ -501,7 +516,7 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
                         CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch,
                         CdcConnectorTemplateDiagnosticCategory.MessageKey,
                         "message.key.columns",
-                        $"source column {keyColumn.Value} for {ExpectedSourceTableName(sourceTable.TableKind)}",
+                        $"source column {keyColumn.Value} for {CdcConnectorTemplateSharedRules.ExpectedSourceTableName(sourceTable.TableKind)}",
                         "missing",
                         request,
                         sourcePhase,
@@ -533,8 +548,8 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
             return;
         }
 
-        long heartbeatMilliseconds = HeartbeatIntervalMilliseconds(request);
-        long pollMilliseconds = PollIntervalMilliseconds(request);
+        long heartbeatMilliseconds = CdcConnectorTemplateSharedRules.HeartbeatIntervalMilliseconds(request);
+        long pollMilliseconds = CdcConnectorTemplateSharedRules.PollIntervalMilliseconds(request);
         if (pollMilliseconds <= heartbeatMilliseconds)
         {
             return;
@@ -840,42 +855,6 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
             )
             .ToArray();
 
-    private static IReadOnlyList<CdcSourceTableInventory> OrderedSourceTables(
-        CdcConnectorTemplateRequest request
-    ) =>
-        [
-            SourceTable(request, CdcSourceTableKind.DocumentCache),
-            SourceTable(request, CdcSourceTableKind.Document),
-            SourceTable(request, CdcSourceTableKind.CdcHeartbeat),
-        ];
-
-    private static CdcSourceTableInventory SourceTable(
-        CdcConnectorTemplateRequest request,
-        CdcSourceTableKind tableKind
-    ) =>
-        request.ProviderSetupEvidence.Result.SourceTableInventory.Single(table =>
-            table.TableKind == tableKind
-        );
-
-    private static IReadOnlyList<CdcExpectedMessageKeyColumns> OrderedMessageKeyColumns(
-        CdcConnectorTemplateRequest request
-    ) =>
-        [
-            MessageKeyColumns(request, CdcSourceTableKind.DocumentCache),
-            MessageKeyColumns(request, CdcSourceTableKind.Document),
-        ];
-
-    private static IReadOnlyList<CdcSourceTableKind> RequiredSourceTableKinds() =>
-        [CdcSourceTableKind.DocumentCache, CdcSourceTableKind.Document, CdcSourceTableKind.CdcHeartbeat];
-
-    private static CdcExpectedMessageKeyColumns MessageKeyColumns(
-        CdcConnectorTemplateRequest request,
-        CdcSourceTableKind tableKind
-    ) =>
-        request.ProviderSetupEvidence.Result.ExpectedMessageKeyColumns.Single(columns =>
-            columns.TableKind == tableKind
-        );
-
     private static CdcSourceTableKind? SqlServerCaptureInstanceSourceTableKind(
         CdcProviderArtifactObservation artifact
     )
@@ -892,63 +871,6 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
             "cdc_heartbeat" => CdcSourceTableKind.CdcHeartbeat,
             _ => null,
         };
-    }
-
-    private static DbTableName ExpectedSourceTableName(CdcSourceTableKind tableKind) =>
-        tableKind switch
-        {
-            CdcSourceTableKind.DocumentCache => new(new DbSchemaName("dms"), "DocumentCache"),
-            CdcSourceTableKind.Document => new(new DbSchemaName("dms"), "Document"),
-            CdcSourceTableKind.CdcHeartbeat => new(new DbSchemaName("dms"), "CdcHeartbeat"),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(tableKind),
-                tableKind,
-                "Unsupported CDC source table kind."
-            ),
-        };
-
-    private static long HeartbeatIntervalMilliseconds(CdcConnectorTemplateRequest request)
-    {
-        if (request.DeploymentPolicy.HeartbeatInterval is null)
-        {
-            return 5000;
-        }
-
-        double milliseconds = Math.Ceiling(
-            request.DeploymentPolicy.HeartbeatInterval.Value.TotalMilliseconds
-        );
-        if (milliseconds is < 1 or > long.MaxValue)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(request),
-                "CDC connector template heartbeat interval must render to a positive millisecond value."
-            );
-        }
-
-        return Convert.ToInt64(milliseconds);
-    }
-
-    private static long PollIntervalMilliseconds(CdcConnectorTemplateRequest request)
-    {
-        if (request.DeploymentPolicy.SqlServerPollInterval is null)
-        {
-            throw new InvalidOperationException(
-                "CDC connector template SQL Server poll interval was not supplied."
-            );
-        }
-
-        double milliseconds = Math.Ceiling(
-            request.DeploymentPolicy.SqlServerPollInterval.Value.TotalMilliseconds
-        );
-        if (milliseconds is < 1 or > long.MaxValue)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(request),
-                "CDC connector template SQL Server poll interval must render to a positive millisecond value."
-            );
-        }
-
-        return Convert.ToInt64(milliseconds);
     }
 
     private static string SanitizePhysicalIdentifier(string value)

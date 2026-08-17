@@ -19,7 +19,6 @@ internal interface ICdcConnectorTemplateRenderer
 internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputValidator inputValidator)
     : ICdcConnectorTemplateRenderer
 {
-    private const int DefaultHeartbeatIntervalMilliseconds = 5000;
     private const string RedactedArtifactValue = "[redacted]";
 
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
@@ -98,7 +97,9 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
             ["producer.override.buffer.memory"] = ProducerBufferBytes(request).ToString(),
             ["producer.override.compression.type"] = "none",
             ["producer.override.partitioner.class"] = PartitionerClass(request.PartitionerAlgorithm),
-            ["heartbeat.interval.ms"] = HeartbeatIntervalMilliseconds(request).ToString(),
+            ["heartbeat.interval.ms"] = CdcConnectorTemplateSharedRules
+                .HeartbeatIntervalMilliseconds(request)
+                .ToString(),
             ["heartbeat.action.query"] = request.ProviderSetupEvidence.Result.HeartbeatActionQuery!.Sql,
             ["topic.delimiter"] = ".",
             ["topic.naming.strategy"] = "io.debezium.schema.SchemaTopicNamingStrategy",
@@ -157,14 +158,18 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
         config["slot.name"] = replicationSlot.SafeArtifactName.Value;
         config["table.include.list"] = string.Join(
             ",",
-            OrderedSourceTables(request).Select(DebeziumTableSelector)
+            CdcConnectorTemplateSharedRules.OrderedSourceTables(request).Select(DebeziumTableSelector)
         );
         config["message.key.columns"] = string.Join(
             ";",
-            OrderedMessageKeyColumns(request)
+            CdcConnectorTemplateSharedRules
+                .OrderedMessageKeyColumns(request)
                 .Select(messageKeyColumns =>
                 {
-                    CdcSourceTableInventory table = SourceTable(request, messageKeyColumns.TableKind);
+                    CdcSourceTableInventory table = CdcConnectorTemplateSharedRules.SourceTable(
+                        request,
+                        messageKeyColumns.TableKind
+                    );
                     return $"{DebeziumTableSelector(table)}:{DebeziumKeyColumnList(table, messageKeyColumns)}";
                 })
         );
@@ -178,14 +183,18 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
     {
         config["table.include.list"] = string.Join(
             ",",
-            OrderedSourceTables(request).Select(DebeziumTableSelector)
+            CdcConnectorTemplateSharedRules.OrderedSourceTables(request).Select(DebeziumTableSelector)
         );
         config["message.key.columns"] = string.Join(
             ";",
-            OrderedMessageKeyColumns(request)
+            CdcConnectorTemplateSharedRules
+                .OrderedMessageKeyColumns(request)
                 .Select(messageKeyColumns =>
                 {
-                    CdcSourceTableInventory table = SourceTable(request, messageKeyColumns.TableKind);
+                    CdcSourceTableInventory table = CdcConnectorTemplateSharedRules.SourceTable(
+                        request,
+                        messageKeyColumns.TableKind
+                    );
                     return $"{DebeziumTableSelector(table)}:{DebeziumKeyColumnList(table, messageKeyColumns)}";
                 })
         );
@@ -194,7 +203,9 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
 
         if (request.DeploymentPolicy.SqlServerPollInterval is not null)
         {
-            config["poll.interval.ms"] = PollIntervalMilliseconds(request).ToString();
+            config["poll.interval.ms"] = CdcConnectorTemplateSharedRules
+                .PollIntervalMilliseconds(request)
+                .ToString();
         }
 
         config["schema.history.internal.kafka.bootstrap.servers"] = request
@@ -244,39 +255,6 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
                 && artifact.State is CdcProviderArtifactState.Created or CdcProviderArtifactState.Matched
             )
             .ToArray();
-
-    private static IReadOnlyList<CdcSourceTableInventory> OrderedSourceTables(
-        CdcConnectorTemplateRequest request
-    ) =>
-        [
-            SourceTable(request, CdcSourceTableKind.DocumentCache),
-            SourceTable(request, CdcSourceTableKind.Document),
-            SourceTable(request, CdcSourceTableKind.CdcHeartbeat),
-        ];
-
-    private static CdcSourceTableInventory SourceTable(
-        CdcConnectorTemplateRequest request,
-        CdcSourceTableKind tableKind
-    ) =>
-        request.ProviderSetupEvidence.Result.SourceTableInventory.Single(table =>
-            table.TableKind == tableKind
-        );
-
-    private static IReadOnlyList<CdcExpectedMessageKeyColumns> OrderedMessageKeyColumns(
-        CdcConnectorTemplateRequest request
-    ) =>
-        [
-            MessageKeyColumns(request, CdcSourceTableKind.DocumentCache),
-            MessageKeyColumns(request, CdcSourceTableKind.Document),
-        ];
-
-    private static CdcExpectedMessageKeyColumns MessageKeyColumns(
-        CdcConnectorTemplateRequest request,
-        CdcSourceTableKind tableKind
-    ) =>
-        request.ProviderSetupEvidence.Result.ExpectedMessageKeyColumns.Single(columns =>
-            columns.TableKind == tableKind
-        );
 
     private static string DebeziumTableSelector(CdcSourceTableInventory table) =>
         $"{EscapeDebeziumRegexIdentifier(table.TableName.Schema.Value)}.{EscapeDebeziumRegexIdentifier(table.TableName.Name)}";
@@ -339,50 +317,6 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
             CdcConnectorTemplateDeploymentPolicy.MinimumProducerBufferBytes,
             request.DeploymentPolicy.MaxRecordBytes
         );
-
-    private static long HeartbeatIntervalMilliseconds(CdcConnectorTemplateRequest request)
-    {
-        if (request.DeploymentPolicy.HeartbeatInterval is null)
-        {
-            return DefaultHeartbeatIntervalMilliseconds;
-        }
-
-        double milliseconds = Math.Ceiling(
-            request.DeploymentPolicy.HeartbeatInterval.Value.TotalMilliseconds
-        );
-        if (milliseconds is < 1 or > long.MaxValue)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(request),
-                "CDC connector template heartbeat interval must render to a positive millisecond value."
-            );
-        }
-
-        return Convert.ToInt64(milliseconds);
-    }
-
-    private static long PollIntervalMilliseconds(CdcConnectorTemplateRequest request)
-    {
-        if (request.DeploymentPolicy.SqlServerPollInterval is null)
-        {
-            throw new InvalidOperationException(
-                "CDC connector template SQL Server poll interval was not supplied."
-            );
-        }
-
-        double milliseconds = Math.Ceiling(
-            request.DeploymentPolicy.SqlServerPollInterval.Value.TotalMilliseconds
-        );
-        if (milliseconds is < 1 or > long.MaxValue)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(request),
-                "CDC connector template SQL Server poll interval must render to a positive millisecond value."
-            );
-        }
-
-        return Convert.ToInt64(milliseconds);
-    }
 
     private static string ConnectorClass(CdcProvider provider) =>
         provider switch
