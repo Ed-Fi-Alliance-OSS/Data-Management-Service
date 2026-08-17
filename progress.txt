@@ -81,3 +81,10 @@
 - Fixed enqueue metric units/tags/lower-camel values and bounded enqueue structured-log target labels; canonical writer target remains unknown when tenant key unavailable.
 - Files changed: DocumentCacheTelemetryTargetLabel.cs, DocumentCacheStatusTelemetry.cs, DocumentCacheStatusService.cs, DocumentCacheEnqueueTelemetry.cs, DocumentCacheProjectionTelemetry.cs, DocumentCacheReadTelemetry.cs, DocumentCacheWriterTelemetry.cs, DefaultRelationalWriteExecutor.cs, DescriptorWriteHandler.cs, ReferenceResolverServiceCollectionExtensions.cs, telemetry tests, tasks.json, progress.txt.
 - Verified: backend unit --filter FullyQualifiedName~DocumentCacheProjectionTelemetry; backend unit --filter FullyQualifiedName~DocumentCacheStatusTelemetry; backend unit combined telemetry/service registration filter; backend unit --filter FullyQualifiedName~DocumentCacheStatusService; production telemetry scan for target_key/raw target-key metric labels.
+
+2026-08-17 - Completed Integration Evidence for reference/design/backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md
+- Added endpoint integration evidence for missing/invalid RequiredRole 404, malformed auth 401, and /health independence.
+- Added serialization shape evidence for unavailable/unknown durable fields, queue not empty, lifecycle non-operational states, cache-ahead latch, runtime not observed, target backoff, and provider failure.
+- Added status service peer-isolation evidence for provider observation failure while healthy peer still returns caught-up/operational.
+- Files changed: Given_DocumentCacheStatusEndpointAuthorization.cs, DocumentCacheStatusSerializationTests.cs, DocumentCacheStatusServiceTests.cs, tasks.json, progress.txt.
+- Verified: core DocumentCacheStatusSerialization; backend DocumentCacheStatusService; frontend DocumentCacheStatus; integration DocumentCacheStatus; PostgreSQL DocumentCacheStatus; MSSQL DocumentCacheStatus with ConnectionStrings__MssqlAdmin=localhost,14333 after default localhost,1433 fallback failed to connect.

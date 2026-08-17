@@ -146,6 +146,64 @@ public class Given_DocumentCacheStatusService
     }
 
     [Test]
+    public async Task It_serializes_provider_observation_failure_without_blocking_peer_targets()
+    {
+        DocumentCacheTargetObservation failedTarget = ResolvedTarget(DocumentCacheTargetKey.Create("", 1));
+        DocumentCacheTargetObservation healthyTarget = ResolvedTarget(DocumentCacheTargetKey.Create("", 2));
+        StaticTargetRegistry registry = new(
+            [failedTarget, healthyTarget],
+            [ExecutionContext(failedTarget), ExecutionContext(healthyTarget)]
+        );
+        DocumentCacheProjectionObservationStore observationStore = ObservationStore(
+            failedTarget,
+            healthyTarget
+        );
+        ScriptedStatusObserver observer = new(
+            (request, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return Task.FromResult(
+                    request.TargetExecutionContext.TargetKey.Equals(failedTarget.TargetKey)
+                        ? DocumentCacheStatusCurrentSourceObservationResult.Failed(
+                            "Provider statement failed."
+                        )
+                        : DocumentCacheStatusCurrentSourceObservationResult.Success(
+                            DocumentCacheLifecycleState.Tracking,
+                            cacheAheadRecoveryRequired: false,
+                            DocumentCacheStatusDurableQueuePresence.Empty,
+                            oldestWorkFirstEnqueuedAt: null,
+                            oldestWorkAgeSeconds: null,
+                            DurableObservedAt
+                        )
+                );
+            }
+        );
+        DocumentCacheStatusService service = CreateService(registry, observationStore, observer);
+
+        DocumentCacheStatusResponse response = await service.GetStatusAsync();
+
+        DocumentCacheStatusTarget failedStatus = response.Targets.Single(target =>
+            target.TargetKey.DataStoreId == 1
+        );
+        failedStatus.OperationalHealth.Status.Should().Be(DocumentCacheOperationalHealthStatus.Unknown);
+        failedStatus
+            .OperationalHealth.Reason.Should()
+            .Be(DocumentCacheStatusReason.ProviderObservationFailed);
+        failedStatus.CaughtUp.Status.Should().Be(DocumentCacheCaughtUpStatus.Unknown);
+        failedStatus.Lifecycle.Availability.Should().Be(DocumentCacheStatusAvailability.Unknown);
+        failedStatus.QueueSummary.Presence.Should().Be(DocumentCacheStatusQueuePresence.Unknown);
+        failedStatus.DurableObservedAt.Should().BeNull();
+
+        DocumentCacheStatusTarget healthyStatus = response.Targets.Single(target =>
+            target.TargetKey.DataStoreId == 2
+        );
+        healthyStatus.OperationalHealth.Status.Should().Be(DocumentCacheOperationalHealthStatus.Operational);
+        healthyStatus.CaughtUp.Status.Should().Be(DocumentCacheCaughtUpStatus.CaughtUp);
+        healthyStatus.DurableObservedAt.Should().Be(DurableObservedAt);
+        observer.StartedKeys.Should().BeEquivalentTo([failedTarget.TargetKey, healthyTarget.TargetKey]);
+    }
+
+    [Test]
     public async Task It_distinguishes_endpoint_budget_started_and_not_started_targets()
     {
         DocumentCacheTargetEffectiveSettings effectiveSettings = EffectiveSettings(
