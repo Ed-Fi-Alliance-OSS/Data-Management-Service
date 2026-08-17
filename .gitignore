@@ -70,6 +70,10 @@ eng/docker-compose/.env.perf-hostpg
 # Local data-load credentials
 /dataload-creds.json
 
+# Local task/progress scratch files
+/tasks.json
+/progress.txt
+
 # ASP.NET Scaffolding
 ScaffoldingReadMe.txt
 
