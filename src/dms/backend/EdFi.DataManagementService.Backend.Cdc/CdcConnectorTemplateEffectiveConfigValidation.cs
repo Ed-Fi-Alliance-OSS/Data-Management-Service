@@ -20,6 +20,11 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
 {
     private const string RedactedValue = "[redacted]";
     private const string TopicHeartbeatName = "topic.heartbeat.name";
+    private static readonly IReadOnlySet<string> _safeUnexpectedEffectiveConfigProperties =
+        new HashSet<string>(StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> _safeUnexpectedSourcePartitionKeys = new HashSet<string>(
+        StringComparer.Ordinal
+    );
 
     public CdcConnectorTemplateResult ValidateEffectiveConfig(
         CdcConnectorTemplateEffectiveConfigValidationRequest request,
@@ -360,7 +365,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
             }
 
             diagnostics.Add(
-                BuildPropertyDiagnostic(
+                BuildUnexpectedPropertyDiagnostic(
                     CdcConnectorTemplateDiagnosticCodes.LiveReadBackUnexpectedProperty,
                     observedProperty.Key,
                     expectedValue: "absent",
@@ -506,6 +511,30 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
         );
     }
 
+    private static CdcConnectorTemplateDiagnostic BuildUnexpectedPropertyDiagnostic(
+        string code,
+        string propertyName,
+        string? expectedValue,
+        string? observedValue,
+        CdcConnectorTemplateRequest request,
+        CdcConnectorTemplateSourcePhase sourcePhase
+    )
+    {
+        CdcConnectorTemplateRedactionClassification redactionClassification =
+            RedactionClassificationForUnexpectedEffectiveConfigProperty(propertyName);
+
+        return BuildDiagnostic(
+            code,
+            CategoryForProperty(propertyName),
+            propertyName,
+            RedactUnexpectedExpectedValueForDiagnostic(expectedValue, redactionClassification),
+            RedactValueForDiagnostic(observedValue, redactionClassification),
+            request,
+            sourcePhase,
+            redactionClassification
+        );
+    }
+
     private static CdcConnectorTemplateDiagnostic BuildSecretDiagnostic(
         string propertyName,
         CdcConnectorTemplateRequest request,
@@ -532,15 +561,13 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
     )
     {
         CdcConnectorTemplateRedactionClassification redactionClassification =
-            propertyName == "source.partition.database"
-                ? CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
-                : CdcConnectorTemplateRedactionClassification.Safe;
+            RedactionClassificationForSourcePartitionProperty(propertyName, expectedValue == "absent");
 
         return BuildDiagnostic(
             CdcConnectorTemplateDiagnosticCodes.LiveReadBackSourcePartitionMismatch,
             CdcConnectorTemplateDiagnosticCategory.LiveReadBack,
             propertyName,
-            RedactValueForDiagnostic(expectedValue, redactionClassification),
+            RedactUnexpectedExpectedValueForDiagnostic(expectedValue, redactionClassification),
             RedactValueForDiagnostic(observedValue, redactionClassification),
             request,
             sourcePhase,
@@ -675,6 +702,21 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
         return CdcConnectorTemplateDiagnosticCategory.LiveReadBack;
     }
 
+    private static CdcConnectorTemplateRedactionClassification RedactionClassificationForUnexpectedEffectiveConfigProperty(
+        string propertyName
+    )
+    {
+        if (IsSecretBearingUnexpectedProperty(propertyName))
+        {
+            return CdcConnectorTemplateRedactionClassification.SecretValue;
+        }
+
+        // Keep unexpected read-back value echoing opt-in only; there are no safe exceptions today.
+        return IsSafeUnexpectedEffectiveConfigProperty(propertyName)
+            ? CdcConnectorTemplateRedactionClassification.Safe
+            : CdcConnectorTemplateRedactionClassification.PhysicalIdentifier;
+    }
+
     private static CdcConnectorTemplateRedactionClassification RedactionClassificationForProperty(
         string propertyName
     )
@@ -698,6 +740,51 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
 
         return CdcConnectorTemplateRedactionClassification.Safe;
     }
+
+    private static CdcConnectorTemplateRedactionClassification RedactionClassificationForSourcePartitionProperty(
+        string propertyName,
+        bool isUnexpectedProperty
+    )
+    {
+        string partitionKey = propertyName.StartsWith("source.partition.", StringComparison.Ordinal)
+            ? propertyName["source.partition.".Length..]
+            : propertyName;
+
+        if (IsSecretBearingUnexpectedProperty(partitionKey))
+        {
+            return CdcConnectorTemplateRedactionClassification.SecretValue;
+        }
+
+        if (partitionKey == "database")
+        {
+            return CdcConnectorTemplateRedactionClassification.PhysicalIdentifier;
+        }
+
+        if (isUnexpectedProperty)
+        {
+            return IsSafeUnexpectedSourcePartitionKey(partitionKey)
+                ? CdcConnectorTemplateRedactionClassification.Safe
+                : CdcConnectorTemplateRedactionClassification.PhysicalIdentifier;
+        }
+
+        return CdcConnectorTemplateRedactionClassification.Safe;
+    }
+
+    private static bool IsSecretBearingUnexpectedProperty(string propertyName) =>
+        CdcConnectorTemplateInputValidator.IsSecretBearingRenderedProperty(propertyName)
+        || propertyName.EndsWith(".password", StringComparison.Ordinal)
+        || propertyName is "sasl.jaas.config" or "ssl.keystore.key";
+
+    private static bool IsSafeUnexpectedEffectiveConfigProperty(string propertyName) =>
+        _safeUnexpectedEffectiveConfigProperties.Contains(propertyName);
+
+    private static bool IsSafeUnexpectedSourcePartitionKey(string partitionKey) =>
+        _safeUnexpectedSourcePartitionKeys.Contains(partitionKey);
+
+    private static string? RedactUnexpectedExpectedValueForDiagnostic(
+        string? value,
+        CdcConnectorTemplateRedactionClassification redactionClassification
+    ) => value == "absent" ? value : RedactValueForDiagnostic(value, redactionClassification);
 
     private static string? RedactValueForDiagnostic(
         string? value,
