@@ -55,6 +55,7 @@ internal class UpsertHandler(ILogger _logger, ResiliencePipeline _resiliencePipe
                         EdfiDoc: requestInfo.ParsedBody,
                         Headers: requestInfo.FrontendRequest.Headers,
                         TraceId: requestInfo.FrontendRequest.TraceId,
+                        TenantKey: requestInfo.FrontendRequest.Tenant ?? string.Empty,
                         DocumentUuid: candidateDocumentUuid,
                         BackendProfileWriteContext: requestInfo.BackendProfileWriteContext
                     )

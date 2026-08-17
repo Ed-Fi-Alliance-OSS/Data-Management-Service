@@ -640,7 +640,8 @@ public sealed record RelationalWriteExecutorRequest
         RelationshipAuthorizationResult? storedRelationshipAuthorization = null,
         RelationshipAuthorizationResult? proposedRelationshipAuthorization = null,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization = null,
-        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null
+        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null,
+        string tenantKey = ""
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
@@ -651,6 +652,7 @@ public sealed record RelationalWriteExecutorRequest
         SelectedBody = selectedBody ?? throw new ArgumentNullException(nameof(selectedBody));
         AllowIdentityUpdates = allowIdentityUpdates;
         TraceId = traceId;
+        TenantKey = tenantKey ?? throw new ArgumentNullException(nameof(tenantKey));
         ReferenceResolutionRequest =
             referenceResolutionRequest ?? throw new ArgumentNullException(nameof(referenceResolutionRequest));
         TargetContext = targetContext ?? throw new ArgumentNullException(nameof(targetContext));
@@ -729,6 +731,12 @@ public sealed record RelationalWriteExecutorRequest
     /// The request trace id for diagnostics.
     /// </summary>
     public TraceId TraceId { get; init; }
+
+    /// <summary>
+    /// The normalized request tenant key used for target-scoped write telemetry.
+    /// Empty string identifies the default/non-tenant target.
+    /// </summary>
+    public string TenantKey { get; init; }
 
     /// <summary>
     /// Reference-resolution inputs the executor must resolve inside the shared write session.
@@ -815,7 +823,8 @@ public sealed record RelationalWriteExecutorInput
         RelationshipAuthorizationResult? storedRelationshipAuthorization = null,
         RelationshipAuthorizationResult? proposedRelationshipAuthorization = null,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization = null,
-        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null
+        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null,
+        string tenantKey = ""
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
@@ -826,6 +835,7 @@ public sealed record RelationalWriteExecutorInput
         SelectedBody = selectedBody ?? throw new ArgumentNullException(nameof(selectedBody));
         AllowIdentityUpdates = allowIdentityUpdates;
         TraceId = traceId;
+        TenantKey = tenantKey ?? throw new ArgumentNullException(nameof(tenantKey));
         ReferenceResolutionRequest =
             referenceResolutionRequest ?? throw new ArgumentNullException(nameof(referenceResolutionRequest));
 
@@ -870,6 +880,9 @@ public sealed record RelationalWriteExecutorInput
 
     /// <inheritdoc cref="RelationalWriteExecutorRequest.TraceId"/>
     public TraceId TraceId { get; init; }
+
+    /// <inheritdoc cref="RelationalWriteExecutorRequest.TenantKey"/>
+    public string TenantKey { get; init; }
 
     /// <inheritdoc cref="RelationalWriteExecutorRequest.ReferenceResolutionRequest"/>
     public ReferenceResolverRequest ReferenceResolutionRequest { get; init; }
@@ -919,7 +932,8 @@ public sealed record RelationalWriteExecutorInput
             StoredRelationshipAuthorization,
             ProposedRelationshipAuthorization,
             StoredNamespaceAuthorization,
-            ProposedNamespaceAuthorization
+            ProposedNamespaceAuthorization,
+            TenantKey
         )
         {
             PostRelationshipAuthorizationPlans = PostRelationshipAuthorizationPlans,

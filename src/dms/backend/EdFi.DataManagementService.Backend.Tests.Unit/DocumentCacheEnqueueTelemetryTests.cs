@@ -103,6 +103,44 @@ public class Given_DocumentCacheEnqueueTelemetry
     }
 
     [Test]
+    public void It_retains_same_data_store_failures_only_for_the_exact_current_target()
+    {
+        DocumentCacheTargetKey tenantATarget = DocumentCacheTargetKey.Create("Tenant-A", 1);
+        DocumentCacheTargetKey tenantBTarget = DocumentCacheTargetKey.Create("Tenant-B", 1);
+        DocumentCacheTargetKey unconfiguredTenantTarget = DocumentCacheTargetKey.Create("Tenant-C", 1);
+        var registry = new MutableTargetRegistry([
+            ResolvedTarget(tenantATarget),
+            ResolvedTarget(tenantBTarget),
+        ]);
+        DocumentCacheEnqueueTelemetry telemetry = CreateTelemetry(pageSize: 10, registry);
+
+        telemetry.RecordFailure(
+            Context(
+                tenantBTarget,
+                DocumentCacheEnqueueTelemetryCanonicalOperation.Update,
+                "tenant b failure"
+            ),
+            DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed
+        );
+        telemetry.RecordFailure(
+            Context(
+                unconfiguredTenantTarget,
+                DocumentCacheEnqueueTelemetryCanonicalOperation.Update,
+                "unconfigured tenant failure"
+            ),
+            DocumentCacheEnqueueFailureCategory.ProviderUnavailable
+        );
+
+        telemetry.GetFailureSnapshot(tenantATarget).RecentEvents.Should().BeEmpty();
+        telemetry.GetFailureSnapshot(unconfiguredTenantTarget).RecentEvents.Should().BeEmpty();
+
+        DocumentCacheEnqueueFailureSnapshot tenantBSnapshot = telemetry.GetFailureSnapshot(tenantBTarget);
+        tenantBSnapshot.RecentEvents.Should().ContainSingle();
+        tenantBSnapshot.RecentEvents[0].TargetKey.Should().Be(tenantBTarget);
+        tenantBSnapshot.RecentEvents[0].Message.Should().Be("tenant b failure");
+    }
+
+    [Test]
     public async Task It_maps_retained_failures_into_status_json_shape()
     {
         DocumentCacheEnqueueTelemetry telemetry = CreateTelemetry(pageSize: 10);

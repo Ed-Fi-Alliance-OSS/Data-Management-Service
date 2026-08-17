@@ -659,6 +659,12 @@ internal sealed class DefaultRelationalWriteExecutor(
         DbException exception
     )
     {
+        DocumentCacheTargetKey? targetKey = TryCreateTelemetryTargetKey(request);
+        if (targetKey is null)
+        {
+            return;
+        }
+
         if (
             !DocumentCacheEnqueueFailureClassifier.TryClassify(
                 exception,
@@ -671,20 +677,16 @@ internal sealed class DefaultRelationalWriteExecutor(
             return;
         }
 
-        if (
-            !TryCreateEnqueueTelemetryContext(request, message, requireEnqueueEnabled: false, out var context)
-        )
-        {
-            context = new DocumentCacheEnqueueTelemetryContext(
-                targetKey: null,
-                ProviderTokenForDialect(request.MappingSet.Key.Dialect),
-                ToCanonicalOperation(request),
-                ToResourceKind(request),
-                message
-            );
-        }
+        DocumentCacheTargetObservation? targetObservation = TryGetCurrentTarget(targetKey);
+        var context = new DocumentCacheEnqueueTelemetryContext(
+            targetKey,
+            targetObservation?.ProviderToken ?? ProviderTokenForDialect(request.MappingSet.Key.Dialect),
+            ToCanonicalOperation(request),
+            ToResourceKind(request),
+            message
+        );
 
-        _documentCacheEnqueueTelemetry.RecordFailure(context!, category);
+        _documentCacheEnqueueTelemetry.RecordFailure(context, category);
     }
 
     private bool TryCreateEnqueueTelemetryContext(
@@ -696,20 +698,21 @@ internal sealed class DefaultRelationalWriteExecutor(
     {
         context = null;
 
-        DocumentCacheTargetObservation? targetObservation = TryGetUniqueCurrentTarget();
-        if (targetObservation is null)
+        DocumentCacheTargetKey? targetKey = TryCreateTelemetryTargetKey(request);
+        if (targetKey is null)
         {
             return false;
         }
 
-        if (requireEnqueueEnabled && !IsEnqueueEnabled(targetObservation))
+        DocumentCacheTargetObservation? targetObservation = TryGetCurrentTarget(targetKey);
+        if (requireEnqueueEnabled && (targetObservation is null || !IsEnqueueEnabled(targetObservation)))
         {
             return false;
         }
 
         context = new DocumentCacheEnqueueTelemetryContext(
-            targetObservation.TargetKey,
-            targetObservation.ProviderToken ?? ProviderTokenForDialect(request.MappingSet.Key.Dialect),
+            targetKey,
+            targetObservation?.ProviderToken ?? ProviderTokenForDialect(request.MappingSet.Key.Dialect),
             ToCanonicalOperation(request),
             ToResourceKind(request),
             message
@@ -717,9 +720,9 @@ internal sealed class DefaultRelationalWriteExecutor(
         return true;
     }
 
-    private DocumentCacheTargetObservation? TryGetUniqueCurrentTarget()
+    private DocumentCacheTargetKey? TryCreateTelemetryTargetKey(RelationalWriteExecutorRequest request)
     {
-        if (_documentCacheTargetRegistry is null || _dataStoreSelection?.IsSet != true)
+        if (_dataStoreSelection?.IsSet != true)
         {
             return null;
         }
@@ -734,11 +737,26 @@ internal sealed class DefaultRelationalWriteExecutor(
             return null;
         }
 
-        DocumentCacheTargetObservation[] matches = _documentCacheTargetRegistry
-            .CurrentSnapshot.Targets.Where(target => target.TargetKey.DataStoreId == dataStoreId)
-            .ToArray();
+        return DocumentCacheTargetKey.TryCreate(
+            request.TenantKey,
+            dataStoreId,
+            out DocumentCacheTargetKey? targetKey,
+            out _
+        )
+            ? targetKey
+            : null;
+    }
 
-        return matches.Length == 1 ? matches[0] : null;
+    private DocumentCacheTargetObservation? TryGetCurrentTarget(DocumentCacheTargetKey targetKey)
+    {
+        if (_documentCacheTargetRegistry is null)
+        {
+            return null;
+        }
+
+        return _documentCacheTargetRegistry.CurrentSnapshot.Targets.SingleOrDefault(target =>
+            target.TargetKey.Equals(targetKey)
+        );
     }
 
     private static bool IsEnqueueEnabled(DocumentCacheTargetObservation targetObservation) =>

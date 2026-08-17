@@ -308,7 +308,10 @@ public class Given_Default_Relational_Write_Executor
             dataStoreSelection: CreateSelectedDataStoreSelection(),
             documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry()
         );
-        var request = CreateRequest(RelationalWriteOperationKind.Post);
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
+        );
 
         await _sut.ExecuteAsync(request);
 
@@ -324,6 +327,27 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_records_DocumentCacheEnqueueTelemetry_success_for_exact_request_tenant_when_targets_share_data_store()
+    {
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        DocumentCacheTargetKey peerTargetKey = DocumentCacheTargetKey.Create("Tenant-B", 99);
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry(
+                CreateDocumentCacheTargetObservation(),
+                CreateDocumentCacheTargetObservation(peerTargetKey)
+            )
+        );
+        var request = CreateRequest(RelationalWriteOperationKind.Post, tenantKey: peerTargetKey.TenantKey);
+
+        await _sut.ExecuteAsync(request);
+
+        telemetry.Successes.Should().ContainSingle();
+        telemetry.Successes[0].TargetKey.Should().Be(peerTargetKey);
+    }
+
+    [Test]
     public async Task It_records_DocumentCacheEnqueueTelemetry_failure_for_classified_enqueue_provider_errors()
     {
         var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
@@ -332,7 +356,10 @@ public class Given_Default_Relational_Write_Executor
             dataStoreSelection: CreateSelectedDataStoreSelection(),
             documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry()
         );
-        var request = CreateRequest(RelationalWriteOperationKind.Put);
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
+        );
         _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
             request.WritePlan.TablePlansInDependencyOrder[0],
             currentSchoolId: 255901,
@@ -359,6 +386,41 @@ public class Given_Default_Relational_Write_Executor
             .Failures[0]
             .Context.CanonicalOperation.Should()
             .Be(DocumentCacheEnqueueTelemetryCanonicalOperation.Update);
+    }
+
+    [Test]
+    public async Task It_records_DocumentCacheEnqueueTelemetry_failure_for_exact_request_tenant_when_targets_share_data_store()
+    {
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        DocumentCacheTargetKey peerTargetKey = DocumentCacheTargetKey.Create("Tenant-B", 99);
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry(
+                CreateDocumentCacheTargetObservation(),
+                CreateDocumentCacheTargetObservation(peerTargetKey)
+            )
+        );
+        var request = CreateRequest(RelationalWriteOperationKind.Put, tenantKey: peerTargetKey.TenantKey);
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException(
+            "insert or update on table \"DocumentProjectionWork\" violates foreign key constraint"
+        );
+        _writeExceptionClassifier.ClassificationToReturn =
+            new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation(
+                "FK_DocumentProjectionWork_Document"
+            );
+
+        await _sut.ExecuteAsync(request);
+
+        telemetry.Failures.Should().ContainSingle();
+        telemetry.Failures[0].Context.TargetKey.Should().Be(peerTargetKey);
     }
 
     [Test]
@@ -8041,7 +8103,8 @@ public class Given_Default_Relational_Write_Executor
         TableWritePlan? rootWritePlan = null,
         JsonNode? selectedBody = null,
         SqlDialect dialect = SqlDialect.Pgsql,
-        WritePrecondition? writePrecondition = null
+        WritePrecondition? writePrecondition = null,
+        string tenantKey = ""
     )
     {
         var resolvedRootWritePlan = rootWritePlan ?? CreateRootPlan();
@@ -8081,7 +8144,8 @@ public class Given_Default_Relational_Write_Executor
                 documentReferences ?? [],
                 descriptorReferences ?? []
             ),
-            writePrecondition: writePrecondition
+            writePrecondition: writePrecondition,
+            tenantKey: tenantKey
         );
     }
 
@@ -9807,17 +9871,21 @@ public class Given_Default_Relational_Write_Executor
         return selection;
     }
 
-    private static IDocumentCacheTargetRegistry CreateDocumentCacheTargetRegistry() =>
+    private static IDocumentCacheTargetRegistry CreateDocumentCacheTargetRegistry(
+        params DocumentCacheTargetObservation[] targets
+    ) =>
         new StaticDocumentCacheTargetRegistry(
             new DocumentCacheTargetRegistrySnapshot(
-                [CreateDocumentCacheTargetObservation()],
+                targets.Length == 0 ? [CreateDocumentCacheTargetObservation()] : [.. targets],
                 new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero)
             )
         );
 
-    private static DocumentCacheTargetObservation CreateDocumentCacheTargetObservation() =>
+    private static DocumentCacheTargetObservation CreateDocumentCacheTargetObservation(
+        DocumentCacheTargetKey? targetKey = null
+    ) =>
         DocumentCacheTargetObservation.ResolvedEligible(
-            DocumentCacheTelemetryTargetKey,
+            targetKey ?? DocumentCacheTelemetryTargetKey,
             new DocumentCacheTargetEffectiveSettings(
                 readAccelerationEnabled: true,
                 directFillTimeout: TimeSpan.FromMilliseconds(250),
