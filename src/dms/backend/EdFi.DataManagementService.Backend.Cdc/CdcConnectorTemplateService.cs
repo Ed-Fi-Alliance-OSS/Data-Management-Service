@@ -17,10 +17,14 @@ public interface ICdcConnectorTemplateService
         CdcConnectorTemplateRequest request,
         CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.RequestValidation
     );
+
+    CdcConnectorTemplateResult Render(CdcConnectorTemplateRequest request);
 }
 
-internal sealed class CdcConnectorTemplateService(ICdcConnectorTemplateInputValidator inputValidator)
-    : ICdcConnectorTemplateService
+internal sealed class CdcConnectorTemplateService(
+    ICdcConnectorTemplateInputValidator inputValidator,
+    ICdcConnectorTemplateRenderer renderer
+) : ICdcConnectorTemplateService
 {
     public CdcProviderSetupReadiness GetProviderSetupReadiness(CdcProviderSetupResult providerSetupResult)
     {
@@ -39,6 +43,8 @@ internal sealed class CdcConnectorTemplateService(ICdcConnectorTemplateInputVali
         CdcConnectorTemplateRequest request,
         CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.RequestValidation
     ) => inputValidator.ValidateRequest(request, sourcePhase);
+
+    public CdcConnectorTemplateResult Render(CdcConnectorTemplateRequest request) => renderer.Render(request);
 }
 
 public sealed record CdcProviderSetupReadiness(
@@ -58,6 +64,9 @@ public static class CdcConnectorTemplateServiceCollectionExtensions
                 ICdcConnectorTemplateInputValidator,
                 CdcConnectorTemplateInputValidator
             >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Scoped<ICdcConnectorTemplateRenderer, CdcConnectorTemplateRenderer>()
         );
         services.TryAdd(
             ServiceDescriptor.Scoped<ICdcConnectorTemplateService, CdcConnectorTemplateService>()
