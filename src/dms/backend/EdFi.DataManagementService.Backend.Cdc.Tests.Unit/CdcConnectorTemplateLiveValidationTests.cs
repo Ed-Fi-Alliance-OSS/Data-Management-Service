@@ -264,13 +264,15 @@ public class Given_CdcConnectorTemplateLiveValidation
     public void It_rejects_arbitrary_unexpected_read_back_properties_without_an_allow_list()
     {
         const string rawPhysicalIdentifier = "Server=unsafe-prod;Password=should-not-leak;Tenant=GrandBend";
+        const string rawDocumentPayload =
+            "{\"documentUuid\":\"abc\",\"studentUniqueId\":\"123\",\"tenant\":\"GrandBend\"}";
         using ServiceProvider serviceProvider = BuildServiceProvider();
         ICdcConnectorTemplateService service =
             serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
         CdcConnectorTemplateRequest request = BuildRequest(CdcProvider.Postgresql);
         CdcConnectorTemplateResult rendered = service.Render(request);
         Dictionary<string, string> effectiveConfig = CopyConfig(rendered.Config);
-        effectiveConfig["skipped.operations"] = "d";
+        effectiveConfig["skipped.operations"] = rawDocumentPayload;
         effectiveConfig["decimal.handling.mode"] = "double";
         effectiveConfig["signal.data.collection"] = "dms.CdcSignal";
         effectiveConfig["database.connection.string"] = rawPhysicalIdentifier;
@@ -295,31 +297,152 @@ public class Given_CdcConnectorTemplateLiveValidation
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackUnexpectedProperty
                 && diagnostic.PropertyName == "skipped.operations"
                 && diagnostic.ExpectedValue == "absent"
-                && diagnostic.ObservedValue == "d"
+                && diagnostic.ObservedValue == "[redacted]"
                 && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.LiveReadBack
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
             )
             .And.Contain(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackUnexpectedProperty
                 && diagnostic.PropertyName == "decimal.handling.mode"
-                && diagnostic.ObservedValue == "double"
+                && diagnostic.ExpectedValue == "absent"
+                && diagnostic.ObservedValue == "[redacted]"
                 && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.LiveReadBack
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
             )
             .And.Contain(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackUnexpectedProperty
                 && diagnostic.PropertyName == "signal.data.collection"
-                && diagnostic.ObservedValue == "dms.CdcSignal"
+                && diagnostic.ExpectedValue == "absent"
+                && diagnostic.ObservedValue == "[redacted]"
                 && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.LiveReadBack
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
             )
             .And.Contain(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackUnexpectedProperty
                 && diagnostic.PropertyName == "database.connection.string"
-                && diagnostic.ExpectedValue == "[redacted]"
+                && diagnostic.ExpectedValue == "absent"
                 && diagnostic.ObservedValue == "[redacted]"
                 && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ConnectionProperty
                 && diagnostic.RedactionClassification
                     == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
             );
         result.ToString().Contains(rawPhysicalIdentifier, StringComparison.Ordinal).Should().BeFalse();
+        result.ToString().Contains(rawDocumentPayload, StringComparison.Ordinal).Should().BeFalse();
+    }
+
+    [Test]
+    public void It_redacts_unexpected_secret_and_source_partition_values_conservatively()
+    {
+        const string rawSecret = "Password=should-not-leak;Tenant=GrandBend";
+        const string rawPhysicalIdentifier = "Server=unsafe-prod;Database=edfi_prod;Tenant=GrandBend";
+        const string rawDocumentPayload =
+            "{\"documentUuid\":\"abc\",\"studentUniqueId\":\"123\",\"tenant\":\"GrandBend\"}";
+        const string rawSourcePartitionExtra = "unexpected-prod-source;Tenant=GrandBend";
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(CdcProvider.Postgresql);
+        CdcConnectorTemplateResult rendered = service.Render(request);
+        Dictionary<string, string> effectiveConfig = CopyConfig(rendered.Config);
+        effectiveConfig["unexpected.custom"] = rawPhysicalIdentifier;
+        effectiveConfig["custom.password"] = rawSecret;
+        effectiveConfig["sasl.jaas.config"] = rawSecret;
+        effectiveConfig["database.connection.string"] = rawPhysicalIdentifier;
+        effectiveConfig["document.payload"] = rawDocumentPayload;
+
+        CdcConnectorTemplateResult result = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                effectiveConfig,
+                new CdcConnectorProviderSetupEvidence(
+                    bindingGeneration: 7,
+                    BuildProviderSetupResult(CdcProvider.Postgresql)
+                ),
+                new CdcConnectorTemplateSourcePartitionEvidence(
+                    new Dictionary<string, string>
+                    {
+                        ["server"] = request.ConnectorName.Value,
+                        ["extra"] = rawSourcePartitionExtra,
+                        ["custom.password"] = rawSecret,
+                    }
+                )
+            )
+        );
+
+        using var _ = new AssertionScope();
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackUnexpectedProperty
+                && diagnostic.PropertyName == "unexpected.custom"
+                && diagnostic.ExpectedValue == "absent"
+                && diagnostic.ObservedValue == "[redacted]"
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.PropertyName == "custom.password"
+                && diagnostic.ObservedValue == "[redacted]"
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.SecretValue
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.PropertyName == "sasl.jaas.config"
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.KafkaSecurityProperty
+                && diagnostic.ObservedValue == "[redacted]"
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.SecretValue
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.PropertyName == "database.connection.string"
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ConnectionProperty
+                && diagnostic.ObservedValue == "[redacted]"
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.PropertyName == "document.payload"
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.LiveReadBack
+                && diagnostic.ObservedValue == "[redacted]"
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackSourcePartitionMismatch
+                && diagnostic.PropertyName == "source.partition.extra"
+                && diagnostic.ExpectedValue == "absent"
+                && diagnostic.ObservedValue == "[redacted]"
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackSourcePartitionMismatch
+                && diagnostic.PropertyName == "source.partition.custom.password"
+                && diagnostic.ExpectedValue == "absent"
+                && diagnostic.ObservedValue == "[redacted]"
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.SecretValue
+            );
+        result
+            .Diagnostics.SelectMany(diagnostic =>
+                new[] { diagnostic.ExpectedValue, diagnostic.ObservedValue }
+            )
+            .Where(value => value is not null)
+            .Should()
+            .NotContain(value =>
+                value!.Contains(rawSecret, StringComparison.Ordinal)
+                || value.Contains(rawPhysicalIdentifier, StringComparison.Ordinal)
+                || value.Contains(rawDocumentPayload, StringComparison.Ordinal)
+                || value.Contains(rawSourcePartitionExtra, StringComparison.Ordinal)
+            );
+        result.ToString().Contains(rawSecret, StringComparison.Ordinal).Should().BeFalse();
+        result.ToString().Contains(rawPhysicalIdentifier, StringComparison.Ordinal).Should().BeFalse();
+        result.ToString().Contains(rawDocumentPayload, StringComparison.Ordinal).Should().BeFalse();
+        result.ToString().Contains(rawSourcePartitionExtra, StringComparison.Ordinal).Should().BeFalse();
     }
 
     [Test]
@@ -488,7 +611,9 @@ public class Given_CdcConnectorTemplateLiveValidation
             .And.Contain(diagnostic =>
                 diagnostic.PropertyName == "source.partition.extra"
                 && diagnostic.ExpectedValue == "absent"
-                && diagnostic.ObservedValue == "unexpected"
+                && diagnostic.ObservedValue == "[redacted]"
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
             );
         result
             .Diagnostics.SelectMany(diagnostic =>
