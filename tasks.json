@@ -256,6 +256,6 @@
       "dotnet build src/dms/EdFi.DataManagementService.sln",
       "Run the focused DocumentCacheStatus, DocumentCacheStatusEndpoint, DocumentCacheEnqueueTelemetry, and DocumentCacheStatusTelemetry test filters in the affected unit and integration projects."
     ],
-    "completed": false
+    "completed": true
   }
 ]

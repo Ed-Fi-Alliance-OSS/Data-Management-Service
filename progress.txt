@@ -88,3 +88,9 @@
 - Added status service peer-isolation evidence for provider observation failure while healthy peer still returns caught-up/operational.
 - Files changed: Given_DocumentCacheStatusEndpointAuthorization.cs, DocumentCacheStatusSerializationTests.cs, DocumentCacheStatusServiceTests.cs, tasks.json, progress.txt.
 - Verified: core DocumentCacheStatusSerialization; backend DocumentCacheStatusService; frontend DocumentCacheStatus; integration DocumentCacheStatus; PostgreSQL DocumentCacheStatus; MSSQL DocumentCacheStatus with ConnectionStrings__MssqlAdmin=localhost,14333 after default localhost,1433 fallback failed to connect.
+
+2026-08-17 - Completed Validation for reference/design/backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md
+- Final validation only; no production code behavior changed.
+- Used PostgreSQL docker compose on localhost,5435 and existing dms-mssql-integration-2025 on localhost,14333 for provider evidence; no provider skips.
+- Files changed: tasks.json, progress.txt.
+- Verified: jq empty tasks.json; dotnet csharpier format src/dms/core src/dms/backend src/dms/frontend src/dms/tests; dotnet build src/dms/EdFi.DataManagementService.sln; focused core/backend/frontend/API/PostgreSQL/MSSQL DocumentCacheStatus/DocumentCacheStatusEndpoint/DocumentCacheEnqueueTelemetry/DocumentCacheStatusTelemetry filters.
