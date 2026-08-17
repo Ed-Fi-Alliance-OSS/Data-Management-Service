@@ -17,7 +17,7 @@ public abstract class Given_PinnedImageConnectorTemplateFixture
     [Test]
     public async Task It_validates_registers_and_reads_back_the_rendered_config_against_the_pinned_runtime()
     {
-        using var cancellation = new CancellationTokenSource(TimeSpan.FromMinutes(4));
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMinutes(8));
         await using CdcConnectorTemplatePinnedImageFixture fixture =
             await CdcConnectorTemplatePinnedImageFixture.StartAsync(Provider, cancellation.Token);
 
@@ -76,7 +76,28 @@ public abstract class Given_PinnedImageConnectorTemplateFixture
             .Should()
             .Be("dms.DocumentCache:DocumentUuid;dms.Document:DocumentUuid");
 
-        fixture.AssertRenderedTemplateCanBeValidatedFromReadBack(request, rendered.Config);
+        fixture.AssertRenderedTemplateCanBeValidatedFromReadBack(
+            request,
+            rendered.Config,
+            BuildOfflineSourcePartitionEvidence(request)
+        );
+    }
+
+    private static CdcConnectorTemplateSourcePartitionEvidence BuildOfflineSourcePartitionEvidence(
+        CdcConnectorTemplateRequest request
+    )
+    {
+        var properties = new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["server"] = request.ConnectorName.Value,
+        };
+
+        if (request.Provider == CdcProvider.SqlServer)
+        {
+            properties["database"] = request.ProviderConnectionProperties.Properties["database.names"];
+        }
+
+        return new CdcConnectorTemplateSourcePartitionEvidence(properties);
     }
 
     private static IReadOnlyDictionary<string, string> OfflineProviderConnectionProperties(

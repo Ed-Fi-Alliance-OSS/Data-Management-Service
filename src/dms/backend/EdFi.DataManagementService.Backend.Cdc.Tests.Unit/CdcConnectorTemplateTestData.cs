@@ -111,6 +111,23 @@ internal static class CdcConnectorTemplateTestData
             sqlServerPollInterval: provider == CdcProvider.SqlServer ? TimeSpan.FromSeconds(2) : null
         );
 
+    public static CdcConnectorTemplateSourcePartitionEvidence BuildSourcePartitionEvidence(
+        CdcConnectorTemplateRequest request
+    )
+    {
+        var properties = new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["server"] = request.ConnectorName.Value,
+        };
+
+        if (request.Provider == CdcProvider.SqlServer)
+        {
+            properties["database"] = request.ProviderConnectionProperties.Properties["database.names"];
+        }
+
+        return new CdcConnectorTemplateSourcePartitionEvidence(properties);
+    }
+
     public static CdcProviderSetupResult BuildProviderSetupResult(
         CdcProvider provider,
         CdcProviderSetupOutcome outcome = CdcProviderSetupOutcome.CreatedOrMatched,
