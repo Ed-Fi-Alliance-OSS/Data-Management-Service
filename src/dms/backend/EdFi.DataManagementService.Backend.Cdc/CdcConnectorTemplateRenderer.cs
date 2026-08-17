@@ -20,7 +20,6 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
     : ICdcConnectorTemplateRenderer
 {
     private const int DefaultHeartbeatIntervalMilliseconds = 5000;
-    private const int DefaultProducerBufferBytes = 33_554_432;
     private const string RedactedArtifactValue = "[redacted]";
 
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
@@ -336,7 +335,10 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
 
     private static int ProducerBufferBytes(CdcConnectorTemplateRequest request) =>
         request.DeploymentPolicy.ProducerBufferBytes
-        ?? Math.Max(DefaultProducerBufferBytes, request.DeploymentPolicy.MaxRecordBytes);
+        ?? Math.Max(
+            CdcConnectorTemplateDeploymentPolicy.MinimumProducerBufferBytes,
+            request.DeploymentPolicy.MaxRecordBytes
+        );
 
     private static long HeartbeatIntervalMilliseconds(CdcConnectorTemplateRequest request)
     {
