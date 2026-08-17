@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Profile;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -34,6 +35,8 @@ internal sealed class DefaultRelationalWriteExecutor(
     ILoggerFactory? loggerFactory = null,
     IDocumentCacheWriterTelemetry? documentCacheWriterTelemetry = null,
     IDataStoreSelection? dataStoreSelection = null,
+    IDocumentCacheEnqueueTelemetry? documentCacheEnqueueTelemetry = null,
+    IDocumentCacheTargetRegistry? documentCacheTargetRegistry = null,
     IRelationalWriteFirstPhase? writeFirstPhase = null,
     IRelationalWriteSecondCommandPhase? secondCommandPhase = null,
     IRelationalCommandExecutor? customViewValidationCommandExecutor = null
@@ -52,6 +55,11 @@ internal sealed class DefaultRelationalWriteExecutor(
         documentCacheWriterTelemetry ?? NoOpDocumentCacheWriterTelemetry.Instance;
 
     private readonly IDataStoreSelection? _dataStoreSelection = dataStoreSelection;
+
+    private readonly IDocumentCacheEnqueueTelemetry _documentCacheEnqueueTelemetry =
+        documentCacheEnqueueTelemetry ?? NoOpDocumentCacheEnqueueTelemetry.Instance;
+
+    private readonly IDocumentCacheTargetRegistry? _documentCacheTargetRegistry = documentCacheTargetRegistry;
 
     /// <summary>
     /// The composite first phase: target capture and lock, stored authorization, reference
@@ -508,9 +516,11 @@ internal sealed class DefaultRelationalWriteExecutor(
 
             if (isMappedWriteFailure)
             {
+                RecordEnqueueFailureIfClassified(executionRequest, ex);
                 return writeFailureResult!;
             }
 
+            RecordEnqueueFailureIfClassified(executionRequest, ex);
             throw;
         }
         catch
@@ -535,11 +545,15 @@ internal sealed class DefaultRelationalWriteExecutor(
             // unmapped one surfaces unchanged, exactly as it does inside the attempt.
             if (_databaseFailureResultMapper.TryBuild(executionRequest!, ex, out var commitFailureResult))
             {
+                RecordEnqueueFailureIfClassified(executionRequest!, ex);
                 return commitFailureResult!;
             }
 
+            RecordEnqueueFailureIfClassified(executionRequest!, ex);
             throw;
         }
+
+        RecordEnqueueSuccessIfApplicable(executionRequest!, committedResult!);
 
         return committedResult!;
     }
@@ -615,4 +629,149 @@ internal sealed class DefaultRelationalWriteExecutor(
             DocumentCacheWriterTelemetry.GetElapsedTime(startTimestamp)
         );
     }
+
+    private void RecordEnqueueSuccessIfApplicable(
+        RelationalWriteExecutorRequest request,
+        RelationalWriteExecutorResult result
+    )
+    {
+        if (result.AttemptOutcome is not RelationalWriteExecutorAttemptOutcome.AppliedWrite)
+        {
+            return;
+        }
+
+        if (
+            !TryCreateEnqueueTelemetryContext(
+                request,
+                "DocumentCache enqueue succeeded.",
+                requireEnqueueEnabled: true,
+                out var context
+            )
+        )
+        {
+            return;
+        }
+
+        _documentCacheEnqueueTelemetry.RecordSuccess(context!);
+    }
+
+    private void RecordEnqueueFailureIfClassified(
+        RelationalWriteExecutorRequest request,
+        DbException exception
+    )
+    {
+        if (
+            !DocumentCacheEnqueueFailureClassifier.TryClassify(
+                exception,
+                writeExceptionClassifier,
+                out DocumentCacheEnqueueFailureCategory category,
+                out string message
+            )
+        )
+        {
+            return;
+        }
+
+        if (
+            !TryCreateEnqueueTelemetryContext(request, message, requireEnqueueEnabled: false, out var context)
+        )
+        {
+            context = new DocumentCacheEnqueueTelemetryContext(
+                targetKey: null,
+                ProviderTokenForDialect(request.MappingSet.Key.Dialect),
+                ToCanonicalOperation(request),
+                ToResourceKind(request),
+                message
+            );
+        }
+
+        _documentCacheEnqueueTelemetry.RecordFailure(context!, category);
+    }
+
+    private bool TryCreateEnqueueTelemetryContext(
+        RelationalWriteExecutorRequest request,
+        string message,
+        bool requireEnqueueEnabled,
+        out DocumentCacheEnqueueTelemetryContext? context
+    )
+    {
+        context = null;
+
+        DocumentCacheTargetObservation? targetObservation = TryGetUniqueCurrentTarget();
+        if (targetObservation is null)
+        {
+            return false;
+        }
+
+        if (requireEnqueueEnabled && !IsEnqueueEnabled(targetObservation))
+        {
+            return false;
+        }
+
+        context = new DocumentCacheEnqueueTelemetryContext(
+            targetObservation.TargetKey,
+            targetObservation.ProviderToken ?? ProviderTokenForDialect(request.MappingSet.Key.Dialect),
+            ToCanonicalOperation(request),
+            ToResourceKind(request),
+            message
+        );
+        return true;
+    }
+
+    private DocumentCacheTargetObservation? TryGetUniqueCurrentTarget()
+    {
+        if (_documentCacheTargetRegistry is null || _dataStoreSelection?.IsSet != true)
+        {
+            return null;
+        }
+
+        long dataStoreId;
+        try
+        {
+            dataStoreId = _dataStoreSelection.GetSelectedDataStore().Id;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+
+        DocumentCacheTargetObservation[] matches = _documentCacheTargetRegistry
+            .CurrentSnapshot.Targets.Where(target => target.TargetKey.DataStoreId == dataStoreId)
+            .ToArray();
+
+        return matches.Length == 1 ? matches[0] : null;
+    }
+
+    private static bool IsEnqueueEnabled(DocumentCacheTargetObservation targetObservation) =>
+        targetObservation.EnqueueTrigger?.Status == DocumentCacheEnqueueTriggerStatus.Satisfied
+        && targetObservation.Lifecycle?.State
+            is DocumentCacheLifecycleState.Resetting
+                or DocumentCacheLifecycleState.Rebuilding
+                or DocumentCacheLifecycleState.Tracking;
+
+    private static RelationalProviderToken ProviderTokenForDialect(SqlDialect dialect) =>
+        dialect switch
+        {
+            SqlDialect.Pgsql => RelationalProviderToken.Postgresql,
+            SqlDialect.Mssql => RelationalProviderToken.SqlServer,
+            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported SQL dialect."),
+        };
+
+    private static DocumentCacheEnqueueTelemetryCanonicalOperation ToCanonicalOperation(
+        RelationalWriteExecutorRequest request
+    ) =>
+        request.OperationKind switch
+        {
+            RelationalWriteOperationKind.Post
+                when request.TargetContext is RelationalWriteTargetContext.CreateNew =>
+                DocumentCacheEnqueueTelemetryCanonicalOperation.Insert,
+            _ => DocumentCacheEnqueueTelemetryCanonicalOperation.Update,
+        };
+
+    private static DocumentCacheEnqueueTelemetryResourceKind ToResourceKind(
+        RelationalWriteExecutorRequest request
+    ) =>
+        request.WritePlan.Model.Resource.ResourceName.EndsWith("Descriptor", StringComparison.Ordinal)
+            ? DocumentCacheEnqueueTelemetryResourceKind.Descriptor
+            : DocumentCacheEnqueueTelemetryResourceKind.Resource;
 }

@@ -67,3 +67,10 @@
 - Added serialization/mapping tests for lower-camel public values, current-generation commands, prohibited fields/aliases, sanitized bounded messages, diagnostic windows, and empty enqueue failures until telemetry task owns the sink.
 - Files changed: DocumentCacheStatusService.cs, DocumentCacheStatusSerializationTests.cs, DocumentCacheStatusMappingTests.cs, tasks.json, progress.txt.
 - Verified: core --filter FullyQualifiedName~DocumentCacheStatusSerialization; backend --filter FullyQualifiedName~DocumentCacheStatusMapping; core/backend --filter FullyQualifiedName~DocumentCacheStatus; production status source scan for prohibited status fields/aliases.
+
+2026-08-17 - Completed Enqueue Telemetry for reference/design/backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md
+- Added canonical write-boundary enqueue telemetry for committed enqueue-enabled applied writes and classified provider failures, with provider/category/resource/operation metrics and structured logs.
+- Added process-local bounded failure retention by current configured target key, pruning removed target buckets and exposing retained failures through status JSON recentEvents/byCategory/evictedCount.
+- Kept failure logging/metrics available for unassociated provider failures while retaining status buckets only for current configured targets; provider filters cover PostgreSQL and SQL Server classifier categories.
+- Files changed: DocumentCacheEnqueueTelemetry.cs, DefaultRelationalWriteExecutor.cs, DocumentCacheStatusService.cs, ReferenceResolverServiceCollectionExtensions.cs, DocumentCacheEnqueueTelemetryTests.cs, DefaultRelationalWriteExecutorTests.cs, PostgresqlDocumentCacheEnqueueTelemetryTests.cs, MssqlDocumentCacheEnqueueTelemetryTests.cs, tasks.json, progress.txt.
+- Verified: backend unit --filter FullyQualifiedName~DocumentCacheEnqueueTelemetry; PostgreSQL integration --filter FullyQualifiedName~DocumentCacheEnqueueTelemetry; MSSQL integration --filter FullyQualifiedName~DocumentCacheEnqueueTelemetry with ConnectionStrings__MssqlAdmin=localhost,14333.

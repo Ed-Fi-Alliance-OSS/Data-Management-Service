@@ -101,6 +101,17 @@ public static class ReferenceResolverServiceCollectionExtensions
         services.TryAdd(
             ServiceDescriptor.Singleton<IDocumentCacheProjectionTelemetry, DocumentCacheProjectionTelemetry>()
         );
+        services.TryAddSingleton<DocumentCacheEnqueueTelemetry>();
+        services.TryAdd(
+            ServiceDescriptor.Singleton<IDocumentCacheEnqueueTelemetry>(static serviceProvider =>
+                serviceProvider.GetRequiredService<DocumentCacheEnqueueTelemetry>()
+            )
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<IDocumentCacheEnqueueFailureObservationProvider>(
+                static serviceProvider => serviceProvider.GetRequiredService<DocumentCacheEnqueueTelemetry>()
+            )
+        );
         services.TryAddSingleton(TimeProvider.System);
         services.TryAdd(
             ServiceDescriptor.Singleton<

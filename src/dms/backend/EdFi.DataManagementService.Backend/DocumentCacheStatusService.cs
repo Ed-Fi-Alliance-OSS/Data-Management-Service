@@ -27,12 +27,14 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         IDocumentCacheStatusCurrentSourceObserver
     > _currentSourceObservers;
     private readonly TimeProvider _timeProvider;
+    private readonly IDocumentCacheEnqueueFailureObservationProvider? _enqueueFailureObservationProvider;
 
     public DocumentCacheStatusService(
         IDocumentCacheTargetRegistry targetRegistry,
         IDocumentCacheProjectionObservationProvider projectionObservationProvider,
         IEnumerable<IDocumentCacheStatusCurrentSourceObserver> currentSourceObservers,
-        TimeProvider timeProvider
+        TimeProvider timeProvider,
+        IDocumentCacheEnqueueFailureObservationProvider? enqueueFailureObservationProvider = null
     )
     {
         _targetRegistry = targetRegistry ?? throw new ArgumentNullException(nameof(targetRegistry));
@@ -45,6 +47,7 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             .GroupBy(observer => observer.ProviderToken)
             .ToImmutableDictionary(group => group.Key, group => group.First());
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+        _enqueueFailureObservationProvider = enqueueFailureObservationProvider;
     }
 
     public async Task<DocumentCacheStatusResponse> GetStatusAsync(
@@ -331,7 +334,7 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         };
     }
 
-    private static DocumentCacheStatusTarget CreateEndpointTimeoutTarget(
+    private DocumentCacheStatusTarget CreateEndpointTimeoutTarget(
         DocumentCacheTargetObservation targetObservation,
         DateTimeOffset registryObservedAt,
         DateTimeOffset processObservedAt,
@@ -404,7 +407,7 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         );
     }
 
-    private static DocumentCacheStatusTarget BuildStatusTarget(
+    private DocumentCacheStatusTarget BuildStatusTarget(
         DocumentCacheTargetObservation targetObservation,
         DateTimeOffset registryObservedAt,
         DateTimeOffset processObservedAt,
@@ -442,8 +445,78 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             ToDocumentDiagnostics(targetHealth),
             ToPoisonTraversalDiagnostics(targetHealth),
             DocumentCacheStatusEffectiveSettings.FromEffectiveSettings(targetObservation.EffectiveSettings),
-            new DocumentCacheStatusEnqueueFailures()
+            ToEnqueueFailures(targetObservation.TargetKey)
         );
+
+    private DocumentCacheStatusEnqueueFailures ToEnqueueFailures(DocumentCacheTargetKey targetKey)
+    {
+        if (_enqueueFailureObservationProvider is null)
+        {
+            return new DocumentCacheStatusEnqueueFailures();
+        }
+
+        DocumentCacheEnqueueFailureSnapshot snapshot = _enqueueFailureObservationProvider.GetFailureSnapshot(
+            targetKey
+        );
+
+        ImmutableArray<DocumentCacheStatusEnqueueFailureEvent> recentEvents = snapshot
+            .RecentEvents.Select(failureEvent => new DocumentCacheStatusEnqueueFailureEvent(
+                failureEvent.ObservedAt,
+                ToStatusCategory(failureEvent.Category),
+                ToStatusCanonicalOperation(failureEvent.CanonicalOperation),
+                ToStatusResourceKind(failureEvent.ResourceKind),
+                failureEvent.Message
+            ))
+            .ToImmutableArray();
+
+        ImmutableArray<DocumentCacheStatusEnqueueFailureCategoryCount> byCategory = snapshot
+            .RecentEvents.GroupBy(failureEvent => failureEvent.Category)
+            .Select(group => new DocumentCacheStatusEnqueueFailureCategoryCount(
+                ToStatusCategory(group.Key),
+                group.Count()
+            ))
+            .ToImmutableArray();
+
+        return new DocumentCacheStatusEnqueueFailures(recentEvents, byCategory, snapshot.EvictedCount);
+    }
+
+    private static DocumentCacheStatusEnqueueFailureCategory ToStatusCategory(
+        DocumentCacheEnqueueFailureCategory category
+    ) =>
+        category switch
+        {
+            DocumentCacheEnqueueFailureCategory.StateMissingOrInvalid =>
+                DocumentCacheStatusEnqueueFailureCategory.StateMissingOrInvalid,
+            DocumentCacheEnqueueFailureCategory.EnqueueTriggerUnavailable =>
+                DocumentCacheStatusEnqueueFailureCategory.EnqueueTriggerUnavailable,
+            DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed =>
+                DocumentCacheStatusEnqueueFailureCategory.WorkPersistenceFailed,
+            DocumentCacheEnqueueFailureCategory.ProviderTimeout =>
+                DocumentCacheStatusEnqueueFailureCategory.ProviderTimeout,
+            DocumentCacheEnqueueFailureCategory.ProviderUnavailable =>
+                DocumentCacheStatusEnqueueFailureCategory.ProviderUnavailable,
+            _ => DocumentCacheStatusEnqueueFailureCategory.UnclassifiedProviderFailure,
+        };
+
+    private static DocumentCacheStatusCanonicalOperation ToStatusCanonicalOperation(
+        DocumentCacheEnqueueTelemetryCanonicalOperation operation
+    ) =>
+        operation switch
+        {
+            DocumentCacheEnqueueTelemetryCanonicalOperation.Insert =>
+                DocumentCacheStatusCanonicalOperation.Insert,
+            _ => DocumentCacheStatusCanonicalOperation.Update,
+        };
+
+    private static DocumentCacheStatusResourceKind ToStatusResourceKind(
+        DocumentCacheEnqueueTelemetryResourceKind resourceKind
+    ) =>
+        resourceKind switch
+        {
+            DocumentCacheEnqueueTelemetryResourceKind.Descriptor =>
+                DocumentCacheStatusResourceKind.Descriptor,
+            _ => DocumentCacheStatusResourceKind.Resource,
+        };
 
     private static DocumentCacheProjectionTargetHealthSnapshot? GetCurrentGenerationTargetHealth(
         DocumentCacheTargetObservation targetObservation,

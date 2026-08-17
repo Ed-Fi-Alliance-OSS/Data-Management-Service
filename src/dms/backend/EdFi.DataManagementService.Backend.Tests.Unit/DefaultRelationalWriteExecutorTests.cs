@@ -15,6 +15,8 @@ using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Profile;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Unit.Profile;
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
@@ -53,6 +55,8 @@ public class Given_Default_Relational_Write_Executor
     private static readonly DocumentUuid UpdateDocumentUuid = new(
         Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")
     );
+    private static readonly DocumentCacheTargetKey DocumentCacheTelemetryTargetKey =
+        DocumentCacheTargetKey.Create("Tenant-A", 99);
 
     [SetUp]
     public void Setup()
@@ -82,7 +86,10 @@ public class Given_Default_Relational_Write_Executor
         IRelationalParameterConfigurator? relationalParameterConfigurator = null,
         IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
             null,
-        ILogger<DefaultRelationalWriteExecutor>? logger = null
+        ILogger<DefaultRelationalWriteExecutor>? logger = null,
+        IDocumentCacheEnqueueTelemetry? documentCacheEnqueueTelemetry = null,
+        IDataStoreSelection? dataStoreSelection = null,
+        IDocumentCacheTargetRegistry? documentCacheTargetRegistry = null
     ) =>
         new(
             _writeSessionFactory,
@@ -99,6 +106,9 @@ public class Given_Default_Relational_Write_Executor
             relationshipAuthorizationProviderFailureExtractor,
             logger,
             loggerFactory: null,
+            dataStoreSelection: dataStoreSelection,
+            documentCacheEnqueueTelemetry: documentCacheEnqueueTelemetry,
+            documentCacheTargetRegistry: documentCacheTargetRegistry,
             writeFirstPhase: new FakeSequentialRelationalWriteFirstPhase(
                 _targetLookupResolver,
                 _referenceResolverAdapterFactory,
@@ -287,6 +297,68 @@ public class Given_Default_Relational_Write_Executor
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_records_DocumentCacheEnqueueTelemetry_success_only_after_committed_applied_write()
+    {
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry()
+        );
+        var request = CreateRequest(RelationalWriteOperationKind.Post);
+
+        await _sut.ExecuteAsync(request);
+
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        telemetry.Successes.Should().ContainSingle();
+        telemetry.Failures.Should().BeEmpty();
+        telemetry.Successes[0].TargetKey.Should().Be(DocumentCacheTelemetryTargetKey);
+        telemetry
+            .Successes[0]
+            .CanonicalOperation.Should()
+            .Be(DocumentCacheEnqueueTelemetryCanonicalOperation.Insert);
+        telemetry.Successes[0].ResourceKind.Should().Be(DocumentCacheEnqueueTelemetryResourceKind.Resource);
+    }
+
+    [Test]
+    public async Task It_records_DocumentCacheEnqueueTelemetry_failure_for_classified_enqueue_provider_errors()
+    {
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry()
+        );
+        var request = CreateRequest(RelationalWriteOperationKind.Put);
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException(
+            "insert or update on table \"DocumentProjectionWork\" violates foreign key constraint"
+        );
+        _writeExceptionClassifier.ClassificationToReturn =
+            new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation(
+                "FK_DocumentProjectionWork_Document"
+            );
+
+        await _sut.ExecuteAsync(request);
+
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        telemetry.Successes.Should().BeEmpty();
+        telemetry.Failures.Should().ContainSingle();
+        telemetry.Failures[0].Context.TargetKey.Should().Be(DocumentCacheTelemetryTargetKey);
+        telemetry.Failures[0].Category.Should().Be(DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed);
+        telemetry
+            .Failures[0]
+            .Context.CanonicalOperation.Should()
+            .Be(DocumentCacheEnqueueTelemetryCanonicalOperation.Update);
     }
 
     [Test]
@@ -9715,6 +9787,99 @@ public class Given_Default_Relational_Write_Executor
 
         var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
         upsertResult.Result.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    private static IDataStoreSelection CreateSelectedDataStoreSelection()
+    {
+        var selection = new DataStoreSelection();
+        selection.SetSelectedDataStore(
+            new DataStore(
+                DocumentCacheTelemetryTargetKey.DataStoreId,
+                "postgresql",
+                "document-cache-enqueue-telemetry",
+                "Host=localhost;Database=document-cache-enqueue-telemetry",
+                [],
+                RelationalProviderToken.Postgresql,
+                RelationalProviderMetadataStatus.Supported
+            )
+        );
+
+        return selection;
+    }
+
+    private static IDocumentCacheTargetRegistry CreateDocumentCacheTargetRegistry() =>
+        new StaticDocumentCacheTargetRegistry(
+            new DocumentCacheTargetRegistrySnapshot(
+                [CreateDocumentCacheTargetObservation()],
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero)
+            )
+        );
+
+    private static DocumentCacheTargetObservation CreateDocumentCacheTargetObservation() =>
+        DocumentCacheTargetObservation.ResolvedEligible(
+            DocumentCacheTelemetryTargetKey,
+            new DocumentCacheTargetEffectiveSettings(
+                readAccelerationEnabled: true,
+                directFillTimeout: TimeSpan.FromMilliseconds(250),
+                projectorPollInterval: TimeSpan.FromSeconds(5),
+                projectorPageSize: 10,
+                projectorMaxConcurrentTargets: 1,
+                projectorFailureBackoff: TimeSpan.FromSeconds(30),
+                projectorBaselineHighWaterMark: 1000,
+                administrationWorkflowTimeout: TimeSpan.FromHours(24)
+            ),
+            new DocumentCacheTargetContextGeneration(1),
+            RelationalProviderToken.Postgresql,
+            new DocumentCachePhysicalSourceFingerprint(
+                "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+            ),
+            new DocumentCacheLifecycleObservation(
+                DocumentCacheLifecycleState.Tracking,
+                CacheAheadRecoveryRequired: false
+            ),
+            new DocumentCacheInventoryValidationResult(
+                DocumentCacheInventoryStatus.Satisfied,
+                "Inventory satisfied."
+            ),
+            new DocumentCacheEnqueueTriggerValidationResult(
+                DocumentCacheEnqueueTriggerStatus.Satisfied,
+                "Enqueue trigger satisfied."
+            ),
+            DocumentCacheSqlServerPrerequisiteDetails.NotApplicable()
+        );
+
+    private sealed class RecordingDocumentCacheEnqueueTelemetry : IDocumentCacheEnqueueTelemetry
+    {
+        public List<DocumentCacheEnqueueTelemetryContext> Successes { get; } = [];
+
+        public List<DocumentCacheEnqueueFailureRecord> Failures { get; } = [];
+
+        public void RecordSuccess(DocumentCacheEnqueueTelemetryContext context) => Successes.Add(context);
+
+        public void RecordFailure(
+            DocumentCacheEnqueueTelemetryContext context,
+            DocumentCacheEnqueueFailureCategory category
+        ) => Failures.Add(new DocumentCacheEnqueueFailureRecord(context, category));
+    }
+
+    private sealed record DocumentCacheEnqueueFailureRecord(
+        DocumentCacheEnqueueTelemetryContext Context,
+        DocumentCacheEnqueueFailureCategory Category
+    );
+
+    private sealed class StaticDocumentCacheTargetRegistry(
+        DocumentCacheTargetRegistrySnapshot currentSnapshot
+    ) : IDocumentCacheTargetRegistry
+    {
+        public DocumentCacheTargetRegistrySnapshot CurrentSnapshot { get; } = currentSnapshot;
+
+        public DocumentCacheTargetRuntimeSnapshot CurrentRuntimeSnapshot { get; } =
+            new([], currentSnapshot.ObservedAt);
+
+        public Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
+            DocumentCacheTargetRefreshReason reason,
+            CancellationToken cancellationToken = default
+        ) => Task.FromResult(CurrentSnapshot);
     }
 
     private sealed class StubDbException(string message) : DbException(message);
