@@ -49,13 +49,10 @@ public class Given_CdcConnectorTemplateSqlServerRendering
             .Contain("connector.class", "io.debezium.connector.sqlserver.SqlServerConnector");
         result
             .Config.Should()
-            .Contain("table.include.list", "[dms].[DocumentCache],[dms].[Document],[dms].[CdcHeartbeat]");
+            .Contain("table.include.list", "dms.DocumentCache,dms.Document,dms.CdcHeartbeat");
         result
             .Config.Should()
-            .Contain(
-                "message.key.columns",
-                "[dms].[DocumentCache]:[DocumentUuid];[dms].[Document]:[DocumentUuid]"
-            );
+            .Contain("message.key.columns", "dms.DocumentCache:DocumentUuid;dms.Document:DocumentUuid");
         result.Config.Should().Contain("time.precision.mode", "isostring");
         result.Config.Should().Contain("unavailable.value.placeholder", "__debezium_unavailable_value");
         result.Config.Should().Contain("poll.interval.ms", "2000");
@@ -88,9 +85,17 @@ public class Given_CdcConnectorTemplateSqlServerRendering
             .Should()
             .NotContain("DocumentProjectionWork", because: "work-table capture is outside the contract");
         result
+            .Config["table.include.list"]
+            .Should()
+            .NotContain("[", because: "Debezium selectors are not SQL quoted identifiers");
+        result
             .Config["message.key.columns"]
             .Should()
             .NotContain("CdcHeartbeat", because: "heartbeat rows use the transform progress key");
+        result
+            .Config["message.key.columns"]
+            .Should()
+            .NotContain("[", because: "Debezium selectors are not SQL quoted identifiers");
         result
             .Config.Values.Should()
             .NotContain(
@@ -138,14 +143,11 @@ public class Given_CdcConnectorTemplateSqlServerRendering
 
         using var _ = new AssertionScope();
         result.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
-        result
-            .Config["table.include.list"]
-            .Should()
-            .Be("[dms].[DocumentCache],[dms].[Document],[dms].[CdcHeartbeat]");
+        result.Config["table.include.list"].Should().Be("dms.DocumentCache,dms.Document,dms.CdcHeartbeat");
         result
             .Config["message.key.columns"]
             .Should()
-            .Be("[dms].[DocumentCache]:[DocumentUuid];[dms].[Document]:[DocumentUuid]");
+            .Be("dms.DocumentCache:DocumentUuid;dms.Document:DocumentUuid");
     }
 
     [Test]
