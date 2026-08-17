@@ -149,6 +149,9 @@ public class WebApplicationBuilderExtensionsTests
                     ["DataManagement:DocumentCache:Projector:FailureBackoff"] = "00:01:15",
                     ["DataManagement:DocumentCache:Projector:BaselineHighWaterMark"] = "2500",
                     ["DataManagement:DocumentCache:Administration:WorkflowTimeout"] = "12:00:00",
+                    ["DataManagement:DocumentCache:Status:StatusObservationTimeout"] = "00:00:08",
+                    ["DataManagement:DocumentCache:Status:EndpointTimeout"] = "00:00:45",
+                    ["DataManagement:DocumentCache:Status:RequiredRole"] = "dms-document-cache-operator",
                 }
             );
 
@@ -169,6 +172,9 @@ public class WebApplicationBuilderExtensionsTests
                 .Be(TimeSpan.FromMinutes(1).Add(TimeSpan.FromSeconds(15)));
             options.Projector.BaselineHighWaterMark.Should().Be(2500);
             options.Administration.WorkflowTimeout.Should().Be(TimeSpan.FromHours(12));
+            options.Status.StatusObservationTimeout.Should().Be(TimeSpan.FromSeconds(8));
+            options.Status.EndpointTimeout.Should().Be(TimeSpan.FromSeconds(45));
+            options.Status.RequiredRole.Should().Be("dms-document-cache-operator");
         }
 
         [Test]
@@ -185,6 +191,62 @@ public class WebApplicationBuilderExtensionsTests
                 .Throw<OptionsValidationException>()
                 .Which.Failures.Should()
                 .Contain("Projector:PageSize must be positive.");
+        }
+
+        [Test]
+        public void It_fails_options_validation_for_an_explicit_null_DocumentCache_Status_section()
+        {
+            using ServiceProvider serviceProvider = CreateServices(
+                "postgresql",
+                new Dictionary<string, string?> { ["DataManagement:DocumentCache:Status"] = null }
+            );
+
+            Action act = () => serviceProvider.GetRequiredService<IStartupValidator>().Validate();
+
+            act.Should()
+                .Throw<OptionsValidationException>()
+                .Which.Failures.Should()
+                .Contain("Status section must not be null.");
+        }
+
+        [Test]
+        public void It_fails_options_validation_for_a_scalar_DocumentCache_Status_section()
+        {
+            using ServiceProvider serviceProvider = CreateServices(
+                "postgresql",
+                new Dictionary<string, string?> { ["DataManagement:DocumentCache:Status"] = "enabled" }
+            );
+
+            Action act = () => serviceProvider.GetRequiredService<IStartupValidator>().Validate();
+
+            act.Should()
+                .Throw<OptionsValidationException>()
+                .Which.Failures.Should()
+                .Contain("Status section must be an object.");
+        }
+
+        [Test]
+        public void It_does_not_fail_options_validation_for_an_invalid_status_required_role()
+        {
+            using ServiceProvider serviceProvider = CreateServices(
+                "postgresql",
+                new Dictionary<string, string?>
+                {
+                    ["DataManagement:DocumentCache:Status:RequiredRole"] = "dms document cache operator",
+                }
+            );
+
+            Action act = () => serviceProvider.GetRequiredService<IStartupValidator>().Validate();
+
+            act.Should().NotThrow();
+            DocumentCacheOptions options = serviceProvider
+                .GetRequiredService<IOptions<DocumentCacheOptions>>()
+                .Value;
+            options
+                .Status.TryGetRequiredRoleForEndpointMapping(out string? endpointMappingRole)
+                .Should()
+                .BeFalse();
+            endpointMappingRole.Should().BeNull();
         }
 
         [Test]
@@ -214,6 +276,8 @@ public class WebApplicationBuilderExtensionsTests
             snapshot.FailureBackoff.Should().Be(TimeSpan.FromSeconds(30));
             snapshot.BaselineHighWaterMark.Should().Be(1000);
             snapshot.WorkflowTimeout.Should().Be(TimeSpan.FromHours(24));
+            snapshot.StatusObservationTimeout.Should().Be(TimeSpan.FromSeconds(5));
+            snapshot.StatusEndpointTimeout.Should().Be(TimeSpan.FromSeconds(30));
         }
 
         [Test]

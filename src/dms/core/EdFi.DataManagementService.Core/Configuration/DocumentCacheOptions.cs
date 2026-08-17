@@ -4,7 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics.CodeAnalysis;
+using System.Text.Json.Serialization;
 using EdFi.DataManagementService.Core.Utilities;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Core.Configuration;
@@ -20,6 +22,8 @@ public sealed class DocumentCacheOptions
     public DocumentCacheProjectorOptions Projector { get; set; } = new();
 
     public DocumentCacheAdministrationOptions Administration { get; set; } = new();
+
+    public DocumentCacheStatusOptions Status { get; set; } = new();
 
     public IReadOnlyList<DocumentCacheTargetKey> GetTargetKeys() =>
         Targets
@@ -59,6 +63,55 @@ public sealed class DocumentCacheProjectorOptions
 public sealed class DocumentCacheAdministrationOptions
 {
     public TimeSpan WorkflowTimeout { get; set; } = TimeSpan.FromHours(24);
+}
+
+public sealed class DocumentCacheStatusOptions
+{
+    public const int MaximumRequiredRoleLength = 256;
+
+    public static readonly TimeSpan DefaultStatusObservationTimeout = TimeSpan.FromSeconds(5);
+
+    public static readonly TimeSpan DefaultEndpointTimeout = TimeSpan.FromSeconds(30);
+
+    public TimeSpan StatusObservationTimeout { get; set; } = DefaultStatusObservationTimeout;
+
+    public TimeSpan EndpointTimeout { get; set; } = DefaultEndpointTimeout;
+
+    [JsonIgnore]
+    public string? RequiredRole { get; set; }
+
+    public bool TryGetRequiredRoleForEndpointMapping(
+        [NotNullWhen(true)] out string? requiredRoleForEndpointMapping
+    )
+    {
+        if (IsValidRequiredRoleForEndpointMapping(RequiredRole))
+        {
+            requiredRoleForEndpointMapping = RequiredRole;
+            return true;
+        }
+
+        requiredRoleForEndpointMapping = null;
+        return false;
+    }
+
+    public static bool IsValidRequiredRoleForEndpointMapping([NotNullWhen(true)] string? requiredRole)
+    {
+        if (requiredRole is null || requiredRole.Length == 0)
+        {
+            return false;
+        }
+
+        if (requiredRole.Length > MaximumRequiredRoleLength)
+        {
+            return false;
+        }
+
+        return !requiredRole.Any(IsInvalidRequiredRoleCharacter);
+    }
+
+    private static bool IsInvalidRequiredRoleCharacter(char character) =>
+        character is <= '\u001f' or '\u007f' or ' ' or ',' or ';' or '"' or '\'' or '[' or ']' or '{' or '}'
+        || char.IsWhiteSpace(character);
 }
 
 public sealed class DocumentCacheTargetKey : IEquatable<DocumentCacheTargetKey>
@@ -174,17 +227,55 @@ public sealed class DocumentCacheTargetKey : IEquatable<DocumentCacheTargetKey>
 public sealed class DocumentCacheOptionsValidator : IValidateOptions<DocumentCacheOptions>
 {
     private const long MaximumCancelAfterTimeoutMilliseconds = 4_294_967_294;
+    private const string StatusSectionName = $"{DocumentCacheOptions.SectionName}:Status";
+
+    private readonly IConfiguration? _configuration;
+
+    public DocumentCacheOptionsValidator(IConfiguration? configuration = null)
+    {
+        _configuration = configuration;
+    }
 
     public ValidateOptionsResult Validate(string? name, DocumentCacheOptions options)
     {
         List<string> failures = [];
 
+        ValidateStatusConfigurationShape(failures);
         ValidateTargets(options, failures);
         ValidateProjector(options, failures);
         ValidateReadAcceleration(options, failures);
         ValidateAdministration(options, failures);
+        ValidateStatus(options, failures);
 
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
+    }
+
+    private void ValidateStatusConfigurationShape(List<string> failures)
+    {
+        if (_configuration is null)
+        {
+            return;
+        }
+
+        IConfigurationSection statusSection = _configuration.GetSection(StatusSectionName);
+        if (statusSection.GetChildren().Any())
+        {
+            return;
+        }
+
+        bool explicitStatusSection = _configuration
+            .AsEnumerable()
+            .Any(setting => string.Equals(setting.Key, StatusSectionName, StringComparison.Ordinal));
+
+        if (!explicitStatusSection)
+        {
+            return;
+        }
+
+        string failure = statusSection.Value is null
+            ? $"{nameof(DocumentCacheOptions.Status)} section must not be null."
+            : $"{nameof(DocumentCacheOptions.Status)} section must be an object.";
+        failures.Add(failure);
     }
 
     private static void ValidateTargets(DocumentCacheOptions options, List<string> failures)
@@ -295,6 +386,27 @@ public sealed class DocumentCacheOptionsValidator : IValidateOptions<DocumentCac
         AddFailureIfNonPositive(
             administration.WorkflowTimeout,
             $"{nameof(DocumentCacheOptions.Administration)}:{nameof(DocumentCacheAdministrationOptions.WorkflowTimeout)}",
+            failures
+        );
+    }
+
+    private static void ValidateStatus(DocumentCacheOptions options, List<string> failures)
+    {
+        DocumentCacheStatusOptions? status = options.Status;
+        if (status is null)
+        {
+            failures.Add($"{nameof(DocumentCacheOptions.Status)} must not be null.");
+            return;
+        }
+
+        AddFailureIfInvalidCancelAfterTimeout(
+            status.StatusObservationTimeout,
+            $"{nameof(DocumentCacheOptions.Status)}:{nameof(DocumentCacheStatusOptions.StatusObservationTimeout)}",
+            failures
+        );
+        AddFailureIfInvalidCancelAfterTimeout(
+            status.EndpointTimeout,
+            $"{nameof(DocumentCacheOptions.Status)}:{nameof(DocumentCacheStatusOptions.EndpointTimeout)}",
             failures
         );
     }

@@ -33,7 +33,7 @@
       "Run dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCache",
       "Inspect appsettings examples to ensure any status examples use DataManagement:DocumentCache:Status and do not imply RequiredRole is public effective settings."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Status Contract",

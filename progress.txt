@@ -5,3 +5,10 @@
 - Kept enqueue-failure retention out of projection observation store.
 - Files changed: DocumentCacheProjectionObservation.cs, DocumentCacheAdministrativeCommandRunner.cs, DocumentCacheProjectionSupervisor.cs, DocumentCacheProjectionObservationTests.cs, DocumentCacheAdministrativeCommandRunnerTests.cs, tasks.json.
 - Verified: backend DocumentCacheProjectionObservation, core DocumentCacheDiagnostics, backend DocumentCacheAdministrativeCommandRunner, backend DocumentCacheProjectionFailureBackoff, backend DocumentCacheProjectionTelemetry.
+
+2026-08-17 - Completed Configuration for reference/design/backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md
+- Added DocumentCache Status options with 5s observation timeout, 30s endpoint timeout, and RequiredRole validation for endpoint mapping only.
+- Kept invalid/missing RequiredRole non-fatal; endpoint can fail closed by TryGetRequiredRoleForEndpointMapping. RequiredRole JsonIgnored and excluded from effective runtime settings.
+- Added status timeouts to target effective settings and startup diagnostics; appsettings sample has Status timing only.
+- Files changed: DocumentCacheOptions.cs, DocumentCacheTargetContracts.cs, DocumentCacheStartupDiagnostics.cs, appsettings.json, DocumentCacheOptionsTests.cs, DocumentCacheTargetContractTests.cs, DocumentCacheOptionsBindingTests.cs, WebApplicationBuilderExtensionsTests.cs, tasks.json.
+- Verified: frontend DocumentCacheOptionsBindingTests, frontend WebApplicationBuilderExtensionsTests, core FullyQualifiedName~DocumentCache, appsettings status example inspection.

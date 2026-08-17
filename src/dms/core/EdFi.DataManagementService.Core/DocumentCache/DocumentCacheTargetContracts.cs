@@ -207,7 +207,9 @@ public sealed record DocumentCacheTargetEffectiveSettings
         int projectorMaxConcurrentTargets,
         TimeSpan projectorFailureBackoff,
         int projectorBaselineHighWaterMark,
-        TimeSpan administrationWorkflowTimeout
+        TimeSpan administrationWorkflowTimeout,
+        TimeSpan? statusObservationTimeout = null,
+        TimeSpan? statusEndpointTimeout = null
     )
     {
         ReadAccelerationEnabled = readAccelerationEnabled;
@@ -218,6 +220,9 @@ public sealed record DocumentCacheTargetEffectiveSettings
         ProjectorFailureBackoff = projectorFailureBackoff;
         ProjectorBaselineHighWaterMark = projectorBaselineHighWaterMark;
         AdministrationWorkflowTimeout = administrationWorkflowTimeout;
+        StatusObservationTimeout =
+            statusObservationTimeout ?? DocumentCacheStatusOptions.DefaultStatusObservationTimeout;
+        StatusEndpointTimeout = statusEndpointTimeout ?? DocumentCacheStatusOptions.DefaultEndpointTimeout;
     }
 
     public bool ReadAccelerationEnabled { get; }
@@ -236,6 +241,10 @@ public sealed record DocumentCacheTargetEffectiveSettings
 
     public TimeSpan AdministrationWorkflowTimeout { get; }
 
+    public TimeSpan StatusObservationTimeout { get; }
+
+    public TimeSpan StatusEndpointTimeout { get; }
+
     public static DocumentCacheTargetEffectiveSettings FromOptions(DocumentCacheOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -248,7 +257,9 @@ public sealed record DocumentCacheTargetEffectiveSettings
             options.Projector.MaxConcurrentTargets,
             options.Projector.FailureBackoff,
             options.Projector.BaselineHighWaterMark,
-            options.Administration.WorkflowTimeout
+            options.Administration.WorkflowTimeout,
+            options.Status.StatusObservationTimeout,
+            options.Status.EndpointTimeout
         );
     }
 }

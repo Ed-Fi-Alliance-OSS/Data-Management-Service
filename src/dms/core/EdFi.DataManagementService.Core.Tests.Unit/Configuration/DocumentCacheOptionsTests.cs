@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DataManagementService.Core.Configuration;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
@@ -55,6 +56,9 @@ public class DocumentCacheOptionsTests
             _options.Projector.FailureBackoff.Should().Be(TimeSpan.FromSeconds(30));
             _options.Projector.BaselineHighWaterMark.Should().Be(1000);
             _options.Administration.WorkflowTimeout.Should().Be(TimeSpan.FromHours(24));
+            _options.Status.StatusObservationTimeout.Should().Be(TimeSpan.FromSeconds(5));
+            _options.Status.EndpointTimeout.Should().Be(TimeSpan.FromSeconds(30));
+            _options.Status.RequiredRole.Should().BeNull();
         }
 
         [Test]
@@ -87,6 +91,9 @@ public class DocumentCacheOptionsTests
                     ["DataManagement:DocumentCache:Projector:FailureBackoff"] = "00:01:15",
                     ["DataManagement:DocumentCache:Projector:BaselineHighWaterMark"] = "2500",
                     ["DataManagement:DocumentCache:Administration:WorkflowTimeout"] = "12:00:00",
+                    ["DataManagement:DocumentCache:Status:StatusObservationTimeout"] = "00:00:08",
+                    ["DataManagement:DocumentCache:Status:EndpointTimeout"] = "00:00:45",
+                    ["DataManagement:DocumentCache:Status:RequiredRole"] = "dms-document-cache-operator",
                 }
             );
             _validationResult = Validate(_options);
@@ -106,6 +113,9 @@ public class DocumentCacheOptionsTests
             _options.Projector.FailureBackoff.Should().Be(TimeSpan.FromSeconds(75));
             _options.Projector.BaselineHighWaterMark.Should().Be(2500);
             _options.Administration.WorkflowTimeout.Should().Be(TimeSpan.FromHours(12));
+            _options.Status.StatusObservationTimeout.Should().Be(TimeSpan.FromSeconds(8));
+            _options.Status.EndpointTimeout.Should().Be(TimeSpan.FromSeconds(45));
+            _options.Status.RequiredRole.Should().Be("dms-document-cache-operator");
         }
 
         [Test]
@@ -283,6 +293,8 @@ public class DocumentCacheOptionsTests
         [TestCase("Projector:BaselineHighWaterMark", "0", "BaselineHighWaterMark")]
         [TestCase("ReadAcceleration:DirectFillTimeout", "00:00:00", "DirectFillTimeout")]
         [TestCase("Administration:WorkflowTimeout", "00:00:00", "WorkflowTimeout")]
+        [TestCase("Status:StatusObservationTimeout", "00:00:00", "StatusObservationTimeout")]
+        [TestCase("Status:EndpointTimeout", "-00:00:01", "EndpointTimeout")]
         [TestCase("Targets:0:DataStoreId", "0", "DataStoreId")]
         public void It_should_fail_validation(string settingName, string settingValue, string expectedFailure)
         {
@@ -332,60 +344,37 @@ public class DocumentCacheOptionsTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_Too_Large_DirectFillTimeout : DocumentCacheOptionsTests
+    public class Given_Too_Large_CancelAfter_Timeouts : DocumentCacheOptionsTests
     {
-        private ValidateOptionsResult _validationResult = null!;
-
-        [SetUp]
-        public void Setup()
+        [TestCase("ReadAcceleration:DirectFillTimeout", "ReadAcceleration:DirectFillTimeout")]
+        [TestCase("Status:StatusObservationTimeout", "Status:StatusObservationTimeout")]
+        [TestCase("Status:EndpointTimeout", "Status:EndpointTimeout")]
+        public void It_should_fail_validation(string settingName, string expectedFailure)
         {
-            DocumentCacheOptions options = new()
-            {
-                ReadAcceleration = new DocumentCacheReadAccelerationOptions
-                {
-                    DirectFillTimeout = TimeSpan.FromMilliseconds(4_294_967_295D),
-                },
-            };
+            DocumentCacheOptions options = new();
+            SetTimeout(options, settingName, TimeSpan.FromMilliseconds(4_294_967_295D));
 
-            _validationResult = Validate(options);
-        }
-
-        [Test]
-        public void It_should_fail_validation()
-        {
-            _validationResult.Failed.Should().BeTrue();
-            _validationResult
+            Validate(options)
                 .Failures.Should()
                 .ContainSingle(failure =>
-                    failure.Contains("ReadAcceleration:DirectFillTimeout") && failure.Contains("4294967294")
+                    failure.Contains(expectedFailure) && failure.Contains("4294967294")
                 );
         }
     }
 
     [TestFixture]
     [Parallelizable]
-    public class Given_Maximum_Supported_DirectFillTimeout : DocumentCacheOptionsTests
+    public class Given_Maximum_Supported_CancelAfter_Timeouts : DocumentCacheOptionsTests
     {
-        private ValidateOptionsResult _validationResult = null!;
-
-        [SetUp]
-        public void Setup()
+        [TestCase("ReadAcceleration:DirectFillTimeout")]
+        [TestCase("Status:StatusObservationTimeout")]
+        [TestCase("Status:EndpointTimeout")]
+        public void It_should_validate_successfully(string settingName)
         {
-            DocumentCacheOptions options = new()
-            {
-                ReadAcceleration = new DocumentCacheReadAccelerationOptions
-                {
-                    DirectFillTimeout = TimeSpan.FromMilliseconds(4_294_967_294D),
-                },
-            };
+            DocumentCacheOptions options = new();
+            SetTimeout(options, settingName, TimeSpan.FromMilliseconds(4_294_967_294D));
 
-            _validationResult = Validate(options);
-        }
-
-        [Test]
-        public void It_should_validate_successfully()
-        {
-            _validationResult.Succeeded.Should().BeTrue();
+            Validate(options).Succeeded.Should().BeTrue();
         }
     }
 
@@ -430,6 +419,93 @@ public class DocumentCacheOptionsTests
                 .Failures.Should()
                 .Contain($"{nameof(DocumentCacheOptions.Administration)} must not be null.");
         }
+
+        [Test]
+        public void It_should_reject_null_status_options()
+        {
+            DocumentCacheOptions options = new() { Status = null! };
+
+            Validate(options)
+                .Failures.Should()
+                .Contain($"{nameof(DocumentCacheOptions.Status)} must not be null.");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_DocumentCache_Status_RequiredRole : DocumentCacheOptionsTests
+    {
+        [Test]
+        public void It_should_preserve_an_exact_valid_role_for_endpoint_mapping()
+        {
+            DocumentCacheStatusOptions status = new() { RequiredRole = "DMS.cache-status:Operator" };
+
+            bool valid = status.TryGetRequiredRoleForEndpointMapping(out string? requiredRole);
+
+            valid.Should().BeTrue();
+            requiredRole.Should().Be("DMS.cache-status:Operator");
+        }
+
+        [TestCase(null)]
+        [TestCase("")]
+        [TestCase(" ")]
+        [TestCase(" role")]
+        [TestCase("role ")]
+        [TestCase("role name")]
+        [TestCase("role\tname")]
+        [TestCase("role,name")]
+        [TestCase("role;name")]
+        [TestCase("\"role\"")]
+        [TestCase("'role'")]
+        [TestCase("[role]")]
+        [TestCase("{role}")]
+        [TestCase("role\u0001")]
+        public void It_should_reject_invalid_roles_for_endpoint_mapping(string? requiredRole)
+        {
+            DocumentCacheStatusOptions status = new() { RequiredRole = requiredRole };
+
+            bool valid = status.TryGetRequiredRoleForEndpointMapping(out string? endpointMappingRole);
+
+            valid.Should().BeFalse();
+            endpointMappingRole.Should().BeNull();
+        }
+
+        [Test]
+        public void It_should_reject_roles_longer_than_256_characters_for_endpoint_mapping()
+        {
+            DocumentCacheStatusOptions status = new() { RequiredRole = new string('a', 257) };
+
+            status.TryGetRequiredRoleForEndpointMapping(out string? endpointMappingRole).Should().BeFalse();
+            endpointMappingRole.Should().BeNull();
+        }
+
+        [Test]
+        public void It_should_not_fail_startup_validation_for_missing_or_invalid_role_values()
+        {
+            DocumentCacheOptions options = new()
+            {
+                Status = new DocumentCacheStatusOptions { RequiredRole = "role name" },
+            };
+
+            Validate(options).Succeeded.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_should_omit_RequiredRole_when_status_settings_are_serialized()
+        {
+            DocumentCacheStatusOptions status = new()
+            {
+                StatusObservationTimeout = TimeSpan.FromSeconds(5),
+                EndpointTimeout = TimeSpan.FromSeconds(30),
+                RequiredRole = "dms-document-cache-operator",
+            };
+
+            string json = JsonSerializer.Serialize(status);
+
+            json.Should().NotContain("RequiredRole");
+            json.Should().Contain("StatusObservationTimeout");
+            json.Should().Contain("EndpointTimeout");
+        }
     }
 
     [TestFixture]
@@ -468,7 +544,32 @@ public class DocumentCacheOptionsTests
             _options.Projector.FailureBackoff.Should().Be(TimeSpan.FromSeconds(30));
             _options.Projector.BaselineHighWaterMark.Should().Be(1000);
             _options.Administration.WorkflowTimeout.Should().Be(TimeSpan.FromHours(24));
+            _options.Status.StatusObservationTimeout.Should().Be(TimeSpan.FromSeconds(5));
+            _options.Status.EndpointTimeout.Should().Be(TimeSpan.FromSeconds(30));
+            _options.Status.RequiredRole.Should().BeNull();
             _validationResult.Succeeded.Should().BeTrue();
+        }
+    }
+
+    private static void SetTimeout(DocumentCacheOptions options, string settingName, TimeSpan value)
+    {
+        switch (settingName)
+        {
+            case "ReadAcceleration:DirectFillTimeout":
+                options.ReadAcceleration.DirectFillTimeout = value;
+                break;
+            case "Status:StatusObservationTimeout":
+                options.Status.StatusObservationTimeout = value;
+                break;
+            case "Status:EndpointTimeout":
+                options.Status.EndpointTimeout = value;
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(settingName),
+                    settingName,
+                    "Unknown timeout setting."
+                );
         }
     }
 }
