@@ -9,7 +9,7 @@ This document describes the **custom validation extension point** for the Data M
 The feature lets a district or vendor enforce its own business rules on documents as they are written, with the rules living in their own versioned assembly rather than in DMS core source: a public abstractions contract the implementer compiles against, registered into DMS's composition at build time, and invoked by a Core-authored fan-in step on the POST and PUT write paths.
 
 Delivery is **compiled-in only** in this version.
-Loading a validator from a dropped-in assembly at runtime is a separate design stream with its own follow-up spike, planned but not yet filed; nothing here forecloses it, and the contract and pipeline seam this document specifies are exactly what that stream would reuse (see [Rejected Alternatives](#rejected-alternatives)).
+Loading a validator from a dropped-in assembly at runtime is a separate design stream, deliberately not pre-filed as a ticket; nothing here forecloses it, and the contract and pipeline seam this document specifies are exactly what that stream would reuse (see [Rejected Alternatives](#rejected-alternatives)).
 
 - [README.md](./README.md) - epic overview and ticket index
 - [01-add-custom-validator-abstractions-contract.md](./01-add-custom-validator-abstractions-contract.md) - the contract types
@@ -80,7 +80,7 @@ A bare file name repeats a file cited in full earlier in this document.
 
 ### Non-Goals
 
-- Runtime delivery of a validator assembly that was not part of the build. Deferred to the follow-up plugin spike (see [Rejected Alternatives](#rejected-alternatives)).
+- Runtime delivery of a validator assembly that was not part of the build. Deferred to a future plugin-delivery spike (see [Rejected Alternatives](#rejected-alternatives)).
 - Validation on GET or DELETE (see [Verb Coverage](#verb-coverage)).
 - Any store-read capability for validators; this version's contract exposes no access to stored data. This has a named consequence for DMS-1414, recorded under [Driving Scenarios](#driving-scenarios).
 - Out-of-process validation (see [Rejected Alternatives](#rejected-alternatives)).
@@ -576,7 +576,7 @@ Both delivery paths therefore feed one registration seam, and nothing scans for 
 | Synchronous `ValidateObject` | `IObjectValidator.cs:14-27` | **Refused.** DMS's pipeline is async and two driving scenarios are I/O-bound. |
 | POST/PUT only; Delete pipeline has no validation step | `PipelineStepsProviders.cs:59`, `:70-79` | **Adopted.** See [Verb Coverage](#verb-coverage). |
 | Accumulate-then-400 with a `validationErrors` path map | `ValidatorExtensions.cs:19-60`; `ErrorTranslator.cs:49-71` | **Adopted.** See [Response Shape](#response-shape). |
-| Plugin folder: probe in a throwaway context, check for `IPluginMarker`, then load for real | `EdFi.Ods.Api/Helpers/AssemblyLoaderHelper.cs:274-322` | **Deferred**, to the follow-up plugin spike. It is a delivery mechanism layered on the same registration seam, so deferring it costs this design nothing. |
+| Plugin folder: probe in a throwaway context, check for `IPluginMarker`, then load for real | `EdFi.Ods.Api/Helpers/AssemblyLoaderHelper.cs:274-322` | **Deferred** to a future plugin-delivery spike. It is a delivery mechanism layered on the same registration seam, so deferring it costs this design nothing. |
 | Feature-flag gating of a validator set (`ConditionalModule`) | `UniqueIdIntegrationModule.cs:19`, `:24` | **Not adopted.** In DMS a validator is active if it is registered, and `AppliesTo` is the only narrowing. An implementer wanting a toggle reads their own configuration in their own registration extension. |
 | Module ordering: `ICustomModule` last, then `Override`-prefixed, then the rest | `TypeHelper.cs:22-51` | **Not needed.** Ordering keys on the module itself, not its origin. DMS has no module system and no last-wins requirement. |
 
@@ -593,7 +593,7 @@ Three ODS behaviors are refused explicitly, each because it converts a defect in
 | Alternative | Disposition | Reason |
 | --- | --- | --- |
 | Public abstractions contract plus DI collection fan-in, composed at build time | **Adopted** | The only way to give DMS a versioned public contract at all; the fan-in mechanic is already production behavior for `IDmsStartupTask`; matches how ODS registers its own validators |
-| Runtime loading from a dropped-in assembly | **Deferred** | A delivery mechanism over the same seam, with its own trust-boundary, packaging, and assembly-identity design. Its own follow-up spike is planned |
+| Runtime loading from a dropped-in assembly | **Deferred** | A delivery mechanism over the same seam, with its own trust-boundary, packaging, and assembly-identity design. It would need its own design stream; not filed, since no deployment has asked for it |
 | Out-of-process validation (webhook or sidecar) | Rejected | No write-path HTTP infrastructure exists to extend; every requirement would be net-new; no validated need for process isolation |
 
 **Runtime assembly loading is deferred, not rejected.** It is the mechanism ODS uses to let a third party add a validator without touching the product's build, and it is the natural next step for any deployment that cannot customize its DMS build.
@@ -646,7 +646,7 @@ Whether to close that gap by adding a store-read capability is recorded under [D
 
 ## Out of Scope
 
-- Runtime loading of a validator assembly that was not part of the build; the follow-up plugin spike owns it.
+- Runtime loading of a validator assembly that was not part of the build; a future plugin-delivery spike owns it, unfiled until a deployment needs it.
 - Validation on GET or DELETE.
 - Store reads from a validator. An earlier revision carried a `ICustomValidationStoreReader` facade exposing `Task<JsonNode?> GetDescriptorByUri(...)`; it is cut. The backend's own contracts cannot serve it directly, since `IQueryRequest`/`IGetRequest` demand a mapping set, query elements, authorization evaluators, and paging inputs that a validator does not hold, their concrete implementations are internal to Core, and neither is keyed by descriptor URI. A facade would also have to collapse `QueryResult`'s seven cases (`Core.External/Backend/QueryResult.cs:25-65`) into `JsonNode?`, giving an infrastructure failure and a genuine not-found the same representation, so a database outage would surface as a validator-authored 400 saying the descriptor does not exist. Designing that error contract deserves its own evidence.
 - Implementing any driving scenario.
@@ -655,7 +655,7 @@ Whether to close that gap by adding a store-read capability is recorded under [D
 
 | Deferred item | Reason |
 | --- | --- |
-| Runtime assembly loading (the plugin spike) | Planned as its own design stream. Inherits this contract, the fan-in step, the failure surfacing, and the startup guard unchanged; adds a discovery-and-registration path feeding the same collection. |
+| Runtime assembly loading (the plugin spike) | Its own design stream when a deployment needs it; deliberately not pre-filed. Inherits this contract, the fan-in step, the failure surfacing, and the startup guard unchanged; adds a discovery-and-registration path feeding the same collection. |
 | Store-read capability for validators | Additive to the contract surface (a validator obtains it by constructor injection, not as a parameter), so adding it later breaks no signature. Needs its own error-contract design. It is one of two things the ODS UniqueId not-changed rule needs, not the only one: that rule keys on the persisted document's identifier (`EdFi.Ods.Features/UniqueIdIntegration/Validation/UniqueIdNotChangedEntityValidator.cs:39`), and this version's `Validate` exposes neither a `DocumentUuid` nor the route, so DMS-1414 needs a document-identity capability alongside store access. The document body does not stand in for it: an `Upsert` body carries no `id` by construction (`Middleware/RejectResourceIdentifierMiddleware.cs:35-45`), and although an `Update` body must carry one matching the route id (`Validation/MatchingDocumentUuidsValidator.cs:23-27`), a writable profile can strip it from the profile-effective body the validator receives, since an `IncludeOnly` member filter keeps only the members the profile names (`Profile/WritableRequestShaper.cs:661-670`). |
 | A wildcard in `AppliesTo` | Additive to `ValidatedResource`. Only worth adding against a real requirement for breadth, which is arguably a different extension point. |
 | ~~Distinct handling for `OperationCanceledException`~~ | **Closed, not deferred.** Core already rethrows a cancelled request's `OperationCanceledException` ahead of its catch-all (`Middleware/CoreExceptionLoggingMiddleware.cs:52-55`), so a validator's inherits that outcome and there is nothing for the fan-in ticket to decide. |
