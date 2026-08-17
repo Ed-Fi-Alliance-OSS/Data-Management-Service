@@ -325,6 +325,32 @@ public class Given_CdcConnectorTemplateSqlServerRendering
     }
 
     [Test]
+    public void It_rejects_missing_capture_instance_artifacts_before_rendering()
+    {
+        CdcConnectorTemplateResult result = Render(
+            BuildRequest(CdcProvider.SqlServer, artifactInventory: [])
+        );
+
+        using var _ = new AssertionScope();
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        result.Config.Should().BeEmpty();
+        result.RegistrationPayload.Should().BeNull();
+        result
+            .Diagnostics.Where(diagnostic =>
+                diagnostic.Code
+                == CdcConnectorTemplateDiagnosticCodes.SqlServerCaptureInstanceMetadataRequired
+            )
+            .Should()
+            .HaveCount(3)
+            .And.OnlyContain(diagnostic =>
+                diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult
+                && diagnostic.PropertyName == "providerSetup.artifactInventory.sqlServerCaptureInstance"
+                && diagnostic.ObservedValue == "missing"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Rendering
+            );
+    }
+
+    [Test]
     public void It_rejects_poll_intervals_that_exceed_the_heartbeat_interval()
     {
         CdcConnectorTemplateResult result = Render(

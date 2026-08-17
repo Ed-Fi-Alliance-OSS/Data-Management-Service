@@ -92,6 +92,8 @@ public static class CdcConnectorTemplateDiagnosticCodes
         "CDC_TEMPLATE_POSTGRESQL_PUBLICATION_METADATA_REQUIRED";
     public const string PostgresqlReplicationSlotMetadataRequired =
         "CDC_TEMPLATE_POSTGRESQL_REPLICATION_SLOT_METADATA_REQUIRED";
+    public const string SqlServerCaptureInstanceMetadataRequired =
+        "CDC_TEMPLATE_SQLSERVER_CAPTURE_INSTANCE_METADATA_REQUIRED";
     public const string SourceTableInventoryMismatch = "CDC_TEMPLATE_SOURCE_TABLE_INVENTORY_MISMATCH";
     public const string SourceColumnInventoryMismatch = "CDC_TEMPLATE_SOURCE_COLUMN_INVENTORY_MISMATCH";
     public const string SqlServerPollIntervalExceedsHeartbeatInterval =
@@ -348,6 +350,7 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
         }
         else if (request.Provider == CdcProvider.SqlServer)
         {
+            AddSqlServerCaptureInstanceDiagnosticsIfNeeded(request, sourcePhase, diagnostics);
             AddSqlServerPollIntervalDiagnosticIfNeeded(request, sourcePhase, diagnostics);
         }
 
@@ -376,6 +379,88 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
         }
 
         AddSourceColumnInventoryDiagnostics(request, sourcePhase, diagnostics);
+    }
+
+    private static void AddSqlServerCaptureInstanceDiagnosticsIfNeeded(
+        CdcConnectorTemplateRequest request,
+        CdcConnectorTemplateSourcePhase sourcePhase,
+        List<CdcConnectorTemplateDiagnostic> diagnostics
+    )
+    {
+        CdcProviderArtifactObservation[] captureInstances = request
+            .ProviderSetupEvidence.Result.ArtifactInventory.Where(artifact =>
+                artifact.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
+            )
+            .ToArray();
+
+        foreach (CdcSourceTableKind tableKind in RequiredSourceTableKinds())
+        {
+            CdcProviderArtifactObservation[] tableCaptureInstances = captureInstances
+                .Where(artifact => SqlServerCaptureInstanceSourceTableKind(artifact) == tableKind)
+                .ToArray();
+
+            if (
+                tableCaptureInstances.Length == 1
+                && tableCaptureInstances[0].State
+                    is CdcProviderArtifactState.Created
+                        or CdcProviderArtifactState.Matched
+            )
+            {
+                continue;
+            }
+
+            diagnostics.Add(
+                BuildDiagnostic(
+                    CdcConnectorTemplateDiagnosticCodes.SqlServerCaptureInstanceMetadataRequired,
+                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult,
+                    "providerSetup.artifactInventory.sqlServerCaptureInstance",
+                    $"one usable SQL Server capture-instance artifact for {ExpectedSourceTableName(tableKind)}",
+                    SqlServerCaptureInstanceObservedValue(tableCaptureInstances),
+                    request,
+                    sourcePhase,
+                    CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+                )
+            );
+        }
+
+        int extraCaptureInstanceCount = captureInstances.Count(artifact =>
+            SqlServerCaptureInstanceSourceTableKind(artifact) is not { } tableKind
+            || !RequiredSourceTableKinds().Contains(tableKind)
+        );
+        if (extraCaptureInstanceCount == 0)
+        {
+            return;
+        }
+
+        diagnostics.Add(
+            BuildDiagnostic(
+                CdcConnectorTemplateDiagnosticCodes.SqlServerCaptureInstanceMetadataRequired,
+                CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult,
+                "providerSetup.artifactInventory.sqlServerCaptureInstance",
+                "only SQL Server capture-instance artifacts for dms.DocumentCache, dms.Document, and dms.CdcHeartbeat",
+                extraCaptureInstanceCount.ToString(),
+                request,
+                sourcePhase,
+                CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            )
+        );
+    }
+
+    private static string SqlServerCaptureInstanceObservedValue(
+        IReadOnlyList<CdcProviderArtifactObservation> tableCaptureInstances
+    )
+    {
+        if (tableCaptureInstances.Count == 0)
+        {
+            return "missing";
+        }
+
+        if (tableCaptureInstances.Count > 1)
+        {
+            return tableCaptureInstances.Count.ToString();
+        }
+
+        return tableCaptureInstances[0].State.ToString();
     }
 
     private static void AddSourceColumnInventoryDiagnostics(
@@ -780,6 +865,9 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
             MessageKeyColumns(request, CdcSourceTableKind.Document),
         ];
 
+    private static IReadOnlyList<CdcSourceTableKind> RequiredSourceTableKinds() =>
+        [CdcSourceTableKind.DocumentCache, CdcSourceTableKind.Document, CdcSourceTableKind.CdcHeartbeat];
+
     private static CdcExpectedMessageKeyColumns MessageKeyColumns(
         CdcConnectorTemplateRequest request,
         CdcSourceTableKind tableKind
@@ -787,6 +875,24 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
         request.ProviderSetupEvidence.Result.ExpectedMessageKeyColumns.Single(columns =>
             columns.TableKind == tableKind
         );
+
+    private static CdcSourceTableKind? SqlServerCaptureInstanceSourceTableKind(
+        CdcProviderArtifactObservation artifact
+    )
+    {
+        if (!artifact.SafeObservedValues.TryGetValue("source_table_kind", out string? sourceTableKind))
+        {
+            return null;
+        }
+
+        return sourceTableKind switch
+        {
+            "document_cache" => CdcSourceTableKind.DocumentCache,
+            "document" => CdcSourceTableKind.Document,
+            "cdc_heartbeat" => CdcSourceTableKind.CdcHeartbeat,
+            _ => null,
+        };
+    }
 
     private static DbTableName ExpectedSourceTableName(CdcSourceTableKind tableKind) =>
         tableKind switch
