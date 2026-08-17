@@ -260,7 +260,7 @@ public class Given_CdcConnectorTemplateCommonRendering
             Outcome: CdcProviderSetupOutcome.CreatedOrMatched,
             BoundPhysicalSourceFingerprint: SourceFingerprint,
             ObservedSourceFingerprint: SourceFingerprint,
-            ArtifactInventory: [],
+            ArtifactInventory: BuildArtifactInventory(provider),
             GrantInventory: [],
             SourceTableInventory: BuildRequiredSourceTableInventory(),
             ExpectedMessageKeyColumns: BuildExpectedMessageKeyColumns(),
@@ -269,6 +269,34 @@ public class Given_CdcConnectorTemplateCommonRendering
             ManifestPayload: null,
             Diagnostics: []
         );
+
+    private static IReadOnlyList<CdcProviderArtifactObservation> BuildArtifactInventory(
+        CdcProvider provider
+    ) =>
+        provider switch
+        {
+            CdcProvider.Postgresql =>
+            [
+                new(
+                    CdcProviderArtifactKind.PostgresqlPublication,
+                    new CdcSafeName("dms_binding_publication"),
+                    CdcProviderArtifactState.Matched,
+                    new Dictionary<string, string>()
+                ),
+                new(
+                    CdcProviderArtifactKind.PostgresqlReplicationSlot,
+                    new CdcSafeName("dms_binding_slot"),
+                    CdcProviderArtifactState.Matched,
+                    new Dictionary<string, string>()
+                ),
+            ],
+            CdcProvider.SqlServer => [],
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(provider),
+                provider,
+                "Unsupported CDC provider."
+            ),
+        };
 
     private static IReadOnlyList<CdcSourceTableInventory> BuildRequiredSourceTableInventory() =>
         [
