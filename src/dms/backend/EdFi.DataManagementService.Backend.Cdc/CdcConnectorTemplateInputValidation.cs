@@ -86,6 +86,11 @@ public static class CdcConnectorTemplateDiagnosticCodes
         "CDC_TEMPLATE_EXTERNALIZED_SECRET_REFERENCE_REQUIRED";
     public const string SqlServerDatabaseNamesRequired = "CDC_TEMPLATE_SQLSERVER_DATABASE_NAMES_REQUIRED";
     public const string SqlServerSingleDatabaseRequired = "CDC_TEMPLATE_SQLSERVER_SINGLE_DATABASE_REQUIRED";
+    public const string PostgresqlPublicationMetadataRequired =
+        "CDC_TEMPLATE_POSTGRESQL_PUBLICATION_METADATA_REQUIRED";
+    public const string PostgresqlReplicationSlotMetadataRequired =
+        "CDC_TEMPLATE_POSTGRESQL_REPLICATION_SLOT_METADATA_REQUIRED";
+    public const string SourceTableInventoryMismatch = "CDC_TEMPLATE_SOURCE_TABLE_INVENTORY_MISMATCH";
 }
 
 internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplateInputValidator
