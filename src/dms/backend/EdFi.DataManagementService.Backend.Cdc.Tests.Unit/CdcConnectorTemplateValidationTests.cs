@@ -291,6 +291,7 @@ public class Given_CdcConnectorTemplateInputValidation
             new CdcSafeName("dms_binding_connector"),
             "edfi.documents",
             bindingGeneration: 7,
+            partitionerAlgorithm: "kafka-murmur2-v1",
             SourceFingerprint
         );
 

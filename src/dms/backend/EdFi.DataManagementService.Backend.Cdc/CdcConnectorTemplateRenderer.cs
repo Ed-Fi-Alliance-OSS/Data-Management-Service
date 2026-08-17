@@ -108,8 +108,7 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
             ["producer.override.max.request.size"] = request.DeploymentPolicy.MaxRecordBytes.ToString(),
             ["producer.override.buffer.memory"] = ProducerBufferBytes(request).ToString(),
             ["producer.override.compression.type"] = "none",
-            ["producer.override.partitioner.class"] =
-                "org.edfi.kafka.connect.partitioner.KafkaMurmur2V1Partitioner",
+            ["producer.override.partitioner.class"] = PartitionerClass(request.PartitionerAlgorithm),
             ["heartbeat.interval.ms"] = HeartbeatIntervalMilliseconds(request).ToString(),
             ["heartbeat.action.query"] = request.ProviderSetupEvidence.Result.HeartbeatActionQuery!.Sql,
             ["topic.delimiter"] = ".",
@@ -580,6 +579,18 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
                 nameof(provider),
                 provider,
                 "Unsupported CDC provider."
+            ),
+        };
+
+    private static string PartitionerClass(string partitionerAlgorithm) =>
+        partitionerAlgorithm switch
+        {
+            CdcConnectorTemplateBindingIdentity.KafkaMurmur2V1PartitionerAlgorithm =>
+                "org.edfi.kafka.connect.partitioner.KafkaMurmur2V1Partitioner",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(partitionerAlgorithm),
+                partitionerAlgorithm,
+                "Unsupported CDC binding partitioner algorithm."
             ),
         };
 

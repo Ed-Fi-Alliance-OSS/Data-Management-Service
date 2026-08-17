@@ -64,11 +64,14 @@ public enum CdcConnectorTemplateRedactionClassification
 
 public sealed record CdcConnectorTemplateBindingIdentity
 {
+    public const string KafkaMurmur2V1PartitionerAlgorithm = "kafka-murmur2-v1";
+
     public CdcConnectorTemplateBindingIdentity(
         CdcProvider provider,
         CdcSafeName connectorName,
         string publicTopicName,
         long bindingGeneration,
+        string partitionerAlgorithm,
         CdcSourceFingerprint boundPhysicalSourceFingerprint
     )
     {
@@ -88,6 +91,10 @@ public sealed record CdcConnectorTemplateBindingIdentity
                     bindingGeneration,
                     "CDC binding generation must be zero or greater."
                 );
+        PartitionerAlgorithm = ValidatePartitionerAlgorithm(
+            partitionerAlgorithm,
+            nameof(partitionerAlgorithm)
+        );
         BoundPhysicalSourceFingerprint = CdcConnectorTemplateContractValidation.ValidateSourceFingerprint(
             boundPhysicalSourceFingerprint,
             nameof(boundPhysicalSourceFingerprint)
@@ -102,6 +109,8 @@ public sealed record CdcConnectorTemplateBindingIdentity
 
     public long BindingGeneration { get; }
 
+    public string PartitionerAlgorithm { get; }
+
     public CdcSourceFingerprint BoundPhysicalSourceFingerprint { get; }
 
     public string ProgressTopicName => CdcConnectorTemplateTopicNames.ProgressTopicName(PublicTopicName);
@@ -110,6 +119,26 @@ public sealed record CdcConnectorTemplateBindingIdentity
         Provider == CdcProvider.SqlServer
             ? CdcConnectorTemplateTopicNames.SqlServerSchemaHistoryTopicName(PublicTopicName)
             : null;
+
+    private static string ValidatePartitionerAlgorithm(string value, string parameterName)
+    {
+        string partitionerAlgorithm = CdcConnectorTemplateContractValidation.ValidateRequiredSafeText(
+            value,
+            parameterName
+        );
+
+        if (
+            !string.Equals(partitionerAlgorithm, KafkaMurmur2V1PartitionerAlgorithm, StringComparison.Ordinal)
+        )
+        {
+            throw new ArgumentException(
+                "CDC binding partitioner algorithm must be kafka-murmur2-v1.",
+                parameterName
+            );
+        }
+
+        return partitionerAlgorithm;
+    }
 }
 
 public sealed record CdcConnectorProviderSetupEvidence
@@ -306,6 +335,8 @@ public sealed record CdcConnectorTemplateRequest
     public string ProgressTopicName => BindingIdentity.ProgressTopicName;
 
     public string? SchemaHistoryTopicName => BindingIdentity.SchemaHistoryTopicName;
+
+    public string PartitionerAlgorithm => BindingIdentity.PartitionerAlgorithm;
 
     private static void ValidateProviderSetupEvidence(
         CdcConnectorTemplateBindingIdentity bindingIdentity,
