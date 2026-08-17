@@ -163,7 +163,8 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 
     public void AssertRenderedTemplateCanBeValidatedFromReadBack(
         CdcConnectorTemplateRequest request,
-        IReadOnlyDictionary<string, string> effectiveConfig
+        IReadOnlyDictionary<string, string> effectiveConfig,
+        CdcConnectorTemplateSourcePartitionEvidence sourcePartitionEvidence
     )
     {
         ICdcConnectorTemplateService service =
@@ -189,7 +190,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
                 request,
                 effectiveConfig,
                 providerSetupEvidence,
-                BuildSourcePartitionEvidence(request, effectiveConfig)
+                sourcePartitionEvidence
             )
         );
 
@@ -461,11 +462,14 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             );
 
         await WaitForRegisteredConnectorRunningAsync(connectorName, cancellationToken);
-        await AssertKafkaConnectReadBackMatchesExpectedConfigAsync(request, cancellationToken);
-
         CdcConnectorSourceOffsetSnapshot retainedOffset = await WaitForCommittedSourceOffsetProgressAsync(
             request,
             startingOffset: null,
+            cancellationToken
+        );
+        await AssertKafkaConnectReadBackMatchesExpectedConfigAsync(
+            request,
+            retainedOffset.SourcePartitionEvidence,
             cancellationToken
         );
         retainedOffset.CanonicalOffsetJson.Should().NotBeNullOrWhiteSpace();
@@ -473,6 +477,25 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 
     public async Task AssertKafkaConnectReadBackMatchesExpectedConfigAsync(
         CdcConnectorTemplateRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        CdcConnectorSourceOffsetSnapshot committedOffset = await WaitForCommittedSourceOffsetProgressAsync(
+            request,
+            startingOffset: null,
+            cancellationToken
+        );
+
+        await AssertKafkaConnectReadBackMatchesExpectedConfigAsync(
+            request,
+            committedOffset.SourcePartitionEvidence,
+            cancellationToken
+        );
+    }
+
+    private async Task AssertKafkaConnectReadBackMatchesExpectedConfigAsync(
+        CdcConnectorTemplateRequest request,
+        CdcConnectorTemplateSourcePartitionEvidence sourcePartitionEvidence,
         CancellationToken cancellationToken
     )
     {
@@ -488,7 +511,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             .BeTrue($"Kafka Connect config read-back failed: {SanitizeForAssertion(responseBody)}");
 
         IReadOnlyDictionary<string, string> config = ParseStringMap(responseBody);
-        AssertRenderedTemplateCanBeValidatedFromReadBack(request, config);
+        AssertRenderedTemplateCanBeValidatedFromReadBack(request, config, sourcePartitionEvidence);
     }
 
     public async ValueTask DisposeAsync()
@@ -1250,7 +1273,12 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
                 continue;
             }
 
-            matchingOffsets.Add(new CdcConnectorSourceOffsetSnapshot(CanonicalizeJson(offset)));
+            matchingOffsets.Add(
+                new CdcConnectorSourceOffsetSnapshot(
+                    CanonicalizeJson(offset),
+                    BuildSourcePartitionEvidence(partition)
+                )
+            );
         }
 
         matchingOffsets
@@ -1627,24 +1655,28 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         ];
 
     private static CdcConnectorTemplateSourcePartitionEvidence BuildSourcePartitionEvidence(
-        CdcConnectorTemplateRequest request,
-        IReadOnlyDictionary<string, string> effectiveConfig
+        JsonElement partition
     )
     {
-        var properties = new SortedDictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["server"] = effectiveConfig["topic.prefix"],
-        };
-
-        if (request.Provider == CdcProvider.SqlServer)
-        {
-            properties["database"] = effectiveConfig["database.names"];
-        }
+        IReadOnlyDictionary<string, string> properties = partition
+            .EnumerateObject()
+            .OrderBy(property => property.Name, StringComparer.Ordinal)
+            .ToDictionary(
+                property => property.Name,
+                property =>
+                    property.Value.ValueKind == JsonValueKind.String
+                        ? property.Value.GetString() ?? string.Empty
+                        : property.Value.GetRawText(),
+                StringComparer.Ordinal
+            );
 
         return new CdcConnectorTemplateSourcePartitionEvidence(properties);
     }
 
-    private sealed record CdcConnectorSourceOffsetSnapshot(string CanonicalOffsetJson);
+    private sealed record CdcConnectorSourceOffsetSnapshot(
+        string CanonicalOffsetJson,
+        CdcConnectorTemplateSourcePartitionEvidence SourcePartitionEvidence
+    );
 }
 
 internal static class CdcConnectorTemplatePinnedImageTestData

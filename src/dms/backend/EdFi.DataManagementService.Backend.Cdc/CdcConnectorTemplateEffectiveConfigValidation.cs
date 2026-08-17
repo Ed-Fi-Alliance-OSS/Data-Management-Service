@@ -389,6 +389,22 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
     {
         if (request.SourcePartitionEvidence is null)
         {
+            if (sourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack)
+            {
+                diagnostics.Add(
+                    BuildDiagnostic(
+                        CdcConnectorTemplateDiagnosticCodes.LiveReadBackSourcePartitionMismatch,
+                        CdcConnectorTemplateDiagnosticCategory.LiveReadBack,
+                        "source.partition",
+                        "actual connector source partition evidence",
+                        null,
+                        request.TemplateRequest,
+                        sourcePhase,
+                        CdcConnectorTemplateRedactionClassification.Safe
+                    )
+                );
+            }
+
             return;
         }
 

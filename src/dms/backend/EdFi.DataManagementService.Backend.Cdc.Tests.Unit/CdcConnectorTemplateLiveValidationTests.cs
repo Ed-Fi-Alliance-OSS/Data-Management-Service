@@ -53,6 +53,44 @@ public class Given_CdcConnectorTemplateLiveValidation
     }
 
     [Test]
+    public void It_rejects_exact_live_read_back_config_without_source_partition_evidence()
+    {
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(CdcProvider.Postgresql);
+        CdcConnectorTemplateResult rendered = service.Render(request);
+
+        CdcConnectorTemplateResult result = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                new CdcConnectorProviderSetupEvidence(
+                    bindingGeneration: 7,
+                    BuildProviderSetupResult(CdcProvider.Postgresql)
+                )
+            )
+        );
+
+        using var _ = new AssertionScope();
+        rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        result.Config.Should().Equal(rendered.Config);
+        CdcConnectorTemplateDiagnostic diagnostic = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackSourcePartitionMismatch
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.LiveReadBack
+                && diagnostic.PropertyName == "source.partition"
+                && diagnostic.ExpectedValue == "actual connector source partition evidence"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack
+                && diagnostic.RedactionClassification == CdcConnectorTemplateRedactionClassification.Safe
+            )
+            .Which;
+        diagnostic.ObservedValue.Should().BeNull();
+    }
+
+    [Test]
     public void It_accepts_masked_secret_read_back_values_for_sqlserver_generated_clients()
     {
         using ServiceProvider serviceProvider = BuildServiceProvider();
@@ -81,13 +119,7 @@ public class Given_CdcConnectorTemplateLiveValidation
                     bindingGeneration: 7,
                     BuildProviderSetupResult(CdcProvider.SqlServer)
                 ),
-                new CdcConnectorTemplateSourcePartitionEvidence(
-                    new Dictionary<string, string>
-                    {
-                        ["server"] = "dms_binding_connector",
-                        ["database"] = "edfi_datastore",
-                    }
-                )
+                BuildSourcePartitionEvidence(request)
             )
         );
 
@@ -125,7 +157,8 @@ public class Given_CdcConnectorTemplateLiveValidation
                 new CdcConnectorProviderSetupEvidence(
                     bindingGeneration: 7,
                     BuildProviderSetupResult(CdcProvider.Postgresql)
-                )
+                ),
+                BuildSourcePartitionEvidence(request)
             )
         );
 
@@ -181,7 +214,8 @@ public class Given_CdcConnectorTemplateLiveValidation
                 new CdcConnectorProviderSetupEvidence(
                     bindingGeneration: 7,
                     BuildProviderSetupResult(CdcProvider.SqlServer)
-                )
+                ),
+                BuildSourcePartitionEvidence(request)
             )
         );
 
@@ -248,7 +282,8 @@ public class Given_CdcConnectorTemplateLiveValidation
                 new CdcConnectorProviderSetupEvidence(
                     bindingGeneration: 7,
                     BuildProviderSetupResult(CdcProvider.Postgresql)
-                )
+                ),
+                BuildSourcePartitionEvidence(request)
             )
         );
 
@@ -371,13 +406,7 @@ public class Given_CdcConnectorTemplateLiveValidation
                 request,
                 rendered.Config,
                 badProviderSetupEvidence,
-                new CdcConnectorTemplateSourcePartitionEvidence(
-                    new Dictionary<string, string>
-                    {
-                        ["server"] = "dms_binding_connector",
-                        ["database"] = "edfi_datastore",
-                    }
-                )
+                BuildSourcePartitionEvidence(request)
             )
         );
 
