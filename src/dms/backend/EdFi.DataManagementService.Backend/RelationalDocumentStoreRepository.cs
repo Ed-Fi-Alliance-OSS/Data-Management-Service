@@ -171,7 +171,8 @@ public sealed class RelationalDocumentStoreRepository(
                         upsertRequest.DocumentInfo.ReferentialId,
                         upsertRequest.TraceId,
                         upsertRequest.AuthorizationStrategyEvaluators,
-                        upsertRequest.AuthorizationContext
+                        upsertRequest.AuthorizationContext,
+                        upsertRequest.TenantKey
                     )
                     {
                         WritePrecondition = writePrecondition,
@@ -355,7 +356,8 @@ public sealed class RelationalDocumentStoreRepository(
                         referentialId: null,
                         updateRequest.TraceId,
                         updateRequest.AuthorizationStrategyEvaluators,
-                        updateRequest.AuthorizationContext
+                        updateRequest.AuthorizationContext,
+                        updateRequest.TenantKey
                     )
                     {
                         WritePrecondition = writePrecondition,

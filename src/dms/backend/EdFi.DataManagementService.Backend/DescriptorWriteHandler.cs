@@ -8,6 +8,8 @@ using System.Diagnostics;
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Utilities;
@@ -29,6 +31,9 @@ internal sealed class DescriptorWriteHandler(
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
         null,
     IDocumentCacheWriterTelemetry? documentCacheWriterTelemetry = null,
+    IDataStoreSelection? dataStoreSelection = null,
+    IDocumentCacheEnqueueTelemetry? documentCacheEnqueueTelemetry = null,
+    IDocumentCacheTargetRegistry? documentCacheTargetRegistry = null,
     IRelationalCommandExecutor? customViewValidationCommandExecutor = null
 ) : IDescriptorWriteHandler
 {
@@ -58,6 +63,10 @@ internal sealed class DescriptorWriteHandler(
         ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance;
     private readonly IDocumentCacheWriterTelemetry _documentCacheWriterTelemetry =
         documentCacheWriterTelemetry ?? NoOpDocumentCacheWriterTelemetry.Instance;
+    private readonly IDataStoreSelection? _dataStoreSelection = dataStoreSelection;
+    private readonly IDocumentCacheEnqueueTelemetry _documentCacheEnqueueTelemetry =
+        documentCacheEnqueueTelemetry ?? NoOpDocumentCacheEnqueueTelemetry.Instance;
+    private readonly IDocumentCacheTargetRegistry? _documentCacheTargetRegistry = documentCacheTargetRegistry;
 
     public async Task<UpsertResult> HandlePostAsync(
         DescriptorWriteRequest request,
@@ -249,6 +258,10 @@ internal sealed class DescriptorWriteHandler(
                             .ConfigureAwait(false);
 
                         await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
+                        RecordDescriptorEnqueueSuccessIfApplicable(
+                            request,
+                            DocumentCacheEnqueueTelemetryCanonicalOperation.Insert
+                        );
                         return insertResult;
                     }
 
@@ -2630,6 +2643,7 @@ internal sealed class DescriptorWriteHandler(
                 request,
                 commandExecutor,
                 command,
+                DocumentCacheEnqueueTelemetryCanonicalOperation.Insert,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -2688,6 +2702,7 @@ internal sealed class DescriptorWriteHandler(
                 request,
                 commandExecutor,
                 command,
+                DocumentCacheEnqueueTelemetryCanonicalOperation.Update,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -2743,6 +2758,10 @@ internal sealed class DescriptorWriteHandler(
             .ConfigureAwait(false);
 
         await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
+        RecordDescriptorEnqueueSuccessIfApplicable(
+            request,
+            DocumentCacheEnqueueTelemetryCanonicalOperation.Update
+        );
         return upsertResult;
     }
 
@@ -2799,11 +2818,16 @@ internal sealed class DescriptorWriteHandler(
                 request,
                 writeSession.CreateCommandExecutor(),
                 command,
+                DocumentCacheEnqueueTelemetryCanonicalOperation.Update,
                 cancellationToken
             )
             .ConfigureAwait(false);
 
         await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
+        RecordDescriptorEnqueueSuccessIfApplicable(
+            request,
+            DocumentCacheEnqueueTelemetryCanonicalOperation.Update
+        );
 
         return new UpdateResult.UpdateSuccess(
             documentUuid,
@@ -3193,6 +3217,10 @@ internal sealed class DescriptorWriteHandler(
                 .ConfigureAwait(false);
 
             await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
+            RecordDescriptorEnqueueSuccessIfApplicable(
+                request,
+                DocumentCacheEnqueueTelemetryCanonicalOperation.Insert
+            );
             return insertResult;
         }
         catch
@@ -3268,6 +3296,7 @@ internal sealed class DescriptorWriteHandler(
         DescriptorWriteRequest request,
         IRelationalCommandExecutor commandExecutor,
         RelationalCommand command,
+        DocumentCacheEnqueueTelemetryCanonicalOperation canonicalOperation,
         CancellationToken cancellationToken
     )
     {
@@ -3289,6 +3318,17 @@ internal sealed class DescriptorWriteHandler(
 
             return contentVersion;
         }
+        catch (DbException ex)
+        {
+            RecordDescriptorCanonicalWriterWait(
+                request,
+                DocumentCacheWriterTelemetryLabel.Failed,
+                canonicalPersistStartTimestamp
+            );
+
+            RecordDescriptorEnqueueFailureIfClassified(request, canonicalOperation, ex);
+            throw;
+        }
         catch
         {
             RecordDescriptorCanonicalWriterWait(
@@ -3299,6 +3339,42 @@ internal sealed class DescriptorWriteHandler(
 
             throw;
         }
+    }
+
+    private void RecordDescriptorEnqueueSuccessIfApplicable(
+        DescriptorWriteRequest request,
+        DocumentCacheEnqueueTelemetryCanonicalOperation canonicalOperation
+    )
+    {
+        DocumentCacheEnqueueTelemetryWriteBoundary.RecordSuccessIfEnqueueEnabled(
+            _documentCacheEnqueueTelemetry,
+            _dataStoreSelection,
+            _documentCacheTargetRegistry,
+            request.TenantKey,
+            request.MappingSet.Key.Dialect,
+            canonicalOperation,
+            DocumentCacheEnqueueTelemetryResourceKind.Descriptor,
+            "DocumentCache descriptor enqueue succeeded."
+        );
+    }
+
+    private void RecordDescriptorEnqueueFailureIfClassified(
+        DescriptorWriteRequest request,
+        DocumentCacheEnqueueTelemetryCanonicalOperation canonicalOperation,
+        DbException exception
+    )
+    {
+        DocumentCacheEnqueueTelemetryWriteBoundary.RecordFailureIfClassified(
+            _documentCacheEnqueueTelemetry,
+            _writeExceptionClassifier,
+            _dataStoreSelection,
+            _documentCacheTargetRegistry,
+            request.TenantKey,
+            request.MappingSet.Key.Dialect,
+            canonicalOperation,
+            DocumentCacheEnqueueTelemetryResourceKind.Descriptor,
+            exception
+        );
     }
 
     private void RecordDescriptorCanonicalWriterWait(

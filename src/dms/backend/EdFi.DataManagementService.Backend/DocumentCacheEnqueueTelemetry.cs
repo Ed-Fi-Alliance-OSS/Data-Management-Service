@@ -8,6 +8,7 @@ using System.Collections.Immutable;
 using System.Data.Common;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.Utilities;
@@ -198,6 +199,175 @@ internal sealed class NoOpDocumentCacheEnqueueTelemetry : IDocumentCacheEnqueueT
             );
         }
     }
+}
+
+internal static class DocumentCacheEnqueueTelemetryWriteBoundary
+{
+    public static void RecordSuccessIfEnqueueEnabled(
+        IDocumentCacheEnqueueTelemetry telemetry,
+        IDataStoreSelection? dataStoreSelection,
+        IDocumentCacheTargetRegistry? targetRegistry,
+        string tenantKey,
+        SqlDialect dialect,
+        DocumentCacheEnqueueTelemetryCanonicalOperation canonicalOperation,
+        DocumentCacheEnqueueTelemetryResourceKind resourceKind,
+        string message
+    )
+    {
+        ArgumentNullException.ThrowIfNull(telemetry);
+
+        if (
+            !TryCreateContext(
+                dataStoreSelection,
+                targetRegistry,
+                tenantKey,
+                dialect,
+                canonicalOperation,
+                resourceKind,
+                message,
+                requireEnqueueEnabled: true,
+                out DocumentCacheEnqueueTelemetryContext? context
+            )
+        )
+        {
+            return;
+        }
+
+        telemetry.RecordSuccess(context!);
+    }
+
+    public static void RecordFailureIfClassified(
+        IDocumentCacheEnqueueTelemetry telemetry,
+        IRelationalWriteExceptionClassifier writeExceptionClassifier,
+        IDataStoreSelection? dataStoreSelection,
+        IDocumentCacheTargetRegistry? targetRegistry,
+        string tenantKey,
+        SqlDialect dialect,
+        DocumentCacheEnqueueTelemetryCanonicalOperation canonicalOperation,
+        DocumentCacheEnqueueTelemetryResourceKind resourceKind,
+        DbException exception
+    )
+    {
+        ArgumentNullException.ThrowIfNull(telemetry);
+        ArgumentNullException.ThrowIfNull(writeExceptionClassifier);
+        ArgumentNullException.ThrowIfNull(exception);
+
+        DocumentCacheTargetKey? targetKey = TryCreateTelemetryTargetKey(dataStoreSelection, tenantKey);
+        if (targetKey is null)
+        {
+            return;
+        }
+
+        if (
+            !DocumentCacheEnqueueFailureClassifier.TryClassify(
+                exception,
+                writeExceptionClassifier,
+                out DocumentCacheEnqueueFailureCategory category,
+                out string message
+            )
+        )
+        {
+            return;
+        }
+
+        DocumentCacheTargetObservation? targetObservation = TryGetCurrentTarget(targetRegistry, targetKey);
+        var context = new DocumentCacheEnqueueTelemetryContext(
+            targetKey,
+            targetObservation?.ProviderToken ?? ProviderTokenForDialect(dialect),
+            canonicalOperation,
+            resourceKind,
+            message
+        );
+
+        telemetry.RecordFailure(context, category);
+    }
+
+    private static bool TryCreateContext(
+        IDataStoreSelection? dataStoreSelection,
+        IDocumentCacheTargetRegistry? targetRegistry,
+        string tenantKey,
+        SqlDialect dialect,
+        DocumentCacheEnqueueTelemetryCanonicalOperation canonicalOperation,
+        DocumentCacheEnqueueTelemetryResourceKind resourceKind,
+        string message,
+        bool requireEnqueueEnabled,
+        out DocumentCacheEnqueueTelemetryContext? context
+    )
+    {
+        context = null;
+
+        DocumentCacheTargetKey? targetKey = TryCreateTelemetryTargetKey(dataStoreSelection, tenantKey);
+        if (targetKey is null)
+        {
+            return false;
+        }
+
+        DocumentCacheTargetObservation? targetObservation = TryGetCurrentTarget(targetRegistry, targetKey);
+        if (requireEnqueueEnabled && (targetObservation is null || !IsEnqueueEnabled(targetObservation)))
+        {
+            return false;
+        }
+
+        context = new DocumentCacheEnqueueTelemetryContext(
+            targetKey,
+            targetObservation?.ProviderToken ?? ProviderTokenForDialect(dialect),
+            canonicalOperation,
+            resourceKind,
+            message
+        );
+        return true;
+    }
+
+    private static DocumentCacheTargetKey? TryCreateTelemetryTargetKey(
+        IDataStoreSelection? dataStoreSelection,
+        string tenantKey
+    )
+    {
+        if (dataStoreSelection?.IsSet != true)
+        {
+            return null;
+        }
+
+        long dataStoreId;
+        try
+        {
+            dataStoreId = dataStoreSelection.GetSelectedDataStore().Id;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+
+        return DocumentCacheTargetKey.TryCreate(
+            tenantKey,
+            dataStoreId,
+            out DocumentCacheTargetKey? targetKey,
+            out _
+        )
+            ? targetKey
+            : null;
+    }
+
+    private static DocumentCacheTargetObservation? TryGetCurrentTarget(
+        IDocumentCacheTargetRegistry? targetRegistry,
+        DocumentCacheTargetKey targetKey
+    ) =>
+        targetRegistry?.CurrentSnapshot.Targets.SingleOrDefault(target => target.TargetKey.Equals(targetKey));
+
+    private static bool IsEnqueueEnabled(DocumentCacheTargetObservation targetObservation) =>
+        targetObservation.EnqueueTrigger?.Status == DocumentCacheEnqueueTriggerStatus.Satisfied
+        && targetObservation.Lifecycle?.State
+            is DocumentCacheLifecycleState.Resetting
+                or DocumentCacheLifecycleState.Rebuilding
+                or DocumentCacheLifecycleState.Tracking;
+
+    private static RelationalProviderToken ProviderTokenForDialect(SqlDialect dialect) =>
+        dialect switch
+        {
+            SqlDialect.Pgsql => RelationalProviderToken.Postgresql,
+            SqlDialect.Mssql => RelationalProviderToken.SqlServer,
+            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported SQL dialect."),
+        };
 }
 
 internal sealed class DocumentCacheEnqueueTelemetry(

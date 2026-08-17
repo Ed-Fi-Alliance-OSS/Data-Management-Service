@@ -23,7 +23,8 @@ public sealed record DescriptorWriteRequest
         ReferentialId? referentialId,
         TraceId traceId,
         AuthorizationStrategyEvaluator[]? authorizationStrategyEvaluators = null,
-        RelationalAuthorizationContext? relationalAuthorizationContext = null
+        RelationalAuthorizationContext? relationalAuthorizationContext = null,
+        string tenantKey = ""
     )
     {
         MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
@@ -32,6 +33,7 @@ public sealed record DescriptorWriteRequest
         DocumentUuid = documentUuid;
         ReferentialId = referentialId;
         TraceId = traceId;
+        TenantKey = tenantKey ?? throw new ArgumentNullException(nameof(tenantKey));
         AuthorizationStrategyEvaluators = authorizationStrategyEvaluators ?? [];
         RelationalAuthorizationContext =
             relationalAuthorizationContext ?? new RelationalAuthorizationContext([]);
@@ -66,6 +68,12 @@ public sealed record DescriptorWriteRequest
     /// The request trace id for diagnostics.
     /// </summary>
     public TraceId TraceId { get; init; }
+
+    /// <summary>
+    /// The normalized request tenant key used for target-scoped write telemetry.
+    /// Empty string identifies the default/non-tenant target.
+    /// </summary>
+    public string TenantKey { get; init; }
 
     /// <summary>
     /// The effective POST/PUT authorization strategies already resolved by Core.

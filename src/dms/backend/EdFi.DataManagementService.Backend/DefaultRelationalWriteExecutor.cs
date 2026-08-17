@@ -639,19 +639,16 @@ internal sealed class DefaultRelationalWriteExecutor(
             return;
         }
 
-        if (
-            !TryCreateEnqueueTelemetryContext(
-                request,
-                "DocumentCache enqueue succeeded.",
-                requireEnqueueEnabled: true,
-                out var context
-            )
-        )
-        {
-            return;
-        }
-
-        _documentCacheEnqueueTelemetry.RecordSuccess(context!);
+        DocumentCacheEnqueueTelemetryWriteBoundary.RecordSuccessIfEnqueueEnabled(
+            _documentCacheEnqueueTelemetry,
+            _dataStoreSelection,
+            _documentCacheTargetRegistry,
+            request.TenantKey,
+            request.MappingSet.Key.Dialect,
+            ToCanonicalOperation(request),
+            DocumentCacheEnqueueTelemetryResourceKind.Resource,
+            "DocumentCache enqueue succeeded."
+        );
     }
 
     private void RecordEnqueueFailureIfClassified(
@@ -659,120 +656,18 @@ internal sealed class DefaultRelationalWriteExecutor(
         DbException exception
     )
     {
-        DocumentCacheTargetKey? targetKey = TryCreateTelemetryTargetKey(request);
-        if (targetKey is null)
-        {
-            return;
-        }
-
-        if (
-            !DocumentCacheEnqueueFailureClassifier.TryClassify(
-                exception,
-                writeExceptionClassifier,
-                out DocumentCacheEnqueueFailureCategory category,
-                out string message
-            )
-        )
-        {
-            return;
-        }
-
-        DocumentCacheTargetObservation? targetObservation = TryGetCurrentTarget(targetKey);
-        var context = new DocumentCacheEnqueueTelemetryContext(
-            targetKey,
-            targetObservation?.ProviderToken ?? ProviderTokenForDialect(request.MappingSet.Key.Dialect),
-            ToCanonicalOperation(request),
-            ToResourceKind(request),
-            message
-        );
-
-        _documentCacheEnqueueTelemetry.RecordFailure(context, category);
-    }
-
-    private bool TryCreateEnqueueTelemetryContext(
-        RelationalWriteExecutorRequest request,
-        string message,
-        bool requireEnqueueEnabled,
-        out DocumentCacheEnqueueTelemetryContext? context
-    )
-    {
-        context = null;
-
-        DocumentCacheTargetKey? targetKey = TryCreateTelemetryTargetKey(request);
-        if (targetKey is null)
-        {
-            return false;
-        }
-
-        DocumentCacheTargetObservation? targetObservation = TryGetCurrentTarget(targetKey);
-        if (requireEnqueueEnabled && (targetObservation is null || !IsEnqueueEnabled(targetObservation)))
-        {
-            return false;
-        }
-
-        context = new DocumentCacheEnqueueTelemetryContext(
-            targetKey,
-            targetObservation?.ProviderToken ?? ProviderTokenForDialect(request.MappingSet.Key.Dialect),
-            ToCanonicalOperation(request),
-            ToResourceKind(request),
-            message
-        );
-        return true;
-    }
-
-    private DocumentCacheTargetKey? TryCreateTelemetryTargetKey(RelationalWriteExecutorRequest request)
-    {
-        if (_dataStoreSelection?.IsSet != true)
-        {
-            return null;
-        }
-
-        long dataStoreId;
-        try
-        {
-            dataStoreId = _dataStoreSelection.GetSelectedDataStore().Id;
-        }
-        catch (InvalidOperationException)
-        {
-            return null;
-        }
-
-        return DocumentCacheTargetKey.TryCreate(
+        DocumentCacheEnqueueTelemetryWriteBoundary.RecordFailureIfClassified(
+            _documentCacheEnqueueTelemetry,
+            writeExceptionClassifier,
+            _dataStoreSelection,
+            _documentCacheTargetRegistry,
             request.TenantKey,
-            dataStoreId,
-            out DocumentCacheTargetKey? targetKey,
-            out _
-        )
-            ? targetKey
-            : null;
-    }
-
-    private DocumentCacheTargetObservation? TryGetCurrentTarget(DocumentCacheTargetKey targetKey)
-    {
-        if (_documentCacheTargetRegistry is null)
-        {
-            return null;
-        }
-
-        return _documentCacheTargetRegistry.CurrentSnapshot.Targets.SingleOrDefault(target =>
-            target.TargetKey.Equals(targetKey)
+            request.MappingSet.Key.Dialect,
+            ToCanonicalOperation(request),
+            DocumentCacheEnqueueTelemetryResourceKind.Resource,
+            exception
         );
     }
-
-    private static bool IsEnqueueEnabled(DocumentCacheTargetObservation targetObservation) =>
-        targetObservation.EnqueueTrigger?.Status == DocumentCacheEnqueueTriggerStatus.Satisfied
-        && targetObservation.Lifecycle?.State
-            is DocumentCacheLifecycleState.Resetting
-                or DocumentCacheLifecycleState.Rebuilding
-                or DocumentCacheLifecycleState.Tracking;
-
-    private static RelationalProviderToken ProviderTokenForDialect(SqlDialect dialect) =>
-        dialect switch
-        {
-            SqlDialect.Pgsql => RelationalProviderToken.Postgresql,
-            SqlDialect.Mssql => RelationalProviderToken.SqlServer,
-            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported SQL dialect."),
-        };
 
     private static DocumentCacheEnqueueTelemetryCanonicalOperation ToCanonicalOperation(
         RelationalWriteExecutorRequest request
@@ -784,11 +679,4 @@ internal sealed class DefaultRelationalWriteExecutor(
                 DocumentCacheEnqueueTelemetryCanonicalOperation.Insert,
             _ => DocumentCacheEnqueueTelemetryCanonicalOperation.Update,
         };
-
-    private static DocumentCacheEnqueueTelemetryResourceKind ToResourceKind(
-        RelationalWriteExecutorRequest request
-    ) =>
-        request.WritePlan.Model.Resource.ResourceName.EndsWith("Descriptor", StringComparison.Ordinal)
-            ? DocumentCacheEnqueueTelemetryResourceKind.Descriptor
-            : DocumentCacheEnqueueTelemetryResourceKind.Resource;
 }
