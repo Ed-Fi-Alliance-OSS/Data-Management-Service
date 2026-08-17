@@ -87,11 +87,61 @@ public class Given_CdcConnectorTemplateContracts
         request.PublicTopicName.Should().Be("edfi.documents");
         request.ProgressTopicName.Should().Be("edfi.documents.cdc-progress");
         request.SchemaHistoryTopicName.Should().BeNull();
+        request
+            .PartitionerAlgorithm.Should()
+            .Be(CdcConnectorTemplateBindingIdentity.KafkaMurmur2V1PartitionerAlgorithm);
         request.DeploymentPolicy.Should().BeSameAs(policy);
         request.ProviderConnectionProperties.Should().BeSameAs(providerConnectionProperties);
         request.KafkaClientSecurityProperties.Should().BeSameAs(kafkaSecurityProperties);
         request.ArtifactOutput.Should().BeSameAs(artifactOutput);
         artifactOutput.IncludeRedactedArtifactPayload.Should().BeTrue();
+    }
+
+    [Test]
+    public void It_requires_the_binding_partitioner_algorithm_contract_token()
+    {
+        Action missingPartitionerAlgorithm = () =>
+            new CdcConnectorTemplateBindingIdentity(
+                CdcProvider.Postgresql,
+                new CdcSafeName("dms_binding_connector"),
+                "edfi.documents",
+                bindingGeneration: 7,
+                partitionerAlgorithm: null!,
+                SourceFingerprint
+            );
+        Action emptyPartitionerAlgorithm = () =>
+            new CdcConnectorTemplateBindingIdentity(
+                CdcProvider.Postgresql,
+                new CdcSafeName("dms_binding_connector"),
+                "edfi.documents",
+                bindingGeneration: 7,
+                partitionerAlgorithm: "",
+                SourceFingerprint
+            );
+        Action unsupportedPartitionerAlgorithm = () =>
+            new CdcConnectorTemplateBindingIdentity(
+                CdcProvider.Postgresql,
+                new CdcSafeName("dms_binding_connector"),
+                "edfi.documents",
+                bindingGeneration: 7,
+                partitionerAlgorithm: "round-robin",
+                SourceFingerprint
+            );
+
+        using var _ = new AssertionScope();
+        missingPartitionerAlgorithm
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("partitionerAlgorithm");
+        emptyPartitionerAlgorithm
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("partitionerAlgorithm");
+        unsupportedPartitionerAlgorithm
+            .Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*kafka-murmur2-v1*")
+            .WithParameterName("partitionerAlgorithm");
     }
 
     [Test]
@@ -172,6 +222,7 @@ public class Given_CdcConnectorTemplateContracts
             "connectorConfigJson",
             "tenantDisplayName",
             "connectionString",
+            "partitionerClass",
             "progressTopicName",
             "schemaHistoryTopicName",
         ];
@@ -327,6 +378,7 @@ public class Given_CdcConnectorTemplateContracts
             new CdcSafeName("dms_binding_connector"),
             "edfi.documents",
             bindingGeneration: 7,
+            partitionerAlgorithm: "kafka-murmur2-v1",
             SourceFingerprint
         );
 
