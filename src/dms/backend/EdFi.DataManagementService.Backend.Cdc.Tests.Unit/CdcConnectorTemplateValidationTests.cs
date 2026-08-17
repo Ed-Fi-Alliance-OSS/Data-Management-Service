@@ -451,6 +451,158 @@ public class Given_CdcConnectorTemplateInputValidation
     }
 
     [Test]
+    public void It_rejects_sqlserver_capture_instance_artifact_inventory_drift_during_public_request_validation()
+    {
+        CdcConnectorTemplateValidationResult emptyInventory = Validate(
+            BuildRequest(CdcProvider.SqlServer, artifactInventory: [])
+        );
+        CdcConnectorTemplateValidationResult missingDocument = Validate(
+            BuildRequest(
+                CdcProvider.SqlServer,
+                artifactInventory:
+                [
+                    BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
+                    BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.CdcHeartbeat),
+                ]
+            )
+        );
+        CdcConnectorTemplateValidationResult duplicateDocument = Validate(
+            BuildRequest(
+                CdcProvider.SqlServer,
+                artifactInventory:
+                [
+                    BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
+                    BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.Document),
+                    BuildSqlServerCaptureInstanceArtifact(
+                        CdcSourceTableKind.Document,
+                        safeArtifactName: new CdcSafeName("dms_binding_document_duplicate_capture")
+                    ),
+                    BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.CdcHeartbeat),
+                ]
+            )
+        );
+        CdcConnectorTemplateValidationResult mismatchedDocument = Validate(
+            BuildRequest(
+                CdcProvider.SqlServer,
+                artifactInventory:
+                [
+                    BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
+                    BuildSqlServerCaptureInstanceArtifact(
+                        CdcSourceTableKind.Document,
+                        CdcProviderArtifactState.Mismatched
+                    ),
+                    BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.CdcHeartbeat),
+                ]
+            )
+        );
+        CdcConnectorTemplateValidationResult unavailableHeartbeat = Validate(
+            BuildRequest(
+                CdcProvider.SqlServer,
+                artifactInventory:
+                [
+                    BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
+                    BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.Document),
+                    BuildSqlServerCaptureInstanceArtifact(
+                        CdcSourceTableKind.CdcHeartbeat,
+                        CdcProviderArtifactState.Unavailable
+                    ),
+                ]
+            )
+        );
+        CdcConnectorTemplateValidationResult extraCaptureInstance = Validate(
+            BuildRequest(
+                CdcProvider.SqlServer,
+                artifactInventory:
+                [
+                    .. BuildSqlServerArtifactInventory(),
+                    BuildSqlServerCaptureInstanceArtifact(
+                        CdcSourceTableKind.Document,
+                        CdcProviderArtifactState.Mismatched,
+                        new CdcSafeName("dms_binding_projection_work_capture"),
+                        new Dictionary<string, string> { ["source_table_kind"] = "document_projection_work" }
+                    ),
+                ]
+            )
+        );
+
+        using var _ = new AssertionScope();
+        emptyInventory.IsValid.Should().BeFalse();
+        emptyInventory
+            .Diagnostics.Where(diagnostic =>
+                diagnostic.Code
+                == CdcConnectorTemplateDiagnosticCodes.SqlServerCaptureInstanceMetadataRequired
+            )
+            .Should()
+            .HaveCount(3)
+            .And.OnlyContain(diagnostic =>
+                diagnostic.ObservedValue == "missing"
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.RequestValidation
+            );
+        missingDocument
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code
+                    == CdcConnectorTemplateDiagnosticCodes.SqlServerCaptureInstanceMetadataRequired
+                && diagnostic.ExpectedValue
+                    == "one usable SQL Server capture-instance artifact for dms.Document"
+                && diagnostic.ObservedValue == "missing"
+            );
+        duplicateDocument
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code
+                    == CdcConnectorTemplateDiagnosticCodes.SqlServerCaptureInstanceMetadataRequired
+                && diagnostic.ExpectedValue
+                    == "one usable SQL Server capture-instance artifact for dms.Document"
+                && diagnostic.ObservedValue == "2"
+            );
+        mismatchedDocument
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code
+                    == CdcConnectorTemplateDiagnosticCodes.SqlServerCaptureInstanceMetadataRequired
+                && diagnostic.ExpectedValue
+                    == "one usable SQL Server capture-instance artifact for dms.Document"
+                && diagnostic.ObservedValue == "Mismatched"
+            );
+        unavailableHeartbeat
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code
+                    == CdcConnectorTemplateDiagnosticCodes.SqlServerCaptureInstanceMetadataRequired
+                && diagnostic.ExpectedValue
+                    == "one usable SQL Server capture-instance artifact for dms.CdcHeartbeat"
+                && diagnostic.ObservedValue == "Unavailable"
+            );
+        extraCaptureInstance
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code
+                    == CdcConnectorTemplateDiagnosticCodes.SqlServerCaptureInstanceMetadataRequired
+                && diagnostic.ExpectedValue
+                    == "only SQL Server capture-instance artifacts for dms.DocumentCache, dms.Document, and dms.CdcHeartbeat"
+                && diagnostic.ObservedValue == "1"
+            );
+        new[]
+        {
+            missingDocument,
+            duplicateDocument,
+            mismatchedDocument,
+            unavailableHeartbeat,
+            extraCaptureInstance,
+        }
+            .SelectMany(result => result.Diagnostics)
+            .Should()
+            .OnlyContain(diagnostic =>
+                diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult
+                && diagnostic.PropertyName == "providerSetup.artifactInventory.sqlServerCaptureInstance"
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            );
+    }
+
+    [Test]
     public void It_rejects_sqlserver_poll_interval_greater_than_heartbeat_during_public_request_validation()
     {
         CdcConnectorTemplateValidationResult result = Validate(

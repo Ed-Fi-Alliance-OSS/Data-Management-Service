@@ -243,25 +243,66 @@ internal static class CdcConnectorTemplateTestData
 
     public static IReadOnlyList<CdcProviderArtifactObservation> BuildSqlServerArtifactInventory() =>
         [
-            new(
-                CdcProviderArtifactKind.SqlServerCaptureInstance,
-                new CdcSafeName("dms_binding_document_cache_capture"),
-                CdcProviderArtifactState.Matched,
-                new Dictionary<string, string>()
-            ),
-            new(
-                CdcProviderArtifactKind.SqlServerCaptureInstance,
-                new CdcSafeName("dms_binding_document_capture"),
-                CdcProviderArtifactState.Matched,
-                new Dictionary<string, string>()
-            ),
-            new(
-                CdcProviderArtifactKind.SqlServerCaptureInstance,
-                new CdcSafeName("dms_binding_cdc_heartbeat_capture"),
-                CdcProviderArtifactState.Matched,
-                new Dictionary<string, string>()
-            ),
+            BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
+            BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.Document),
+            BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.CdcHeartbeat),
         ];
+
+    public static CdcProviderArtifactObservation BuildSqlServerCaptureInstanceArtifact(
+        CdcSourceTableKind tableKind,
+        CdcProviderArtifactState state = CdcProviderArtifactState.Matched,
+        CdcSafeName? safeArtifactName = null,
+        IReadOnlyDictionary<string, string>? safeObservedValues = null
+    )
+    {
+        CdcSafeName artifactName = safeArtifactName ?? DefaultSqlServerCaptureInstanceName(tableKind);
+        var observedValues = new Dictionary<string, string>
+        {
+            ["capture_instance"] = artifactName.Value,
+            ["source_table_kind"] = SqlServerCaptureInstanceSourceTableKindToken(tableKind),
+        };
+
+        if (safeObservedValues is not null)
+        {
+            foreach (var value in safeObservedValues)
+            {
+                observedValues[value.Key] = value.Value;
+            }
+        }
+
+        return new CdcProviderArtifactObservation(
+            CdcProviderArtifactKind.SqlServerCaptureInstance,
+            artifactName,
+            state,
+            observedValues
+        );
+    }
+
+    private static CdcSafeName DefaultSqlServerCaptureInstanceName(CdcSourceTableKind tableKind) =>
+        tableKind switch
+        {
+            CdcSourceTableKind.DocumentCache => new CdcSafeName("dms_binding_document_cache_capture"),
+            CdcSourceTableKind.Document => new CdcSafeName("dms_binding_document_capture"),
+            CdcSourceTableKind.CdcHeartbeat => new CdcSafeName("dms_binding_cdc_heartbeat_capture"),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(tableKind),
+                tableKind,
+                "Unsupported CDC source table kind."
+            ),
+        };
+
+    private static string SqlServerCaptureInstanceSourceTableKindToken(CdcSourceTableKind tableKind) =>
+        tableKind switch
+        {
+            CdcSourceTableKind.DocumentCache => "document_cache",
+            CdcSourceTableKind.Document => "document",
+            CdcSourceTableKind.CdcHeartbeat => "cdc_heartbeat",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(tableKind),
+                tableKind,
+                "Unsupported CDC source table kind."
+            ),
+        };
 
     public static IReadOnlyList<CdcProviderHistoryObservation> BuildProviderHistoryObservations(
         CdcProvider provider

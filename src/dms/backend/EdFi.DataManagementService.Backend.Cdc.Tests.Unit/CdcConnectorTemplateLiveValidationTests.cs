@@ -336,6 +336,84 @@ public class Given_CdcConnectorTemplateLiveValidation
     }
 
     [Test]
+    public void It_uses_sqlserver_capture_instance_prerequisites_for_preflight_and_live_read_back()
+    {
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(CdcProvider.SqlServer);
+        CdcConnectorTemplateResult rendered = service.Render(request);
+        CdcConnectorProviderSetupEvidence badProviderSetupEvidence = new(
+            bindingGeneration: 7,
+            BuildProviderSetupResult(
+                CdcProvider.SqlServer,
+                artifactInventory:
+                [
+                    BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
+                    BuildSqlServerCaptureInstanceArtifact(
+                        CdcSourceTableKind.Document,
+                        CdcProviderArtifactState.Unavailable
+                    ),
+                    BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.CdcHeartbeat),
+                ]
+            )
+        );
+
+        CdcConnectorTemplateResult preflightResult = service.ValidateRegistrationPreflight(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                badProviderSetupEvidence
+            )
+        );
+        CdcConnectorTemplateResult liveReadBackResult = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                badProviderSetupEvidence,
+                new CdcConnectorTemplateSourcePartitionEvidence(
+                    new Dictionary<string, string>
+                    {
+                        ["server"] = "dms_binding_connector",
+                        ["database"] = "edfi_datastore",
+                    }
+                )
+            )
+        );
+
+        using var _ = new AssertionScope();
+        rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        preflightResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        liveReadBackResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        preflightResult.Config.Should().BeEmpty();
+        liveReadBackResult.Config.Should().BeEmpty();
+        preflightResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code
+                    == CdcConnectorTemplateDiagnosticCodes.SqlServerCaptureInstanceMetadataRequired
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult
+                && diagnostic.PropertyName == "providerSetup.artifactInventory.sqlServerCaptureInstance"
+                && diagnostic.ExpectedValue
+                    == "one usable SQL Server capture-instance artifact for dms.Document"
+                && diagnostic.ObservedValue == "Unavailable"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.RegistrationPreflight
+            );
+        liveReadBackResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code
+                    == CdcConnectorTemplateDiagnosticCodes.SqlServerCaptureInstanceMetadataRequired
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult
+                && diagnostic.PropertyName == "providerSetup.artifactInventory.sqlServerCaptureInstance"
+                && diagnostic.ExpectedValue
+                    == "one usable SQL Server capture-instance artifact for dms.Document"
+                && diagnostic.ObservedValue == "Unavailable"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack
+            );
+    }
+
+    [Test]
     public void It_rejects_source_partition_shape_drift_without_leaking_sqlserver_database_names()
     {
         using ServiceProvider serviceProvider = BuildServiceProvider();

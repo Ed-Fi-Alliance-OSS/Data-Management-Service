@@ -1532,19 +1532,31 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
                     CdcProviderArtifactKind.SqlServerCaptureInstance,
                     new CdcSafeName("dms_binding_document_cache_capture"),
                     CdcProviderArtifactState.Matched,
-                    new Dictionary<string, string>()
+                    new Dictionary<string, string>
+                    {
+                        ["capture_instance"] = "dms_binding_document_cache_capture",
+                        ["source_table_kind"] = "document_cache",
+                    }
                 ),
                 new(
                     CdcProviderArtifactKind.SqlServerCaptureInstance,
                     new CdcSafeName("dms_binding_document_capture"),
                     CdcProviderArtifactState.Matched,
-                    new Dictionary<string, string>()
+                    new Dictionary<string, string>
+                    {
+                        ["capture_instance"] = "dms_binding_document_capture",
+                        ["source_table_kind"] = "document",
+                    }
                 ),
                 new(
                     CdcProviderArtifactKind.SqlServerCaptureInstance,
                     new CdcSafeName("dms_binding_cdc_heartbeat_capture"),
                     CdcProviderArtifactState.Matched,
-                    new Dictionary<string, string>()
+                    new Dictionary<string, string>
+                    {
+                        ["capture_instance"] = "dms_binding_cdc_heartbeat_capture",
+                        ["source_table_kind"] = "cdc_heartbeat",
+                    }
                 ),
             ],
             _ => throw new ArgumentOutOfRangeException(
