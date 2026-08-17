@@ -47,3 +47,9 @@
 - Added MSSQL integration evidence for lifecycle states, latch, empty/nonempty queue, missing state, cancellation, provider timeout, provider failure, and index/no-scan plan.
 - Files changed: MssqlDocumentCacheStatusCurrentSourceObserver.cs, MssqlReferenceResolverServiceCollectionExtensions.cs, DocumentCacheStatusCurrentSourceObservationTests.cs, DocumentCacheServiceRegistrationTests.cs, MssqlDocumentCacheStatusCurrentSourceObserverTests.cs, tasks.json.
 - Verified: backend unit --filter FullyQualifiedName~DocumentCacheStatus|Category=DocumentCacheServiceRegistration; MSSQL integration --filter FullyQualifiedName~DocumentCacheStatus with dms-mssql-integration-2025 on localhost,14333.
+
+2026-08-17 - Completed Endpoint and Authorization route mapping for reference/design/backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md
+- Mapped GET /health/document-cache from HealthCheckEndpointModule only when Status:RequiredRole passes endpoint-mapping validation; route delegates to IDocumentCacheStatusService and is excluded from description metadata.
+- Kept existing /health anonymous/independent and did not register DocumentCache status as IHealthCheck. Exact JWT role enforcement remains next endpoint/auth task.
+- Files changed: HealthCheckEndpointModule.cs, HealthCheckEndpointModuleTests.cs, tasks.json, progress.txt.
+- Verified: frontend --filter FullyQualifiedName~HealthCheckEndpointModule; frontend --filter FullyQualifiedName~OpenApi; integration --filter FullyQualifiedName~DocumentCacheStatusEndpoint (build OK, no matching tests).

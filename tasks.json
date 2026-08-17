@@ -141,7 +141,7 @@
       "Run dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter FullyQualifiedName~OpenApi",
       "Run dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheStatusEndpoint"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Endpoint and Authorization",
