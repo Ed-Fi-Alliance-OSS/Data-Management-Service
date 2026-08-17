@@ -80,6 +80,10 @@ public sealed class CdcConnectorTemplateValidationException : Exception
 
 public static class CdcConnectorTemplateDiagnosticCodes
 {
+    public const string ProviderSetupResultNotReady = "CDC_TEMPLATE_PROVIDER_SETUP_RESULT_NOT_READY";
+    public const string SourceFingerprintEvidenceRequired =
+        "CDC_TEMPLATE_SOURCE_FINGERPRINT_EVIDENCE_REQUIRED";
+    public const string HeartbeatActionQueryRequired = "CDC_TEMPLATE_HEARTBEAT_ACTION_QUERY_REQUIRED";
     public const string ReservedKey = "CDC_TEMPLATE_RESERVED_KEY";
     public const string ConnectionPropertyRequired = "CDC_TEMPLATE_CONNECTION_PROPERTY_REQUIRED";
     public const string ConnectionPropertyNotAllowed = "CDC_TEMPLATE_CONNECTION_PROPERTY_NOT_ALLOWED";
