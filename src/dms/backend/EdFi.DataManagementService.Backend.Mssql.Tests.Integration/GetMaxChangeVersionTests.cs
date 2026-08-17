@@ -64,11 +64,9 @@ public class Given_Fresh_ChangeVersionSequence : GetMaxChangeVersionTestBase
     }
 
     [Test]
-    public void It_should_return_start_value_one()
+    public void It_should_return_zero_before_any_change_version_has_been_allocated()
     {
-        // Per Microsoft sys.sequences docs, current_value returns START WITH
-        // if the sequence has never been used.
-        Result.Should().Be(1L);
+        Result.Should().Be(0L);
     }
 }
 

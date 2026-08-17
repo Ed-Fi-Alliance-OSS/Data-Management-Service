@@ -1394,7 +1394,8 @@ public class Given_MssqlDialect_Emitting_GetMaxChangeVersion_Function
     [Test]
     public void It_should_convert_current_value_to_bigint()
     {
-        _ddl.Should().Contain("CONVERT(bigint, seq.current_value)");
+        _ddl.Should().Contain("WHEN seq.last_used_value IS NULL THEN seq.current_value - 1");
+        _ddl.Should().Contain("ELSE seq.last_used_value");
     }
 
     [Test]
