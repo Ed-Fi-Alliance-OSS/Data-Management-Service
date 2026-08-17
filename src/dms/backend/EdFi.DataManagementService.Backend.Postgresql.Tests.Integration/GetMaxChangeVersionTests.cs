@@ -62,11 +62,9 @@ public class Given_Fresh_ChangeVersionSequence : GetMaxChangeVersionTestBase
     }
 
     [Test]
-    public void It_should_return_start_value_one()
+    public void It_should_return_zero_before_any_change_version_has_been_allocated()
     {
-        // PG last_value on a sequence with is_called=false returns START WITH.
-        // dms.ChangeVersionSequence is created with START WITH 1.
-        Result.Should().Be(1L);
+        Result.Should().Be(0L);
     }
 }
 
