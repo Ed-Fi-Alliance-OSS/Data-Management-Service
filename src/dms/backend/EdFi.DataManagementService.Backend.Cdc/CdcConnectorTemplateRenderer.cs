@@ -169,7 +169,7 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
         config["slot.name"] = replicationSlot.SafeArtifactName.Value;
         config["table.include.list"] = string.Join(
             ",",
-            OrderedSourceTables(request).Select(table => table.EmittedQuotedTableName)
+            OrderedSourceTables(request).Select(DebeziumTableSelector)
         );
         config["message.key.columns"] = string.Join(
             ";",
@@ -177,7 +177,7 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
                 .Select(messageKeyColumns =>
                 {
                     CdcSourceTableInventory table = SourceTable(request, messageKeyColumns.TableKind);
-                    return $"{table.EmittedQuotedTableName}:{EmittedKeyColumnList(table, messageKeyColumns)}";
+                    return $"{DebeziumTableSelector(table)}:{DebeziumKeyColumnList(table, messageKeyColumns)}";
                 })
         );
         config["unavailable.value.placeholder"] = "__debezium_unavailable_value";
@@ -190,7 +190,7 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
     {
         config["table.include.list"] = string.Join(
             ",",
-            OrderedSourceTables(request).Select(table => table.EmittedQuotedTableName)
+            OrderedSourceTables(request).Select(DebeziumTableSelector)
         );
         config["message.key.columns"] = string.Join(
             ";",
@@ -198,7 +198,7 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
                 .Select(messageKeyColumns =>
                 {
                     CdcSourceTableInventory table = SourceTable(request, messageKeyColumns.TableKind);
-                    return $"{table.EmittedQuotedTableName}:{EmittedKeyColumnList(table, messageKeyColumns)}";
+                    return $"{DebeziumTableSelector(table)}:{DebeziumKeyColumnList(table, messageKeyColumns)}";
                 })
         );
         config["time.precision.mode"] = "isostring";
@@ -404,7 +404,10 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
             columns.TableKind == tableKind
         );
 
-    private static string EmittedKeyColumnList(
+    private static string DebeziumTableSelector(CdcSourceTableInventory table) =>
+        $"{EscapeDebeziumRegexIdentifier(table.TableName.Schema.Value)}.{EscapeDebeziumRegexIdentifier(table.TableName.Name)}";
+
+    private static string DebeziumKeyColumnList(
         CdcSourceTableInventory table,
         CdcExpectedMessageKeyColumns messageKeyColumns
     )
@@ -417,10 +420,44 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
         return string.Join(
             ",",
             messageKeyColumns.KeyColumns.Select(column =>
-                emittedColumnsByName[column.Value].EmittedQuotedColumnName
+                EscapeDebeziumRegexIdentifier(emittedColumnsByName[column.Value].ColumnName.Value)
             )
         );
     }
+
+    private static string EscapeDebeziumRegexIdentifier(string identifier)
+    {
+        var escapedIdentifier = new StringBuilder(identifier.Length);
+
+        foreach (char character in identifier)
+        {
+            if (IsJavaRegexMetacharacter(character))
+            {
+                escapedIdentifier.Append('\\');
+            }
+
+            escapedIdentifier.Append(character);
+        }
+
+        return escapedIdentifier.ToString();
+    }
+
+    private static bool IsJavaRegexMetacharacter(char character) =>
+        character
+            is '\\'
+                or '.'
+                or '^'
+                or '$'
+                or '|'
+                or '?'
+                or '*'
+                or '+'
+                or '('
+                or ')'
+                or '['
+                or ']'
+                or '{'
+                or '}';
 
     private static DbTableName ExpectedSourceTableName(CdcSourceTableKind tableKind) =>
         tableKind switch

@@ -39,16 +39,10 @@ public class Given_CdcConnectorTemplatePostgresqlRendering
         result.Config.Should().Contain("slot.name", "dms_binding_slot");
         result
             .Config.Should()
-            .Contain(
-                "table.include.list",
-                "\"dms\".\"DocumentCache\",\"dms\".\"Document\",\"dms\".\"CdcHeartbeat\""
-            );
+            .Contain("table.include.list", "dms.DocumentCache,dms.Document,dms.CdcHeartbeat");
         result
             .Config.Should()
-            .Contain(
-                "message.key.columns",
-                "\"dms\".\"DocumentCache\":\"DocumentUuid\";\"dms\".\"Document\":\"DocumentUuid\""
-            );
+            .Contain("message.key.columns", "dms.DocumentCache:DocumentUuid;dms.Document:DocumentUuid");
         result.Config.Should().Contain("unavailable.value.placeholder", "__debezium_unavailable_value");
         result.Config.Should().NotContainKey("slot.drop.on.stop");
         result.Config.Should().NotContainKey("topic.creation.default.replication.factor");
@@ -58,9 +52,17 @@ public class Given_CdcConnectorTemplatePostgresqlRendering
             .Should()
             .NotContain("DocumentProjectionWork", because: "work-table capture is outside the contract");
         result
+            .Config["table.include.list"]
+            .Should()
+            .NotContain("\"", because: "Debezium selectors are not SQL quoted identifiers");
+        result
             .Config["message.key.columns"]
             .Should()
             .NotContain("CdcHeartbeat", because: "heartbeat rows use the transform progress key");
+        result
+            .Config["message.key.columns"]
+            .Should()
+            .NotContain("\"", because: "Debezium selectors are not SQL quoted identifiers");
     }
 
     [Test]
@@ -96,14 +98,11 @@ public class Given_CdcConnectorTemplatePostgresqlRendering
 
         using var _ = new AssertionScope();
         result.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
-        result
-            .Config["table.include.list"]
-            .Should()
-            .Be("\"dms\".\"DocumentCache\",\"dms\".\"Document\",\"dms\".\"CdcHeartbeat\"");
+        result.Config["table.include.list"].Should().Be("dms.DocumentCache,dms.Document,dms.CdcHeartbeat");
         result
             .Config["message.key.columns"]
             .Should()
-            .Be("\"dms\".\"DocumentCache\":\"DocumentUuid\";\"dms\".\"Document\":\"DocumentUuid\"");
+            .Be("dms.DocumentCache:DocumentUuid;dms.Document:DocumentUuid");
     }
 
     [Test]
@@ -193,8 +192,7 @@ public class Given_CdcConnectorTemplatePostgresqlRendering
                     ["database.dbname"] = "edfi_datastore",
                     ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
                     ["publication.name"] = "dms_binding_publication",
-                    ["table.include.list"] =
-                        "\"dms\".\"DocumentCache\",\"dms\".\"Document\",\"dms\".\"CdcHeartbeat\"",
+                    ["table.include.list"] = "dms.DocumentCache,dms.Document,dms.CdcHeartbeat",
                 }
             )
         );

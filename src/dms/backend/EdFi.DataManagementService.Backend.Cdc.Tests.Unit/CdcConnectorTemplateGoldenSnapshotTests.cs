@@ -43,7 +43,7 @@ public class Given_CdcConnectorTemplateGoldenSnapshots
                 heartbeat.action.query=select 1
                 heartbeat.interval.ms=5000
                 key.converter=org.apache.kafka.connect.storage.StringConverter
-                message.key.columns="dms"."DocumentCache":"DocumentUuid";"dms"."Document":"DocumentUuid"
+                message.key.columns=dms.DocumentCache:DocumentUuid;dms.Document:DocumentUuid
                 name=dms_binding_connector
                 plugin.name=pgoutput
                 producer.override.acks=all
@@ -61,7 +61,7 @@ public class Given_CdcConnectorTemplateGoldenSnapshots
                 slot.name=dms_binding_slot
                 snapshot.mode=initial
                 statistics.metrics.enabled=true
-                table.include.list="dms"."DocumentCache","dms"."Document","dms"."CdcHeartbeat"
+                table.include.list=dms.DocumentCache,dms.Document,dms.CdcHeartbeat
                 tasks.max=1
                 tombstones.on.delete=false
                 topic.delimiter=.
@@ -110,7 +110,7 @@ public class Given_CdcConnectorTemplateGoldenSnapshots
                 heartbeat.interval.ms=5000
                 include.schema.changes=false
                 key.converter=org.apache.kafka.connect.storage.StringConverter
-                message.key.columns=[dms].[DocumentCache]:[DocumentUuid];[dms].[Document]:[DocumentUuid]
+                message.key.columns=dms.DocumentCache:DocumentUuid;dms.Document:DocumentUuid
                 name=dms_binding_connector
                 poll.interval.ms=2000
                 producer.override.acks=all
@@ -135,7 +135,7 @@ public class Given_CdcConnectorTemplateGoldenSnapshots
                 schema.history.internal.producer.security.protocol=SASL_SSL
                 snapshot.mode=initial
                 statistics.metrics.enabled=true
-                table.include.list=[dms].[DocumentCache],[dms].[Document],[dms].[CdcHeartbeat]
+                table.include.list=dms.DocumentCache,dms.Document,dms.CdcHeartbeat
                 tasks.max=1
                 time.precision.mode=isostring
                 tombstones.on.delete=false
