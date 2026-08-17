@@ -692,6 +692,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
         if (
             propertyName.StartsWith("database.", StringComparison.Ordinal)
             || propertyName.StartsWith("driver.", StringComparison.Ordinal)
+            || CdcConnectorTemplateInputValidator.IsKafkaSecurityMaterialRenderedProperty(propertyName)
             || propertyName
                 is "table.include.list"
                     or "message.key.columns"

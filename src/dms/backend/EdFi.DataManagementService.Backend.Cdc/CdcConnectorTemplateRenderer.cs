@@ -444,20 +444,7 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
         || propertyName == "heartbeat.action.query"
         || propertyName == "schema.history.internal.kafka.bootstrap.servers"
         || CdcConnectorTemplateInputValidator.IsSecretBearingRenderedProperty(propertyName)
-        || IsKafkaSecurityMaterialReference(propertyName);
-
-    private static bool IsKafkaSecurityMaterialReference(string propertyName)
-    {
-        string? suffix = CdcConnectorTemplateInputValidator.GeneratedKafkaSecurityPropertySuffix(
-            propertyName
-        );
-
-        return suffix
-            is "ssl.truststore.location"
-                or "ssl.truststore.certificates"
-                or "ssl.keystore.location"
-                or "ssl.keystore.certificate.chain";
-    }
+        || CdcConnectorTemplateInputValidator.IsKafkaSecurityMaterialRenderedProperty(propertyName);
 
     private static void WriteStringMap(Utf8JsonWriter writer, IReadOnlyDictionary<string, string> properties)
     {
