@@ -298,12 +298,7 @@ public sealed class PgsqlDialect : SqlDialectBase
             DECLARE
                 result bigint;
             BEGIN
-                SELECT CASE
-                    WHEN is_called THEN last_value
-                    ELSE last_value - 1
-                END
-                FROM {quotedSequence}
-                INTO result;
+                SELECT last_value FROM {quotedSequence} INTO result;
                 RETURN result;
             END
             $GetMaxChangeVersion$ LANGUAGE plpgsql;
