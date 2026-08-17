@@ -185,6 +185,29 @@ public class Given_CdcConnectorTemplateCommonRendering
         result.Config.Should().Contain("producer.override.security.protocol", "SSL");
     }
 
+    [TestCaseSource(nameof(ProducerBufferMemoryCases))]
+    public void It_renders_producer_buffer_memory_from_policy_without_dropping_below_max_record_bytes(
+        int maxRecordBytes,
+        int? producerBufferBytes,
+        string expectedBufferMemory
+    )
+    {
+        CdcConnectorTemplateResult result = Render(
+            BuildRequest(
+                CdcProvider.Postgresql,
+                new CdcConnectorTemplateDeploymentPolicy("broker:9092", maxRecordBytes, producerBufferBytes)
+            )
+        );
+
+        using var _ = new AssertionScope();
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        result.Config.Should().Contain("producer.override.max.request.size", maxRecordBytes.ToString());
+        result.Config.Should().Contain("producer.override.buffer.memory", expectedBufferMemory);
+        int.Parse(result.Config["producer.override.buffer.memory"])
+            .Should()
+            .BeGreaterThanOrEqualTo(maxRecordBytes);
+    }
+
     [Test]
     public void It_returns_validation_diagnostics_without_rendering_when_reserved_inputs_are_supplied()
     {
@@ -270,6 +293,22 @@ public class Given_CdcConnectorTemplateCommonRendering
             serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
 
         return service.Render(request);
+    }
+
+    private static IEnumerable<TestCaseData> ProducerBufferMemoryCases()
+    {
+        yield return new TestCaseData(1_048_576, null, "33554432").SetName(
+            "Omitted producer buffer uses default floor"
+        );
+        yield return new TestCaseData(67_108_864, null, "67108864").SetName(
+            "Omitted producer buffer uses max record bytes above default floor"
+        );
+        yield return new TestCaseData(1_048_576, 1_048_576, "1048576").SetName(
+            "Explicit producer buffer equal to max record bytes is emitted"
+        );
+        yield return new TestCaseData(1_048_576, 67_108_864, "67108864").SetName(
+            "Explicit producer buffer above max record bytes is emitted"
+        );
     }
 
     private static CdcConnectorTemplateRequest BuildRequest(

@@ -178,10 +178,25 @@ public sealed record CdcConnectorTemplateDeploymentPolicy
             kafkaBootstrapServers,
             nameof(kafkaBootstrapServers)
         );
-        MaxRecordBytes = ValidatePositive(maxRecordBytes, nameof(maxRecordBytes));
-        ProducerBufferBytes = producerBufferBytes.HasValue
+        int validatedMaxRecordBytes = ValidatePositive(maxRecordBytes, nameof(maxRecordBytes));
+        int? validatedProducerBufferBytes = producerBufferBytes.HasValue
             ? ValidatePositive(producerBufferBytes.Value, nameof(producerBufferBytes))
             : null;
+
+        if (
+            validatedProducerBufferBytes.HasValue
+            && validatedProducerBufferBytes.Value < validatedMaxRecordBytes
+        )
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(producerBufferBytes),
+                validatedProducerBufferBytes.Value,
+                "CDC connector template producerBufferBytes must be greater than or equal to maxRecordBytes."
+            );
+        }
+
+        MaxRecordBytes = validatedMaxRecordBytes;
+        ProducerBufferBytes = validatedProducerBufferBytes;
         HeartbeatInterval = heartbeatInterval.HasValue
             ? ValidatePositive(heartbeatInterval.Value, nameof(heartbeatInterval))
             : null;
