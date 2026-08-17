@@ -148,6 +148,18 @@ public sealed record CdcConnectorProviderSetupEvidence
     {
         ArgumentNullException.ThrowIfNull(result);
 
+        CdcConnectorTemplateContractValidation.ValidateSourceFingerprint(
+            result.BoundPhysicalSourceFingerprint,
+            $"{nameof(result)}.{nameof(result.BoundPhysicalSourceFingerprint)}"
+        );
+        if (result.ObservedSourceFingerprint is not null)
+        {
+            CdcConnectorTemplateContractValidation.ValidateSourceFingerprint(
+                result.ObservedSourceFingerprint,
+                $"{nameof(result)}.{nameof(result.ObservedSourceFingerprint)}"
+            );
+        }
+
         BindingGeneration =
             bindingGeneration > 0
                 ? bindingGeneration
@@ -754,17 +766,52 @@ internal static class CdcConnectorTemplateContractValidation
         string parameterName
     )
     {
+        ArgumentNullException.ThrowIfNull(sourceFingerprint);
+
         ValidateRequiredSafeText(
             sourceFingerprint.Version,
             $"{parameterName}.{nameof(sourceFingerprint.Version)}"
         );
-        ValidateRequiredSafeText(
+        if (
+            !string.Equals(
+                sourceFingerprint.Version,
+                CdcSourceFingerprintMetadata.Version,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            throw new ArgumentException(
+                $"CDC source fingerprint version must be {CdcSourceFingerprintMetadata.Version}.",
+                parameterName
+            );
+        }
+
+        string value = ValidateRequiredSafeText(
             sourceFingerprint.Value,
             $"{parameterName}.{nameof(sourceFingerprint.Value)}"
         );
+        const string prefix = "sha256:";
+        if (!value.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "CDC source fingerprint value must use sha256 prefix.",
+                parameterName
+            );
+        }
+
+        string hash = value[prefix.Length..];
+        if (hash.Length != 64 || hash.Any(character => !IsLowerHex(character)))
+        {
+            throw new ArgumentException(
+                "CDC source fingerprint value must contain a lowercase SHA-256 value.",
+                parameterName
+            );
+        }
 
         return sourceFingerprint;
     }
+
+    private static bool IsLowerHex(char character) => character is >= '0' and <= '9' or >= 'a' and <= 'f';
 
     public static IReadOnlyDictionary<string, string> NormalizeStringProperties(
         IReadOnlyDictionary<string, string> properties,

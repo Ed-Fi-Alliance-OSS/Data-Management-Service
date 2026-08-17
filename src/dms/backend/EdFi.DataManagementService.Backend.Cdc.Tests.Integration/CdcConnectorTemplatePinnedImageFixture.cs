@@ -1467,7 +1467,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             "edfi.documents",
             bindingGeneration: 7,
             partitionerAlgorithm: "kafka-murmur2-v1",
-            CdcConnectorTemplatePinnedImageTestData.SourceFingerprint
+            CdcConnectorTemplatePinnedImageTestData.SourceFingerprint(provider)
         );
 
     private static CdcConnectorProviderSetupEvidence BuildProviderSetupEvidence(CdcProvider provider) =>
@@ -1478,8 +1478,10 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             Provider: provider,
             Mode: CdcProviderSetupMode.InitialCreateOrExactMatch,
             Outcome: CdcProviderSetupOutcome.CreatedOrMatched,
-            BoundPhysicalSourceFingerprint: CdcConnectorTemplatePinnedImageTestData.SourceFingerprint,
-            ObservedSourceFingerprint: CdcConnectorTemplatePinnedImageTestData.SourceFingerprint,
+            BoundPhysicalSourceFingerprint: CdcConnectorTemplatePinnedImageTestData.SourceFingerprint(
+                provider
+            ),
+            ObservedSourceFingerprint: CdcConnectorTemplatePinnedImageTestData.SourceFingerprint(provider),
             ArtifactInventory: BuildArtifactInventory(provider),
             GrantInventory: [],
             SourceTableInventory: BuildRequiredSourceTableInventory(provider),
@@ -1635,10 +1637,10 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 
 internal static class CdcConnectorTemplatePinnedImageTestData
 {
-    public static readonly CdcSourceFingerprint SourceFingerprint = new(
-        "cdc-source-fingerprint-v1",
-        "physical-source-fingerprint"
-    );
+    private const string SourceIdentity = "f81d4fae-7dec-11d0-a765-00a0c91e6bf6";
+
+    public static CdcSourceFingerprint SourceFingerprint(CdcProvider provider) =>
+        CdcSourceFingerprintMetadata.Compute(provider, SourceIdentity);
 }
 
 internal sealed record CdcConnectorTemplateSmokeSettings(
