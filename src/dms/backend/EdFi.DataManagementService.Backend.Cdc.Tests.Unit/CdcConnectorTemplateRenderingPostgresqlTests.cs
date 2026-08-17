@@ -260,6 +260,7 @@ public class Given_CdcConnectorTemplatePostgresqlRendering
                 providerConnectionProperties: new Dictionary<string, string>
                 {
                     ["database.hostname"] = "postgresql.internal",
+                    ["database.user"] = "connector_user",
                     ["database.dbname"] = "edfi_datastore",
                     ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
                     ["publication.name"] = "dms_binding_publication",

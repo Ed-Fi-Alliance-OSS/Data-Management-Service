@@ -36,7 +36,9 @@ public class Given_CdcConnectorTemplateCommonRendering
                 new Dictionary<string, string>
                 {
                     ["database.hostname"] = "postgresql.internal",
+                    ["database.user"] = "connector_user",
                     ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
+                    ["database.dbname"] = "edfi_datastore",
                 },
                 new Dictionary<string, string>
                 {
@@ -126,7 +128,9 @@ public class Given_CdcConnectorTemplateCommonRendering
                 new Dictionary<string, string>
                 {
                     ["database.hostname"] = "postgresql.internal",
+                    ["database.user"] = "connector_user",
                     ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
+                    ["database.dbname"] = "edfi_datastore",
                 }
             )
         );
@@ -160,6 +164,7 @@ public class Given_CdcConnectorTemplateCommonRendering
                 new Dictionary<string, string>
                 {
                     ["database.hostname"] = "sqlserver.internal",
+                    ["database.user"] = "connector_user",
                     ["database.names"] = "edfi_datastore",
                     ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
                 },
@@ -187,7 +192,14 @@ public class Given_CdcConnectorTemplateCommonRendering
             BuildRequest(
                 CdcProvider.Postgresql,
                 new CdcConnectorTemplateDeploymentPolicy("broker:9092", maxRecordBytes: 1_048_576),
-                new Dictionary<string, string> { ["producer.override.acks"] = "all" }
+                new Dictionary<string, string>
+                {
+                    ["database.hostname"] = "postgresql.internal",
+                    ["database.user"] = "connector_user",
+                    ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
+                    ["database.dbname"] = "edfi_datastore",
+                    ["producer.override.acks"] = "all",
+                }
             )
         );
 
@@ -272,10 +284,31 @@ public class Given_CdcConnectorTemplateCommonRendering
             deploymentPolicy,
             new CdcProviderConnectionProperties(
                 provider,
-                providerConnectionProperties ?? new Dictionary<string, string>()
+                providerConnectionProperties ?? BuildProviderConnectionProperties(provider)
             ),
             new CdcKafkaClientSecurityProperties(kafkaSecurityProperties ?? new Dictionary<string, string>())
         );
+
+    private static IReadOnlyDictionary<string, string> BuildProviderConnectionProperties(
+        CdcProvider provider
+    ) =>
+        provider == CdcProvider.Postgresql
+            ? new Dictionary<string, string>
+            {
+                ["database.hostname"] = "postgresql.internal",
+                ["database.port"] = "5432",
+                ["database.user"] = "connector_user",
+                ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
+                ["database.dbname"] = "edfi_datastore",
+            }
+            : new Dictionary<string, string>
+            {
+                ["database.hostname"] = "sqlserver.internal",
+                ["database.port"] = "1433",
+                ["database.user"] = "connector_user",
+                ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
+                ["database.names"] = "edfi_datastore",
+            };
 
     private static CdcConnectorTemplateBindingIdentity BuildBinding(CdcProvider provider) =>
         new(

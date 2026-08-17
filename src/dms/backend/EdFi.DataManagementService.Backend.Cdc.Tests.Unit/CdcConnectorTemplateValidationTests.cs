@@ -65,6 +65,69 @@ public class Given_CdcConnectorTemplateInputValidation
     }
 
     [Test]
+    public void It_rejects_missing_required_provider_connection_properties()
+    {
+        CdcConnectorTemplateValidationResult postgresqlResult = Validate(
+            CdcProvider.Postgresql,
+            new Dictionary<string, string> { ["database.hostname"] = "postgresql.internal" }
+        );
+        CdcConnectorTemplateValidationResult sqlServerResult = Validate(
+            CdcProvider.SqlServer,
+            new Dictionary<string, string> { ["database.names"] = "edfi_datastore" }
+        );
+
+        CdcConnectorTemplateDiagnostic[] postgresqlRequiredDiagnostics = postgresqlResult
+            .Diagnostics.Where(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.ConnectionPropertyRequired
+            )
+            .ToArray();
+        CdcConnectorTemplateDiagnostic[] sqlServerRequiredDiagnostics = sqlServerResult
+            .Diagnostics.Where(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.ConnectionPropertyRequired
+            )
+            .ToArray();
+        CdcConnectorTemplateDiagnostic[] requiredDiagnostics = postgresqlRequiredDiagnostics
+            .Concat(sqlServerRequiredDiagnostics)
+            .ToArray();
+
+        using var _ = new AssertionScope();
+        postgresqlRequiredDiagnostics
+            .Select(diagnostic => diagnostic.PropertyName)
+            .Should()
+            .BeEquivalentTo("database.user", "database.password", "database.dbname");
+        sqlServerRequiredDiagnostics
+            .Select(diagnostic => diagnostic.PropertyName)
+            .Should()
+            .BeEquivalentTo("database.hostname", "database.user", "database.password");
+        requiredDiagnostics
+            .Should()
+            .AllSatisfy(diagnostic =>
+            {
+                diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.MissingInput);
+                diagnostic
+                    .ExpectedValue.Should()
+                    .BeOneOf(
+                        "required PostgreSQL connection property",
+                        "required SQL Server connection property"
+                    );
+                diagnostic.ObservedValue.Should().BeNull();
+            });
+        requiredDiagnostics
+            .Where(diagnostic => diagnostic.PropertyName == "database.password")
+            .Should()
+            .OnlyContain(diagnostic =>
+                diagnostic.RedactionClassification == CdcConnectorTemplateRedactionClassification.SecretValue
+            );
+        requiredDiagnostics
+            .Where(diagnostic => diagnostic.PropertyName != "database.password")
+            .Should()
+            .OnlyContain(diagnostic =>
+                diagnostic.RedactionClassification
+                == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            );
+    }
+
+    [Test]
     public void It_rejects_connection_and_security_properties_outside_the_provider_allow_lists()
     {
         CdcConnectorTemplateValidationResult postgresqlResult = Validate(
@@ -160,6 +223,10 @@ public class Given_CdcConnectorTemplateInputValidation
             CdcProvider.Postgresql,
             new Dictionary<string, string>
             {
+                ["database.hostname"] = "postgresql.internal",
+                ["database.user"] = "connector_user",
+                ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
+                ["database.dbname"] = "edfi_datastore",
                 ["connector.class"] = "io.debezium.connector.postgresql.PostgresConnector",
                 ["heartbeat.interval.ms"] = "5000",
                 ["topic.prefix"] = "dms_binding_connector",
@@ -198,7 +265,13 @@ public class Given_CdcConnectorTemplateInputValidation
 
         CdcConnectorTemplateValidationResult result = Validate(
             CdcProvider.Postgresql,
-            new Dictionary<string, string> { ["database.password"] = rawSecret },
+            new Dictionary<string, string>
+            {
+                ["database.hostname"] = "postgresql.internal",
+                ["database.user"] = "connector_user",
+                ["database.password"] = rawSecret,
+                ["database.dbname"] = "edfi_datastore",
+            },
             new Dictionary<string, string> { ["sasl.jaas.config"] = rawSecret }
         );
         Action act = () => result.ThrowIfInvalid();
@@ -234,6 +307,9 @@ public class Given_CdcConnectorTemplateInputValidation
             CdcProvider.SqlServer,
             new Dictionary<string, string>
             {
+                ["database.hostname"] = "sqlserver.internal",
+                ["database.user"] = "connector_user",
+                ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
                 ["database.names"] = "edfi_datastore",
                 ["connector.class"] = "io.debezium.connector.sqlserver.SqlServerConnector",
             },
@@ -280,10 +356,29 @@ public class Given_CdcConnectorTemplateInputValidation
             new CdcConnectorTemplateDeploymentPolicy("broker:9092", maxRecordBytes: 1_048_576),
             new CdcProviderConnectionProperties(
                 provider,
-                providerConnectionProperties ?? new Dictionary<string, string>()
+                providerConnectionProperties ?? BuildRequiredProviderConnectionProperties(provider)
             ),
             new CdcKafkaClientSecurityProperties(kafkaSecurityProperties ?? new Dictionary<string, string>())
         );
+
+    private static IReadOnlyDictionary<string, string> BuildRequiredProviderConnectionProperties(
+        CdcProvider provider
+    ) =>
+        provider == CdcProvider.Postgresql
+            ? new Dictionary<string, string>
+            {
+                ["database.hostname"] = "postgresql.internal",
+                ["database.user"] = "connector_user",
+                ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
+                ["database.dbname"] = "edfi_datastore",
+            }
+            : new Dictionary<string, string>
+            {
+                ["database.hostname"] = "sqlserver.internal",
+                ["database.user"] = "connector_user",
+                ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
+                ["database.names"] = "edfi_datastore",
+            };
 
     private static CdcConnectorTemplateBindingIdentity BuildBinding(CdcProvider provider) =>
         new(
