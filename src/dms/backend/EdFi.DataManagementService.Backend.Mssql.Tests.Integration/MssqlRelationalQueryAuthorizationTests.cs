@@ -8,6 +8,7 @@ using System.Data.Common;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Mssql;
@@ -4850,7 +4851,12 @@ public class Given_A_Mssql_Relational_Query_Authorization_With_Anchored_Person_P
 
     private static void AssertSingleRootRelationReference(PageKeysetSpec.Query keyset, string rootTableName)
     {
-        var quotedRootRelation = $"[edfi].[{rootTableName}]";
+        // Derived from the dialect rather than hand-quoted, matching the other root-relation counts in
+        // this branch: QualifyTable carries the closing delimiter, which is what stops a shorter table
+        // name from matching inside a longer one.
+        var quotedRootRelation = SqlDialectFactory
+            .Create(SqlDialect.Mssql)
+            .QualifyTable(new DbTableName(new DbSchemaName("edfi"), rootTableName));
 
         keyset.Plan.TotalCountSql.Should().NotBeNull();
         CountOccurrences(keyset.Plan.PageDocumentIdSql, quotedRootRelation).Should().Be(1);

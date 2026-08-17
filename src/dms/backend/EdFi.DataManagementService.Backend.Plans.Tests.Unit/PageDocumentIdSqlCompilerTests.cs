@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.External.Security;
 using FluentAssertions;
 using NUnit.Framework;
@@ -1926,6 +1927,15 @@ public class Given_PageDocumentIdSqlCompiler
     /// intermediate join loop actually runs: the anchor and the first hop open the subquery, one JOIN carries
     /// the middle hop, and the terminal step supplies the person column.
     /// </summary>
+    /// <remarks>
+    /// This is the only place that shape is exercised anywhere in the branch. The integration differential's
+    /// transitive specs — Grade and CourseTranscript — are both two-hop, and at two hops
+    /// <c>AppendRootDocumentIdInTransitivePersonAuthViewSql</c>'s loop range is empty, so the JOIN-emitting body
+    /// never executes against a database. The expected fragment below is therefore checked twice: once against a
+    /// hand-authored literal, and once against the differential emitter, whose own <c>AppendPathJoins</c> body
+    /// <em>is</em> executed at two hops through the Legacy arm and proved row-equivalent to production. Neither
+    /// witness is the only one.
+    /// </remarks>
     [TestCase(
         SqlDialect.Pgsql,
         "r.\"StudentAssessmentRegistration_DocumentId\" IN (SELECT t0.\"DocumentId\" FROM \"edfi\".\"StudentAssessmentRegistration\" t0 JOIN \"edfi\".\"StudentEducationOrganizationAssociation\" t1 ON t1.\"DocumentId\" = t0.\"StudentEducationOrganizationAssociation_DocumentId\" WHERE t1.\"Student_DocumentId\" IN (SELECT t2.\"Student_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStudentDocumentId\" t2 WHERE t2.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"
@@ -1943,26 +1953,41 @@ public class Given_PageDocumentIdSqlCompiler
             new DbSchemaName("edfi"),
             "StudentAssessmentRegistrationBatteryPartAssociation"
         );
-        var compiler = new PageDocumentIdSqlCompiler(dialect);
-        var plan = compiler.Compile(
-            CreateSpec(
-                [],
-                [],
-                includeTotalCountSql: true,
-                authorization: CreateAuthorizationSpec(
-                    dialect,
-                    CreateAuthorizationStrategy(
-                        AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
-                        CreateThreeHopStudentPersonAuthorizationSubject(rootTable)
-                    )
-                ),
-                rootTable: rootTable
-            )
+        var spec = CreateSpec(
+            [],
+            [],
+            includeTotalCountSql: true,
+            authorization: CreateAuthorizationSpec(
+                dialect,
+                CreateAuthorizationStrategy(
+                    AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly,
+                    CreateThreeHopStudentPersonAuthorizationSubject(rootTable)
+                )
+            ),
+            rootTable: rootTable
         );
+        var plan = new PageDocumentIdSqlCompiler(dialect).Compile(spec);
 
         plan.PageDocumentIdSql.Should().Contain(expectedPredicateFragment);
         plan.TotalCountSql.Should().NotBeNull();
         plan.TotalCountSql.Should().Contain(expectedPredicateFragment);
+
+        // The independent witness for the JOIN-emitting loop body, per this test's remarks. Both emitters
+        // allocate t0/t1/t2 in the same order for a single-person-subject spec, so the predicates are directly
+        // comparable — and unlike the literal above, this one carries the predicate's closing paren.
+        var emittedPredicate = RelationshipAuthorizationDifferentialSqlEmitter.EmitAuthorizationPredicate(
+            spec,
+            dialect,
+            RelationshipAuthorizationPredicateShape.Anchored
+        );
+
+        plan.PageDocumentIdSql.Should()
+            .Contain(
+                emittedPredicate,
+                "the three-hop predicate the compiler emits must agree with the differential emitter's, which is "
+                    + "the arm the executed row-set equivalence proof pins to production"
+            );
+        plan.TotalCountSql.Should().Contain(emittedPredicate);
 
         var quotedRootRelation = SqlDialectFactory.Create(dialect).QualifyTable(rootTable);
 

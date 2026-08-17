@@ -72,9 +72,7 @@ internal static class AnchoredAuthorizationPlanSupport
         RelationshipAuthorizationDifferentialSpec spec,
         RelationshipAuthorizationPredicateShape shape
     ) =>
-        RelationshipAuthorizationDifferentialSqlEmitter
-            .Emit(spec.QuerySpec, SqlDialect.Pgsql, shape, Claim.Length)
-            .PageSql;
+        RelationshipAuthorizationDifferentialSqlEmitter.Emit(spec.QuerySpec, SqlDialect.Pgsql, shape).PageSql;
 
     public static async Task<ExplainedPlan> ExplainAsync(
         PostgresqlGeneratedDdlTestDatabase database,
@@ -621,9 +619,22 @@ public class Given_A_Postgresql_Anchored_Authorization_Deep_Offset_Measurement
         }
 
         report.AppendLine(
-            "prototype reference (StudentSectionAssociation, perf rig 2026-07-23): -33% at offset 0, "
-                + "-41% to -46% at deep offsets"
+            "shared blocks are the hardware-independent signal here and fall at every offset; wall-clock medians "
+                + "are offset- and resource-dependent on developer hardware, so quote the numbers above rather "
+                + "than any projection"
         );
+
+        // Printed only for the resource the prototype actually measured, and only as history. Executed runs on
+        // developer hardware do not reproduce it — medians have landed between -22% and +4% at the deep offsets
+        // while the structural claim and the buffer reduction held throughout — so it must not read as a target
+        // the report is being checked against.
+        if (resourceName == AnchoredAuthorizationPlanSupport.DirectSubjectResourceName)
+        {
+            report.AppendLine(
+                "historical prototype run for this resource (dedicated perf rig 2026-07-23, NOT reproduced by "
+                    + "this fixture): -33% at offset 0, -41% to -46% at deep offsets"
+            );
+        }
 
         await TestContext.Out.WriteLineAsync(report.ToString());
     }

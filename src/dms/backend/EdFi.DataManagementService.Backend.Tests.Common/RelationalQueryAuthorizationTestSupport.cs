@@ -877,25 +877,50 @@ internal static class RelationshipAuthorizationDifferentialSqlEmitter
     public static RelationshipAuthorizationDifferentialSql Emit(
         PageDocumentIdQuerySpec spec,
         SqlDialect dialect,
-        RelationshipAuthorizationPredicateShape shape,
-        int claimEducationOrganizationIdCount
+        RelationshipAuthorizationPredicateShape shape
     )
     {
         ArgumentNullException.ThrowIfNull(spec);
 
-        var subject = SinglePersonSubject(spec);
+        var (subject, claimParameterization) = SingleAuthorizationSubject(spec);
 
         return new RelationshipAuthorizationDifferentialSql(
-            EmitPageSql(spec, subject, dialect, shape, claimEducationOrganizationIdCount),
-            EmitTotalCountSql(spec, subject, dialect, shape, claimEducationOrganizationIdCount)
+            EmitPageSql(spec, subject, claimParameterization, dialect, shape),
+            EmitTotalCountSql(spec, subject, claimParameterization, dialect, shape)
         );
     }
 
     /// <summary>
-    /// The differential specs each carry exactly one relationship strategy with exactly one person subject.
-    /// Anything else is a malformed spec rather than a shape this emitter should guess at.
+    /// Just the authorization predicate, without the page or count scaffolding around it. Lets a unit test pin the
+    /// real compiler's predicate against this emitter's for a path shape no integration fixture generates rows
+    /// for — production's intermediate-join loop only runs a nonzero number of iterations past two hops, and the
+    /// differential specs are all two-hop.
     /// </summary>
-    private static PageDocumentIdAuthorizationPersonSubject SinglePersonSubject(PageDocumentIdQuerySpec spec)
+    public static string EmitAuthorizationPredicate(
+        PageDocumentIdQuerySpec spec,
+        SqlDialect dialect,
+        RelationshipAuthorizationPredicateShape shape
+    )
+    {
+        ArgumentNullException.ThrowIfNull(spec);
+
+        var (subject, claimParameterization) = SingleAuthorizationSubject(spec);
+        var writer = new SqlWriter(SqlDialectFactory.Create(dialect));
+
+        AppendAuthorizationPredicate(writer, spec.RootTable, subject, claimParameterization, shape);
+
+        return writer.ToString();
+    }
+
+    /// <summary>
+    /// The differential specs each carry exactly one relationship strategy with exactly one person subject, plus
+    /// the claim parameterization the compiler was handed. Anything else is a malformed spec rather than a shape
+    /// this emitter should guess at.
+    /// </summary>
+    private static (
+        PageDocumentIdAuthorizationPersonSubject Subject,
+        AuthorizationClaimEducationOrganizationIdParameterization ClaimParameterization
+    ) SingleAuthorizationSubject(PageDocumentIdQuerySpec spec)
     {
         var strategies = spec.Authorization?.Strategies;
 
@@ -903,28 +928,31 @@ internal static class RelationshipAuthorizationDifferentialSqlEmitter
             strategies is not { Count: 1 }
             || strategies[0].Subjects is not { Count: 1 }
             || strategies[0].Subjects[0] is not PageDocumentIdAuthorizationPersonSubject personSubject
+            || spec.Authorization!.ClaimEducationOrganizationIdParameterization
+                is not { } claimParameterization
         )
         {
             throw new InvalidOperationException(
-                "The differential emitter requires a spec with exactly one strategy carrying exactly one person subject."
+                "The differential emitter requires a spec with exactly one strategy carrying exactly one person "
+                    + "subject and a claim EdOrg parameterization."
             );
         }
 
-        return personSubject;
+        return (personSubject, claimParameterization);
     }
 
     private static string EmitPageSql(
         PageDocumentIdQuerySpec spec,
         PageDocumentIdAuthorizationPersonSubject subject,
+        AuthorizationClaimEducationOrganizationIdParameterization claimParameterization,
         SqlDialect dialect,
-        RelationshipAuthorizationPredicateShape shape,
-        int claimEducationOrganizationIdCount
+        RelationshipAuthorizationPredicateShape shape
     )
     {
         var writer = new SqlWriter(SqlDialectFactory.Create(dialect));
 
         writer.Append($"SELECT {RootAlias}.").AppendQuoted("DocumentId").AppendLine();
-        AppendFromAndWhere(writer, spec, subject, dialect, shape, claimEducationOrganizationIdCount);
+        AppendFromAndWhere(writer, spec, subject, claimParameterization, shape);
         writer.Append($"ORDER BY {RootAlias}.").AppendQuoted("DocumentId").AppendLine(" ASC");
         writer.AppendLine(
             dialect == SqlDialect.Mssql
@@ -938,15 +966,15 @@ internal static class RelationshipAuthorizationDifferentialSqlEmitter
     private static string EmitTotalCountSql(
         PageDocumentIdQuerySpec spec,
         PageDocumentIdAuthorizationPersonSubject subject,
+        AuthorizationClaimEducationOrganizationIdParameterization claimParameterization,
         SqlDialect dialect,
-        RelationshipAuthorizationPredicateShape shape,
-        int claimEducationOrganizationIdCount
+        RelationshipAuthorizationPredicateShape shape
     )
     {
         var writer = new SqlWriter(SqlDialectFactory.Create(dialect));
 
         writer.AppendLine("SELECT COUNT(1)");
-        AppendFromAndWhere(writer, spec, subject, dialect, shape, claimEducationOrganizationIdCount);
+        AppendFromAndWhere(writer, spec, subject, claimParameterization, shape);
         writer.AppendLine(";");
 
         return writer.ToString();
@@ -956,21 +984,13 @@ internal static class RelationshipAuthorizationDifferentialSqlEmitter
         SqlWriter writer,
         PageDocumentIdQuerySpec spec,
         PageDocumentIdAuthorizationPersonSubject subject,
-        SqlDialect dialect,
-        RelationshipAuthorizationPredicateShape shape,
-        int claimEducationOrganizationIdCount
+        AuthorizationClaimEducationOrganizationIdParameterization claimParameterization,
+        RelationshipAuthorizationPredicateShape shape
     )
     {
         writer.Append("FROM ").AppendTable(spec.RootTable).AppendLine($" {RootAlias}");
         writer.Append("WHERE (");
-        AppendAuthorizationPredicate(
-            writer,
-            spec.RootTable,
-            subject,
-            dialect,
-            shape,
-            claimEducationOrganizationIdCount
-        );
+        AppendAuthorizationPredicate(writer, spec.RootTable, subject, claimParameterization, shape);
         writer.AppendLine(")");
     }
 
@@ -982,9 +1002,8 @@ internal static class RelationshipAuthorizationDifferentialSqlEmitter
         SqlWriter writer,
         DbTableName rootTable,
         PageDocumentIdAuthorizationPersonSubject subject,
-        SqlDialect dialect,
-        RelationshipAuthorizationPredicateShape shape,
-        int claimEducationOrganizationIdCount
+        AuthorizationClaimEducationOrganizationIdParameterization claimParameterization,
+        RelationshipAuthorizationPredicateShape shape
     )
     {
         var personMetadata = subject.PersonMetadata;
@@ -1014,13 +1033,7 @@ internal static class RelationshipAuthorizationDifferentialSqlEmitter
 
             writer.Append($" WHERE {legacySourceAlias}.");
             writer.AppendQuoted(TerminalPersonColumn(subject, pathSteps).Value);
-            AppendMembershipSubquery(
-                writer,
-                subject,
-                dialect,
-                $"t{aliasOrdinal}",
-                claimEducationOrganizationIdCount
-            );
+            AppendMembershipSubquery(writer, subject, claimParameterization, $"t{aliasOrdinal}");
             writer.Append(")");
             return;
         }
@@ -1031,21 +1044,14 @@ internal static class RelationshipAuthorizationDifferentialSqlEmitter
             case RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn:
                 // r.<anchor> IN (<membership>)
                 writer.Append($"{RootAlias}.").AppendQuoted(AnchorColumn(subject, pathSteps).Value);
-                AppendMembershipSubquery(
-                    writer,
-                    subject,
-                    dialect,
-                    $"t{aliasOrdinal}",
-                    claimEducationOrganizationIdCount
-                );
+                AppendMembershipSubquery(writer, subject, claimParameterization, $"t{aliasOrdinal}");
                 return;
             case RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath:
                 AppendAnchoredTransitivePredicate(
                     writer,
                     subject,
                     pathSteps,
-                    dialect,
-                    claimEducationOrganizationIdCount,
+                    claimParameterization,
                     ref aliasOrdinal
                 );
                 return;
@@ -1066,8 +1072,7 @@ internal static class RelationshipAuthorizationDifferentialSqlEmitter
         SqlWriter writer,
         PageDocumentIdAuthorizationPersonSubject subject,
         IReadOnlyList<ColumnPathStep> pathSteps,
-        SqlDialect dialect,
-        int claimEducationOrganizationIdCount,
+        AuthorizationClaimEducationOrganizationIdParameterization claimParameterization,
         ref int aliasOrdinal
     )
     {
@@ -1090,13 +1095,7 @@ internal static class RelationshipAuthorizationDifferentialSqlEmitter
 
         writer.Append($" WHERE {terminalSourceAlias}.");
         writer.AppendQuoted(TerminalPersonColumn(subject, pathSteps).Value);
-        AppendMembershipSubquery(
-            writer,
-            subject,
-            dialect,
-            $"t{aliasOrdinal}",
-            claimEducationOrganizationIdCount
-        );
+        AppendMembershipSubquery(writer, subject, claimParameterization, $"t{aliasOrdinal}");
         writer.Append(")");
     }
 
@@ -1134,9 +1133,8 @@ internal static class RelationshipAuthorizationDifferentialSqlEmitter
     private static void AppendMembershipSubquery(
         SqlWriter writer,
         PageDocumentIdAuthorizationPersonSubject subject,
-        SqlDialect dialect,
-        string authAlias,
-        int claimEducationOrganizationIdCount
+        AuthorizationClaimEducationOrganizationIdParameterization claimParameterization,
+        string authAlias
     )
     {
         writer.Append(" IN (SELECT ").Append($"{authAlias}.");
@@ -1144,21 +1142,59 @@ internal static class RelationshipAuthorizationDifferentialSqlEmitter
         writer.Append(" FROM ").AppendTable(subject.AuthObject.Name);
         writer.Append($" {authAlias} WHERE {authAlias}.");
         writer.AppendQuoted(subject.AuthObject.ClaimEducationOrganizationIdColumn.Value);
-
-        if (dialect == SqlDialect.Mssql)
-        {
-            var placeholders = Enumerable
-                .Range(0, claimEducationOrganizationIdCount)
-                .Select(static index => $"@ClaimEducationOrganizationIds_{index}");
-
-            writer.Append($" IN ({string.Join(", ", placeholders)})");
-        }
-        else
-        {
-            writer.Append(" = ANY(@ClaimEducationOrganizationIds)");
-        }
-
+        AppendClaimFilter(writer, claimParameterization);
         writer.Append(")");
+    }
+
+    /// <summary>
+    /// The claim filter, driven by the parameterization the spec already carries rather than re-derived from the
+    /// dialect and a claim count. Production's own emitter is <c>internal</c> to <c>Backend.Plans</c> and
+    /// unreachable from here, so this stays a local switch — but one that reads the same public record, so it
+    /// cannot disagree with production about a parameter name or about how many placeholders a claim list yields.
+    /// </summary>
+    /// <remarks>
+    /// The SQL Server structured shape is rejected rather than emitted. It only appears at or above
+    /// <c>MssqlStructuredParameterThreshold</c> claim EdOrgs, and the differential fixtures bind one scalar
+    /// parameter per claim id — emitting a table-valued reference they never bind would fail at execution with a
+    /// missing-parameter error that says nothing about the cause.
+    /// </remarks>
+    private static void AppendClaimFilter(
+        SqlWriter writer,
+        AuthorizationClaimEducationOrganizationIdParameterization claimParameterization
+    )
+    {
+        switch (claimParameterization.Kind)
+        {
+            case AuthorizationClaimEducationOrganizationIdParameterizationKind.PgsqlArray:
+                writer.Append(" = ANY(");
+                writer.AppendParameter(claimParameterization.BaseParameterName);
+                writer.Append(")");
+                return;
+            case AuthorizationClaimEducationOrganizationIdParameterizationKind.MssqlScalar:
+                writer.Append(" IN (");
+
+                for (
+                    var parameterIndex = 0;
+                    parameterIndex < claimParameterization.ParameterNamesInOrder.Count;
+                    parameterIndex++
+                )
+                {
+                    if (parameterIndex > 0)
+                    {
+                        writer.Append(", ");
+                    }
+
+                    writer.AppendParameter(claimParameterization.ParameterNamesInOrder[parameterIndex]);
+                }
+
+                writer.Append(")");
+                return;
+            default:
+                throw new NotSupportedException(
+                    $"The differential emitter does not support the '{claimParameterization.Kind}' claim EdOrg "
+                        + "parameterization: its fixtures bind one scalar parameter per claim id."
+                );
+        }
     }
 
     private static DbColumnName AnchorColumn(

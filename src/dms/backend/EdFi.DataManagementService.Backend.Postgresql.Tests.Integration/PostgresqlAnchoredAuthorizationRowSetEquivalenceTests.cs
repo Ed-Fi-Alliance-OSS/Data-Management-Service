@@ -239,7 +239,7 @@ public class Given_A_Postgresql_Anchored_Authorization_Row_Set_Equivalence
     {
         var spec = SpecFor(resourceName);
         var productionPlan = new PageDocumentIdSqlCompiler(SqlDialect.Pgsql).Compile(spec.QuerySpec);
-        var emitted = Emit(spec, RelationshipAuthorizationPredicateShape.Anchored, _authorizedClaim);
+        var emitted = Emit(spec, RelationshipAuthorizationPredicateShape.Anchored);
 
         var productionIds = await SelectDocumentIdsAsync(
             productionPlan.PageDocumentIdSql,
@@ -399,8 +399,8 @@ public class Given_A_Postgresql_Anchored_Authorization_Row_Set_Equivalence
     public void It_should_emit_a_root_relation_self_join_only_in_the_legacy_shape(string resourceName)
     {
         var spec = SpecFor(resourceName);
-        var anchored = Emit(spec, RelationshipAuthorizationPredicateShape.Anchored, _authorizedClaim);
-        var legacy = Emit(spec, RelationshipAuthorizationPredicateShape.Legacy, _authorizedClaim);
+        var anchored = Emit(spec, RelationshipAuthorizationPredicateShape.Anchored);
+        var legacy = Emit(spec, RelationshipAuthorizationPredicateShape.Legacy);
 
         legacy.PageSql.Should().NotBe(anchored.PageSql);
 
@@ -423,17 +423,15 @@ public class Given_A_Postgresql_Anchored_Authorization_Row_Set_Equivalence
             .Create(SqlDialect.Pgsql, claimEducationOrganizationIds ?? _authorizedClaim)
             .Single(spec => spec.ResourceName == resourceName);
 
+    /// <summary>
+    /// The claim ids are already inside <paramref name="spec"/> — they were passed to
+    /// <see cref="RelationshipAuthorizationDifferentialSpecs.Create"/> to build its parameterization, which is what
+    /// the emitter reads its parameter names from.
+    /// </summary>
     private static RelationshipAuthorizationDifferentialSql Emit(
         RelationshipAuthorizationDifferentialSpec spec,
-        RelationshipAuthorizationPredicateShape shape,
-        IReadOnlyList<long> claimEducationOrganizationIds
-    ) =>
-        RelationshipAuthorizationDifferentialSqlEmitter.Emit(
-            spec.QuerySpec,
-            SqlDialect.Pgsql,
-            shape,
-            claimEducationOrganizationIds.Count
-        );
+        RelationshipAuthorizationPredicateShape shape
+    ) => RelationshipAuthorizationDifferentialSqlEmitter.Emit(spec.QuerySpec, SqlDialect.Pgsql, shape);
 
     private async Task<IReadOnlyList<long>> SelectPageAsync(
         RelationshipAuthorizationDifferentialSpec spec,
@@ -442,22 +440,13 @@ public class Given_A_Postgresql_Anchored_Authorization_Row_Set_Equivalence
         int offset,
         int limit
     ) =>
-        await SelectDocumentIdsAsync(
-            Emit(spec, shape, claimEducationOrganizationIds).PageSql,
-            claimEducationOrganizationIds,
-            offset,
-            limit
-        );
+        await SelectDocumentIdsAsync(Emit(spec, shape).PageSql, claimEducationOrganizationIds, offset, limit);
 
     private async Task<long> CountForShapeAsync(
         RelationshipAuthorizationDifferentialSpec spec,
         RelationshipAuthorizationPredicateShape shape,
         IReadOnlyList<long> claimEducationOrganizationIds
-    ) =>
-        await CountAsync(
-            Emit(spec, shape, claimEducationOrganizationIds).TotalCountSql,
-            claimEducationOrganizationIds
-        );
+    ) => await CountAsync(Emit(spec, shape).TotalCountSql, claimEducationOrganizationIds);
 
     private async Task<IReadOnlyList<long>> SelectDocumentIdsAsync(
         string sql,
