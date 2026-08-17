@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.DocumentCache;
 using FluentAssertions;
@@ -155,6 +156,60 @@ public class Given_DocumentCacheStatusCurrentSourceObservation
         foreach (DbColumnName column in columns)
         {
             sql.Should().Contain(SqlIdentifierQuoter.QuoteIdentifier(SqlDialect.Pgsql, column));
+        }
+    }
+
+    [Test]
+    public void It_uses_one_sql_server_status_statement_with_ordered_single_row_work_access()
+    {
+        string sql = MssqlDocumentCacheStatusCurrentSourceObserver.StatusObservationSql;
+        string normalizedSql = sql.ToUpperInvariant();
+
+        sql.Should().Contain("SYSUTCDATETIME()");
+        sql.Should().Contain("FROM [dms].[DocumentCacheState] AS [state]");
+        sql.Should().Contain("FROM [dms].[DocumentProjectionWork] AS [work]");
+        sql.Should().Contain("SELECT TOP (1) [work].[DocumentId], [work].[FirstEnqueuedAt]");
+        sql.Should().Contain("ORDER BY [work].[FirstEnqueuedAt], [work].[DocumentId]");
+        sql.Should().Contain("DATEDIFF_BIG(NANOSECOND");
+        normalizedSql.Should().NotContain("COUNT(");
+        normalizedSql.Should().NotContain("COUNT (");
+        sql.Should().NotContain("FROM [dms].[Document] ");
+        sql.Should().NotContain("JOIN [dms].[Document] ");
+        sql.Should().NotContain("FROM [dms].[DocumentCache] ");
+        sql.Should().NotContain("JOIN [dms].[DocumentCache] ");
+    }
+
+    [Test]
+    public void It_renders_sql_server_identifiers_from_the_document_cache_inventory()
+    {
+        string sql = MssqlDocumentCacheStatusCurrentSourceObserver.StatusObservationSql;
+
+        sql.Should()
+            .Contain(
+                SqlIdentifierQuoter.QuoteTableName(
+                    SqlDialect.Mssql,
+                    DocumentCacheInventoryDefinition.DocumentCacheState
+                )
+            );
+        sql.Should()
+            .Contain(
+                SqlIdentifierQuoter.QuoteTableName(
+                    SqlDialect.Mssql,
+                    DocumentCacheInventoryDefinition.DocumentProjectionWork
+                )
+            );
+
+        DbColumnName[] columns =
+        [
+            DocumentCacheInventoryDefinition.DocumentCacheStateColumns.StateId,
+            DocumentCacheInventoryDefinition.DocumentCacheStateColumns.ProjectionLifecycleState,
+            DocumentCacheInventoryDefinition.DocumentCacheStateColumns.CacheAheadRecoveryRequired,
+            DocumentCacheInventoryDefinition.DocumentProjectionWorkColumns.DocumentId,
+            DocumentCacheInventoryDefinition.DocumentProjectionWorkColumns.FirstEnqueuedAt,
+        ];
+        foreach (DbColumnName column in columns)
+        {
+            sql.Should().Contain(SqlIdentifierQuoter.QuoteIdentifier(SqlDialect.Mssql, column));
         }
     }
 }

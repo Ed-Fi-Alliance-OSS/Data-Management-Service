@@ -40,3 +40,10 @@
 - Kept status request read-only/current-state only: no target refresh, lifecycle commands, workers, direct fill, cache reads, Kafka, or CDC readiness dependencies.
 - Files changed: DocumentCacheStatusService.cs (core/backend), DocumentCacheStatusServiceTests.cs, ReferenceResolverServiceCollectionExtensions.cs, DocumentCacheServiceRegistrationTests.cs, tasks.json.
 - Verified: backend unit --filter FullyQualifiedName~DocumentCacheStatusService; backend unit --filter FullyQualifiedName~DocumentCacheStatus|Category=DocumentCacheServiceRegistration; core unit --filter FullyQualifiedName~DocumentCacheStatus; integration --filter FullyQualifiedName~DocumentCacheStatus (no matching tests).
+
+2026-08-17 - Completed SQL Server Provider Observation for reference/design/backend-redesign/epics/18-document-cache/06-documentcache-health-readiness-and-telemetry.md
+- Added MSSQL current-source status observer with one SYSUTCDATETIME statement over DocumentCacheState plus TOP(1) ordered DocumentProjectionWork access; no counts/source/cache reads.
+- Registered observer in MSSQL provider DI; kept timeout/cancel/failure outcomes free of stale durable facts.
+- Added MSSQL integration evidence for lifecycle states, latch, empty/nonempty queue, missing state, cancellation, provider timeout, provider failure, and index/no-scan plan.
+- Files changed: MssqlDocumentCacheStatusCurrentSourceObserver.cs, MssqlReferenceResolverServiceCollectionExtensions.cs, DocumentCacheStatusCurrentSourceObservationTests.cs, DocumentCacheServiceRegistrationTests.cs, MssqlDocumentCacheStatusCurrentSourceObserverTests.cs, tasks.json.
+- Verified: backend unit --filter FullyQualifiedName~DocumentCacheStatus|Category=DocumentCacheServiceRegistration; MSSQL integration --filter FullyQualifiedName~DocumentCacheStatus with dms-mssql-integration-2025 on localhost,14333.

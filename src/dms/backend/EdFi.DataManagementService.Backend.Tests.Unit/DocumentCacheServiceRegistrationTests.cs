@@ -163,6 +163,10 @@ public class Given_DocumentCacheServiceRegistration
         AssertScopedFactory<IDocumentCacheWriter>(services);
         AssertScopedFactory<IDocumentCacheSessionBoundWriter>(services);
         AssertSingleton<IDocumentProjectionWorkPager, MssqlDocumentProjectionWorkPager>(services);
+        AssertSingleton<
+            IDocumentCacheStatusCurrentSourceObserver,
+            MssqlDocumentCacheStatusCurrentSourceObserver
+        >(services);
         AssertSingleton<IDocumentCacheAdministrativeMutex, MssqlDocumentCacheAdministrativeMutex>(services);
         AssertSingleton<
             IDocumentCacheProviderCommandTimeoutClassifier,

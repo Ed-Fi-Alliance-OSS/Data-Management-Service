@@ -58,6 +58,12 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
         );
         services.TryAdd(
             ServiceDescriptor.Singleton<
+                IDocumentCacheStatusCurrentSourceObserver,
+                MssqlDocumentCacheStatusCurrentSourceObserver
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
                 IDocumentCacheAdministrativeMutex,
                 MssqlDocumentCacheAdministrativeMutex
             >()

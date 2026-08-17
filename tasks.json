@@ -85,7 +85,7 @@
       "Add focused SQL Server provider evidence proving the status observation statement uses ordered single-row oldest-work access and does not scan dms.Document or dms.DocumentCache.",
       "Run dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCacheStatus"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Status Composition",
