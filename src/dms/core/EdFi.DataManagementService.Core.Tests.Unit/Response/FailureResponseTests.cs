@@ -144,6 +144,70 @@ public class Given_FailureResponse_For_Too_Many_Requests
 
 [TestFixture]
 [Parallelizable]
+public class Given_FailureResponse_For_Service_Unavailable
+{
+    private static readonly TraceId _traceId = new("circuit-open-trace");
+
+    private System.Text.Json.Nodes.JsonNode _response = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _response = FailureResponse.ForServiceUnavailable(_traceId);
+    }
+
+    [Test]
+    public void It_has_the_service_unavailable_type()
+    {
+        _response["type"]!.ToString().Should().Be("urn:ed-fi:api:service-unavailable");
+    }
+
+    [Test]
+    public void It_has_the_service_unavailable_title()
+    {
+        _response["title"]!.ToString().Should().Be("Service Unavailable");
+    }
+
+    [Test]
+    public void It_has_status_503()
+    {
+        _response["status"]!.GetValue<int>().Should().Be(503);
+    }
+
+    /// <summary>
+    /// The break duration travels in the Retry-After header, so the body stays constant and a
+    /// client that reads only the detail is not told a wait that the header may disagree with.
+    /// </summary>
+    [Test]
+    public void It_renders_a_detail_that_does_not_depend_on_the_break_duration()
+    {
+        _response["detail"]!
+            .ToString()
+            .Should()
+            .Be("The service is temporarily unable to handle the request. Retry the request later.");
+    }
+
+    [Test]
+    public void It_carries_the_supplied_correlation_id()
+    {
+        _response["correlationId"]!.ToString().Should().Be(_traceId.Value);
+    }
+
+    [Test]
+    public void It_has_empty_validation_errors()
+    {
+        _response["validationErrors"]!.AsObject().Count.Should().Be(0);
+    }
+
+    [Test]
+    public void It_has_an_empty_errors_array()
+    {
+        _response["errors"]!.AsArray().Count.Should().Be(0);
+    }
+}
+
+[TestFixture]
+[Parallelizable]
 public class Given_FailureResponse_For_Security_Configuration
 {
     private static readonly TraceId _traceId = new("security-trace");

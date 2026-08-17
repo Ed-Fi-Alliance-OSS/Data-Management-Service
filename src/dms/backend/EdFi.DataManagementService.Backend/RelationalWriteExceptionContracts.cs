@@ -38,7 +38,14 @@ public interface IRelationalWriteExceptionClassifier
 
     /// <summary>
     /// Reports whether the exception represents a transient, retry-eligible database failure
-    /// (deadlock victim, serialization failure, lock-request timeout).
+    /// (deadlock victim, serialization failure, lock-request timeout). Every such failure must be
+    /// one the server raised, because that is what proves the transaction did not commit and makes
+    /// replaying the whole operation safe. A failure raised on the client side leaves the outcome
+    /// unknown and must be excluded, whether or not the provider also classifies it: a provider that
+    /// recognizes such a failure should report
+    /// <see cref="RelationalWriteExceptionClassification.IndeterminateOutcomeFailure"/>, and one
+    /// that does not leaves it unrecognized. Both are reported as server errors and neither is
+    /// retried, so the distinction is one of diagnosis, not of safety.
     /// </summary>
     bool IsTransientFailure(DbException exception);
 }
@@ -73,6 +80,19 @@ public abstract record RelationalWriteExceptionClassification
         private UnrecognizedWriteFailure() { }
 
         public static UnrecognizedWriteFailure Instance { get; } = new();
+    }
+
+    /// <summary>
+    /// A failure the provider raised on the client side, leaving what the server did unknown: the
+    /// statement or commit may have been applied in full. The operation cannot be replayed, because
+    /// a replay of an applied write answers for the state the first attempt already produced - a
+    /// deleted row reads as 404, a bumped version as 412. It is reported as a server error instead.
+    /// </summary>
+    public sealed record IndeterminateOutcomeFailure : RelationalWriteExceptionClassification
+    {
+        private IndeterminateOutcomeFailure() { }
+
+        public static IndeterminateOutcomeFailure Instance { get; } = new();
     }
 }
 

@@ -335,10 +335,12 @@ public class Given_A_Host_Using_The_Relational_Backend
         var body = JsonNode.Parse(responseBody)!.AsObject();
 
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError, responseBody);
-        body["error"]!
-            .GetValue<string>()
-            .Should()
-            .Contain("Write plan lookup failed for resource 'TestProject.Widget'");
+
+        // The diagnostic text names internal components, so it is logged rather than served; the
+        // client sees the standard system-error problem details.
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:system");
+        body["status"]!.GetValue<int>().Should().Be(500);
+        responseBody.Should().NotContain("Write plan lookup failed");
         writeExecutor.Requests.Should().BeEmpty();
         flattener.Inputs.Should().BeEmpty();
     }

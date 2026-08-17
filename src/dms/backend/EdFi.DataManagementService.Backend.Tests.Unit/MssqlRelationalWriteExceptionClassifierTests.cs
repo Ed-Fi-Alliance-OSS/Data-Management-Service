@@ -168,6 +168,25 @@ public class Given_MssqlRelationalWriteExceptionClassifier
         classification.Should().BeNull();
     }
 
+    /// <summary>
+    /// A command timeout expires on the client, so unlike every server-raised code in the transient
+    /// set it carries no evidence about what the server did. Classifying it keeps it out of the
+    /// unrecognized bucket - the engine's behavior here is understood - while the separate
+    /// transience check keeps it out of the retry path.
+    /// </summary>
+    [Test]
+    public void It_classifies_a_command_timeout_as_an_indeterminate_outcome()
+    {
+        var exception = CreateSqlException(-2, "Execution Timeout Expired.");
+
+        var classified = _sut.TryClassify(exception, out var classification);
+
+        classified.Should().BeTrue();
+        classification
+            .Should()
+            .BeSameAs(RelationalWriteExceptionClassification.IndeterminateOutcomeFailure.Instance);
+    }
+
     [Test]
     public void It_ignores_non_sql_server_db_exceptions()
     {
@@ -193,6 +212,20 @@ public class Given_MssqlRelationalWriteExceptionClassifier
         var exception = CreateSqlException(errorNumber, "Transient SQL Server condition.");
 
         _sut.IsTransientFailure(exception).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Every other member of the transient set is raised by the server, which proves the statement
+    /// did not commit and makes a replay safe. A command timeout expires on the client while the
+    /// server may still be committing, so replaying it can delete a row the first attempt already
+    /// deleted and answer 404 - a client error for a purely transient condition.
+    /// </summary>
+    [Test]
+    public void It_does_not_report_a_command_timeout_as_transient()
+    {
+        var exception = CreateSqlException(-2, "Execution Timeout Expired.");
+
+        _sut.IsTransientFailure(exception).Should().BeFalse();
     }
 
     [TestCase(547)]

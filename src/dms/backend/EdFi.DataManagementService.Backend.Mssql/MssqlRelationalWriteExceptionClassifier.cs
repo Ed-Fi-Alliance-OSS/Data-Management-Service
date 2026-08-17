@@ -24,6 +24,16 @@ internal sealed partial class MssqlRelationalWriteExceptionClassifier : IRelatio
     private const int UpdateConflictNumber = 41302;
     private const int DependencyFailureNumber = 41301;
 
+    // SqlClient reports a client-side command timeout as -2. Under write contention it is a symptom
+    // of the same lock waits that produce deadlock victims, but it must not be retried with them:
+    // every other code below is raised by the server, which proves the transaction did not commit,
+    // while this one expires on the client and leaves the outcome unknown. A timeout on the commit
+    // can mean the server committed and only failed to acknowledge it, so a replay would answer for
+    // state the first attempt already produced - a re-run DELETE reads as 404, a re-run conditional
+    // write as 412. It is classified so it stays out of the unrecognized bucket, and reported as a
+    // server error the client may safely reissue on its own terms.
+    private const int CommandTimeoutNumber = -2;
+
     public bool TryClassify(
         DbException exception,
         [NotNullWhen(true)] out RelationalWriteExceptionClassification? classification
@@ -60,6 +70,9 @@ internal sealed partial class MssqlRelationalWriteExceptionClassifier : IRelatio
                     constraintName
                 )
             ),
+            CommandTimeoutNumber => RelationalWriteExceptionClassification
+                .IndeterminateOutcomeFailure
+                .Instance,
             DeadlockVictimNumber
             or LockRequestTimeoutNumber
             or SnapshotIsolationUpdateConflictNumber

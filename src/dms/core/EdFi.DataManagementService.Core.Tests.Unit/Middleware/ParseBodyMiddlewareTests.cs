@@ -294,4 +294,64 @@ public class ParseBodyMiddlewareTests
                 .Contain("\"correlationId\":\"correlation-id\"");
         }
     }
+
+    /// <summary>
+    /// The middleware owns body parsing only. A failure raised further down the pipeline is not a
+    /// client validation error, and its message is internal, so the exception must travel on to the
+    /// pipeline's exception handler rather than being answered here.
+    ///
+    /// Only the pre-parsed case below is a regression guard. The middleware-parsed case passed
+    /// before the fix too, because on that path the downstream call already sat outside the guarded
+    /// block; the pre-parsed path is the one that ran the whole pipeline inside it, and the one the
+    /// production frontend always takes.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Downstream_Step_Throws : ParseBodyMiddlewareTests
+    {
+        private const string DownstreamMessage =
+            "Transaction (Process ID 112) was deadlocked on lock resources with another process "
+            + "and has been chosen as the deadlock victim. Rerun the transaction.";
+
+        private static RequestInfo RequestWith(JsonNode? parsedBody, string? body) =>
+            new(
+                new FrontendRequest(
+                    Path: "ed-fi/schools",
+                    Body: body,
+                    Form: null,
+                    Headers: [],
+                    QueryParameters: [],
+                    TraceId: new TraceId("traceId"),
+                    RouteQualifiers: [],
+                    ParsedBody: parsedBody
+                ),
+                RequestMethod.POST,
+                No.ServiceProvider
+            );
+
+        private static Func<Task> ThrowingNext =>
+            () => throw new InvalidOperationException(DownstreamMessage);
+
+        [Test]
+        public async Task It_propagates_the_exception_when_the_frontend_pre_parsed_the_body()
+        {
+            var requestInfo = RequestWith(JsonNode.Parse("""{ "schoolId": 1 }"""), body: null);
+
+            Func<Task> act = () => Middleware().Execute(requestInfo, ThrowingNext);
+
+            await act.Should().ThrowAsync<InvalidOperationException>().WithMessage(DownstreamMessage);
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+
+        [Test]
+        public async Task It_propagates_the_exception_when_the_middleware_parsed_the_body()
+        {
+            var requestInfo = RequestWith(parsedBody: null, body: """{ "schoolId": 1 }""");
+
+            Func<Task> act = () => Middleware().Execute(requestInfo, ThrowingNext);
+
+            await act.Should().ThrowAsync<InvalidOperationException>().WithMessage(DownstreamMessage);
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
 }

@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.Model;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
+using Polly.CircuitBreaker;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
@@ -25,7 +26,7 @@ public class CoreExceptionLoggingMiddlewareTests
         await cancellationSource.CancelAsync();
         var requestInfo = No.RequestInfo("traceId");
         requestInfo.RequestCancellationToken = cancellationSource.Token;
-        var middleware = new CoreExceptionLoggingMiddleware(NullLogger.Instance);
+        var middleware = new CoreExceptionLoggingMiddleware(NullLogger.Instance, null);
 
         Func<Task> act = async () =>
             await middleware.Execute(
@@ -36,6 +37,76 @@ public class CoreExceptionLoggingMiddlewareTests
         await act.Should().ThrowAsync<OperationCanceledException>();
         requestInfo.CaughtException.Should().BeNull();
         requestInfo.FrontendResponse.Should().BeSameAs(No.FrontendResponse);
+    }
+
+    /// <summary>
+    /// An open circuit means the backend is shedding load, not that the request was wrong. It has to
+    /// read as retriable so a client replays it rather than dropping the document, and the break
+    /// duration is the honest retry hint.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Circuit_Is_Open : CoreExceptionLoggingMiddlewareTests
+    {
+        private static async Task<IFrontendResponse> ExecuteWith(TimeSpan? breakDuration)
+        {
+            var requestInfo = No.RequestInfo("traceId");
+            var middleware = new CoreExceptionLoggingMiddleware(NullLogger.Instance, breakDuration);
+
+            await middleware.Execute(
+                requestInfo,
+                () => throw new BrokenCircuitException("The circuit is now open and is not allowing calls.")
+            );
+
+            return requestInfo.FrontendResponse;
+        }
+
+        [Test]
+        public async Task It_returns_503_problem_details()
+        {
+            var response = await ExecuteWith(TimeSpan.FromSeconds(30));
+
+            response.StatusCode.Should().Be(503);
+            response.ContentType.Should().Be("application/problem+json");
+
+            JsonObject body = response.Body!.AsObject();
+            body["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:service-unavailable");
+            body["status"]?.GetValue<int>().Should().Be(503);
+            body["correlationId"]?.GetValue<string>().Should().Be("traceId");
+        }
+
+        [Test]
+        public async Task It_does_not_disclose_the_internal_message()
+        {
+            var response = await ExecuteWith(TimeSpan.FromSeconds(30));
+
+            response.Body!.ToJsonString().Should().NotContain("circuit");
+        }
+
+        [Test]
+        public async Task It_serves_retry_after_from_the_configured_break_duration()
+        {
+            var response = await ExecuteWith(TimeSpan.FromSeconds(30));
+
+            response.Headers.Should().ContainKey("Retry-After");
+            response.Headers["Retry-After"].Should().Be("30");
+        }
+
+        [Test]
+        public async Task It_rounds_a_fractional_break_duration_up_to_whole_seconds()
+        {
+            var response = await ExecuteWith(TimeSpan.FromMilliseconds(1500));
+
+            response.Headers["Retry-After"].Should().Be("2");
+        }
+
+        [Test]
+        public async Task It_omits_retry_after_when_no_break_duration_is_configured()
+        {
+            var response = await ExecuteWith(breakDuration: null);
+
+            response.Headers.Should().NotContainKey("Retry-After");
+        }
     }
 
     [TestFixture]
@@ -69,7 +140,7 @@ public class CoreExceptionLoggingMiddlewareTests
         public async Task Setup()
         {
             var requestInfo = No.RequestInfo("traceId");
-            var middleware = new CoreExceptionLoggingMiddleware(NullLogger.Instance);
+            var middleware = new CoreExceptionLoggingMiddleware(NullLogger.Instance, null);
 
             await middleware.Execute(
                 requestInfo,
@@ -100,7 +171,7 @@ public class CoreExceptionLoggingMiddlewareTests
         public async Task Setup()
         {
             var requestInfo = No.RequestInfo("custom-view-trace-id");
-            var middleware = new CoreExceptionLoggingMiddleware(NullLogger.Instance);
+            var middleware = new CoreExceptionLoggingMiddleware(NullLogger.Instance, null);
 
             await middleware.Execute(
                 requestInfo,

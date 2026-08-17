@@ -23,6 +23,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
 using Polly;
+using Polly.CircuitBreaker;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Pipeline;
 
@@ -124,7 +125,8 @@ public class PipelineOrderingTests
                 A.Fake<IServiceScopeFactory>(),
                 A.Fake<CachedClaimSetProvider>(),
                 A.Fake<IResourceDependencyGraphMLFactory>(),
-                A.Fake<IProfileService>()
+                A.Fake<IProfileService>(),
+                new CircuitBreakerSettings()
             );
 
             _stepTypes = GetStepTypes(apiService, "CreateQueryPipeline");
@@ -317,7 +319,8 @@ public class PipelineOrderingTests
                 A.Fake<IServiceScopeFactory>(),
                 A.Fake<CachedClaimSetProvider>(),
                 A.Fake<IResourceDependencyGraphMLFactory>(),
-                A.Fake<IProfileService>()
+                A.Fake<IProfileService>(),
+                new CircuitBreakerSettings()
             );
 
             _stepTypes = GetStepTypes(apiService, "CreateGetTrackedChangesPipeline");
@@ -465,7 +468,8 @@ public class PipelineOrderingTests
                 A.Fake<IServiceScopeFactory>(),
                 A.Fake<CachedClaimSetProvider>(),
                 A.Fake<IResourceDependencyGraphMLFactory>(),
-                A.Fake<IProfileService>()
+                A.Fake<IProfileService>(),
+                new CircuitBreakerSettings()
             );
 
             return GetStepTypes(apiService, factoryMethodName);
@@ -580,7 +584,8 @@ public class PipelineOrderingTests
                 A.Fake<IServiceScopeFactory>(),
                 A.Fake<CachedClaimSetProvider>(),
                 A.Fake<IResourceDependencyGraphMLFactory>(),
-                profileService
+                profileService,
+                new CircuitBreakerSettings()
             );
 
             _stepTypes = GetStepTypes(apiService, "CreateGetTokenInfoPipeline");
@@ -707,7 +712,12 @@ public class PipelineOrderingTests
         private const string DataRoutePipeline = "CreateMethodNotAllowedPipeline";
         private const string TrackedChangePipeline = "CreateTrackedChangeMethodNotAllowedPipeline";
 
-        private static ApiService BuildApiService()
+        internal static ApiService BuildApiServiceWith(CircuitBreakerSettings circuitBreakerSettings) =>
+            BuildApiService(circuitBreakerSettings);
+
+        private static ApiService BuildApiService() => BuildApiService(new CircuitBreakerSettings());
+
+        private static ApiService BuildApiService(CircuitBreakerSettings circuitBreakerSettings)
         {
             var services = new ServiceCollection();
 
@@ -747,7 +757,8 @@ public class PipelineOrderingTests
                 A.Fake<IServiceScopeFactory>(),
                 A.Fake<CachedClaimSetProvider>(),
                 A.Fake<IResourceDependencyGraphMLFactory>(),
-                A.Fake<IProfileService>()
+                A.Fake<IProfileService>(),
+                circuitBreakerSettings
             );
 
             return apiService;
@@ -839,6 +850,44 @@ public class PipelineOrderingTests
 
             requestInfo.FrontendResponse.StatusCode.Should().Be(405);
             requestInfo.FrontendResponse.Headers.Should().Contain("Allow", expectedAllow);
+        }
+    }
+
+    /// <summary>
+    /// The break duration reaches the exception middleware from configuration, and every one of the
+    /// circuit-breaker settings is a bare number of seconds, so wiring the wrong one would compile,
+    /// pass every other test, and quote a plausible-looking Retry-After that has nothing to do with
+    /// how long the circuit stays open. The values below are deliberately distinct so only the
+    /// intended setting can produce the expected header.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Pipeline_Is_Built_With_Circuit_Breaker_Settings : PipelineOrderingTests
+    {
+        [Test]
+        public async Task It_quotes_the_break_duration_as_retry_after_not_another_setting()
+        {
+            var apiService = Given_The_Method_Not_Allowed_Pipelines.BuildApiServiceWith(
+                new CircuitBreakerSettings
+                {
+                    FailureRatio = 0.1,
+                    SamplingDurationSeconds = 120,
+                    MinimumThroughput = 20,
+                    BreakDurationSeconds = 7,
+                }
+            );
+
+            var exceptionMiddleware = GetSteps(apiService, "CreateMethodNotAllowedPipeline")
+                .Single(step => step is CoreExceptionLoggingMiddleware);
+
+            RequestInfo requestInfo = No.RequestInfo("circuit-break-duration-wiring-trace-id");
+            await exceptionMiddleware.Execute(
+                requestInfo,
+                () => throw new BrokenCircuitException("circuit is open")
+            );
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(503);
+            requestInfo.FrontendResponse.Headers.Should().Contain("Retry-After", "7");
         }
     }
 }

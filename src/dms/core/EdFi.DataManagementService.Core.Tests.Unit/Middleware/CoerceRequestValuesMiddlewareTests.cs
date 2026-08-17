@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Validation;
 using FluentAssertions;
 using Json.Schema;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -313,6 +314,88 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
 
                 gradeLevels[0]!["isSecondary"]!.AsValue().GetValueKind().Should().Be(JsonValueKind.Number);
                 gradeLevels[1]!["isSecondary"]!.AsValue().GetValueKind().Should().Be(JsonValueKind.String);
+            }
+        }
+
+        /// <summary>
+        /// Coercion runs before document validation, so the schema cannot shield it from a client that
+        /// sends an object or array where a scalar belongs. Rejecting that shape is document
+        /// validation's job; throwing here would escape the pipeline as a 500 instead.
+        /// </summary>
+        [TestFixture]
+        [Parallelizable]
+        public class Given_A_Request_With_Non_Scalar_Values_At_Typed_Paths
+            : CoerceRequestValuesMiddlewareTests
+        {
+            private RequestInfo _requestInfo = No.RequestInfo();
+            private Func<Task> _act = () => Task.CompletedTask;
+
+            [SetUp]
+            public void Setup()
+            {
+                string jsonData = """
+                    {
+                        "schoolId": {},
+                        "yearsOld": [],
+                        "gradeLevels": [
+                            {
+                                "gradeLevelDescriptor": "grade1",
+                                "isSecondary": { "nested": true }
+                            }
+                        ],
+                        "nameOfInstitution": "school12"
+                    }
+                    """;
+
+                var frontEndRequest = new FrontendRequest(
+                    Path: "ed-fi/schools",
+                    Body: jsonData,
+                    Form: null,
+                    Headers: [],
+                    QueryParameters: [],
+                    TraceId: new TraceId("traceId"),
+                    RouteQualifiers: []
+                );
+                _requestInfo = Context(frontEndRequest, RequestMethod.POST);
+                _act = () => Middleware().Execute(_requestInfo, Next());
+            }
+
+            [Test]
+            public async Task It_does_not_throw()
+            {
+                await _act.Should().NotThrowAsync();
+            }
+
+            [Test]
+            public async Task It_leaves_the_values_for_document_validation()
+            {
+                await _act();
+
+                _requestInfo.ParsedBody["schoolId"]!.GetValueKind().Should().Be(JsonValueKind.Object);
+                _requestInfo.ParsedBody["yearsOld"]!.GetValueKind().Should().Be(JsonValueKind.Array);
+                _requestInfo.ParsedBody["gradeLevels"]!.AsArray()[0]!["isSecondary"]!
+                    .GetValueKind()
+                    .Should()
+                    .Be(JsonValueKind.Object);
+            }
+
+            /// <summary>
+            /// Runs the step that follows in every write pipeline, since leaving the value alone is
+            /// only correct if the next step then rejects it as a client error.
+            /// </summary>
+            [Test]
+            public async Task It_is_answered_by_document_validation_as_a_client_error()
+            {
+                IPipelineStep validateDocument = new ValidateDocumentMiddleware(
+                    NullLogger.Instance,
+                    new DocumentValidator(new CompiledSchemaCache())
+                );
+
+                await Middleware()
+                    .Execute(_requestInfo, () => validateDocument.Execute(_requestInfo, Next()));
+
+                _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+                _requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain("Data Validation Failed");
             }
         }
     }

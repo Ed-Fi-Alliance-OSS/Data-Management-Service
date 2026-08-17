@@ -1552,13 +1552,12 @@ function Invoke-BulkLoadClient {
     Resolve-SeedDataStandardRefTag), so the two are version-consistent by construction.
 
     Connection/concurrency/retry tuning is required: DMS's Polly circuit breaker
-    (FailureRatio=0.01, MinimumThroughput=2, 10s sampling window, 30s break) trips almost
-    immediately under the BulkLoadClient's unbounded default concurrency, causing all
-    subsequent requests to 500 (BrokenCircuit) and retry-storming the rate limiter
-    (PermitLimit=20000/10s, QueueLimit=0) into a flood of 429s. The reference values used
-    by the CI bulk-load path (eng/bulkLoad/modules/BulkLoad.psm1 -c 100 -l 500 -t 50)
-    prove the approach; bootstrap seed delivery uses conservative equivalents for the
-    relational backend.
+    (FailureRatio=0.1, MinimumThroughput=20, 120s sampling window, 30s break) can trip under
+    the BulkLoadClient's unbounded default concurrency, refusing subsequent requests with 503
+    (BrokenCircuit) and retry-storming the rate limiter (PermitLimit=20000/10s, QueueLimit=0)
+    into a flood of 429s. The reference values used by the CI bulk-load path
+    (eng/bulkLoad/modules/BulkLoad.psm1 -c 100 -l 500 -t 50) prove the approach;
+    bootstrap seed delivery uses conservative equivalents for the relational backend.
     #>
     param(
         [string]$BulkLoadClientDll,

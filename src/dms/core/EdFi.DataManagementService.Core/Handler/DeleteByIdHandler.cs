@@ -125,17 +125,18 @@ internal class DeleteByIdHandler(ILogger _logger, ResiliencePipeline _resilience
             DeleteFailureWriteConflict => new FrontendResponse(
                 StatusCode: 500,
                 Body: FailureResponse.ForSystemError(requestInfo.FrontendRequest.TraceId),
-                Headers: []
+                Headers: [],
+                ContentType: "application/problem+json"
             ),
             DeleteFailureETagMisMatch mismatch => new FrontendResponse(
                 StatusCode: 412,
                 Body: FailureResponse.ForETagMisMatch(mismatch.Reason, requestInfo.FrontendRequest.TraceId),
                 Headers: []
             ),
-            UnknownFailure failure => new(
-                StatusCode: 500,
-                Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
-                Headers: []
+            UnknownFailure failure => CreateUnknownFailureResponse(
+                _logger,
+                requestInfo,
+                failure.FailureMessage
             ),
             _ => new(
                 StatusCode: 500,

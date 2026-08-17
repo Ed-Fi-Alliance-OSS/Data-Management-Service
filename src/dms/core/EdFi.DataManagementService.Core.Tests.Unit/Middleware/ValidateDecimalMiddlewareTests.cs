@@ -150,5 +150,97 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     .Contain("yearsOfPriorProfessionalExperience must be between -999.99 and 999.99.");
             }
         }
+
+        /// <summary>
+        /// A JSON number too large for <see cref="decimal" /> satisfies the resource's
+        /// <c>"type": "number"</c> schema, so it reaches this middleware. Reading it must produce the
+        /// same data-validation rejection as any other unusable decimal rather than an exception,
+        /// which the pipeline would answer as a 500.
+        /// </summary>
+        [TestFixture]
+        [Parallelizable]
+        public class Given_A_Decimal_Too_Large_For_The_Type : ValidateDecimalMiddlewareTests
+        {
+            private RequestInfo _requestInfo = No.RequestInfo();
+
+            [SetUp]
+            public async Task Setup()
+            {
+                var jsonData = """
+                    {
+                        "staffUniqueId": "staff11",
+                        "yearsOfPriorProfessionalExperience": 1e400
+                    }
+                    """;
+                var frontEndRequest = new FrontendRequest(
+                    "ed-fi/staffs",
+                    Body: jsonData,
+                    Form: null,
+                    Headers: [],
+                    QueryParameters: [],
+                    TraceId: new TraceId("traceId"),
+                    RouteQualifiers: []
+                );
+                _requestInfo = Context(frontEndRequest, RequestMethod.POST);
+                _requestInfo.ParsedBody = JsonNode.Parse(jsonData)!;
+                await Middleware().Execute(_requestInfo, () => Task.CompletedTask);
+            }
+
+            [Test]
+            public void It_provides_error_response()
+            {
+                _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+                _requestInfo
+                    .FrontendResponse.Body?.ToJsonString()
+                    .Should()
+                    .Contain("Value is not a valid decimal.");
+            }
+        }
+
+        /// <summary>
+        /// An explicit null at a decimal path is rejected upstream by document validation for every
+        /// resource the Ed-Fi schema declares, since none of them make a number nullable. Covered
+        /// directly because the middleware must not depend on that: the read is the same one that has
+        /// to survive an unusable value.
+        /// </summary>
+        [TestFixture]
+        [Parallelizable]
+        public class Given_A_Null_At_A_Decimal_Path : ValidateDecimalMiddlewareTests
+        {
+            private RequestInfo _requestInfo = No.RequestInfo();
+
+            [SetUp]
+            public async Task Setup()
+            {
+                var jsonData = """
+                    {
+                        "staffUniqueId": "staff11",
+                        "yearsOfPriorProfessionalExperience": null
+                    }
+                    """;
+                var frontEndRequest = new FrontendRequest(
+                    "ed-fi/staffs",
+                    Body: jsonData,
+                    Form: null,
+                    Headers: [],
+                    QueryParameters: [],
+                    TraceId: new TraceId("traceId"),
+                    RouteQualifiers: []
+                );
+                _requestInfo = Context(frontEndRequest, RequestMethod.POST);
+                _requestInfo.ParsedBody = JsonNode.Parse(jsonData)!;
+                await Middleware().Execute(_requestInfo, () => Task.CompletedTask);
+            }
+
+            [Test]
+            public void It_provides_error_response()
+            {
+                _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+                _requestInfo
+                    .FrontendResponse.Body?.ToJsonString()
+                    .Should()
+                    .Contain("Value is not a valid decimal.");
+            }
+        }
     }
 }

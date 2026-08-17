@@ -135,7 +135,8 @@ internal class UpsertHandler(ILogger _logger, ResiliencePipeline _resiliencePipe
             UpsertFailureWriteConflict => new(
                 StatusCode: 500,
                 Body: ForSystemError(requestInfo.FrontendRequest.TraceId),
-                Headers: []
+                Headers: [],
+                ContentType: "application/problem+json"
             ),
             UpsertFailureETagMisMatch mismatch => new(
                 StatusCode: 412,
@@ -206,10 +207,10 @@ internal class UpsertHandler(ILogger _logger, ResiliencePipeline _resiliencePipe
                 Body: ForDataPolicyEnforced(failure.ProfileName, requestInfo.FrontendRequest.TraceId),
                 Headers: []
             ),
-            UnknownFailure failure => new(
-                StatusCode: 500,
-                Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
-                Headers: []
+            UnknownFailure failure => CreateUnknownFailureResponse(
+                _logger,
+                requestInfo,
+                failure.FailureMessage
             ),
             _ => new(
                 StatusCode: 500,

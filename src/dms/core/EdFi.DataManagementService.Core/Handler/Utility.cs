@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 using Polly;
 using Polly.Retry;
@@ -80,6 +81,39 @@ public static class Utility
     public static JsonNode? ToJsonError(string errorInfo, TraceId traceId)
     {
         return new JsonObject { ["error"] = errorInfo, ["correlationId"] = traceId.Value };
+    }
+
+    /// <summary>
+    /// Shapes the response for a backend failure the backend itself could not classify. The failure
+    /// message is written for diagnosis and names internal components, so it is logged rather than
+    /// served; several producers build it from a caught exception and log nothing else, which makes
+    /// this the only record of what went wrong. Being exception-derived is also why it is sanitized
+    /// like the request path beside it, at the cost of the punctuation the whitelist drops. The
+    /// client receives the standard problem-details envelope in its place. Note that a failure
+    /// escaping as an exception instead of a result is answered by
+    /// <c>CoreExceptionLoggingMiddleware</c>, whose generic 500 deliberately carries a different,
+    /// non-problem-details body, so the two shapes both exist for server-side failures.
+    /// </summary>
+    internal static FrontendResponse CreateUnknownFailureResponse(
+        ILogger logger,
+        RequestInfo requestInfo,
+        string failureMessage
+    )
+    {
+        logger.LogError(
+            "Backend reported an unknown failure for {Method} {Path}: {FailureMessage} - {TraceId}",
+            requestInfo.Method,
+            LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.Path),
+            LoggingSanitizer.SanitizeForLogging(failureMessage),
+            requestInfo.FrontendRequest.TraceId.Value
+        );
+
+        return new FrontendResponse(
+            StatusCode: 500,
+            Body: FailureResponse.ForSystemError(requestInfo.FrontendRequest.TraceId),
+            Headers: [],
+            ContentType: "application/problem+json"
+        );
     }
 
     internal static FrontendResponse CreateSecurityConfigurationFailureResponse(

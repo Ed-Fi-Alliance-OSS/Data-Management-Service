@@ -62,29 +62,23 @@ namespace EdFi.DataManagementService.Core.Middleware
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
-            try
+            if (requestInfo.FrontendRequest.BodyParseErrorMessage != null)
             {
-                if (requestInfo.FrontendRequest.BodyParseErrorMessage != null)
-                {
-                    _logger.LogDebug(
-                        "Unable to parse the request body as JSON - {TraceId}",
-                        requestInfo.FrontendRequest.TraceId.Value
-                    );
+                _logger.LogDebug(
+                    "Unable to parse the request body as JSON - {TraceId}",
+                    requestInfo.FrontendRequest.TraceId.Value
+                );
 
-                    SetValidationErrorResponse(
-                        requestInfo,
-                        requestInfo.FrontendRequest.BodyParseErrorMessage
-                    );
-                    return;
-                }
+                SetValidationErrorResponse(requestInfo, requestInfo.FrontendRequest.BodyParseErrorMessage);
+                return;
+            }
 
-                if (requestInfo.FrontendRequest.ParsedBody != null)
-                {
-                    requestInfo.ParsedBody = requestInfo.FrontendRequest.ParsedBody;
-                    await next();
-                    return;
-                }
-
+            if (requestInfo.FrontendRequest.ParsedBody != null)
+            {
+                requestInfo.ParsedBody = requestInfo.FrontendRequest.ParsedBody;
+            }
+            else
+            {
                 if (string.IsNullOrWhiteSpace(requestInfo.FrontendRequest.Body))
                 {
                     requestInfo.FrontendResponse = new FrontendResponse(
@@ -98,23 +92,31 @@ namespace EdFi.DataManagementService.Core.Middleware
                     return;
                 }
 
-                JsonNode? body = JsonNode.Parse(requestInfo.FrontendRequest.Body);
+                // Only the parse itself is guarded, and only for the one exception that means the
+                // body was malformed. A failure raised by a later step, or by anything other than
+                // the JSON grammar, is not a client validation error and its message is internal,
+                // so it must travel on to the pipeline's exception handler instead of being
+                // answered as a 400 here.
+                try
+                {
+                    JsonNode? body = JsonNode.Parse(requestInfo.FrontendRequest.Body);
 
-                Trace.Assert(body != null, "Unable to parse JSON", "");
+                    Trace.Assert(body != null, "Unable to parse JSON", "");
 
-                requestInfo.ParsedBody = body;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(
-                    ex,
-                    "Unable to parse the request body as JSON - {TraceId}",
-                    requestInfo.FrontendRequest.TraceId.Value
-                );
+                    requestInfo.ParsedBody = body;
+                }
+                catch (System.Text.Json.JsonException ex)
+                {
+                    _logger.LogDebug(
+                        ex,
+                        "Unable to parse the request body as JSON - {TraceId}",
+                        requestInfo.FrontendRequest.TraceId.Value
+                    );
 
-                SetValidationErrorResponse(requestInfo, ex.Message);
+                    SetValidationErrorResponse(requestInfo, ex.Message);
 
-                return;
+                    return;
+                }
             }
 
             await next();

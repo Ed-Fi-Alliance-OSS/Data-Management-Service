@@ -690,4 +690,45 @@ public class JsonHelperExtensionsTests
             result.Should().Be(1);
         }
     }
+
+    /// <summary>
+    /// The coercion helpers run over request-body nodes before document validation, so the node at a
+    /// typed path is whatever shape the client sent. An object or array there is not something to
+    /// coerce; like an unparseable value it belongs to document validation, so the helper must leave
+    /// the node alone rather than throw.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class When_coercing_a_node_that_is_not_a_value
+    {
+        private static readonly (string Name, Action<JsonNode> Coerce)[] _coercions =
+        [
+            (nameof(JsonHelpers.TryCoerceToBoolean), node => node.TryCoerceToBoolean()),
+            (nameof(JsonHelpers.TryCoerceStringToNumber), node => node.TryCoerceStringToNumber()),
+            (nameof(JsonHelpers.TryCoerceStringToDecimal), node => node.TryCoerceStringToDecimal()),
+            (nameof(JsonHelpers.TryNormalizeDateTimeString), node => node.TryNormalizeDateTimeString()),
+            (nameof(JsonHelpers.TryCoerceSlashDateToIso8601), node => node.TryCoerceSlashDateToIso8601()),
+        ];
+
+        [TestCase("{ \"value\": {} }")]
+        [TestCase("{ \"value\": { \"nested\": 1 } }")]
+        [TestCase("{ \"value\": [] }")]
+        [TestCase("{ \"value\": [1] }")]
+        public void Given_an_object_or_array__Then_leaves_it_for_document_validation(string jsonString)
+        {
+            foreach ((string name, Action<JsonNode> coerce) in _coercions)
+            {
+                // Arrange
+                JsonNode jsonNode = JsonNode.Parse(jsonString)!;
+                string before = jsonNode.ToJsonString();
+
+                // Act
+                Action act = () => coerce(jsonNode["value"]!);
+
+                // Assert
+                act.Should().NotThrow("{0} must not throw on a non-scalar node", name);
+                jsonNode.ToJsonString().Should().Be(before, "{0} must leave the node untouched", name);
+            }
+        }
+    }
 }

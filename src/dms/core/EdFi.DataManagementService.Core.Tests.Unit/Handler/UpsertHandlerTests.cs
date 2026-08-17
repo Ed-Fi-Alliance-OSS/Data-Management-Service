@@ -719,6 +719,16 @@ public class UpsertHandlerTests
             requestInfo.FrontendResponse.Headers.Should().BeEmpty();
             requestInfo.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }
+
+        /// <summary>
+        /// The body is problem details, so the content type has to say so; serving it as plain
+        /// application/json leaves a client content-negotiating on the wrong media type.
+        /// </summary>
+        [Test]
+        public void It_serves_the_problem_details_content_type()
+        {
+            requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+        }
     }
 
     [TestFixture]
@@ -1315,15 +1325,26 @@ public class UpsertHandlerTests
             await upsertHandler.Execute(requestInfo, NullNext);
         }
 
+        /// <summary>
+        /// The failure message names internal components and is written by the backend for
+        /// diagnosis, not for a client. It is logged instead, and the response carries the same
+        /// problem-details envelope every other server-side failure uses.
+        /// </summary>
         [Test]
         public void It_has_the_correct_response()
         {
             requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+            requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
 
             var expected = $$"""
 {
-  "error": "FailureMessage",
-  "correlationId": "{{_traceId}}"
+  "detail": "An unexpected problem has occurred.",
+  "type": "urn:ed-fi:api:system",
+  "title": "System Error",
+  "status": 500,
+  "correlationId": "{{_traceId}}",
+  "validationErrors": {},
+  "errors": []
 }
 """;
 
@@ -1338,6 +1359,12 @@ expected: {expected}
 actual: {requestInfo.FrontendResponse.Body}
 """
                 );
+        }
+
+        [Test]
+        public void It_does_not_disclose_the_failure_message()
+        {
+            requestInfo.FrontendResponse.Body!.ToJsonString().Should().NotContain("FailureMessage");
         }
     }
 }

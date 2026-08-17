@@ -349,6 +349,130 @@ selection the API's other error responses use.
 }
 ```
 
+## CircuitBreaker
+
+DMS routes its document CRUD calls - GET by id, query, POST, PUT, DELETE, and
+tracked-change queries - through a Polly resilience pipeline whose outermost
+strategy is a circuit breaker.
+Endpoints that do not read or write documents, such as
+`availableChangeVersions`, bypass the pipeline and keep answering while the
+breaker is open.
+It counts backend calls that *return* an unknown-failure result - the outcome
+DMS uses for a failure it cannot turn into a specific answer for the client.
+Recognized outcomes such as a deadlock victim, a constraint violation or a
+validation failure never count toward it, because each maps to its own result.
+Two consequences are worth knowing:
+
+- On SQL Server, a write failure whose outcome is indeterminate - a command
+  timeout, which expires on the client and leaves it unknown whether the server
+  applied the write - is recognized by the classifier yet still reported as an
+  unknown failure, so it does count toward the breaker.
+  That is deliberate: a sustained run of them is the signal that the backend is
+  unhealthy.
+  The PostgreSQL classifier does not currently recognize this case; an Npgsql
+  client-side timeout is not a `PostgresException`, so it escapes as an
+  exception instead and falls under the next point.
+  Either way it is never retried and never answered as a client error.
+- A failure that escapes as an exception rather than a result does not count.
+  The breaker's predicate inspects returned results only.
+
+When the breaker opens, every request that reaches the pipeline is refused for
+`BreakDurationSeconds`.
+That includes reads: the pipeline is shared by GET, query, POST, PUT and
+DELETE alike, so an open breaker pauses document reads as well as writes.
+
+| Parameter               | Description                                                                                                                                                                  |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| FailureRatio            | Fraction of sampled calls that must fail before the breaker opens. Greater than 0 and at most 1; `0.1` means 10%.                                                             |
+| SamplingDurationSeconds | Length of the rolling window over which the failure ratio is assessed. From 0.5 to 86400 (one day), inclusive.                                                                |
+| MinimumThroughput       | Minimum number of calls that must occur inside the sampling window before the breaker may open at all. At least 2.                                                            |
+| BreakDurationSeconds    | How long the breaker stays open before it admits a trial call. From 0.5 to 86400 (one day), inclusive.                                                                        |
+
+DMS refuses to start when a value falls outside those bounds, naming the
+offending setting rather than letting the resilience pipeline fail later.
+The duration bounds are inclusive at both ends, matching the range the pipeline
+enforces rather than its prose, which describes the lower bound as exclusive.
+`FailureRatio` is the one place DMS is stricter than the pipeline: a ratio of
+exactly `0` is accepted there but rejected here, because it asks the breaker to
+open on a window containing no failures at all.
+
+Beyond those hard bounds, two independent rules bound these values, and the
+shipped defaults (`0.1` / `120` / `20` / `30`) satisfy both.
+A configuration that violates either still starts and still works, but the
+breaker will not behave usefully:
+
+- `FailureRatio * MinimumThroughput` must exceed 1.
+  Otherwise a single anomalous failure satisfies the ratio and opens the
+  breaker on its own.
+- `MinimumThroughput / SamplingDurationSeconds` must sit below the
+  deployment's quietest sustained request rate.
+  The throughput floor is a hard gate: until the window holds
+  `MinimumThroughput` calls the breaker cannot open no matter how many of
+  them failed, so a value set too high silently disables load shedding for a
+  low-traffic deployment even when its database is completely down.
+  At the defaults that floor is 20 / 120 = 0.17 requests per second.
+
+DMS logs a startup warning when the first rule is violated, and when the
+throughput floor exceeds one request per second.
+It cannot check the second rule properly: only the operator knows the
+deployment's quietest sustained rate, so the warning fires on an obviously
+high floor rather than on a genuinely unreachable one.
+Compare the floor against your own traffic.
+
+### Rejection response
+
+A request refused by an open breaker receives a `503 Service Unavailable`
+response with a `Retry-After` header and an Ed-Fi problem-details body served
+as `application/problem+json`.
+`Retry-After` carries the configured `BreakDurationSeconds`, rounded up to
+whole seconds.
+It is the full break duration rather than the time remaining in the current
+break, so a client that is refused partway through a break is told to wait
+longer than it strictly needs to.
+That errs deliberately: the value can never send a client back early, and
+retrying early is what turns one break into a queue of retries arriving the
+moment it lifts.
+The request never reached the backend, so it is safe for a client to reissue
+it unchanged.
+
+```json
+{
+  "detail": "The service is temporarily unable to handle the request. Retry the request later.",
+  "type": "urn:ed-fi:api:service-unavailable",
+  "title": "Service Unavailable",
+  "status": 503,
+  "correlationId": "0HNCTN1IRQMDG:00000001",
+  "validationErrors": {},
+  "errors": []
+}
+```
+
+### Unclassified backend failure response
+
+A document request whose backend failure DMS could not turn into a specific
+answer receives a `500 Internal Server Error` carrying the standard Ed-Fi
+problem-details envelope as `application/problem+json`, on every verb:
+
+```json
+{
+  "detail": "An unexpected problem has occurred.",
+  "type": "urn:ed-fi:api:system",
+  "title": "System Error",
+  "status": 500,
+  "correlationId": "0HNCTN1IRQMDG:00000001",
+  "validationErrors": {},
+  "errors": []
+}
+```
+
+Earlier releases answered this case with `{"error": "...", "correlationId": "..."}`
+as `application/json`, where the `error` value was an internal diagnostic
+message naming DMS components.
+That message is now written to the log instead of the response, so a client
+parsing the old `error` field will no longer find it.
+Failures that escape as exceptions rather than results are answered by a
+separate generic 500 that still uses a `{"message", "traceId"}` body.
+
 ## OtlpLogging
 
 CMS and DMS compile in `Serilog.Sinks.OpenTelemetry` as a single

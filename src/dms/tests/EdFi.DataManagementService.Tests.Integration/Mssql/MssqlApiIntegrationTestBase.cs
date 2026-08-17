@@ -23,6 +23,16 @@ public abstract class MssqlApiIntegrationTestBase : ApiIntegrationTestBase
 
     protected override string Datastore => "mssql";
 
+    /// <summary>
+    /// Applies the snapshot isolation settings production provisioning applies, so a test that
+    /// depends on locking behavior exercises the configuration production actually runs under.
+    /// These are database-scoped options that live in master rather than in the data pages, so a
+    /// snapshot revert does not clear them and the slot pool would otherwise hand the changed
+    /// configuration to every later test that leases the same database. Opting in here rather than
+    /// in the test keeps the revert paired with the change.
+    /// </summary>
+    protected virtual bool MatchProductionWriteIsolation => false;
+
     [OneTimeSetUp]
     public void GuardConnectionStringPresent()
     {
@@ -35,9 +45,14 @@ public abstract class MssqlApiIntegrationTestBase : ApiIntegrationTestBase
     {
         IMssqlGeneratedDdlBaselineDatabase baseline = await MssqlBaselineCache.CreateOrGetAsync(fixture);
         _lease = await baseline.AcquireRestoredDatabaseAsync();
-        if (EnableDocumentCacheReadAcceleration)
+        if (EnableDocumentCacheReadAcceleration || MatchProductionWriteIsolation)
         {
-            await SetReadCommittedSnapshotAsync(_lease.Database.DatabaseName);
+            await SetReadCommittedSnapshotAsync(_lease.Database.DatabaseName, enabled: true);
+        }
+
+        if (MatchProductionWriteIsolation)
+        {
+            await SetAllowSnapshotIsolationAsync(_lease.Database.DatabaseName, enabled: true);
         }
 
         return _lease.Database.ConnectionString;
@@ -54,16 +69,35 @@ public abstract class MssqlApiIntegrationTestBase : ApiIntegrationTestBase
     {
         if (_lease is not null)
         {
+            if (MatchProductionWriteIsolation)
+            {
+                // Returned to the pooled default before the slot is handed back, so the next test to
+                // lease this database sees the isolation configuration it was built with.
+                await SetAllowSnapshotIsolationAsync(_lease.Database.DatabaseName, enabled: false);
+                await SetReadCommittedSnapshotAsync(
+                    _lease.Database.DatabaseName,
+                    enabled: EnableDocumentCacheReadAcceleration
+                );
+            }
+
             await _lease.DisposeAsync();
             _lease = null;
         }
     }
 
-    private static Task SetReadCommittedSnapshotAsync(string databaseName)
+    private static Task SetReadCommittedSnapshotAsync(string databaseName, bool enabled)
     {
         string quotedDatabaseName = MssqlTestDatabaseHelper.QuoteIdentifier(databaseName);
         return MssqlTestDatabaseHelper.ExecuteAdminNonQueryAsync(
-            $"ALTER DATABASE {quotedDatabaseName} SET READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE;"
+            $"ALTER DATABASE {quotedDatabaseName} SET READ_COMMITTED_SNAPSHOT {(enabled ? "ON" : "OFF")} WITH ROLLBACK IMMEDIATE;"
+        );
+    }
+
+    private static Task SetAllowSnapshotIsolationAsync(string databaseName, bool enabled)
+    {
+        string quotedDatabaseName = MssqlTestDatabaseHelper.QuoteIdentifier(databaseName);
+        return MssqlTestDatabaseHelper.ExecuteAdminNonQueryAsync(
+            $"ALTER DATABASE {quotedDatabaseName} SET ALLOW_SNAPSHOT_ISOLATION {(enabled ? "ON" : "OFF")};"
         );
     }
 }

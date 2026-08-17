@@ -39,8 +39,11 @@ internal class DecimalValidator : IDecimalValidator
 
             foreach (var match in result.Matches)
             {
-                decimal? value = match.Value!.GetValue<decimal?>();
-                if (value == null)
+                // The path's "type": "number" schema admits values decimal cannot hold, such as a
+                // magnitude beyond its range, so reading one is itself a validation outcome rather
+                // than a precondition. A failed read is reported like any other unusable value; it
+                // must not throw, because an exception here escapes the pipeline as a 500.
+                if (match.Value is not JsonValue jsonValue || !jsonValue.TryGetValue(out decimal value))
                 {
                     AddError(errors, info.Path.Value, "Value is not a valid decimal.");
                     continue;

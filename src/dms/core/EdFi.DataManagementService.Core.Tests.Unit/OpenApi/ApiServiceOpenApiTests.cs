@@ -74,7 +74,8 @@ public class ApiServiceOpenApiTests
             A.Fake<IServiceScopeFactory>(),
             cachedClaimSetProvider,
             A.Fake<IResourceDependencyGraphMLFactory>(),
-            profileService ?? A.Fake<IProfileService>()
+            profileService ?? A.Fake<IProfileService>(),
+            new CircuitBreakerSettings()
         );
     }
 

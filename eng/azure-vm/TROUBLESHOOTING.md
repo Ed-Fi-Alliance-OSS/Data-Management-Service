@@ -42,7 +42,7 @@ docker exec -it dms-sec-postgres psql -U postgres -l    # list databases
 | **DMS crash-loops** with `Realm does not exist` (or never binds `/health`) | DMS loads CMS data stores at startup and fails fast if identity/CMS aren't ready (`DMS-1093`/`DMS-1109`). Run `bootstrap/bootstrap.ps1` **before** starting `st-dms`/`mt-dms`. |
 | **Bulk-load can't fetch XSDs** against `/mt-dms` (404) | `DMS-1230`, fixed in `:pre` ≥ 2026-06-24 (#1048). If you still see 404s, your image predates the fix — `docker compose … pull`. (`seed/clone-data.sh` remains a faster MT seeding path.) |
 | Bulk-load **`invalid_client` / 401** with a fresh key | `DMS-1231`, fixed in `:pre` ≥ 2026-06-24 (#1047) — generated secrets are now Basic-safe. On an older image the secret may contain `+`/`%`; re-mint until `+`/`%`/space-free, or URL-encode it in the Basic header. |
-| Bulk-load **429 / "circuit is now open"** mid-run | Rate limiter + circuit breaker (`FAILURE_RATIO=0.01`) tripped by parallel load. Load descriptors first, raise the rate limit, then resources; or use `seed/clone-data.sh`. |
+| Bulk-load **429 / 503 "service is temporarily unable"** mid-run | Rate limiter + circuit breaker tripped by parallel load. Load descriptors first, raise the rate limit, then resources; or use `seed/clone-data.sh`. The breaker no longer opens on a single anomaly (`FAILURE_RATIO=0.1`, `MINIMUM_THROUGHPUT=20`), and a break now answers 503 with `Retry-After` rather than a 400, so a client that retries 5xx no longer drops the documents it was refused. |
 
 ## Reset deployment state
 

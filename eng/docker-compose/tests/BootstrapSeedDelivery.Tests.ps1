@@ -2424,9 +2424,9 @@ EdFi.BulkLoadClient.Console fake
             # Ed-Fi-Data-Standard tag, so validation is on by construction.
             $capture.args | Should -Not -Contain "-n"
             # Tuning flags required to prevent circuit-breaker tripping and rate-limiter flooding.
-            # DMS's Polly breaker (FailureRatio=0.01, MinimumThroughput=2, 10s sampling, 30s break)
-            # opens almost immediately under unbounded concurrency; these conservative defaults keep
-            # the relational backend stable. See Invoke-BulkLoadClient in load-dms-seed-data.ps1.
+            # DMS's Polly breaker (FailureRatio=0.1, MinimumThroughput=20, 120s sampling, 30s break)
+            # can open under unbounded concurrency; these conservative defaults keep the relational
+            # backend stable. See Invoke-BulkLoadClient in load-dms-seed-data.ps1.
             $capture.args | Should -Contain "-c"
             $capture.args | Should -Contain "-l"
             $capture.args | Should -Contain "-t"

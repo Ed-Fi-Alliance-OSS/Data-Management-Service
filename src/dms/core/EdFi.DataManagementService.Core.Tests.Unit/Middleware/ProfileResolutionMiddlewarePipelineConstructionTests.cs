@@ -94,7 +94,8 @@ public class Given_Scope_Validation_Is_Enabled_For_Profile_Resolution_Middleware
             A.Fake<IServiceScopeFactory>(),
             A.Fake<CachedClaimSetProvider>(),
             A.Fake<IResourceDependencyGraphMLFactory>(),
-            A.Fake<IProfileService>()
+            A.Fake<IProfileService>(),
+            new CircuitBreakerSettings()
         );
     }
 
