@@ -27,21 +27,16 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private readonly PlaywrightContext _playwrightContext;
         private readonly TestLogger _logger;
         private readonly ScenarioContext _scenarioContext;
-        private readonly FeatureContext _featureContext;
 
         public StepDefinitions(
             PlaywrightContext playwrightContext,
             TestLogger logger,
-            ScenarioContext scenarioContext,
-            FeatureContext featureContext
+            ScenarioContext scenarioContext
         )
         {
             _playwrightContext = playwrightContext;
             _logger = logger;
             _scenarioContext = scenarioContext;
-            _featureContext = featureContext;
-
-            _featureContext.TryAdd("_waitOnNextQuery", false);
         }
 
         private IAPIResponse _apiResponse = null!;
@@ -288,7 +283,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     $"{baseUrl}/{descriptor["descriptorName"]}",
                     new() { DataObject = descriptor, Headers = GetHeaders() }
                 )!;
-                _featureContext["_waitOnNextQuery"] = true;
                 _apiResponses.Add(response);
 
                 response
@@ -310,7 +304,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     dataUrl,
                     new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetWriteHeaders() }
                 )!;
-                _featureContext["_waitOnNextQuery"] = true;
                 _apiResponses.Add(response);
 
                 response
@@ -362,7 +355,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     $"{baseUrl}/{descriptorName}",
                     new() { DataObject = descriptorBody, Headers = GetHeaders() }
                 )!;
-                _featureContext["_waitOnNextQuery"] = true;
 
                 string body = apiResponse.TextAsync().Result;
                 _logger.log.Information(body);
@@ -439,7 +431,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetWriteHeaders() }
                 )!
             );
-            _featureContext["_waitOnNextQuery"] = true;
             _logger.log.Information(await _apiResponse.TextAsync());
 
             _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
@@ -464,21 +455,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             return string.Empty;
         }
 
-        private async Task WaitForNextQueryIfNeededAsync()
-        {
-            if (
-                _featureContext.TryGetValue("_waitOnNextQuery", out object? waitOnNextQuery)
-                && waitOnNextQuery is bool shouldWait
-                && shouldWait
-            )
-            {
-                // Writes can be visible before the change-query watermark reflects them.
-                // Consume the one-shot flag so only the next read pays the settle delay.
-                await Task.Delay(500);
-                _featureContext["_waitOnNextQuery"] = false;
-            }
-        }
-
         [When("a POST request is made to {string} with header {string} value {string}")]
         public async Task WhenSendingAPOSTRequestToWithBodyAndCustomHeader(
             string url,
@@ -498,7 +474,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = headers }
             )!;
-            _featureContext["_waitOnNextQuery"] = true;
             _logger.log.Information(_apiResponse.TextAsync().Result);
 
             _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
@@ -528,7 +503,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = headers }
             )!;
-            _featureContext["_waitOnNextQuery"] = true;
             _logger.log.Information(await _apiResponse.TextAsync());
         }
 
@@ -559,7 +533,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     Data = await content.ReadAsStringAsync(),
                 }
             )!;
-            _featureContext["_waitOnNextQuery"] = true;
         }
 
         [When("a POST request is made for dependent resource {string} with")]
@@ -570,7 +543,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetWriteHeaders() }
             )!;
-            _featureContext["_waitOnNextQuery"] = true;
 
             _dependentId = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
@@ -599,7 +571,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     Headers = GetWriteHeadersWithIfMatch(ifMatch),
                 }
             )!;
-            _featureContext["_waitOnNextQuery"] = true;
 
             extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
@@ -628,7 +599,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     Headers = GetWriteHeadersWithIfNoneMatch(ifNoneMatch),
                 }
             )!;
-            _featureContext["_waitOnNextQuery"] = true;
 
             extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
@@ -654,7 +624,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetWriteHeaders() }
                 )!
             );
-            _featureContext["_waitOnNextQuery"] = true;
 
             extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
@@ -692,7 +661,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { DataByte = System.Text.Encoding.UTF8.GetBytes(body), Headers = GetWriteHeaders() }
             )!;
-            _featureContext["_waitOnNextQuery"] = true;
 
             if (_apiResponse.Status != 204)
             {
@@ -726,7 +694,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Headers = GetHeaders() }
             )!;
-            _featureContext["_waitOnNextQuery"] = true;
         }
 
         [When("a relationship with {string} is deleted")]
@@ -739,7 +706,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Headers = GetHeaders() }
             )!;
-            _featureContext["_waitOnNextQuery"] = true;
         }
 
         [When("a DELETE request is made to referenced resource {string}")]
@@ -751,14 +717,11 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Headers = GetHeaders() }
             )!;
-            _featureContext["_waitOnNextQuery"] = true;
         }
 
         [When("a GET request is made to {string}")]
         public async Task WhenAGETRequestIsMadeTo(string url)
         {
-            await WaitForNextQueryIfNeededAsync();
-
             string id = GetCurrentId();
 
             url = AddDataPrefixIfNecessary(url)
@@ -830,8 +793,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a GET request is made to {string} with header {string} value {string}")]
         public async Task WhenAGETRequestIsMadeToWithHeader(string url, string header, string value)
         {
-            await WaitForNextQueryIfNeededAsync();
-
             string id = GetCurrentId();
 
             url = AddDataPrefixIfNecessary(url)
@@ -859,11 +820,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("an {string} request is made to {string} with headers")]
         public async Task WhenAnRequestIsMadeToWithHeaders(string method, string url, DataTable headersTable)
         {
-            if (string.Equals(method, "GET", StringComparison.OrdinalIgnoreCase))
-            {
-                await WaitForNextQueryIfNeededAsync();
-            }
-
             url = AddDataPrefixIfNecessary(url)
                 .Replace("{id}", _id)
                 .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
@@ -887,11 +843,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("an unauthenticated {string} request is made to {string}")]
         public async Task WhenAnUnauthenticatedRequestIsMadeTo(string method, string url)
         {
-            if (string.Equals(method, "GET", StringComparison.OrdinalIgnoreCase))
-            {
-                await WaitForNextQueryIfNeededAsync();
-            }
-
             url = AddDataPrefixIfNecessary(url)
                 .Replace("{id}", _id)
                 .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
