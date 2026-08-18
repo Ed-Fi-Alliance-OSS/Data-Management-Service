@@ -153,6 +153,76 @@ public class Given_DocumentCacheStatusMapping
     }
 
     [Test]
+    public async Task It_maps_requested_runtime_cancellation_to_cancelling()
+    {
+        DocumentCacheTargetObservation target = ResolvedTarget(generation: 3);
+        DocumentCacheProjectionObservationStore observationStore = new(
+            new FixedTimeProvider(ProcessObservedAt)
+        );
+        observationStore.ObserveTarget(
+            TargetHealth(
+                target,
+                executionState: new DocumentCacheProjectionExecutionStateSnapshot(
+                    isRunning: true,
+                    isActivelyProcessing: false,
+                    isWaitingForWorkerGate: false,
+                    isInBackoff: false,
+                    backoffUntil: null,
+                    cancellationRequested: true,
+                    cancellationObservedAt: null
+                )
+            )
+        );
+        DocumentCacheStatusService service = CreateService(
+            new StaticTargetRegistry([target], [ExecutionContext(target)]),
+            observationStore
+        );
+
+        DocumentCacheStatusTarget statusTarget = (await service.GetStatusAsync()).Targets.Single();
+        JsonObject root = JsonNode.Parse(JsonSerializer.Serialize(statusTarget))!.AsObject();
+
+        statusTarget.ExecutionState.Status.Should().Be(DocumentCacheStatusExecutionState.Cancelling);
+        root["executionState"]!["status"]!.GetValue<string>().Should().Be("cancelling");
+        statusTarget.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.RuntimeCancelled);
+        statusTarget.CaughtUp.Reason.Should().Be(DocumentCacheStatusReason.RuntimeCancelled);
+    }
+
+    [Test]
+    public async Task It_maps_observed_runtime_cancellation_to_cancelled()
+    {
+        DocumentCacheTargetObservation target = ResolvedTarget(generation: 3);
+        DocumentCacheProjectionObservationStore observationStore = new(
+            new FixedTimeProvider(ProcessObservedAt)
+        );
+        observationStore.ObserveTarget(
+            TargetHealth(
+                target,
+                executionState: new DocumentCacheProjectionExecutionStateSnapshot(
+                    isRunning: true,
+                    isActivelyProcessing: false,
+                    isWaitingForWorkerGate: false,
+                    isInBackoff: false,
+                    backoffUntil: null,
+                    cancellationRequested: true,
+                    cancellationObservedAt: RuntimeObservedAt
+                )
+            )
+        );
+        DocumentCacheStatusService service = CreateService(
+            new StaticTargetRegistry([target], [ExecutionContext(target)]),
+            observationStore
+        );
+
+        DocumentCacheStatusTarget statusTarget = (await service.GetStatusAsync()).Targets.Single();
+        JsonObject root = JsonNode.Parse(JsonSerializer.Serialize(statusTarget))!.AsObject();
+
+        statusTarget.ExecutionState.Status.Should().Be(DocumentCacheStatusExecutionState.Cancelled);
+        root["executionState"]!["status"]!.GetValue<string>().Should().Be("cancelled");
+        statusTarget.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.RuntimeCancelled);
+        statusTarget.CaughtUp.Reason.Should().Be(DocumentCacheStatusReason.RuntimeCancelled);
+    }
+
+    [Test]
     public async Task It_maps_only_current_generation_commands_without_generation_fields()
     {
         DocumentCacheTargetObservation oldTarget = ResolvedTarget(generation: 1);
@@ -248,7 +318,8 @@ public class Given_DocumentCacheStatusMapping
         int suppressedDocumentCount = 0,
         ImmutableArray<long> suppressedDocumentIds = default,
         long targetDiagnosticEvictionCount = 0,
-        long documentDiagnosticEvictionCount = 0
+        long documentDiagnosticEvictionCount = 0,
+        DocumentCacheProjectionExecutionStateSnapshot? executionState = null
     ) =>
         new(
             target.TargetKey,
@@ -257,15 +328,16 @@ public class Given_DocumentCacheStatusMapping
             RuntimeObservedAt,
             target.ProviderToken,
             target.PhysicalSourceFingerprint,
-            executionState: new DocumentCacheProjectionExecutionStateSnapshot(
-                isRunning: true,
-                isActivelyProcessing: false,
-                isWaitingForWorkerGate: false,
-                isInBackoff: false,
-                backoffUntil: null,
-                cancellationRequested: false,
-                cancellationObservedAt: null
-            ),
+            executionState
+                ?? new DocumentCacheProjectionExecutionStateSnapshot(
+                    isRunning: true,
+                    isActivelyProcessing: false,
+                    isWaitingForWorkerGate: false,
+                    isInBackoff: false,
+                    backoffUntil: null,
+                    cancellationRequested: false,
+                    cancellationObservedAt: null
+                ),
             lastSuccess: new DocumentCacheProjectionSuccessSnapshot(
                 documentId: 11,
                 contentVersion: 12,

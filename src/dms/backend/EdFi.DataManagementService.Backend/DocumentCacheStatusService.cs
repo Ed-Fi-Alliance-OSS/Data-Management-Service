@@ -741,14 +741,14 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
     {
         DocumentCacheProjectionExecutionStateSnapshot executionState = targetHealth.ExecutionState;
 
-        if (executionState.CancellationRequested)
-        {
-            return DocumentCacheStatusExecutionState.Cancelling;
-        }
-
         if (executionState.CancellationObservedAt is not null)
         {
             return DocumentCacheStatusExecutionState.Cancelled;
+        }
+
+        if (executionState.CancellationRequested)
+        {
+            return DocumentCacheStatusExecutionState.Cancelling;
         }
 
         if (executionState.IsInBackoff)
