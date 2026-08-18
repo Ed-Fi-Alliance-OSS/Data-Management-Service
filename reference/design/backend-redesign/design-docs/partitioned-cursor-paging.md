@@ -321,14 +321,14 @@ the existing unknown-query-field rule.
 Partition validation uses its own ordered phases, and unlike cursor validation the last of them may
 report several errors. The four phases run in this order, and the first one to find a fault answers:
 
-1. **Resource filters.** The same unknown-query-field and filter-value-type rules GET-many applies,
+1. **Change-version window.** The same `minChangeVersion`/`maxChangeVersion` parsing GET-many
+   applies, in the same position relative to filters that GET-many puts it in.
+2. **Resource filters.** The same unknown-query-field and filter-value-type rules GET-many applies,
    over the same candidate set. The five reserved paging names and `number` are excluded from filter
    matching before this phase runs, so a supplied `limit` is not reported as an unknown query field.
    Excluding `number` is also what makes a resource property of that name unfilterable here while it
    stays filterable on the collection GET, which is the approved intentional ODS difference the epic
    records.
-2. **Change-version window.** The same `minChangeVersion`/`maxChangeVersion` parsing GET-many
-   applies.
 3. **`number` syntax and range.** A malformed or out-of-range `number` produces the exact error
    `Number of partitions must be between 1 and 200.` A present-but-blank `?number=` is a malformed
    value and produces that same error rather than being treated as absent and defaulted: a client
@@ -340,20 +340,25 @@ report several errors. The four phases run in this order, and the first one to f
    present, report them in the canonical order `pageToken`, `pageSize`, `limit`, `offset`,
    `totalCount`.
 
-Filters and the change-version window are placed ahead of the two partition phases, unlike GET-many,
+The change-version window and filters are placed ahead of the two partition phases, unlike GET-many,
 which validates paging first because a paging fault is the first thing wrong with a page request.
-This operation has no page. Filters must run first because excluding the reserved names from filter
-matching is what lets phase 4 report `?limit=5` as a parameter that does not apply here rather than
-as an unknown query field, and that exclusion is only meaningful if filter matching happens before
-the reserved-parameter phase reports.
+This operation has no page. Within the two shared phases, the window is validated ahead of filters,
+which is the order GET-many uses: a query string that faults in both ways must be answered with the
+same problem type by both operations, because a client that discriminates on `type` should not have
+to know which of the two sibling endpoints it called. Filters must in turn run ahead of phase 4,
+because excluding the reserved names from filter matching is what lets phase 4 report `?limit=5` as a
+parameter that does not apply here rather than as an unknown query field, and that exclusion is only
+meaningful if filter matching happens before the reserved-parameter phase reports.
 
-Three consequences of the ordering, each a fixed part of the contract:
+Four consequences of the ordering, each a fixed part of the contract:
 
 - `?number=abc&notAField=1` answers with the unknown-query-field error alone. Both are client
   mistakes, and answering the field first keeps this operation's unknown-field behavior identical to
   GET-many's.
 - `?number=abc&minChangeVersion=bogus` answers with the change-version error alone.
 - `?notAField=1&limit=5` answers with the unknown-query-field error alone.
+- `?minChangeVersion=bogus&notAField=1` answers with the change-version error alone, in the
+  parameter-validation shell — the same problem type GET-many answers that query string with.
 
 The asymmetry with cursor validation is deliberate. Cursor parameters are interdependent — the
 meaning of `limit`, `pageSize`, and `totalCount` all depend on whether a valid `pageToken` is

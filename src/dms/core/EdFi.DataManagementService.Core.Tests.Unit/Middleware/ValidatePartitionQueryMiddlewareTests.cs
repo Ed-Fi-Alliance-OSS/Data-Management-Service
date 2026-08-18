@@ -305,6 +305,28 @@ public class ValidatePartitionQueryMiddlewareTests
                 .And.ContainSingle();
             AssertNothingApplied(requestInfo);
         }
+
+        // The window is validated ahead of the resource filters as well, which is what makes this
+        // operation answer a query string faulty in both ways with the same problem type GET-many
+        // answers it with. A client that discriminates on type does not have to know which of the two
+        // sibling operations it called.
+        [Test]
+        public async Task It_answers_before_the_resource_filter_phase()
+        {
+            RequestInfo requestInfo = await Execute(("minChangeVersion", "notANumber"), ("notAField", "1"));
+
+            requestInfo.FrontendResponse.Body!["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:api:bad-request:parameter-validation-failed");
+            requestInfo.FrontendResponse.Body!["errors"]!
+                .AsArray()
+                .Select(error => error!.GetValue<string>())
+                .Should()
+                .NotContain("The query field 'notAField' is not valid for this resource.")
+                .And.ContainSingle();
+            AssertNothingApplied(requestInfo);
+        }
     }
 
     [TestFixture]

@@ -25,10 +25,14 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// </param>
 /// <remarks>
 /// The GET-many counterpart of this step validates paging first, because a paging fault is the first
-/// thing wrong with a page request. This operation has no page, so the order is filters, then the
-/// change-version window, then the partition parameters. Filters run first because the reserved paging
-/// names are excluded from filter matching, and excluding them is what lets the partition phase report
-/// <c>?limit=5</c> as a parameter that does not apply here rather than as an unknown query field.
+/// thing wrong with a page request. This operation has no page, so the order is the change-version
+/// window, then filters, then the partition parameters. Two orderings are load-bearing. The window is
+/// validated ahead of filters so that a request faulty in both ways is answered the same way GET-many
+/// answers it, with the same problem type: these are sibling operations over one query string, and a
+/// client that discriminates on type should not have to know which of the two it called. Filters are
+/// validated ahead of the partition parameters because the reserved paging names are excluded from
+/// filter matching, and excluding them is what lets the partition phase report <c>?limit=5</c> as a
+/// parameter that does not apply here rather than as an unknown query field.
 /// <para>
 /// A consequence worth stating: a request carrying both an unknown field and a reserved paging
 /// parameter is answered with the unknown-field message alone. Both are client mistakes, and answering
@@ -60,6 +64,30 @@ internal class ValidatePartitionQueryMiddleware(ILogger _logger, int _defaultPar
             "Entering ValidatePartitionQueryMiddleware - {TraceId}",
             requestInfo.FrontendRequest.TraceId.Value
         );
+
+        // Both parameter faults answer with the same shell, so they share one construction. The media
+        // type is not stated here at all; it comes from the FrontendResponse default.
+        FrontendResponse ParameterValidationFailed(string[] errors) =>
+            new(
+                StatusCode: 400,
+                Body: ForParameterValidation(errors, requestInfo.FrontendRequest.TraceId),
+                Headers: []
+            );
+
+        ChangeVersionValidationResult changeVersionResult = ChangeVersionParameterValidator.Validate(
+            requestInfo.FrontendRequest.QueryParameters
+        );
+
+        if (changeVersionResult.Errors.Count > 0)
+        {
+            _logger.LogDebug(
+                "Partition change-version parameter validation error - {TraceId}",
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+
+            requestInfo.FrontendResponse = ParameterValidationFailed([.. changeVersionResult.Errors]);
+            return;
+        }
 
         ResourceQueryFilterResult filterResult = ResourceQueryFilterValidator.Validate(
             requestInfo.FrontendRequest.QueryParameters,
@@ -111,30 +139,6 @@ internal class ValidatePartitionQueryMiddleware(ILogger _logger, int _defaultPar
                     $"ValidatePartitionQueryMiddleware received an unhandled resource query filter "
                         + $"result '{filterResult.GetType().Name}'."
                 );
-        }
-
-        // Both parameter faults below answer with the same shell, so they share one construction. The
-        // media type is not stated here at all; it comes from the FrontendResponse default.
-        FrontendResponse ParameterValidationFailed(string[] errors) =>
-            new(
-                StatusCode: 400,
-                Body: ForParameterValidation(errors, requestInfo.FrontendRequest.TraceId),
-                Headers: []
-            );
-
-        ChangeVersionValidationResult changeVersionResult = ChangeVersionParameterValidator.Validate(
-            requestInfo.FrontendRequest.QueryParameters
-        );
-
-        if (changeVersionResult.Errors.Count > 0)
-        {
-            _logger.LogDebug(
-                "Partition change-version parameter validation error - {TraceId}",
-                requestInfo.FrontendRequest.TraceId.Value
-            );
-
-            requestInfo.FrontendResponse = ParameterValidationFailed([.. changeVersionResult.Errors]);
-            return;
         }
 
         PartitionValidationResult partitionResult = PartitionRequestValidator.Validate(
