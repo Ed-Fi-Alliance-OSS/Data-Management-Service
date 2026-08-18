@@ -257,6 +257,95 @@ public partial class Given_DescriptorReadHandler
         new KeyNotFoundException("boundary plan is missing a key"),
     ];
 
+    // The custom-view probe is the one command the boundary path is allowed to issue besides the
+    // boundary statement itself, and it has to run first: the boundary statement selects through the
+    // configured views, so a missing or non-conforming view must be reported as a validation failure
+    // rather than as whatever the provider says when the boundary statement hits it.
+    [TestCase(SqlDialect.Pgsql, "\"auth\".\"SchoolTypeDescriptorWithCustomViewProviderTest\"")]
+    [TestCase(SqlDialect.Mssql, "[auth].[SchoolTypeDescriptorWithCustomViewProviderTest]")]
+    public async Task It_validates_custom_views_before_executing_the_boundary_command(
+        SqlDialect dialect,
+        string expectedViewFragment
+    )
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor(
+            [
+                new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
+                new InMemoryRelationalCommandExecution([
+                    InMemoryRelationalResultSet.Create(
+                        RelationalAccessTestData.CreateRow(("DocumentId", 110L))
+                    ),
+                ]),
+            ],
+            dialect
+        );
+        var sut = CreateHandler(commandExecutor);
+
+        var result = await sut.HandlePartitionsAsync(
+            CreatePartitionRequest(
+                dialect,
+                authorizationStrategyEvaluators:
+                [
+                    CreateAuthorizationStrategyEvaluator("SchoolTypeDescriptorWithCustomViewProviderTest"),
+                ]
+            )
+        );
+
+        result.Should().BeOfType<PartitionResult.PartitionSuccess>();
+        commandExecutor.Commands.Should().HaveCount(2);
+        commandExecutor.Commands[0].CommandText.Should().Contain(expectedViewFragment);
+        commandExecutor.Commands[0].CommandText.Should().NotContain("ROW_NUMBER() OVER");
+        commandExecutor.Commands[1].CommandText.Should().Contain(expectedViewFragment);
+        commandExecutor.Commands[1].CommandText.Should().Contain("ROW_NUMBER() OVER");
+    }
+
+    // Validation and the boundary statement are separate round trips against the same views, so a view
+    // dropped, revoked, or broken in between raises only at execution. That failure must keep the
+    // custom-view validation contract GET-many reports for the same condition instead of escaping as an
+    // unhandled provider error.
+    [Test]
+    public async Task It_relabels_a_provider_error_under_a_custom_view()
+    {
+        var commandExecutor = A.Fake<IRelationalCommandExecutor>();
+        var databaseException = new StubDbException("custom view does not exist");
+
+        A.CallTo(() =>
+                commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(Task.FromResult(true));
+        A.CallTo(() =>
+                commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<IReadOnlyList<long>>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Throws(databaseException);
+
+        var sut = CreateHandler(commandExecutor);
+
+        var action = () =>
+            sut.HandlePartitionsAsync(
+                CreatePartitionRequest(
+                    SqlDialect.Pgsql,
+                    authorizationStrategyEvaluators:
+                    [
+                        CreateAuthorizationStrategyEvaluator(
+                            "SchoolTypeDescriptorWithCustomViewProviderTest"
+                        ),
+                    ]
+                )
+            );
+
+        var assertion = await action.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+
+        assertion.Which.InnerException.Should().BeSameAs(databaseException);
+    }
+
     [Test]
     public async Task It_rejects_a_null_descriptor_partition_request()
     {

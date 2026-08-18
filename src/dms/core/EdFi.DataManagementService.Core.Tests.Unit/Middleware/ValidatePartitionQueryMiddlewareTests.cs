@@ -242,6 +242,24 @@ public class ValidatePartitionQueryMiddlewareTests
                 .Should()
                 .Equal("The query field 'notAField' is not valid for this resource.");
         }
+
+        // Filter matching also precedes the count phase, so a request that is wrong in both ways is
+        // answered with the field. The count error is suppressed, not merged.
+        [Test]
+        public async Task It_answers_before_the_partition_count_phase()
+        {
+            RequestInfo requestInfo = await Execute(("partitionCount", "abc"), ("notAField", "1"));
+
+            requestInfo.FrontendResponse.Body!["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:api:bad-request");
+            requestInfo.FrontendResponse.Body!["errors"]!
+                .AsArray()
+                .Select(error => error!.GetValue<string>())
+                .Should()
+                .Equal("The query field 'notAField' is not valid for this resource.");
+        }
     }
 
     [TestFixture]
@@ -277,6 +295,26 @@ public class ValidatePartitionQueryMiddlewareTests
                 .GetValue<string>()
                 .Should()
                 .Be("urn:ed-fi:api:bad-request:parameter-validation-failed");
+            AssertNothingApplied(requestInfo);
+        }
+
+        // The window is validated ahead of the count, so a request faulty in both ways is answered
+        // with the window error alone. Both shells are parameter-validation, so the errors array is
+        // what distinguishes them.
+        [Test]
+        public async Task It_answers_before_the_partition_count_phase()
+        {
+            RequestInfo requestInfo = await Execute(
+                ("partitionCount", "abc"),
+                ("minChangeVersion", "notANumber")
+            );
+
+            requestInfo.FrontendResponse.Body!["errors"]!
+                .AsArray()
+                .Select(error => error!.GetValue<string>())
+                .Should()
+                .NotContain(PartitionRequestValidator.PartitionCountOutOfRange)
+                .And.ContainSingle();
             AssertNothingApplied(requestInfo);
         }
     }

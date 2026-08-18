@@ -14,10 +14,12 @@ using Polly.CircuitBreaker;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 
 /// <summary>
-/// Which backend results the circuit breaker counts as failures. Asserted against the predicate the
-/// production pipeline uses rather than against a copy, because the classification's whole purpose is
-/// that every operation is treated the same way: an operation whose unknown failure is not counted
-/// keeps taking load from a backend that has already failed for every other operation.
+/// Which backend results the resilience pipeline retries and which ones the circuit breaker counts as
+/// failures. Asserted against the predicates the production pipeline uses rather than against copies,
+/// because the classification's whole purpose is that every operation is treated the same way: an
+/// operation whose unknown failure is not counted keeps taking load from a backend that has already
+/// failed for every other operation, and one whose retryable failure is not retried surfaces a
+/// transient conflict to a client the others retry past.
 /// </summary>
 [TestFixture]
 public class UnknownFailureClassificationTests
@@ -48,6 +50,58 @@ public class UnknownFailureClassificationTests
         public void It_covers_every_operation_that_produces_one()
         {
             _unknownFailures.Should().HaveCount(6);
+        }
+    }
+
+    /// <summary>
+    /// The retry predicate is gated the same way, because the two are declared side by side and an
+    /// operation that adds a result type has to extend both. Gating only one catches a half-finished
+    /// addition in a single direction.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Retryable_Result : UnknownFailureClassificationTests
+    {
+        private static readonly object[] _retryableFailures =
+        [
+            new DeleteResult.DeleteFailureWriteConflict(),
+            new GetResult.GetFailureRetryable(),
+            new PartitionResult.PartitionFailureRetryable(),
+            new QueryResult.QueryFailureRetryable(),
+            new UpdateResult.UpdateFailureWriteConflict(),
+            new UpsertResult.UpsertFailureWriteConflict(),
+        ];
+
+        [TestCaseSource(nameof(_retryableFailures))]
+        public void It_is_retried(object result)
+        {
+            Utility.IsRetryableResult(result).Should().BeTrue();
+        }
+
+        // One case per operation that can produce one, so an operation added later without its arm
+        // shows up here as a missing case rather than as a transient conflict served to a client.
+        [Test]
+        public void It_covers_every_operation_that_produces_one()
+        {
+            _retryableFailures.Should().HaveCount(6);
+        }
+
+        // The negative side, for the same reason it matters on the breaker predicate: an unknown
+        // failure retried as if it were transient repeats work against a backend that already failed.
+        private static readonly object[] _nonRetryableResults =
+        [
+            new PartitionResult.PartitionSuccess([]),
+            new PartitionResult.UnknownPartitionFailure("partition failed"),
+            new PartitionResult.PartitionFailureNotImplemented("not implemented"),
+            new QueryResult.QuerySuccess(new JsonArray(), TotalCount: null),
+            new QueryResult.UnknownFailure("query failed"),
+            new object(),
+        ];
+
+        [TestCaseSource(nameof(_nonRetryableResults))]
+        public void It_does_not_retry_a_result_that_is_not_retryable(object result)
+        {
+            Utility.IsRetryableResult(result).Should().BeFalse();
         }
     }
 

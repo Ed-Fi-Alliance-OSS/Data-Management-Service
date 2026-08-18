@@ -30,7 +30,19 @@ internal class ValidateQueryMiddleware(
     bool _cursorParametersRecognized
 ) : IPipelineStep
 {
-    private static readonly string[] _paginationQueryParameters = ["limit", "offset", "totalCount"];
+    /// <summary>
+    /// The paging names this operation parses and excludes from filter matching. Spelled from the
+    /// constants the cursor validator reads, because <see cref="Paging.PartitionRequestValidator" />
+    /// reserves the same five names from the same constants: matching filters over a different set of
+    /// names than /partitions rejects would let one operation filter on a resource property the other
+    /// treats as paging.
+    /// </summary>
+    private static readonly string[] _paginationQueryParameters =
+    [
+        CursorRequestValidator.LimitParameter,
+        CursorRequestValidator.OffsetParameter,
+        CursorRequestValidator.TotalCountParameter,
+    ];
 
     /// <summary>
     /// Finds and sets PaginationParameters on the requestInfo by parsing the client request.

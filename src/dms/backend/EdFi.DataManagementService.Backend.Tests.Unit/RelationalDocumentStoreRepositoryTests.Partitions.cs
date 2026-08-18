@@ -324,6 +324,65 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             .Contain("strictly ascending");
     }
 
+    // The custom-view probe is the one command the boundary path is allowed to issue besides the
+    // boundary statement itself — the explicit exception to the one-command shape asserted above. It has
+    // to run first: the boundary statement selects through the configured views, so a missing or
+    // non-conforming view must be reported as a validation failure rather than as whatever the provider
+    // says when the boundary statement reaches it.
+    [Test]
+    public async Task It_validates_custom_views_before_executing_the_boundary_command()
+    {
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var partitionRequest = CreatePartitionRequest(
+            mappingSet,
+            authorizationStrategyEvaluators: [CreateAuthorizationStrategyEvaluator(CustomViewStrategyName)]
+        );
+
+        StubPartitionBoundaryStarts(100L);
+        StubPartitionCustomViewValidation();
+
+        var result = await _sut.QueryPartitions(partitionRequest);
+
+        result.Should().BeOfType<PartitionResult.PartitionSuccess>();
+        _capturedPartitionCommands.Should().HaveCount(2);
+        _capturedPartitionCommands[0].CommandText.Should().Contain(CustomViewStrategyName);
+        _capturedPartitionCommands[0].CommandText.Should().NotContain("ROW_NUMBER() OVER");
+        _capturedPartitionCommands[1].CommandText.Should().Contain("ROW_NUMBER() OVER");
+    }
+
+    // Validation and the boundary statement are separate round trips against the same views, so a view
+    // dropped, revoked, or broken in between raises only at execution. That failure must keep the
+    // custom-view validation contract GET-many reports for the same condition instead of escaping as an
+    // unhandled provider error.
+    [Test]
+    public async Task It_relabels_a_provider_error_under_a_custom_view()
+    {
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var databaseException = new StubDbException("custom view does not exist");
+        var partitionRequest = CreatePartitionRequest(
+            mappingSet,
+            authorizationStrategyEvaluators: [CreateAuthorizationStrategyEvaluator(CustomViewStrategyName)]
+        );
+
+        StubPartitionBoundaryStarts();
+        StubPartitionCustomViewValidation();
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<IReadOnlyList<long>>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Throws(databaseException);
+
+        var action = () => _sut.QueryPartitions(partitionRequest);
+
+        var assertion = await action.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+
+        assertion.Which.InnerException.Should().BeSameAs(databaseException);
+    }
+
     [Test]
     public async Task It_rejects_a_null_partition_request()
     {
@@ -372,6 +431,22 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
     }
+
+    /// <summary>
+    /// Answers the custom-view probe and records it into the same ordered list the boundary command is
+    /// recorded into, so a test can assert which of the two ran first rather than only that both ran.
+    /// Installed after <see cref="StubPartitionBoundaryStarts" />, which resets that list.
+    /// </summary>
+    private void StubPartitionCustomViewValidation() =>
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => _capturedPartitionCommands.Add(call.GetArgument<RelationalCommand>(0)!))
+            .Returns(Task.FromResult(true));
 
     /// <summary>
     /// Answers the boundary command with <paramref name="ascendingStarts" /> and records every command
