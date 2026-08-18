@@ -1121,6 +1121,13 @@ function Build-TemplateNuGetPackage {
         -DatabaseEngine $DatabaseEngine `
         -DatabaseName $DatabaseName
 
+    # A restorable PostgreSQL package must dump the complete validated datastore: a
+    # dms-schema-only artifact would ship a manifest declaring projects it does not
+    # contain, and the restore path skips provisioning. Checked before any dump work.
+    if ($DatabaseEngine -eq "postgresql") {
+        Assert-CompleteRestoreArtifactScope -Partition $schemaPartition -ArtifactSchemaName ([string[]]$databaseSchemas)
+    }
+
     Invoke-DatabaseDump -DatabaseEngine $DatabaseEngine -DatabaseName $DatabaseName -DatabaseSchemas $databaseSchemas -BackupDirectory './' -BackupFileName $config.DatabaseBackupName -MssqlPassword $MssqlPassword
 
     $restoreManifestPath = Write-TemplateRestoreManifest `
@@ -1447,10 +1454,7 @@ function Get-TemplateSourceCatalogFacts {
     $documentJsonRows = Invoke-TemplateCatalogQuery @queryParameters `
         -Query (Get-DocumentJsonColumnTypeQuerySql -DatabaseEngine $DatabaseEngine) `
         -FailureMessage "Failed to read the DocumentJson column type from '$DatabaseName'."
-    $documentJsonColumnType = ([string]@($documentJsonRows | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1)).Trim()
-    if ([string]::IsNullOrWhiteSpace($documentJsonColumnType)) {
-        throw "dms.Document.DocumentJson was not found in '$DatabaseName'; the source database is not a provisioned DMS datastore."
-    }
+    $documentJsonColumnType = ConvertFrom-DocumentJsonColumnTypeRow -Row $documentJsonRows
 
     $schemaRows = Invoke-TemplateCatalogQuery @queryParameters `
         -Query (Get-InventorySchemaQuerySql -DatabaseEngine $DatabaseEngine -Purpose InventoryEnumeration) `

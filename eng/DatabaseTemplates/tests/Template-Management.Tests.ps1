@@ -1059,7 +1059,7 @@ Describe "Build-TemplateNuGetPackage package identity derivation" {
             Mock New-DatabaseTemplateCsproj {}
             Mock Build-NuGetPackage {}
             Mock Get-TemplateSourceCatalogFacts { [pscustomobject]@{} }
-            Mock Assert-DmsOnlyTemplateSource { [pscustomobject]@{ ProjectSchemaNames = [string[]]@("edfi") } }
+            Mock Assert-DmsOnlyTemplateSource { [pscustomobject]@{ HasAuth = $false; ResourceSchemaNames = [string[]]@(); TrackedChangesProjectNames = [string[]]@(); ProjectSchemaNames = [string[]]@("edfi") } }
             Mock Write-TemplateRestoreManifest { "restore-manifest.json" }
             Mock Add-FileToCsProjForNuget {}
 
@@ -1087,7 +1087,7 @@ Describe "Build-TemplateNuGetPackage package identity derivation" {
             Mock New-DatabaseTemplateCsproj {}
             Mock Build-NuGetPackage {}
             Mock Get-TemplateSourceCatalogFacts { [pscustomobject]@{} }
-            Mock Assert-DmsOnlyTemplateSource { [pscustomobject]@{ ProjectSchemaNames = [string[]]@("edfi") } }
+            Mock Assert-DmsOnlyTemplateSource { [pscustomobject]@{ HasAuth = $false; ResourceSchemaNames = [string[]]@(); TrackedChangesProjectNames = [string[]]@(); ProjectSchemaNames = [string[]]@("edfi") } }
             Mock Write-TemplateRestoreManifest { "restore-manifest.json" }
             Mock Add-FileToCsProjForNuget {}
 
@@ -1125,7 +1125,7 @@ Describe "Get-TemplateSourceCatalogFacts" {
                 $global:LASTEXITCODE = 0
                 if ($query -match 'EffectiveSchema') { return "1.0.0|$('ab' * 32)|42|$('cd' * 32)" }
                 if ($query -match 'server_version') { return '16.8' }
-                if ($query -match 'data_type') { return 'jsonb' }
+                if ($query -match 'data_type') { return 'DocumentCache|jsonb' }
                 if ($query -match 'relkind') {
                     return @(
                         'dms|Document|table',
@@ -1170,7 +1170,7 @@ Describe "Get-TemplateSourceCatalogFacts" {
                 if ($query -match 'EffectiveSchema') { return "1.0.0|$('ab' * 32)|42|$('cd' * 32)" }
                 if ($query -match 'ProductVersion') { return '17.0.900.7' }
                 if ($query -match 'compatibility_level') { return '170' }
-                if ($query -match 'sys\.columns') { return 'nvarchar' }
+                if ($query -match 'sys\.columns') { return 'DocumentCache|nvarchar' }
                 if ($query -match 'sys\.objects') {
                     return @('dms|Document|table', 'edfi|School|table', 'tracked_changes_edfi|School|table')
                 }
@@ -1203,7 +1203,7 @@ Describe "Get-TemplateSourceCatalogFacts" {
                 $global:LASTEXITCODE = 0
                 if ($query -match 'EffectiveSchema') { return "1.0.0|$('ab' * 32)|42|$('cd' * 32)" }
                 if ($query -match 'server_version') { return '16.8' }
-                if ($query -match 'data_type') { return 'jsonb' }
+                if ($query -match 'data_type') { return 'DocumentCache|jsonb' }
                 if ($query -match 'relkind') { return @('dms|Document|table') }
                 if ($query -match 'pg_namespace') { return @('dms', 'public') }
             }
@@ -1261,6 +1261,43 @@ Describe "Build-TemplateNuGetPackage restore gate and manifest" {
         }
     }
 
+    It "refuses to build a PostgreSQL restore package whose dms-only artifact would omit the validated resource schemas" {
+        InModuleScope Template-Management -Parameters @{ configPath = (Join-Path (Split-Path $PSScriptRoot -Parent) "MinimalTemplateSettings.psd1") } {
+            param($configPath)
+
+            $configPath | Should -Exist
+
+            # A clean, gate-passing full source whose artifact scope (default dms-only dump,
+            # no -DumpAllUserSchemas) would not contain the declared projects.
+            $cleanFullSourceFacts = [pscustomobject]@{
+                FullInventory = @{
+                    schemas    = @(
+                        @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
+                        @{ schemaName = "edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                        @{ schemaName = "tracked_changes_edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                        @{ schemaName = "public"; objects = @() }
+                    )
+                    principals = @()
+                }
+            }
+
+            Mock Get-TemplateSourceCatalogFacts { $cleanFullSourceFacts }
+            Mock Invoke-DatabaseDump {}
+            Mock Write-TemplateRestoreManifest {}
+            Mock New-DatabaseTemplateCsproj {}
+            Mock Add-FileToCsProjForNuget {}
+            Mock Build-NuGetPackage {}
+
+            { Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0" -TemplateKind "Minimal" } |
+                Should -Throw "*would omit required DMS-owned schemas: edfi, tracked_changes_edfi*"
+
+            # The incomplete artifact is refused before any dump or packaging work.
+            Should -Invoke Invoke-DatabaseDump -Times 0 -Exactly
+            Should -Invoke Write-TemplateRestoreManifest -Times 0 -Exactly
+            Should -Invoke Build-NuGetPackage -Times 0 -Exactly
+        }
+    }
+
     It "writes a shape-valid restore manifest from the captured facts and the completed artifact and packages it beside the artifact" {
         $workDir = Join-Path $TestDrive ([Guid]::NewGuid().ToString('N'))
         New-Item -ItemType Directory -Path $workDir -Force | Out-Null
@@ -1289,6 +1326,8 @@ Describe "Build-TemplateNuGetPackage restore gate and manifest" {
                     ArtifactInventory          = @{
                         schemas    = @(
                             @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }, @{ name = "EffectiveSchema"; type = "table" }) },
+                            @{ schemaName = "edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                            @{ schemaName = "tracked_changes_edfi"; objects = @(@{ name = "School"; type = "table" }) },
                             @{ schemaName = "public"; objects = @() }
                         )
                         principals = @()
@@ -1296,6 +1335,7 @@ Describe "Build-TemplateNuGetPackage restore gate and manifest" {
                 }
 
                 Mock Get-TemplateSourceCatalogFacts { $cleanFacts }
+                Mock Get-UserSchemaNames { @("dms", "edfi", "tracked_changes_edfi") }
                 Mock Invoke-DatabaseDump {
                     Set-Content -LiteralPath (Join-Path $BackupDirectory $BackupFileName) -Value "fake artifact bytes"
                 }
@@ -1303,7 +1343,7 @@ Describe "Build-TemplateNuGetPackage restore gate and manifest" {
                 Mock Add-FileToCsProjForNuget {}
                 Mock Build-NuGetPackage {}
 
-                Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.123" -TemplateKind "Minimal"
+                Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.123" -TemplateKind "Minimal" -DumpAllUserSchemas
 
                 # Read-RestoreManifest shape-validates the written manifest as a consumer would.
                 $manifest = Read-RestoreManifest -Path "./restore-manifest.json"
@@ -1320,8 +1360,8 @@ Describe "Build-TemplateNuGetPackage restore gate and manifest" {
                 $manifest.artifactFileName | Should -Be "EdFi.Api.Minimal.Template.PostgreSql.5.2.0.sql"
                 $manifest.artifactSha256 | Should -Be (Get-FileSha256Hex -Path "./EdFi.Api.Minimal.Template.PostgreSql.5.2.0.sql")
 
-                # The manifest inventory is the artifact scope, not the full-database scope.
-                @($manifest.inventory.schemas | ForEach-Object { $_.schemaName }) | Should -Be @("dms", "public")
+                # The manifest inventory is the artifact scope (here: the complete dumped set).
+                @($manifest.inventory.schemas | ForEach-Object { $_.schemaName }) | Should -Be @("dms", "edfi", "public", "tracked_changes_edfi")
 
                 # The manifest is added to the package csproj beside the artifact.
                 Should -Invoke Add-FileToCsProjForNuget -Times 1 -Exactly -ParameterFilter {

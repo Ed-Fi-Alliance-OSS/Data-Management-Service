@@ -747,9 +747,67 @@ Describe "inventory catalog query SQL builders" {
         (Get-DatabaseCompatibilityLevelQuerySql -DatabaseName "edfi_dms") | Should -BeLike "*N'edfi_dms'*"
     }
 
-    It "reads the DocumentJson physical type from the live catalog on both engines" {
-        (Get-DocumentJsonColumnTypeQuerySql -DatabaseEngine postgresql) | Should -BeLike "*information_schema.columns*DocumentJson*"
-        (Get-DocumentJsonColumnTypeQuerySql -DatabaseEngine mssql) | Should -BeLike "*sys.columns*DocumentJson*"
+    It "enumerates every dms DocumentJson carrier from the live catalog rather than pinning one table" {
+        $pgSql = Get-DocumentJsonColumnTypeQuerySql -DatabaseEngine postgresql
+        $pgSql | Should -BeLike "*information_schema.columns*DocumentJson*"
+        $pgSql | Should -BeLike "*table_schema = 'dms'*"
+        $pgSql | Should -Not -BeLike "*table_name = *"
+
+        $mssqlSql = Get-DocumentJsonColumnTypeQuerySql -DatabaseEngine mssql
+        $mssqlSql | Should -BeLike "*sys.columns*DocumentJson*"
+        $mssqlSql | Should -BeLike "*s.name = N'dms'*"
+        $mssqlSql | Should -Not -BeLike "*OBJECT_ID(*"
+    }
+}
+
+Describe "ConvertFrom-DocumentJsonColumnTypeRow" {
+    It "returns the single physical type when dms.DocumentCache is the carrier" {
+        ConvertFrom-DocumentJsonColumnTypeRow -Row @("DocumentCache|jsonb") | Should -Be "jsonb"
+        ConvertFrom-DocumentJsonColumnTypeRow -Row @("", "DocumentCache|NVARCHAR") | Should -Be "nvarchar"
+    }
+
+    It "accepts additional carriers only when every carrier reports the same type" {
+        ConvertFrom-DocumentJsonColumnTypeRow -Row @("Document|jsonb", "DocumentCache|jsonb") | Should -Be "jsonb"
+        { ConvertFrom-DocumentJsonColumnTypeRow -Row @("Document|varchar", "DocumentCache|jsonb") } |
+            Should -Throw "*do not share one physical storage type*Document=varchar*DocumentCache=jsonb*"
+    }
+
+    It "rejects an empty result, a missing DocumentCache carrier, and malformed rows" {
+        { ConvertFrom-DocumentJsonColumnTypeRow -Row @() } | Should -Throw "*No DocumentJson column was found*"
+        { ConvertFrom-DocumentJsonColumnTypeRow -Row @("SomethingElse|jsonb") } | Should -Throw "*dms.DocumentCache.DocumentJson was not found*"
+        { ConvertFrom-DocumentJsonColumnTypeRow -Row @("DocumentCache") } | Should -Throw "*malformed row*"
+    }
+}
+
+Describe "Assert-CompleteRestoreArtifactScope" {
+    BeforeAll {
+        $script:fullPartition = Get-TemplateProjectSchemaPartition -DatabaseEngine postgresql -SchemaName @(
+            "dms", "auth", "edfi", "tpdm", "tracked_changes_edfi", "tracked_changes_tpdm", "public"
+        )
+    }
+
+    It "accepts an artifact scope carrying the complete validated datastore" {
+        { Assert-CompleteRestoreArtifactScope -Partition $script:fullPartition -ArtifactSchemaName @(
+                "dms", "auth", "edfi", "tpdm", "tracked_changes_edfi", "tracked_changes_tpdm"
+            ) } | Should -Not -Throw
+    }
+
+    It "accepts a dms-only artifact when the validated source has no resource schemas" {
+        $dmsOnlyPartition = Get-TemplateProjectSchemaPartition -DatabaseEngine postgresql -SchemaName @("dms", "public")
+        { Assert-CompleteRestoreArtifactScope -Partition $dmsOnlyPartition -ArtifactSchemaName @("dms") } | Should -Not -Throw
+    }
+
+    It "rejects an artifact scope missing resource schemas, companions, auth, or dms itself" {
+        { Assert-CompleteRestoreArtifactScope -Partition $script:fullPartition -ArtifactSchemaName @("dms") } |
+            Should -Throw "*would omit required DMS-owned schemas: auth, edfi, tpdm, tracked_changes_edfi, tracked_changes_tpdm*-DumpAllUserSchemas*"
+
+        { Assert-CompleteRestoreArtifactScope -Partition $script:fullPartition -ArtifactSchemaName @(
+                "dms", "auth", "edfi", "tpdm", "tracked_changes_edfi"
+            ) } | Should -Throw "*would omit required DMS-owned schemas: tracked_changes_tpdm*"
+
+        { Assert-CompleteRestoreArtifactScope -Partition $script:fullPartition -ArtifactSchemaName @(
+                "auth", "edfi", "tpdm", "tracked_changes_edfi", "tracked_changes_tpdm"
+            ) } | Should -Throw "*would omit required DMS-owned schemas: dms*"
     }
 }
 
