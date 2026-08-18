@@ -426,7 +426,7 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             predicates.Add(
                 new QueryValuePredicate(
                     contentVersionColumn,
-                    QueryComparisonOperator.GreaterThan,
+                    QueryComparisonOperator.GreaterThanOrEqual,
                     MinChangeVersionParameterName,
                     ScalarKind.Int64
                 )

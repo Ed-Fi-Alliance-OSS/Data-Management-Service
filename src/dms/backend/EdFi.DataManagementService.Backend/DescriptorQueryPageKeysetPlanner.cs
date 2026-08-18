@@ -162,7 +162,7 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
             predicates.Add(
                 new QueryValuePredicate(
                     new DbColumnName(ContentVersionColumnName),
-                    QueryComparisonOperator.GreaterThan,
+                    QueryComparisonOperator.GreaterThanOrEqual,
                     MinChangeVersionParameterName,
                     ScalarKind.Int64
                 )

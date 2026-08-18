@@ -3546,7 +3546,7 @@ public class Given_A_Mssql_Relational_Query_Authorization_With_The_Authoritative
         var keyset = _context.AssertSingleQueryHydration();
         keyset
             .Plan.PageDocumentIdSql.Should()
-            .Contain("r.[ContentVersion] > @minChangeVersion")
+            .Contain("r.[ContentVersion] >= @minChangeVersion")
             .And.Contain("r.[ContentVersion] <= @maxChangeVersion")
             .And.Contain("@ClaimEducationOrganizationIds_0");
     }

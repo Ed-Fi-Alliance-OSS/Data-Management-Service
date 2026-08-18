@@ -2961,7 +2961,7 @@ public class Given_A_Postgresql_Relational_Query_Authorization_With_The_Authorit
         var keyset = _context.AssertSingleQueryHydration();
         keyset
             .Plan.PageDocumentIdSql.Should()
-            .Contain("r.\"ContentVersion\" > @minChangeVersion")
+            .Contain("r.\"ContentVersion\" >= @minChangeVersion")
             .And.Contain("r.\"ContentVersion\" <= @maxChangeVersion")
             .And.Contain("= ANY(@ClaimEducationOrganizationIds)");
     }
