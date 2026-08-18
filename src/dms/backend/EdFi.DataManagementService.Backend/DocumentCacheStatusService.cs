@@ -21,6 +21,13 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
 
     private const string ObservationTimeoutMessage = "DocumentCache status observation timed out.";
 
+    private enum ProviderObservationCancellationSource
+    {
+        None = 0,
+        StatusObservationTimeout = 1,
+        EndpointTimeout = 2,
+    }
+
     private static readonly ImmutableArray<DocumentCacheEnqueueFailureCategory> EnqueueFailureCategoryOrder =
     [
         DocumentCacheEnqueueFailureCategory.StateMissingOrInvalid,
@@ -263,14 +270,58 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             );
         }
 
-        using CancellationTokenSource targetObservationTimeoutSource =
+        using CancellationTokenSource statusObservationTimeoutSource = new();
+        int firstCancellationSource = (int)ProviderObservationCancellationSource.None;
+
+        void RecordFirstCancellationSource(ProviderObservationCancellationSource cancellationSource)
+        {
+            _ = Interlocked.CompareExchange(
+                ref firstCancellationSource,
+                (int)cancellationSource,
+                (int)ProviderObservationCancellationSource.None
+            );
+        }
+
+        using CancellationTokenRegistration statusObservationTimeoutRegistration =
+            statusObservationTimeoutSource.Token.Register(() =>
+                RecordFirstCancellationSource(ProviderObservationCancellationSource.StatusObservationTimeout)
+            );
+        using CancellationTokenRegistration endpointTimeoutRegistration = endpointCancellationToken.Register(
+            () =>
+                RecordFirstCancellationSource(ProviderObservationCancellationSource.EndpointTimeout)
+        );
+        using CancellationTokenSource providerObservationCancellationSource =
             CancellationTokenSource.CreateLinkedTokenSource(
                 endpointCancellationToken,
-                callerCancellationToken
+                callerCancellationToken,
+                statusObservationTimeoutSource.Token
             );
-        targetObservationTimeoutSource.CancelAfter(
+        statusObservationTimeoutSource.CancelAfter(
             executionContext.EffectiveSettings.StatusObservationTimeout
         );
+
+        ProviderObservationCancellationSource GetFirstCancellationSource() =>
+            SelectFirstCancellationSource(
+                (ProviderObservationCancellationSource)Volatile.Read(ref firstCancellationSource),
+                statusObservationTimeoutSource.Token,
+                endpointCancellationToken
+            );
+
+        CancellationToken providerObservationCancellationToken = providerObservationCancellationSource.Token;
+
+        DocumentCacheStatusDurableObservation CreateTimedOutObservation(
+            ProviderObservationCancellationSource cancellationSource
+        ) =>
+            cancellationSource == ProviderObservationCancellationSource.EndpointTimeout
+                ? DocumentCacheStatusDurableObservation.EndpointTimeout(EndpointTimeoutStartedMessage)
+                : DocumentCacheStatusDurableObservation.ObservationTimeout(ObservationTimeoutMessage);
+
+        DocumentCacheStatusReason CreateTimedOutReason(
+            ProviderObservationCancellationSource cancellationSource
+        ) =>
+            cancellationSource == ProviderObservationCancellationSource.EndpointTimeout
+                ? DocumentCacheStatusReason.StatusEndpointTimeout
+                : DocumentCacheStatusReason.StatusObservationTimeout;
 
         long providerObservationStartedAt = Stopwatch.GetTimestamp();
         try
@@ -278,7 +329,7 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             DocumentCacheStatusCurrentSourceObservationResult result = await observer
                 .ObserveAsync(
                     new DocumentCacheStatusCurrentSourceObservationRequest(executionContext),
-                    targetObservationTimeoutSource.Token
+                    providerObservationCancellationToken
                 )
                 .ConfigureAwait(false);
 
@@ -287,50 +338,34 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
                 callerCancellationToken.ThrowIfCancellationRequested();
             }
 
+            ProviderObservationCancellationSource cancellationSource = GetFirstCancellationSource();
+
             RecordProviderObservationTelemetry(
                 targetObservation.TargetKey,
                 providerToken,
                 result,
-                endpointCancellationToken,
-                targetObservationTimeoutSource.Token,
+                cancellationSource,
                 DocumentCacheProjectionTelemetry.GetElapsedTime(providerObservationStartedAt)
             );
 
-            return ToDurableObservation(
-                result,
-                endpointCancellationToken,
-                callerCancellationToken,
-                targetObservationTimeoutSource.Token
-            );
+            return ToDurableObservation(result, callerCancellationToken, cancellationSource);
         }
         catch (OperationCanceledException)
         {
             callerCancellationToken.ThrowIfCancellationRequested();
 
-            if (endpointCancellationToken.IsCancellationRequested)
-            {
-                _statusTelemetry.RecordProviderObservation(
-                    targetObservation.TargetKey,
-                    providerToken,
-                    DocumentCacheStatusProviderObservationTelemetryOutcome.TimedOut,
-                    DocumentCacheStatusReason.StatusEndpointTimeout,
-                    DocumentCacheProjectionTelemetry.GetElapsedTime(providerObservationStartedAt),
-                    lifecycleState: null,
-                    oldestWorkAgeSeconds: null
-                );
-                return DocumentCacheStatusDurableObservation.EndpointTimeout(EndpointTimeoutStartedMessage);
-            }
+            ProviderObservationCancellationSource cancellationSource = GetFirstCancellationSource();
 
             _statusTelemetry.RecordProviderObservation(
                 targetObservation.TargetKey,
                 providerToken,
                 DocumentCacheStatusProviderObservationTelemetryOutcome.TimedOut,
-                DocumentCacheStatusReason.StatusObservationTimeout,
+                CreateTimedOutReason(cancellationSource),
                 DocumentCacheProjectionTelemetry.GetElapsedTime(providerObservationStartedAt),
                 lifecycleState: null,
                 oldestWorkAgeSeconds: null
             );
-            return DocumentCacheStatusDurableObservation.ObservationTimeout(ObservationTimeoutMessage);
+            return CreateTimedOutObservation(cancellationSource);
         }
         catch
         {
@@ -349,12 +384,35 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         }
     }
 
+    private static ProviderObservationCancellationSource SelectFirstCancellationSource(
+        ProviderObservationCancellationSource firstCancellationSource,
+        CancellationToken statusObservationTimeoutToken,
+        CancellationToken endpointCancellationToken
+    )
+    {
+        if (firstCancellationSource != ProviderObservationCancellationSource.None)
+        {
+            return firstCancellationSource;
+        }
+
+        if (statusObservationTimeoutToken.IsCancellationRequested)
+        {
+            return ProviderObservationCancellationSource.StatusObservationTimeout;
+        }
+
+        if (endpointCancellationToken.IsCancellationRequested)
+        {
+            return ProviderObservationCancellationSource.EndpointTimeout;
+        }
+
+        return ProviderObservationCancellationSource.None;
+    }
+
     private void RecordProviderObservationTelemetry(
         DocumentCacheTargetKey targetKey,
         RelationalProviderToken providerToken,
         DocumentCacheStatusCurrentSourceObservationResult result,
-        CancellationToken endpointCancellationToken,
-        CancellationToken targetObservationCancellationToken,
+        ProviderObservationCancellationSource cancellationSource,
         TimeSpan duration
     )
     {
@@ -371,14 +429,15 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
                     DocumentCacheStatusReason.StatusObservationTimeout
                 ),
                 DocumentCacheStatusCurrentSourceObservationOutcome.Cancelled
-                    when endpointCancellationToken.IsCancellationRequested => (
-                    DocumentCacheStatusProviderObservationTelemetryOutcome.TimedOut,
-                    DocumentCacheStatusReason.StatusEndpointTimeout
-                ),
-                DocumentCacheStatusCurrentSourceObservationOutcome.Cancelled
-                    when targetObservationCancellationToken.IsCancellationRequested => (
+                    when cancellationSource
+                        == ProviderObservationCancellationSource.StatusObservationTimeout => (
                     DocumentCacheStatusProviderObservationTelemetryOutcome.TimedOut,
                     DocumentCacheStatusReason.StatusObservationTimeout
+                ),
+                DocumentCacheStatusCurrentSourceObservationOutcome.Cancelled
+                    when cancellationSource == ProviderObservationCancellationSource.EndpointTimeout => (
+                    DocumentCacheStatusProviderObservationTelemetryOutcome.TimedOut,
+                    DocumentCacheStatusReason.StatusEndpointTimeout
                 ),
                 DocumentCacheStatusCurrentSourceObservationOutcome.Cancelled
                 or DocumentCacheStatusCurrentSourceObservationOutcome.Failed => (
@@ -405,9 +464,8 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
 
     private static DocumentCacheStatusDurableObservation ToDurableObservation(
         DocumentCacheStatusCurrentSourceObservationResult result,
-        CancellationToken endpointCancellationToken,
         CancellationToken callerCancellationToken,
-        CancellationToken targetObservationCancellationToken
+        ProviderObservationCancellationSource cancellationSource
     )
     {
         callerCancellationToken.ThrowIfCancellationRequested();
@@ -433,11 +491,11 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             DocumentCacheStatusCurrentSourceObservationOutcome.ProviderTimeout =>
                 DocumentCacheStatusDurableObservation.ObservationTimeout(result.Message),
             DocumentCacheStatusCurrentSourceObservationOutcome.Cancelled
-                when endpointCancellationToken.IsCancellationRequested =>
-                DocumentCacheStatusDurableObservation.EndpointTimeout(EndpointTimeoutStartedMessage),
-            DocumentCacheStatusCurrentSourceObservationOutcome.Cancelled
-                when targetObservationCancellationToken.IsCancellationRequested =>
+                when cancellationSource == ProviderObservationCancellationSource.StatusObservationTimeout =>
                 DocumentCacheStatusDurableObservation.ObservationTimeout(ObservationTimeoutMessage),
+            DocumentCacheStatusCurrentSourceObservationOutcome.Cancelled
+                when cancellationSource == ProviderObservationCancellationSource.EndpointTimeout =>
+                DocumentCacheStatusDurableObservation.EndpointTimeout(EndpointTimeoutStartedMessage),
             DocumentCacheStatusCurrentSourceObservationOutcome.Cancelled =>
                 DocumentCacheStatusDurableObservation.ProviderObservationFailed(result.Message),
             DocumentCacheStatusCurrentSourceObservationOutcome.Failed =>

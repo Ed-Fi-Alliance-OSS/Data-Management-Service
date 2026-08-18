@@ -430,6 +430,53 @@ public class Given_DocumentCacheStatusService
     }
 
     [Test]
+    public async Task It_preserves_observation_timeout_when_provider_returns_cancelled_after_endpoint_timeout()
+    {
+        DocumentCacheTargetEffectiveSettings effectiveSettings = EffectiveSettings(
+            statusObservationTimeout: TimeSpan.FromMilliseconds(20),
+            endpointTimeout: TimeSpan.FromMilliseconds(80)
+        );
+        DocumentCacheTargetObservation target = ResolvedTarget(
+            DocumentCacheTargetKey.Create("", 1),
+            effectiveSettings
+        );
+        StaticTargetRegistry registry = new([target], [ExecutionContext(target)]);
+        ScriptedStatusObserver observer = new(
+            async (_, cancellationToken) =>
+            {
+                await WaitForCancellationAsync(cancellationToken);
+                await Task.Delay(TimeSpan.FromMilliseconds(120));
+                return DocumentCacheStatusCurrentSourceObservationResult.Cancelled("cancelled");
+            }
+        );
+        CapturingStatusTelemetry telemetry = new();
+        DocumentCacheStatusService service = CreateService(
+            registry,
+            ObservationStore(target),
+            observer,
+            telemetry
+        );
+
+        DocumentCacheStatusResponse response = await service.GetStatusAsync();
+
+        DocumentCacheStatusTarget statusTarget = response.Targets.Should().ContainSingle().Which;
+        statusTarget.OperationalHealth.Status.Should().Be(DocumentCacheOperationalHealthStatus.Unknown);
+        statusTarget.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.StatusObservationTimeout);
+        statusTarget.CaughtUp.Status.Should().Be(DocumentCacheCaughtUpStatus.Unknown);
+        statusTarget.CaughtUp.Reason.Should().Be(DocumentCacheStatusReason.StatusObservationTimeout);
+        statusTarget.Lifecycle.Availability.Should().Be(DocumentCacheStatusAvailability.Unknown);
+
+        CapturedProviderObservation providerObservation = telemetry
+            .ProviderObservations.Should()
+            .ContainSingle()
+            .Which;
+        providerObservation
+            .Outcome.Should()
+            .Be(DocumentCacheStatusProviderObservationTelemetryOutcome.TimedOut);
+        providerObservation.Reason.Should().Be(DocumentCacheStatusReason.StatusObservationTimeout);
+    }
+
+    [Test]
     public async Task It_serializes_provider_observation_failure_without_blocking_peer_targets()
     {
         DocumentCacheTargetObservation failedTarget = ResolvedTarget(DocumentCacheTargetKey.Create("", 1));
