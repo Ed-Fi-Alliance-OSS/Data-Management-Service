@@ -691,6 +691,122 @@ public class Given_CdcConnectorTemplateLiveValidation
             );
     }
 
+    [TestCase(CdcProvider.Postgresql)]
+    [TestCase(CdcProvider.SqlServer)]
+    public void It_rejects_provider_setup_source_column_drift_for_preflight_and_live_read_back(
+        CdcProvider provider
+    )
+    {
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(provider);
+        CdcConnectorTemplateResult rendered = service.Render(request);
+        CdcConnectorProviderSetupEvidence badProviderSetupEvidence = new(
+            bindingGeneration: 7,
+            BuildProviderSetupResult(
+                provider,
+                sourceTableInventory:
+                [
+                    BuildSourceTable(
+                        provider,
+                        CdcSourceTableKind.DocumentCache,
+                        "DocumentCache",
+                        [BuildColumn(provider, "DocumentUuid;DROP_TABLE")]
+                    ),
+                    BuildSourceTable(
+                        provider,
+                        CdcSourceTableKind.Document,
+                        "Document",
+                        [BuildColumn(provider, "DocumentUuid"), BuildColumn(provider, "DocumentUuid", 2)]
+                    ),
+                    BuildSourceTable(
+                        provider,
+                        CdcSourceTableKind.CdcHeartbeat,
+                        "CdcHeartbeat",
+                        [
+                            BuildColumn(provider, "HeartbeatId"),
+                            BuildColumn(provider, "HeartbeatSequence", 2),
+                            BuildColumn(provider, "HeartbeatAt", 3),
+                        ]
+                    ),
+                ]
+            )
+        );
+
+        CdcConnectorTemplateResult preflightResult = service.ValidateRegistrationPreflight(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                badProviderSetupEvidence
+            )
+        );
+        CdcConnectorTemplateResult liveReadBackResult = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                badProviderSetupEvidence,
+                BuildSourcePartitionEvidence(request)
+            )
+        );
+
+        using var _ = new AssertionScope();
+        rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        preflightResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        liveReadBackResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        preflightResult.Config.Should().BeEmpty();
+        liveReadBackResult.Config.Should().BeEmpty();
+        preflightResult
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.MessageKey
+                && diagnostic.PropertyName == "message.key.columns"
+                && diagnostic.ExpectedValue == "source column DocumentUuid for dms.DocumentCache"
+                && diagnostic.ObservedValue == "missing"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.RegistrationPreflight
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.MessageKey
+                && diagnostic.PropertyName == "message.key.columns"
+                && diagnostic.ExpectedValue == "unique source column names for dms.Document"
+                && diagnostic.ObservedValue == "duplicate"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.RegistrationPreflight
+            );
+        liveReadBackResult
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.MessageKey
+                && diagnostic.PropertyName == "message.key.columns"
+                && diagnostic.ExpectedValue == "source column DocumentUuid for dms.DocumentCache"
+                && diagnostic.ObservedValue == "missing"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.MessageKey
+                && diagnostic.PropertyName == "message.key.columns"
+                && diagnostic.ExpectedValue == "unique source column names for dms.Document"
+                && diagnostic.ObservedValue == "duplicate"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack
+            );
+        preflightResult
+            .Diagnostics.Concat(liveReadBackResult.Diagnostics)
+            .Should()
+            .OnlyContain(diagnostic =>
+                diagnostic.RedactionClassification
+                == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            );
+        string.Join(
+                "|",
+                preflightResult.Diagnostics.Concat(liveReadBackResult.Diagnostics).SelectMany(DiagnosticText)
+            )
+            .Should()
+            .NotContain("DROP_TABLE", because: "raw source column names are redacted");
+    }
+
     [Test]
     public void It_rejects_source_partition_shape_drift_without_leaking_sqlserver_database_names()
     {
@@ -755,4 +871,7 @@ public class Given_CdcConnectorTemplateLiveValidation
 
     private static Dictionary<string, string> CopyConfig(IReadOnlyDictionary<string, string> config) =>
         config.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+
+    private static IEnumerable<string> DiagnosticText(CdcConnectorTemplateDiagnostic diagnostic) =>
+        [diagnostic.ExpectedValue ?? string.Empty, diagnostic.ObservedValue ?? string.Empty];
 }
