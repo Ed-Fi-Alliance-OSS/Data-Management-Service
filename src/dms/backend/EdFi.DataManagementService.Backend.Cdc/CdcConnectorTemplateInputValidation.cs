@@ -317,6 +317,10 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
     internal static bool IsKafkaClientSecurityProperty(string propertyName) =>
         _kafkaSecurityAllowList.Contains(propertyName);
 
+    internal static bool IsSqlServerDriverConnectionProperty(string propertyName) =>
+        propertyName.StartsWith("driver.", StringComparison.Ordinal)
+        && _connectionAllowListByProvider[CdcProvider.SqlServer].Contains(propertyName);
+
     public CdcConnectorTemplateValidationResult ValidateRequest(
         CdcConnectorTemplateRequest request,
         CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.RequestValidation

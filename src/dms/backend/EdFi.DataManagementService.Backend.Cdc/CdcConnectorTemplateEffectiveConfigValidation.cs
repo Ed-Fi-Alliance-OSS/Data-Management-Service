@@ -647,7 +647,10 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
             return CdcConnectorTemplateDiagnosticCategory.ProducerPolicy;
         }
 
-        if (propertyName.StartsWith("database.", StringComparison.Ordinal))
+        if (
+            propertyName.StartsWith("database.", StringComparison.Ordinal)
+            || CdcConnectorTemplateInputValidator.IsSqlServerDriverConnectionProperty(propertyName)
+        )
         {
             return CdcConnectorTemplateDiagnosticCategory.ConnectionProperty;
         }
