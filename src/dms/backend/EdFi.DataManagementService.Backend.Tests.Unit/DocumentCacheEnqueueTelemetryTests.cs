@@ -59,27 +59,26 @@ public class Given_DocumentCacheEnqueueTelemetry
         DocumentCacheEnqueueTelemetry telemetry = CreateTelemetry(pageSize: 2);
 
         telemetry.RecordFailure(
-            Context(TargetKey, DocumentCacheEnqueueTelemetryCanonicalOperation.Insert, "first"),
+            Context(TargetKey, DocumentCacheEnqueueTelemetryCanonicalOperation.Insert),
             DocumentCacheEnqueueFailureCategory.ProviderUnavailable
         );
         telemetry.RecordFailure(
-            Context(TargetKey, DocumentCacheEnqueueTelemetryCanonicalOperation.Update, "second"),
+            Context(TargetKey, DocumentCacheEnqueueTelemetryCanonicalOperation.Update),
             DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed
         );
         telemetry.RecordFailure(
-            Context(TargetKey, DocumentCacheEnqueueTelemetryCanonicalOperation.Insert, "third"),
+            Context(TargetKey, DocumentCacheEnqueueTelemetryCanonicalOperation.Insert),
             DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed
         );
         telemetry.RecordFailure(
             Context(
                 DocumentCacheTargetKey.Create("other", 2),
-                DocumentCacheEnqueueTelemetryCanonicalOperation.Update,
-                "other"
+                DocumentCacheEnqueueTelemetryCanonicalOperation.Update
             ),
             DocumentCacheEnqueueFailureCategory.StateMissingOrInvalid
         );
         telemetry.RecordFailure(
-            Context(targetKey: null, DocumentCacheEnqueueTelemetryCanonicalOperation.Update, "unknown"),
+            Context(targetKey: null, DocumentCacheEnqueueTelemetryCanonicalOperation.Update),
             DocumentCacheEnqueueFailureCategory.UnclassifiedProviderFailure
         );
 
@@ -128,7 +127,7 @@ public class Given_DocumentCacheEnqueueTelemetry
         DocumentCacheEnqueueTelemetry telemetry = CreateTelemetry(pageSize: 10, registry);
 
         telemetry.RecordFailure(
-            Context(TargetKey, DocumentCacheEnqueueTelemetryCanonicalOperation.Update, "retained"),
+            Context(TargetKey, DocumentCacheEnqueueTelemetryCanonicalOperation.Update),
             DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed
         );
 
@@ -156,19 +155,11 @@ public class Given_DocumentCacheEnqueueTelemetry
         DocumentCacheEnqueueTelemetry telemetry = CreateTelemetry(pageSize: 10, registry);
 
         telemetry.RecordFailure(
-            Context(
-                tenantBTarget,
-                DocumentCacheEnqueueTelemetryCanonicalOperation.Update,
-                "tenant b failure"
-            ),
+            Context(tenantBTarget, DocumentCacheEnqueueTelemetryCanonicalOperation.Update),
             DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed
         );
         telemetry.RecordFailure(
-            Context(
-                unconfiguredTenantTarget,
-                DocumentCacheEnqueueTelemetryCanonicalOperation.Update,
-                "unconfigured tenant failure"
-            ),
+            Context(unconfiguredTenantTarget, DocumentCacheEnqueueTelemetryCanonicalOperation.Update),
             DocumentCacheEnqueueFailureCategory.ProviderUnavailable
         );
 
@@ -202,11 +193,11 @@ public class Given_DocumentCacheEnqueueTelemetry
         );
 
         telemetry.RecordFailure(
-            Context(TargetKey, DocumentCacheEnqueueTelemetryCanonicalOperation.Insert, "state missing"),
+            Context(TargetKey, DocumentCacheEnqueueTelemetryCanonicalOperation.Insert),
             DocumentCacheEnqueueFailureCategory.StateMissingOrInvalid
         );
         telemetry.RecordFailure(
-            Context(TargetKey, DocumentCacheEnqueueTelemetryCanonicalOperation.Update, "work failed"),
+            Context(TargetKey, DocumentCacheEnqueueTelemetryCanonicalOperation.Update),
             DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed
         );
 
@@ -258,15 +249,9 @@ public class Given_DocumentCacheEnqueueTelemetry
             meter: collector.Meter
         );
 
-        telemetry.RecordSuccess(
-            Context(TargetKey, DocumentCacheEnqueueTelemetryCanonicalOperation.Insert, "committed")
-        );
+        telemetry.RecordSuccess(Context(TargetKey, DocumentCacheEnqueueTelemetryCanonicalOperation.Insert));
         telemetry.RecordFailure(
-            Context(
-                TargetKey,
-                DocumentCacheEnqueueTelemetryCanonicalOperation.Update,
-                "SQLSTATE 08006 failed\n{unsafe} DocumentId 123"
-            ),
+            Context(TargetKey, DocumentCacheEnqueueTelemetryCanonicalOperation.Update),
             DocumentCacheEnqueueFailureCategory.ProviderUnavailable
         );
 
@@ -324,10 +309,10 @@ public class Given_DocumentCacheEnqueueTelemetry
         string targetLabel = DocumentCacheTelemetryTargetLabel.FromTargetKey(configuredTargetKey);
 
         telemetry.RecordSuccess(
-            Context(requestTargetKey, DocumentCacheEnqueueTelemetryCanonicalOperation.Insert, "committed")
+            Context(requestTargetKey, DocumentCacheEnqueueTelemetryCanonicalOperation.Insert)
         );
         telemetry.RecordFailure(
-            Context(requestTargetKey, DocumentCacheEnqueueTelemetryCanonicalOperation.Update, "failed"),
+            Context(requestTargetKey, DocumentCacheEnqueueTelemetryCanonicalOperation.Update),
             DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed
         );
 
@@ -437,8 +422,7 @@ public class Given_DocumentCacheEnqueueTelemetry
             SqlDialect.Pgsql,
             DocumentCacheEnqueueOutcome.AlreadySatisfied,
             DocumentCacheEnqueueTelemetryCanonicalOperation.Insert,
-            DocumentCacheEnqueueTelemetryResourceKind.Resource,
-            "committed"
+            DocumentCacheEnqueueTelemetryResourceKind.Resource
         );
 
         telemetry.GetFailureSnapshot(TargetKey).RecentEvents.Should().BeEmpty();
@@ -486,8 +470,7 @@ public class Given_DocumentCacheEnqueueTelemetry
             SqlDialect.Pgsql,
             DocumentCacheEnqueueOutcome.NoWorkQueued,
             DocumentCacheEnqueueTelemetryCanonicalOperation.Update,
-            DocumentCacheEnqueueTelemetryResourceKind.Resource,
-            "no work"
+            DocumentCacheEnqueueTelemetryResourceKind.Resource
         );
 
         collector.MeasurementsFor(DocumentCacheEnqueueTelemetry.SuccessCounterName).Should().BeEmpty();
@@ -547,15 +530,14 @@ public class Given_DocumentCacheEnqueueTelemetry
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             new StubDbException(providerMessage),
             NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance,
-            out DocumentCacheEnqueueFailureCategory category,
-            out string message
+            out DocumentCacheEnqueueFailureCategory category
         );
 
         classified.Should().BeTrue();
         category.Should().Be((DocumentCacheEnqueueFailureCategory)expectedCategory);
-        message.Should().Be(DocumentCacheEnqueueFailureClassifier.MessageFor(category));
-        message.Should().NotBe(providerMessage);
-        message.Should().NotContain("\r").And.NotContain("\n").And.NotContain("{").And.NotContain("}");
+        string safeMessage = DocumentCacheEnqueueFailureClassifier.MessageFor(category);
+        safeMessage.Should().NotBe(providerMessage);
+        safeMessage.Should().NotContain("\r").And.NotContain("\n").And.NotContain("{").And.NotContain("}");
     }
 
     [Test]
@@ -567,14 +549,13 @@ public class Given_DocumentCacheEnqueueTelemetry
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             new StubDbException(providerMessage),
             NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance,
-            out DocumentCacheEnqueueFailureCategory category,
-            out string message
+            out DocumentCacheEnqueueFailureCategory category
         );
 
         classified.Should().BeTrue();
         category.Should().Be(DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed);
-        message.Should().Be(DocumentCacheEnqueueFailureClassifier.MessageFor(category));
-        message
+        DocumentCacheEnqueueFailureClassifier
+            .MessageFor(category)
             .Should()
             .NotContain("SQLSTATE")
             .And.NotContain("edfi")
@@ -591,8 +572,7 @@ public class Given_DocumentCacheEnqueueTelemetry
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             new StubDbException("duplicate key value violates unique constraint"),
             NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance,
-            out DocumentCacheEnqueueFailureCategory category,
-            out _
+            out DocumentCacheEnqueueFailureCategory category
         );
 
         classified.Should().BeFalse();
@@ -605,8 +585,7 @@ public class Given_DocumentCacheEnqueueTelemetry
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             new StubDbException("ordinary provider write failure"),
             NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance,
-            out DocumentCacheEnqueueFailureCategory category,
-            out _
+            out DocumentCacheEnqueueFailureCategory category
         );
 
         classified.Should().BeFalse();
@@ -619,8 +598,7 @@ public class Given_DocumentCacheEnqueueTelemetry
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             new StubDbException("deadlock detected while writing the canonical resource row"),
             NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance,
-            out DocumentCacheEnqueueFailureCategory category,
-            out _
+            out DocumentCacheEnqueueFailureCategory category
         );
 
         classified.Should().BeFalse();
@@ -633,13 +611,11 @@ public class Given_DocumentCacheEnqueueTelemetry
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             new StubDbException("command timeout while inserting into dms.DocumentProjectionWork"),
             new StubProviderCommandTimeoutClassifier(isProviderCommandTimeout: true),
-            out DocumentCacheEnqueueFailureCategory category,
-            out string message
+            out DocumentCacheEnqueueFailureCategory category
         );
 
         classified.Should().BeTrue();
         category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderTimeout);
-        message.Should().Be(DocumentCacheEnqueueFailureClassifier.MessageFor(category));
     }
 
     [Test]
@@ -648,13 +624,11 @@ public class Given_DocumentCacheEnqueueTelemetry
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             new StubDbException("command timeout while executing TF_Document_EnqueueProjectionInsert"),
             new StubProviderCommandTimeoutClassifier(isProviderCommandTimeout: true),
-            out DocumentCacheEnqueueFailureCategory category,
-            out string message
+            out DocumentCacheEnqueueFailureCategory category
         );
 
         classified.Should().BeTrue();
         category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderTimeout);
-        message.Should().Be(DocumentCacheEnqueueFailureClassifier.MessageFor(category));
     }
 
     [Test]
@@ -663,13 +637,11 @@ public class Given_DocumentCacheEnqueueTelemetry
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             new StubDbException("deadlock detected while inserting into dms.DocumentProjectionWork"),
             NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance,
-            out DocumentCacheEnqueueFailureCategory category,
-            out string message
+            out DocumentCacheEnqueueFailureCategory category
         );
 
         classified.Should().BeTrue();
         category.Should().Be(DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed);
-        message.Should().Be(DocumentCacheEnqueueFailureClassifier.MessageFor(category));
     }
 
     [Test]
@@ -678,13 +650,11 @@ public class Given_DocumentCacheEnqueueTelemetry
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             new StubDbException("deadlock detected while reading dms.DocumentCacheState"),
             NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance,
-            out DocumentCacheEnqueueFailureCategory category,
-            out string message
+            out DocumentCacheEnqueueFailureCategory category
         );
 
         classified.Should().BeTrue();
         category.Should().Be(DocumentCacheEnqueueFailureCategory.UnclassifiedProviderFailure);
-        message.Should().Be(DocumentCacheEnqueueFailureClassifier.MessageFor(category));
     }
 
     [Test]
@@ -693,8 +663,7 @@ public class Given_DocumentCacheEnqueueTelemetry
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             new StubDbException("connection refused while opening the provider connection"),
             NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance,
-            out DocumentCacheEnqueueFailureCategory category,
-            out _
+            out DocumentCacheEnqueueFailureCategory category
         );
 
         classified.Should().BeFalse();
@@ -707,13 +676,11 @@ public class Given_DocumentCacheEnqueueTelemetry
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             new StubDbException("connection refused while reading dms.DocumentCacheState"),
             NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance,
-            out DocumentCacheEnqueueFailureCategory category,
-            out string message
+            out DocumentCacheEnqueueFailureCategory category
         );
 
         classified.Should().BeTrue();
         category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderUnavailable);
-        message.Should().Be(DocumentCacheEnqueueFailureClassifier.MessageFor(category));
     }
 
     [Test]
@@ -722,13 +689,11 @@ public class Given_DocumentCacheEnqueueTelemetry
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             new StubDbException("connection refused while executing TR_Document_EnqueueProjectionWork"),
             NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance,
-            out DocumentCacheEnqueueFailureCategory category,
-            out string message
+            out DocumentCacheEnqueueFailureCategory category
         );
 
         classified.Should().BeTrue();
         category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderUnavailable);
-        message.Should().Be(DocumentCacheEnqueueFailureClassifier.MessageFor(category));
     }
 
     private static DocumentCacheEnqueueTelemetry CreateTelemetry(
@@ -752,15 +717,13 @@ public class Given_DocumentCacheEnqueueTelemetry
 
     private static DocumentCacheEnqueueTelemetryContext Context(
         DocumentCacheTargetKey? targetKey,
-        DocumentCacheEnqueueTelemetryCanonicalOperation operation,
-        string message
+        DocumentCacheEnqueueTelemetryCanonicalOperation operation
     ) =>
         new(
             targetKey,
             RelationalProviderToken.Postgresql,
             operation,
-            DocumentCacheEnqueueTelemetryResourceKind.Resource,
-            message
+            DocumentCacheEnqueueTelemetryResourceKind.Resource
         );
 
     private static IDataStoreSelection CreateSelectedDataStoreSelection()

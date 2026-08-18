@@ -658,8 +658,7 @@ internal sealed class DefaultRelationalWriteExecutor(
             request.MappingSet.Key.Dialect,
             persistedTarget.DocumentCacheEnqueueOutcome,
             ToCanonicalOperation(request),
-            DocumentCacheEnqueueTelemetryResourceKind.Resource,
-            "DocumentCache enqueue succeeded."
+            DocumentCacheEnqueueTelemetryResourceKind.Resource
         );
     }
 

@@ -46,8 +46,7 @@ internal sealed record DocumentCacheEnqueueTelemetryContext
         DocumentCacheTargetKey? targetKey,
         RelationalProviderToken? providerToken,
         DocumentCacheEnqueueTelemetryCanonicalOperation canonicalOperation,
-        DocumentCacheEnqueueTelemetryResourceKind resourceKind,
-        string? message = null
+        DocumentCacheEnqueueTelemetryResourceKind resourceKind
     )
     {
         if (targetKey is not null)
@@ -62,7 +61,6 @@ internal sealed record DocumentCacheEnqueueTelemetryContext
             "Unsupported canonical enqueue operation."
         );
         ResourceKind = RequireDefined(resourceKind, nameof(resourceKind), "Unsupported resource kind.");
-        Message = DocumentCacheEnqueueTelemetryText.Sanitize(message ?? "DocumentCache enqueue telemetry.");
     }
 
     public DocumentCacheTargetKey? TargetKey { get; }
@@ -72,8 +70,6 @@ internal sealed record DocumentCacheEnqueueTelemetryContext
     public DocumentCacheEnqueueTelemetryCanonicalOperation CanonicalOperation { get; }
 
     public DocumentCacheEnqueueTelemetryResourceKind ResourceKind { get; }
-
-    public string Message { get; }
 
     private static TEnum RequireDefined<TEnum>(TEnum value, string parameterName, string message)
         where TEnum : struct, Enum
@@ -211,8 +207,7 @@ internal static class DocumentCacheEnqueueTelemetryWriteBoundary
         SqlDialect dialect,
         DocumentCacheEnqueueOutcome enqueueOutcome,
         DocumentCacheEnqueueTelemetryCanonicalOperation canonicalOperation,
-        DocumentCacheEnqueueTelemetryResourceKind resourceKind,
-        string message
+        DocumentCacheEnqueueTelemetryResourceKind resourceKind
     )
     {
         ArgumentNullException.ThrowIfNull(telemetry);
@@ -228,8 +223,7 @@ internal static class DocumentCacheEnqueueTelemetryWriteBoundary
             tenantKey,
             dialect,
             canonicalOperation,
-            resourceKind,
-            message
+            resourceKind
         );
 
         telemetry.RecordSuccess(context);
@@ -257,8 +251,7 @@ internal static class DocumentCacheEnqueueTelemetryWriteBoundary
             !DocumentCacheEnqueueFailureClassifier.TryClassify(
                 exception,
                 providerCommandTimeoutClassifier,
-                out DocumentCacheEnqueueFailureCategory category,
-                out string message
+                out DocumentCacheEnqueueFailureCategory category
             )
         )
         {
@@ -272,8 +265,7 @@ internal static class DocumentCacheEnqueueTelemetryWriteBoundary
             targetKey,
             targetObservation?.ProviderToken ?? ProviderTokenForDialect(dialect),
             canonicalOperation,
-            resourceKind,
-            message
+            resourceKind
         );
 
         telemetry.RecordFailure(context, category);
@@ -285,8 +277,7 @@ internal static class DocumentCacheEnqueueTelemetryWriteBoundary
         string tenantKey,
         SqlDialect dialect,
         DocumentCacheEnqueueTelemetryCanonicalOperation canonicalOperation,
-        DocumentCacheEnqueueTelemetryResourceKind resourceKind,
-        string message
+        DocumentCacheEnqueueTelemetryResourceKind resourceKind
     )
     {
         DocumentCacheTargetKey? targetKey = TryCreateTelemetryTargetKey(dataStoreSelection, tenantKey);
@@ -297,8 +288,7 @@ internal static class DocumentCacheEnqueueTelemetryWriteBoundary
             targetKey,
             targetObservation?.ProviderToken ?? ProviderTokenForDialect(dialect),
             canonicalOperation,
-            resourceKind,
-            message
+            resourceKind
         );
     }
 
@@ -573,8 +563,7 @@ internal static class DocumentCacheEnqueueFailureClassifier
     public static bool TryClassify(
         DbException exception,
         IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
-        out DocumentCacheEnqueueFailureCategory category,
-        out string message
+        out DocumentCacheEnqueueFailureCategory category
     )
     {
         ArgumentNullException.ThrowIfNull(exception);
@@ -592,7 +581,6 @@ internal static class DocumentCacheEnqueueFailureClassifier
         )
         {
             category = DocumentCacheEnqueueFailureCategory.StateMissingOrInvalid;
-            message = MessageFor(category);
             return true;
         }
 
@@ -603,14 +591,12 @@ internal static class DocumentCacheEnqueueFailureClassifier
         )
         {
             category = DocumentCacheEnqueueFailureCategory.ProviderTimeout;
-            message = MessageFor(category);
             return true;
         }
 
         if (IsProviderUnavailable(classificationText) && hasEnqueueArtifactEvidence)
         {
             category = DocumentCacheEnqueueFailureCategory.ProviderUnavailable;
-            message = MessageFor(category);
             return true;
         }
 
@@ -620,21 +606,18 @@ internal static class DocumentCacheEnqueueFailureClassifier
         )
         {
             category = DocumentCacheEnqueueFailureCategory.EnqueueTriggerUnavailable;
-            message = MessageFor(category);
             return true;
         }
 
         if (classificationText.Contains(DocumentProjectionWorkName, StringComparison.OrdinalIgnoreCase))
         {
             category = DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed;
-            message = MessageFor(category);
             return true;
         }
 
         if (hasEnqueueArtifactEvidence)
         {
             category = DocumentCacheEnqueueFailureCategory.UnclassifiedProviderFailure;
-            message = MessageFor(category);
             return true;
         }
 
@@ -643,7 +626,6 @@ internal static class DocumentCacheEnqueueFailureClassifier
         // and must not pollute DocumentCache enqueue telemetry unless the provider message names a
         // known enqueue artifact above.
         category = default;
-        message = string.Empty;
         return false;
     }
 

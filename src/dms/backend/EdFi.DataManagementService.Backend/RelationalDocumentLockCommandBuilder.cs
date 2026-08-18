@@ -39,26 +39,6 @@ internal static class RelationalDocumentLockCommandBuilder
     /// The same statement with the document id supplied as a SQL expression instead of a bound value, for a
     /// create whose identity an earlier statement of the same command generated.
     /// </summary>
-    public static RelationalCommand BuildContentVersionCommand(SqlDialect dialect, string documentIdSql)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(documentIdSql);
-
-        return new RelationalCommand(
-            RelationalParameterTokenRewriter.Rewrite(
-                BuildContentVersionSql(dialect),
-                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                {
-                    [RelationalParameterTokenRewriter.BareName(DocumentIdParameterName)] = documentIdSql,
-                }
-            ),
-            []
-        );
-    }
-
-    /// <summary>
-    /// The same statement with the document id supplied as a SQL expression instead of a bound value, for a
-    /// create whose identity an earlier statement of the same command generated.
-    /// </summary>
     public static RelationalCommand BuildContentVersionWithDocumentCacheEnqueueOutcomeCommand(
         SqlDialect dialect,
         string documentIdSql

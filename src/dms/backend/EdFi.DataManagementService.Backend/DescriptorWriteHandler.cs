@@ -3413,8 +3413,7 @@ internal sealed class DescriptorWriteHandler(
             request.MappingSet.Key.Dialect,
             enqueueOutcome,
             canonicalOperation,
-            DocumentCacheEnqueueTelemetryResourceKind.Descriptor,
-            "DocumentCache descriptor enqueue succeeded."
+            DocumentCacheEnqueueTelemetryResourceKind.Descriptor
         );
     }
 
@@ -3483,7 +3482,7 @@ internal sealed class DescriptorWriteHandler(
                     {
                         return new DescriptorWritePersistResult(
                             reader.GetRequiredFieldValue<long>("ContentVersion"),
-                            RequireEnqueueOutcome(
+                            DocumentCacheEnqueueOutcomeConversion.FromDescriptorWrite(
                                 reader.GetRequiredFieldValue<int>("DocumentCacheEnqueueOutcome")
                             )
                         );
@@ -3496,19 +3495,6 @@ internal sealed class DescriptorWriteHandler(
             },
             cancellationToken
         );
-
-    private static DocumentCacheEnqueueOutcome RequireEnqueueOutcome(int value)
-    {
-        var outcome = (DocumentCacheEnqueueOutcome)value;
-        if (!Enum.IsDefined(outcome))
-        {
-            throw new InvalidOperationException(
-                $"Descriptor write returned unsupported DocumentCache enqueue outcome '{value}'."
-            );
-        }
-
-        return outcome;
-    }
 
     private sealed record DescriptorWritePersistResult(
         long ContentVersion,

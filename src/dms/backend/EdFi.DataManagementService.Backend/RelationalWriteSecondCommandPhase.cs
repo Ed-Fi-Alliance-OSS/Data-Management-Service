@@ -1365,7 +1365,7 @@ internal sealed class CompositeRelationalWriteSecondCommand(
                 reader.GetValue(reader.GetOrdinal("ContentVersion")),
                 CultureInfo.InvariantCulture
             ),
-            RequireEnqueueOutcome(
+            DocumentCacheEnqueueOutcomeConversion.FromRelationalWritePersistence(
                 Convert.ToInt32(
                     reader.GetValue(reader.GetOrdinal("DocumentCacheEnqueueOutcome")),
                     CultureInfo.InvariantCulture
@@ -1381,19 +1381,6 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         }
 
         return observation;
-    }
-
-    private static DocumentCacheEnqueueOutcome RequireEnqueueOutcome(int value)
-    {
-        var outcome = (DocumentCacheEnqueueOutcome)value;
-        if (!Enum.IsDefined(outcome))
-        {
-            throw new InvalidOperationException(
-                $"Relational write persistence returned unsupported DocumentCache enqueue outcome '{value}'."
-            );
-        }
-
-        return outcome;
     }
 
     /// <summary>

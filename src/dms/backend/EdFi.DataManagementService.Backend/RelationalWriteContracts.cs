@@ -132,6 +132,28 @@ internal enum DocumentCacheEnqueueOutcome
     AlreadySatisfied = 4,
 }
 
+internal static class DocumentCacheEnqueueOutcomeConversion
+{
+    public static DocumentCacheEnqueueOutcome FromRelationalWritePersistence(int value) =>
+        RequireDefined(value, "Relational write persistence");
+
+    public static DocumentCacheEnqueueOutcome FromDescriptorWrite(int value) =>
+        RequireDefined(value, "Descriptor write");
+
+    private static DocumentCacheEnqueueOutcome RequireDefined(int value, string source)
+    {
+        var outcome = (DocumentCacheEnqueueOutcome)value;
+        if (!Enum.IsDefined(outcome))
+        {
+            throw new InvalidOperationException(
+                $"{source} returned unsupported DocumentCache enqueue outcome '{value}'."
+            );
+        }
+
+        return outcome;
+    }
+}
+
 /// <summary>
 /// Backend-local input contract for flattening a validated write body into relational buffers and candidates.
 /// </summary>

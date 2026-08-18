@@ -33,14 +33,13 @@ public class Given_Mssql_DocumentCacheEnqueueTelemetry
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             exception,
             _providerCommandTimeoutClassifier,
-            out DocumentCacheEnqueueFailureCategory category,
-            out string message
+            out DocumentCacheEnqueueFailureCategory category
         );
 
         classified.Should().BeTrue();
         category.Should().Be(DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed);
-        message.Should().Be(DocumentCacheEnqueueFailureClassifier.MessageFor(category));
-        message
+        DocumentCacheEnqueueFailureClassifier
+            .MessageFor(category)
             .Should()
             .NotContain("547")
             .And.NotContain("DocumentProjectionWork")
@@ -58,14 +57,13 @@ public class Given_Mssql_DocumentCacheEnqueueTelemetry
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             exception,
             _providerCommandTimeoutClassifier,
-            out DocumentCacheEnqueueFailureCategory category,
-            out string message
+            out DocumentCacheEnqueueFailureCategory category
         );
 
         classified.Should().BeTrue();
         category.Should().Be(DocumentCacheEnqueueFailureCategory.EnqueueTriggerUnavailable);
-        message.Should().Be(DocumentCacheEnqueueFailureClassifier.MessageFor(category));
-        message
+        DocumentCacheEnqueueFailureClassifier
+            .MessageFor(category)
             .Should()
             .NotContain("229")
             .And.NotContain("TF_Document_EnqueueProjection")
@@ -86,8 +84,7 @@ public class Given_Mssql_DocumentCacheEnqueueTelemetry
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             exception,
             _providerCommandTimeoutClassifier,
-            out DocumentCacheEnqueueFailureCategory category,
-            out _
+            out DocumentCacheEnqueueFailureCategory category
         );
 
         classified.Should().BeFalse();
@@ -107,8 +104,7 @@ public class Given_Mssql_DocumentCacheEnqueueTelemetry
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             exception,
             _providerCommandTimeoutClassifier,
-            out DocumentCacheEnqueueFailureCategory category,
-            out _
+            out DocumentCacheEnqueueFailureCategory category
         );
 
         classified.Should().BeTrue();
@@ -126,8 +122,7 @@ public class Given_Mssql_DocumentCacheEnqueueTelemetry
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             exception,
             _providerCommandTimeoutClassifier,
-            out DocumentCacheEnqueueFailureCategory category,
-            out _
+            out DocumentCacheEnqueueFailureCategory category
         );
 
         classified.Should().BeTrue();

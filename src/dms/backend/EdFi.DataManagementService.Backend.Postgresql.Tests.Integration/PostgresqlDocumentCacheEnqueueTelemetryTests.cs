@@ -32,14 +32,13 @@ public class Given_Postgresql_DocumentCacheEnqueueTelemetry
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             exception,
             _providerCommandTimeoutClassifier,
-            out DocumentCacheEnqueueFailureCategory category,
-            out string message
+            out DocumentCacheEnqueueFailureCategory category
         );
 
         classified.Should().BeTrue();
         category.Should().Be(DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed);
-        message.Should().Be(DocumentCacheEnqueueFailureClassifier.MessageFor(category));
-        message
+        DocumentCacheEnqueueFailureClassifier
+            .MessageFor(category)
             .Should()
             .NotContain("23503")
             .And.NotContain("DocumentProjectionWork")
@@ -57,14 +56,13 @@ public class Given_Postgresql_DocumentCacheEnqueueTelemetry
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             exception,
             _providerCommandTimeoutClassifier,
-            out DocumentCacheEnqueueFailureCategory category,
-            out string message
+            out DocumentCacheEnqueueFailureCategory category
         );
 
         classified.Should().BeTrue();
         category.Should().Be(DocumentCacheEnqueueFailureCategory.EnqueueTriggerUnavailable);
-        message.Should().Be(DocumentCacheEnqueueFailureClassifier.MessageFor(category));
-        message
+        DocumentCacheEnqueueFailureClassifier
+            .MessageFor(category)
             .Should()
             .NotContain("42501")
             .And.NotContain("TF_Document_EnqueueProjection")
@@ -81,8 +79,7 @@ public class Given_Postgresql_DocumentCacheEnqueueTelemetry
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             exception,
             _providerCommandTimeoutClassifier,
-            out DocumentCacheEnqueueFailureCategory category,
-            out _
+            out DocumentCacheEnqueueFailureCategory category
         );
 
         classified.Should().BeFalse();
@@ -102,8 +99,7 @@ public class Given_Postgresql_DocumentCacheEnqueueTelemetry
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             exception,
             _providerCommandTimeoutClassifier,
-            out DocumentCacheEnqueueFailureCategory category,
-            out _
+            out DocumentCacheEnqueueFailureCategory category
         );
 
         classified.Should().BeTrue();
@@ -121,8 +117,7 @@ public class Given_Postgresql_DocumentCacheEnqueueTelemetry
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             exception,
             _providerCommandTimeoutClassifier,
-            out DocumentCacheEnqueueFailureCategory category,
-            out _
+            out DocumentCacheEnqueueFailureCategory category
         );
 
         classified.Should().BeTrue();
