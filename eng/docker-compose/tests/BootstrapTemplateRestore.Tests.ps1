@@ -87,6 +87,8 @@ BeforeAll {
             [string]$TemplateKind = "Minimal",
             [string]$Producer = "local-dev",
 
+            [string]$ManifestDataStandardVersion = "5.2.0",
+
             [switch]$OmitManifest,
             [switch]$ExtraArtifact,
             [switch]$WrongNuspecVersion,
@@ -122,7 +124,7 @@ BeforeAll {
                 PackageVersion           = $PackageVersion
                 DatabaseEngine           = $DatabaseEngine
                 TemplateKind             = $TemplateKind
-                DataStandardVersion      = "5.2.0"
+                DataStandardVersion      = $ManifestDataStandardVersion
                 ProjectName              = [string[]]@("edfi")
                 ApiSchemaFormatVersion   = "1.0.0"
                 EffectiveSchemaHash      = ("ab" * 32)
@@ -265,6 +267,23 @@ Describe "Resolve-RestoreTemplatePackageIdentity" {
             -EnvironmentValues (New-TestEnvironmentValues -PackageId "EdFi.Api.Minimal.Template.MsSql.6.1.0") `
             -RestoreTemplate Populated -DatabaseEngine postgresql
         $identity.PackageId | Should -Be "EdFi.Api.Populated.Template.PostgreSql.6.1.0"
+    }
+
+    It "extracts the Data Standard version from the trailing id segment with the same strict grammar" {
+        $identity = Resolve-RestoreTemplatePackageIdentity `
+            -EnvironmentValues (New-TestEnvironmentValues -PackageId "EdFi.Api.Populated.Template.PostgreSql.5.2.0") `
+            -RestoreTemplate Minimal -DatabaseEngine postgresql
+        $identity.DataStandardVersion | Should -Be "5.2.0"
+
+        $identity = Resolve-RestoreTemplatePackageIdentity `
+            -EnvironmentValues (New-TestEnvironmentValues -PackageId "EdFi.Api.Minimal.Template.MsSql.6.1.0") `
+            -RestoreTemplate Minimal -DatabaseEngine mssql
+        $identity.DataStandardVersion | Should -Be "6.1.0"
+
+        { Resolve-RestoreTemplatePackageIdentity `
+                -EnvironmentValues (New-TestEnvironmentValues -PackageId "EdFi.Api.Minimal.Template.PostgreSql.Custom") `
+                -RestoreTemplate Minimal -DatabaseEngine postgresql } |
+            Should -Throw "*must end with the Data Standard version segment*"
     }
 
     It "rejects a missing or malformed DATABASE_TEMPLATE_PACKAGE" {
@@ -590,6 +609,23 @@ Describe "Initialize-RestorePackageStage" {
         New-RestoreTestPackage -Directory $hashDirectory -TrustWorld $trustWorld -WrongArtifactSha | Out-Null
         { Invoke-TrustedFindAndStage -TrustWorld $trustWorld -PackageDirectory $hashDirectory -EnvironmentValues $environmentValues } |
             Should -Throw "*does not match the manifest's artifactSha256*"
+
+        # The manifest's Data Standard disagrees with the one the package id encodes. Proven
+        # in -PackageDirectory mode WITHOUT DATABASE_TEMPLATE_NUGET_VERSION so the two version
+        # concepts stay separated: the failure names the Data Standard, never the NuGet key.
+        $dataStandardDirectory = New-TestWorkspace
+        New-RestoreTestPackage -Directory $dataStandardDirectory -TrustWorld $trustWorld -ManifestDataStandardVersion "6.1.0" | Out-Null
+        $dataStandardFailure = { Invoke-TrustedFindAndStage `
+                -TrustWorld $trustWorld `
+                -PackageDirectory $dataStandardDirectory `
+                -EnvironmentValues (New-TestEnvironmentValues -NugetVersion "") }
+        $dataStandardFailure | Should -Throw "*Data Standard mismatch*dataStandardVersion '6.1.0'*encodes Data Standard '5.2.0'*"
+        try {
+            & $dataStandardFailure
+        }
+        catch {
+            $_.Exception.Message.Contains("DATABASE_TEMPLATE_NUGET_VERSION") | Should -BeFalse
+        }
 
         # A legacy package without a restore manifest is not restore-eligible.
         $legacyDirectory = New-TestWorkspace
