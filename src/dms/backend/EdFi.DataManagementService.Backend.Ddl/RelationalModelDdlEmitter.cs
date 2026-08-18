@@ -1832,87 +1832,122 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         // ContentVersion stamp - compute the set of affected documents from inserted/deleted
         // rows that are inserts, deletes, or actual value changes. No-op UPDATEs are excluded.
-        writer.AppendLine(";WITH affectedDocs AS (");
-        using (writer.Indent())
+        void EmitContentVersionStamp()
         {
-            writer.Append("SELECT i.");
-            writer.AppendLine(quotedKeyColumn);
-            writer.AppendLine("FROM inserted i");
-            writer.Append("LEFT JOIN deleted del ON ");
-            EmitMssqlJoinConjunction(writer, "del", "i", tableKeyColumns);
-            writer.AppendLine();
-            writer.Append("WHERE del.");
-            writer.Append(quotedProbeKeyColumn);
-            if (isRootDocumentStampingTrigger)
+            writer.AppendLine(";WITH affectedDocs AS (");
+            using (writer.Indent())
             {
-                writer.Append(" IS NOT NULL AND (");
-                EmitMssqlColumnValueDiffDisjunction(writer, tableModel, "i", "del", storedColumns);
-                writer.Append(")");
-            }
-            else
-            {
-                writer.Append(" IS NULL OR ");
-                EmitMssqlColumnValueDiffDisjunction(writer, tableModel, "i", "del", storedColumns);
-            }
-            writer.AppendLine();
-            // Root branches are disjoint (inserted-side takes changed updates, deleted-side
-            // pure deletes), so UNION ALL skips the dedup sort and the diff disjunction runs
-            // once per row. Child rows map many-to-one onto the root document, so the child
-            // shape keeps UNION's dedup and the deleted-side diff for changed updates.
-            writer.AppendLine(isRootDocumentStampingTrigger ? "UNION ALL" : "UNION");
-            writer.Append("SELECT del.");
-            writer.AppendLine(quotedKeyColumn);
-            writer.AppendLine("FROM deleted del");
-            writer.Append("LEFT JOIN inserted i ON ");
-            EmitMssqlJoinConjunction(writer, "i", "del", tableKeyColumns);
-            writer.AppendLine();
-            writer.Append("WHERE i.");
-            writer.Append(quotedProbeKeyColumn);
-            if (isRootDocumentStampingTrigger)
-            {
-                writer.AppendLine(" IS NULL");
-            }
-            else
-            {
-                writer.Append(" IS NULL OR ");
-                EmitMssqlColumnValueDiffDisjunction(writer, tableModel, "i", "del", storedColumns);
+                writer.Append("SELECT i.");
+                writer.AppendLine(quotedKeyColumn);
+                writer.AppendLine("FROM inserted i");
+                writer.Append("LEFT JOIN deleted del ON ");
+                EmitMssqlJoinConjunction(writer, "del", "i", tableKeyColumns);
                 writer.AppendLine();
+                writer.Append("WHERE del.");
+                writer.Append(quotedProbeKeyColumn);
+                if (isRootDocumentStampingTrigger)
+                {
+                    writer.Append(" IS NOT NULL AND (");
+                    EmitMssqlColumnValueDiffDisjunction(writer, tableModel, "i", "del", storedColumns);
+                    writer.Append(")");
+                }
+                else
+                {
+                    writer.Append(" IS NULL OR ");
+                    EmitMssqlColumnValueDiffDisjunction(writer, tableModel, "i", "del", storedColumns);
+                }
+                writer.AppendLine();
+                // Root branches are disjoint (inserted-side takes changed updates, deleted-side
+                // pure deletes), so UNION ALL skips the dedup sort and the diff disjunction runs
+                // once per row. Child rows map many-to-one onto the root document, so the child
+                // shape keeps UNION's dedup and the deleted-side diff for changed updates.
+                writer.AppendLine(isRootDocumentStampingTrigger ? "UNION ALL" : "UNION");
+                writer.Append("SELECT del.");
+                writer.AppendLine(quotedKeyColumn);
+                writer.AppendLine("FROM deleted del");
+                writer.Append("LEFT JOIN inserted i ON ");
+                EmitMssqlJoinConjunction(writer, "i", "del", tableKeyColumns);
+                writer.AppendLine();
+                writer.Append("WHERE i.");
+                writer.Append(quotedProbeKeyColumn);
+                if (isRootDocumentStampingTrigger)
+                {
+                    writer.AppendLine(" IS NULL");
+                }
+                else
+                {
+                    writer.Append(" IS NULL OR ");
+                    EmitMssqlColumnValueDiffDisjunction(writer, tableModel, "i", "del", storedColumns);
+                    writer.AppendLine();
+                }
             }
-        }
-        writer.AppendLine(")");
+            writer.AppendLine(")");
 
-        writer.AppendLine("UPDATE d");
-        writer.Append("SET d.");
-        writer.Append(Quote(ContentVersionColumn));
-        writer.Append(" = NEXT VALUE FOR ");
-        writer.Append(sequenceName);
-        writer.Append(", d.");
-        writer.Append(Quote(ContentLastModifiedAtColumn));
-        writer.AppendLine(" = sysutcdatetime()");
-        writer.AppendLine(
-            "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped"
-        );
-        writer.Append("FROM ");
-        writer.Append(documentTable);
-        writer.AppendLine(" d");
-        writer.Append("INNER JOIN affectedDocs a ON d.");
-        writer.Append(Quote(DocumentIdColumn));
-        writer.Append(" = a.");
-        writer.Append(quotedKeyColumn);
-        if (!isRootDocumentStampingTrigger)
-        {
-            writer.AppendLine();
-            writer.Append("INNER JOIN ");
-            writer.Append(mirrorStampTarget);
-            writer.Append(" stampTarget ON stampTarget.");
+            writer.AppendLine("UPDATE d");
+            writer.Append("SET d.");
+            writer.Append(Quote(ContentVersionColumn));
+            writer.Append(" = NEXT VALUE FOR ");
+            writer.Append(sequenceName);
+            writer.Append(", d.");
+            writer.Append(Quote(ContentLastModifiedAtColumn));
+            writer.AppendLine(" = sysutcdatetime()");
+            writer.AppendLine(
+                "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped"
+            );
+            writer.Append("FROM ");
+            writer.Append(documentTable);
+            writer.AppendLine(" d");
+            writer.Append("INNER JOIN affectedDocs a ON d.");
             writer.Append(Quote(DocumentIdColumn));
             writer.Append(" = a.");
             writer.Append(quotedKeyColumn);
-            writer.AppendLine(";");
+            if (!isRootDocumentStampingTrigger)
+            {
+                writer.AppendLine();
+                writer.Append("INNER JOIN ");
+                writer.Append(mirrorStampTarget);
+                writer.Append(" stampTarget ON stampTarget.");
+                writer.Append(Quote(DocumentIdColumn));
+                writer.Append(" = a.");
+                writer.Append(quotedKeyColumn);
+                writer.AppendLine(";");
+            }
+            else
+            {
+                writer.AppendLine(";");
+            }
+        }
+
+        if (isRootDocumentStampingTrigger)
+        {
+            // Both affectedDocs branches require a matching deleted row, so on a pure INSERT the
+            // workset is provably empty - yet the statement still scans and locks dms.Document to
+            // resolve the join, which is one half of the concurrent-write deadlocking. The other
+            // half is the mirror stamp below re-firing this trigger as an UPDATE that touches only
+            // ContentVersion/ContentLastModifiedAt: deleted is non-empty there, so EXISTS alone
+            // cannot exclude it, but no stored column appears in that SET clause.
+            //
+            // UPDATE(col) is a performance pre-filter only, exactly as in the IdentityVersion stamp
+            // below: it reports that a column appeared in a SET clause, not that its value changed.
+            // The null-safe value diff inside affectedDocs stays authoritative, so the guard can
+            // only skip statements whose workset would have been empty. The disjunction covers
+            // exactly the stored columns that diff already uses, so the two cannot disagree.
+            writer.Append("IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR ");
+            EmitMssqlUpdateColumnDisjunction(writer, storedColumns);
+            writer.AppendLine(")");
+            writer.AppendLine("BEGIN");
+            using (writer.Indent())
+            {
+                EmitContentVersionStamp();
+            }
+            writer.AppendLine("END");
         }
         else
         {
-            writer.AppendLine(";");
+            // Child shape is deliberately unguarded: its inserted-side branch legitimately matches
+            // pure inserts (a new collection row must stamp its root document), so a deleted-row
+            // guard would drop real stamps.
+            EmitContentVersionStamp();
         }
 
         // The guard bounds direct recursion: without it the mirror self-UPDATE re-fires
