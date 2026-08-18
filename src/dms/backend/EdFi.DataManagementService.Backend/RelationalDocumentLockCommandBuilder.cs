@@ -52,6 +52,10 @@ internal static class RelationalDocumentLockCommandBuilder
                 new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
                     [RelationalParameterTokenRewriter.BareName(DocumentIdParameterName)] = documentIdSql,
+                    [RelationalParameterTokenRewriter.BareName(EnqueueOutcomeNoWorkQueuedParameterName)] =
+                        EnqueueOutcomeNoWorkQueuedParameterName,
+                    [RelationalParameterTokenRewriter.BareName(EnqueueOutcomeAlreadySatisfiedParameterName)] =
+                        EnqueueOutcomeAlreadySatisfiedParameterName,
                 }
             ),
             [

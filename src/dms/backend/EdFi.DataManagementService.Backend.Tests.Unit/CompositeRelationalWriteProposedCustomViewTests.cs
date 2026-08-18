@@ -791,7 +791,9 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
     public async Task It_emits_the_proposed_custom_view_check_before_the_document_and_resource_dml()
     {
         var request = CreateRequest(CreateProposedOnlyPlan(("SchoolWithATag", 0)));
-        var session = new ScriptedWriteSession(CreateDmlReader(Authorized(), Sentinel(1), Scalar(77L)));
+        var session = new ScriptedWriteSession(
+            CreateDmlReader(Authorized(), Sentinel(1), PersistObservation(77L))
+        );
 
         var resolution = await CreateSut()
             .ResolveAsync(
@@ -1232,8 +1234,13 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
     private static DbDataReader CreateDmlReader(params IReadOnlyList<object?[]>[] resultSets) =>
         new ScriptedDbDataReader(
             resultSets,
-            [.. resultSets.Select(static _ => new[] { "AuthorizationResult" })]
+            [.. resultSets.Select(static resultSet => ColumnNamesFor(resultSet))]
         );
+
+    private static string[] ColumnNamesFor(IReadOnlyList<object?[]> resultSet) =>
+        resultSet.FirstOrDefault()?.Length == 2
+            ? ["ContentVersion", "DocumentCacheEnqueueOutcome"]
+            : ["AuthorizationResult"];
 
     private static IReadOnlyList<object?[]> Authorized() =>
         [
@@ -1245,9 +1252,9 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
             [ordinal],
         ];
 
-    private static IReadOnlyList<object?[]> Scalar(object? value) =>
+    private static IReadOnlyList<object?[]> PersistObservation(long contentVersion) =>
         [
-            [value],
+            [(object)contentVersion, (int)DocumentCacheEnqueueOutcome.NoWorkQueued],
         ];
 
     /// <summary>
