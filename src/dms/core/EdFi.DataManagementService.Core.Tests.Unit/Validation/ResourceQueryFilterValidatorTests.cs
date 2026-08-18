@@ -78,9 +78,91 @@ public class ResourceQueryFilterValidatorTests
         }
 
         [Test]
-        public void It_lowercases_a_boolean_value()
+        public void It_canonicalizes_a_boolean_value()
         {
             ((ResourceQueryFilterResult.Valid)_result).QueryElements[1].Value.Should().Be("true");
+        }
+    }
+
+    /// <summary>
+    /// Boolean filters reach the candidate query as canonical protocol text derived from the parsed
+    /// value, not as a folded copy of what the client typed. The two differ on every value
+    /// <c>bool.TryParse</c> accepts but does not spell canonically: it ignores surrounding whitespace,
+    /// so folding the supplied text leaves padding on the value the filter is compared against, and
+    /// that comparison then matches nothing while the request is answered as a success.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Boolean_Filter_Spelled_Uncanonically : ResourceQueryFilterValidatorTests
+    {
+        private static string ValueOf(string supplied) =>
+            (
+                (ResourceQueryFilterResult.Valid)
+                    ResourceQueryFilterValidator.Validate(
+                        new Dictionary<string, string> { ["isActive"] = supplied },
+                        Fields(),
+                        ordinalExcludedNames: [],
+                        ignoreCaseExcludedNames: []
+                    )
+            )
+                .QueryElements[0]
+                .Value;
+
+        [TestCase("true")]
+        [TestCase("TRUE")]
+        [TestCase("tRuE")]
+        [TestCase(" true ")]
+        [TestCase("  TrUe\t")]
+        public void It_canonicalizes_an_accepted_true_to_exactly_true(string supplied)
+        {
+            ValueOf(supplied).Should().Be("true");
+        }
+
+        [TestCase("false")]
+        [TestCase("FALSE")]
+        [TestCase("fAlSe")]
+        [TestCase(" false ")]
+        [TestCase("\tFaLsE  ")]
+        public void It_canonicalizes_an_accepted_false_to_exactly_false(string supplied)
+        {
+            ValueOf(supplied).Should().Be("false");
+        }
+    }
+
+    /// <summary>
+    /// A value that does not parse is still reported exactly as the client supplied it, so the
+    /// canonicalization above cannot reach the message a rejected request answers with.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Boolean_Filter_That_Does_Not_Parse : ResourceQueryFilterValidatorTests
+    {
+        private ResourceQueryFilterResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _result = ResourceQueryFilterValidator.Validate(
+                new Dictionary<string, string> { ["isActive"] = " TrUthY " },
+                Fields(),
+                ordinalExcludedNames: [],
+                ignoreCaseExcludedNames: []
+            );
+        }
+
+        [Test]
+        public void It_reports_the_value_the_client_supplied()
+        {
+            ((ResourceQueryFilterResult.InvalidValues)_result)
+                .ValidationErrors["$.isActive"]
+                .Should()
+                .Equal("The value ' TrUthY ' is not valid for isActive.");
+        }
+
+        [Test]
+        public void It_emits_no_query_element_that_could_execute()
+        {
+            _result.Should().BeOfType<ResourceQueryFilterResult.InvalidValues>();
         }
     }
 

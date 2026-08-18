@@ -140,9 +140,9 @@ to continue.
 
 ### Query-parameter name canonicalization
 
-`pageToken`, `pageSize`, and the partition `number` parameter are case-insensitive at the HTTP
-boundary and are canonicalized before Core validation. The canonicalization this design adds is
-scoped to exactly those three names, and `number` only on the partitions operation.
+`pageToken`, `pageSize`, and the partition `partitionCount` parameter are case-insensitive at the
+HTTP boundary and are canonicalized before Core validation. The canonicalization this design adds is
+scoped to exactly those three names, and `partitionCount` only on the partitions operation.
 
 `limit`, `offset`, and `totalCount` were already case-insensitive at the HTTP boundary before this
 design, and remain so. That is deliberate public contract: the frontend has folded their names since
@@ -282,7 +282,7 @@ let a client believe it was walking a cursor when it was re-reading page one.
 Each regular resource and descriptor collection exposes a sibling operation:
 
 ```http
-GET /data/{projectEndpoint}/{resourceEndpoint}/partitions?number=10
+GET /data/{projectEndpoint}/{resourceEndpoint}/partitions?partitionCount=10
 ```
 
 Route qualifiers, tenant segments, authentication, resource authorization, and profile routing
@@ -290,7 +290,7 @@ continue to compose through their existing DMS boundaries.
 
 | Input/output | Contract |
 | --- | --- |
-| `number` | Optional desired partition count. Valid range is `1..200`; the default is configurable and initially `10`. |
+| `partitionCount` | Optional desired partition count. Valid range is `1..200`; the default is configurable and initially `10`. |
 | response | HTTP 200 with `{ "pageTokens": ["...", "..."] }`. No accessible candidates produces an empty array. |
 | fewer partitions | The response may contain fewer tokens than requested, because every partition is at least five maximum-sized pages. It never contains more. |
 | filters | Supports the same resource-property and live-resource change-version filters as GET-many. Boundaries are calculated after filters and authorization. |
@@ -305,7 +305,7 @@ profile documents agree.
 
 #### Partition validation
 
-`number` is the only partition-control parameter the operation accepts. Alongside it, `/partitions`
+`partitionCount` is the only partition-control parameter the operation accepts. Alongside it, `/partitions`
 accepts the same resource-property filters and `minChangeVersion`/`maxChangeVersion` live
 change-version filters that GET-many accepts, because boundaries are calculated over the filtered,
 authorized candidate set. The five reserved paging parameters — `pageToken`, `pageSize`, `limit`,
@@ -316,11 +316,11 @@ the existing unknown-query-field rule.
 Partition validation uses its own ordered phases, and unlike cursor validation it may report
 several errors:
 
-1. **`number` syntax and range.** A malformed or out-of-range `number` produces the exact error
-   `Number of partitions must be between 1 and 200.` A present-but-blank `?number=` is a malformed
-   value and produces that same error rather than being treated as absent and defaulted: a client
-   that typed `number=` asked for a partition count, and the parameter it typed should not be
-   silently ignored. This phase takes precedence over the unsupported-parameter phase.
+1. **`partitionCount` syntax and range.** A malformed or out-of-range `partitionCount` produces the
+   exact error `Number of partitions must be between 1 and 200.` A present-but-blank
+   `?partitionCount=` is a malformed value and produces that same error rather than being treated as
+   absent and defaulted: a client that typed `partitionCount=` asked for a partition count, and the
+   parameter it typed should not be silently ignored. This phase takes precedence over the unsupported-parameter phase.
 2. **Reserved parameters.** Reserved paging parameters are reported as unsupported *without* first
    parsing their values, using the exact error
    `The '{parameter}' parameter is not supported by the partitions endpoint.` If several are
@@ -331,14 +331,14 @@ The asymmetry with cursor validation is deliberate. Cursor parameters are interd
 meaning of `limit`, `pageSize`, and `totalCount` all depend on whether a valid `pageToken` is
 present — so reporting more than one error would report consequences rather than the cause.
 Unsupported partition parameters are independent mistakes, and a client that sent three of them
-should learn about all three in one response instead of over three round trips. `number` is
+should learn about all three in one response instead of over three round trips. `partitionCount` is
 validated first because it is the only parameter that controls the partition calculation itself,
 while the reserved paging parameters have no effect on it at all.
 
 #### Partition sizing
 
 ```text
-requested count = number ?? DefaultPartitionCount
+requested count = partitionCount ?? DefaultPartitionCount
 computed size   = ceiling(accessible candidate count / requested count)
 minimum size    = MaximumPageSize * 5
 partition size  = max(computed size, minimum size)
@@ -356,7 +356,7 @@ collection receives one token.
 
 **The size is a true mathematical ceiling.** A floored size produces partitions smaller than the
 requested count requires, so covering the candidate set takes one *more* partition than requested.
-Because the contract promises at most `number` tokens and never more, the division MUST NOT be
+Because the contract promises at most `partitionCount` tokens and never more, the division MUST NOT be
 computed as an integer quotient with a ceiling applied afterward — that ceiling is a no-op on an
 already-truncated value. Use non-integer arithmetic, or any exact equivalent. The algebraic
 spelling is not contractual; the returned token count is.
@@ -613,8 +613,8 @@ existing root, filter, and authorization indexes cannot serve.
   `ResourcePathOperation.Collection`, `.ById(DocumentUuid)`, and `.Partitions`. This recognizes
   `/{project}/{resource}/partitions` before UUID parsing. Unknown third segments retain the
   existing invalid-UUID response, and additional segments remain unmatched. The frontend
-  canonicalizes `pageToken`, `pageSize`, and partition `number` alongside the traditional names it
-  already folded, while preserving last-value-wins semantics.
+  canonicalizes `pageToken`, `pageSize`, and partition `partitionCount` alongside the traditional
+  names it already folded, while preserving last-value-wins semantics.
 - **Core model.** Use the explicit traditional/cursor choice and the typed `Int64` range described
   above. Keep token text encoding and decoding at the HTTP contract boundary.
 - **Core pipelines.** Keep the existing GET-many pipeline for cursor pages. Add a dedicated
@@ -635,9 +635,20 @@ existing root, filter, and authorization indexes cannot serve.
 ## OpenAPI Assembly
 
 The current ApiSchema base documents already contain `pageToken`, `pageSize`, and
-`numberOfPartitions` parameter components — the last of which describes the `number` query
+`numberOfPartitions` parameter components — the last of which describes a `number` query
 parameter — while resource fragments omit the cursor parameter references, the `Next-Page-Token`
 header, and the partition paths.
+
+**The runtime count parameter is `partitionCount`, not the `number` that component publishes.** This
+is an approved intentional divergence from the consumed base ApiSchema. `number` is generic enough to
+name a resource property, and a partition-control parameter is removed from resource-filter matching
+before the query-field lookup runs, so reserving `number` would make a resource exposing a query
+field of that name filterable on its collection GET and not on its `/partitions` sibling. Ed-Fi's
+query namespace is flat and offers no qualification syntax, so one raw key cannot carry both meanings,
+and no value-shape rule can recover the lost filter. Assembly MUST therefore publish a partition-count
+parameter whose `name` is `partitionCount` — cloning the `numberOfPartitions` component's description,
+schema, and bounds rather than referencing a component whose `name` is `number`. Referencing it
+unchanged would publish a parameter DMS does not serve, which this section forbids below.
 
 Add these platform-wide operations during DMS OpenAPI assembly, after all core, abstract, and
 extension fragments are merged but before domain and profile filtering.
@@ -669,8 +680,9 @@ Publish the runtime `MaximumPageSize`, initially `500`, as both the default and 
 existing `limit` parameter and the new `pageSize` parameter. This replaces the authoritative
 fixture's published `limit` default of `25` with fixed maximum `500`, and its `pageSize` default of
 `25` with no maximum, using the runtime value consistently across assembled DMS documents. Publish
-`DefaultPartitionCount` as the `numberOfPartitions` default. Published metadata that disagrees with
-runtime enforcement is a defect regardless of which value is more conservative.
+`DefaultPartitionCount` as the published partition-count default. Published metadata that disagrees
+with runtime enforcement is a defect regardless of which value is more conservative — the parameter
+name included.
 
 **Profile filtering.** Profile OpenAPI filtering MUST explicitly associate `/partitions` with its
 base collection, because the partition response carries no resource schema from which the current

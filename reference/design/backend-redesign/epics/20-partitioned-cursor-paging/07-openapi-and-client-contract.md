@@ -39,6 +39,10 @@ core, extension, descriptor, and profile OpenAPI documents without per-resource 
 - Append `Partitions` to the exact base collection `operationId`, preserving extension prefixes.
 - Publish runtime `MaximumPageSize` as both the default and maximum for `limit` and `pageSize`;
   publish the runtime partition-count default.
+- Publish the partition-count parameter under its runtime name `partitionCount`, cloning the base
+  ApiSchema `numberOfPartitions` component's description, schema, and bounds rather than referencing
+  that component, whose query `name` is the `number` DMS-1387 deliberately does not reserve.
+  Referencing it unchanged would publish a parameter DMS does not serve.
 - Copy only eligible resource/change-version filters, security, tags, and domain metadata.
 - Associate profile partition paths explicitly with readable base resources without rewriting the
   token response to a profile media type.

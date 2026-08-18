@@ -153,9 +153,12 @@ internal static class PartitionProfileScenario
     }
 
     /// <summary>
-    /// Seeds a few documents through the unprofiled pipeline so the unfiltered partitions request has
-    /// something to describe. The count is deliberately small: this scenario is about profile handling,
-    /// and the multi-partition sizing is asserted by <see cref="PartitionEndpointScenario" />.
+    /// Seeds a few documents so the unfiltered partitions request has something to describe. The POST
+    /// names no profile, so the assigned write-only profile is implicitly applied to it; its
+    /// <c>IncludeAll</c> write content type restricts only a nested <c>profileScope</c> object the seed
+    /// payload does not carry, so the stored documents are unchanged. The count is deliberately small:
+    /// this scenario is about profile handling, and the multi-partition sizing is asserted by
+    /// <see cref="PartitionEndpointScenario" />.
     /// </summary>
     private static async Task SeedMergeItemsAsync(ApiIntegrationHarness harness)
     {

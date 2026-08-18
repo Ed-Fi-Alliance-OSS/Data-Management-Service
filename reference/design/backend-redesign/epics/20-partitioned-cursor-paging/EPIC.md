@@ -297,22 +297,33 @@ The approved intentional ODS differences are:
   blank and non-numeric values, where ODS's `int?` model binding reads a blank value as absent and
   returns HTTP 200, and fails binding on a non-numeric value before its validator can emit a range
   message;
+- name the desired partition count `partitionCount`, where ODS 7.3.2 names it `number` and the
+  consumed base ApiSchema publishes a `numberOfPartitions` component whose query `name` is `number`.
+  A partition-control parameter is removed from resource-filter matching before the query-field
+  lookup runs, so reserving a key as generic as `number` would leave a resource exposing a query
+  field of that name filterable on its collection GET and not on its `/partitions` sibling, and
+  Ed-Fi's flat query namespace has no qualification syntax that would let one raw key carry both
+  meanings. Under DMS, `number` is therefore an ordinary resource query field on `/partitions`: it
+  filters where the resource declares it and is answered by the unknown-query-field rule where it
+  does not. No alias or deprecated fallback is retained, because either would reinstate the
+  collision. DMS-1388 publishes a parameter named `partitionCount` rather than referencing the
+  `numberOfPartitions` component unchanged;
 - return `Number of partitions must be between 1 and 200.` for a non-numeric
-  `/partitions?number=abc`, where ODS's `[FromQuery] int? number` binding fails before its
-  controller body runs. `PartitionsController` is an `[ApiController]`, and
-  `ApiBehaviorOptionsConfigurator`
+  `/partitions?partitionCount=abc`, where the corresponding ODS request is `?number=abc` and its
+  `[FromQuery] int? number` binding fails before its controller body runs. `PartitionsController` is
+  an `[ApiController]`, and `ApiBehaviorOptionsConfigurator`
   supplies an `InvalidModelStateResponseFactory` without setting `SuppressModelStateInvalidFilter`,
   so automatic model-state validation answers with an `ErrorTranslator` ProblemDetails shell built
   from `ModelState`, and the controller's own range check — which is what produces ODS's otherwise
   identical `Number of partitions must be between 1 and 200.` text — never executes. This is the
   partition-side form of the cursor `int?` binding difference above, with a different endpoint and a
   different message;
-- return that same range error for a present-but-blank `/partitions?number=`, treating the present
-  query key as a malformed partition count, where ODS's nullable-int model binding reads an empty
-  value as absent, so `number` arrives null, its range check does not trigger for null, and the
-  request succeeds with the configured default partition count. The empty-value-binds-to-null step
-  rests on ASP.NET Core's standard binding of an empty value to a nullable simple type, the same
-  basis as the recorded blank-`pageSize` behavior above;
+- return that same range error for a present-but-blank `/partitions?partitionCount=`, treating the
+  present query key as a malformed partition count, where ODS's nullable-int model binding reads an
+  empty `?number=` as absent, so its `number` arrives null, its range check does not trigger for
+  null, and the request succeeds with the configured default partition count. The
+  empty-value-binds-to-null step rests on ASP.NET Core's standard binding of an empty value to a
+  nullable simple type, the same basis as the recorded blank-`pageSize` behavior above;
 - reject `pageToken` and `pageSize` on `/deletes` and `/keyChanges` under DMS's
   unknown-query-field rule, where ODS binds the same request model on those endpoints, accepts a
   valid token, and answers a malformed one with `The page token provided was invalid.`;
@@ -332,7 +343,7 @@ The approved intentional ODS differences are:
   sized for. When `number` is supplied, ODS still returns at most `number` tokens, because its token
   loop emits a final token spanning the second-to-last starting id through `int.MaxValue` and stops;
   the surplus partition is absorbed into a final range that can be roughly twice as wide as the
-  others rather than handed out as an extra token. When `number` is omitted, both of that loop's cap
+  others rather than handed out as an extra token. When ODS's `number` is omitted, both of that loop's cap
   expressions read the nullable request value and no cap applies, while the sizing SQL used the
   configured default partition count, so only in that default case can ODS return one more token
   than its configured `DefaultPartitionCount`. DMS honors its at-most-count promise for the default

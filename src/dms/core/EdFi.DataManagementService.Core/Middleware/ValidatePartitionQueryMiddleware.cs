@@ -42,10 +42,18 @@ internal class ValidatePartitionQueryMiddleware(ILogger _logger, int _defaultPar
     /// names are matched the way <see cref="ValidateQueryMiddleware" /> parses them, and the count is
     /// matched the way <see cref="PartitionRequestValidator" /> looks it up.
     /// </summary>
+    /// <remarks>
+    /// A name listed here is removed from filter matching, so it cannot also be filtered on. That is
+    /// why the count is spelled <c>partitionCount</c> rather than <c>number</c>: this operation and
+    /// GET-many must accept the same filters over the same candidate set, and reserving a name as
+    /// generic as <c>number</c> would leave a resource exposing a query field of that name filterable
+    /// on the collection and not here. Nothing outside this list is reserved, so <c>number</c> reaches
+    /// the ordinary query-field lookup like any other supplied name.
+    /// </remarks>
     private static readonly string[] _ordinalOwnedParameters =
     [
         .. PartitionRequestValidator.ReservedParameters,
-        PartitionRequestValidator.NumberParameter,
+        PartitionRequestValidator.PartitionCountParameter,
     ];
 
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)

@@ -35,7 +35,14 @@ internal sealed record PartitionValidationResult(IReadOnlyList<string> Errors, i
 /// </remarks>
 internal static class PartitionRequestValidator
 {
-    internal const string NumberParameter = "number";
+    /// <summary>
+    /// The public query key carrying the desired partition count. Spelled <c>partitionCount</c> rather
+    /// than the <c>number</c> the consumed base ApiSchema's parameter component publishes: a key that
+    /// generic cannot be reserved out of the resource-filter namespace without making a resource
+    /// property of the same name unfilterable on this operation alone, and Ed-Fi's flat query namespace
+    /// offers no qualification syntax that would let one raw key carry both meanings.
+    /// </summary>
+    internal const string PartitionCountParameter = "partitionCount";
 
     /// <summary>
     /// The paging parameters the partitions operation reserves, in the canonical order they are
@@ -53,7 +60,7 @@ internal static class PartitionRequestValidator
         CursorRequestValidator.TotalCountParameter,
     ];
 
-    internal static string NumberOutOfRange =>
+    internal static string PartitionCountOutOfRange =>
         $"Number of partitions must be between {AppSettingsValidator.MinimumDefaultPartitionCount} and "
         + $"{AppSettingsValidator.MaximumDefaultPartitionCount}.";
 
@@ -73,23 +80,32 @@ internal static class PartitionRequestValidator
         int? requestedPartitionCount = null;
 
         // Phase 1, count syntax and range. A present-but-blank value is a malformed count rather than
-        // an absent one: a client that typed "number=" asked for a partition count, and the parameter
-        // it typed should not be silently ignored. This phase suppresses the reserved-parameter phase,
-        // because the count is the only parameter that controls the calculation. A client-supplied
-        // count is bounded by the same constants that bound the configured default, which is what
-        // keeps the accepted request range and the accepted configuration range from drifting apart.
-        if (queryParameters.TryGetValue(NumberParameter, out string? numberValue))
+        // an absent one: a client that typed "partitionCount=" asked for a partition count, and the
+        // parameter it typed should not be silently ignored. This phase suppresses the reserved-
+        // parameter phase, because the count is the only parameter that controls the calculation. A
+        // client-supplied count is bounded by the same constants that bound the configured default,
+        // which is what keeps the accepted request range and the accepted configuration range from
+        // drifting apart.
+        if (queryParameters.TryGetValue(PartitionCountParameter, out string? partitionCountValue))
         {
             if (
-                !int.TryParse(numberValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out int number)
-                || number < AppSettingsValidator.MinimumDefaultPartitionCount
-                || number > AppSettingsValidator.MaximumDefaultPartitionCount
+                !int.TryParse(
+                    partitionCountValue,
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out int partitionCount
+                )
+                || partitionCount < AppSettingsValidator.MinimumDefaultPartitionCount
+                || partitionCount > AppSettingsValidator.MaximumDefaultPartitionCount
             )
             {
-                return new PartitionValidationResult([NumberOutOfRange], RequestedPartitionCount: null);
+                return new PartitionValidationResult(
+                    [PartitionCountOutOfRange],
+                    RequestedPartitionCount: null
+                );
             }
 
-            requestedPartitionCount = number;
+            requestedPartitionCount = partitionCount;
         }
 
         // Phase 2, reserved paging parameters. Reported without parsing their values: the complaint is

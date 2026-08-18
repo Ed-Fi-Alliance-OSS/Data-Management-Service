@@ -423,15 +423,15 @@ public static class AspNetCoreFrontend
     private const string PartitionsPathSegment = "partitions";
 
     /// <summary>
-    /// Whether the path names the partitions operation, which is the only place the generic
-    /// <c>number</c> parameter is a paging control rather than a possible resource query field.
+    /// Whether the path names the partitions operation, which is the only place the
+    /// <c>partitionCount</c> parameter is a paging control rather than a possible resource query field.
     /// </summary>
     /// <remarks>
     /// The segment must be the third of the <c>{project}/{resource}/partitions</c> shape. Testing only
     /// the final segment would also recognize a two-segment collection whose resource is itself named
-    /// <c>partitions</c>, where <c>number</c> is an ordinary query field and rewriting its spelling
-    /// would change which field is filtered on or which name an unknown-field error reports. The
-    /// position requirement is what makes that impossible rather than merely unlikely, so nothing
+    /// <c>partitions</c>, where <c>partitionCount</c> is an ordinary query field and rewriting its
+    /// spelling would change which field is filtered on or which name an unknown-field error reports.
+    /// The position requirement is what makes that impossible rather than merely unlikely, so nothing
     /// here rests on an assumption about which resource names a schema declares.
     /// </remarks>
     /// <remarks>
@@ -481,7 +481,7 @@ public static class AspNetCoreFrontend
     /// <summary>
     /// The canonical spelling of the partition count, recognized only on the partitions operation.
     /// </summary>
-    private const string PartitionNumberParameterName = "number";
+    private const string PartitionCountParameterName = "partitionCount";
 
     /// <summary>
     /// Canonicalizes the query parameter names Core matches exactly. A name that is not recognized is
@@ -489,9 +489,10 @@ public static class AspNetCoreFrontend
     /// </summary>
     /// <remarks>
     /// The cursor parameters are canonicalized everywhere. The partition count is canonicalized only
-    /// on the partitions operation, because <c>number</c> is generic enough to collide with a
-    /// resource query field, and rewriting its spelling elsewhere would change resource filtering and
-    /// unknown-field error text on collections this feature does not otherwise touch.
+    /// on the partitions operation, because a resource may expose a query field named
+    /// <c>partitionCount</c>, and rewriting its spelling elsewhere would change resource filtering and
+    /// unknown-field error text on collections this feature does not otherwise touch. Scoping it also
+    /// keeps such a field filterable on its collection GET, where the name is not a paging control.
     /// </remarks>
     /// <remarks>
     /// Recognition is an ordinal case-insensitive comparison, which is the same relation the query
@@ -506,7 +507,7 @@ public static class AspNetCoreFrontend
     /// </remarks>
     private static string FromValidatedQueryParam(
         KeyValuePair<string, StringValues> queryParam,
-        bool canonicalizePartitionNumber
+        bool canonicalizePartitionCount
     )
     {
         string suppliedName = queryParam.Key;
@@ -522,9 +523,9 @@ public static class AspNetCoreFrontend
         }
 
         return
-            canonicalizePartitionNumber
-            && string.Equals(suppliedName, PartitionNumberParameterName, StringComparison.OrdinalIgnoreCase)
-            ? PartitionNumberParameterName
+            canonicalizePartitionCount
+            && string.Equals(suppliedName, PartitionCountParameterName, StringComparison.OrdinalIgnoreCase)
+            ? PartitionCountParameterName
             : suppliedName;
     }
 
@@ -596,7 +597,7 @@ public static class AspNetCoreFrontend
                 : JsonBodyExtractionResult.Empty;
         string? rawBody = includeBody && !parseJsonBody ? await ExtractRawBodyFrom(httpRequest) : null;
 
-        bool canonicalizePartitionNumber = IsPartitionsPath(dmsPath);
+        bool canonicalizePartitionCount = IsPartitionsPath(dmsPath);
 
         return new(
             Body: rawBody,
@@ -608,7 +609,7 @@ public static class AspNetCoreFrontend
             // last-value-wins. Canonicalizing a name uses the same comparison as the query collection's
             // own comparer, so two entries it holds separately cannot produce one canonical key.
             QueryParameters: httpRequest.Query.ToDictionary(
-                queryParam => FromValidatedQueryParam(queryParam, canonicalizePartitionNumber),
+                queryParam => FromValidatedQueryParam(queryParam, canonicalizePartitionCount),
                 x => x.Value[^1] ?? ""
             ),
             TraceId: ExtractTraceIdFrom(httpRequest, appSettings),

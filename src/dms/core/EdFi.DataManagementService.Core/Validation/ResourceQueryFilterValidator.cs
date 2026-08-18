@@ -102,7 +102,7 @@ internal static class ResourceQueryFilterValidator
         {
             QueryElementAndType? queryElementAndType = QueryElementFrom(clientQueryTerm, possibleQueryFields);
 
-            if (queryElementAndType == null)
+            if (queryElementAndType is null)
             {
                 return new ResourceQueryFilterResult.UnknownQueryField(clientQueryTerm.Key);
             }
@@ -115,11 +115,20 @@ internal static class ResourceQueryFilterValidator
             switch (type)
             {
                 case "boolean":
-                    if (!bool.TryParse(queryFieldValue, out _))
+                    // Canonicalized from the parsed value rather than by folding the supplied text.
+                    // The two differ on every input bool.TryParse accepts but does not spell
+                    // canonically: it ignores surrounding whitespace, so folding " true " leaves the
+                    // padding on the value a filter is later compared against, which matches nothing.
+                    // Deriving the text from the parsed boolean also removes a culture-sensitive fold
+                    // on a fixed protocol token.
+                    if (bool.TryParse(queryFieldValue, out bool booleanValue))
+                    {
+                        queryFieldValue = booleanValue ? "true" : "false";
+                    }
+                    else
                     {
                         AddValidationError(validationErrors, jsonPathString, queryFieldValue, queryFieldName);
                     }
-                    queryFieldValue = queryFieldValue.ToLower();
                     break;
                 case "date":
                     if (

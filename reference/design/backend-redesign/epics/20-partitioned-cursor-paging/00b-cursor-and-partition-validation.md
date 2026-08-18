@@ -48,7 +48,7 @@ story assert a presence semantic the other owns.
   returns exactly one error.
 - Treat query-key presence, including a blank, malformed, or zero value, as the phase-selection and
   conflict-ordering signal rather than deferring to a bound value.
-- Add the separately phase-gated partition validator with `number` precedence over the
+- Add the separately phase-gated partition validator with partition-count precedence over the
   unsupported-parameter phase and canonical unsupported-parameter ordering.
 - Add the approved parameter-validation ProblemDetails shell for cursor and partition failures, and
   answer traditional `limit`/`offset`/`totalCount` failures with that same shell while retaining
@@ -57,7 +57,7 @@ story assert a presence semantic the other owns.
   existing invalid-query-field HTTP 400 behavior instead of globally reserving the names.
 - Add typed `ResourcePathOperation` collection, by-id, and partition cases, and update path parsing,
   request state, route semantics, logging classification, and API dispatch to consume them.
-- Canonicalize `pageToken`, `pageSize`, and partition `number` at the HTTP boundary, preserving
+- Canonicalize `pageToken`, `pageSize`, and the partition count at the HTTP boundary, preserving
   last-value-wins behavior across repeated parameters including case variants.
 - Preserve the existing invalid-UUID result for unknown third segments and unmatched behavior for
   additional segments.
@@ -82,9 +82,9 @@ story assert a presence semantic the other owns.
 - Tests implement every row of the design doc's worked precedence table, including the blank
   `pageSize` and non-numeric `pageSize` rows recorded as approved intentional ODS differences in the
   epic.
-- Partition validator tests preserve `number` precedence and canonical unsupported-parameter
+- Partition validator tests preserve partition-count precedence and canonical unsupported-parameter
   ordering, and cover several reserved parameters in one request. They also cover malformed, blank,
-  and out-of-range `number`, including the blank case the design doc treats as malformed rather than
+  and out-of-range partition counts, including the blank case the design doc treats as malformed rather than
   absent, and prove resource-property and change-version filters are accepted rather than reported
   as unsupported.
 - Traditional-only pagination failures answer with the parameter-validation shell while retaining

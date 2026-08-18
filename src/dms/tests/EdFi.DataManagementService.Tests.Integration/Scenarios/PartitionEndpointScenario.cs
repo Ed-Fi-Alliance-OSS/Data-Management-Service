@@ -71,7 +71,10 @@ internal static class PartitionEndpointScenario
 
         var seededIds = await SeedMergeItemsAsync(harness, "coverage");
 
-        var pageTokens = await ReadPageTokensAsync(harness, $"{MergeItemsPartitionsEndpoint}?number=3");
+        var pageTokens = await ReadPageTokensAsync(
+            harness,
+            $"{MergeItemsPartitionsEndpoint}?partitionCount=3"
+        );
 
         pageTokens
             .Should()
@@ -96,7 +99,10 @@ internal static class PartitionEndpointScenario
 
         var seeded = await SeedDescriptorsAsync(harness, "coverage");
 
-        var pageTokens = await ReadPageTokensAsync(harness, $"{DescriptorPartitionsEndpoint}?number=3");
+        var pageTokens = await ReadPageTokensAsync(
+            harness,
+            $"{DescriptorPartitionsEndpoint}?partitionCount=3"
+        );
 
         pageTokens.Should().HaveCountGreaterThan(1);
 
@@ -115,7 +121,10 @@ internal static class PartitionEndpointScenario
 
         await SeedMergeItemsAsync(harness, "count-bound");
 
-        var pageTokens = await ReadPageTokensAsync(harness, $"{MergeItemsPartitionsEndpoint}?number=2");
+        var pageTokens = await ReadPageTokensAsync(
+            harness,
+            $"{MergeItemsPartitionsEndpoint}?partitionCount=2"
+        );
 
         pageTokens
             .Should()
@@ -242,7 +251,7 @@ internal static class PartitionEndpointScenario
         ArgumentNullException.ThrowIfNull(harness);
 
         using HttpResponseMessage response = await harness.HttpClient.GetAsync(
-            $"{MergeItemsPartitionsEndpoint}?number=0"
+            $"{MergeItemsPartitionsEndpoint}?partitionCount=0"
         );
         string body = await response.Content.ReadAsStringAsync();
 
