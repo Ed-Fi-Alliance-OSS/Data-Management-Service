@@ -299,6 +299,54 @@ function Test-RestorePropertyPresent {
     return $null -ne $InputObject.PSObject.Properties[$Name]
 }
 
+function Test-RestoreJsonArray {
+    <#
+    .SYNOPSIS
+    Returns $true only when a parsed JSON value is a real array (IList). A scalar or a
+    singleton JSON object must never satisfy a contract field that requires an array; the
+    permissive @(...) wrapping idiom would silently accept both.
+    #>
+    param (
+        $Value
+    )
+
+    return ($Value -is [System.Collections.IList] -and $Value -isnot [string])
+}
+
+function Get-RestoreWrappedPropertyValue {
+    <#
+    .SYNOPSIS
+    StrictMode-safe property read that distinguishes an absent property from a present one
+    and preserves empty arrays. PowerShell unrolls an empty array at a function return
+    boundary, so the value travels wrapped in a result object whose property read does not
+    unroll.
+
+    .OUTPUTS
+    PSCustomObject { Present = [bool]; Value = <the property value or $null> }.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        $InputObject,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    if (-not (Test-RestorePropertyPresent -InputObject $InputObject -Name $Name)) {
+        return [pscustomobject]@{ Present = $false; Value = $null }
+    }
+
+    $value = $null
+    if ($InputObject -is [System.Collections.IDictionary]) {
+        $value = $InputObject[$Name]
+    }
+    else {
+        $value = $InputObject.PSObject.Properties[$Name].Value
+    }
+
+    return [pscustomobject]@{ Present = $true; Value = $value }
+}
+
 function ConvertTo-CanonicalJsonStringLiteral {
     <#
     .SYNOPSIS
@@ -348,15 +396,21 @@ function ConvertTo-CanonicalInventory {
         $Inventory
     )
 
-    $rawSchemas = Get-RestorePropertyValue -InputObject $Inventory -Name "schemas"
-    if ($null -eq $rawSchemas) {
+    $schemasWrapped = Get-RestoreWrappedPropertyValue -InputObject $Inventory -Name "schemas"
+    if (-not $schemasWrapped.Present -or $null -eq $schemasWrapped.Value) {
         throw "Inventory is missing the required 'schemas' array."
+    }
+    if (-not (Test-RestoreJsonArray -Value $schemasWrapped.Value)) {
+        throw "Inventory 'schemas' must be a JSON array, not a single object or scalar."
     }
 
     $schemaEntries = [System.Collections.Generic.List[object]]::new()
     $seenSchemaNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
 
-    foreach ($rawSchema in @($rawSchemas)) {
+    foreach ($rawSchema in $schemasWrapped.Value) {
+        if ($null -eq $rawSchema) {
+            throw "Inventory contains a null schema entry."
+        }
         $schemaName = [string](Get-RestorePropertyValue -InputObject $rawSchema -Name "schemaName")
         if ([string]::IsNullOrWhiteSpace($schemaName)) {
             throw "Inventory contains a schema entry without a non-empty 'schemaName'."
@@ -365,11 +419,20 @@ function ConvertTo-CanonicalInventory {
             throw "Inventory contains duplicate schema entry '$schemaName'."
         }
 
+        $objectsWrapped = Get-RestoreWrappedPropertyValue -InputObject $rawSchema -Name "objects"
+        if (-not $objectsWrapped.Present -or $null -eq $objectsWrapped.Value) {
+            throw "Inventory schema '$schemaName' is missing its 'objects' array (an empty schema declares an empty array)."
+        }
+        if (-not (Test-RestoreJsonArray -Value $objectsWrapped.Value)) {
+            throw "Inventory schema '$schemaName' 'objects' must be a JSON array, not a single object or scalar."
+        }
+
         $objectEntries = [System.Collections.Generic.List[object]]::new()
         $seenObjectKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
-        $rawObjects = Get-RestorePropertyValue -InputObject $rawSchema -Name "objects"
-        foreach ($rawObject in @($rawObjects)) {
-            if ($null -eq $rawObject) { continue }
+        foreach ($rawObject in $objectsWrapped.Value) {
+            if ($null -eq $rawObject) {
+                throw "Inventory schema '$schemaName' contains a null object entry."
+            }
             $objectName = [string](Get-RestorePropertyValue -InputObject $rawObject -Name "name")
             $objectType = [string](Get-RestorePropertyValue -InputObject $rawObject -Name "type")
             if ([string]::IsNullOrWhiteSpace($objectName) -or [string]::IsNullOrWhiteSpace($objectType)) {
@@ -403,10 +466,20 @@ function ConvertTo-CanonicalInventory {
 
     $principalEntries = [System.Collections.Generic.List[string]]::new()
     $seenPrincipals = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
-    $rawPrincipals = Get-RestorePropertyValue -InputObject $Inventory -Name "principals"
-    foreach ($rawPrincipal in @($rawPrincipals)) {
-        # An absent or JSON-null principals property means "no principals", not an entry.
-        if ($null -eq $rawPrincipal) { continue }
+    # An absent or JSON-null principals property means "no principals"; a present value must
+    # be a real JSON array.
+    $principalsWrapped = Get-RestoreWrappedPropertyValue -InputObject $Inventory -Name "principals"
+    $rawPrincipals = @()
+    if ($principalsWrapped.Present -and $null -ne $principalsWrapped.Value) {
+        if (-not (Test-RestoreJsonArray -Value $principalsWrapped.Value)) {
+            throw "Inventory 'principals' must be a JSON array when present, not a single value."
+        }
+        $rawPrincipals = $principalsWrapped.Value
+    }
+    foreach ($rawPrincipal in $rawPrincipals) {
+        if ($null -eq $rawPrincipal) {
+            throw "Inventory contains a null principal entry."
+        }
         $principalName = [string]$rawPrincipal
         if ([string]::IsNullOrWhiteSpace($principalName)) {
             throw "Inventory contains an empty principal entry."
@@ -580,27 +653,20 @@ function Assert-RestoreManifestShape {
         throw "Restore manifest field 'contentProfile' must be exactly '$($script:RestoreContentProfileDmsDatastoreOnly)', but found '$contentProfile'. Only DMS-datastore-only template packages are eligible for restore."
     }
 
-    # The projects value is read inline rather than through the field helper: PowerShell
-    # unrolls an empty array at a function return boundary, which would make an empty
-    # projects array indistinguishable from an absent field.
-    if (-not (Test-RestorePropertyPresent -InputObject $Manifest -Name "projects")) {
+    # The projects value is read through the wrapped helper (not a plain function return):
+    # PowerShell unrolls an empty array at a function return boundary, which would make an
+    # empty projects array indistinguishable from an absent field. A scalar or singleton
+    # object is rejected: the contract requires a real JSON array.
+    $projectsWrapped = Get-RestoreWrappedPropertyValue -InputObject $Manifest -Name "projects"
+    if (-not $projectsWrapped.Present -or $null -eq $projectsWrapped.Value) {
         throw "Restore manifest is missing required field 'projects'."
     }
-    # Plain branch assignments, not a captured if/else expression: PowerShell flattens an
-    # empty-array branch value of a captured if/else expression to $null.
-    $projectsRaw = $null
-    if ($Manifest -is [System.Collections.IDictionary]) {
-        $projectsRaw = $Manifest["projects"]
+    if (-not (Test-RestoreJsonArray -Value $projectsWrapped.Value)) {
+        throw "Restore manifest field 'projects' must be a non-empty JSON array of project endpoint names."
     }
-    else {
-        $projectsRaw = $Manifest.PSObject.Properties["projects"].Value
-    }
-    if ($null -eq $projectsRaw) {
-        throw "Restore manifest is missing required field 'projects'."
-    }
-    $projectEntries = @($projectsRaw)
+    $projectEntries = @($projectsWrapped.Value)
     if ($projectEntries.Count -eq 0) {
-        throw "Restore manifest field 'projects' must be a non-empty array of project endpoint names."
+        throw "Restore manifest field 'projects' must be a non-empty JSON array of project endpoint names."
     }
     $seenProjects = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     foreach ($project in $projectEntries) {
@@ -615,7 +681,7 @@ function Assert-RestoreManifestShape {
     $null = Assert-RestoreManifestField -Manifest $Manifest -FieldName "apiSchemaFormatVersion" -AsNonEmptyString
 
     $effectiveSchemaHash = Assert-RestoreManifestField -Manifest $Manifest -FieldName "effectiveSchemaHash" -AsNonEmptyString
-    if ($effectiveSchemaHash -cnotmatch "^[0-9a-f]{64}$") {
+    if ($effectiveSchemaHash -cnotmatch "^[0-9a-f]{64}\z") {
         throw "Restore manifest field 'effectiveSchemaHash' must be a 64-character lowercase hex SHA-256."
     }
 
@@ -652,7 +718,7 @@ function Assert-RestoreManifestShape {
     $null = Assert-RestoreManifestField -Manifest $Manifest -FieldName "documentJsonColumnType" -AsNonEmptyString
 
     $inventorySha256 = Assert-RestoreManifestField -Manifest $Manifest -FieldName "inventorySha256" -AsNonEmptyString
-    if ($inventorySha256 -cnotmatch "^[0-9a-f]{64}$") {
+    if ($inventorySha256 -cnotmatch "^[0-9a-f]{64}\z") {
         throw "Restore manifest field 'inventorySha256' must be a 64-character lowercase hex SHA-256."
     }
 
@@ -672,7 +738,7 @@ function Assert-RestoreManifestShape {
     }
 
     $artifactSha256 = Assert-RestoreManifestField -Manifest $Manifest -FieldName "artifactSha256" -AsNonEmptyString
-    if ($artifactSha256 -cnotmatch "^[0-9a-f]{64}$") {
+    if ($artifactSha256 -cnotmatch "^[0-9a-f]{64}\z") {
         throw "Restore manifest field 'artifactSha256' must be a 64-character lowercase hex SHA-256."
     }
 }
@@ -780,7 +846,7 @@ function New-MssqlRestoreMoveClause {
         [string]$DataDirectory = "/var/opt/mssql/data"
     )
 
-    if ($DatabaseName -notmatch "^[A-Za-z0-9_]+$") {
+    if ($DatabaseName -notmatch "^[A-Za-z0-9_]+\z") {
         throw "Database name '$DatabaseName' contains unsupported characters."
     }
 
@@ -791,7 +857,7 @@ function New-MssqlRestoreMoveClause {
             $physicalName = "$DatabaseName.mdf"
         }
         else {
-            if ($logicalName -notmatch "^[A-Za-z0-9_]+$") {
+            if ($logicalName -notmatch "^[A-Za-z0-9_]+\z") {
                 throw "Data file logical name '$logicalName' from backup '$BackupFileName' contains unsupported characters and cannot be used to derive a restore path."
             }
             $physicalName = "${DatabaseName}_${logicalName}.ndf"
@@ -804,7 +870,7 @@ function New-MssqlRestoreMoveClause {
             $physicalName = "${DatabaseName}_log.ldf"
         }
         else {
-            if ($logicalName -notmatch "^[A-Za-z0-9_]+$") {
+            if ($logicalName -notmatch "^[A-Za-z0-9_]+\z") {
                 throw "Log file logical name '$logicalName' from backup '$BackupFileName' contains unsupported characters and cannot be used to derive a restore path."
             }
             $physicalName = "${DatabaseName}_${logicalName}.ldf"

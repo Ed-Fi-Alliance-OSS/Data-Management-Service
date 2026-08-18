@@ -309,8 +309,42 @@ Describe "ConvertTo-CanonicalInventoryJson" {
 
     It "throws when the schemas array or a required entry field is missing" {
         { ConvertTo-CanonicalInventoryJson -Inventory (@{ principals = @() }) } | Should -Throw "*missing the required 'schemas'*"
+        { ConvertTo-CanonicalInventoryJson -Inventory (@{ schemas = @(@{ schemaName = "dms"; objects = @(); extra = 1 }) }) } | Should -Not -Throw
         { ConvertTo-CanonicalInventoryJson -Inventory (@{ schemas = @(@{ objects = @() }) }) } | Should -Throw "*without a non-empty 'schemaName'*"
         { ConvertTo-CanonicalInventoryJson -Inventory (@{ schemas = @(@{ schemaName = "dms"; objects = @(@{ name = "x" }) }) }) } | Should -Throw "*both a non-empty 'name' and 'type'*"
+    }
+
+    It "rejects a scalar or singleton-object schemas value: the contract requires a real JSON array" {
+        $singletonObject = @{ schemas = @{ schemaName = "dms"; objects = @() } }
+        { ConvertTo-CanonicalInventoryJson -Inventory $singletonObject } | Should -Throw "*'schemas' must be a JSON array*"
+
+        # And after a JSON round trip, where the singleton is a PSCustomObject.
+        $roundTripped = ($singletonObject | ConvertTo-Json -Depth 10) | ConvertFrom-Json
+        { ConvertTo-CanonicalInventoryJson -Inventory $roundTripped } | Should -Throw "*'schemas' must be a JSON array*"
+    }
+
+    It "rejects a schema entry with a missing, null, or non-array objects value" {
+        { ConvertTo-CanonicalInventoryJson -Inventory (@{ schemas = @(@{ schemaName = "dms" }) }) } |
+            Should -Throw "*schema 'dms' is missing its 'objects' array*"
+        { ConvertTo-CanonicalInventoryJson -Inventory (@{ schemas = @(@{ schemaName = "dms"; objects = $null }) }) } |
+            Should -Throw "*schema 'dms' is missing its 'objects' array*"
+        { ConvertTo-CanonicalInventoryJson -Inventory (@{ schemas = @(@{ schemaName = "dms"; objects = @{ name = "x"; type = "table" } }) }) } |
+            Should -Throw "*schema 'dms' 'objects' must be a JSON array*"
+    }
+
+    It "rejects a scalar principals value and null entries" {
+        $scalarPrincipals = @{
+            schemas    = @(@{ schemaName = "dms"; objects = @() })
+            principals = "reader"
+        }
+        { ConvertTo-CanonicalInventoryJson -Inventory $scalarPrincipals } | Should -Throw "*'principals' must be a JSON array*"
+
+        { ConvertTo-CanonicalInventoryJson -Inventory (@{ schemas = @($null) }) } | Should -Throw "*null schema entry*"
+        { ConvertTo-CanonicalInventoryJson -Inventory (@{ schemas = @(@{ schemaName = "dms"; objects = @($null) }) }) } |
+            Should -Throw "*null object entry*"
+        # Built untyped: a [string[]] helper parameter would coerce $null into "".
+        $nullPrincipal = @{ schemas = @(@{ schemaName = "dms"; objects = @() }); principals = @($null) }
+        { ConvertTo-CanonicalInventoryJson -Inventory $nullPrincipal } | Should -Throw "*null principal entry*"
     }
 }
 
@@ -393,10 +427,20 @@ Describe "Assert-RestoreManifestShape" {
         }
     }
 
+    It "rejects a scalar projects value: the contract requires a real JSON array" {
+        $manifest = New-ValidRestoreManifest
+        $manifest.projects = "ed-fi"
+        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*'projects' must be a non-empty JSON array*"
+
+        # The same strictness must hold after a JSON round trip (PSCustomObject input).
+        $roundTripped = ($manifest | ConvertTo-Json -Depth 10) | ConvertFrom-Json
+        { Assert-RestoreManifestShape -Manifest $roundTripped } | Should -Throw "*'projects' must be a non-empty JSON array*"
+    }
+
     It "rejects an empty, duplicate-bearing, or non-string projects array" {
         $manifest = New-ValidRestoreManifest
         $manifest.projects = @()
-        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*'projects' must be a non-empty array*"
+        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*'projects' must be a non-empty JSON array*"
 
         $manifest = New-ValidRestoreManifest
         $manifest.projects = @("ed-fi", "ED-FI")
@@ -407,7 +451,7 @@ Describe "Assert-RestoreManifestShape" {
         { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*not a non-empty JSON string*"
     }
 
-    It "rejects hash fields that are not 64-character lowercase hex" {
+    It "rejects hash fields that are not 64-character lowercase hex, including a trailing newline" {
         foreach ($field in @("effectiveSchemaHash", "inventorySha256", "artifactSha256")) {
             $manifest = New-ValidRestoreManifest
             $manifest[$field] = ("AB" * 32)
@@ -415,6 +459,11 @@ Describe "Assert-RestoreManifestShape" {
 
             $manifest = New-ValidRestoreManifest
             $manifest[$field] = "abc123"
+            { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*'$field' must be a 64-character lowercase hex*"
+
+            # \z anchoring: the .NET $ anchor would tolerate a single trailing newline.
+            $manifest = New-ValidRestoreManifest
+            $manifest[$field] = ("ab" * 32) + "`n"
             { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*'$field' must be a 64-character lowercase hex*"
         }
     }
@@ -555,6 +604,11 @@ Describe "New-MssqlRestoreMoveClause" {
             Should -Throw "*Data file logical name*contains unsupported characters*"
         { New-MssqlRestoreMoveClause -DatabaseName "testdb" -DataLogicalNames @("MyDb") -LogLogicalNames @("MyDb_log", "bad log") -BackupFileName "b.bak" } |
             Should -Throw "*Log file logical name*contains unsupported characters*"
+    }
+
+    It "rejects an additional logical name with a trailing newline (\z anchoring)" {
+        { New-MssqlRestoreMoveClause -DatabaseName "testdb" -DataLogicalNames @("MyDb", "MyDb2`n") -LogLogicalNames @("MyDb_log") -BackupFileName "b.bak" } |
+            Should -Throw "*Data file logical name*contains unsupported characters*"
     }
 
     It "rejects an unsafe database name" {
