@@ -476,7 +476,16 @@ public class Given_HydrationExecutor_With_A_Selected_Keyset_Result_Set
     {
         var result = await ExecuteQueryHydrationAsync(
             Given_HydrationReader_With_A_Selected_Keyset_Result_Set.CreateSelectedIdsTable(84L, 42L),
-            CreateDocumentMetadataTable((42L, DocumentUuid, 44L, 45L), (84L, OtherDocumentUuid, 46L, 47L)),
+            CreateDocumentMetadataTable(
+                (42L, DocumentUuid, 44L, new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero), (short)1),
+                (
+                    84L,
+                    OtherDocumentUuid,
+                    46L,
+                    new DateTimeOffset(2026, 4, 2, 12, 1, 0, TimeSpan.Zero),
+                    (short)1
+                )
+            ),
             CreateRootTableRows((42L, 255901), (84L, 255902)),
             CreateChildTableRows((100L, 42L, 0, "Springfield"))
         );
@@ -519,7 +528,15 @@ public class Given_HydrationExecutor_With_A_Selected_Keyset_Result_Set
     {
         var command = new RecordingDbCommand(
             HydrationDescriptorResultTestHelper.CreateReader(
-                CreateDocumentMetadataTable((42L, DocumentUuid, 44L, 45L)),
+                CreateDocumentMetadataTable(
+                    (
+                        42L,
+                        DocumentUuid,
+                        44L,
+                        new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                        (short)1
+                    )
+                ),
                 CreateRootTableRows((42L, 255901)),
                 CreateChildTableRows((100L, 42L, 0, "Springfield"))
             )
@@ -586,16 +603,20 @@ public class Given_HydrationExecutor_With_A_Selected_Keyset_Result_Set
     }
 
     private static DataTable CreateDocumentMetadataTable(
-        params (long DocumentId, Guid DocumentUuid, long ContentVersion, long IdentityVersion)[] rows
+        params (
+            long DocumentId,
+            Guid DocumentUuid,
+            long ContentVersion,
+            DateTimeOffset ContentLastModifiedAt,
+            short ResourceKeyId
+        )[] rows
     )
     {
         var table = new DataTable();
         table.Columns.Add("DocumentId", typeof(long));
         table.Columns.Add("DocumentUuid", typeof(Guid));
         table.Columns.Add("ContentVersion", typeof(long));
-        table.Columns.Add("IdentityVersion", typeof(long));
         table.Columns.Add("ContentLastModifiedAt", typeof(DateTimeOffset));
-        table.Columns.Add("IdentityLastModifiedAt", typeof(DateTimeOffset));
         table.Columns.Add("ResourceKeyId", typeof(short));
 
         foreach (var row in rows)
@@ -604,10 +625,8 @@ public class Given_HydrationExecutor_With_A_Selected_Keyset_Result_Set
                 row.DocumentId,
                 row.DocumentUuid,
                 row.ContentVersion,
-                row.IdentityVersion,
-                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
-                new DateTimeOffset(2026, 4, 2, 12, 1, 0, TimeSpan.Zero),
-                (short)1
+                row.ContentLastModifiedAt,
+                row.ResourceKeyId
             );
         }
 

@@ -464,6 +464,21 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             return string.Empty;
         }
 
+        private async Task WaitForNextQueryIfNeededAsync()
+        {
+            if (
+                _featureContext.TryGetValue("_waitOnNextQuery", out object? waitOnNextQuery)
+                && waitOnNextQuery is bool shouldWait
+                && shouldWait
+            )
+            {
+                // Writes can be visible before the change-query watermark reflects them.
+                // Consume the one-shot flag so only the next read pays the settle delay.
+                await Task.Delay(500);
+                _featureContext["_waitOnNextQuery"] = false;
+            }
+        }
+
         [When("a POST request is made to {string} with header {string} value {string}")]
         public async Task WhenSendingAPOSTRequestToWithBodyAndCustomHeader(
             string url,
@@ -742,6 +757,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a GET request is made to {string}")]
         public async Task WhenAGETRequestIsMadeTo(string url)
         {
+            await WaitForNextQueryIfNeededAsync();
+
             string id = GetCurrentId();
 
             url = AddDataPrefixIfNecessary(url)
@@ -813,6 +830,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a GET request is made to {string} with header {string} value {string}")]
         public async Task WhenAGETRequestIsMadeToWithHeader(string url, string header, string value)
         {
+            await WaitForNextQueryIfNeededAsync();
+
             string id = GetCurrentId();
 
             url = AddDataPrefixIfNecessary(url)
@@ -840,6 +859,11 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("an {string} request is made to {string} with headers")]
         public async Task WhenAnRequestIsMadeToWithHeaders(string method, string url, DataTable headersTable)
         {
+            if (string.Equals(method, "GET", StringComparison.OrdinalIgnoreCase))
+            {
+                await WaitForNextQueryIfNeededAsync();
+            }
+
             url = AddDataPrefixIfNecessary(url)
                 .Replace("{id}", _id)
                 .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
@@ -863,6 +887,11 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("an unauthenticated {string} request is made to {string}")]
         public async Task WhenAnUnauthenticatedRequestIsMadeTo(string method, string url)
         {
+            if (string.Equals(method, "GET", StringComparison.OrdinalIgnoreCase))
+            {
+                await WaitForNextQueryIfNeededAsync();
+            }
+
             url = AddDataPrefixIfNecessary(url)
                 .Replace("{id}", _id)
                 .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
