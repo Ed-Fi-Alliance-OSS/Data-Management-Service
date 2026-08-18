@@ -218,6 +218,76 @@ public class Given_CdcConnectorTemplateServiceRegistration
             .NotContain("${env:CDC_DATABASE_PASSWORD}");
     }
 
+    [Test]
+    public void It_reports_the_same_provider_prerequisite_diagnostics_for_request_validation_and_readiness()
+    {
+        CdcProviderSetupResult providerSetupResult = BuildProviderSetupResult(
+            CdcProvider.Postgresql,
+            artifactInventory: [],
+            sourceTableInventory:
+            [
+                BuildSourceTable(
+                    CdcProvider.Postgresql,
+                    CdcSourceTableKind.DocumentCache,
+                    "DocumentCache",
+                    [BuildColumn(CdcProvider.Postgresql, "DocumentUuid;DROP_TABLE")]
+                ),
+                BuildSourceTable(
+                    CdcProvider.Postgresql,
+                    CdcSourceTableKind.Document,
+                    "DocumentProjectionWork;DROP_TABLE",
+                    [
+                        BuildColumn(CdcProvider.Postgresql, "DocumentUuid"),
+                        BuildColumn(CdcProvider.Postgresql, "DocumentUuid", 2),
+                    ]
+                ),
+                BuildSourceTable(
+                    CdcProvider.Postgresql,
+                    CdcSourceTableKind.CdcHeartbeat,
+                    "CdcHeartbeat",
+                    [
+                        BuildColumn(CdcProvider.Postgresql, "HeartbeatId"),
+                        BuildColumn(CdcProvider.Postgresql, "HeartbeatSequence", 2),
+                        BuildColumn(CdcProvider.Postgresql, "HeartbeatAt", 3),
+                    ]
+                ),
+            ]
+        );
+        using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddCdcConnectorTemplates()
+            .BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+
+        CdcProviderSetupReadiness readiness = service.GetProviderSetupReadiness(providerSetupResult);
+        CdcConnectorTemplateValidationResult requestValidation = service.ValidateRequest(
+            BuildRequest(
+                providerSetupResult,
+                providerConnectionProperties: new CdcProviderConnectionProperties(
+                    CdcProvider.Postgresql,
+                    BuildProviderConnectionProperties(CdcProvider.Postgresql)
+                ),
+                deploymentPolicy: BuildDeploymentPolicy(CdcProvider.Postgresql)
+            )
+        );
+
+        using var _ = new AssertionScope();
+        readiness.CanRenderTemplate.Should().BeFalse();
+        requestValidation.IsValid.Should().BeFalse();
+        NormalizeProviderPrerequisiteDiagnostics(requestValidation.Diagnostics)
+            .Should()
+            .BeEquivalentTo(NormalizeProviderPrerequisiteDiagnostics(readiness.Diagnostics));
+        requestValidation
+            .Diagnostics.Should()
+            .OnlyContain(diagnostic =>
+                diagnostic.SafeArtifactOrObjectName == new CdcSafeName("dms_binding_connector")
+            );
+        readiness
+            .Diagnostics.All(diagnostic => diagnostic.SafeArtifactOrObjectName is null)
+            .Should()
+            .BeTrue();
+    }
+
     private static CdcProviderSetupReadiness Readiness(CdcProviderSetupResult providerSetupResult)
     {
         IServiceCollection services = new ServiceCollection();
@@ -229,4 +299,22 @@ public class Given_CdcConnectorTemplateServiceRegistration
 
         return service.GetProviderSetupReadiness(providerSetupResult);
     }
+
+    private static object[] NormalizeProviderPrerequisiteDiagnostics(
+        IReadOnlyList<CdcConnectorTemplateDiagnostic> diagnostics
+    ) =>
+        diagnostics
+            .Select(diagnostic => new
+            {
+                diagnostic.Code,
+                diagnostic.Category,
+                diagnostic.Severity,
+                diagnostic.PropertyName,
+                diagnostic.ExpectedValue,
+                diagnostic.ObservedValue,
+                diagnostic.Provider,
+                diagnostic.SourcePhase,
+                diagnostic.RedactionClassification,
+            })
+            .ToArray();
 }

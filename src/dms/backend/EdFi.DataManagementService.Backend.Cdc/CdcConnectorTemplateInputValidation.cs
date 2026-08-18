@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.Ddl;
-using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Cdc;
 
@@ -345,216 +344,19 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
         List<CdcConnectorTemplateDiagnostic> diagnostics
     )
     {
-        if (request.Provider == CdcProvider.Postgresql)
+        diagnostics.AddRange(
+            CdcProviderSetupPrerequisiteRules.Validate(
+                request.ProviderSetupEvidence.Result,
+                request.ConnectorName,
+                sourcePhase
+            )
+        );
+
+        if (request.Provider == CdcProvider.SqlServer)
         {
-            AddMissingArtifactDiagnosticIfNeeded(
-                request,
-                sourcePhase,
-                diagnostics,
-                CdcProviderArtifactKind.PostgresqlPublication,
-                CdcConnectorTemplateDiagnosticCodes.PostgresqlPublicationMetadataRequired,
-                "publication.name"
-            );
-            AddMissingArtifactDiagnosticIfNeeded(
-                request,
-                sourcePhase,
-                diagnostics,
-                CdcProviderArtifactKind.PostgresqlReplicationSlot,
-                CdcConnectorTemplateDiagnosticCodes.PostgresqlReplicationSlotMetadataRequired,
-                "slot.name"
-            );
-        }
-        else if (request.Provider == CdcProvider.SqlServer)
-        {
-            AddSqlServerCaptureInstanceDiagnosticsIfNeeded(request, sourcePhase, diagnostics);
             AddSqlServerPollIntervalDiagnosticIfNeeded(request, sourcePhase, diagnostics);
         }
-
-        foreach (
-            CdcSourceTableInventory sourceTable in CdcConnectorTemplateSharedRules.OrderedSourceTables(
-                request
-            )
-        )
-        {
-            DbTableName expectedTableName = CdcConnectorTemplateSharedRules.ExpectedSourceTableName(
-                sourceTable.TableKind
-            );
-            if (sourceTable.TableName.Equals(expectedTableName))
-            {
-                continue;
-            }
-
-            diagnostics.Add(
-                BuildDiagnostic(
-                    CdcConnectorTemplateDiagnosticCodes.SourceTableInventoryMismatch,
-                    CdcConnectorTemplateDiagnosticCategory.IncludeList,
-                    "table.include.list",
-                    $"{expectedTableName.Schema.Value}.{expectedTableName.Name}",
-                    SanitizePhysicalIdentifier(
-                        $"{sourceTable.TableName.Schema.Value}.{sourceTable.TableName.Name}"
-                    ),
-                    request,
-                    sourcePhase,
-                    CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
-                )
-            );
-        }
-
-        AddSourceColumnInventoryDiagnostics(request, sourcePhase, diagnostics);
     }
-
-    private static void AddSqlServerCaptureInstanceDiagnosticsIfNeeded(
-        CdcConnectorTemplateRequest request,
-        CdcConnectorTemplateSourcePhase sourcePhase,
-        List<CdcConnectorTemplateDiagnostic> diagnostics
-    )
-    {
-        CdcProviderArtifactObservation[] captureInstances = CdcConnectorTemplateSharedRules
-            .ArtifactInventory(request.ProviderSetupEvidence.Result)
-            .Where(artifact => artifact.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance)
-            .ToArray();
-
-        foreach (
-            CdcSourceTableKind tableKind in CdcConnectorTemplateSharedRules.OrderedRequiredSourceTableKinds
-        )
-        {
-            CdcProviderArtifactObservation[] tableCaptureInstances = captureInstances
-                .Where(artifact =>
-                    CdcConnectorTemplateSharedRules.SqlServerCaptureInstanceSourceTableKind(artifact)
-                    == tableKind
-                )
-                .ToArray();
-
-            if (
-                tableCaptureInstances.Length == 1
-                && tableCaptureInstances[0].State
-                    is CdcProviderArtifactState.Created
-                        or CdcProviderArtifactState.Matched
-            )
-            {
-                continue;
-            }
-
-            diagnostics.Add(
-                BuildDiagnostic(
-                    CdcConnectorTemplateDiagnosticCodes.SqlServerCaptureInstanceMetadataRequired,
-                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult,
-                    "providerSetup.artifactInventory.sqlServerCaptureInstance",
-                    $"one usable SQL Server capture-instance artifact for {CdcConnectorTemplateSharedRules.ExpectedSourceTableName(tableKind)}",
-                    SqlServerCaptureInstanceObservedValue(tableCaptureInstances),
-                    request,
-                    sourcePhase,
-                    CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
-                )
-            );
-        }
-
-        int extraCaptureInstanceCount = captureInstances.Count(artifact =>
-            CdcConnectorTemplateSharedRules.SqlServerCaptureInstanceSourceTableKind(artifact)
-                is not { } tableKind
-            || !CdcConnectorTemplateSharedRules.OrderedRequiredSourceTableKinds.Contains(tableKind)
-        );
-        if (extraCaptureInstanceCount == 0)
-        {
-            return;
-        }
-
-        diagnostics.Add(
-            BuildDiagnostic(
-                CdcConnectorTemplateDiagnosticCodes.SqlServerCaptureInstanceMetadataRequired,
-                CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult,
-                "providerSetup.artifactInventory.sqlServerCaptureInstance",
-                "only SQL Server capture-instance artifacts for dms.DocumentCache, dms.Document, and dms.CdcHeartbeat",
-                extraCaptureInstanceCount.ToString(),
-                request,
-                sourcePhase,
-                CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
-            )
-        );
-    }
-
-    private static string SqlServerCaptureInstanceObservedValue(
-        IReadOnlyList<CdcProviderArtifactObservation> tableCaptureInstances
-    )
-    {
-        if (tableCaptureInstances.Count == 0)
-        {
-            return "missing";
-        }
-
-        if (tableCaptureInstances.Count > 1)
-        {
-            return tableCaptureInstances.Count.ToString();
-        }
-
-        return tableCaptureInstances[0].State.ToString();
-    }
-
-    private static void AddSourceColumnInventoryDiagnostics(
-        CdcConnectorTemplateRequest request,
-        CdcConnectorTemplateSourcePhase sourcePhase,
-        List<CdcConnectorTemplateDiagnostic> diagnostics
-    )
-    {
-        foreach (
-            CdcExpectedMessageKeyColumns messageKeyColumns in CdcConnectorTemplateSharedRules.OrderedMessageKeyColumns(
-                request
-            )
-        )
-        {
-            CdcSourceTableInventory sourceTable = CdcConnectorTemplateSharedRules.SourceTable(
-                request,
-                messageKeyColumns.TableKind
-            );
-
-            if (HasDuplicateColumnNames(sourceTable))
-            {
-                diagnostics.Add(
-                    BuildDiagnostic(
-                        CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch,
-                        CdcConnectorTemplateDiagnosticCategory.MessageKey,
-                        "message.key.columns",
-                        $"unique source column names for {CdcConnectorTemplateSharedRules.ExpectedSourceTableName(sourceTable.TableKind)}",
-                        "duplicate",
-                        request,
-                        sourcePhase,
-                        CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
-                    )
-                );
-            }
-
-            foreach (DbColumnName keyColumn in messageKeyColumns.KeyColumns)
-            {
-                if (CountSourceColumns(sourceTable, keyColumn) > 0)
-                {
-                    continue;
-                }
-
-                diagnostics.Add(
-                    BuildDiagnostic(
-                        CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch,
-                        CdcConnectorTemplateDiagnosticCategory.MessageKey,
-                        "message.key.columns",
-                        $"source column {keyColumn.Value} for {CdcConnectorTemplateSharedRules.ExpectedSourceTableName(sourceTable.TableKind)}",
-                        "missing",
-                        request,
-                        sourcePhase,
-                        CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
-                    )
-                );
-            }
-        }
-    }
-
-    private static bool HasDuplicateColumnNames(CdcSourceTableInventory sourceTable) =>
-        sourceTable
-            .Columns.GroupBy(column => column.ColumnName.Value, StringComparer.Ordinal)
-            .Any(group => group.Count() > 1);
-
-    private static int CountSourceColumns(CdcSourceTableInventory sourceTable, DbColumnName columnName) =>
-        sourceTable.Columns.Count(column =>
-            string.Equals(column.ColumnName.Value, columnName.Value, StringComparison.Ordinal)
-        );
 
     private static void AddSqlServerPollIntervalDiagnosticIfNeeded(
         CdcConnectorTemplateRequest request,
@@ -593,35 +395,6 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
                 "poll.interval.ms",
                 $"<= heartbeat.interval.ms ({heartbeatMilliseconds})",
                 pollMilliseconds.ToString(),
-                request,
-                sourcePhase,
-                CdcConnectorTemplateRedactionClassification.Safe
-            )
-        );
-    }
-
-    private static void AddMissingArtifactDiagnosticIfNeeded(
-        CdcConnectorTemplateRequest request,
-        CdcConnectorTemplateSourcePhase sourcePhase,
-        List<CdcConnectorTemplateDiagnostic> diagnostics,
-        CdcProviderArtifactKind artifactKind,
-        string code,
-        string propertyName
-    )
-    {
-        CdcProviderArtifactObservation[] artifacts = MatchingUsableArtifacts(request, artifactKind);
-        if (artifacts.Length == 1)
-        {
-            return;
-        }
-
-        diagnostics.Add(
-            BuildDiagnostic(
-                code,
-                CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult,
-                propertyName,
-                "one matched provider setup artifact",
-                artifacts.Length == 0 ? "missing" : artifacts.Length.ToString(),
                 request,
                 sourcePhase,
                 CdcConnectorTemplateRedactionClassification.Safe
@@ -874,34 +647,6 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
             sourcePhase,
             redactionClassification
         );
-
-    private static CdcProviderArtifactObservation[] MatchingUsableArtifacts(
-        CdcConnectorTemplateRequest request,
-        CdcProviderArtifactKind artifactKind
-    ) =>
-        CdcConnectorTemplateSharedRules
-            .ArtifactInventory(request.ProviderSetupEvidence.Result)
-            .Where(artifact =>
-                artifact.ArtifactKind == artifactKind
-                && artifact.State is CdcProviderArtifactState.Created or CdcProviderArtifactState.Matched
-            )
-            .ToArray();
-
-    private static string SanitizePhysicalIdentifier(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return RedactedValue;
-        }
-
-        return new string(
-            value
-                .Select(character =>
-                    char.IsLetterOrDigit(character) || character is '_' or '.' ? character : '_'
-                )
-                .ToArray()
-        );
-    }
 
     internal static bool IsReservedKey(string propertyName) =>
         _reservedExactKeys.Contains(propertyName)
