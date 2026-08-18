@@ -24,6 +24,44 @@ BeforeAll {
         return Join-Path $script:restoreWorkspaceRoot "candidate-$([Guid]::NewGuid().ToString('n'))"
     }
 
+    function script:New-PrepareFallbackProbe {
+        # The prepare-dms-schema.ps1 fallback only runs when bootstrap-manifest.psm1 is NOT
+        # loaded, and the script has no dot-source guard, so extract exactly the fallback
+        # if-statement via AST and execute it in a clean child pwsh session (where Get-Command
+        # finds no module Get-BootstrapRoot). The probe file lives in the given directory, so the
+        # fallback's $PSScriptRoot-anchored roots relocate there - the validation SEMANTICS are
+        # what the probe pins, not the production location.
+        param(
+            [Parameter(Mandatory)]
+            [string]$Directory
+        )
+
+        $prepareScript = Join-Path $script:dockerComposeDir "prepare-dms-schema.ps1"
+        $tokens = $null
+        $parseErrors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($prepareScript, [ref]$tokens, [ref]$parseErrors)
+        if ($parseErrors.Count -gt 0) {
+            throw "prepare-dms-schema.ps1 failed to parse."
+        }
+        $fallbackBlock = $ast.Find({
+            param($node)
+            $node -is [System.Management.Automation.Language.IfStatementAst] -and
+                $node.Extent.Text.Contains("Get-Command Get-BootstrapRoot")
+        }, $true)
+        if ($null -eq $fallbackBlock) {
+            throw "The module-absent fallback block was not found in prepare-dms-schema.ps1."
+        }
+
+        $probePath = Join-Path $Directory "fallback-probe.ps1"
+        @(
+            "`$ErrorActionPreference = 'Stop'"
+            "function Format-LogSafeText { param(`$Value) [string]`$Value }"
+            $fallbackBlock.Extent.Text
+            "Get-BootstrapRoot"
+        ) -join "`n" | Set-Content -LiteralPath $probePath -Encoding utf8
+        return $probePath
+    }
+
     function script:Restore-CleanModuleState {
         # Later suites in the same session must never inherit a candidate-redirected module
         # instance or a stray override value; Remove-Item is required because assigning $null/""
@@ -94,32 +132,22 @@ Describe "DMS_BOOTSTRAP_ROOT_OVERRIDE workspace redirection" {
             Should -Be ([System.IO.Path]::GetFullPath((Join-Path $script:activeBootstrapRoot "bootstrap-manifest.json")))
     }
 
+    It "rejects a case-variant .BOOTSTRAP-RESTORE sibling on case-sensitive platforms" -Skip:$IsWindows {
+        # On Linux the case-variant is a DIFFERENT directory, outside the restore workspace and
+        # outside its .gitignore entry; the containment check must not accept it.
+        $env:DMS_BOOTSTRAP_ROOT_OVERRIDE = Join-Path (Join-Path $script:dockerComposeDir ".BOOTSTRAP-RESTORE") "candidate-x"
+        { Import-ManifestModule } | Should -Throw "*must point strictly inside*"
+    }
+
+    It "accepts a case-variant spelling on Windows, where it is the same directory" -Skip:(-not $IsWindows) {
+        $candidate = Join-Path (Join-Path $script:dockerComposeDir ".BOOTSTRAP-RESTORE") "candidate-x"
+        $env:DMS_BOOTSTRAP_ROOT_OVERRIDE = $candidate
+        Import-ManifestModule
+        Get-BootstrapRoot | Should -Be $candidate
+    }
+
     It "prepare-dms-schema.ps1's module-absent fallback mirrors the override with the same validation" {
-        # The fallback only runs when bootstrap-manifest.psm1 is NOT loaded, and the script has no
-        # dot-source guard, so extract exactly the fallback if-statement via AST and execute it in
-        # a clean child pwsh session (where Get-Command finds no module Get-BootstrapRoot). The
-        # probe file lives in TestDrive, so the fallback's $PSScriptRoot-anchored roots relocate
-        # there - the validation SEMANTICS are what this pins, not the production location.
-        $prepareScript = Join-Path $script:dockerComposeDir "prepare-dms-schema.ps1"
-        $tokens = $null
-        $parseErrors = $null
-        $ast = [System.Management.Automation.Language.Parser]::ParseFile($prepareScript, [ref]$tokens, [ref]$parseErrors)
-        $parseErrors | Should -BeNullOrEmpty
-        $fallbackBlock = $ast.Find({
-            param($node)
-            $node -is [System.Management.Automation.Language.IfStatementAst] -and
-                $node.Extent.Text.Contains("Get-Command Get-BootstrapRoot")
-        }, $true)
-        $fallbackBlock | Should -Not -BeNullOrEmpty -Because "the module-absent fallback block must exist"
-
-        $probePath = Join-Path $TestDrive "fallback-probe.ps1"
-        @(
-            "`$ErrorActionPreference = 'Stop'"
-            "function Format-LogSafeText { param(`$Value) [string]`$Value }"
-            $fallbackBlock.Extent.Text
-            "Get-BootstrapRoot"
-        ) -join "`n" | Set-Content -LiteralPath $probePath -Encoding utf8
-
+        $probePath = New-PrepareFallbackProbe -Directory $TestDrive
         $candidate = Join-Path (Join-Path $TestDrive ".bootstrap-restore") "candidate-fallback"
         $env:DMS_BOOTSTRAP_ROOT_OVERRIDE = $candidate
         $resolvedRoot = & pwsh -NoProfile -NonInteractive -File $probePath | Select-Object -Last 1
@@ -132,6 +160,14 @@ Describe "DMS_BOOTSTRAP_ROOT_OVERRIDE workspace redirection" {
         $rejectionOutput | Should -BeLike "*must be an absolute path strictly inside*"
 
         $env:DMS_BOOTSTRAP_ROOT_OVERRIDE = Join-Path $TestDrive "elsewhere"
+        $rejectionOutput = & pwsh -NoProfile -NonInteractive -File $probePath 2>&1 | Out-String
+        $LASTEXITCODE | Should -Not -Be 0
+        $rejectionOutput | Should -BeLike "*must point strictly inside*"
+    }
+
+    It "the fallback rejects a case-variant .BOOTSTRAP-RESTORE sibling on case-sensitive platforms" -Skip:$IsWindows {
+        $probePath = New-PrepareFallbackProbe -Directory $TestDrive
+        $env:DMS_BOOTSTRAP_ROOT_OVERRIDE = Join-Path (Join-Path $TestDrive ".BOOTSTRAP-RESTORE") "candidate-x"
         $rejectionOutput = & pwsh -NoProfile -NonInteractive -File $probePath 2>&1 | Out-String
         $LASTEXITCODE | Should -Not -Be 0
         $rejectionOutput | Should -BeLike "*must point strictly inside*"

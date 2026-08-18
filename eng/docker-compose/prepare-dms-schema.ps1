@@ -169,7 +169,10 @@ if (-not (Get-Command Get-BootstrapRoot -ErrorAction SilentlyContinue)) {
         $prepareOverrideFullPath = [System.IO.Path]::GetFullPath($prepareOverrideValue).TrimEnd(
             [System.IO.Path]::DirectorySeparatorChar,
             [System.IO.Path]::AltDirectorySeparatorChar)
-        if (-not $prepareOverrideFullPath.StartsWith($prepareRestoreRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+        # Platform-aware containment, in lockstep with bootstrap-manifest.psm1: case-insensitive
+        # only on Windows; on Linux a case-variant sibling is a different, unguarded directory.
+        $prepareOverrideComparison = if ($IsWindows) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+        if (-not $prepareOverrideFullPath.StartsWith($prepareRestoreRoot + [System.IO.Path]::DirectorySeparatorChar, $prepareOverrideComparison)) {
             throw "DMS_BOOTSTRAP_ROOT_OVERRIDE must point strictly inside '$(Format-LogSafeText $prepareRestoreRoot)' (a restore candidate directory), got '$(Format-LogSafeText $prepareOverrideValue)'."
         }
         $script:PrepareBootstrapRoot = $prepareOverrideFullPath
