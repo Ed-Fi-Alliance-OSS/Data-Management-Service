@@ -792,18 +792,17 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         DateTimeOffset registryObservedAt
     )
     {
-        DocumentCacheStatusInventoryComponent inventoryComponent = ToInventoryComponent(
-            targetObservation.Inventory
-        );
+        DocumentCacheInventoryValidationComponents? inventoryComponents =
+            targetObservation.InventoryComponents;
 
         return new(
-            targetObservation.Inventory is null && targetObservation.EnqueueTrigger is null
+            inventoryComponents is null && targetObservation.EnqueueTrigger is null
                 ? null
                 : registryObservedAt,
-            inventoryComponent,
-            inventoryComponent,
-            inventoryComponent,
-            inventoryComponent,
+            ToInventoryComponent(inventoryComponents?.State),
+            ToInventoryComponent(inventoryComponents?.Work),
+            ToInventoryComponent(inventoryComponents?.Cache),
+            ToInventoryComponent(inventoryComponents?.DataStoreIdentity),
             ToEnqueueTriggerComponent(targetObservation.EnqueueTrigger)
         );
     }

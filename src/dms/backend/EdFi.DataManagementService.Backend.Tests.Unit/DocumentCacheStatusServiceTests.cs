@@ -103,6 +103,44 @@ public class Given_DocumentCacheStatusService
     }
 
     [Test]
+    public async Task It_maps_inventory_components_independently()
+    {
+        DocumentCacheInventoryValidationResult validInventory = new(
+            DocumentCacheInventoryStatus.Satisfied,
+            "Inventory satisfied."
+        );
+        DocumentCacheInventoryValidationResult invalidState = new(
+            DocumentCacheInventoryStatus.Invalid,
+            "DocumentCache state inventory is invalid."
+        );
+        DocumentCacheTargetObservation target = ResolvedInventoryInvalidTarget(
+            DocumentCacheTargetKey.Create("", 1),
+            invalidState,
+            new DocumentCacheInventoryValidationComponents(
+                invalidState,
+                validInventory,
+                validInventory,
+                validInventory
+            )
+        );
+        DocumentCacheStatusService service = CreateService(new StaticTargetRegistry([target], []));
+
+        DocumentCacheStatusTarget statusTarget = (await service.GetStatusAsync()).Targets.Single();
+
+        statusTarget.Inventory.ObservedAt.Should().Be(RegistryObservedAt);
+        statusTarget.Inventory.State.Status.Should().Be(DocumentCacheStatusInventoryStatus.Invalid);
+        statusTarget.Inventory.State.Reason.Should().Be(DocumentCacheStatusInventoryReason.Invalid);
+        statusTarget.Inventory.State.Message.Should().Be("DocumentCache state inventory is invalid.");
+        statusTarget.Inventory.Work.Status.Should().Be(DocumentCacheStatusInventoryStatus.Valid);
+        statusTarget.Inventory.Work.Message.Should().BeNull();
+        statusTarget.Inventory.Cache.Status.Should().Be(DocumentCacheStatusInventoryStatus.Valid);
+        statusTarget.Inventory.Cache.Message.Should().BeNull();
+        statusTarget.Inventory.DataStoreIdentity.Status.Should().Be(DocumentCacheStatusInventoryStatus.Valid);
+        statusTarget.Inventory.DataStoreIdentity.Message.Should().BeNull();
+        statusTarget.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.InventoryInvalid);
+    }
+
+    [Test]
     public async Task It_serializes_per_target_observation_timeout_without_blocking_peer_targets()
     {
         DocumentCacheTargetObservation slowTarget = ResolvedTarget(
@@ -381,6 +419,32 @@ public class Given_DocumentCacheStatusService
                 "Enqueue trigger satisfied."
             ),
             DocumentCacheSqlServerPrerequisiteDetails.NotApplicable()
+        );
+    }
+
+    private static DocumentCacheTargetObservation ResolvedInventoryInvalidTarget(
+        DocumentCacheTargetKey targetKey,
+        DocumentCacheInventoryValidationResult aggregateInventory,
+        DocumentCacheInventoryValidationComponents inventoryComponents
+    )
+    {
+        DocumentCacheTargetEffectiveSettings settings = EffectiveSettings();
+        return DocumentCacheTargetObservation.ResolvedIneligible(
+            targetKey,
+            settings,
+            Generation,
+            RelationalProviderToken.Postgresql,
+            Fingerprint(targetKey.DataStoreId),
+            new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false),
+            aggregateInventory,
+            new DocumentCacheEnqueueTriggerValidationResult(
+                DocumentCacheEnqueueTriggerStatus.Satisfied,
+                "Enqueue trigger satisfied."
+            ),
+            DocumentCacheSqlServerPrerequisiteDetails.NotApplicable(),
+            retryState: null,
+            diagnostics: [],
+            inventoryComponents: inventoryComponents
         );
     }
 

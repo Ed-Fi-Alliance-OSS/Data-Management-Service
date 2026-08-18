@@ -356,6 +356,23 @@ public sealed record DocumentCacheInventoryValidationResult
     public string Message { get; }
 }
 
+public sealed record DocumentCacheInventoryValidationComponents(
+    DocumentCacheInventoryValidationResult State,
+    DocumentCacheInventoryValidationResult Work,
+    DocumentCacheInventoryValidationResult Cache,
+    DocumentCacheInventoryValidationResult DataStoreIdentity
+)
+{
+    public static DocumentCacheInventoryValidationComponents FromAggregate(
+        DocumentCacheInventoryValidationResult inventory
+    )
+    {
+        ArgumentNullException.ThrowIfNull(inventory);
+
+        return new(inventory, inventory, inventory, inventory);
+    }
+}
+
 public sealed record DocumentCacheEnqueueTriggerValidationResult
 {
     public DocumentCacheEnqueueTriggerValidationResult(
@@ -378,12 +395,23 @@ public sealed record DocumentCacheProviderInventoryValidationResult
         DocumentCacheInventoryValidationResult inventory,
         DocumentCacheEnqueueTriggerValidationResult enqueueTrigger
     )
+        : this(inventory, DocumentCacheInventoryValidationComponents.FromAggregate(inventory), enqueueTrigger)
+    { }
+
+    public DocumentCacheProviderInventoryValidationResult(
+        DocumentCacheInventoryValidationResult inventory,
+        DocumentCacheInventoryValidationComponents inventoryComponents,
+        DocumentCacheEnqueueTriggerValidationResult enqueueTrigger
+    )
     {
         Inventory = inventory;
+        InventoryComponents = inventoryComponents;
         EnqueueTrigger = enqueueTrigger;
     }
 
     public DocumentCacheInventoryValidationResult Inventory { get; }
+
+    public DocumentCacheInventoryValidationComponents InventoryComponents { get; }
 
     public DocumentCacheEnqueueTriggerValidationResult EnqueueTrigger { get; }
 
@@ -649,7 +677,8 @@ public sealed record DocumentCacheTargetDiagnostic
         DocumentCacheSqlServerPrerequisiteDetails? sqlServerPrerequisites,
         DocumentCacheResolutionRetryState? retryState,
         DocumentCacheTargetDiagnosticCategory category,
-        string message
+        string message,
+        DocumentCacheInventoryValidationComponents? inventoryComponents = null
     )
     {
         TargetKey = targetKey;
@@ -659,6 +688,11 @@ public sealed record DocumentCacheTargetDiagnostic
         PhysicalSourceFingerprint = physicalSourceFingerprint;
         Lifecycle = lifecycle;
         Inventory = inventory;
+        InventoryComponents =
+            inventoryComponents
+            ?? (
+                inventory is null ? null : DocumentCacheInventoryValidationComponents.FromAggregate(inventory)
+            );
         EnqueueTrigger = enqueueTrigger;
         SqlServerPrerequisites = sqlServerPrerequisites;
         RetryState = retryState;
@@ -679,6 +713,8 @@ public sealed record DocumentCacheTargetDiagnostic
     public DocumentCacheLifecycleObservation? Lifecycle { get; }
 
     public DocumentCacheInventoryValidationResult? Inventory { get; }
+
+    public DocumentCacheInventoryValidationComponents? InventoryComponents { get; }
 
     public DocumentCacheEnqueueTriggerValidationResult? EnqueueTrigger { get; }
 
@@ -703,6 +739,7 @@ public sealed record DocumentCacheTargetObservation
         DocumentCachePhysicalSourceFingerprint? physicalSourceFingerprint,
         DocumentCacheLifecycleObservation? lifecycle,
         DocumentCacheInventoryValidationResult? inventory,
+        DocumentCacheInventoryValidationComponents? inventoryComponents,
         DocumentCacheEnqueueTriggerValidationResult? enqueueTrigger,
         DocumentCacheSqlServerPrerequisiteDetails? sqlServerPrerequisites,
         DocumentCacheResolutionRetryState? retryState,
@@ -718,6 +755,7 @@ public sealed record DocumentCacheTargetObservation
         PhysicalSourceFingerprint = physicalSourceFingerprint;
         Lifecycle = lifecycle;
         Inventory = inventory;
+        InventoryComponents = inventoryComponents;
         EnqueueTrigger = enqueueTrigger;
         SqlServerPrerequisites = sqlServerPrerequisites;
         RetryState = retryState;
@@ -742,6 +780,8 @@ public sealed record DocumentCacheTargetObservation
 
     public DocumentCacheInventoryValidationResult? Inventory { get; }
 
+    public DocumentCacheInventoryValidationComponents? InventoryComponents { get; }
+
     public DocumentCacheEnqueueTriggerValidationResult? EnqueueTrigger { get; }
 
     public DocumentCacheSqlServerPrerequisiteDetails? SqlServerPrerequisites { get; }
@@ -764,6 +804,7 @@ public sealed record DocumentCacheTargetObservation
             physicalSourceFingerprint: null,
             lifecycle: null,
             inventory: null,
+            inventoryComponents: null,
             enqueueTrigger: null,
             sqlServerPrerequisites: null,
             retryState: null,
@@ -786,6 +827,7 @@ public sealed record DocumentCacheTargetObservation
             physicalSourceFingerprint: null,
             lifecycle: null,
             inventory: null,
+            inventoryComponents: null,
             enqueueTrigger: null,
             sqlServerPrerequisites: null,
             retryState,
@@ -802,7 +844,8 @@ public sealed record DocumentCacheTargetObservation
         DocumentCacheInventoryValidationResult inventory,
         DocumentCacheEnqueueTriggerValidationResult enqueueTrigger,
         DocumentCacheSqlServerPrerequisiteDetails? sqlServerPrerequisites,
-        IEnumerable<DocumentCacheTargetDiagnostic>? diagnostics = null
+        IEnumerable<DocumentCacheTargetDiagnostic>? diagnostics = null,
+        DocumentCacheInventoryValidationComponents? inventoryComponents = null
     ) =>
         new(
             targetKey,
@@ -814,6 +857,7 @@ public sealed record DocumentCacheTargetObservation
             physicalSourceFingerprint,
             lifecycle,
             inventory,
+            inventoryComponents ?? DocumentCacheInventoryValidationComponents.FromAggregate(inventory),
             enqueueTrigger,
             sqlServerPrerequisites,
             retryState: null,
@@ -831,7 +875,8 @@ public sealed record DocumentCacheTargetObservation
         DocumentCacheEnqueueTriggerValidationResult? enqueueTrigger,
         DocumentCacheSqlServerPrerequisiteDetails? sqlServerPrerequisites,
         DocumentCacheResolutionRetryState? retryState,
-        IEnumerable<DocumentCacheTargetDiagnostic>? diagnostics
+        IEnumerable<DocumentCacheTargetDiagnostic>? diagnostics,
+        DocumentCacheInventoryValidationComponents? inventoryComponents = null
     ) =>
         new(
             targetKey,
@@ -843,6 +888,12 @@ public sealed record DocumentCacheTargetObservation
             physicalSourceFingerprint,
             lifecycle,
             inventory,
+            inventoryComponents
+                ?? (
+                    inventory is null
+                        ? null
+                        : DocumentCacheInventoryValidationComponents.FromAggregate(inventory)
+                ),
             enqueueTrigger,
             sqlServerPrerequisites,
             retryState,
@@ -863,6 +914,7 @@ public sealed record DocumentCacheTargetObservation
             PhysicalSourceFingerprint,
             Lifecycle,
             Inventory,
+            InventoryComponents,
             EnqueueTrigger,
             SqlServerPrerequisites,
             RetryState,
@@ -888,6 +940,7 @@ public sealed record DocumentCacheTargetObservation
             PhysicalSourceFingerprint,
             Lifecycle,
             Inventory,
+            InventoryComponents,
             EnqueueTrigger,
             SqlServerPrerequisites,
             retryState,

@@ -33,6 +33,26 @@ internal static class DocumentCacheInventoryValidatorSupport
         RelationalProviderToken.SqlServer
     );
 
+    private static readonly InventoryComponentKind[] StateComponent = [InventoryComponentKind.State];
+    private static readonly InventoryComponentKind[] WorkComponent = [InventoryComponentKind.Work];
+    private static readonly InventoryComponentKind[] CacheComponent = [InventoryComponentKind.Cache];
+    private static readonly InventoryComponentKind[] DataStoreIdentityComponent =
+    [
+        InventoryComponentKind.DataStoreIdentity,
+    ];
+    private static readonly InventoryComponentKind[] CacheAndWorkComponents =
+    [
+        InventoryComponentKind.Cache,
+        InventoryComponentKind.Work,
+    ];
+    private static readonly InventoryComponentKind[] AllInventoryComponents =
+    [
+        InventoryComponentKind.State,
+        InventoryComponentKind.Work,
+        InventoryComponentKind.Cache,
+        InventoryComponentKind.DataStoreIdentity,
+    ];
+
     private const string PgsqlDocumentCacheJsonObjectCheckExpression =
         "JSONB_TYPEOFDOCUMENTJSON='OBJECT'TEXT";
     private const string MssqlDocumentCacheJsonObjectCheckExpression =
@@ -86,7 +106,8 @@ internal static class DocumentCacheInventoryValidatorSupport
                     inventoryIssues.Add(
                         new InventoryIssue(
                             DocumentCacheInventoryStatus.Missing,
-                            $"{Display(tableSpec.Table)} table is missing."
+                            $"{Display(tableSpec.Table)} table is missing.",
+                            tableSpec.Components
                         )
                     );
                     continue;
@@ -129,7 +150,8 @@ internal static class DocumentCacheInventoryValidatorSupport
                 .ConfigureAwait(false);
 
             return new DocumentCacheProviderInventoryValidationResult(
-                ToInventoryResult(inventoryIssues),
+                ToInventoryResult(inventoryIssues, "DocumentCache inventory is satisfied."),
+                ToInventoryComponents(inventoryIssues),
                 ToEnqueueResult(enqueueIssues)
             );
         }
@@ -140,11 +162,13 @@ internal static class DocumentCacheInventoryValidatorSupport
         catch (Exception exception)
         {
             LogInventoryValidationFailure(logger, exception);
+            DocumentCacheInventoryValidationResult unreadableInventory = new(
+                DocumentCacheInventoryStatus.Unreadable,
+                "DocumentCache inventory is unreadable."
+            );
             return new DocumentCacheProviderInventoryValidationResult(
-                new DocumentCacheInventoryValidationResult(
-                    DocumentCacheInventoryStatus.Unreadable,
-                    "DocumentCache inventory is unreadable."
-                ),
+                unreadableInventory,
+                DocumentCacheInventoryValidationComponents.FromAggregate(unreadableInventory),
                 new DocumentCacheEnqueueTriggerValidationResult(
                     DocumentCacheEnqueueTriggerStatus.Unreadable,
                     "DocumentCache enqueue inventory is unreadable."
@@ -172,7 +196,8 @@ internal static class DocumentCacheInventoryValidatorSupport
                     Smallint(DataStoreIdentityTableDefinition.DataStoreIdentitySingletonId.Value, dialect),
                     Uuid(DataStoreIdentityTableDefinition.SourceIdentity.Value, dialect),
                 ],
-                ExactColumnSet: true
+                ExactColumnSet: true,
+                Components: DataStoreIdentityComponent
             ),
             new TableSpec(
                 DocumentCacheInventoryDefinition.Document,
@@ -182,7 +207,8 @@ internal static class DocumentCacheInventoryValidatorSupport
                     Smallint(DocumentCacheInventoryDefinition.DocumentColumns.ResourceKeyId.Value, dialect),
                     Bigint(DocumentCacheInventoryDefinition.DocumentColumns.ContentVersion.Value, dialect),
                 ],
-                ExactColumnSet: false
+                ExactColumnSet: false,
+                Components: CacheAndWorkComponents
             ),
             new TableSpec(
                 DocumentCacheInventoryDefinition.ResourceKey,
@@ -207,7 +233,8 @@ internal static class DocumentCacheInventoryValidatorSupport
                         32
                     ),
                 ],
-                ExactColumnSet: true
+                ExactColumnSet: true,
+                Components: CacheAndWorkComponents
             ),
             new TableSpec(
                 DocumentCacheInventoryDefinition.DocumentCache,
@@ -246,7 +273,8 @@ internal static class DocumentCacheInventoryValidatorSupport
                     Json(DocumentCacheInventoryDefinition.DocumentCacheColumns.DocumentJson.Value, dialect),
                     DateTime(DocumentCacheInventoryDefinition.DocumentCacheColumns.ComputedAt.Value, dialect),
                 ],
-                ExactColumnSet: true
+                ExactColumnSet: true,
+                Components: CacheComponent
             ),
             new TableSpec(
                 DocumentCacheInventoryDefinition.DocumentCacheState,
@@ -270,7 +298,8 @@ internal static class DocumentCacheInventoryValidatorSupport
                         dialect
                     ),
                 ],
-                ExactColumnSet: true
+                ExactColumnSet: true,
+                Components: StateComponent
             ),
             new TableSpec(
                 DocumentCacheInventoryDefinition.DocumentProjectionWork,
@@ -295,9 +324,43 @@ internal static class DocumentCacheInventoryValidatorSupport
                         dialect
                     ),
                 ],
-                ExactColumnSet: true
+                ExactColumnSet: true,
+                Components: WorkComponent
             ),
         ];
+    }
+
+    private static IReadOnlyList<InventoryComponentKind> ComponentsFor(DbTableName table)
+    {
+        if (table == DataStoreIdentityTableDefinition.Table)
+        {
+            return DataStoreIdentityComponent;
+        }
+
+        if (table == DocumentCacheInventoryDefinition.DocumentCacheState)
+        {
+            return StateComponent;
+        }
+
+        if (table == DocumentCacheInventoryDefinition.DocumentProjectionWork)
+        {
+            return WorkComponent;
+        }
+
+        if (table == DocumentCacheInventoryDefinition.DocumentCache)
+        {
+            return CacheComponent;
+        }
+
+        if (
+            table == DocumentCacheInventoryDefinition.Document
+            || table == DocumentCacheInventoryDefinition.ResourceKey
+        )
+        {
+            return CacheAndWorkComponents;
+        }
+
+        return AllInventoryComponents;
     }
 
     private static RequiredColumn Bigint(string name, SqlDialect dialect) =>
@@ -572,7 +635,11 @@ internal static class DocumentCacheInventoryValidatorSupport
         if (index is null)
         {
             inventoryIssues.Add(
-                new InventoryIssue(DocumentCacheInventoryStatus.Missing, $"{artifactDescription} is missing.")
+                new InventoryIssue(
+                    DocumentCacheInventoryStatus.Missing,
+                    $"{artifactDescription} is missing.",
+                    ComponentsFor(table)
+                )
             );
             return;
         }
@@ -582,7 +649,8 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Invalid,
-                    $"{artifactDescription} is not unique."
+                    $"{artifactDescription} is not unique.",
+                    ComponentsFor(table)
                 )
             );
         }
@@ -592,7 +660,8 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Invalid,
-                    $"{artifactDescription} is not usable."
+                    $"{artifactDescription} is not usable.",
+                    ComponentsFor(table)
                 )
             );
         }
@@ -602,7 +671,8 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Invalid,
-                    $"{artifactDescription} is filtered or partial."
+                    $"{artifactDescription} is filtered or partial.",
+                    ComponentsFor(table)
                 )
             );
         }
@@ -612,7 +682,8 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Invalid,
-                    $"{artifactDescription} has included columns."
+                    $"{artifactDescription} has included columns.",
+                    ComponentsFor(table)
                 )
             );
         }
@@ -622,12 +693,19 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Invalid,
-                    $"{artifactDescription} has expression keys."
+                    $"{artifactDescription} has expression keys.",
+                    ComponentsFor(table)
                 )
             );
         }
 
-        ValidateColumnOrder(index.Columns, expectedColumns, artifactDescription, inventoryIssues);
+        ValidateColumnOrder(
+            index.Columns,
+            expectedColumns,
+            artifactDescription,
+            inventoryIssues,
+            ComponentsFor(table)
+        );
     }
 
     private static async Task ValidateDocumentCacheUuidTriggerAsync(
@@ -651,7 +729,8 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Missing,
-                    $"{DocumentCacheInventoryDefinition.DocumentCacheTriggers.ValidateDocumentUuid} trigger is missing."
+                    $"{DocumentCacheInventoryDefinition.DocumentCacheTriggers.ValidateDocumentUuid} trigger is missing.",
+                    CacheComponent
                 )
             );
             return;
@@ -662,7 +741,8 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Invalid,
-                    $"{DocumentCacheInventoryDefinition.DocumentCacheTriggers.ValidateDocumentUuid} trigger is not enabled for ordinary sessions."
+                    $"{DocumentCacheInventoryDefinition.DocumentCacheTriggers.ValidateDocumentUuid} trigger is not enabled for ordinary sessions.",
+                    CacheComponent
                 )
             );
         }
@@ -672,7 +752,8 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Invalid,
-                    $"{DocumentCacheInventoryDefinition.DocumentCacheTriggers.ValidateDocumentUuid} trigger shape is invalid."
+                    $"{DocumentCacheInventoryDefinition.DocumentCacheTriggers.ValidateDocumentUuid} trigger shape is invalid.",
+                    CacheComponent
                 )
             );
         }
@@ -691,7 +772,8 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Invalid,
-                    $"{DocumentCacheInventoryDefinition.DocumentCacheTriggers.ValidateDocumentUuid} trigger uses an unexpected function."
+                    $"{DocumentCacheInventoryDefinition.DocumentCacheTriggers.ValidateDocumentUuid} trigger uses an unexpected function.",
+                    CacheComponent
                 )
             );
         }
@@ -704,7 +786,8 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Invalid,
-                    $"{DocumentCacheInventoryDefinition.DocumentCacheTriggers.ValidateDocumentUuid} trigger function has unexpected semantics."
+                    $"{DocumentCacheInventoryDefinition.DocumentCacheTriggers.ValidateDocumentUuid} trigger function has unexpected semantics.",
+                    CacheComponent
                 )
             );
         }
@@ -714,7 +797,8 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Invalid,
-                    $"{DocumentCacheInventoryDefinition.DocumentCacheTriggers.ValidateDocumentUuid} trigger shape is invalid."
+                    $"{DocumentCacheInventoryDefinition.DocumentCacheTriggers.ValidateDocumentUuid} trigger shape is invalid.",
+                    CacheComponent
                 )
             );
         }
@@ -727,7 +811,8 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Invalid,
-                    $"{DocumentCacheInventoryDefinition.DocumentCacheTriggers.ValidateDocumentUuid} trigger has unexpected semantics."
+                    $"{DocumentCacheInventoryDefinition.DocumentCacheTriggers.ValidateDocumentUuid} trigger has unexpected semantics.",
+                    CacheComponent
                 )
             );
         }
@@ -993,13 +1078,14 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Missing,
-                    $"{constraintName} primary key is missing."
+                    $"{constraintName} primary key is missing.",
+                    ComponentsFor(table)
                 )
             );
             return;
         }
 
-        ValidateColumnOrder(columns, expectedColumns, constraintName, inventoryIssues);
+        ValidateColumnOrder(columns, expectedColumns, constraintName, inventoryIssues, ComponentsFor(table));
     }
 
     private static async Task RequireCheckConstraintAsync(
@@ -1026,7 +1112,8 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Missing,
-                    $"{constraintName} check constraint is missing."
+                    $"{constraintName} check constraint is missing.",
+                    ComponentsFor(table)
                 )
             );
             return;
@@ -1037,7 +1124,8 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Invalid,
-                    $"{constraintName} check constraint is disabled or untrusted."
+                    $"{constraintName} check constraint is disabled or untrusted.",
+                    ComponentsFor(table)
                 )
             );
         }
@@ -1047,7 +1135,8 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Invalid,
-                    $"{constraintName} check constraint has unexpected semantics."
+                    $"{constraintName} check constraint has unexpected semantics.",
+                    ComponentsFor(table)
                 )
             );
         }
@@ -1078,7 +1167,8 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Missing,
-                    $"{Display(table)}.{columnName} default constraint is missing."
+                    $"{Display(table)}.{columnName} default constraint is missing.",
+                    ComponentsFor(table)
                 )
             );
             return;
@@ -1092,7 +1182,8 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Missing,
-                    $"{mssqlConstraintName} default constraint is missing."
+                    $"{mssqlConstraintName} default constraint is missing.",
+                    ComponentsFor(table)
                 )
             );
         }
@@ -1102,7 +1193,8 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Invalid,
-                    $"{Display(table)}.{columnName} default expression is invalid."
+                    $"{Display(table)}.{columnName} default expression is invalid.",
+                    ComponentsFor(table)
                 )
             );
         }
@@ -1136,18 +1228,26 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Missing,
-                    $"{constraintName} foreign key is missing."
+                    $"{constraintName} foreign key is missing.",
+                    ComponentsFor(table)
                 )
             );
             return;
         }
 
-        ValidateColumnOrder(foreignKey.Columns, expectedColumns, constraintName, inventoryIssues);
+        ValidateColumnOrder(
+            foreignKey.Columns,
+            expectedColumns,
+            constraintName,
+            inventoryIssues,
+            ComponentsFor(table)
+        );
         ValidateColumnOrder(
             foreignKey.ReferencedColumns,
             expectedReferencedColumns,
             $"{constraintName} referenced columns",
-            inventoryIssues
+            inventoryIssues,
+            ComponentsFor(table)
         );
 
         if (
@@ -1158,7 +1258,8 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Invalid,
-                    $"{constraintName} foreign key references an unexpected table."
+                    $"{constraintName} foreign key references an unexpected table.",
+                    ComponentsFor(table)
                 )
             );
         }
@@ -1168,7 +1269,8 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Invalid,
-                    $"{constraintName} foreign key has unexpected referential actions."
+                    $"{constraintName} foreign key has unexpected referential actions.",
+                    ComponentsFor(table)
                 )
             );
         }
@@ -1178,7 +1280,8 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Invalid,
-                    $"{constraintName} foreign key is disabled or untrusted."
+                    $"{constraintName} foreign key is disabled or untrusted.",
+                    ComponentsFor(table)
                 )
             );
         }
@@ -1200,7 +1303,8 @@ internal static class DocumentCacheInventoryValidatorSupport
                 inventoryIssues.Add(
                     new InventoryIssue(
                         DocumentCacheInventoryStatus.Missing,
-                        $"{Display(tableSpec.Table)}.{expectedColumn.Name} column is missing."
+                        $"{Display(tableSpec.Table)}.{expectedColumn.Name} column is missing.",
+                        tableSpec.Components
                     )
                 );
                 continue;
@@ -1211,7 +1315,8 @@ internal static class DocumentCacheInventoryValidatorSupport
                 inventoryIssues.Add(
                     new InventoryIssue(
                         DocumentCacheInventoryStatus.Invalid,
-                        $"{Display(tableSpec.Table)}.{expectedColumn.Name} nullability is invalid."
+                        $"{Display(tableSpec.Table)}.{expectedColumn.Name} nullability is invalid.",
+                        tableSpec.Components
                     )
                 );
             }
@@ -1221,7 +1326,8 @@ internal static class DocumentCacheInventoryValidatorSupport
                 inventoryIssues.Add(
                     new InventoryIssue(
                         DocumentCacheInventoryStatus.Invalid,
-                        $"{Display(tableSpec.Table)}.{expectedColumn.Name} type is invalid."
+                        $"{Display(tableSpec.Table)}.{expectedColumn.Name} type is invalid.",
+                        tableSpec.Components
                     )
                 );
             }
@@ -1231,7 +1337,8 @@ internal static class DocumentCacheInventoryValidatorSupport
                 inventoryIssues.Add(
                     new InventoryIssue(
                         DocumentCacheInventoryStatus.Invalid,
-                        $"{Display(tableSpec.Table)}.{expectedColumn.Name} length is invalid."
+                        $"{Display(tableSpec.Table)}.{expectedColumn.Name} length is invalid.",
+                        tableSpec.Components
                     )
                 );
             }
@@ -1248,7 +1355,8 @@ internal static class DocumentCacheInventoryValidatorSupport
                 inventoryIssues.Add(
                     new InventoryIssue(
                         DocumentCacheInventoryStatus.Invalid,
-                        $"{Display(tableSpec.Table)}.{expectedColumn.Name} collation is invalid."
+                        $"{Display(tableSpec.Table)}.{expectedColumn.Name} collation is invalid.",
+                        tableSpec.Components
                     )
                 );
             }
@@ -1269,7 +1377,8 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Invalid,
-                    $"{Display(tableSpec.Table)} has unexpected columns."
+                    $"{Display(tableSpec.Table)} has unexpected columns.",
+                    tableSpec.Components
                 )
             );
         }
@@ -1279,7 +1388,8 @@ internal static class DocumentCacheInventoryValidatorSupport
         IReadOnlyList<string> actualColumns,
         IReadOnlyList<string> expectedColumns,
         string objectName,
-        List<InventoryIssue> inventoryIssues
+        List<InventoryIssue> inventoryIssues,
+        IReadOnlyList<InventoryComponentKind> components
     )
     {
         if (actualColumns.SequenceEqual(expectedColumns, StringComparer.Ordinal))
@@ -1288,7 +1398,11 @@ internal static class DocumentCacheInventoryValidatorSupport
         }
 
         inventoryIssues.Add(
-            new InventoryIssue(DocumentCacheInventoryStatus.Invalid, $"{objectName} column order is invalid.")
+            new InventoryIssue(
+                DocumentCacheInventoryStatus.Invalid,
+                $"{objectName} column order is invalid.",
+                components
+            )
         );
     }
 
@@ -2003,21 +2117,23 @@ internal static class DocumentCacheInventoryValidatorSupport
             inventoryIssues.Add(
                 new InventoryIssue(
                     DocumentCacheInventoryStatus.Missing,
-                    $"{Display(table)} singleton row is missing."
+                    $"{Display(table)} singleton row is missing.",
+                    ComponentsFor(table)
                 )
             );
         }
     }
 
     private static DocumentCacheInventoryValidationResult ToInventoryResult(
-        IReadOnlyList<InventoryIssue> issues
+        IReadOnlyList<InventoryIssue> issues,
+        string satisfiedMessage
     )
     {
         if (issues.Count == 0)
         {
             return new DocumentCacheInventoryValidationResult(
                 DocumentCacheInventoryStatus.Satisfied,
-                "DocumentCache inventory is satisfied."
+                satisfiedMessage
             );
         }
 
@@ -2035,6 +2151,33 @@ internal static class DocumentCacheInventoryValidatorSupport
 
         return new DocumentCacheInventoryValidationResult(status, BuildIssueMessage(issues));
     }
+
+    private static DocumentCacheInventoryValidationComponents ToInventoryComponents(
+        IReadOnlyList<InventoryIssue> issues
+    ) =>
+        new(
+            ToInventoryResult(
+                IssuesForComponent(issues, InventoryComponentKind.State),
+                "DocumentCache state inventory is satisfied."
+            ),
+            ToInventoryResult(
+                IssuesForComponent(issues, InventoryComponentKind.Work),
+                "DocumentCache work inventory is satisfied."
+            ),
+            ToInventoryResult(
+                IssuesForComponent(issues, InventoryComponentKind.Cache),
+                "DocumentCache cache inventory is satisfied."
+            ),
+            ToInventoryResult(
+                IssuesForComponent(issues, InventoryComponentKind.DataStoreIdentity),
+                "DocumentCache data store identity inventory is satisfied."
+            )
+        );
+
+    private static IReadOnlyList<InventoryIssue> IssuesForComponent(
+        IReadOnlyList<InventoryIssue> issues,
+        InventoryComponentKind component
+    ) => issues.Where(issue => issue.Components.Contains(component)).ToArray();
 
     private static DocumentCacheEnqueueTriggerValidationResult ToEnqueueResult(
         IReadOnlyList<EnqueueIssue> issues
@@ -2594,7 +2737,8 @@ internal static class DocumentCacheInventoryValidatorSupport
     private sealed record TableSpec(
         DbTableName Table,
         IReadOnlyList<RequiredColumn> Columns,
-        bool ExactColumnSet
+        bool ExactColumnSet,
+        IReadOnlyList<InventoryComponentKind> Components
     );
 
     private sealed record RequiredColumn(
@@ -2690,8 +2834,19 @@ internal static class DocumentCacheInventoryValidatorSupport
         string Message { get; }
     }
 
-    private sealed record InventoryIssue(DocumentCacheInventoryStatus Status, string Message)
-        : IValidationIssue;
+    private enum InventoryComponentKind
+    {
+        State,
+        Work,
+        Cache,
+        DataStoreIdentity,
+    }
+
+    private sealed record InventoryIssue(
+        DocumentCacheInventoryStatus Status,
+        string Message,
+        IReadOnlyList<InventoryComponentKind> Components
+    ) : IValidationIssue;
 
     private sealed record EnqueueIssue(DocumentCacheEnqueueTriggerStatus Status, string Message)
         : IValidationIssue;
