@@ -763,4 +763,7 @@ function Assert-AssetOnlyPackageContract
     }
 }
 
-Export-ModuleMember -Function Resolve-StandardSchemaPackage, Assert-AssetOnlyPackageContract
+# Resolve-LocalFolderPackage, Resolve-HttpV3Package, and Expand-Nupkg are exported for the
+# database-template restore consumer (bootstrap-restore.psm1), which acquires template
+# packages through the same folder-feed and NuGet v3 flat-container primitives.
+Export-ModuleMember -Function Resolve-StandardSchemaPackage, Assert-AssetOnlyPackageContract, Resolve-LocalFolderPackage, Resolve-HttpV3Package, Expand-Nupkg

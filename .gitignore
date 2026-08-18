@@ -70,6 +70,7 @@ eng/docker-compose/.env.perf-hostpg
 # trust-policy overlay, detached attestation documents, and the transient companion
 # attestation-package workspace. Private key material must never be committed.
 eng/DatabaseTemplates/.dev-trust/
+eng/docker-compose/.bootstrap-restore/
 eng/docker-compose/template-trust-policy.local.json
 *.nupkg.attestation.json
 .attestation-package/

@@ -194,6 +194,7 @@ jobs:
           # regression a PR failure instead of a silent gap.
           $paths = @(
             "eng/docker-compose/tests/BootstrapPackageResolver.Tests.ps1",
+            "eng/docker-compose/tests/BootstrapTemplateRestore.Tests.ps1",
             "eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1",
             "eng/docker-compose/tests/BootstrapSeedDelivery.Tests.ps1",
             "eng/docker-compose/tests/BootstrapStandardSchemaSelection.Tests.ps1",
