@@ -175,9 +175,10 @@ public class DocumentCacheStatusContractTests
             DocumentCacheStatusResponse response = new(
                 ObservedAtWithOffset(),
                 [
-                    PopulatedTarget(tenantKey: "z", dataStoreId: 3),
+                    PopulatedTarget(tenantKey: "Tenant-B", dataStoreId: 3),
                     PopulatedTarget(tenantKey: "", dataStoreId: 2),
-                    PopulatedTarget(tenantKey: "a", dataStoreId: 1),
+                    PopulatedTarget(tenantKey: "TENANT-A", dataStoreId: 2),
+                    PopulatedTarget(tenantKey: "tenant-a", dataStoreId: 1),
                     PopulatedTarget(tenantKey: "", dataStoreId: 1),
                 ]
             );
@@ -185,13 +186,14 @@ public class DocumentCacheStatusContractTests
             JsonArray targets = JsonNode.Parse(JsonSerializer.Serialize(response))!["targets"]!.AsArray();
 
             targets
-                .Select(target => target!["targetKey"]!["tenantKey"]!.GetValue<string>())
+                .Select(target =>
+                    (
+                        TenantKey: target!["targetKey"]!["tenantKey"]!.GetValue<string>(),
+                        DataStoreId: target["targetKey"]!["dataStoreId"]!.GetValue<long>()
+                    )
+                )
                 .Should()
-                .Equal("", "", "a", "z");
-            targets
-                .Select(target => target!["targetKey"]!["dataStoreId"]!.GetValue<long>())
-                .Should()
-                .Equal(1, 2, 1, 3);
+                .Equal(("", 1L), ("", 2L), ("tenant-a", 1L), ("TENANT-A", 2L), ("Tenant-B", 3L));
         }
 
         [Test]

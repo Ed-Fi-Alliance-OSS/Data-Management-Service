@@ -288,8 +288,7 @@ public sealed record DocumentCacheStatusResponse
 
         ObservedAt = DocumentCacheStatusTimestamp.ToUtc(observedAt);
         Targets = targets
-            .OrderBy(target => target.TargetKey.TenantKey, StringComparer.Ordinal)
-            .ThenBy(target => target.TargetKey.DataStoreId)
+            .OrderBy(target => target.TargetKey.TargetKey, DocumentCacheStatusTargetKeyComparer.Instance)
             .ToImmutableArray();
     }
 
@@ -331,6 +330,42 @@ public sealed record DocumentCacheStatusTargetKey
         ArgumentNullException.ThrowIfNull(targetKey);
 
         return new(targetKey.TenantKey, targetKey.DataStoreId);
+    }
+}
+
+public sealed class DocumentCacheStatusTargetKeyComparer : IComparer<DocumentCacheTargetKey>
+{
+    private DocumentCacheStatusTargetKeyComparer() { }
+
+    public static DocumentCacheStatusTargetKeyComparer Instance { get; } = new();
+
+    public int Compare(DocumentCacheTargetKey? x, DocumentCacheTargetKey? y)
+    {
+        if (ReferenceEquals(x, y))
+        {
+            return 0;
+        }
+
+        if (x is null)
+        {
+            return -1;
+        }
+
+        if (y is null)
+        {
+            return 1;
+        }
+
+        int tenantComparison = StringComparer.OrdinalIgnoreCase.Compare(x.TenantKey, y.TenantKey);
+        if (tenantComparison != 0)
+        {
+            return tenantComparison;
+        }
+
+        int dataStoreComparison = x.DataStoreId.CompareTo(y.DataStoreId);
+        return dataStoreComparison != 0
+            ? dataStoreComparison
+            : StringComparer.Ordinal.Compare(x.TenantKey, y.TenantKey);
     }
 }
 

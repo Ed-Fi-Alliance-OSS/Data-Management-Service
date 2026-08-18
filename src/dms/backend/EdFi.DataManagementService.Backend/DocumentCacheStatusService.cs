@@ -85,8 +85,7 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         DateTimeOffset observedAt = _timeProvider.GetUtcNow();
 
         ImmutableArray<DocumentCacheTargetObservation> targetObservations = registrySnapshot
-            .Targets.OrderBy(target => target.TargetKey.TenantKey, StringComparer.Ordinal)
-            .ThenBy(target => target.TargetKey.DataStoreId)
+            .Targets.OrderBy(target => target.TargetKey, DocumentCacheStatusTargetKeyComparer.Instance)
             .ToImmutableArray();
 
         if (targetObservations.IsEmpty)

@@ -39,27 +39,42 @@ public class Given_DocumentCacheStatusService
     [Test]
     public async Task It_evaluates_explicit_targets_deterministically_without_refreshing_registry()
     {
-        DocumentCacheTargetObservation zTarget = ResolvedTarget(DocumentCacheTargetKey.Create("z", 3));
+        DocumentCacheTargetObservation tenantBTarget = ResolvedTarget(
+            DocumentCacheTargetKey.Create("Tenant-B", 3)
+        );
         DocumentCacheTargetObservation defaultTenantTarget = ResolvedTarget(
             DocumentCacheTargetKey.Create("", 1)
         );
-        DocumentCacheTargetObservation aTarget = ResolvedTarget(DocumentCacheTargetKey.Create("a", 2));
+        DocumentCacheTargetObservation tenantAFirstTarget = ResolvedTarget(
+            DocumentCacheTargetKey.Create("TENANT-A", 1)
+        );
+        DocumentCacheTargetObservation tenantATarget = ResolvedTarget(
+            DocumentCacheTargetKey.Create("tenant-a", 2)
+        );
         StaticTargetRegistry registry = new(
-            [zTarget, defaultTenantTarget, aTarget],
-            [ExecutionContext(zTarget), ExecutionContext(defaultTenantTarget), ExecutionContext(aTarget)]
+            [tenantBTarget, defaultTenantTarget, tenantATarget, tenantAFirstTarget],
+            [
+                ExecutionContext(tenantBTarget),
+                ExecutionContext(defaultTenantTarget),
+                ExecutionContext(tenantATarget),
+                ExecutionContext(tenantAFirstTarget),
+            ]
         );
         DocumentCacheProjectionObservationStore observationStore = ObservationStore(
-            zTarget,
+            tenantBTarget,
             defaultTenantTarget,
-            aTarget
+            tenantATarget,
+            tenantAFirstTarget
         );
         ScriptedStatusObserver observer = new(Success);
         DocumentCacheStatusService service = CreateService(registry, observationStore, observer);
 
         DocumentCacheStatusResponse response = await service.GetStatusAsync();
 
-        response.Targets.Select(target => target.TargetKey.TenantKey).Should().Equal("", "a", "z");
-        response.Targets.Select(target => target.TargetKey.DataStoreId).Should().Equal(1, 2, 3);
+        response
+            .Targets.Select(target => (target.TargetKey.TenantKey, target.TargetKey.DataStoreId))
+            .Should()
+            .Equal(("", 1L), ("TENANT-A", 1L), ("tenant-a", 2L), ("Tenant-B", 3L));
         response
             .Targets.Should()
             .AllSatisfy(target =>
@@ -72,7 +87,12 @@ public class Given_DocumentCacheStatusService
             });
         observer
             .StartedKeys.Should()
-            .BeEquivalentTo([zTarget.TargetKey, defaultTenantTarget.TargetKey, aTarget.TargetKey]);
+            .BeEquivalentTo([
+                tenantBTarget.TargetKey,
+                defaultTenantTarget.TargetKey,
+                tenantATarget.TargetKey,
+                tenantAFirstTarget.TargetKey,
+            ]);
         registry.RefreshCallCount.Should().Be(0);
     }
 
