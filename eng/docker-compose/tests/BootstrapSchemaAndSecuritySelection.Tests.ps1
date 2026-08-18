@@ -102,11 +102,16 @@ exit $ExitCode
             # Data Standard version recorded as projectSchema.projectVersion (contract-required
             # by JsonSchemaForApiSchema.json). Pass "" to OMIT the field for negative tests.
             [string]
-            $ProjectVersion = "5.2.0"
+            $ProjectVersion = "5.2.0",
+
+            # ApiSchema format version emitted as the top-level apiSchemaVersion
+            # (contract-required). Pass "" to OMIT the field for negative tests.
+            [string]
+            $ApiSchemaVersion = "1.0.0"
         )
 
         $schema = [ordered]@{
-            apiSchemaVersion = "1.0.0"
+            apiSchemaVersion = $ApiSchemaVersion
             projectSchema = [ordered]@{
                 projectName = $ProjectName
                 projectVersion = $ProjectVersion
@@ -123,6 +128,10 @@ exit $ExitCode
 
         if ([string]::IsNullOrEmpty($ProjectVersion)) {
             $schema["projectSchema"].Remove("projectVersion")
+        }
+
+        if ([string]::IsNullOrEmpty($ApiSchemaVersion)) {
+            $schema.Remove("apiSchemaVersion")
         }
 
         New-Item -ItemType Directory -Path (Split-Path -Parent $Path) -Force | Out-Null
@@ -554,6 +563,19 @@ exit $ExitCode
 
             { Invoke-PrepareSchema -ApiSchemaPath $schemaDir } |
                 Should -Throw "*missing projectSchema.projectVersion*"
+        }
+
+        It "rejects a core schema without apiSchemaVersion instead of recording a blank format version" {
+            $schemaDir = New-TestDirectory
+            New-ApiSchemaFile `
+                -Path (Join-Path $schemaDir "ApiSchema.json") `
+                -ProjectName "Ed-Fi" `
+                -ProjectEndpointName "ed-fi" `
+                -IsExtensionProject $false `
+                -ApiSchemaVersion ""
+
+            { Invoke-PrepareSchema -ApiSchemaPath $schemaDir } |
+                Should -Throw "*missing apiSchemaVersion*"
         }
 
         It "copies optional schema-adjacent runtime content and preserves schema JSON payloads" {
