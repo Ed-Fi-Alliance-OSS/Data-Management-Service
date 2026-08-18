@@ -162,7 +162,12 @@ if (-not [string]::IsNullOrWhiteSpace($env:DMS_BOOTSTRAP_ROOT_OVERRIDE)) {
         [System.IO.Path]::DirectorySeparatorChar,
         [System.IO.Path]::AltDirectorySeparatorChar)
     $requiredPrefix = $script:BootstrapRestoreWorkspaceRoot + [System.IO.Path]::DirectorySeparatorChar
-    if (-not $overrideFullPath.StartsWith($requiredPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+    # Containment case sensitivity matches the platform: Windows paths are case-insensitive, but
+    # on Linux a case-variant sibling (e.g. .BOOTSTRAP-RESTORE) is a DIFFERENT directory outside
+    # the restore workspace and outside its .gitignore entry, so the check must be case-sensitive
+    # there. Keep this in lockstep with the prepare-dms-schema.ps1 fallback mirror.
+    $prefixComparison = if ($IsWindows) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+    if (-not $overrideFullPath.StartsWith($requiredPrefix, $prefixComparison)) {
         throw "DMS_BOOTSTRAP_ROOT_OVERRIDE must point strictly inside '$(Format-LogSafePath $script:BootstrapRestoreWorkspaceRoot)' (a restore candidate directory), got '$(Format-LogSafePath $overrideValue)'."
     }
     $script:BootstrapRoot = $overrideFullPath
