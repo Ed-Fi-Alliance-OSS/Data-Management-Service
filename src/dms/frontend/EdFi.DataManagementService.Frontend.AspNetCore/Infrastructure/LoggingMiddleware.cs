@@ -28,7 +28,9 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
         var sanitizedPath = LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value);
         var pathBase = LoggingSanitizer.SanitizeForLogging(context.Request.PathBase.Value);
         var rawTraceId = ExtractTraceId(context) ?? string.Empty;
-        var traceId = LoggingSanitizer.SanitizeForLogging(rawTraceId);
+        var maxLength = GetCorrelationIdMaxLength();
+        var truncatedTraceId = rawTraceId.Length > maxLength ? rawTraceId[..maxLength] : rawTraceId;
+        var traceId = LoggingSanitizer.SanitizeForLogging(truncatedTraceId);
 
         var scopeValues = new Dictionary<string, object>
         {
@@ -159,11 +161,11 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
                                 new
                                 {
                                     message = "The server encountered an unexpected condition that prevented it from fulfilling the request.",
-                                    // The error response body echoes the raw correlation value, matching
-                                    // every other DMS error response body (see FailureResponse). Only log
-                                    // properties are sanitized; applying the logging whitelist to a
-                                    // client-reported trace id yields the TraceId to search for in the logs.
-                                    traceId = rawTraceId,
+                                    // The error response body echoes the sanitized and truncated
+                                    // correlation value so it always matches the TraceId searchable
+                                    // in the logs. Applying the same logging whitelist and length cap
+                                    // to the response ensures log/response parity.
+                                    traceId = traceId,
                                 }
                             )
                         );
@@ -197,6 +199,18 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
         catch (OptionsValidationException)
         {
             return context.TraceIdentifier;
+        }
+    }
+
+    private int GetCorrelationIdMaxLength()
+    {
+        try
+        {
+            return _appSettings.Value.CorrelationIdMaxLength;
+        }
+        catch (OptionsValidationException)
+        {
+            return AppSettings.DefaultCorrelationIdMaxLength;
         }
     }
 
