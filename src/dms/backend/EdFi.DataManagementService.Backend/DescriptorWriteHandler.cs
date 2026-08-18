@@ -257,7 +257,13 @@ internal sealed class DescriptorWriteHandler(
                             )
                             .ConfigureAwait(false);
 
-                        await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
+                        await CommitDescriptorWriteWithEnqueueFailureTelemetryAsync(
+                                request,
+                                writeSession,
+                                DocumentCacheEnqueueTelemetryCanonicalOperation.Insert,
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
                         RecordDescriptorEnqueueSuccessIfApplicable(
                             request,
                             DocumentCacheEnqueueTelemetryCanonicalOperation.Insert
@@ -2757,7 +2763,13 @@ internal sealed class DescriptorWriteHandler(
             )
             .ConfigureAwait(false);
 
-        await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await CommitDescriptorWriteWithEnqueueFailureTelemetryAsync(
+                request,
+                writeSession,
+                DocumentCacheEnqueueTelemetryCanonicalOperation.Update,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
         RecordDescriptorEnqueueSuccessIfApplicable(
             request,
             DocumentCacheEnqueueTelemetryCanonicalOperation.Update
@@ -2823,7 +2835,13 @@ internal sealed class DescriptorWriteHandler(
             )
             .ConfigureAwait(false);
 
-        await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await CommitDescriptorWriteWithEnqueueFailureTelemetryAsync(
+                request,
+                writeSession,
+                DocumentCacheEnqueueTelemetryCanonicalOperation.Update,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
         RecordDescriptorEnqueueSuccessIfApplicable(
             request,
             DocumentCacheEnqueueTelemetryCanonicalOperation.Update
@@ -3216,7 +3234,13 @@ internal sealed class DescriptorWriteHandler(
                 )
                 .ConfigureAwait(false);
 
-            await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await CommitDescriptorWriteWithEnqueueFailureTelemetryAsync(
+                    request,
+                    writeSession,
+                    DocumentCacheEnqueueTelemetryCanonicalOperation.Insert,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
             RecordDescriptorEnqueueSuccessIfApplicable(
                 request,
                 DocumentCacheEnqueueTelemetryCanonicalOperation.Insert
@@ -3337,6 +3361,24 @@ internal sealed class DescriptorWriteHandler(
                 canonicalPersistStartTimestamp
             );
 
+            throw;
+        }
+    }
+
+    private async Task CommitDescriptorWriteWithEnqueueFailureTelemetryAsync(
+        DescriptorWriteRequest request,
+        IRelationalWriteSession writeSession,
+        DocumentCacheEnqueueTelemetryCanonicalOperation canonicalOperation,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (DbException ex)
+        {
+            RecordDescriptorEnqueueFailureIfClassified(request, canonicalOperation, ex);
             throw;
         }
     }

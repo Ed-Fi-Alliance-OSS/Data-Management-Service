@@ -208,8 +208,103 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
             .Be(DocumentCacheEnqueueTelemetryResourceKind.Descriptor);
     }
 
+    [TestCase(
+        DescriptorWritePath.PostInsert,
+        nameof(DocumentCacheEnqueueTelemetryCanonicalOperation.Insert),
+        typeof(UpsertResult.UnknownFailure)
+    )]
+    [TestCase(
+        DescriptorWritePath.PostAsUpdate,
+        nameof(DocumentCacheEnqueueTelemetryCanonicalOperation.Update),
+        typeof(UpsertResult.UnknownFailure)
+    )]
+    [TestCase(
+        DescriptorWritePath.PutUpdate,
+        nameof(DocumentCacheEnqueueTelemetryCanonicalOperation.Update),
+        typeof(UpdateResult.UnknownFailure)
+    )]
+    public async Task It_records_descriptor_enqueue_failure_when_commit_throws_classified_exception(
+        DescriptorWritePath writePath,
+        string expectedOperationName,
+        Type expectedResultType
+    )
+    {
+        var expectedOperation = Enum.Parse<DocumentCacheEnqueueTelemetryCanonicalOperation>(
+            expectedOperationName
+        );
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService();
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.CommitExceptionToThrow = new StubDbException(
+            "insert or update on table \"DocumentProjectionWork\" violates foreign key constraint"
+        );
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry(
+            () => sessionFactory.Session.CommitCallCount,
+            () => sessionFactory.Session.RollbackCallCount
+        );
+        var sut = CreateSut(targetLookupService, sessionFactory, telemetry);
+        var mappingSet = CreateMappingSet(SqlDialect.Pgsql);
+
+        object result;
+        if (writePath == DescriptorWritePath.PostInsert)
+        {
+            targetLookupService.PostResult = new RelationalWriteTargetLookupResult.CreateNew(documentUuid);
+            sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(46L)]);
+
+            result = await sut.HandlePostAsync(CreatePostRequest(mappingSet, documentUuid));
+        }
+        else if (writePath == DescriptorWritePath.PostAsUpdate)
+        {
+            targetLookupService.PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(
+                345L,
+                documentUuid,
+                44L
+            );
+            sessionFactory.Session.ScalarResults.Enqueue(44L);
+            sessionFactory.Session.Executor.ResultSets.Enqueue([
+                CreatePersistedDescriptorResultSet(description: "Previous Description"),
+            ]);
+            sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(45L)]);
+
+            result = await sut.HandlePostAsync(CreatePostRequest(mappingSet, documentUuid));
+        }
+        else
+        {
+            targetLookupService.PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(
+                345L,
+                documentUuid,
+                44L
+            );
+            sessionFactory.Session.ScalarResults.Enqueue(44L);
+            sessionFactory.Session.Executor.ResultSets.Enqueue([
+                CreatePersistedDescriptorResultSet(description: "Previous Description"),
+            ]);
+            sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(45L)]);
+
+            result = await sut.HandlePutAsync(
+                CreatePutRequest(mappingSet, documentUuid, description: "Updated Description")
+            );
+        }
+
+        result.Should().BeOfType(expectedResultType);
+        sessionFactory.Session.CommitCallCount.Should().Be(1);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+        telemetry.Successes.Should().BeEmpty();
+        telemetry.Failures.Should().ContainSingle();
+        telemetry.Failures[0].RollbackCallCountAtRecord.Should().Be(0);
+        telemetry.Failures[0].Category.Should().Be(DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed);
+        telemetry.Failures[0].Context.TargetKey.Should().Be(TargetKey);
+        telemetry.Failures[0].Context.ProviderToken.Should().Be(RelationalProviderToken.Postgresql);
+        telemetry.Failures[0].Context.CanonicalOperation.Should().Be(expectedOperation);
+        telemetry
+            .Failures[0]
+            .Context.ResourceKind.Should()
+            .Be(DocumentCacheEnqueueTelemetryResourceKind.Descriptor);
+    }
+
     public enum DescriptorWritePath
     {
+        PostInsert,
         PostAsUpdate,
         PutUpdate,
     }
@@ -589,6 +684,8 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
 
         public int RollbackCallCount { get; private set; }
 
+        public DbException? CommitExceptionToThrow { get; set; }
+
         public DbCommand CreateCommand(RelationalCommand command)
         {
             var dbCommand = new RecordingDbCommand(new DataTable().CreateDataReader())
@@ -615,6 +712,11 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         {
             cancellationToken.ThrowIfCancellationRequested();
             CommitCallCount++;
+            if (CommitExceptionToThrow is not null)
+            {
+                throw CommitExceptionToThrow;
+            }
+
             return Task.CompletedTask;
         }
 
