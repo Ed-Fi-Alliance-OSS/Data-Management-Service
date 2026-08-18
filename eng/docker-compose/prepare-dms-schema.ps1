@@ -155,6 +155,25 @@ if (-not (Get-Command Read-RequiredJsonBoolean -ErrorAction SilentlyContinue)) {
 
 if (-not (Get-Command Get-BootstrapRoot -ErrorAction SilentlyContinue)) {
     $script:PrepareBootstrapRoot = Join-Path $PSScriptRoot ".bootstrap"
+    # Mirrors the DMS_BOOTSTRAP_ROOT_OVERRIDE seam in bootstrap-manifest.psm1 (see the override
+    # block there for the contract): the restore flow redirects the prepare phases into a
+    # candidate directory that must live strictly inside eng/docker-compose/.bootstrap-restore/.
+    # This fallback only runs when the module is not loaded (extraction-style test contexts) and
+    # must resolve the same root the module would, with the same strict validation.
+    if (-not [string]::IsNullOrWhiteSpace($env:DMS_BOOTSTRAP_ROOT_OVERRIDE)) {
+        $prepareOverrideValue = $env:DMS_BOOTSTRAP_ROOT_OVERRIDE
+        $prepareRestoreRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".bootstrap-restore"))
+        if (-not [System.IO.Path]::IsPathRooted($prepareOverrideValue)) {
+            throw "DMS_BOOTSTRAP_ROOT_OVERRIDE must be an absolute path strictly inside '$(Format-LogSafeText $prepareRestoreRoot)', got relative path '$(Format-LogSafeText $prepareOverrideValue)'."
+        }
+        $prepareOverrideFullPath = [System.IO.Path]::GetFullPath($prepareOverrideValue).TrimEnd(
+            [System.IO.Path]::DirectorySeparatorChar,
+            [System.IO.Path]::AltDirectorySeparatorChar)
+        if (-not $prepareOverrideFullPath.StartsWith($prepareRestoreRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "DMS_BOOTSTRAP_ROOT_OVERRIDE must point strictly inside '$(Format-LogSafeText $prepareRestoreRoot)' (a restore candidate directory), got '$(Format-LogSafeText $prepareOverrideValue)'."
+        }
+        $script:PrepareBootstrapRoot = $prepareOverrideFullPath
+    }
     $script:PrepareBootstrapManifestPath = Join-Path $script:PrepareBootstrapRoot "bootstrap-manifest.json"
     $script:PrepareWorkspaceMismatchMessage = "Existing staged bootstrap workspace differs from requested inputs, manifest state is incomplete, or files were manually edited (partial prior state). Stop the local stack and remove eng/docker-compose/.bootstrap before retrying. For local Docker, run: pwsh eng/docker-compose/start-local-dms.ps1 -d -v -RemoveBootstrap. E2E teardown wrappers also remove the bootstrap workspace."
     $script:PrepareUtf8NoBom = [System.Text.UTF8Encoding]::new($false)

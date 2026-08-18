@@ -281,6 +281,10 @@ function Invoke-ConfigureLocalDataStore {
         $SeparateConfigDatabase
     )
 
+    # Refuse to run under a leaked restore-candidate override: this phase talks to CMS and the
+    # live data store, and must only ever see the ACTIVE .bootstrap workspace.
+    Assert-NoBootstrapRootOverride -PhaseName "configure-local-data-store.ps1"
+
     $resolvedEnvironmentFile = Resolve-ConfigureEnvironmentFile -Path $EnvironmentFile
     # Compose the MSSQL engine overlay for -DatabaseEngine mssql; this covers direct invocation of
     # this script with a custom -EnvironmentFile (still gets the overlay layered on top) and the

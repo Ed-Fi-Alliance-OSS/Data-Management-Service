@@ -23,9 +23,32 @@ function Get-BootstrapRepoRoot {
 function Get-BootstrapRoot {
     <#
     .SYNOPSIS
-    Absolute path to eng/docker-compose/.bootstrap (staged workspace root).
+    Absolute path to the staged workspace root: eng/docker-compose/.bootstrap, unless the
+    restore-only DMS_BOOTSTRAP_ROOT_OVERRIDE seam redirected this module instance into a
+    candidate directory at import time (see the override block below Format-LogSafePath).
     #>
     return $script:BootstrapRoot
+}
+
+function Assert-NoBootstrapRootOverride {
+    <#
+    .SYNOPSIS
+    Fails fast when DMS_BOOTSTRAP_ROOT_OVERRIDE is set in the process environment. Only the
+    prepare phases may consume the override: the restore flow sets it strictly around candidate
+    creation and clears it in a finally block, so any phase command that talks to Docker, CMS,
+    or a database seeing it means the override leaked - and running would point live services at
+    a half-validated candidate workspace. A blank value counts as absent, matching the override
+    block's own read.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $PhaseName
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($env:DMS_BOOTSTRAP_ROOT_OVERRIDE)) {
+        throw "$PhaseName must not run while DMS_BOOTSTRAP_ROOT_OVERRIDE is set (currently '$(Format-LogSafePath $env:DMS_BOOTSTRAP_ROOT_OVERRIDE)'). The override redirects the bootstrap workspace to a restore candidate and only the prepare phases may consume it; clear the variable and retry."
+    }
 }
 
 function Get-BootstrapWorkspaceMismatchMessage {
@@ -115,6 +138,35 @@ function Format-LogSafePath {
     }
 
     return $builder.ToString()
+}
+
+# DMS_BOOTSTRAP_ROOT_OVERRIDE: restore-only redirection seam. When the database-template
+# restore flow builds a candidate workspace it sets this variable (strictly around the prepare
+# phases, cleared in finally) so prepare-dms-schema.ps1 / prepare-dms-claims.ps1 stage into a
+# candidate directory instead of the active .bootstrap. Validation is deliberately strict and
+# happens at import time so an invalid value can never be half-honored: the value must be an
+# absolute path strictly INSIDE eng/docker-compose/.bootstrap-restore/ (never the workspace root
+# itself, never the active .bootstrap, never an arbitrary location). Every phase command that
+# consumes the active workspace guards itself with Assert-NoBootstrapRootOverride, so a leaked
+# override fails fast instead of pointing live services at a half-validated candidate. A blank
+# value is treated as absent (on some hosts a cleared variable reads back as "").
+$script:BootstrapRestoreWorkspaceRoot = [System.IO.Path]::GetFullPath((Join-Path $script:DockerComposeRoot ".bootstrap-restore"))
+if (-not [string]::IsNullOrWhiteSpace($env:DMS_BOOTSTRAP_ROOT_OVERRIDE)) {
+    $overrideValue = $env:DMS_BOOTSTRAP_ROOT_OVERRIDE
+    if (-not [System.IO.Path]::IsPathRooted($overrideValue)) {
+        throw "DMS_BOOTSTRAP_ROOT_OVERRIDE must be an absolute path strictly inside '$(Format-LogSafePath $script:BootstrapRestoreWorkspaceRoot)', got relative path '$(Format-LogSafePath $overrideValue)'."
+    }
+    # TrimEnd before the containment check: with a trailing separator the workspace root itself
+    # ("...\.bootstrap-restore\") would otherwise start with its own prefix and slip through.
+    $overrideFullPath = [System.IO.Path]::GetFullPath($overrideValue).TrimEnd(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar)
+    $requiredPrefix = $script:BootstrapRestoreWorkspaceRoot + [System.IO.Path]::DirectorySeparatorChar
+    if (-not $overrideFullPath.StartsWith($requiredPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "DMS_BOOTSTRAP_ROOT_OVERRIDE must point strictly inside '$(Format-LogSafePath $script:BootstrapRestoreWorkspaceRoot)' (a restore candidate directory), got '$(Format-LogSafePath $overrideValue)'."
+    }
+    $script:BootstrapRoot = $overrideFullPath
+    $script:BootstrapManifestPath = Join-Path $script:BootstrapRoot "bootstrap-manifest.json"
 }
 
 function New-BootstrapManifest {
@@ -621,6 +673,11 @@ function Invoke-BootstrapStartupConfiguration {
         $AddExtensionSecurityMetadata
     )
 
+    # A leaked restore-candidate override must never reach service startup (or teardown, which
+    # can remove the workspace Get-BootstrapRoot resolves): refuse before any manifest read or
+    # environment activation.
+    Assert-NoBootstrapRootOverride -PhaseName "Startup configuration (start-local-dms.ps1 / start-published-dms.ps1)"
+
     try {
         $bootstrapMode = Set-BootstrapStartupEnvironment -SkipArtifactValidation:$IsTeardown
     } catch {
@@ -687,6 +744,7 @@ function Remove-BootstrapWorkspaceIfRequested {
 Export-ModuleMember -Function `
     Get-BootstrapRepoRoot, `
     Get-BootstrapRoot, `
+    Assert-NoBootstrapRootOverride, `
     Get-BootstrapWorkspaceMismatchMessage, `
     Format-LogSafeText, `
     Format-LogSafePath, `

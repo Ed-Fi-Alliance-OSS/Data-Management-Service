@@ -1355,6 +1355,77 @@ param(
     }
 
     # =========================================================================
+    # DMS-1271 restore-candidate isolation: a non-restore wrapper run resolves
+    # the ACTIVE .bootstrap root everywhere - no phase ever receives a
+    # .bootstrap-restore path in its argv or sees DMS_BOOTSTRAP_ROOT_OVERRIDE.
+    # =========================================================================
+    Context "restore-candidate isolation on non-restore wrapper runs" {
+        BeforeEach {
+            $script:isolationLog = Join-Path $script:repo.RepoRoot "call-log-override-isolation.txt"
+            # Stubs with NO param block: every argument the wrapper passes lands verbatim in
+            # $args, so the recorded line is the full argv - exactly what the isolation claim is
+            # about. The configure stub still returns the result object the wrapper consumes.
+            foreach ($stubName in @(
+                "prepare-dms-schema.ps1",
+                "prepare-dms-claims.ps1",
+                "start-local-dms.ps1",
+                "configure-local-data-store.ps1",
+                "provision-dms-schema.ps1",
+                "load-dms-seed-data.ps1"
+            )) {
+                $resultStatement = if ($stubName -eq "configure-local-data-store.ps1") {
+                    "[pscustomobject]@{ DataStoreIds = [long[]]@([long]42); SelectedDataStoreIds = [long[]]@([long]42); RouteContexts = @(); Tenant = ''; SchoolYears = [int[]]@(); HasRouteQualifiedDataStores = `$false }"
+                }
+                else {
+                    ""
+                }
+                @"
+Add-Content -LiteralPath '$script:isolationLog' -Value "$stubName args=[`$(`$args -join ' ')] override=[`$env:DMS_BOOTSTRAP_ROOT_OVERRIDE]"
+$resultStatement
+"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot $stubName) -Encoding utf8
+            }
+        }
+
+        It "no phase argv references .bootstrap-restore and the override variable is never set, across staging and full runs" {
+            Remove-Item Env:\DMS_BOOTSTRAP_ROOT_OVERRIDE -ErrorAction SilentlyContinue
+
+            # Run 1: fresh checkout - exercises the prepare (staging) phases.
+            & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -InfraOnly
+
+            # Run 2: complete manifest with seed loading - exercises start, configure,
+            # provision, and seed.
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            & $script:repo.WrapperScript `
+                -EnvironmentFile $script:repo.EnvFile `
+                -InfraOnly `
+                -DmsBaseUrl "http://localhost:8080" `
+                -LoadSeedData `
+                -SeedDataPath $script:repo.DockerComposeRoot
+
+            $log = @(Get-Content -LiteralPath $script:isolationLog)
+
+            # Every phase script must have been exercised at least once across the two runs, or
+            # the isolation claim would be vacuous for the missing phase.
+            foreach ($phaseName in @(
+                "prepare-dms-schema.ps1",
+                "prepare-dms-claims.ps1",
+                "start-local-dms.ps1",
+                "configure-local-data-store.ps1",
+                "provision-dms-schema.ps1",
+                "load-dms-seed-data.ps1"
+            )) {
+                $log | Where-Object { $_ -like "$phaseName *" } |
+                    Should -Not -BeNullOrEmpty -Because "phase '$phaseName' must be exercised by the two runs"
+            }
+
+            foreach ($line in $log) {
+                $line.Contains(".bootstrap-restore") | Should -BeFalse -Because "no phase argv may reference a restore-candidate path: $line"
+                $line | Should -BeLike "*override=[[]]" -Because "no phase may run with DMS_BOOTSTRAP_ROOT_OVERRIDE set: $line"
+            }
+        }
+    }
+
+    # =========================================================================
     # R5 - Wrapper -InfraOnly -DmsBaseUrl: call-graph proof
     #   Story Req 2: first start invocation has -InfraOnly but NOT -DmsBaseUrl;
     #   second (health-wait) start invocation carries -DmsBaseUrl;
