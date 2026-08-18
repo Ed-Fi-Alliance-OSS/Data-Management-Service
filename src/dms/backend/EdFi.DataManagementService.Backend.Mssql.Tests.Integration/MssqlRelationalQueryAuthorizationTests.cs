@@ -3519,9 +3519,9 @@ public class Given_A_Mssql_Relational_Query_Authorization_With_The_Authoritative
     public async Task It_composes_the_change_version_window_with_relationship_authorization_filtering()
     {
         // The stamping triggers assign strictly increasing ContentVersion values in insert order, and
-        // minChangeVersion is exclusive. A window after Alpha through Gamma holds authorized Beta
-        // (SchoolId 200) and unauthorized Gamma (SchoolId 300). The window excludes authorized Alpha and
-        // Delta, and authorization excludes in-window Gamma, so only the intersection survives.
+        // minChangeVersion is inclusive. A window from Alpha through Gamma holds authorized Alpha and
+        // Beta (SchoolIds 100 and 200) plus unauthorized Gamma (SchoolId 300). Authorization excludes
+        // in-window Gamma, so the authorized lower-bound intersection survives.
         var alphaSchool = _persistedSchoolsInDocumentOrder[0];
         var betaSchool = _persistedSchoolsInDocumentOrder[1];
         var gammaSchool = _persistedSchoolsInDocumentOrder[2];
@@ -3537,11 +3537,11 @@ public class Given_A_Mssql_Relational_Query_Authorization_With_The_Authoritative
 
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
 
-        success.TotalCount.Should().Be(1);
+        success.TotalCount.Should().Be(2);
         success
             .EdfiDocs.Select(static document => document!["id"]!.GetValue<string>())
             .Should()
-            .Equal(betaSchool.DocumentUuid.ToString());
+            .Equal(alphaSchool.DocumentUuid.ToString(), betaSchool.DocumentUuid.ToString());
 
         var keyset = _context.AssertSingleQueryHydration();
         keyset
