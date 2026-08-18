@@ -53,6 +53,41 @@ BeforeAll {
         }
     }
 
+    function script:New-ForgedAttestation {
+        # Signs an arbitrary payload object with a (trusted) key, bypassing
+        # New-TemplateAttestation's own input validation, so tests can prove the VERIFIER
+        # rejects malformed-but-correctly-signed payloads.
+        param (
+            [Parameter(Mandatory = $true)]
+            $PayloadObject,
+
+            [Parameter(Mandatory = $true)]
+            [string]$PrivateKeyPath
+        )
+
+        $payloadBytes = [System.Text.Encoding]::UTF8.GetBytes(($PayloadObject | ConvertTo-Json -Compress))
+        $ecdsa = [System.Security.Cryptography.ECDsa]::Create()
+        try {
+            $ecdsa.ImportFromPem((Get-Content -LiteralPath $PrivateKeyPath -Raw))
+            $signatureBytes = $ecdsa.SignData($payloadBytes, [System.Security.Cryptography.HashAlgorithmName]::SHA256)
+            $keyId = [System.Convert]::ToHexString(
+                [System.Security.Cryptography.SHA256]::HashData($ecdsa.ExportSubjectPublicKeyInfo())).ToLowerInvariant()
+        }
+        finally {
+            $ecdsa.Dispose()
+        }
+
+        return ([ordered]@{
+                version    = 1
+                payloadB64 = [System.Convert]::ToBase64String($payloadBytes)
+                signature  = [ordered]@{
+                    algorithm = "ECDSA_P256_SHA256"
+                    keyId     = $keyId
+                    valueB64  = [System.Convert]::ToBase64String($signatureBytes)
+                }
+            } | ConvertTo-Json -Depth 5)
+    }
+
     function script:New-TestTrustSetup {
         # One self-consistent trust world: a signing key, a tracked policy trusting it under
         # producer name "local-dev", a fake package file, its hash, and a valid attestation.
@@ -241,6 +276,48 @@ Describe "Read-TemplateTrustPolicy" {
         $badBase64Entry.publicKeys[0].publicKeySpkiB64 = "not base64!!"
         $badBase64 = Write-TrustPolicyFile -Path (Join-Path $workspace "badb64.json") -Producer @($badBase64Entry)
         { Read-TemplateTrustPolicy -TrackedPolicyPath $badBase64 } | Should -Throw "*not valid base64*"
+    }
+
+    It "rejects singleton objects where the policy schema requires JSON arrays" {
+        $workspace = New-TestWorkspace
+        $signingKey = New-TemplateAttestationSigningKey -PrivateKeyPath (Join-Path $workspace "k.pem")
+
+        # producers as a single JSON object rather than an array.
+        $singletonProducersPath = Join-Path $workspace "singleton-producers.json"
+        [ordered]@{ version = 1; producers = (New-DetachedProducerEntry -Name "p" -SigningKey $signingKey) } |
+            ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $singletonProducersPath -Encoding utf8
+        { Read-TemplateTrustPolicy -TrackedPolicyPath $singletonProducersPath } |
+            Should -Throw "*'producers' must be a JSON array*"
+
+        # publicKeys as a single JSON object rather than an array.
+        $singletonKeysPath = Join-Path $workspace "singleton-keys.json"
+        [ordered]@{
+            version   = 1
+            producers = @(
+                [ordered]@{
+                    name       = "p"
+                    provider   = "detached-attestation"
+                    publicKeys = [ordered]@{
+                        keyId            = $signingKey.KeyId
+                        algorithm        = $signingKey.Algorithm
+                        publicKeySpkiB64 = $signingKey.PublicKeySpkiB64
+                    }
+                }
+            )
+        } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $singletonKeysPath -Encoding utf8
+        { Read-TemplateTrustPolicy -TrackedPolicyPath $singletonKeysPath } |
+            Should -Throw "*'publicKeys' must be a JSON array*"
+
+        # certificateFingerprints as a single JSON string rather than an array.
+        $singletonFingerprintPath = Join-Path $workspace "singleton-fingerprint.json"
+        [ordered]@{
+            version   = 1
+            producers = @(
+                [ordered]@{ name = "p"; provider = "nuget-author-signature"; certificateFingerprints = ("a1" * 32) }
+            )
+        } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $singletonFingerprintPath -Encoding utf8
+        { Read-TemplateTrustPolicy -TrackedPolicyPath $singletonFingerprintPath } |
+            Should -Throw "*'certificateFingerprints' must be a JSON array*"
     }
 
     It "loads a schema-reserved nuget-author-signature producer but requires fingerprints" {
@@ -457,6 +534,66 @@ Describe "New-TemplateAttestation and Test-TemplateAttestation round trip" {
             -ExpectedPackageVersion $setup.PackageVersion `
             -TrustPolicy $setup.TrustPolicy
         $verdict.Reason | Should -BeLike "*Unsupported attestation signature algorithm*"
+    }
+
+    It "rejects a correctly signed payload whose attestationVersion is the string '1' rather than the integer 1" {
+        $setup = New-TestTrustSetup
+        $forged = New-ForgedAttestation -PrivateKeyPath $setup.SigningKey.PrivateKeyPath -PayloadObject ([ordered]@{
+                attestationVersion = "1"
+                packageId          = $setup.PackageId
+                packageVersion     = $setup.PackageVersion
+                packageSha256      = $setup.PackageSha256
+                producer           = $setup.ProducerName
+                createdUtc         = "2026-08-18T00:00:00.0000000Z"
+            })
+
+        $verdict = Test-TemplateAttestation `
+            -AttestationJson $forged `
+            -PackageSha256 $setup.PackageSha256 `
+            -ExpectedPackageId $setup.PackageId `
+            -ExpectedPackageVersion $setup.PackageVersion `
+            -TrustPolicy $setup.TrustPolicy
+
+        $verdict.IsTrusted | Should -BeFalse
+        $verdict.Reason | Should -BeLike "*Unsupported attestation payload version '1'*"
+    }
+
+    It "rejects a correctly signed payload whose packageSha256 is uppercase instead of normalizing it into acceptance" {
+        $setup = New-TestTrustSetup
+        $forged = New-ForgedAttestation -PrivateKeyPath $setup.SigningKey.PrivateKeyPath -PayloadObject ([ordered]@{
+                attestationVersion = 1
+                packageId          = $setup.PackageId
+                packageVersion     = $setup.PackageVersion
+                packageSha256      = $setup.PackageSha256.ToUpperInvariant()
+                producer           = $setup.ProducerName
+                createdUtc         = "2026-08-18T00:00:00.0000000Z"
+            })
+
+        $verdict = Test-TemplateAttestation `
+            -AttestationJson $forged `
+            -PackageSha256 $setup.PackageSha256 `
+            -ExpectedPackageId $setup.PackageId `
+            -ExpectedPackageVersion $setup.PackageVersion `
+            -TrustPolicy $setup.TrustPolicy
+
+        $verdict.IsTrusted | Should -BeFalse
+        $verdict.Reason | Should -BeLike "*payload packageSha256 is not a 64-character lowercase hex*"
+    }
+
+    It "rejects a document whose version is the string '1' rather than the integer 1" {
+        $setup = New-TestTrustSetup
+        $document = $setup.AttestationJson | ConvertFrom-Json
+        $document.version = "1"
+
+        $verdict = Test-TemplateAttestation `
+            -AttestationJson ($document | ConvertTo-Json -Depth 5) `
+            -PackageSha256 $setup.PackageSha256 `
+            -ExpectedPackageId $setup.PackageId `
+            -ExpectedPackageVersion $setup.PackageVersion `
+            -TrustPolicy $setup.TrustPolicy
+
+        $verdict.IsTrusted | Should -BeFalse
+        $verdict.Reason | Should -BeLike "*Unsupported attestation document version '1'*"
     }
 
     It "rejects an uppercase or malformed caller-supplied package hash as a caller defect" {

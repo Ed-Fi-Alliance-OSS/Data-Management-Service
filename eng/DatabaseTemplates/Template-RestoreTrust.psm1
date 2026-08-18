@@ -64,6 +64,33 @@ function Get-JsonPropertyValue {
     return $null
 }
 
+function Test-TrustJsonArray {
+    <#
+    .SYNOPSIS
+    Returns $true only when a parsed JSON value is a real array (IList). Policy and
+    attestation contract fields that require arrays must never accept a scalar or a
+    singleton JSON object through permissive @(...) wrapping.
+    #>
+    param (
+        $Value
+    )
+
+    return ($Value -is [System.Collections.IList] -and $Value -isnot [string])
+}
+
+function Test-TrustJsonInteger {
+    <#
+    .SYNOPSIS
+    Returns $true only when a parsed JSON value is a real integer. A loose -ne comparison
+    would coerce a string "1" into passing an integer version gate.
+    #>
+    param (
+        $Value
+    )
+
+    return ($Value -is [int]) -or ($Value -is [long]) -or ($Value -is [short]) -or ($Value -is [byte])
+}
+
 function Get-FileSha256Hex {
     <#
     .SYNOPSIS
@@ -184,10 +211,15 @@ function Read-TrustPolicyDocument {
     if ($null -eq $producersProperty -or $null -eq $producersProperty.Value) {
         throw "Trust policy '$Path' must declare a 'producers' array (empty is allowed and means no trust anchors)."
     }
+    if (-not (Test-TrustJsonArray -Value $producersProperty.Value)) {
+        throw "Trust policy '$Path' 'producers' must be a JSON array, not a single object or scalar."
+    }
 
     $producers = [System.Collections.Generic.List[object]]::new()
-    foreach ($rawProducer in @($producersProperty.Value)) {
-        if ($null -eq $rawProducer) { continue }
+    foreach ($rawProducer in $producersProperty.Value) {
+        if ($null -eq $rawProducer) {
+            throw "Trust policy '$Path' contains a null producer entry."
+        }
 
         $nameProperty = $rawProducer.PSObject.Properties["name"]
         if ($null -eq $nameProperty -or $nameProperty.Value -isnot [string] -or [string]::IsNullOrWhiteSpace($nameProperty.Value)) {
@@ -211,6 +243,9 @@ function Read-TrustPolicyDocument {
             $keysProperty = $rawProducer.PSObject.Properties["publicKeys"]
             $keyEntries = @()
             if ($null -ne $keysProperty -and $null -ne $keysProperty.Value) {
+                if (-not (Test-TrustJsonArray -Value $keysProperty.Value)) {
+                    throw "Trust policy '$Path' producer '$producerName' 'publicKeys' must be a JSON array, not a single object or scalar."
+                }
                 $keyEntries = @($keysProperty.Value)
             }
             if ($keyEntries.Count -eq 0) {
@@ -275,6 +310,9 @@ function Read-TrustPolicyDocument {
             $fingerprintsProperty = $rawProducer.PSObject.Properties["certificateFingerprints"]
             $fingerprintEntries = @()
             if ($null -ne $fingerprintsProperty -and $null -ne $fingerprintsProperty.Value) {
+                if (-not (Test-TrustJsonArray -Value $fingerprintsProperty.Value)) {
+                    throw "Trust policy '$Path' producer '$producerName' 'certificateFingerprints' must be a JSON array, not a single value."
+                }
                 $fingerprintEntries = @($fingerprintsProperty.Value)
             }
             if ($fingerprintEntries.Count -eq 0) {
@@ -485,9 +523,11 @@ function Test-TemplateAttestation {
         return New-AttestationVerdict -IsTrusted $false -Reason "The attestation document is empty."
     }
 
+    # Integer type is required, not just value equality: a loose -ne would coerce a JSON
+    # string "1" into acceptance.
     $documentVersion = Get-JsonPropertyValue -InputObject $document -Name "version"
-    if ($documentVersion -ne $script:SupportedAttestationVersion) {
-        return New-AttestationVerdict -IsTrusted $false -Reason "Unsupported attestation document version '$documentVersion'; only version $($script:SupportedAttestationVersion) is supported."
+    if (-not (Test-TrustJsonInteger -Value $documentVersion) -or $documentVersion -ne $script:SupportedAttestationVersion) {
+        return New-AttestationVerdict -IsTrusted $false -Reason "Unsupported attestation document version '$documentVersion'; only integer version $($script:SupportedAttestationVersion) is supported."
     }
 
     $payloadB64 = [string](Get-JsonPropertyValue -InputObject $document -Name "payloadB64")
@@ -554,11 +594,16 @@ function Test-TemplateAttestation {
     }
 
     $payloadVersion = Get-JsonPropertyValue -InputObject $payload -Name "attestationVersion"
-    if ($payloadVersion -ne $script:SupportedAttestationVersion) {
-        return New-AttestationVerdict -IsTrusted $false -Reason "Unsupported attestation payload version '$payloadVersion'; only version $($script:SupportedAttestationVersion) is supported."
+    if (-not (Test-TrustJsonInteger -Value $payloadVersion) -or $payloadVersion -ne $script:SupportedAttestationVersion) {
+        return New-AttestationVerdict -IsTrusted $false -Reason "Unsupported attestation payload version '$payloadVersion'; only integer version $($script:SupportedAttestationVersion) is supported."
     }
 
-    $payloadSha = ([string](Get-JsonPropertyValue -InputObject $payload -Name "packageSha256")).ToLowerInvariant()
+    # The signed hash must already be in the canonical lowercase form; a signed uppercase
+    # spelling is rejected rather than normalized into acceptance.
+    $payloadSha = [string](Get-JsonPropertyValue -InputObject $payload -Name "packageSha256")
+    if ($payloadSha -cnotmatch "^[0-9a-f]{64}\z") {
+        return New-AttestationVerdict -IsTrusted $false -Reason "The attestation payload packageSha256 is not a 64-character lowercase hex SHA-256."
+    }
     if ($payloadSha -cne $PackageSha256) {
         return New-AttestationVerdict -IsTrusted $false -Reason "The attestation binds package SHA-256 '$payloadSha', which does not match the resolved package bytes ('$PackageSha256'). The package was modified after signing or the attestation belongs to a different package."
     }
