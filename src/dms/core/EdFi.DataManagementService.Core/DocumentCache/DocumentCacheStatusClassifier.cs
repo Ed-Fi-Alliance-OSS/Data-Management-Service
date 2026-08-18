@@ -440,12 +440,6 @@ public static class DocumentCacheStatusClassifier
                     runtimeObservation.Message
                         ?? "Current-generation DocumentCache projection runtime is cancelled."
                 ),
-            DocumentCacheStatusExecutionState.Faulted or DocumentCacheStatusExecutionState.Stopped =>
-                DocumentCacheStatusProcessEligibility.Ineligible(
-                    DocumentCacheStatusReason.RuntimeFaulted,
-                    runtimeObservation.Message
-                        ?? "Current-generation DocumentCache projection runtime is faulted."
-                ),
             DocumentCacheStatusExecutionState.TargetBackoff =>
                 DocumentCacheStatusProcessEligibility.Ineligible(
                     DocumentCacheStatusReason.TargetBackoff,

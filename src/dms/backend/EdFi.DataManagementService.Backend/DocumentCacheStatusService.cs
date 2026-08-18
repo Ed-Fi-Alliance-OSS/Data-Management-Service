@@ -641,8 +641,6 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
                     "Current-generation DocumentCache projection runtime is in target-level backoff.",
                 DocumentCacheStatusExecutionState.Cancelling or DocumentCacheStatusExecutionState.Cancelled =>
                     "Current-generation DocumentCache projection runtime is cancelled.",
-                DocumentCacheStatusExecutionState.Faulted or DocumentCacheStatusExecutionState.Stopped =>
-                    "Current-generation DocumentCache projection runtime is faulted.",
                 _ => null,
             }
         );
@@ -683,8 +681,6 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
                     "Current-generation DocumentCache projection runtime is in target-level backoff.",
                 DocumentCacheStatusExecutionState.Cancelling or DocumentCacheStatusExecutionState.Cancelled =>
                     "Current-generation DocumentCache projection runtime is cancelled.",
-                DocumentCacheStatusExecutionState.Faulted or DocumentCacheStatusExecutionState.Stopped =>
-                    "Current-generation DocumentCache projection runtime is faulted.",
                 _ => null,
             }
         );

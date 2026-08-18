@@ -431,7 +431,6 @@ public class DocumentCacheStatusClassifierTests
             DocumentCacheStatusReason.TargetReplaced,
             DocumentCacheStatusReason.RuntimeNotObserved,
             DocumentCacheStatusReason.RuntimeCancelled,
-            DocumentCacheStatusReason.RuntimeFaulted,
             DocumentCacheStatusReason.TargetBackoff,
         ];
 
@@ -926,15 +925,6 @@ public class DocumentCacheStatusClassifierTests
                 DocumentCacheStatusExecutionState.Cancelled,
                 ProcessObservedAt,
                 message: "Runtime cancelled."
-            );
-        }
-
-        if (reasons.Contains(DocumentCacheStatusReason.RuntimeFaulted))
-        {
-            return new DocumentCacheStatusRuntimeObservation(
-                DocumentCacheStatusExecutionState.Faulted,
-                ProcessObservedAt,
-                message: "Runtime faulted."
             );
         }
 

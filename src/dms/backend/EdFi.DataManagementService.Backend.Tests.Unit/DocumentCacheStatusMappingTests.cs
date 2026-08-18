@@ -23,7 +23,6 @@ public class Given_DocumentCacheStatusMapping
     private static readonly DateTimeOffset ProcessObservedAt = new(2026, 8, 17, 14, 0, 1, TimeSpan.Zero);
     private static readonly DateTimeOffset RuntimeObservedAt = new(2026, 8, 17, 14, 0, 2, TimeSpan.Zero);
     private static readonly DateTimeOffset DurableObservedAt = new(2026, 8, 17, 14, 0, 3, TimeSpan.Zero);
-    private static readonly DocumentCacheTargetKey TargetKey = DocumentCacheTargetKey.Create("", 1);
 
     [Test]
     public async Task It_maps_projection_diagnostics_to_public_categories()
@@ -220,6 +219,161 @@ public class Given_DocumentCacheStatusMapping
         root["executionState"]!["status"]!.GetValue<string>().Should().Be("cancelled");
         statusTarget.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.RuntimeCancelled);
         statusTarget.CaughtUp.Reason.Should().Be(DocumentCacheStatusReason.RuntimeCancelled);
+    }
+
+    [Test]
+    public async Task It_maps_every_public_execution_state_from_reachable_runtime_observations()
+    {
+        DocumentCacheProjectionObservationStore observationStore = new(
+            new FixedTimeProvider(ProcessObservedAt)
+        );
+        List<DocumentCacheTargetObservation> targets = [];
+        List<DocumentCacheTargetExecutionContext> executionContexts = [];
+        Dictionary<int, DocumentCacheStatusExecutionState> expectedByDataStoreId = [];
+
+        AddTarget(
+            dataStoreId: 1,
+            expectedState: DocumentCacheStatusExecutionState.NotObserved,
+            executionState: null,
+            observeRuntime: false
+        );
+        AddTarget(
+            dataStoreId: 2,
+            expectedState: DocumentCacheStatusExecutionState.Idle,
+            executionState: new DocumentCacheProjectionExecutionStateSnapshot(
+                isRunning: false,
+                isActivelyProcessing: false,
+                isWaitingForWorkerGate: false,
+                isInBackoff: false,
+                backoffUntil: null,
+                cancellationRequested: false,
+                cancellationObservedAt: null
+            )
+        );
+        AddTarget(
+            dataStoreId: 3,
+            expectedState: DocumentCacheStatusExecutionState.WaitingForPoll,
+            executionState: new DocumentCacheProjectionExecutionStateSnapshot(
+                isRunning: true,
+                isActivelyProcessing: false,
+                isWaitingForWorkerGate: false,
+                isInBackoff: false,
+                backoffUntil: null,
+                cancellationRequested: false,
+                cancellationObservedAt: null
+            )
+        );
+        AddTarget(
+            dataStoreId: 4,
+            expectedState: DocumentCacheStatusExecutionState.WaitingForConcurrency,
+            executionState: new DocumentCacheProjectionExecutionStateSnapshot(
+                isRunning: true,
+                isActivelyProcessing: false,
+                isWaitingForWorkerGate: true,
+                isInBackoff: false,
+                backoffUntil: null,
+                cancellationRequested: false,
+                cancellationObservedAt: null
+            )
+        );
+        AddTarget(
+            dataStoreId: 5,
+            expectedState: DocumentCacheStatusExecutionState.Active,
+            executionState: new DocumentCacheProjectionExecutionStateSnapshot(
+                isRunning: true,
+                isActivelyProcessing: true,
+                isWaitingForWorkerGate: false,
+                isInBackoff: false,
+                backoffUntil: null,
+                cancellationRequested: false,
+                cancellationObservedAt: null
+            )
+        );
+        AddTarget(
+            dataStoreId: 6,
+            expectedState: DocumentCacheStatusExecutionState.TargetBackoff,
+            executionState: new DocumentCacheProjectionExecutionStateSnapshot(
+                isRunning: true,
+                isActivelyProcessing: false,
+                isWaitingForWorkerGate: false,
+                isInBackoff: true,
+                backoffUntil: RuntimeObservedAt.AddSeconds(30),
+                cancellationRequested: false,
+                cancellationObservedAt: null
+            )
+        );
+        AddTarget(
+            dataStoreId: 7,
+            expectedState: DocumentCacheStatusExecutionState.Cancelling,
+            executionState: new DocumentCacheProjectionExecutionStateSnapshot(
+                isRunning: true,
+                isActivelyProcessing: false,
+                isWaitingForWorkerGate: false,
+                isInBackoff: false,
+                backoffUntil: null,
+                cancellationRequested: true,
+                cancellationObservedAt: null
+            )
+        );
+        AddTarget(
+            dataStoreId: 8,
+            expectedState: DocumentCacheStatusExecutionState.Cancelled,
+            executionState: new DocumentCacheProjectionExecutionStateSnapshot(
+                isRunning: true,
+                isActivelyProcessing: false,
+                isWaitingForWorkerGate: false,
+                isInBackoff: false,
+                backoffUntil: null,
+                cancellationRequested: true,
+                cancellationObservedAt: RuntimeObservedAt
+            )
+        );
+        DocumentCacheStatusService service = CreateService(
+            new StaticTargetRegistry(targets, executionContexts),
+            observationStore
+        );
+
+        DocumentCacheStatusTarget[] statusTargets = (await service.GetStatusAsync()).Targets.ToArray();
+
+        statusTargets
+            .Select(target => target.ExecutionState.Status)
+            .Should()
+            .Equal(expectedByDataStoreId.OrderBy(pair => pair.Key).Select(pair => pair.Value));
+        statusTargets
+            .Select(target => JsonSerializer.Serialize(target.ExecutionState.Status))
+            .Should()
+            .Equal(
+                "\"notObserved\"",
+                "\"idle\"",
+                "\"waitingForPoll\"",
+                "\"waitingForConcurrency\"",
+                "\"active\"",
+                "\"targetBackoff\"",
+                "\"cancelling\"",
+                "\"cancelled\""
+            );
+
+        void AddTarget(
+            int dataStoreId,
+            DocumentCacheStatusExecutionState expectedState,
+            DocumentCacheProjectionExecutionStateSnapshot? executionState,
+            bool observeRuntime = true
+        )
+        {
+            DocumentCacheTargetObservation target = ResolvedTarget(
+                generation: dataStoreId,
+                dataStoreId: dataStoreId
+            );
+
+            targets.Add(target);
+            executionContexts.Add(ExecutionContext(target));
+            expectedByDataStoreId.Add(dataStoreId, expectedState);
+
+            if (observeRuntime)
+            {
+                observationStore.ObserveTarget(TargetHealth(target, executionState: executionState));
+            }
+        }
     }
 
     [Test]
@@ -443,9 +597,13 @@ public class Given_DocumentCacheStatusMapping
             phaseDiagnostics: []
         );
 
-    private static DocumentCacheTargetObservation ResolvedTarget(long generation, int pageSize = 10) =>
+    private static DocumentCacheTargetObservation ResolvedTarget(
+        long generation,
+        int pageSize = 10,
+        int dataStoreId = 1
+    ) =>
         DocumentCacheTargetObservation.ResolvedEligible(
-            TargetKey,
+            DocumentCacheTargetKey.Create("", dataStoreId),
             new DocumentCacheTargetEffectiveSettings(
                 readAccelerationEnabled: true,
                 directFillTimeout: TimeSpan.FromSeconds(2),

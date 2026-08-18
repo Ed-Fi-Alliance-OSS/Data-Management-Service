@@ -337,9 +337,8 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   `lifecycle.availability` is `available`, `unavailable`, or `unknown`.
   `cacheAhead.state` is `clear`, `recoveryRequired`, or `unknown`.
   `queueSummary.presence` is `empty`, `notEmpty`, `unknown`, or `unavailable`.
-  `executionState.status` is `notObserved`, `starting`, `idle`, `waitingForPoll`,
-  `waitingForConcurrency`, `active`, `targetBackoff`, `cancelling`, `cancelled`,
-  `faulted`, or `stopped`.
+  `executionState.status` is `notObserved`, `idle`, `waitingForPoll`,
+  `waitingForConcurrency`, `active`, `targetBackoff`, `cancelling`, or `cancelled`.
 - When present, `activeCommand` has `command`, `phase`, `status`, `startedAt`,
   `observedAt`, `message`, and `phaseDiagnostics`. Command values reuse the shared
   administrative command JSON enum values, not status-only aliases:
@@ -415,8 +414,8 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
 - Skip the provider current-source statement unless process eligibility is otherwise
   satisfied for the current target generation: resolved target, compatible provider
   metadata, valid inventory and enqueue-trigger observation, satisfied provider
-  prerequisites, and a current running/unfaulted runtime observation with no active
-  target-level backoff. For targets already known non-operational or unknown from 18-01 or
+  prerequisites, and a current runtime observation with no active target-level backoff. For
+  targets already known non-operational or unknown from 18-01 or
   18-04 process facts, serialize current durable-state, queue, oldest-work, and
   `durableObservedAt` fields as unavailable and use the process-eligibility reason for
   `operationalHealth` and `caughtUp`. Do not reuse an earlier durable success to fill those
@@ -454,7 +453,7 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
 - Process eligibility is composed from the current 18-01 target observation and the
   current-generation 18-04 runtime observation. A resolved target must have satisfied
   inventory, satisfied enqueue-trigger validation, provider-compatible metadata,
-  satisfied provider prerequisites, and a current running/unfaulted execution context.
+  satisfied provider prerequisites, and a current execution context.
 - Keep `operationalHealth.reason` and `caughtUp.reason` as single fixed-enum values
   selected by deterministic precedence. Additional simultaneous facts belong in bounded
   diagnostics arrays and component fields, not in multi-reason status values.
@@ -464,8 +463,8 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   `effectiveSchemaCompatibilityFailure`, `resourceKeyCompatibilityFailure`,
   `inventoryInvalid`, `enqueueTriggerUnavailable`, SQL Server prerequisite reasons
   `sqlServerPrerequisiteFailed` then `unsupportedPrerequisiteIncident`, `targetRemoved`,
-  `targetReplaced`, `runtimeNotObserved`, `runtimeCancelled`, `runtimeFaulted`,
-  `targetBackoff`, then `statusEndpointTimeout` as `unknown` when process eligibility
+  `targetReplaced`, `runtimeNotObserved`, `runtimeCancelled`, `targetBackoff`, then
+  `statusEndpointTimeout` as `unknown` when process eligibility
   otherwise passed but the endpoint budget prevented the target's durable observation from
   starting or completing, then `statusObservationTimeout` as `unknown` when process
   eligibility otherwise passed but the per-target status-observation timeout expired while
@@ -502,8 +501,8 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   from direct fill/cache read or deterministic writer invariant failures, are reported as
   bounded target diagnostics and metrics, but they do not directly change
   `operationalHealth.status`. They affect operational health only when the
-  current-generation runtime observation has actually faulted, cancelled, or put the target
-  into target-level provider backoff.
+  current-generation runtime observation has actually cancelled or put the target into
+  target-level provider backoff.
 - Last-ended target diagnostics and active administrative command observations are reported
   for operator context, but only current-generation target observations contribute to
   operational health and caught-up status. Public `activeCommand` and last-ended command

@@ -208,6 +208,24 @@ public class DocumentCacheStatusContractTests
         }
 
         [Test]
+        public void It_should_advertise_only_reachable_execution_state_values()
+        {
+            Enum.GetValues<DocumentCacheStatusExecutionState>()
+                .Select(value => JsonSerializer.Serialize(value))
+                .Should()
+                .Equal(
+                    "\"notObserved\"",
+                    "\"idle\"",
+                    "\"waitingForPoll\"",
+                    "\"waitingForConcurrency\"",
+                    "\"active\"",
+                    "\"targetBackoff\"",
+                    "\"cancelling\"",
+                    "\"cancelled\""
+                );
+        }
+
+        [Test]
         public void It_should_serialize_effective_settings_without_required_role_or_administration_settings()
         {
             DocumentCacheTargetEffectiveSettings targetEffectiveSettings = new(

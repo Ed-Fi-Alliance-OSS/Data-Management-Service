@@ -65,7 +65,6 @@ public enum DocumentCacheStatusReason
     TargetReplaced,
     RuntimeNotObserved,
     RuntimeCancelled,
-    RuntimeFaulted,
     TargetBackoff,
     StatusEndpointTimeout,
     StatusObservationTimeout,
@@ -190,7 +189,6 @@ public enum DocumentCacheStatusBacklogEstimateKind
 public enum DocumentCacheStatusExecutionState
 {
     NotObserved,
-    Starting,
     Idle,
     WaitingForPoll,
     WaitingForConcurrency,
@@ -198,8 +196,6 @@ public enum DocumentCacheStatusExecutionState
     TargetBackoff,
     Cancelling,
     Cancelled,
-    Faulted,
-    Stopped,
 }
 
 [JsonConverter(typeof(LowerCamelJsonStringEnumConverter<DocumentCacheStatusActiveCommandStatus>))]
