@@ -92,6 +92,15 @@ function Resolve-RestoreTemplatePackageIdentity {
     }
     $packageId = $packageId.Remove($engineMatches[0].Index, $engineMatches[0].Length).Insert($engineMatches[0].Index, ".Template.$engineToken.")
 
+    # The trailing id segment is the Data Standard version the package encodes (e.g.
+    # EdFi.Api.Minimal.Template.PostgreSql.5.2.0 -> 5.2.0). It is extracted with the same
+    # strict grammar as the kind/engine segments so the manifest's dataStandardVersion can be
+    # proven against it - a distinct concept from the package's own NuGet version.
+    $dataStandardVersion = $packageId.Substring($engineMatches[0].Index + ".Template.$engineToken.".Length)
+    if ($dataStandardVersion -cnotmatch '^\d+(\.\d+)+\z') {
+        throw "DATABASE_TEMPLATE_PACKAGE '$basePackageId' must end with the Data Standard version segment after the engine token (e.g. '...Template.PostgreSql.5.2.0'), but found '$dataStandardVersion'."
+    }
+
     $packageVersion = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvironmentValues -Name "DATABASE_TEMPLATE_NUGET_VERSION"
     if ([string]::IsNullOrWhiteSpace($packageVersion)) {
         if ($RequireNugetVersion) {
@@ -104,8 +113,9 @@ function Resolve-RestoreTemplatePackageIdentity {
     }
 
     return [pscustomobject]@{
-        PackageId      = $packageId
-        PackageVersion = $packageVersion
+        PackageId           = $packageId
+        PackageVersion      = $packageVersion
+        DataStandardVersion = $dataStandardVersion
     }
 }
 
@@ -214,12 +224,13 @@ function Find-RestoreTemplatePackage {
         }
 
         return [pscustomobject]@{
-            PackageId         = $identity.PackageId
-            PackageVersion    = $packageVersion
-            PackagePath       = $packageFile.FullName
-            AttestationJson   = (Get-Content -LiteralPath $attestationPath -Raw)
-            AttestationSource = $attestationPath
-            DownloadDirectory = $null
+            PackageId           = $identity.PackageId
+            PackageVersion      = $packageVersion
+            DataStandardVersion = $identity.DataStandardVersion
+            PackagePath         = $packageFile.FullName
+            AttestationJson     = (Get-Content -LiteralPath $attestationPath -Raw)
+            AttestationSource   = $attestationPath
+            DownloadDirectory   = $null
         }
     }
 
@@ -253,12 +264,13 @@ function Find-RestoreTemplatePackage {
         }
 
         return [pscustomobject]@{
-            PackageId         = $identity.PackageId
-            PackageVersion    = $identity.PackageVersion
-            PackagePath       = $packagePath
-            AttestationJson   = (Get-Content -LiteralPath $attestationPath -Raw)
-            AttestationSource = $attestationPath
-            DownloadDirectory = $null
+            PackageId           = $identity.PackageId
+            PackageVersion      = $identity.PackageVersion
+            DataStandardVersion = $identity.DataStandardVersion
+            PackagePath         = $packagePath
+            AttestationJson     = (Get-Content -LiteralPath $attestationPath -Raw)
+            AttestationSource   = $attestationPath
+            DownloadDirectory   = $null
         }
     }
 
@@ -298,12 +310,13 @@ function Find-RestoreTemplatePackage {
         }
 
         return [pscustomobject]@{
-            PackageId         = $identity.PackageId
-            PackageVersion    = $identity.PackageVersion
-            PackagePath       = $packagePath
-            AttestationJson   = (Get-Content -LiteralPath $attestationFiles[0].FullName -Raw)
-            AttestationSource = "$companionPackageId@$($identity.PackageVersion)"
-            DownloadDirectory = $downloadDirectory
+            PackageId           = $identity.PackageId
+            PackageVersion      = $identity.PackageVersion
+            DataStandardVersion = $identity.DataStandardVersion
+            PackagePath         = $packagePath
+            AttestationJson     = (Get-Content -LiteralPath $attestationFiles[0].FullName -Raw)
+            AttestationSource   = "$companionPackageId@$($identity.PackageVersion)"
+            DownloadDirectory   = $downloadDirectory
         }
     }
     catch {
@@ -364,8 +377,10 @@ function Assert-TrustedRestorePackage {
 function Assert-RestoreManifestMatchesRequest {
     <#
     .SYNOPSIS
-    Fails unless a (shape-valid) restore manifest declares exactly the engine and template
-    kind this restore run selected. The shape contract already pins the fixed
+    Fails unless a (shape-valid) restore manifest declares exactly the engine, template
+    kind, and Data Standard version this restore run selected - the Data Standard version
+    being the one the resolved package id encodes in its trailing segment, a distinct
+    concept from the package's own NuGet version. The shape contract already pins the fixed
     DmsDatastoreOnly content profile and every field type.
     #>
     param (
@@ -378,7 +393,10 @@ function Assert-RestoreManifestMatchesRequest {
 
         [Parameter(Mandatory = $true)]
         [ValidateSet("Minimal", "Populated")]
-        [string]$RestoreTemplate
+        [string]$RestoreTemplate,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DataStandardVersion
     )
 
     if ([string]$Manifest.databaseEngine -cne $DatabaseEngine) {
@@ -386,6 +404,9 @@ function Assert-RestoreManifestMatchesRequest {
     }
     if ([string]$Manifest.templateKind -cne $RestoreTemplate) {
         throw "The restore manifest declares templateKind '$($Manifest.templateKind)' but this restore requested '$RestoreTemplate'."
+    }
+    if (-not ([string]$Manifest.dataStandardVersion).Equals($DataStandardVersion, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Data Standard mismatch: the restore manifest declares dataStandardVersion '$($Manifest.dataStandardVersion)' but the resolved package id encodes Data Standard '$DataStandardVersion'. This is a Data Standard problem, not a package (NuGet) version problem."
     }
 }
 
@@ -452,7 +473,7 @@ function Initialize-RestorePackageStage {
         }
         $manifest = Read-RestoreManifest -Path $manifestFiles[0].FullName
 
-        Assert-RestoreManifestMatchesRequest -Manifest $manifest -DatabaseEngine $DatabaseEngine -RestoreTemplate $RestoreTemplate
+        Assert-RestoreManifestMatchesRequest -Manifest $manifest -DatabaseEngine $DatabaseEngine -RestoreTemplate $RestoreTemplate -DataStandardVersion $Package.DataStandardVersion
 
         # Identity triangle: the request, the manifest, and the nuspec must all agree on the
         # package id and version.
