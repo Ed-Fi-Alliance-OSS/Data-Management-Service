@@ -52,7 +52,7 @@ public class Given_CdcConnectorTemplateIntegrationBoundaries
         result.RedactedArtifactPayload.Should().NotBeNull();
         result
             .RedactedArtifactPayload!.FileName.Should()
-            .Be(new CdcSafeName("cdc-connector-template.sqlserver.manifest.json"));
+            .Be(new CdcSafeName("cdc-connector-template.sqlserver.dms_binding_connector.manifest.json"));
         result.SchemaHistoryTopicName.Should().Be("edfi.documents.schema-history");
         result.Config.Should().Contain("name", request.ConnectorName.Value);
         result

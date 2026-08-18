@@ -35,13 +35,14 @@ internal static class CdcConnectorTemplateTestData
         IReadOnlyList<CdcExpectedMessageKeyColumns>? expectedMessageKeyColumns = null,
         string heartbeatSql = "select 1",
         CdcProviderSetupOutcome outcome = CdcProviderSetupOutcome.CreatedOrMatched,
-        CdcSourceFingerprint? fingerprint = null
+        CdcSourceFingerprint? fingerprint = null,
+        string connectorName = "dms_binding_connector"
     )
     {
         CdcSourceFingerprint physicalSourceFingerprint = fingerprint ?? SourceFingerprintFor(provider);
 
         return new CdcConnectorTemplateRequest(
-            BuildBinding(provider, fingerprint: physicalSourceFingerprint),
+            BuildBinding(provider, fingerprint: physicalSourceFingerprint, connectorName: connectorName),
             new CdcConnectorProviderSetupEvidence(
                 BindingGeneration,
                 BuildProviderSetupResult(
@@ -92,11 +93,12 @@ internal static class CdcConnectorTemplateTestData
         CdcProvider provider,
         long bindingGeneration = BindingGeneration,
         string partitionerAlgorithm = CdcConnectorTemplateBindingIdentity.KafkaMurmur2V1PartitionerAlgorithm,
-        CdcSourceFingerprint? fingerprint = null
+        CdcSourceFingerprint? fingerprint = null,
+        string connectorName = "dms_binding_connector"
     ) =>
         new(
             provider,
-            new CdcSafeName("dms_binding_connector"),
+            new CdcSafeName(connectorName),
             "edfi.documents",
             bindingGeneration,
             partitionerAlgorithm,

@@ -53,7 +53,9 @@ public class Given_CdcConnectorTemplateArtifacts
 
         using var _ = new AssertionScope();
         result.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
-        payload.FileName.Should().Be(new CdcSafeName("cdc-connector-template.postgresql.manifest.json"));
+        payload
+            .FileName.Should()
+            .Be(new CdcSafeName("cdc-connector-template.postgresql.dms_binding_connector.manifest.json"));
         root.EnumerateObject()
             .Select(property => property.Name)
             .Should()
@@ -156,7 +158,9 @@ public class Given_CdcConnectorTemplateArtifacts
 
         using var _ = new AssertionScope();
         result.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
-        payload.FileName.Should().Be(new CdcSafeName("cdc-connector-template.sqlserver.manifest.json"));
+        payload
+            .FileName.Should()
+            .Be(new CdcSafeName("cdc-connector-template.sqlserver.dms_binding_connector.manifest.json"));
         File.Exists(manifestPath).Should().BeTrue();
         File.ReadAllText(manifestPath).Should().Be(payload.Json);
         root.GetProperty("provider").GetString().Should().Be("sqlserver");
@@ -183,6 +187,73 @@ public class Given_CdcConnectorTemplateArtifacts
             .GetString()
             .Should()
             .Be("[redacted]");
+    }
+
+    [Test]
+    public void It_writes_same_provider_manifest_files_by_connector_name_without_overwriting()
+    {
+        string artifactDirectory = Path.Combine(
+            TestContext.CurrentContext.WorkDirectory,
+            $"cdc-connector-template-artifacts-{Guid.NewGuid():N}"
+        );
+        var artifactOutput = new CdcConnectorTemplateArtifactOutputRequest(
+            includeRedactedArtifactPayload: false,
+            manifestOutputDirectoryPath: artifactDirectory
+        );
+
+        CdcConnectorTemplateResult first = Render(
+            BuildRequest(
+                CdcProvider.Postgresql,
+                artifactOutput: artifactOutput,
+                connectorName: "dms_binding_connector"
+            )
+        );
+        CdcConnectorTemplateResult second = Render(
+            BuildRequest(
+                CdcProvider.Postgresql,
+                artifactOutput: artifactOutput,
+                connectorName: "dms_second_binding_connector"
+            )
+        );
+
+        string firstManifestFileName =
+            "cdc-connector-template.postgresql.dms_binding_connector.manifest.json";
+        string secondManifestFileName =
+            "cdc-connector-template.postgresql.dms_second_binding_connector.manifest.json";
+        string firstManifestPath = Path.Combine(artifactDirectory, firstManifestFileName);
+        string secondManifestPath = Path.Combine(artifactDirectory, secondManifestFileName);
+        using JsonDocument firstDocument = JsonDocument.Parse(File.ReadAllText(firstManifestPath));
+        using JsonDocument secondDocument = JsonDocument.Parse(File.ReadAllText(secondManifestPath));
+
+        using var _ = new AssertionScope();
+        first.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        second.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        first.RedactedArtifactPayload.Should().NotBeNull();
+        second.RedactedArtifactPayload.Should().NotBeNull();
+        first.RedactedArtifactPayload!.FileName.Should().Be(new CdcSafeName(firstManifestFileName));
+        second.RedactedArtifactPayload!.FileName.Should().Be(new CdcSafeName(secondManifestFileName));
+        File.Exists(firstManifestPath).Should().BeTrue();
+        File.Exists(secondManifestPath).Should().BeTrue();
+        File.ReadAllText(firstManifestPath).Should().Be(first.RedactedArtifactPayload.Json);
+        File.ReadAllText(secondManifestPath).Should().Be(second.RedactedArtifactPayload.Json);
+        firstDocument
+            .RootElement.GetProperty("connectorName")
+            .GetString()
+            .Should()
+            .Be("dms_binding_connector");
+        secondDocument
+            .RootElement.GetProperty("connectorName")
+            .GetString()
+            .Should()
+            .Be("dms_second_binding_connector");
+        Directory
+            .GetFiles(artifactDirectory, "cdc-connector-template.postgresql.*.manifest.json")
+            .Select(Path.GetFileName)
+            .Should()
+            .BeEquivalentTo(firstManifestFileName, secondManifestFileName);
+        File.Exists(Path.Combine(artifactDirectory, "cdc-connector-template.postgresql.manifest.json"))
+            .Should()
+            .BeFalse();
     }
 
     [Test]

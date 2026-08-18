@@ -498,7 +498,7 @@ public class Given_CdcConnectorTemplateContracts
         };
         var registrationPayload = new CdcKafkaConnectRegistrationPayload(binding.ConnectorName, config);
         var artifactPayload = new CdcConnectorTemplateArtifactPayload(
-            new CdcSafeName("cdc-connector-template.sqlserver.manifest.json"),
+            new CdcSafeName("cdc-connector-template.sqlserver.dms_binding_connector.manifest.json"),
             """{"redactedConfig":{"database.password":"[redacted]"}}"""
         );
         var diagnostic = new CdcConnectorTemplateDiagnostic(
