@@ -2073,7 +2073,104 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().Contain("SET r.[ContentVersion] = s.[ContentVersion],");
         _ddl.Should().Contain("r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]");
         _ddl.Should().Contain("FROM [dms].[Descriptor] r");
-        _ddl.Should().Contain("INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];");
+        // Unterminated: the recompile hint terminates the mirror UPDATE, so the join no longer
+        // carries the semicolon. The hint's position is asserted by index rather than by embedding a
+        // newline and indentation in the literal.
+        _ddl.Should().Contain("INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]");
+
+        var triggerBody = ExtractMssqlTriggerBody(_ddl, "TR_Descriptor_Stamp_Document");
+        var mirrorJoinStart = triggerBody.IndexOf(
+            "INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]",
+            StringComparison.Ordinal
+        );
+        mirrorJoinStart.Should().BeGreaterOrEqualTo(0);
+        triggerBody
+            .IndexOf("OPTION (RECOMPILE);", StringComparison.Ordinal)
+            .Should()
+            .BeGreaterThan(
+                mirrorJoinStart,
+                "the recompile hint must terminate the descriptor mirror UPDATE, after its join"
+            );
+    }
+
+    /// <summary>
+    /// The whole guard predicate as one literal, so the NOT EXISTS disjunct cannot go missing:
+    /// UPDATE() is false for every column on a DELETE, so without it the guard would skip the delete
+    /// branch and descriptor deletes would silently stop stamping. The disjunction covers exactly the
+    /// stored columns the affectedDocs value diff uses.
+    /// </summary>
+    [Test]
+    public void It_should_guard_the_descriptor_content_stamp_with_a_deleted_probe_and_stored_column_prefilter()
+    {
+        ExtractMssqlTriggerBody(_ddl, "TR_Descriptor_Stamp_Document")
+            .Should()
+            .Contain(
+                "IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) "
+                    + "OR UPDATE([Namespace]) OR UPDATE([CodeValue]) OR UPDATE([ShortDescription]) "
+                    + "OR UPDATE([Description]) OR UPDATE([EffectiveBeginDate]) "
+                    + "OR UPDATE([EffectiveEndDate]) OR UPDATE([Discriminator]) OR UPDATE([Uri]))"
+            );
+    }
+
+    /// <summary>
+    /// The stamp columns are stamp targets rather than client content, and ResourceKeyId is immutable
+    /// and denormalized at insert - both are excluded from the no-op diff, so both must stay out of the
+    /// pre-filter that shadows it.
+    /// </summary>
+    [Test]
+    public void It_should_not_prefilter_the_descriptor_content_stamp_on_stamp_or_immutable_columns()
+    {
+        var triggerBody = ExtractMssqlTriggerBody(_ddl, "TR_Descriptor_Stamp_Document");
+
+        triggerBody.Should().NotContain("UPDATE([ContentVersion])");
+        triggerBody.Should().NotContain("UPDATE([ContentLastModifiedAt])");
+        triggerBody.Should().NotContain("UPDATE([ResourceKeyId])");
+    }
+
+    [Test]
+    public void It_should_place_the_descriptor_affected_docs_workset_inside_the_guard()
+    {
+        var triggerBody = ExtractMssqlTriggerBody(_ddl, "TR_Descriptor_Stamp_Document");
+
+        var resourceKeyGuardStart = triggerBody.IndexOf(
+            "WHERE i.[ResourceKeyId] <> d.[ResourceKeyId]",
+            StringComparison.Ordinal
+        );
+        var stampedPrepopulationStart = triggerBody.IndexOf(
+            "INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])",
+            StringComparison.Ordinal
+        );
+        var guardStart = triggerBody.IndexOf(
+            "IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE(",
+            StringComparison.Ordinal
+        );
+        var worksetStart = triggerBody.IndexOf(";WITH affectedDocs AS (", StringComparison.Ordinal);
+        var documentUpdateStart = triggerBody.IndexOf(
+            "INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];",
+            StringComparison.Ordinal
+        );
+        var mirrorGuardStart = triggerBody.IndexOf(
+            "IF EXISTS (SELECT 1 FROM @stamped)",
+            StringComparison.Ordinal
+        );
+
+        guardStart.Should().BeGreaterThan(0);
+
+        // Both of these must keep running for a pure INSERT, which the guard skips: the divergence
+        // check is a correctness gate, and the pre-population is what carries the document's existing
+        // stamps into the mirror.
+        resourceKeyGuardStart
+            .Should()
+            .BeInRange(0, guardStart, "the ResourceKeyId divergence check must stay outside the guard");
+        stampedPrepopulationStart
+            .Should()
+            .BeInRange(0, guardStart, "@stamped pre-population must stay outside the guard");
+
+        worksetStart.Should().BeGreaterThan(guardStart);
+        documentUpdateStart.Should().BeGreaterThan(worksetStart);
+        mirrorGuardStart
+            .Should()
+            .BeGreaterThan(documentUpdateStart, "the mirror stamp must follow the guarded block");
     }
 
     [Test]
