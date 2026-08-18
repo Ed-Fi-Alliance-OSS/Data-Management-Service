@@ -1,0 +1,5 @@
+{
+  "_comment": "Trust anchors for database-template restore (DMS bootstrap). Restore authenticates the exact template .nupkg bytes against these producers before any extraction, Docker startup, or database work; an empty producers list means restore fails closed for every package. Local development signers register in the git-ignored template-trust-policy.local.json overlay via eng/DatabaseTemplates/new-template-dev-trust.ps1; the shared CI producer entry is added here in a reviewed commit.",
+  "version": 1,
+  "producers": []
+}

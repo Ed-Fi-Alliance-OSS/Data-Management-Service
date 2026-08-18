@@ -65,6 +65,14 @@ artifacts/
 eng/docker-compose/.bootstrap/
 eng/docker-compose/.derived/
 eng/docker-compose/.env.perf-hostpg
+
+# Database-template restore trust artifacts: local signer keys, the operator-local
+# trust-policy overlay, detached attestation documents, and the transient companion
+# attestation-package workspace. Private key material must never be committed.
+eng/DatabaseTemplates/.dev-trust/
+eng/docker-compose/template-trust-policy.local.json
+*.nupkg.attestation.json
+.attestation-package/
 .dms-dotnet-diagnostics/
 
 # Local data-load credentials
