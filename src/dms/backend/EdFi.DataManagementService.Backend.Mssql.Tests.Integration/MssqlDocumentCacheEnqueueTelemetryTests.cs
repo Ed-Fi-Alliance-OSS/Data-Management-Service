@@ -19,7 +19,8 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [Category(MssqlCiShards.Shard4)]
 public class Given_Mssql_DocumentCacheEnqueueTelemetry
 {
-    private readonly MssqlRelationalWriteExceptionClassifier _writeExceptionClassifier = new();
+    private readonly MssqlDocumentCacheProviderCommandTimeoutClassifier _providerCommandTimeoutClassifier =
+        new();
 
     [Test]
     public void It_classifies_projection_work_foreign_key_failures_as_work_persistence_failures()
@@ -31,7 +32,7 @@ public class Given_Mssql_DocumentCacheEnqueueTelemetry
 
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             exception,
-            _writeExceptionClassifier,
+            _providerCommandTimeoutClassifier,
             out DocumentCacheEnqueueFailureCategory category,
             out string message
         );
@@ -51,7 +52,7 @@ public class Given_Mssql_DocumentCacheEnqueueTelemetry
 
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             exception,
-            _writeExceptionClassifier,
+            _providerCommandTimeoutClassifier,
             out DocumentCacheEnqueueFailureCategory category,
             out string message
         );
@@ -73,7 +74,7 @@ public class Given_Mssql_DocumentCacheEnqueueTelemetry
 
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             exception,
-            _writeExceptionClassifier,
+            _providerCommandTimeoutClassifier,
             out DocumentCacheEnqueueFailureCategory category,
             out _
         );
@@ -85,7 +86,7 @@ public class Given_Mssql_DocumentCacheEnqueueTelemetry
     [TestCase(1205)]
     [TestCase(1222)]
     [TestCase(3960)]
-    public void It_classifies_transient_enqueue_artifact_failures_as_provider_timeouts(int errorNumber)
+    public void It_classifies_transient_projection_work_failures_as_work_persistence_failures(int errorNumber)
     {
         SqlException exception = CreateSqlException(
             errorNumber,
@@ -94,7 +95,26 @@ public class Given_Mssql_DocumentCacheEnqueueTelemetry
 
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             exception,
-            _writeExceptionClassifier,
+            _providerCommandTimeoutClassifier,
+            out DocumentCacheEnqueueFailureCategory category,
+            out _
+        );
+
+        classified.Should().BeTrue();
+        category.Should().Be(DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed);
+    }
+
+    [Test]
+    public void It_classifies_provider_command_timeouts_with_enqueue_artifacts_as_provider_timeouts()
+    {
+        SqlException exception = CreateSqlException(
+            -2,
+            "Execution Timeout Expired while inserting into dms.DocumentProjectionWork."
+        );
+
+        bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
+            exception,
+            _providerCommandTimeoutClassifier,
             out DocumentCacheEnqueueFailureCategory category,
             out _
         );

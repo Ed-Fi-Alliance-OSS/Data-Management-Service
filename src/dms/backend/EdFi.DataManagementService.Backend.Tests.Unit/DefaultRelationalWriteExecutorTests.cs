@@ -89,7 +89,8 @@ public class Given_Default_Relational_Write_Executor
         ILogger<DefaultRelationalWriteExecutor>? logger = null,
         IDocumentCacheEnqueueTelemetry? documentCacheEnqueueTelemetry = null,
         IDataStoreSelection? dataStoreSelection = null,
-        IDocumentCacheTargetRegistry? documentCacheTargetRegistry = null
+        IDocumentCacheTargetRegistry? documentCacheTargetRegistry = null,
+        IDocumentCacheProviderCommandTimeoutClassifier? documentCacheProviderCommandTimeoutClassifier = null
     ) =>
         new(
             _writeSessionFactory,
@@ -120,7 +121,8 @@ public class Given_Default_Relational_Write_Executor
             secondCommandPhase: new FakeSequentialRelationalWriteSecondCommand(
                 _noProfilePersister,
                 relationshipAuthorizationProviderFailureExtractor
-            )
+            ),
+            documentCacheProviderCommandTimeoutClassifier: documentCacheProviderCommandTimeoutClassifier
         );
 
     [Test]
@@ -444,6 +446,83 @@ public class Given_Default_Relational_Write_Executor
             .Failures[0]
             .Context.CanonicalOperation.Should()
             .Be(DocumentCacheEnqueueTelemetryCanonicalOperation.Update);
+    }
+
+    [Test]
+    public async Task It_records_DocumentCacheEnqueueTelemetry_provider_timeout_only_from_timeout_classifier()
+    {
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry(),
+            documentCacheProviderCommandTimeoutClassifier: new RecordingDocumentCacheProviderCommandTimeoutClassifier
+            {
+                IsProviderCommandTimeoutToReturn = true,
+            }
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException(
+            "command timeout while inserting into dms.DocumentProjectionWork"
+        );
+        _writeExceptionClassifier.IsTransientFailureToReturn = true;
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureWriteConflict())
+            );
+        telemetry.Failures.Should().ContainSingle();
+        telemetry.Failures[0].Category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderTimeout);
+    }
+
+    [Test]
+    public async Task It_records_DocumentCacheEnqueueTelemetry_transient_projection_work_failures_as_work_persistence_failures()
+    {
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry(),
+            documentCacheProviderCommandTimeoutClassifier: new RecordingDocumentCacheProviderCommandTimeoutClassifier()
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException(
+            "deadlock detected while inserting into dms.DocumentProjectionWork"
+        );
+        _writeExceptionClassifier.IsTransientFailureToReturn = true;
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureWriteConflict())
+            );
+        telemetry.Failures.Should().ContainSingle();
+        telemetry.Failures[0].Category.Should().Be(DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed);
     }
 
     [Test]
@@ -10078,6 +10157,14 @@ public class Given_Default_Relational_Write_Executor
         DocumentCacheEnqueueTelemetryContext Context,
         DocumentCacheEnqueueFailureCategory Category
     );
+
+    private sealed class RecordingDocumentCacheProviderCommandTimeoutClassifier
+        : IDocumentCacheProviderCommandTimeoutClassifier
+    {
+        public bool IsProviderCommandTimeoutToReturn { get; set; }
+
+        public bool IsProviderCommandTimeout(Exception exception) => IsProviderCommandTimeoutToReturn;
+    }
 
     private sealed class StaticDocumentCacheTargetRegistry(
         DocumentCacheTargetRegistrySnapshot currentSnapshot

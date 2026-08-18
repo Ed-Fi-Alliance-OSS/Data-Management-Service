@@ -5,7 +5,6 @@
 
 using System.Collections.Immutable;
 using System.Data.Common;
-using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Metrics;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
@@ -259,7 +258,7 @@ public class Given_DocumentCacheEnqueueTelemetry
 
         DocumentCacheEnqueueTelemetryWriteBoundary.RecordFailureIfClassified(
             telemetry,
-            new StubWriteExceptionClassifier(),
+            NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance,
             dataStoreSelection: null,
             registry,
             TargetKey.TenantKey,
@@ -306,9 +305,7 @@ public class Given_DocumentCacheEnqueueTelemetry
 
         DocumentCacheEnqueueTelemetryWriteBoundary.RecordFailureIfClassified(
             telemetry,
-            new StubWriteExceptionClassifier(
-                RelationalWriteExceptionClassification.UnrecognizedWriteFailure.Instance
-            ),
+            NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance,
             CreateSelectedDataStoreSelection(),
             registry,
             TargetKey.TenantKey,
@@ -345,7 +342,7 @@ public class Given_DocumentCacheEnqueueTelemetry
     {
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             new StubDbException(providerMessage),
-            new StubWriteExceptionClassifier(),
+            NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance,
             out DocumentCacheEnqueueFailureCategory category,
             out string message
         );
@@ -360,9 +357,7 @@ public class Given_DocumentCacheEnqueueTelemetry
     {
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             new StubDbException("duplicate key value violates unique constraint"),
-            new StubWriteExceptionClassifier(
-                new RelationalWriteExceptionClassification.UniqueConstraintViolation("UK_School_NaturalKey")
-            ),
+            NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance,
             out DocumentCacheEnqueueFailureCategory category,
             out _
         );
@@ -376,9 +371,7 @@ public class Given_DocumentCacheEnqueueTelemetry
     {
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             new StubDbException("ordinary provider write failure"),
-            new StubWriteExceptionClassifier(
-                RelationalWriteExceptionClassification.UnrecognizedWriteFailure.Instance
-            ),
+            NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance,
             out DocumentCacheEnqueueFailureCategory category,
             out _
         );
@@ -392,7 +385,7 @@ public class Given_DocumentCacheEnqueueTelemetry
     {
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             new StubDbException("deadlock detected while writing the canonical resource row"),
-            new StubWriteExceptionClassifier(isTransientFailure: true),
+            NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance,
             out DocumentCacheEnqueueFailureCategory category,
             out _
         );
@@ -402,11 +395,11 @@ public class Given_DocumentCacheEnqueueTelemetry
     }
 
     [Test]
-    public void It_classifies_transient_provider_failures_with_enqueue_artifacts_as_provider_timeouts()
+    public void It_classifies_provider_command_timeouts_with_enqueue_artifacts_as_provider_timeouts()
     {
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
-            new StubDbException("deadlock detected while inserting into dms.DocumentProjectionWork"),
-            new StubWriteExceptionClassifier(isTransientFailure: true),
+            new StubDbException("command timeout while inserting into dms.DocumentProjectionWork"),
+            new StubProviderCommandTimeoutClassifier(isProviderCommandTimeout: true),
             out DocumentCacheEnqueueFailureCategory category,
             out _
         );
@@ -416,11 +409,39 @@ public class Given_DocumentCacheEnqueueTelemetry
     }
 
     [Test]
+    public void It_classifies_transient_projection_work_failures_as_work_persistence_failed()
+    {
+        bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
+            new StubDbException("deadlock detected while inserting into dms.DocumentProjectionWork"),
+            NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance,
+            out DocumentCacheEnqueueFailureCategory category,
+            out _
+        );
+
+        classified.Should().BeTrue();
+        category.Should().Be(DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed);
+    }
+
+    [Test]
+    public void It_classifies_other_enqueue_artifact_transient_failures_as_unclassified_provider_failures()
+    {
+        bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
+            new StubDbException("deadlock detected while reading dms.DocumentCacheState"),
+            NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance,
+            out DocumentCacheEnqueueFailureCategory category,
+            out _
+        );
+
+        classified.Should().BeTrue();
+        category.Should().Be(DocumentCacheEnqueueFailureCategory.UnclassifiedProviderFailure);
+    }
+
+    [Test]
     public void It_does_not_classify_provider_unavailable_failures_without_enqueue_artifacts()
     {
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             new StubDbException("connection refused while opening the provider connection"),
-            new StubWriteExceptionClassifier(),
+            NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance,
             out DocumentCacheEnqueueFailureCategory category,
             out _
         );
@@ -434,7 +455,7 @@ public class Given_DocumentCacheEnqueueTelemetry
     {
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             new StubDbException("connection refused while reading dms.DocumentCacheState"),
-            new StubWriteExceptionClassifier(),
+            NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance,
             out DocumentCacheEnqueueFailureCategory category,
             out _
         );
@@ -609,25 +630,10 @@ public class Given_DocumentCacheEnqueueTelemetry
 
     private sealed class StubDbException(string message) : DbException(message);
 
-    private sealed class StubWriteExceptionClassifier(
-        RelationalWriteExceptionClassification? classificationToReturn = null,
-        bool isTransientFailure = false
-    ) : IRelationalWriteExceptionClassifier
+    private sealed class StubProviderCommandTimeoutClassifier(bool isProviderCommandTimeout)
+        : IDocumentCacheProviderCommandTimeoutClassifier
     {
-        public bool TryClassify(
-            DbException exception,
-            [NotNullWhen(true)] out RelationalWriteExceptionClassification? classification
-        )
-        {
-            classification = classificationToReturn;
-            return classification is not null;
-        }
-
-        public bool IsForeignKeyViolation(DbException exception) => false;
-
-        public bool IsUniqueConstraintViolation(DbException exception) => false;
-
-        public bool IsTransientFailure(DbException exception) => isTransientFailure;
+        public bool IsProviderCommandTimeout(Exception exception) => isProviderCommandTimeout;
     }
 
     private sealed class MetricCollector : IDisposable

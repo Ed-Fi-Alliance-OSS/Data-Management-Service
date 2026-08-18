@@ -243,7 +243,7 @@ internal static class DocumentCacheEnqueueTelemetryWriteBoundary
 
     public static void RecordFailureIfClassified(
         IDocumentCacheEnqueueTelemetry telemetry,
-        IRelationalWriteExceptionClassifier writeExceptionClassifier,
+        IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
         IDataStoreSelection? dataStoreSelection,
         IDocumentCacheTargetRegistry? targetRegistry,
         string tenantKey,
@@ -254,7 +254,7 @@ internal static class DocumentCacheEnqueueTelemetryWriteBoundary
     )
     {
         ArgumentNullException.ThrowIfNull(telemetry);
-        ArgumentNullException.ThrowIfNull(writeExceptionClassifier);
+        ArgumentNullException.ThrowIfNull(providerCommandTimeoutClassifier);
         ArgumentNullException.ThrowIfNull(exception);
 
         DocumentCacheTargetKey? targetKey = TryCreateTelemetryTargetKey(dataStoreSelection, tenantKey);
@@ -262,7 +262,7 @@ internal static class DocumentCacheEnqueueTelemetryWriteBoundary
         if (
             !DocumentCacheEnqueueFailureClassifier.TryClassify(
                 exception,
-                writeExceptionClassifier,
+                providerCommandTimeoutClassifier,
                 out DocumentCacheEnqueueFailureCategory category,
                 out string message
             )
@@ -588,13 +588,13 @@ internal static class DocumentCacheEnqueueFailureClassifier
 
     public static bool TryClassify(
         DbException exception,
-        IRelationalWriteExceptionClassifier writeExceptionClassifier,
+        IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
         out DocumentCacheEnqueueFailureCategory category,
         out string message
     )
     {
         ArgumentNullException.ThrowIfNull(exception);
-        ArgumentNullException.ThrowIfNull(writeExceptionClassifier);
+        ArgumentNullException.ThrowIfNull(providerCommandTimeoutClassifier);
 
         string sanitizedMessage = DocumentCacheEnqueueTelemetryText.Sanitize(
             string.IsNullOrWhiteSpace(exception.Message)
@@ -623,7 +623,9 @@ internal static class DocumentCacheEnqueueFailureClassifier
 
         bool hasEnqueueArtifactEvidence = HasEnqueueArtifactEvidence(sanitizedMessage);
 
-        if (hasEnqueueArtifactEvidence && writeExceptionClassifier.IsTransientFailure(exception))
+        if (
+            hasEnqueueArtifactEvidence && providerCommandTimeoutClassifier.IsProviderCommandTimeout(exception)
+        )
         {
             category = DocumentCacheEnqueueFailureCategory.ProviderTimeout;
             return true;
@@ -638,6 +640,12 @@ internal static class DocumentCacheEnqueueFailureClassifier
         if (sanitizedMessage.Contains(DocumentProjectionWorkName, StringComparison.OrdinalIgnoreCase))
         {
             category = DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed;
+            return true;
+        }
+
+        if (hasEnqueueArtifactEvidence)
+        {
+            category = DocumentCacheEnqueueFailureCategory.UnclassifiedProviderFailure;
             return true;
         }
 

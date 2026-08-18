@@ -39,7 +39,8 @@ internal sealed class DefaultRelationalWriteExecutor(
     IDocumentCacheTargetRegistry? documentCacheTargetRegistry = null,
     IRelationalWriteFirstPhase? writeFirstPhase = null,
     IRelationalWriteSecondCommandPhase? secondCommandPhase = null,
-    IRelationalCommandExecutor? customViewValidationCommandExecutor = null
+    IRelationalCommandExecutor? customViewValidationCommandExecutor = null,
+    IDocumentCacheProviderCommandTimeoutClassifier? documentCacheProviderCommandTimeoutClassifier = null
 ) : IRelationalWriteExecutor
 {
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
@@ -60,6 +61,10 @@ internal sealed class DefaultRelationalWriteExecutor(
         documentCacheEnqueueTelemetry ?? NoOpDocumentCacheEnqueueTelemetry.Instance;
 
     private readonly IDocumentCacheTargetRegistry? _documentCacheTargetRegistry = documentCacheTargetRegistry;
+
+    private readonly IDocumentCacheProviderCommandTimeoutClassifier _documentCacheProviderCommandTimeoutClassifier =
+        documentCacheProviderCommandTimeoutClassifier
+        ?? NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance;
 
     /// <summary>
     /// The composite first phase: target capture and lock, stored authorization, reference
@@ -665,7 +670,7 @@ internal sealed class DefaultRelationalWriteExecutor(
     {
         DocumentCacheEnqueueTelemetryWriteBoundary.RecordFailureIfClassified(
             _documentCacheEnqueueTelemetry,
-            writeExceptionClassifier,
+            _documentCacheProviderCommandTimeoutClassifier,
             _dataStoreSelection,
             _documentCacheTargetRegistry,
             request.TenantKey,

@@ -362,6 +362,90 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
             .Be(DocumentCacheEnqueueTelemetryResourceKind.Descriptor);
     }
 
+    [Test]
+    public async Task It_records_descriptor_enqueue_provider_timeout_only_from_timeout_classifier()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService();
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.CommitExceptionToThrow = new StubDbException(
+            "command timeout while inserting into dms.DocumentProjectionWork"
+        );
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry(
+            () => sessionFactory.Session.CommitCallCount,
+            () => sessionFactory.Session.RollbackCallCount
+        );
+        var sut = CreateSut(
+            targetLookupService,
+            sessionFactory,
+            telemetry,
+            writeExceptionClassifier: new TransientRelationalWriteExceptionClassifier(),
+            documentCacheProviderCommandTimeoutClassifier: new StubDocumentCacheProviderCommandTimeoutClassifier(
+                isProviderCommandTimeout: true
+            )
+        );
+        var mappingSet = CreateMappingSet(SqlDialect.Pgsql);
+        targetLookupService.PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(
+            345L,
+            documentUuid,
+            44L
+        );
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([
+            CreatePersistedDescriptorResultSet(description: "Previous Description"),
+        ]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(45L)]);
+
+        var result = await sut.HandlePutAsync(
+            CreatePutRequest(mappingSet, documentUuid, description: "Updated Description")
+        );
+
+        result.Should().BeOfType<UpdateResult.UpdateFailureWriteConflict>();
+        telemetry.Failures.Should().ContainSingle();
+        telemetry.Failures[0].Category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderTimeout);
+    }
+
+    [Test]
+    public async Task It_records_descriptor_transient_projection_work_failures_as_work_persistence_failures()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService();
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.CommitExceptionToThrow = new StubDbException(
+            "deadlock detected while inserting into dms.DocumentProjectionWork"
+        );
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry(
+            () => sessionFactory.Session.CommitCallCount,
+            () => sessionFactory.Session.RollbackCallCount
+        );
+        var sut = CreateSut(
+            targetLookupService,
+            sessionFactory,
+            telemetry,
+            writeExceptionClassifier: new TransientRelationalWriteExceptionClassifier(),
+            documentCacheProviderCommandTimeoutClassifier: new StubDocumentCacheProviderCommandTimeoutClassifier()
+        );
+        var mappingSet = CreateMappingSet(SqlDialect.Pgsql);
+        targetLookupService.PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(
+            345L,
+            documentUuid,
+            44L
+        );
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([
+            CreatePersistedDescriptorResultSet(description: "Previous Description"),
+        ]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(45L)]);
+
+        var result = await sut.HandlePutAsync(
+            CreatePutRequest(mappingSet, documentUuid, description: "Updated Description")
+        );
+
+        result.Should().BeOfType<UpdateResult.UpdateFailureWriteConflict>();
+        telemetry.Failures.Should().ContainSingle();
+        telemetry.Failures[0].Category.Should().Be(DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed);
+    }
+
     [TestCase(DescriptorWritePath.PostInsert, typeof(UpsertResult.UpsertFailureWriteConflict))]
     [TestCase(DescriptorWritePath.PostAsUpdate, typeof(UpsertResult.UpsertFailureWriteConflict))]
     [TestCase(DescriptorWritePath.PutUpdate, typeof(UpdateResult.UpdateFailureWriteConflict))]
@@ -449,7 +533,8 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         IDocumentCacheEnqueueTelemetry telemetry,
         IDocumentCacheTargetRegistry? targetRegistry = null,
         string tenantKey = TargetKeyTenant,
-        IRelationalWriteExceptionClassifier? writeExceptionClassifier = null
+        IRelationalWriteExceptionClassifier? writeExceptionClassifier = null,
+        IDocumentCacheProviderCommandTimeoutClassifier? documentCacheProviderCommandTimeoutClassifier = null
     )
     {
         return new DescriptorWriteHandler(
@@ -462,7 +547,8 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
             dataStoreSelection: CreateSelectedDataStoreSelection(tenantKey),
             documentCacheEnqueueTelemetry: telemetry,
             documentCacheTargetRegistry: targetRegistry
-                ?? CreateTargetRegistry(CreateDocumentCacheTargetObservation())
+                ?? CreateTargetRegistry(CreateDocumentCacheTargetObservation()),
+            documentCacheProviderCommandTimeoutClassifier: documentCacheProviderCommandTimeoutClassifier
         );
     }
 
@@ -758,6 +844,13 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         public bool IsUniqueConstraintViolation(DbException exception) => false;
 
         public bool IsTransientFailure(DbException exception) => true;
+    }
+
+    private sealed class StubDocumentCacheProviderCommandTimeoutClassifier(
+        bool isProviderCommandTimeout = false
+    ) : IDocumentCacheProviderCommandTimeoutClassifier
+    {
+        public bool IsProviderCommandTimeout(Exception exception) => isProviderCommandTimeout;
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider

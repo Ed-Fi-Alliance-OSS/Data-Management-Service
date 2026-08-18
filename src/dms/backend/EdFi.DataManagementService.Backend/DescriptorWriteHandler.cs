@@ -34,7 +34,8 @@ internal sealed class DescriptorWriteHandler(
     IDataStoreSelection? dataStoreSelection = null,
     IDocumentCacheEnqueueTelemetry? documentCacheEnqueueTelemetry = null,
     IDocumentCacheTargetRegistry? documentCacheTargetRegistry = null,
-    IRelationalCommandExecutor? customViewValidationCommandExecutor = null
+    IRelationalCommandExecutor? customViewValidationCommandExecutor = null,
+    IDocumentCacheProviderCommandTimeoutClassifier? documentCacheProviderCommandTimeoutClassifier = null
 ) : IDescriptorWriteHandler
 {
     private readonly IRelationalWriteTargetLookupService _targetLookupService =
@@ -67,6 +68,9 @@ internal sealed class DescriptorWriteHandler(
     private readonly IDocumentCacheEnqueueTelemetry _documentCacheEnqueueTelemetry =
         documentCacheEnqueueTelemetry ?? NoOpDocumentCacheEnqueueTelemetry.Instance;
     private readonly IDocumentCacheTargetRegistry? _documentCacheTargetRegistry = documentCacheTargetRegistry;
+    private readonly IDocumentCacheProviderCommandTimeoutClassifier _documentCacheProviderCommandTimeoutClassifier =
+        documentCacheProviderCommandTimeoutClassifier
+        ?? NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance;
     private const string EnqueueOutcomeNoWorkQueuedParameterName = "@enqueueOutcomeNoWorkQueued";
     private const string EnqueueOutcomeAlreadySatisfiedParameterName = "@enqueueOutcomeAlreadySatisfied";
 
@@ -3422,7 +3426,7 @@ internal sealed class DescriptorWriteHandler(
     {
         DocumentCacheEnqueueTelemetryWriteBoundary.RecordFailureIfClassified(
             _documentCacheEnqueueTelemetry,
-            _writeExceptionClassifier,
+            _documentCacheProviderCommandTimeoutClassifier,
             _dataStoreSelection,
             _documentCacheTargetRegistry,
             request.TenantKey,

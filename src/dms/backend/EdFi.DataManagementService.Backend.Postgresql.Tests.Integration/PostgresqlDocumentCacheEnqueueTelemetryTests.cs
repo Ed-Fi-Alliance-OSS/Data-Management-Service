@@ -16,7 +16,8 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 [Category("DocumentCacheEnqueueTelemetry")]
 public class Given_Postgresql_DocumentCacheEnqueueTelemetry
 {
-    private readonly PostgresqlRelationalWriteExceptionClassifier _writeExceptionClassifier = new();
+    private readonly PostgresqlDocumentCacheProviderCommandTimeoutClassifier _providerCommandTimeoutClassifier =
+        new();
 
     [Test]
     public void It_classifies_projection_work_foreign_key_failures_as_work_persistence_failures()
@@ -30,7 +31,7 @@ public class Given_Postgresql_DocumentCacheEnqueueTelemetry
 
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             exception,
-            _writeExceptionClassifier,
+            _providerCommandTimeoutClassifier,
             out DocumentCacheEnqueueFailureCategory category,
             out string message
         );
@@ -50,7 +51,7 @@ public class Given_Postgresql_DocumentCacheEnqueueTelemetry
 
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             exception,
-            _writeExceptionClassifier,
+            _providerCommandTimeoutClassifier,
             out DocumentCacheEnqueueFailureCategory category,
             out string message
         );
@@ -69,7 +70,7 @@ public class Given_Postgresql_DocumentCacheEnqueueTelemetry
 
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             exception,
-            _writeExceptionClassifier,
+            _providerCommandTimeoutClassifier,
             out DocumentCacheEnqueueFailureCategory category,
             out _
         );
@@ -81,7 +82,7 @@ public class Given_Postgresql_DocumentCacheEnqueueTelemetry
     [TestCase(PostgresErrorCodes.DeadlockDetected)]
     [TestCase(PostgresErrorCodes.SerializationFailure)]
     [TestCase(PostgresErrorCodes.LockNotAvailable)]
-    public void It_classifies_transient_enqueue_artifact_failures_as_provider_timeouts(string sqlState)
+    public void It_classifies_transient_projection_work_failures_as_work_persistence_failures(string sqlState)
     {
         var exception = CreateException(
             sqlState,
@@ -90,7 +91,26 @@ public class Given_Postgresql_DocumentCacheEnqueueTelemetry
 
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             exception,
-            _writeExceptionClassifier,
+            _providerCommandTimeoutClassifier,
+            out DocumentCacheEnqueueFailureCategory category,
+            out _
+        );
+
+        classified.Should().BeTrue();
+        category.Should().Be(DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed);
+    }
+
+    [Test]
+    public void It_classifies_provider_command_timeouts_with_enqueue_artifacts_as_provider_timeouts()
+    {
+        var exception = CreateException(
+            "57014",
+            "canceling statement due to statement timeout while inserting into dms.DocumentProjectionWork"
+        );
+
+        bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
+            exception,
+            _providerCommandTimeoutClassifier,
             out DocumentCacheEnqueueFailureCategory category,
             out _
         );
