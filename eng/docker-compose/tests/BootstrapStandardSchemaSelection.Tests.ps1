@@ -182,6 +182,7 @@ exit $ExitCode
                 apiSchemaVersion = "1.0.0"
                 projectSchema    = [ordered]@{
                     projectName         = $ProjectName
+                    projectVersion      = "5.2.0"
                     projectEndpointName = $ProjectEndpointName
                     isExtensionProject  = $IsExtensionProject
                     resourceSchemas     = [ordered]@{}
@@ -393,6 +394,10 @@ exit $ExitCode
             $manifest.schema.selectionMode | Should -Be "Standard"
             $manifest.schema.selectedExtensions | Should -BeNullOrEmpty
             $manifest.schema.apiSchemaManifestPath | Should -Be "ApiSchema/bootstrap-api-schema-manifest.json"
+            # Recorded from the staged core schema: its Data Standard version
+            # (projectSchema.projectVersion) and ApiSchema format version (apiSchemaVersion).
+            $manifest.schema.dataStandardVersion | Should -Be "5.2.0"
+            $manifest.schema.apiSchemaFormatVersion | Should -Be "1.0.0"
             Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "ApiSchema/schemas/Ed-Fi/ApiSchema.json") |
                 Should -BeTrue
             Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "ApiSchema/bootstrap-api-schema-manifest.json") |
