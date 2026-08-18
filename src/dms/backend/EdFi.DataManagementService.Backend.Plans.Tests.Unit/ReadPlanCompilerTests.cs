@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
@@ -372,6 +373,63 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             .Throw<InvalidOperationException>()
             .WithMessage(
                 "document-reference lookup plan is missing required SelectBySingleDocumentSql for SQL Server read plans"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_table_read_plans_carrying_single_document_sql_for_a_dialect_without_support()
+    {
+        var readPlan = CreateReadPlanWithTableSingleDocumentSql(_mssqlProjectionReadPlan, "SELECT 1;");
+
+        var act = ValidateSingleDocumentSql(
+            readPlan,
+            new DialectWithoutSingleDocumentHydration(PlanSqlDialectFactory.Create(SqlDialect.Mssql))
+        );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "table read plan at index '0' for table 'edfi.StudentProjection' has unexpected SelectBySingleDocumentSql for SQL Server read plans"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_descriptor_projection_plans_carrying_single_document_sql_for_a_dialect_without_support()
+    {
+        var readPlan = CreateReadPlanWithDescriptorProjectionSingleDocumentSql(
+            CreateReadPlanWithoutTableSingleDocumentSql(_mssqlProjectionReadPlan),
+            "SELECT 1;"
+        );
+
+        var act = ValidateSingleDocumentSql(
+            readPlan,
+            new DialectWithoutSingleDocumentHydration(PlanSqlDialectFactory.Create(SqlDialect.Mssql))
+        );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "descriptor projection plan at index '0' has unexpected SelectBySingleDocumentSql for SQL Server read plans"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_document_reference_lookup_plans_carrying_single_document_sql_for_a_dialect_without_support()
+    {
+        var readPlan = CreateReadPlanWithDocumentReferenceLookupSingleDocumentSql(
+            CreateReadPlanWithoutTableOrDescriptorSingleDocumentSql(_mssqlProjectionReadPlan),
+            "SELECT 1;"
+        );
+
+        var act = ValidateSingleDocumentSql(
+            readPlan,
+            new DialectWithoutSingleDocumentHydration(PlanSqlDialectFactory.Create(SqlDialect.Mssql))
+        );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "document-reference lookup plan has unexpected SelectBySingleDocumentSql for SQL Server read plans"
             );
     }
 
@@ -3326,6 +3384,69 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             );
     }
 
+    private static Action ValidateSingleDocumentSql(ResourceReadPlan readPlan, IPlanSqlDialect planDialect)
+    {
+        return () =>
+            ReadPlanSingleDocumentSqlValidator.ValidateOrThrow(
+                readPlan,
+                planDialect,
+                reason => new InvalidOperationException(reason)
+            );
+    }
+
+    /// <summary>
+    /// A dialect that declines single-document hydration while behaving like its inner dialect in
+    /// every other respect. Both shipped dialects now support single-document hydration, so this is
+    /// the only way to reach the validator's absent-SQL arm, which is the contract a future dialect
+    /// would land against.
+    /// </summary>
+    private sealed class DialectWithoutSingleDocumentHydration(IPlanSqlDialect inner) : IPlanSqlDialect
+    {
+        public SqlDialect Dialect => inner.Dialect;
+
+        public string DisplayName => inner.DisplayName;
+
+        public bool SupportsSingleDocumentHydration => false;
+
+        public string CorrelatedRowSetJoinKeyword => inner.CorrelatedRowSetJoinKeyword;
+
+        public void AppendPagingClause(
+            SqlWriter writer,
+            string offsetParameterName,
+            string limitParameterName
+        ) => inner.AppendPagingClause(writer, offsetParameterName, limitParameterName);
+
+        public void AppendCursorSelectRowLimitPrefix(SqlWriter writer, string pageSizeParameterName) =>
+            inner.AppendCursorSelectRowLimitPrefix(writer, pageSizeParameterName);
+
+        public void AppendCursorPagingClause(SqlWriter writer, string pageSizeParameterName) =>
+            inner.AppendCursorPagingClause(writer, pageSizeParameterName);
+
+        public void AppendCreateKeysetTempTable(SqlWriter writer, KeysetTableContract keyset) =>
+            inner.AppendCreateKeysetTempTable(writer, keyset);
+
+        public void AppendKeysetSelectedIdOutputClause(SqlWriter writer, KeysetTableContract keyset) =>
+            inner.AppendKeysetSelectedIdOutputClause(writer, keyset);
+
+        public void AppendKeysetSelectedIdReturningClause(SqlWriter writer, KeysetTableContract keyset) =>
+            inner.AppendKeysetSelectedIdReturningClause(writer, keyset);
+
+        public void AppendDocumentMetadataSelect(SqlWriter writer, KeysetTableContract keyset) =>
+            inner.AppendDocumentMetadataSelect(writer, keyset);
+
+        public void AppendSingleDocumentMetadataSelect(SqlWriter writer, string documentIdParameterName) =>
+            inner.AppendSingleDocumentMetadataSelect(writer, documentIdParameterName);
+
+        public void AppendComparisonSql(
+            SqlWriter writer,
+            string tableAlias,
+            DbColumnName column,
+            string operatorToken,
+            string parameterName,
+            ScalarKind? scalarKind
+        ) => inner.AppendComparisonSql(writer, tableAlias, column, operatorToken, parameterName, scalarKind);
+    }
+
     private static ResourceReadPlan CreateReadPlanWithTableSingleDocumentSql(
         ResourceReadPlan readPlan,
         string? selectBySingleDocumentSql,
@@ -3341,6 +3462,53 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         return readPlan with
         {
             TablePlansInDependencyOrder = [.. tablePlans],
+        };
+    }
+
+    /// <summary>
+    /// Clears single-document SQL from every table plan. The absent-SQL validation arm checks table
+    /// plans before descriptor and lookup plans, so reaching either of those arms requires the table
+    /// plans to be clean first.
+    /// </summary>
+    private static ResourceReadPlan CreateReadPlanWithoutTableSingleDocumentSql(ResourceReadPlan readPlan)
+    {
+        var tablePlans = readPlan
+            .TablePlansInDependencyOrder.Select(tablePlan =>
+                tablePlan with
+                {
+                    SelectBySingleDocumentSql = null,
+                }
+            )
+            .ToArray();
+
+        return readPlan with
+        {
+            TablePlansInDependencyOrder = [.. tablePlans],
+        };
+    }
+
+    /// <summary>
+    /// Clears single-document SQL from every table and descriptor projection plan, which is what the
+    /// lookup arm of absent-SQL validation needs in order to be reached at all.
+    /// </summary>
+    private static ResourceReadPlan CreateReadPlanWithoutTableOrDescriptorSingleDocumentSql(
+        ResourceReadPlan readPlan
+    )
+    {
+        var cleared = CreateReadPlanWithoutTableSingleDocumentSql(readPlan);
+
+        var descriptorPlans = cleared
+            .DescriptorProjectionPlansInOrder.Select(descriptorPlan =>
+                descriptorPlan with
+                {
+                    SelectBySingleDocumentSql = null,
+                }
+            )
+            .ToArray();
+
+        return cleared with
+        {
+            DescriptorProjectionPlansInOrder = [.. descriptorPlans],
         };
     }
 

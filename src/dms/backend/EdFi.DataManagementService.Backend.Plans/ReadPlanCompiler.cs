@@ -456,7 +456,7 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Emits canonical single-document hydration SQL for a PostgreSQL table plan.
+    /// Emits canonical single-document hydration SQL for a table plan.
     /// </summary>
     private string EmitSelectBySingleDocumentSql(
         DbTableModel tableModel,

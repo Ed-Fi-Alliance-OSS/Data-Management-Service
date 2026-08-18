@@ -40,7 +40,7 @@ internal static class MssqlNamespaceAuthorizationCommandAssertions
 
     /// <summary>
     /// A statement whose target is a session-scoped temp table stages a read rather than persisting a row:
-    /// current-state hydration materializes its page keyset into <c>[#page]</c>, and that staging travels in
+    /// query keyset hydration materializes its page keyset into <c>[#page]</c>, and that staging travels in
     /// whichever command carries the hydration read. Excluding a temp-table target keeps the persistence
     /// markers pointed at the document, root, child, extension, identity, and tracking relations, which are
     /// always schema-qualified.

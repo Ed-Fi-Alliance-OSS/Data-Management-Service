@@ -624,6 +624,50 @@ public class Given_HydrationBatchBuilder_With_Pgsql_Single_Document_Fast_Path
         fastPathFlaggedBatch.Should().Be(expectedKeysetBatch);
     }
 
+    private static DescriptorProjectionPlan[] BuildDescriptorPlans() =>
+        [
+            new DescriptorProjectionPlan(
+                SelectByKeysetSql: RootDescriptorKeysetSql,
+                ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+                SourcesInOrder: [],
+                SelectBySingleDocumentSql: RootDescriptorSingleDocumentSql
+            ),
+            new DescriptorProjectionPlan(
+                SelectByKeysetSql: ChildDescriptorKeysetSql,
+                ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+                SourcesInOrder: [],
+                SelectBySingleDocumentSql: ChildDescriptorSingleDocumentSql
+            ),
+        ];
+
+    private static DocumentReferenceLookupPlan BuildLookupPlan() =>
+        new(
+            SelectByKeysetSql: LookupKeysetSql,
+            ResultShape: new DocumentReferenceLookupResultShape(
+                DocumentIdOrdinal: 0,
+                DocumentUuidOrdinal: 1,
+                ResourceKeyIdOrdinal: 2
+            ),
+            SourcesInOrder:
+            [
+                new DocumentReferenceLookupSource(
+                    Table: new DbTableName(new DbSchemaName("edfi"), "School"),
+                    FkColumn: new DbColumnName("School_DocumentId")
+                ),
+            ],
+            SelectBySingleDocumentSql: LookupSingleDocumentSql
+        );
+}
+
+[TestFixture]
+public class Given_HydrationBatchBuilder_With_Mssql_Single_Document_Fast_Path
+{
+    /// <summary>
+    /// Stands in for the composite carrier's captured-target-present predicate. The read path never
+    /// supplies one; only the guarded write-path builder does.
+    /// </summary>
+    private const string GuardPredicateSql = "@dms_composite_target_documentid IS NOT NULL";
+
     [Test]
     public void It_should_emit_the_sql_server_keyset_batch_when_the_feature_flag_is_disabled()
     {
@@ -697,39 +741,62 @@ public class Given_HydrationBatchBuilder_With_Pgsql_Single_Document_Fast_Path
         fastPathBatch.Should().Contain(HydrationBatchBuilderTestHelper.ChildSingleDocumentSql);
     }
 
-    private static DescriptorProjectionPlan[] BuildDescriptorPlans() =>
-        [
-            new DescriptorProjectionPlan(
-                SelectByKeysetSql: RootDescriptorKeysetSql,
-                ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
-                SourcesInOrder: [],
-                SelectBySingleDocumentSql: RootDescriptorSingleDocumentSql
-            ),
-            new DescriptorProjectionPlan(
-                SelectByKeysetSql: ChildDescriptorKeysetSql,
-                ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
-                SourcesInOrder: [],
-                SelectBySingleDocumentSql: ChildDescriptorSingleDocumentSql
-            ),
-        ];
-
-    private static DocumentReferenceLookupPlan BuildLookupPlan() =>
-        new(
-            SelectByKeysetSql: LookupKeysetSql,
-            ResultShape: new DocumentReferenceLookupResultShape(
-                DocumentIdOrdinal: 0,
-                DocumentUuidOrdinal: 1,
-                ResourceKeyIdOrdinal: 2
-            ),
-            SourcesInOrder:
-            [
-                new DocumentReferenceLookupSource(
-                    Table: new DbTableName(new DbSchemaName("edfi"), "School"),
-                    FkColumn: new DbColumnName("School_DocumentId")
-                ),
-            ],
-            SelectBySingleDocumentSql: LookupSingleDocumentSql
+    /// <summary>
+    /// Negative control for the guarded write-path builder: with the flag off it still materializes
+    /// <c>[#page]</c> behind the caller's guard predicate. Without this the enabled case below could
+    /// pass against a builder that never emitted the preamble in the first place.
+    /// </summary>
+    [Test]
+    public void It_should_emit_the_sql_server_guarded_keyset_batch_when_the_feature_flag_is_disabled()
+    {
+        var batch = HydrationBatchBuilder.BuildGuardedSingleDocumentBatch(
+            BuildTestReadPlan(SqlDialect.Mssql, includeSingleDocumentSql: true),
+            SqlDialect.Mssql,
+            new HydrationExecutionOptions(UseSingleDocumentFastPath: false),
+            GuardPredicateSql
         );
+
+        batch.Should().Contain("CREATE TABLE [#page]");
+        batch.Should().Contain("INSERT INTO [#page]");
+        batch.Should().Contain(GuardPredicateSql);
+    }
+
+    /// <summary>
+    /// Every write hydrates current state through the guarded builder, so the preamble has to be gone
+    /// on that path and not only on the read path the fixture above covers.
+    /// </summary>
+    [Test]
+    public void It_should_not_emit_sql_server_page_temp_table_work_on_the_guarded_write_path_when_the_fast_path_is_enabled()
+    {
+        var batch = HydrationBatchBuilder.BuildGuardedSingleDocumentBatch(
+            BuildTestReadPlan(SqlDialect.Mssql, includeSingleDocumentSql: true),
+            SqlDialect.Mssql,
+            new HydrationExecutionOptions(UseSingleDocumentFastPath: true),
+            GuardPredicateSql
+        );
+
+        batch.Should().NotContain("CREATE TABLE [#page]");
+        batch.Should().NotContain("DROP TABLE [#page]");
+        batch.Should().NotContain("INSERT INTO [#page]");
+        batch.Should().Contain(HydrationBatchBuilderTestHelper.RootSingleDocumentSql);
+    }
+
+    /// <summary>
+    /// The fast path is pure selects, so an absent captured id yields zero-row result sets on its own
+    /// and the caller's guard predicate is dropped rather than carried into the batch.
+    /// </summary>
+    [Test]
+    public void It_should_drop_the_guard_predicate_on_the_sql_server_fast_path()
+    {
+        var batch = HydrationBatchBuilder.BuildGuardedSingleDocumentBatch(
+            BuildTestReadPlan(SqlDialect.Mssql, includeSingleDocumentSql: true),
+            SqlDialect.Mssql,
+            new HydrationExecutionOptions(UseSingleDocumentFastPath: true),
+            GuardPredicateSql
+        );
+
+        batch.Should().NotContain(GuardPredicateSql);
+    }
 }
 
 [TestFixture]
@@ -904,6 +971,33 @@ public class Given_HydrationBatchBuilder_With_Pgsql_Single_Document_Fast_Path_Mi
             );
 
         act.Should().NotThrow();
+    }
+}
+
+/// <summary>
+/// The guard is dialect-parameterized on <c>DisplayName</c>, and its SQL Server wording became
+/// reachable only once SQL Server started supporting single-document hydration.
+/// </summary>
+[TestFixture]
+public class Given_HydrationBatchBuilder_With_Mssql_Single_Document_Fast_Path_Missing_Sql
+{
+    [Test]
+    public void It_should_throw_when_a_table_plan_is_missing_single_document_sql()
+    {
+        var act = () =>
+            HydrationBatchBuilder.Build(
+                BuildTestReadPlan(SqlDialect.Mssql),
+                new PageKeysetSpec.Single(42L),
+                SqlDialect.Mssql,
+                new HydrationExecutionOptions(UseSingleDocumentFastPath: true)
+            );
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception
+            .Message.Should()
+            .Be(
+                "SQL Server single-document hydration requires table read plan at index '0' for table 'edfi.School' to provide SelectBySingleDocumentSql."
+            );
     }
 }
 
