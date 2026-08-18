@@ -375,6 +375,90 @@ public class Given_DocumentCacheEnqueueTelemetry
             .NotContain(value => value.Contains(TargetKey.ToString(), StringComparison.Ordinal));
     }
 
+    [TestCase(nameof(DocumentCacheEnqueueOutcome.Inserted))]
+    [TestCase(nameof(DocumentCacheEnqueueOutcome.Advanced))]
+    [TestCase(nameof(DocumentCacheEnqueueOutcome.AlreadySatisfied))]
+    public void It_records_successful_write_boundary_outcomes_with_unknown_target_without_retention(
+        string enqueueOutcomeName
+    )
+    {
+        using MetricCollector collector = new();
+        var logger = new CapturingLogger<DocumentCacheEnqueueTelemetry>();
+        DocumentCacheTargetObservation target = ResolvedTarget(TargetKey);
+        var registry = new StaticTargetRegistry([target], [ExecutionContext(target)]);
+        DocumentCacheEnqueueTelemetry telemetry = CreateTelemetry(
+            pageSize: 10,
+            targetRegistry: registry,
+            logger: logger,
+            meter: collector.Meter
+        );
+
+        DocumentCacheEnqueueTelemetryWriteBoundary.RecordSuccessIfEnqueueSucceeded(
+            telemetry,
+            dataStoreSelection: null,
+            registry,
+            TargetKey.TenantKey,
+            SqlDialect.Pgsql,
+            Enum.Parse<DocumentCacheEnqueueOutcome>(enqueueOutcomeName),
+            DocumentCacheEnqueueTelemetryCanonicalOperation.Insert,
+            DocumentCacheEnqueueTelemetryResourceKind.Resource,
+            "committed"
+        );
+
+        telemetry.GetFailureSnapshot(TargetKey).RecentEvents.Should().BeEmpty();
+
+        MetricMeasurement success = collector
+            .MeasurementsFor(DocumentCacheEnqueueTelemetry.SuccessCounterName)
+            .Should()
+            .ContainSingle()
+            .Which;
+        success.Tags["provider"].Should().Be("postgresql");
+        success.Tags["target"].Should().Be("unknown");
+        success.Tags["canonical_operation"].Should().Be("insert");
+        success.Tags["resource_kind"].Should().Be("resource");
+        success.Tags["outcome"].Should().Be("committed");
+        success.Tags.Should().NotContainKey("target_key");
+
+        CapturedLogEntry logEntry = logger.Entries.Should().ContainSingle().Which;
+        logEntry.Message.Should().Contain("DocumentCacheEnqueueSucceeded");
+        logEntry.Properties["Target"].Should().Be("unknown");
+        logEntry
+            .Properties.Values.OfType<string>()
+            .Should()
+            .NotContain(value => value.Contains(TargetKey.ToString(), StringComparison.Ordinal));
+    }
+
+    [Test]
+    public void It_does_not_record_no_work_write_boundary_outcomes_with_unknown_target()
+    {
+        using MetricCollector collector = new();
+        var logger = new CapturingLogger<DocumentCacheEnqueueTelemetry>();
+        DocumentCacheTargetObservation target = ResolvedTarget(TargetKey);
+        var registry = new StaticTargetRegistry([target], [ExecutionContext(target)]);
+        DocumentCacheEnqueueTelemetry telemetry = CreateTelemetry(
+            pageSize: 10,
+            targetRegistry: registry,
+            logger: logger,
+            meter: collector.Meter
+        );
+
+        DocumentCacheEnqueueTelemetryWriteBoundary.RecordSuccessIfEnqueueSucceeded(
+            telemetry,
+            dataStoreSelection: null,
+            registry,
+            TargetKey.TenantKey,
+            SqlDialect.Pgsql,
+            DocumentCacheEnqueueOutcome.NoWorkQueued,
+            DocumentCacheEnqueueTelemetryCanonicalOperation.Update,
+            DocumentCacheEnqueueTelemetryResourceKind.Resource,
+            "no work"
+        );
+
+        collector.MeasurementsFor(DocumentCacheEnqueueTelemetry.SuccessCounterName).Should().BeEmpty();
+        telemetry.GetFailureSnapshot(TargetKey).RecentEvents.Should().BeEmpty();
+        logger.Entries.Should().BeEmpty();
+    }
+
     [Test]
     public void It_does_not_record_unclassified_non_enqueue_failures_from_the_write_boundary()
     {

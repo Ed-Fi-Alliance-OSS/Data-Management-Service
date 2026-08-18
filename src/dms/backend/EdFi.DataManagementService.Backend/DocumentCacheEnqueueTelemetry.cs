@@ -299,12 +299,9 @@ internal static class DocumentCacheEnqueueTelemetryWriteBoundary
         context = null;
 
         DocumentCacheTargetKey? targetKey = TryCreateTelemetryTargetKey(dataStoreSelection, tenantKey);
-        if (targetKey is null)
-        {
-            return false;
-        }
-
-        DocumentCacheTargetObservation? targetObservation = TryGetCurrentTarget(targetRegistry, targetKey);
+        DocumentCacheTargetObservation? targetObservation = targetKey is null
+            ? null
+            : TryGetCurrentTarget(targetRegistry, targetKey);
         context = new DocumentCacheEnqueueTelemetryContext(
             targetKey,
             targetObservation?.ProviderToken ?? ProviderTokenForDialect(dialect),
