@@ -20,11 +20,6 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
 {
     private const string RedactedValue = "[redacted]";
     private const string TopicHeartbeatName = "topic.heartbeat.name";
-    private static readonly IReadOnlySet<string> _safeUnexpectedEffectiveConfigProperties =
-        new HashSet<string>(StringComparer.Ordinal);
-    private static readonly IReadOnlySet<string> _safeUnexpectedSourcePartitionKeys = new HashSet<string>(
-        StringComparer.Ordinal
-    );
 
     public CdcConnectorTemplateResult ValidateEffectiveConfig(
         CdcConnectorTemplateEffectiveConfigValidationRequest request,
@@ -674,10 +669,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
             return CdcConnectorTemplateRedactionClassification.SecretValue;
         }
 
-        // Keep unexpected read-back value echoing opt-in only; there are no safe exceptions today.
-        return IsSafeUnexpectedEffectiveConfigProperty(propertyName)
-            ? CdcConnectorTemplateRedactionClassification.Safe
-            : CdcConnectorTemplateRedactionClassification.PhysicalIdentifier;
+        return CdcConnectorTemplateRedactionClassification.PhysicalIdentifier;
     }
 
     private static CdcConnectorTemplateRedactionClassification RedactionClassificationForProperty(
@@ -727,9 +719,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
 
         if (isUnexpectedProperty)
         {
-            return IsSafeUnexpectedSourcePartitionKey(partitionKey)
-                ? CdcConnectorTemplateRedactionClassification.Safe
-                : CdcConnectorTemplateRedactionClassification.PhysicalIdentifier;
+            return CdcConnectorTemplateRedactionClassification.PhysicalIdentifier;
         }
 
         return CdcConnectorTemplateRedactionClassification.Safe;
@@ -739,12 +729,6 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
         CdcConnectorTemplateInputValidator.IsSecretBearingRenderedProperty(propertyName)
         || propertyName.EndsWith(".password", StringComparison.Ordinal)
         || propertyName is "sasl.jaas.config" or "ssl.keystore.key";
-
-    private static bool IsSafeUnexpectedEffectiveConfigProperty(string propertyName) =>
-        _safeUnexpectedEffectiveConfigProperties.Contains(propertyName);
-
-    private static bool IsSafeUnexpectedSourcePartitionKey(string partitionKey) =>
-        _safeUnexpectedSourcePartitionKeys.Contains(partitionKey);
 
     private static string? RedactUnexpectedExpectedValueForDiagnostic(
         string? value,
