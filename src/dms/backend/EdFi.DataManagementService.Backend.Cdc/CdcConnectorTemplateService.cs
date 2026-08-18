@@ -236,7 +236,10 @@ internal static class CdcProviderSetupReadinessRules
         IReadOnlyList<CdcSourceTableInventory>? sourceTableInventory =
             providerSetupResult.SourceTableInventory;
 
-        if (HasRequiredSourceInventory(sourceTableInventory))
+        if (
+            sourceTableInventory is not null
+            && CdcConnectorTemplateSharedRules.HasRequiredSourceInventory(sourceTableInventory)
+        )
         {
             AddSourceTableNameDiagnostics(providerSetupResult, sourceTableInventory, diagnostics);
             return;
@@ -297,7 +300,10 @@ internal static class CdcProviderSetupReadinessRules
     {
         IReadOnlyList<CdcExpectedMessageKeyColumns>? expectedMessageKeyColumns =
             providerSetupResult.ExpectedMessageKeyColumns;
-        if (!HasExpectedMessageKeyColumns(expectedMessageKeyColumns))
+        if (
+            expectedMessageKeyColumns is null
+            || !CdcConnectorTemplateSharedRules.HasExpectedMessageKeyColumns(expectedMessageKeyColumns)
+        )
         {
             diagnostics.Add(
                 BuildDiagnostic(
@@ -315,7 +321,10 @@ internal static class CdcProviderSetupReadinessRules
 
         IReadOnlyList<CdcSourceTableInventory>? sourceTableInventory =
             providerSetupResult.SourceTableInventory;
-        if (!HasRequiredSourceInventory(sourceTableInventory))
+        if (
+            sourceTableInventory is null
+            || !CdcConnectorTemplateSharedRules.HasRequiredSourceInventory(sourceTableInventory)
+        )
         {
             return;
         }
@@ -426,7 +435,8 @@ internal static class CdcProviderSetupReadinessRules
         List<CdcConnectorTemplateDiagnostic> diagnostics
     )
     {
-        CdcProviderArtifactObservation[] captureInstances = ArtifactInventory(providerSetupResult)
+        CdcProviderArtifactObservation[] captureInstances = CdcConnectorTemplateSharedRules
+            .ArtifactInventory(providerSetupResult)
             .Where(artifact => artifact.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance)
             .ToArray();
 
@@ -435,7 +445,10 @@ internal static class CdcProviderSetupReadinessRules
         )
         {
             CdcProviderArtifactObservation[] tableCaptureInstances = captureInstances
-                .Where(artifact => SqlServerCaptureInstanceSourceTableKind(artifact) == tableKind)
+                .Where(artifact =>
+                    CdcConnectorTemplateSharedRules.SqlServerCaptureInstanceSourceTableKind(artifact)
+                    == tableKind
+                )
                 .ToArray();
 
             if (
@@ -462,7 +475,8 @@ internal static class CdcProviderSetupReadinessRules
         }
 
         int extraCaptureInstanceCount = captureInstances.Count(artifact =>
-            SqlServerCaptureInstanceSourceTableKind(artifact) is not { } tableKind
+            CdcConnectorTemplateSharedRules.SqlServerCaptureInstanceSourceTableKind(artifact)
+                is not { } tableKind
             || !CdcConnectorTemplateSharedRules.OrderedRequiredSourceTableKinds.Contains(tableKind)
         );
         if (extraCaptureInstanceCount == 0)
@@ -505,18 +519,6 @@ internal static class CdcProviderSetupReadinessRules
             redactionClassification
         );
 
-    private static bool HasRequiredSourceInventory(
-        IReadOnlyList<CdcSourceTableInventory>? sourceTableInventory
-    ) =>
-        sourceTableInventory is not null
-        && CdcConnectorTemplateSharedRules.HasRequiredSourceInventory(sourceTableInventory);
-
-    private static bool HasExpectedMessageKeyColumns(
-        IReadOnlyList<CdcExpectedMessageKeyColumns>? expectedMessageKeyColumns
-    ) =>
-        expectedMessageKeyColumns is not null
-        && CdcConnectorTemplateSharedRules.HasExpectedMessageKeyColumns(expectedMessageKeyColumns);
-
     private static bool HasDuplicateColumnNames(CdcSourceTableInventory sourceTable) =>
         sourceTable
             .Columns.GroupBy(column => column.ColumnName.Value, StringComparer.Ordinal)
@@ -531,37 +533,13 @@ internal static class CdcProviderSetupReadinessRules
         CdcProviderSetupResult providerSetupResult,
         CdcProviderArtifactKind artifactKind
     ) =>
-        ArtifactInventory(providerSetupResult)
+        CdcConnectorTemplateSharedRules
+            .ArtifactInventory(providerSetupResult)
             .Where(artifact =>
                 artifact.ArtifactKind == artifactKind
                 && artifact.State is CdcProviderArtifactState.Created or CdcProviderArtifactState.Matched
             )
             .ToArray();
-
-    private static CdcProviderArtifactObservation[] ArtifactInventory(
-        CdcProviderSetupResult providerSetupResult
-    ) => providerSetupResult.ArtifactInventory is null ? [] : providerSetupResult.ArtifactInventory.ToArray();
-
-    private static CdcSourceTableKind? SqlServerCaptureInstanceSourceTableKind(
-        CdcProviderArtifactObservation artifact
-    )
-    {
-        if (
-            artifact.SafeObservedValues is null
-            || !artifact.SafeObservedValues.TryGetValue("source_table_kind", out string? sourceTableKind)
-        )
-        {
-            return null;
-        }
-
-        return sourceTableKind switch
-        {
-            "document_cache" => CdcSourceTableKind.DocumentCache,
-            "document" => CdcSourceTableKind.Document,
-            "cdc_heartbeat" => CdcSourceTableKind.CdcHeartbeat,
-            _ => null,
-        };
-    }
 
     private static string SqlServerCaptureInstanceObservedValue(
         IReadOnlyList<CdcProviderArtifactObservation> tableCaptureInstances

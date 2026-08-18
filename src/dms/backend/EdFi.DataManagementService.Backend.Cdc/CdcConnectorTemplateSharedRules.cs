@@ -89,10 +89,13 @@ internal static class CdcConnectorTemplateSharedRules
         };
 
     internal static bool HasRequiredSourceInventory(
-        IReadOnlyList<CdcSourceTableInventory> sourceTableInventory
+        IReadOnlyList<CdcSourceTableInventory>? sourceTableInventory
     )
     {
-        ArgumentNullException.ThrowIfNull(sourceTableInventory);
+        if (sourceTableInventory is null)
+        {
+            return false;
+        }
 
         CdcSourceTableKind[] observedKinds = sourceTableInventory.Select(table => table.TableKind).ToArray();
 
@@ -103,10 +106,13 @@ internal static class CdcConnectorTemplateSharedRules
     }
 
     internal static bool HasExpectedMessageKeyColumns(
-        IReadOnlyList<CdcExpectedMessageKeyColumns> expectedMessageKeyColumns
+        IReadOnlyList<CdcExpectedMessageKeyColumns>? expectedMessageKeyColumns
     )
     {
-        ArgumentNullException.ThrowIfNull(expectedMessageKeyColumns);
+        if (expectedMessageKeyColumns is null)
+        {
+            return false;
+        }
 
         CdcSourceTableKind[] observedKinds = expectedMessageKeyColumns
             .Select(columns => columns.TableKind)
@@ -120,6 +126,40 @@ internal static class CdcConnectorTemplateSharedRules
                 columns.KeyColumns.Count == 1
                 && string.Equals(columns.KeyColumns[0].Value, "DocumentUuid", StringComparison.Ordinal)
             );
+    }
+
+    internal static CdcProviderArtifactObservation[] ArtifactInventory(
+        CdcProviderSetupResult providerSetupResult
+    )
+    {
+        ArgumentNullException.ThrowIfNull(providerSetupResult);
+
+        return providerSetupResult.ArtifactInventory is null
+            ? []
+            : providerSetupResult.ArtifactInventory.ToArray();
+    }
+
+    internal static CdcSourceTableKind? SqlServerCaptureInstanceSourceTableKind(
+        CdcProviderArtifactObservation artifact
+    )
+    {
+        ArgumentNullException.ThrowIfNull(artifact);
+
+        if (
+            artifact.SafeObservedValues is null
+            || !artifact.SafeObservedValues.TryGetValue("source_table_kind", out string? sourceTableKind)
+        )
+        {
+            return null;
+        }
+
+        return sourceTableKind switch
+        {
+            "document_cache" => CdcSourceTableKind.DocumentCache,
+            "document" => CdcSourceTableKind.Document,
+            "cdc_heartbeat" => CdcSourceTableKind.CdcHeartbeat,
+            _ => null,
+        };
     }
 
     internal static long HeartbeatIntervalMilliseconds(CdcConnectorTemplateRequest request)

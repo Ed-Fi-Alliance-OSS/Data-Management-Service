@@ -249,8 +249,9 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
         CdcConnectorTemplateRequest request,
         CdcProviderArtifactKind artifactKind
     ) =>
-        request
-            .ProviderSetupEvidence.Result.ArtifactInventory.Where(artifact =>
+        CdcConnectorTemplateSharedRules
+            .ArtifactInventory(request.ProviderSetupEvidence.Result)
+            .Where(artifact =>
                 artifact.ArtifactKind == artifactKind
                 && artifact.State is CdcProviderArtifactState.Created or CdcProviderArtifactState.Matched
             )

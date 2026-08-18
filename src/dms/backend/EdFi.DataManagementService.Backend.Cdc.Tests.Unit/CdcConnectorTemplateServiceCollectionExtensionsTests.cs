@@ -163,6 +163,61 @@ public class Given_CdcConnectorTemplateServiceRegistration
             );
     }
 
+    [Test]
+    public void It_reports_malformed_provider_setup_evidence_without_throwing_for_template_readiness()
+    {
+        CdcProviderSetupResult providerSetupResult = BuildProviderSetupResult(CdcProvider.SqlServer) with
+        {
+            ArtifactInventory =
+            [
+                BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
+                BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.Document) with
+                {
+                    SafeObservedValues = null!,
+                },
+                BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.CdcHeartbeat),
+            ],
+            SourceTableInventory = null!,
+            ExpectedMessageKeyColumns = null!,
+        };
+
+        CdcProviderSetupReadiness readiness = Readiness(providerSetupResult);
+
+        using var _ = new AssertionScope();
+        readiness.CanRenderTemplate.Should().BeFalse();
+        readiness
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceTableInventoryMismatch
+                && diagnostic.PropertyName == "providerSetup.sourceTableInventory"
+                && diagnostic.ObservedValue == "missing"
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch
+                && diagnostic.PropertyName == "providerSetup.expectedMessageKeyColumns"
+                && diagnostic.ObservedValue == "missing"
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code
+                    == CdcConnectorTemplateDiagnosticCodes.SqlServerCaptureInstanceMetadataRequired
+                && diagnostic.ExpectedValue
+                    == "one usable SQL Server capture-instance artifact for dms.Document"
+                && diagnostic.ObservedValue == "missing"
+            );
+        string.Join(
+                "|",
+                readiness.Diagnostics.SelectMany(diagnostic =>
+                    new[]
+                    {
+                        diagnostic.ExpectedValue ?? string.Empty,
+                        diagnostic.ObservedValue ?? string.Empty,
+                    }
+                )
+            )
+            .Should()
+            .NotContain("${env:CDC_DATABASE_PASSWORD}");
+    }
+
     private static CdcProviderSetupReadiness Readiness(CdcProviderSetupResult providerSetupResult)
     {
         IServiceCollection services = new ServiceCollection();
