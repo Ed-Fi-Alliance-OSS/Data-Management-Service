@@ -23,6 +23,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
     private const string ConnectorDatabasePassword = "EdFi_Dms1!";
     private const string PostgresqlDatabaseName = "edfi_datastore";
     private const string SqlServerDatabaseName = "edfi_datastore";
+    private const string SqlServerGatingRoleName = "dms_binding_gate";
     private const string DocumentStateTransformClass = "org.edfi.kafka.connect.transforms.DocumentState";
     private const string DocumentStateJsonConverterClass =
         "org.edfi.kafka.connect.converters.DocumentStateJsonConverter";
@@ -38,20 +39,55 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         new(
             CdcSourceTableKind.DocumentCache,
             "DocumentCache",
-            new CdcSafeName("dms_binding_document_cache_capture"),
-            "document_cache"
+            new CdcSafeName("dms_binding_document_cache"),
+            "document_cache",
+            "DocumentId",
+            [
+                new("DocumentId", "bigint"),
+                new("DocumentUuid", "uniqueidentifier"),
+                new("ProjectName", "nvarchar(256)"),
+                new("ResourceName", "nvarchar(256)"),
+                new("ResourceVersion", "nvarchar(32)"),
+                new("ContentVersion", "bigint"),
+                new("StreamEtag", "varchar(64)"),
+                new("LastModifiedAt", "datetime2(7)"),
+                new("DocumentJson", "nvarchar(max)"),
+                new("ComputedAt", "datetime2(7)"),
+            ]
         ),
         new(
             CdcSourceTableKind.Document,
             "Document",
-            new CdcSafeName("dms_binding_document_capture"),
-            "document"
+            new CdcSafeName("dms_binding_document"),
+            "document",
+            "DocumentId",
+            [
+                new("DocumentId", "bigint"),
+                new("DocumentUuid", "uniqueidentifier"),
+                new("ResourceKeyId", "smallint"),
+                new("CreatedByOwnershipTokenId", "smallint", IsNullable: true),
+                new("ContentVersion", "bigint"),
+                new("IdentityVersion", "bigint"),
+                new("ContentLastModifiedAt", "datetime2(7)"),
+                new("IdentityLastModifiedAt", "datetime2(7)"),
+                new("CreatedAt", "datetime2(7)"),
+            ]
         ),
         new(
             CdcSourceTableKind.CdcHeartbeat,
             "CdcHeartbeat",
             new CdcSafeName("dms_binding_cdc_heartbeat_capture"),
-            "cdc_heartbeat"
+            "cdc_heartbeat",
+            "HeartbeatId",
+            [
+                new("HeartbeatId", "smallint"),
+                new("HeartbeatSequence", "bigint"),
+                new("HeartbeatAt", "datetime2(7)"),
+            ],
+            [
+                "CONSTRAINT [CK_CdcHeartbeat_Singleton] CHECK ([HeartbeatId] = 1)",
+                "CONSTRAINT [CK_CdcHeartbeat_Sequence] CHECK ([HeartbeatSequence] >= 0)",
+            ]
         ),
     ];
 
@@ -121,6 +157,53 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             "cdc-template-offline",
             DockerCli.Offline
         );
+
+    public static void AssertSqlServerCaptureSetupMirrorsProviderSetupEvidence()
+    {
+        string[] setupSql = SqlServerCaptureInstances.Select(EnableSqlServerCaptureInstanceSql).ToArray();
+        Dictionary<string, CdcProviderArtifactObservation> artifacts = BuildArtifactInventory(
+                CdcProvider.SqlServer
+            )
+            .Where(artifact => artifact.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance)
+            .ToDictionary(artifact => artifact.SafeArtifactName.Value, StringComparer.Ordinal);
+
+        using var _ = new AssertionScope();
+        setupSql.Should().OnlyContain(sql => !sql.Contains("@role_name = NULL", StringComparison.Ordinal));
+        setupSql
+            .Should()
+            .OnlyContain(sql => sql.Contains("@role_name = N'dms_binding_gate'", StringComparison.Ordinal));
+        setupSql
+            .Should()
+            .OnlyContain(sql => sql.Contains("@supports_net_changes = 0", StringComparison.Ordinal));
+        setupSql.Should().OnlyContain(sql => sql.Contains("@index_name = NULL", StringComparison.Ordinal));
+        setupSql
+            .Should()
+            .OnlyContain(sql => sql.Contains("@filegroup_name = NULL", StringComparison.Ordinal));
+        setupSql
+            .Should()
+            .OnlyContain(sql => sql.Contains("@allow_partition_switch = 0", StringComparison.Ordinal));
+
+        foreach (SqlServerCaptureInstanceDefinition definition in SqlServerCaptureInstances)
+        {
+            string sql = setupSql.Single(sql =>
+                sql.Contains(
+                    $"@capture_instance = N'{definition.CaptureInstanceName.Value}'",
+                    StringComparison.Ordinal
+                )
+            );
+
+            sql.Should().Contain($"@source_name = N'{definition.SourceTableName}'");
+            sql.Should().Contain($"@captured_column_list = N'{definition.CapturedColumnList}'");
+
+            CdcProviderArtifactObservation artifact = artifacts[definition.CaptureInstanceName.Value];
+            artifact.SafeObservedValues["capture_instance"].Should().Be(definition.CaptureInstanceName.Value);
+            artifact.SafeObservedValues["source_table_kind"].Should().Be(definition.SourceTableKindToken);
+            artifact.SafeObservedValues["source_object"].Should().Be($"dms.{definition.SourceTableName}");
+            artifact.SafeObservedValues["role_name"].Should().Be(SqlServerGatingRoleName);
+            artifact.SafeObservedValues["supports_net_changes"].Should().Be(false.ToString());
+            artifact.SafeObservedValues["captured_columns"].Should().Be(definition.CapturedColumnCsv);
+        }
+    }
 
     public static async Task<CdcConnectorTemplatePinnedImageFixture> StartAsync(
         CdcProvider provider,
@@ -1001,6 +1084,10 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 
     private async Task CreateMinimalSqlServerObjectsAsync(CancellationToken cancellationToken)
     {
+        string createSourceTablesSql = string.Join(
+            Environment.NewLine,
+            SqlServerCaptureInstances.Select(CreateSqlServerSourceTableSql)
+        );
         string enableCaptureInstancesSql = string.Join(
             Environment.NewLine,
             SqlServerCaptureInstances.Select(EnableSqlServerCaptureInstanceSql)
@@ -1013,24 +1100,14 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             USE [{{SqlServerDatabaseName}}];
             IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'dms')
                 EXEC(N'CREATE SCHEMA [dms]');
-            IF OBJECT_ID(N'[dms].[DocumentCache]', N'U') IS NULL
-                CREATE TABLE [dms].[DocumentCache] ([DocumentUuid] nvarchar(36) NOT NULL PRIMARY KEY);
-            IF OBJECT_ID(N'[dms].[Document]', N'U') IS NULL
-                CREATE TABLE [dms].[Document] ([DocumentUuid] nvarchar(36) NOT NULL PRIMARY KEY);
-            IF OBJECT_ID(N'[dms].[CdcHeartbeat]', N'U') IS NULL
-                CREATE TABLE [dms].[CdcHeartbeat]
-                (
-                    [HeartbeatId] smallint NOT NULL PRIMARY KEY,
-                    [HeartbeatSequence] bigint NOT NULL,
-                    [HeartbeatAt] datetime2(7) NOT NULL,
-                    CONSTRAINT [CK_CdcHeartbeat_Singleton] CHECK ([HeartbeatId] = 1),
-                    CONSTRAINT [CK_CdcHeartbeat_Sequence] CHECK ([HeartbeatSequence] >= 0)
-                );
+            {{createSourceTablesSql}}
             IF NOT EXISTS (SELECT 1 FROM [dms].[CdcHeartbeat] WHERE [HeartbeatId] = 1)
                 INSERT INTO [dms].[CdcHeartbeat] ([HeartbeatId], [HeartbeatSequence], [HeartbeatAt])
                 VALUES (1, 0, sysutcdatetime());
             IF (SELECT is_cdc_enabled FROM sys.databases WHERE name = DB_NAME()) = 0
                 EXEC sys.sp_cdc_enable_db;
+            IF DATABASE_PRINCIPAL_ID(N'{{SqlServerLiteralValue(SqlServerGatingRoleName)}}') IS NULL
+                EXEC(N'CREATE ROLE {{SqlServerBracketIdentifier(SqlServerGatingRoleName)}}');
             {{enableCaptureInstancesSql}}
             """;
 
@@ -1059,10 +1136,43 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         await AssertSqlServerCaptureInstancesMatchProviderSetupEvidenceAsync(cancellationToken);
     }
 
+    private static string CreateSqlServerSourceTableSql(SqlServerCaptureInstanceDefinition definition)
+    {
+        string sourceTableName = SqlServerLiteralValue(definition.SourceTableName);
+        string columnDefinitions = string.Join(
+            $",{Environment.NewLine}",
+            definition.CapturedColumns.Select(column =>
+                $"                    {SqlServerBracketIdentifier(column.ColumnName)} {column.ProviderDataType} {(column.IsNullable ? "NULL" : "NOT NULL")}"
+            )
+        );
+        string constraintDefinitions = string.Join(
+            $",{Environment.NewLine}",
+            new[]
+            {
+                $"                    CONSTRAINT {SqlServerBracketIdentifier(definition.SourcePrimaryKeyName)} PRIMARY KEY CLUSTERED ({SqlServerBracketIdentifier(definition.PrimaryKeyColumnName)})",
+            }.Concat(
+                definition.AdditionalTableConstraints.Select(constraint =>
+                    $"                    {constraint}"
+                )
+            )
+        );
+
+        return $$"""
+            IF OBJECT_ID(N'[dms].[{{sourceTableName}}]', N'U') IS NULL
+                CREATE TABLE [dms].[{{sourceTableName}}]
+                (
+            {{columnDefinitions}},
+            {{constraintDefinitions}}
+                );
+            """;
+    }
+
     private static string EnableSqlServerCaptureInstanceSql(SqlServerCaptureInstanceDefinition definition)
     {
         string captureInstanceName = SqlServerLiteralValue(definition.CaptureInstanceName.Value);
         string sourceTableName = SqlServerLiteralValue(definition.SourceTableName);
+        string gatingRoleName = SqlServerLiteralValue(SqlServerGatingRoleName);
+        string capturedColumnList = SqlServerLiteralValue(definition.CapturedColumnList);
 
         return $$"""
             IF NOT EXISTS (
@@ -1071,9 +1181,13 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
                 EXEC sys.sp_cdc_enable_table
                     @source_schema = N'dms',
                     @source_name = N'{{sourceTableName}}',
-                    @role_name = NULL,
+                    @capture_instance = N'{{captureInstanceName}}',
                     @supports_net_changes = 0,
-                    @capture_instance = N'{{captureInstanceName}}';
+                    @role_name = N'{{gatingRoleName}}',
+                    @index_name = NULL,
+                    @captured_column_list = N'{{capturedColumnList}}',
+                    @filegroup_name = NULL,
+                    @allow_partition_switch = 0;
             """;
     }
 
@@ -1089,13 +1203,36 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         );
         string output = await ReadSqlServerScalarAsync(
             $$"""
+            WITH captured_columns AS (
+                SELECT
+                    captured_column.object_id,
+                    STRING_AGG(CONVERT(nvarchar(max), captured_column.column_name), N',') WITHIN GROUP (ORDER BY captured_column.column_ordinal) AS captured_columns
+                FROM cdc.captured_columns AS captured_column
+                GROUP BY captured_column.object_id
+            )
             SELECT
                 change_table.capture_instance
                 + N'|' + SCHEMA_NAME(source_table.schema_id)
                 + N'|' + source_table.name
+                + N'|' + COALESCE(change_table.role_name, N'')
+                + N'|' + CASE WHEN change_table.supports_net_changes = 1 THEN N'True' ELSE N'False' END
+                + N'|' + COALESCE(change_table.index_name, N'')
+                + N'|' + COALESCE(change_table.filegroup_name, N'')
+                + N'|' + CASE WHEN change_table.partition_switch = 1 THEN N'True' ELSE N'False' END
+                + N'|' + CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM sys.indexes AS source_index
+                    INNER JOIN sys.partition_schemes AS partition_scheme
+                        ON partition_scheme.data_space_id = source_index.data_space_id
+                    WHERE source_index.object_id = source_table.object_id
+                    AND source_index.index_id IN (0, 1)
+                ) THEN N'True' ELSE N'False' END
+                + N'|' + COALESCE(captured_columns.captured_columns, N'')
             FROM cdc.change_tables AS change_table
             INNER JOIN sys.tables AS source_table
                 ON source_table.object_id = change_table.source_object_id
+            LEFT JOIN captured_columns
+                ON captured_columns.object_id = change_table.object_id
             WHERE source_table.schema_id = SCHEMA_ID(N'dms')
                 AND source_table.name IN ({{sourceNameList}})
             ORDER BY change_table.capture_instance;
@@ -1103,24 +1240,93 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             cancellationToken
         );
 
-        string[] actualCaptureInstances = output
+        Dictionary<string, SqlServerCaptureInstanceMetadata> actualCaptureInstances = output
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .OrderBy(value => value, StringComparer.Ordinal)
-            .ToArray();
-        string[] advertisedCaptureInstances = BuildArtifactInventory(CdcProvider.SqlServer)
-            .Where(artifact => artifact.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance)
-            .Select(artifact =>
-                $"{artifact.SafeArtifactName.Value}|dms|{SqlServerSourceTableNameFromKindToken(artifact.SafeObservedValues["source_table_kind"])}"
-            )
-            .OrderBy(value => value, StringComparer.Ordinal)
-            .ToArray();
+            .Select(ParseSqlServerCaptureInstanceMetadata)
+            .ToDictionary(metadata => metadata.CaptureInstanceName, StringComparer.Ordinal);
+        Dictionary<string, CdcProviderArtifactObservation> advertisedCaptureInstances =
+            BuildArtifactInventory(CdcProvider.SqlServer)
+                .Where(artifact => artifact.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance)
+                .ToDictionary(artifact => artifact.SafeArtifactName.Value, StringComparer.Ordinal);
 
+        using var _ = new AssertionScope();
         actualCaptureInstances
-            .Should()
-            .Equal(
-                advertisedCaptureInstances,
-                "SQL Server pinned-image fixture CDC capture instances should match the provider setup evidence advertised to the template service"
+            .Keys.Should()
+            .BeEquivalentTo(
+                SqlServerCaptureInstances.Select(definition => definition.CaptureInstanceName.Value)
             );
+        advertisedCaptureInstances.Keys.Should().BeEquivalentTo(actualCaptureInstances.Keys);
+
+        foreach (SqlServerCaptureInstanceDefinition definition in SqlServerCaptureInstances)
+        {
+            SqlServerCaptureInstanceMetadata metadata = actualCaptureInstances[
+                definition.CaptureInstanceName.Value
+            ];
+            CdcProviderArtifactObservation artifact = advertisedCaptureInstances[
+                definition.CaptureInstanceName.Value
+            ];
+
+            metadata.SourceSchema.Should().Be("dms");
+            metadata.SourceTableName.Should().Be(definition.SourceTableName);
+            metadata.RoleName.Should().Be(SqlServerGatingRoleName);
+            metadata.SupportsNetChanges.Should().BeFalse();
+            metadata
+                .IndexName.Should()
+                .BeOneOf(
+                    [string.Empty, definition.SourcePrimaryKeyName],
+                    "the fixture requests @index_name = NULL, so SQL Server may expose no index or the selected source primary key"
+                );
+            metadata.FilegroupName.Should().BeEmpty();
+            metadata
+                .SourceIsPartitioned.Should()
+                .BeFalse("the fixture source tables are deliberately not partitioned");
+            (metadata.SourceIsPartitioned && metadata.PartitionSwitch)
+                .Should()
+                .BeFalse("partition switching must not be enabled for partitioned fixture sources");
+            metadata
+                .CapturedColumns.Should()
+                .Equal(definition.CapturedColumns.Select(column => column.ColumnName));
+
+            artifact.SafeObservedValues["capture_instance"].Should().Be(metadata.CaptureInstanceName);
+            artifact.SafeObservedValues["source_table_kind"].Should().Be(definition.SourceTableKindToken);
+            artifact.SafeObservedValues["source_object"].Should().Be($"dms.{metadata.SourceTableName}");
+            artifact.SafeObservedValues["role_name"].Should().Be(metadata.RoleName);
+            artifact
+                .SafeObservedValues["supports_net_changes"]
+                .Should()
+                .Be(metadata.SupportsNetChanges.ToString());
+            artifact
+                .SafeObservedValues["captured_columns"]
+                .Should()
+                .Be(string.Join(",", metadata.CapturedColumns));
+        }
+    }
+
+    private static SqlServerCaptureInstanceMetadata ParseSqlServerCaptureInstanceMetadata(string value)
+    {
+        string[] parts = value.Split('|', StringSplitOptions.TrimEntries);
+        if (parts.Length != 10)
+        {
+            throw new InvalidOperationException(
+                $"Unexpected SQL Server CDC capture metadata shape: {SanitizeForAssertion(value)}"
+            );
+        }
+
+        string[] capturedColumns = parts[9]
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        return new SqlServerCaptureInstanceMetadata(
+            CaptureInstanceName: parts[0],
+            SourceSchema: parts[1],
+            SourceTableName: parts[2],
+            RoleName: parts[3],
+            SupportsNetChanges: bool.Parse(parts[4]),
+            IndexName: parts[5],
+            FilegroupName: parts[6],
+            PartitionSwitch: bool.Parse(parts[7]),
+            SourceIsPartitioned: bool.Parse(parts[8]),
+            CapturedColumns: capturedColumns
+        );
     }
 
     private async Task<long> ReadProviderHeartbeatSequenceAsync(CancellationToken cancellationToken)
@@ -1560,12 +1766,8 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
     private static string SqlServerLiteralValue(string value) =>
         value.Replace("'", "''", StringComparison.Ordinal);
 
-    private static string SqlServerSourceTableNameFromKindToken(string tableKindToken) =>
-        SqlServerCaptureInstances
-            .Single(definition =>
-                string.Equals(definition.SourceTableKindToken, tableKindToken, StringComparison.Ordinal)
-            )
-            .SourceTableName;
+    private static string SqlServerBracketIdentifier(string value) =>
+        $"[{value.Replace("]", "]]", StringComparison.Ordinal)}]";
 
     private static CdcConnectorTemplateBindingIdentity BuildBinding(CdcProvider provider) =>
         new(
@@ -1654,36 +1856,71 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             {
                 ["capture_instance"] = definition.CaptureInstanceName.Value,
                 ["source_table_kind"] = definition.SourceTableKindToken,
+                ["source_object"] = $"dms.{definition.SourceTableName}",
+                ["role_name"] = SqlServerGatingRoleName,
+                ["supports_net_changes"] = false.ToString(),
+                ["expected_supports_net_changes"] = false.ToString(),
+                ["expected_source_index"] = $"none_or_source_primary_key.{definition.SourcePrimaryKeyName}",
+                ["expected_filegroup_name"] = "none",
+                ["expected_partition_switch"] = "disabled_when_source_partitioned",
+                ["captured_columns"] = definition.CapturedColumnCsv,
+                ["captured_column_count"] = definition.CapturedColumns.Count.ToString(
+                    CultureInfo.InvariantCulture
+                ),
             }
         );
 
     private static IReadOnlyList<CdcSourceTableInventory> BuildRequiredSourceTableInventory(
         CdcProvider provider
     ) =>
-        [
-            BuildSourceTable(
-                provider,
-                CdcSourceTableKind.DocumentCache,
-                "DocumentCache",
-                [BuildColumn(provider, "DocumentUuid")]
-            ),
-            BuildSourceTable(
-                provider,
-                CdcSourceTableKind.Document,
-                "Document",
-                [BuildColumn(provider, "DocumentUuid")]
-            ),
-            BuildSourceTable(
-                provider,
-                CdcSourceTableKind.CdcHeartbeat,
-                "CdcHeartbeat",
-                [
-                    BuildColumn(provider, "HeartbeatId"),
-                    BuildColumn(provider, "HeartbeatSequence", 2),
-                    BuildColumn(provider, "HeartbeatAt", 3),
-                ]
-            ),
-        ];
+        provider == CdcProvider.SqlServer
+            ? SqlServerCaptureInstances.Select(BuildSqlServerSourceTableInventory).ToArray()
+            :
+            [
+                BuildSourceTable(
+                    provider,
+                    CdcSourceTableKind.DocumentCache,
+                    "DocumentCache",
+                    [BuildColumn(provider, "DocumentUuid")]
+                ),
+                BuildSourceTable(
+                    provider,
+                    CdcSourceTableKind.Document,
+                    "Document",
+                    [BuildColumn(provider, "DocumentUuid")]
+                ),
+                BuildSourceTable(
+                    provider,
+                    CdcSourceTableKind.CdcHeartbeat,
+                    "CdcHeartbeat",
+                    [
+                        BuildColumn(provider, "HeartbeatId"),
+                        BuildColumn(provider, "HeartbeatSequence", 2),
+                        BuildColumn(provider, "HeartbeatAt", 3),
+                    ]
+                ),
+            ];
+
+    private static CdcSourceTableInventory BuildSqlServerSourceTableInventory(
+        SqlServerCaptureInstanceDefinition definition
+    ) =>
+        new(
+            definition.TableKind,
+            new DbTableName(new DbSchemaName("dms"), definition.SourceTableName),
+            $"[dms].[{definition.SourceTableName}]",
+            definition
+                .CapturedColumns.Select(
+                    (column, index) =>
+                        new CdcSourceColumnInventory(
+                            new DbColumnName(column.ColumnName),
+                            SqlServerBracketIdentifier(column.ColumnName),
+                            index + 1,
+                            column.ProviderDataType,
+                            column.IsNullable
+                        )
+                )
+                .ToArray()
+        );
 
     private static CdcSourceTableInventory BuildSourceTable(
         CdcProvider provider,
@@ -1740,7 +1977,44 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         CdcSourceTableKind TableKind,
         string SourceTableName,
         CdcSafeName CaptureInstanceName,
-        string SourceTableKindToken
+        string SourceTableKindToken,
+        string PrimaryKeyColumnName,
+        IReadOnlyList<SqlServerSourceColumnDefinition> CapturedColumns,
+        IReadOnlyList<string>? AdditionalTableConstraintsInput = null
+    )
+    {
+        public IReadOnlyList<string> AdditionalTableConstraints { get; } =
+            AdditionalTableConstraintsInput ?? [];
+
+        public string SourcePrimaryKeyName => $"PK_{SourceTableName}";
+
+        public string CapturedColumnList =>
+            string.Join(
+                ", ",
+                CapturedColumns.Select(column => SqlServerBracketIdentifier(column.ColumnName))
+            );
+
+        public string CapturedColumnCsv =>
+            string.Join(",", CapturedColumns.Select(column => column.ColumnName));
+    }
+
+    private sealed record SqlServerSourceColumnDefinition(
+        string ColumnName,
+        string ProviderDataType,
+        bool IsNullable = false
+    );
+
+    private sealed record SqlServerCaptureInstanceMetadata(
+        string CaptureInstanceName,
+        string SourceSchema,
+        string SourceTableName,
+        string RoleName,
+        bool SupportsNetChanges,
+        string IndexName,
+        string FilegroupName,
+        bool PartitionSwitch,
+        bool SourceIsPartitioned,
+        IReadOnlyList<string> CapturedColumns
     );
 
     private sealed record CdcConnectorSourceOffsetSnapshot(

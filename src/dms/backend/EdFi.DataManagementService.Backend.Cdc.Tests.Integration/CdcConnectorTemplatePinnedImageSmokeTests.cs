@@ -158,4 +158,10 @@ public sealed class Given_SqlServerPinnedImageConnectorTemplateFixture
     : Given_PinnedImageConnectorTemplateFixture
 {
     protected override CdcProvider Provider => CdcProvider.SqlServer;
+
+    [Test]
+    public void It_uses_the_provider_setup_capture_instance_shape_in_fixture_sql_and_evidence()
+    {
+        CdcConnectorTemplatePinnedImageFixture.AssertSqlServerCaptureSetupMirrorsProviderSetupEvidence();
+    }
 }
