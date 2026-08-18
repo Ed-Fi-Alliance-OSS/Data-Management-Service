@@ -505,15 +505,6 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         await AssertKafkaConnectWorkerEnvConfigProviderEnabledAsync(cancellationToken);
         AssertRenderedProviderPasswordUsesEnvReference(rendered);
 
-        string connectorName = rendered.ConnectorName.Value;
-        using HttpResponseMessage deleteResponse = await _httpClient.DeleteAsync(
-            $"/connectors/{Uri.EscapeDataString(connectorName)}",
-            cancellationToken
-        );
-        deleteResponse
-            .StatusCode.Should()
-            .BeOneOf(HttpStatusCode.NoContent, HttpStatusCode.NotFound, HttpStatusCode.Accepted);
-
         rendered.RegistrationPayload.Should().NotBeNull();
         using var content = new StringContent(
             JsonSerializer.Serialize(rendered.RegistrationPayload),
