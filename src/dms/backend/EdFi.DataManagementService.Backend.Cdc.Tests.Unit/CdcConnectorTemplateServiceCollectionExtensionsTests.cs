@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.Ddl;
+using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using FluentAssertions.Execution;
 using Microsoft.Extensions.DependencyInjection;
@@ -216,6 +217,65 @@ public class Given_CdcConnectorTemplateServiceRegistration
             )
             .Should()
             .NotContain("${env:CDC_DATABASE_PASSWORD}");
+    }
+
+    [Test]
+    public void It_reports_null_nested_provider_setup_inventory_entries_without_throwing_for_template_readiness()
+    {
+        CdcProviderSetupResult providerSetupResult = BuildProviderSetupResult(CdcProvider.Postgresql) with
+        {
+            SourceTableInventory =
+            [
+                BuildSourceTable(
+                    CdcProvider.Postgresql,
+                    CdcSourceTableKind.DocumentCache,
+                    "DocumentCache",
+                    [BuildColumn(CdcProvider.Postgresql, "DocumentUuid")]
+                ),
+                null!,
+                BuildSourceTable(
+                    CdcProvider.Postgresql,
+                    CdcSourceTableKind.CdcHeartbeat,
+                    "CdcHeartbeat",
+                    [
+                        BuildColumn(CdcProvider.Postgresql, "HeartbeatId"),
+                        BuildColumn(CdcProvider.Postgresql, "HeartbeatSequence", 2),
+                        BuildColumn(CdcProvider.Postgresql, "HeartbeatAt", 3),
+                    ]
+                ),
+            ],
+            ExpectedMessageKeyColumns =
+            [
+                new(CdcSourceTableKind.DocumentCache, [new DbColumnName("DocumentUuid")]),
+                new(CdcSourceTableKind.Document, null!),
+            ],
+        };
+        CdcProviderSetupReadiness? readiness = null;
+
+        Action act = () => readiness = Readiness(providerSetupResult);
+
+        using var _ = new AssertionScope();
+        act.Should().NotThrow();
+        readiness.Should().NotBeNull();
+        readiness!.CanRenderTemplate.Should().BeFalse();
+        readiness
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceTableInventoryMismatch
+                && diagnostic.PropertyName == "providerSetup.sourceTableInventory"
+                && diagnostic.ObservedValue == "3"
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch
+                && diagnostic.PropertyName == "providerSetup.expectedMessageKeyColumns"
+                && diagnostic.ObservedValue == "2"
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.MessageKey
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            );
     }
 
     [Test]

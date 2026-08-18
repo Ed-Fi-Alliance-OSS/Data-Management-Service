@@ -169,6 +169,24 @@ internal static class CdcProviderSetupPrerequisiteRules
                 table.TableKind == messageKeyColumns.TableKind
             );
 
+            if (HasMalformedSourceColumns(sourceTable))
+            {
+                diagnostics.Add(
+                    BuildDiagnostic(
+                        CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch,
+                        CdcConnectorTemplateDiagnosticCategory.MessageKey,
+                        "providerSetup.sourceTableInventory.columns",
+                        $"non-null source column inventory for {CdcConnectorTemplateSharedRules.ExpectedSourceTableName(sourceTable.TableKind)}",
+                        "malformed",
+                        providerSetupResult.Provider,
+                        safeArtifactOrObjectName,
+                        sourcePhase,
+                        CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+                    )
+                );
+                continue;
+            }
+
             if (HasDuplicateColumnNames(sourceTable))
             {
                 diagnostics.Add(
@@ -391,6 +409,9 @@ internal static class CdcProviderSetupPrerequisiteRules
                 && artifact.State is CdcProviderArtifactState.Created or CdcProviderArtifactState.Matched
             )
             .ToArray();
+
+    private static bool HasMalformedSourceColumns(CdcSourceTableInventory sourceTable) =>
+        sourceTable.Columns is null || sourceTable.Columns.Any(column => column is null);
 
     private static bool HasDuplicateColumnNames(CdcSourceTableInventory sourceTable) =>
         sourceTable

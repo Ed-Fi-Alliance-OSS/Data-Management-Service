@@ -97,6 +97,11 @@ internal static class CdcConnectorTemplateSharedRules
             return false;
         }
 
+        if (sourceTableInventory.Any(table => table is null))
+        {
+            return false;
+        }
+
         CdcSourceTableKind[] observedKinds = sourceTableInventory.Select(table => table.TableKind).ToArray();
 
         return sourceTableInventory.Count == OrderedRequiredSourceTableKinds.Count
@@ -110,6 +115,15 @@ internal static class CdcConnectorTemplateSharedRules
     )
     {
         if (expectedMessageKeyColumns is null)
+        {
+            return false;
+        }
+
+        if (
+            expectedMessageKeyColumns.Any(columns =>
+                columns is null || columns.KeyColumns is null || columns.KeyColumns.Count == 0
+            )
+        )
         {
             return false;
         }
@@ -136,7 +150,7 @@ internal static class CdcConnectorTemplateSharedRules
 
         return providerSetupResult.ArtifactInventory is null
             ? []
-            : providerSetupResult.ArtifactInventory.ToArray();
+            : providerSetupResult.ArtifactInventory.Where(artifact => artifact is not null).ToArray();
     }
 
     internal static CdcSourceTableKind? SqlServerCaptureInstanceSourceTableKind(

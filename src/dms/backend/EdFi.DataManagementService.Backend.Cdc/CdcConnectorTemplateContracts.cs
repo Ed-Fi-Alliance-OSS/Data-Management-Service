@@ -457,36 +457,10 @@ public sealed record CdcConnectorTemplateRequest
         string parameterName
     )
     {
-        ArgumentNullException.ThrowIfNull(expectedMessageKeyColumns);
-
-        var observedKinds = expectedMessageKeyColumns.Select(columns => columns.TableKind).ToArray();
-        IReadOnlyList<CdcSourceTableKind> requiredKinds =
-            CdcConnectorTemplateSharedRules.OrderedRequiredMessageKeyTableKinds;
-
-        if (
-            expectedMessageKeyColumns.Count != requiredKinds.Count
-            || requiredKinds.Except(observedKinds).Any()
-            || observedKinds.Except(requiredKinds).Any()
-            || observedKinds.GroupBy(kind => kind).Any(group => group.Count() > 1)
-        )
+        if (!CdcConnectorTemplateSharedRules.HasExpectedMessageKeyColumns(expectedMessageKeyColumns))
         {
             throw new ArgumentException(
                 "CDC provider setup result message-key inventory must contain only dms.DocumentCache and dms.Document.",
-                parameterName
-            );
-        }
-
-        bool hasInvalidKeyColumns = expectedMessageKeyColumns
-            .Select(messageKeyColumns => messageKeyColumns.KeyColumns)
-            .Any(keyColumns =>
-                keyColumns.Count != 1
-                || !string.Equals(keyColumns[0].Value, "DocumentUuid", StringComparison.Ordinal)
-            );
-
-        if (hasInvalidKeyColumns)
-        {
-            throw new ArgumentException(
-                "CDC provider setup result message-key inventory must use DocumentUuid as the only document key column.",
                 parameterName
             );
         }
