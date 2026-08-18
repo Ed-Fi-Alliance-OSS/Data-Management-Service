@@ -1066,7 +1066,13 @@ internal sealed class DescriptorReadHandler(
 
         try
         {
-            ascendingStarts = await ReadPartitionStartsAsync(preparation.PartitionPlan, cancellationToken)
+            ascendingStarts = await PartitionBoundaryCommand
+                .ExecuteAsync(
+                    _commandExecutor,
+                    preparation.PartitionPlan,
+                    "Descriptor partition boundary",
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
         }
         // Trade-off: a provider error raised while executing a custom-view boundary statement is
@@ -1278,26 +1284,6 @@ internal sealed class DescriptorReadHandler(
 
         return new DescriptorPartitionPreparationResult.Prepared(
             new DescriptorPartitionPreparation(authorizationSpec, partitionPlan)
-        );
-    }
-
-    /// <summary>
-    /// Executes the single identifiers-only boundary statement and reads the ordered starting ids.
-    /// </summary>
-    private Task<IReadOnlyList<long>> ReadPartitionStartsAsync(
-        PartitionWindowPlan partitionPlan,
-        CancellationToken cancellationToken
-    )
-    {
-        var command = new RelationalCommand(
-            partitionPlan.Plan.PageDocumentIdSql,
-            PartitionBoundaryParameterBinding.Bind(partitionPlan, "Descriptor partition boundary")
-        );
-
-        return _commandExecutor.ExecuteReaderAsync(
-            command,
-            PartitionBoundaryReader.ReadAscendingStartsAsync,
-            cancellationToken
         );
     }
 

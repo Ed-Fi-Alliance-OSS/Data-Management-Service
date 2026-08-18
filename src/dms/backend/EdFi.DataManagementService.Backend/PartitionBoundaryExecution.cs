@@ -45,6 +45,44 @@ internal static class PartitionBoundaryParameterBinding
 }
 
 /// <summary>
+/// Executes a compiled partition-boundary statement and reads the ordered starting identifiers.
+/// </summary>
+/// <remarks>
+/// The regular-resource and descriptor entry points differ in how the candidate relation is planned and
+/// in how a provider fault is classified, never in how the compiled statement is executed. Keeping the
+/// single command here means the binder, the reader, and the one command that uses them stay in one
+/// file, which is the property the binder was extracted for.
+///
+/// The command description is the caller's, because it names the operation in the diagnostics the
+/// binder and the executor emit: a boundary statement from the descriptor path has to stay
+/// distinguishable from a regular-resource one in a log.
+/// </remarks>
+internal static class PartitionBoundaryCommand
+{
+    public static Task<IReadOnlyList<long>> ExecuteAsync(
+        IRelationalCommandExecutor commandExecutor,
+        PartitionWindowPlan partitionPlan,
+        string commandDescription,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(commandExecutor);
+        ArgumentNullException.ThrowIfNull(partitionPlan);
+
+        var command = new RelationalCommand(
+            partitionPlan.Plan.PageDocumentIdSql,
+            PartitionBoundaryParameterBinding.Bind(partitionPlan, commandDescription)
+        );
+
+        return commandExecutor.ExecuteReaderAsync(
+            command,
+            PartitionBoundaryReader.ReadAscendingStartsAsync,
+            cancellationToken
+        );
+    }
+}
+
+/// <summary>
 /// Reads the starting identifiers a partition-boundary statement returns.
 /// </summary>
 /// <remarks>

@@ -31,6 +31,19 @@ public class PartitionRequestHandlerTests
 {
     private const int MaximumPageSize = 500;
     private const int RequestedPartitionCount = 9;
+    private const string TenantKey = "partition-tenant";
+
+    /// <summary>
+    /// Request state the handler must carry into the backend request unchanged. Every value here is
+    /// deliberately not the one a bare <see cref="RequestInfo" /> already holds, because a field
+    /// asserted against its own default passes whether or not the handler ever copied it.
+    /// </summary>
+    private static readonly QueryElement[] _queryElements =
+    [
+        new("codeValue", [new JsonPath("$.codeValue")], "Partitioned", "string"),
+    ];
+
+    private static readonly ChangeVersionRange _changeVersionRange = new(1_387, 2_387);
 
     private sealed class Handler(PartitionResult result) : IPartitionQueryHandler
     {
@@ -62,6 +75,9 @@ public class PartitionRequestHandlerTests
         RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
         requestInfo.ScopedServiceProvider = serviceProvider;
         requestInfo.RequestedPartitionCount = requestedPartitionCount;
+        requestInfo.QueryElements = _queryElements;
+        requestInfo.ChangeVersionRange = _changeVersionRange;
+        requestInfo.FrontendRequest = requestInfo.FrontendRequest with { Tenant = TenantKey };
 
         await new PartitionRequestHandler(
             NullLogger.Instance,
@@ -157,6 +173,27 @@ public class PartitionRequestHandlerTests
             _handler
                 .CapturedRequest!.MinimumPartitionSize.Should()
                 .Be(CursorPagingLimits.MinimumPartitionSize(MaximumPageSize));
+        }
+
+        // Boundaries are calculated over the rows a page of the same request would be selected from, so
+        // everything that narrows that candidate set has to reach the backend. Dropping any of the three
+        // below would still answer 200 with walkable tokens, just over the wrong set of rows.
+        [Test]
+        public void It_hands_the_resource_filters_to_the_backend()
+        {
+            _handler.CapturedRequest!.QueryElements.Should().BeSameAs(_queryElements);
+        }
+
+        [Test]
+        public void It_hands_the_change_version_window_to_the_backend()
+        {
+            _handler.CapturedRequest!.ChangeVersionRange.Should().Be(_changeVersionRange);
+        }
+
+        [Test]
+        public void It_hands_the_tenant_to_the_backend()
+        {
+            _handler.CapturedRequest!.TenantKey.Should().Be(TenantKey);
         }
     }
 

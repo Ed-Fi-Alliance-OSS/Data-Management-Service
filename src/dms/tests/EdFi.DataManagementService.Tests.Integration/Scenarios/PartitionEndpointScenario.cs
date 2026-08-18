@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -56,12 +57,6 @@ internal static class PartitionEndpointScenario
     /// runs across separate ranges rather than inside one.
     /// </summary>
     private const int SeededDocumentCount = 25;
-
-    /// <summary>
-    /// A walk inside one partition cannot loop forever on a token that fails to advance: it exhausts
-    /// this and fails with the pages it did retrieve rather than hanging.
-    /// </summary>
-    private const int MaximumWalkedPages = 25;
 
     public static async Task It_covers_a_regular_resource_collection_across_its_partitions(
         ApiIntegrationHarness harness
@@ -141,6 +136,17 @@ internal static class PartitionEndpointScenario
 
         var pageTokens = await ReadPageTokensAsync(harness, $"{DescriptorPartitionsEndpoint}?{filter}");
 
+        // The boundaries themselves, not just the documents the walk reaches. Boundaries calculated
+        // over the unfiltered collection would still deliver only the matching document once the walk
+        // applies the filter to every range, so the containment assertions below cannot tell a filtered
+        // candidate set from an unfiltered one. The count can: one candidate is one boundary.
+        pageTokens
+            .Should()
+            .HaveCount(
+                1,
+                "the filter leaves a single candidate, so the boundaries are calculated over one row"
+            );
+
         var returnedIds = await WalkEveryPartitionAsync(
             harness,
             $"{DescriptorEndpoint}?{filter}",
@@ -174,14 +180,21 @@ internal static class PartitionEndpointScenario
     }
 
     /// <summary>
-    /// An empty collection is a partitionable one: it simply has no boundaries. The response shape does
-    /// not change, so a client can walk zero tokens without special-casing anything.
+    /// An empty candidate set is a partitionable one: it simply has no boundaries. The response shape
+    /// does not change, so a client can walk zero tokens without special-casing anything.
     /// </summary>
+    /// <remarks>
+    /// The collection is seeded first even though the filter matches none of it. Without the seed the
+    /// leased database might hold no descriptors at all, and the empty token array would be a statement
+    /// about the database rather than about the filter — which is the property under test.
+    /// </remarks>
     public static async Task It_returns_an_empty_token_array_for_a_filter_matching_nothing(
         ApiIntegrationHarness harness
     )
     {
         ArgumentNullException.ThrowIfNull(harness);
+
+        await SeedDescriptorsAsync(harness, "empty-filter");
 
         var pageTokens = await ReadPageTokensAsync(
             harness,
@@ -328,13 +341,15 @@ internal static class PartitionEndpointScenario
     )
     {
         char separator = collectionEndpoint.Contains('?', StringComparison.Ordinal) ? '&' : '?';
+        int collectionCount = await ReadTotalCountAsync(harness, collectionEndpoint, separator);
+        int maximumWalkedPages = PagesToCover(collectionCount);
         HashSet<string> returnedIds = [];
 
         foreach (string partitionToken in pageTokens)
         {
             string? pageToken = partitionToken;
 
-            for (var page = 0; page < MaximumWalkedPages; page++)
+            for (var page = 0; page < maximumWalkedPages; page++)
             {
                 using HttpResponseMessage response = await harness.HttpClient.GetAsync(
                     $"{collectionEndpoint}{separator}pageToken={Uri.EscapeDataString(pageToken!)}"
@@ -361,11 +376,51 @@ internal static class PartitionEndpointScenario
                 pageToken = nextPageTokenValues.Single();
             }
 
-            pageToken.Should().BeNull($"a walk of one partition of '{collectionEndpoint}' must terminate");
+            pageToken
+                .Should()
+                .BeNull(
+                    $"a walk of one partition of '{collectionEndpoint}' must terminate, and no partition "
+                        + $"holds more than the {collectionCount} documents the collection itself holds"
+                );
         }
 
         return returnedIds;
     }
+
+    /// <summary>
+    /// The number of documents the collection this walk covers currently holds, filter included. Read
+    /// from the collection rather than from the seed so the bound it feeds tracks whatever the leased
+    /// database holds, and so a fixture that starts seeding this collection changes the reported count
+    /// instead of turning a walk into a non-terminating one.
+    /// </summary>
+    private static async Task<int> ReadTotalCountAsync(
+        ApiIntegrationHarness harness,
+        string collectionEndpoint,
+        char separator
+    )
+    {
+        using HttpResponseMessage response = await harness.HttpClient.GetAsync(
+            $"{collectionEndpoint}{separator}limit=1&totalCount=true"
+        );
+        string body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        response
+            .Headers.TryGetValues("Total-Count", out IEnumerable<string>? totalCountValues)
+            .Should()
+            .BeTrue("totalCount=true must emit the Total-Count header");
+
+        return int.Parse(totalCountValues!.Single(), CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// The pages a walk of one partition may take before it has failed to advance. A partition cannot
+    /// hold more rows than the whole collection does, so the pages that cover the collection bound it,
+    /// plus one for the empty page a full final page provokes and one for slack against an insert
+    /// landing between the count and the walk.
+    /// </summary>
+    private static int PagesToCover(int documentCount) =>
+        ((documentCount + HostMaximumPageSize - 1) / HostMaximumPageSize) + 2;
 
     private static async Task<string[]> SeedMergeItemsAsync(ApiIntegrationHarness harness, string scenario)
     {
@@ -408,8 +463,13 @@ internal static class PartitionEndpointScenario
     /// A per-run identity inside Int32, because the merge item's identity is an integer and a collision
     /// with a sibling scenario's seed would answer 200 on an update instead of 201.
     /// </summary>
+    /// <remarks>
+    /// The stride between runs is wider than <see cref="SeededDocumentCount" />, so a run's indices stay
+    /// inside the slot its suffix selected. A stride narrower than the seed would let one run's later
+    /// indices spill into the next slot and reintroduce the collision this exists to avoid.
+    /// </remarks>
     private static int UniqueIdentity(string suffix, int index) =>
-        1_387_000 + Math.Abs(suffix.GetHashCode(StringComparison.Ordinal) % 100_000) * 10 + index;
+        1_387_000 + Math.Abs(suffix.GetHashCode(StringComparison.Ordinal) % 100_000) * 1_000 + index;
 
     /// <summary>
     /// The seeded descriptors' identities and their code values. The code values are returned because

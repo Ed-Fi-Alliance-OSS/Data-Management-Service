@@ -15,13 +15,16 @@ namespace EdFi.DataManagementService.Core.External.Backend;
 /// token text and no provider syntax. Core encodes each range as a page token at the HTTP contract
 /// boundary.
 ///
-/// The failure alternatives mirror the query failures reachable from the shared capability lookup,
-/// authorization resolution, and command execution the partition operation runs, so the two operations
-/// cannot answer the same backend condition differently. They are named for partitions rather than
-/// reused from <see cref="QueryResult"/> so a partition outcome cannot be mistaken for a GET-many one
-/// at the seam. There is deliberately no known-error alternative: that query failure reports invalid
-/// query terms that evaded validation against a hydrating page, and no partition path produces it, so
-/// the contract does not advertise an outcome nothing can return.
+/// The failure alternatives mirror the query failure set the shared capability lookup, authorization
+/// resolution, and command execution report, so the two operations cannot answer the same backend
+/// condition differently. Mirroring the set rather than only the conditions a partition request reaches
+/// means an alternative may have no producer: nothing classifies a provider fault as retryable on
+/// either operation today, so <see cref="PartitionFailureRetryable"/> is carried for the query
+/// alternative it mirrors rather than because a partition path constructs it. They are named for
+/// partitions rather than reused from <see cref="QueryResult"/> so a partition outcome cannot be
+/// mistaken for a GET-many one at the seam. There is deliberately no known-error alternative: that
+/// query failure reports invalid query terms that evaded validation against a hydrating page, and no
+/// partition path produces it, so the contract does not advertise an outcome nothing can return.
 /// </remarks>
 public abstract record PartitionResult
 {

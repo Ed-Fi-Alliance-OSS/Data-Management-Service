@@ -159,6 +159,14 @@ internal static class PartitionProfileScenario
     /// payload does not carry, so the stored documents are unchanged. The count is deliberately small:
     /// this scenario is about profile handling, and the multi-partition sizing is asserted by
     /// <see cref="PartitionEndpointScenario" />.
+    ///
+    /// <para>
+    /// The identity is a per-run slot inside Int32, because the merge item's identity is an integer and
+    /// a collision with a sibling scenario's seed would answer 200 on an update instead of 201. The
+    /// stride is wider than the seed so a run's indices stay inside the slot its suffix selected, and
+    /// the base is offset from the one <see cref="PartitionEndpointScenario" /> uses so the two
+    /// scenarios cannot land on the same slot.
+    /// </para>
     /// </summary>
     private static async Task SeedMergeItemsAsync(ApiIntegrationHarness harness)
     {
@@ -169,7 +177,9 @@ internal static class PartitionProfileScenario
             var payload = new JsonObject
             {
                 ["profileRootOnlyMergeItemId"] =
-                    1_387_500 + Math.Abs(suffix.GetHashCode(StringComparison.Ordinal) % 100_000) * 10 + index,
+                    1_387_500
+                    + Math.Abs(suffix.GetHashCode(StringComparison.Ordinal) % 100_000) * 1_000
+                    + index,
                 ["displayName"] = $"Partition profile {suffix} {index}",
             };
 

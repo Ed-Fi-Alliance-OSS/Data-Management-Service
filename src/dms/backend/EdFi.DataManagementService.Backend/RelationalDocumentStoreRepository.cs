@@ -1542,8 +1542,11 @@ public sealed class RelationalDocumentStoreRepository(
 
         try
         {
-            ascendingStarts = await ExecutePartitionBoundaryCommandAsync(
+            ascendingStarts = await PartitionBoundaryCommand
+                .ExecuteAsync(
+                    _commandExecutor,
                     preparation.PartitionPlan,
+                    "Partition boundary selection",
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -1781,26 +1784,6 @@ public sealed class RelationalDocumentStoreRepository(
 
     private static RelationalPartitionPreparationResult PartitionComplete(PartitionResult result) =>
         new RelationalPartitionPreparationResult.Complete(result);
-
-    /// <summary>
-    /// Executes the single identifiers-only boundary statement and reads the ordered starting ids.
-    /// </summary>
-    private Task<IReadOnlyList<long>> ExecutePartitionBoundaryCommandAsync(
-        PartitionWindowPlan partitionPlan,
-        CancellationToken cancellationToken
-    )
-    {
-        var command = new RelationalCommand(
-            partitionPlan.Plan.PageDocumentIdSql,
-            PartitionBoundaryParameterBinding.Bind(partitionPlan, "Partition boundary selection")
-        );
-
-        return _commandExecutor.ExecuteReaderAsync(
-            command,
-            PartitionBoundaryReader.ReadAscendingStartsAsync,
-            cancellationToken
-        );
-    }
 
     private async Task<DocumentCacheReadAccelerationQuerySelectionResult> SelectQueryReadAccelerationCandidatePageAsync(
         IQueryRequest queryRequest,
