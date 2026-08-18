@@ -65,7 +65,7 @@ graph TB
 
 - **FR-ARCH-1**: Configuration management SHALL be implemented in a separate application ("Configuration Management Service").
 - **FR-ARCH-2**: The Ed-Fi API service SHALL retrieve configuration information from the Configuration Management Service using the Ed-Fi Management API specification.
-- **FR-ARCH-3**: The Ed-FI API service SHALL support both current versions of PostgreSQL and Microsoft SQL Server interchangeably.
+- **FR-ARCH-3**: The Ed-Fi API service SHALL support both current versions of PostgreSQL and Microsoft SQL Server interchangeably.
 - **FR-ARCH-4**: The Ed-Fi API service SHALL NOT utilize an external cache provider (e.g. Redis, Memcached).
 - **FR-ARCH-5**: The Ed-Fi API service SHALL be capable of operating on either Windows or Linux machines.
 
@@ -246,7 +246,7 @@ graph TB
 
 - **FR-LOG-4.** Hosts SHOULD be able to optionally enable more detailed request/response logging for troubleshooting, and SHOULD be able to turn detailed logging off just as easily.
 - **FR-LOG-5.** When detailed request/response logging is enabled, dictionary key values SHALL be masked before being written to the log.
-- **FR-LOG-7.** Every failed request SHALL produce a corresponding log entry carrying the same Correlation ID as the error response.
+- **FR-LOG-6.** Every failed request SHALL produce a corresponding log entry carrying the same Correlation ID as the error response.
 
 ### 3.11 Schema & Dependency Publishing (FR-SCHEMA)
 
@@ -269,7 +269,7 @@ graph TB
 ### 4.2 Security (NFR-SEC)
 
 - **NFR-SEC-1.** Client secrets SHALL be hashed at rest, unconditionally, in every environment including local development; there is no plain-text storage opt-out.
-- **NFR-SEC-2.** Access-governance changes (claimset permissions, education organization / namespace / profile assignments) SHALL be configurable by hosts without requiring a new software release, via an external service.
+- **NFR-SEC-2.** Access-governance changes (claim set permissions, education organization / namespace / profile assignments) SHALL be configurable by hosts without requiring a new software release, via an external service.
 - **NFR-SEC-3.** The system SHALL document, but not itself remediate, the accepted business-process risks in NFR-SEC-3a through NFR-SEC-3d, which are inherent to how the ecosystem operates. Each SHOULD be mitigated by the host through external controls rather than by the platform itself.
   - **NFR-SEC-3a.** A client authorized to register a person's enrollment can thereby gain read access to that person's basic information. _Host mitigation:_ network and usage monitoring.
   - **NFR-SEC-3b.** Sequentially-issued identifiers are easier to guess than randomly-issued ones. _Host mitigation:_ a non-sequential identifier policy.
