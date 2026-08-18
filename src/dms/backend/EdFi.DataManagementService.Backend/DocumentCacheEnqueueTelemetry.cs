@@ -596,16 +596,6 @@ internal static class DocumentCacheEnqueueFailureClassifier
             return true;
         }
 
-        if (
-            classificationText.Contains(EnqueueFunctionPrefix, StringComparison.OrdinalIgnoreCase)
-            || classificationText.Contains(EnqueueTriggerName, StringComparison.OrdinalIgnoreCase)
-        )
-        {
-            category = DocumentCacheEnqueueFailureCategory.EnqueueTriggerUnavailable;
-            message = MessageFor(category);
-            return true;
-        }
-
         bool hasEnqueueArtifactEvidence = HasEnqueueArtifactEvidence(classificationText);
 
         if (
@@ -620,6 +610,16 @@ internal static class DocumentCacheEnqueueFailureClassifier
         if (IsProviderUnavailable(classificationText) && hasEnqueueArtifactEvidence)
         {
             category = DocumentCacheEnqueueFailureCategory.ProviderUnavailable;
+            message = MessageFor(category);
+            return true;
+        }
+
+        if (
+            classificationText.Contains(EnqueueFunctionPrefix, StringComparison.OrdinalIgnoreCase)
+            || classificationText.Contains(EnqueueTriggerName, StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            category = DocumentCacheEnqueueFailureCategory.EnqueueTriggerUnavailable;
             message = MessageFor(category);
             return true;
         }

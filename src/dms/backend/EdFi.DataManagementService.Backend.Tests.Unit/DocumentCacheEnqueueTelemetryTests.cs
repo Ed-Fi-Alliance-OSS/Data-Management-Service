@@ -643,6 +643,21 @@ public class Given_DocumentCacheEnqueueTelemetry
     }
 
     [Test]
+    public void It_classifies_provider_command_timeouts_with_enqueue_trigger_text_as_provider_timeouts()
+    {
+        bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
+            new StubDbException("command timeout while executing TF_Document_EnqueueProjectionInsert"),
+            new StubProviderCommandTimeoutClassifier(isProviderCommandTimeout: true),
+            out DocumentCacheEnqueueFailureCategory category,
+            out string message
+        );
+
+        classified.Should().BeTrue();
+        category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderTimeout);
+        message.Should().Be(DocumentCacheEnqueueFailureClassifier.MessageFor(category));
+    }
+
+    [Test]
     public void It_classifies_transient_projection_work_failures_as_work_persistence_failed()
     {
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
@@ -691,6 +706,21 @@ public class Given_DocumentCacheEnqueueTelemetry
     {
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             new StubDbException("connection refused while reading dms.DocumentCacheState"),
+            NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance,
+            out DocumentCacheEnqueueFailureCategory category,
+            out string message
+        );
+
+        classified.Should().BeTrue();
+        category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderUnavailable);
+        message.Should().Be(DocumentCacheEnqueueFailureClassifier.MessageFor(category));
+    }
+
+    [Test]
+    public void It_classifies_provider_unavailable_failures_with_enqueue_trigger_text()
+    {
+        bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
+            new StubDbException("connection refused while executing TR_Document_EnqueueProjectionWork"),
             NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance,
             out DocumentCacheEnqueueFailureCategory category,
             out string message
