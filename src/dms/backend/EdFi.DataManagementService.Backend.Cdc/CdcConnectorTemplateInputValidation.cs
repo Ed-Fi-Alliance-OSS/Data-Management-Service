@@ -11,12 +11,12 @@ public interface ICdcConnectorTemplateInputValidator
 {
     CdcConnectorTemplateValidationResult ValidateRequest(
         CdcConnectorTemplateRequest request,
-        CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.RequestValidation
+        CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.Render
     );
 
     void ValidateRequestOrThrow(
         CdcConnectorTemplateRequest request,
-        CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.RequestValidation
+        CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.Render
     );
 }
 
@@ -323,7 +323,7 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
 
     public CdcConnectorTemplateValidationResult ValidateRequest(
         CdcConnectorTemplateRequest request,
-        CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.RequestValidation
+        CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.Render
     )
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -339,7 +339,7 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
 
     public void ValidateRequestOrThrow(
         CdcConnectorTemplateRequest request,
-        CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.RequestValidation
+        CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.Render
     ) => ValidateRequest(request, sourcePhase).ThrowIfInvalid();
 
     private static void ValidateProviderPrerequisites(
@@ -373,7 +373,7 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
             diagnostics.Add(
                 BuildDiagnostic(
                     CdcConnectorTemplateDiagnosticCodes.SqlServerPollIntervalRequired,
-                    CdcConnectorTemplateDiagnosticCategory.Heartbeat,
+                    CdcConnectorTemplateDiagnosticCategory.HeartbeatConfigurationViolation,
                     "poll.interval.ms",
                     "positive SQL Server poll interval",
                     null,
@@ -395,7 +395,7 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
         diagnostics.Add(
             BuildDiagnostic(
                 CdcConnectorTemplateDiagnosticCodes.SqlServerPollIntervalExceedsHeartbeatInterval,
-                CdcConnectorTemplateDiagnosticCategory.Heartbeat,
+                CdcConnectorTemplateDiagnosticCategory.HeartbeatConfigurationViolation,
                 "poll.interval.ms",
                 $"<= heartbeat.interval.ms ({heartbeatMilliseconds})",
                 pollMilliseconds.ToString(),
@@ -428,7 +428,7 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
                 diagnostics.Add(
                     BuildDiagnostic(
                         CdcConnectorTemplateDiagnosticCodes.ConnectionPropertyNotAllowed,
-                        CdcConnectorTemplateDiagnosticCategory.ConnectionProperty,
+                        CdcConnectorTemplateDiagnosticCategory.ConnectionPropertyViolation,
                         property.Key,
                         "allow-listed provider connection property",
                         null,
@@ -479,7 +479,7 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
             diagnostics.Add(
                 BuildDiagnostic(
                     CdcConnectorTemplateDiagnosticCodes.ConnectionPropertyRequired,
-                    CdcConnectorTemplateDiagnosticCategory.MissingInput,
+                    CdcConnectorTemplateDiagnosticCategory.MissingRequiredInput,
                     propertyName,
                     RequiredConnectionPropertyMessage(request.Provider),
                     null,
@@ -509,7 +509,7 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
                 diagnostics.Add(
                     BuildDiagnostic(
                         CdcConnectorTemplateDiagnosticCodes.KafkaSecurityPropertyNotAllowed,
-                        CdcConnectorTemplateDiagnosticCategory.KafkaSecurityProperty,
+                        CdcConnectorTemplateDiagnosticCategory.KafkaSecurityPropertyViolation,
                         property.Key,
                         "unprefixed allow-listed Kafka security property",
                         null,
@@ -542,7 +542,7 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
             diagnostics.Add(
                 BuildDiagnostic(
                     CdcConnectorTemplateDiagnosticCodes.SqlServerDatabaseNamesRequired,
-                    CdcConnectorTemplateDiagnosticCategory.MissingInput,
+                    CdcConnectorTemplateDiagnosticCategory.MissingRequiredInput,
                     "database.names",
                     "exactly one SQL Server database name",
                     null,
@@ -563,7 +563,7 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
         diagnostics.Add(
             BuildDiagnostic(
                 CdcConnectorTemplateDiagnosticCodes.SqlServerSingleDatabaseRequired,
-                CdcConnectorTemplateDiagnosticCategory.ConnectionProperty,
+                CdcConnectorTemplateDiagnosticCategory.ConnectionPropertyViolation,
                 "database.names",
                 "exactly one SQL Server database name",
                 RedactedValue,
@@ -589,7 +589,7 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
         diagnostics.Add(
             BuildDiagnostic(
                 CdcConnectorTemplateDiagnosticCodes.ReservedKey,
-                CdcConnectorTemplateDiagnosticCategory.ReservedKey,
+                CdcConnectorTemplateDiagnosticCategory.ReservedKeyViolation,
                 propertyName,
                 "renderer-owned connector property",
                 null,
@@ -618,7 +618,7 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
         diagnostics.Add(
             BuildDiagnostic(
                 CdcConnectorTemplateDiagnosticCodes.ExternalizedSecretReferenceRequired,
-                CdcConnectorTemplateDiagnosticCategory.SecretRedactionFailure,
+                CdcConnectorTemplateDiagnosticCategory.SecretRedactionViolation,
                 propertyName,
                 "${env:NAME} or ${file:/absolute/path:property}",
                 RedactedValue,
