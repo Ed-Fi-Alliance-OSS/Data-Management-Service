@@ -200,7 +200,8 @@ public class Given_DocumentCacheStatusService
                 return await Success(request, cancellationToken);
             }
         );
-        DocumentCacheStatusService service = CreateService(registry, observationStore, observer);
+        CapturingStatusTelemetry telemetry = new();
+        DocumentCacheStatusService service = CreateService(registry, observationStore, observer, telemetry);
 
         DocumentCacheStatusResponse response = await service.GetStatusAsync();
 
@@ -216,6 +217,15 @@ public class Given_DocumentCacheStatusService
         );
         fastStatus.OperationalHealth.Status.Should().Be(DocumentCacheOperationalHealthStatus.Operational);
         fastStatus.CaughtUp.Status.Should().Be(DocumentCacheCaughtUpStatus.CaughtUp);
+
+        CapturedProviderObservation slowProviderObservation = telemetry
+            .ProviderObservations.Should()
+            .ContainSingle(observation => observation.TargetKey.Equals(slowTarget.TargetKey))
+            .Which;
+        slowProviderObservation
+            .Outcome.Should()
+            .Be(DocumentCacheStatusProviderObservationTelemetryOutcome.TimedOut);
+        slowProviderObservation.Reason.Should().Be(DocumentCacheStatusReason.StatusObservationTimeout);
     }
 
     [Test]
@@ -307,7 +317,8 @@ public class Given_DocumentCacheStatusService
                 return DocumentCacheStatusCurrentSourceObservationResult.Cancelled("cancelled");
             }
         );
-        DocumentCacheStatusService service = CreateService(registry, observationStore, observer);
+        CapturingStatusTelemetry telemetry = new();
+        DocumentCacheStatusService service = CreateService(registry, observationStore, observer, telemetry);
 
         DocumentCacheStatusResponse response = await service.GetStatusAsync();
 
@@ -323,6 +334,16 @@ public class Given_DocumentCacheStatusService
         secondStatus.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.StatusEndpointTimeout);
         secondStatus.OperationalHealth.Message.Should().Contain("did not start");
         observer.StartedKeys.Should().ContainSingle(key => key.Equals(firstTarget.TargetKey));
+
+        CapturedProviderObservation providerObservation = telemetry
+            .ProviderObservations.Should()
+            .ContainSingle()
+            .Which;
+        providerObservation.TargetKey.Should().Be(firstTarget.TargetKey);
+        providerObservation
+            .Outcome.Should()
+            .Be(DocumentCacheStatusProviderObservationTelemetryOutcome.TimedOut);
+        providerObservation.Reason.Should().Be(DocumentCacheStatusReason.StatusEndpointTimeout);
     }
 
     [Test]
@@ -340,6 +361,73 @@ public class Given_DocumentCacheStatusService
         Func<Task> act = () => service.GetStatusAsync(cancellationTokenSource.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Test]
+    public async Task It_propagates_caller_cancellation_returned_as_cancelled_without_provider_telemetry()
+    {
+        DocumentCacheTargetObservation target = ResolvedTarget(DocumentCacheTargetKey.Create("", 1));
+        using CancellationTokenSource cancellationTokenSource = new();
+        ScriptedStatusObserver observer = new(
+            async (_, _) =>
+            {
+                await cancellationTokenSource.CancelAsync();
+                return DocumentCacheStatusCurrentSourceObservationResult.Cancelled("cancelled");
+            }
+        );
+        CapturingStatusTelemetry telemetry = new();
+        DocumentCacheStatusService service = CreateService(
+            new StaticTargetRegistry([target], [ExecutionContext(target)]),
+            ObservationStore(target),
+            observer,
+            telemetry
+        );
+
+        Func<Task> act = () => service.GetStatusAsync(cancellationTokenSource.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        telemetry.ProviderObservations.Should().BeEmpty();
+        telemetry.StatusObservations.Should().BeEmpty();
+        observer.StartedKeys.Should().ContainSingle(key => key.Equals(target.TargetKey));
+    }
+
+    [Test]
+    public async Task It_maps_unattributed_provider_cancelled_outcome_to_provider_observation_failed()
+    {
+        DocumentCacheTargetObservation target = ResolvedTarget(DocumentCacheTargetKey.Create("", 1));
+        CapturingStatusTelemetry telemetry = new();
+        DocumentCacheStatusService service = CreateService(
+            new StaticTargetRegistry([target], [ExecutionContext(target)]),
+            ObservationStore(target),
+            new ScriptedStatusObserver(
+                (_, _) =>
+                    Task.FromResult(
+                        DocumentCacheStatusCurrentSourceObservationResult.Cancelled(
+                            "Provider cancelled without request timeout."
+                        )
+                    )
+            ),
+            telemetry
+        );
+
+        DocumentCacheStatusResponse response = await service.GetStatusAsync();
+
+        DocumentCacheStatusTarget statusTarget = response.Targets.Should().ContainSingle().Which;
+        statusTarget.OperationalHealth.Status.Should().Be(DocumentCacheOperationalHealthStatus.Unknown);
+        statusTarget
+            .OperationalHealth.Reason.Should()
+            .Be(DocumentCacheStatusReason.ProviderObservationFailed);
+        statusTarget.Lifecycle.Availability.Should().Be(DocumentCacheStatusAvailability.Unknown);
+
+        CapturedProviderObservation providerObservation = telemetry
+            .ProviderObservations.Should()
+            .ContainSingle()
+            .Which;
+        providerObservation.TargetKey.Should().Be(target.TargetKey);
+        providerObservation
+            .Outcome.Should()
+            .Be(DocumentCacheStatusProviderObservationTelemetryOutcome.Failed);
+        providerObservation.Reason.Should().Be(DocumentCacheStatusReason.ProviderObservationFailed);
     }
 
     [Test]
@@ -385,14 +473,16 @@ public class Given_DocumentCacheStatusService
     private static DocumentCacheStatusService CreateService(
         StaticTargetRegistry registry,
         DocumentCacheProjectionObservationStore? observationStore = null,
-        ScriptedStatusObserver? observer = null
+        ScriptedStatusObserver? observer = null,
+        IDocumentCacheStatusTelemetry? statusTelemetry = null
     ) =>
         new(
             registry,
             observationStore
                 ?? new DocumentCacheProjectionObservationStore(new FixedTimeProvider(ProcessObservedAt)),
             observer is null ? [] : [observer],
-            new FixedTimeProvider(ProcessObservedAt)
+            new FixedTimeProvider(ProcessObservedAt),
+            statusTelemetry: statusTelemetry
         );
 
     private static DocumentCacheProjectionObservationStore ObservationStore(
@@ -646,6 +736,60 @@ public class Given_DocumentCacheStatusService
             );
         }
     }
+
+    private sealed class CapturingStatusTelemetry : IDocumentCacheStatusTelemetry
+    {
+        private readonly ConcurrentQueue<DocumentCacheStatusTarget> _statusObservations = new();
+        private readonly ConcurrentQueue<CapturedProviderObservation> _providerObservations = new();
+
+        public ImmutableArray<DocumentCacheStatusTarget> StatusObservations =>
+            _statusObservations.ToImmutableArray();
+
+        public ImmutableArray<CapturedProviderObservation> ProviderObservations =>
+            _providerObservations.ToImmutableArray();
+
+        public void RecordStatusObservation(
+            DocumentCacheTargetObservation targetObservation,
+            DocumentCacheStatusTarget statusTarget
+        )
+        {
+            ArgumentNullException.ThrowIfNull(targetObservation);
+            _statusObservations.Enqueue(statusTarget);
+        }
+
+        public void RecordProviderObservation(
+            DocumentCacheTargetKey targetKey,
+            RelationalProviderToken providerToken,
+            DocumentCacheStatusProviderObservationTelemetryOutcome outcome,
+            DocumentCacheStatusReason reason,
+            TimeSpan duration,
+            DocumentCacheLifecycleState? lifecycleState,
+            double? oldestWorkAgeSeconds
+        )
+        {
+            _providerObservations.Enqueue(
+                new CapturedProviderObservation(
+                    targetKey,
+                    providerToken,
+                    outcome,
+                    reason,
+                    duration,
+                    lifecycleState,
+                    oldestWorkAgeSeconds
+                )
+            );
+        }
+    }
+
+    private sealed record CapturedProviderObservation(
+        DocumentCacheTargetKey TargetKey,
+        RelationalProviderToken ProviderToken,
+        DocumentCacheStatusProviderObservationTelemetryOutcome Outcome,
+        DocumentCacheStatusReason Reason,
+        TimeSpan Duration,
+        DocumentCacheLifecycleState? LifecycleState,
+        double? OldestWorkAgeSeconds
+    );
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {

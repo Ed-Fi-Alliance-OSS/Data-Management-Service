@@ -272,6 +272,11 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
                 )
                 .ConfigureAwait(false);
 
+            if (result.Outcome == DocumentCacheStatusCurrentSourceObservationOutcome.Cancelled)
+            {
+                callerCancellationToken.ThrowIfCancellationRequested();
+            }
+
             RecordProviderObservationTelemetry(
                 targetObservation.TargetKey,
                 providerToken,
