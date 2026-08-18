@@ -279,7 +279,7 @@ public sealed record CdcKafkaClientSecurityProperties
 {
     public CdcKafkaClientSecurityProperties(IReadOnlyDictionary<string, string> properties)
     {
-        Properties = CdcConnectorTemplateContractValidation.NormalizeStringProperties(
+        Properties = CdcConnectorTemplateContractValidation.NormalizeKafkaClientSecurityProperties(
             properties,
             nameof(properties)
         );
@@ -519,10 +519,11 @@ public sealed record CdcConnectorTemplateEffectiveConfigValidationRequest
         ArgumentNullException.ThrowIfNull(providerSetupEvidence);
 
         TemplateRequest = templateRequest;
-        EffectiveConfig = CdcConnectorTemplateContractValidation.NormalizeStringPropertiesAllowingEmptyValues(
-            effectiveConfig,
-            nameof(effectiveConfig)
-        );
+        EffectiveConfig =
+            CdcConnectorTemplateContractValidation.NormalizeConnectorStringPropertiesAllowingEmptyValues(
+                effectiveConfig,
+                nameof(effectiveConfig)
+            );
         ProviderSetupEvidence = providerSetupEvidence;
         SourcePartitionEvidence = sourcePartitionEvidence;
     }
@@ -541,7 +542,10 @@ public sealed record CdcKafkaConnectRegistrationPayload
     public CdcKafkaConnectRegistrationPayload(CdcSafeName name, IReadOnlyDictionary<string, string> config)
     {
         Name = name.Value;
-        Config = CdcConnectorTemplateContractValidation.NormalizeStringProperties(config, nameof(config));
+        Config = CdcConnectorTemplateContractValidation.NormalizeConnectorStringProperties(
+            config,
+            nameof(config)
+        );
     }
 
     [JsonPropertyName("name")]
@@ -584,7 +588,10 @@ public sealed record CdcConnectorTemplateResult
         ArgumentNullException.ThrowIfNull(bindingIdentity);
         ArgumentNullException.ThrowIfNull(diagnostics);
 
-        Config = CdcConnectorTemplateContractValidation.NormalizeStringProperties(config, nameof(config));
+        Config = CdcConnectorTemplateContractValidation.NormalizeConnectorStringProperties(
+            config,
+            nameof(config)
+        );
         ValidateRegistrationPayload(bindingIdentity, Config, registrationPayload);
 
         Provider = bindingIdentity.Provider;
@@ -816,6 +823,21 @@ public static class CdcConnectorTemplateTopicNames
 
 internal static class CdcConnectorTemplateContractValidation
 {
+    private static readonly IReadOnlySet<string> _kafkaCertificateChainPropertyNames = new HashSet<string>(
+        StringComparer.Ordinal
+    )
+    {
+        "ssl.truststore.certificates",
+        "ssl.keystore.certificate.chain",
+    };
+
+    private static readonly IReadOnlyList<string> _generatedKafkaSecurityPrefixes =
+    [
+        "producer.override.",
+        "schema.history.internal.producer.",
+        "schema.history.internal.consumer.",
+    ];
+
     public static CdcSourceFingerprint ValidateSourceFingerprint(
         CdcSourceFingerprint sourceFingerprint,
         string parameterName
@@ -871,33 +893,68 @@ internal static class CdcConnectorTemplateContractValidation
     public static IReadOnlyDictionary<string, string> NormalizeStringProperties(
         IReadOnlyDictionary<string, string> properties,
         string parameterName
-    )
-    {
-        ArgumentNullException.ThrowIfNull(properties);
-
-        return properties
-            .OrderBy(pair => pair.Key, StringComparer.Ordinal)
-            .ToDictionary(
-                pair => ValidateRequiredSafeText(pair.Key, $"{parameterName}.Key"),
-                pair => ValidateRequiredSafeText(pair.Value, $"{parameterName}[{pair.Key}]"),
-                StringComparer.Ordinal
-            );
-    }
+    ) => NormalizeStringProperties(properties, parameterName, allowEmptyValues: false, AllowsNoLineBreaks);
 
     public static IReadOnlyDictionary<string, string> NormalizeStringPropertiesAllowingEmptyValues(
         IReadOnlyDictionary<string, string> properties,
         string parameterName
+    ) => NormalizeStringProperties(properties, parameterName, allowEmptyValues: true, AllowsNoLineBreaks);
+
+    public static IReadOnlyDictionary<string, string> NormalizeKafkaClientSecurityProperties(
+        IReadOnlyDictionary<string, string> properties,
+        string parameterName
+    ) =>
+        NormalizeStringProperties(
+            properties,
+            parameterName,
+            allowEmptyValues: false,
+            IsKafkaCertificateChainProperty
+        );
+
+    public static IReadOnlyDictionary<string, string> NormalizeConnectorStringProperties(
+        IReadOnlyDictionary<string, string> properties,
+        string parameterName
+    ) =>
+        NormalizeStringProperties(
+            properties,
+            parameterName,
+            allowEmptyValues: false,
+            IsConnectorCertificateChainProperty
+        );
+
+    public static IReadOnlyDictionary<string, string> NormalizeConnectorStringPropertiesAllowingEmptyValues(
+        IReadOnlyDictionary<string, string> properties,
+        string parameterName
+    ) =>
+        NormalizeStringProperties(
+            properties,
+            parameterName,
+            allowEmptyValues: true,
+            IsConnectorCertificateChainProperty
+        );
+
+    private static IReadOnlyDictionary<string, string> NormalizeStringProperties(
+        IReadOnlyDictionary<string, string> properties,
+        string parameterName,
+        bool allowEmptyValues,
+        Func<string, bool> allowsLineBreaks
     )
     {
         ArgumentNullException.ThrowIfNull(properties);
 
-        return properties
-            .OrderBy(pair => pair.Key, StringComparer.Ordinal)
-            .ToDictionary(
-                pair => ValidateRequiredSafeText(pair.Key, $"{parameterName}.Key"),
-                pair => ValidateSafeTextAllowingEmptyValues(pair.Value, $"{parameterName}[{pair.Key}]"),
-                StringComparer.Ordinal
+        var normalizedProperties = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        foreach (var property in properties.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        {
+            string propertyName = ValidateRequiredSafeText(property.Key, $"{parameterName}.Key");
+            normalizedProperties[propertyName] = ValidateSafeText(
+                property.Value,
+                $"{parameterName}[{propertyName}]",
+                allowEmptyValues,
+                allowsLineBreaks(propertyName)
             );
+        }
+
+        return normalizedProperties;
     }
 
     public static string ValidateRequiredSafeText(string value, string parameterName)
@@ -910,7 +967,7 @@ internal static class CdcConnectorTemplateContractValidation
             );
         }
 
-        if (value.Any(char.IsControl))
+        if (ContainsDisallowedControlCharacter(value, allowLineBreaks: false))
         {
             throw new ArgumentException(
                 "CDC connector template text values must not contain control characters.",
@@ -921,14 +978,27 @@ internal static class CdcConnectorTemplateContractValidation
         return value;
     }
 
-    private static string ValidateSafeTextAllowingEmptyValues(string? value, string parameterName)
+    private static string ValidateSafeText(
+        string? value,
+        string parameterName,
+        bool allowEmptyValues,
+        bool allowLineBreaks
+    )
     {
         if (value is null)
         {
             throw new ArgumentNullException(parameterName);
         }
 
-        if (value.Any(char.IsControl))
+        if (!allowEmptyValues && string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException(
+                "CDC connector template text values must be supplied.",
+                parameterName
+            );
+        }
+
+        if (ContainsDisallowedControlCharacter(value, allowLineBreaks))
         {
             throw new ArgumentException(
                 "CDC connector template text values must not contain control characters.",
@@ -948,4 +1018,30 @@ internal static class CdcConnectorTemplateContractValidation
 
         return ValidateRequiredSafeText(value, parameterName);
     }
+
+    internal static bool IsKafkaCertificateChainProperty(string propertyName) =>
+        _kafkaCertificateChainPropertyNames.Contains(propertyName);
+
+    internal static bool IsConnectorCertificateChainProperty(string propertyName)
+    {
+        if (IsKafkaCertificateChainProperty(propertyName))
+        {
+            return true;
+        }
+
+        string prefix =
+            _generatedKafkaSecurityPrefixes.FirstOrDefault(prefix =>
+                propertyName.StartsWith(prefix, StringComparison.Ordinal)
+            ) ?? string.Empty;
+
+        return prefix.Length > 0 && IsKafkaCertificateChainProperty(propertyName[prefix.Length..]);
+    }
+
+    private static bool AllowsNoLineBreaks(string propertyName) => false;
+
+    private static bool ContainsDisallowedControlCharacter(string value, bool allowLineBreaks) =>
+        value.Any(character => char.IsControl(character) && !IsAllowedLineBreak(character, allowLineBreaks));
+
+    private static bool IsAllowedLineBreak(char character, bool allowLineBreaks) =>
+        allowLineBreaks && (character is '\r' or '\n');
 }

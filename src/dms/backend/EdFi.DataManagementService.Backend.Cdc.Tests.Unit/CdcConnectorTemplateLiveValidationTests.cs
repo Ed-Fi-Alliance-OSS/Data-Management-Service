@@ -488,6 +488,103 @@ public class Given_CdcConnectorTemplateLiveValidation
     }
 
     [Test]
+    public void It_compares_multiline_kafka_certificate_chain_read_back_values_without_leaking_mismatches()
+    {
+        const string expectedTruststoreCertificateChain =
+            "-----BEGIN CERTIFICATE-----\nMIIDEXPECTEDTRUST\n-----END CERTIFICATE-----";
+        const string expectedKeystoreCertificateChain =
+            "-----BEGIN CERTIFICATE-----\r\nMIIDEXPECTEDKEY\r\n-----END CERTIFICATE-----";
+        const string observedTruststoreCertificateChain =
+            "-----BEGIN CERTIFICATE-----\nMIIDOBSERVEDTRUST\n-----END CERTIFICATE-----";
+
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(
+            CdcProvider.Postgresql,
+            kafkaSecurityProperties: new Dictionary<string, string>
+            {
+                ["security.protocol"] = "SSL",
+                ["ssl.truststore.certificates"] = expectedTruststoreCertificateChain,
+                ["ssl.keystore.certificate.chain"] = expectedKeystoreCertificateChain,
+            }
+        );
+        CdcConnectorTemplateResult rendered = service.Render(request);
+
+        CdcConnectorTemplateResult exactReadBack = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                new CdcConnectorProviderSetupEvidence(
+                    bindingGeneration: 7,
+                    BuildProviderSetupResult(CdcProvider.Postgresql)
+                ),
+                BuildSourcePartitionEvidence(request)
+            )
+        );
+
+        Dictionary<string, string> effectiveConfig = CopyConfig(rendered.Config);
+        effectiveConfig["producer.override.ssl.truststore.certificates"] = observedTruststoreCertificateChain;
+        CdcConnectorTemplateResult mismatch = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                effectiveConfig,
+                new CdcConnectorProviderSetupEvidence(
+                    bindingGeneration: 7,
+                    BuildProviderSetupResult(CdcProvider.Postgresql)
+                ),
+                BuildSourcePartitionEvidence(request)
+            )
+        );
+
+        CdcConnectorTemplateDiagnostic diagnostic = mismatch
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackPropertyMismatch
+                && diagnostic.PropertyName == "producer.override.ssl.truststore.certificates"
+            )
+            .Which;
+
+        using var _ = new AssertionScope();
+        rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        rendered
+            .Config["producer.override.ssl.truststore.certificates"]
+            .Should()
+            .Be(expectedTruststoreCertificateChain);
+        rendered
+            .Config["producer.override.ssl.keystore.certificate.chain"]
+            .Should()
+            .Be(expectedKeystoreCertificateChain);
+        exactReadBack.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        exactReadBack.Diagnostics.Should().BeEmpty();
+        mismatch.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.ProducerPolicy);
+        diagnostic.ExpectedValue.Should().Be("[redacted]");
+        diagnostic.ObservedValue.Should().Be("[redacted]");
+        diagnostic
+            .RedactionClassification.Should()
+            .Be(CdcConnectorTemplateRedactionClassification.PhysicalIdentifier);
+        mismatch
+            .Diagnostics.SelectMany(DiagnosticText)
+            .Should()
+            .NotContain(value =>
+                value.Contains(expectedTruststoreCertificateChain, StringComparison.Ordinal)
+                || value.Contains(expectedKeystoreCertificateChain, StringComparison.Ordinal)
+                || value.Contains(observedTruststoreCertificateChain, StringComparison.Ordinal)
+                || value.Contains("MIIDEXPECTED", StringComparison.Ordinal)
+                || value.Contains("MIIDOBSERVED", StringComparison.Ordinal)
+            );
+        mismatch
+            .ToString()
+            .Should()
+            .NotContain(expectedTruststoreCertificateChain)
+            .And.NotContain(expectedKeystoreCertificateChain)
+            .And.NotContain(observedTruststoreCertificateChain)
+            .And.NotContain("MIIDEXPECTED")
+            .And.NotContain("MIIDOBSERVED");
+    }
+
+    [Test]
     public void It_redacts_rendered_kafka_security_material_read_back_mismatches()
     {
         string[] generatedPrefixes =
