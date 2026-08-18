@@ -341,6 +341,39 @@ public class Given_CdcConnectorTemplateSqlServerRendering
     }
 
     [Test]
+    public void It_rejects_whitespace_padded_database_name_input_without_rendering()
+    {
+        CdcConnectorTemplateResult result = Render(
+            BuildRequest(
+                CdcProvider.SqlServer,
+                providerConnectionProperties: new Dictionary<string, string>
+                {
+                    ["database.hostname"] = "sqlserver.internal",
+                    ["database.user"] = "connector_user",
+                    ["database.names"] = " edfi_datastore ",
+                    ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
+                }
+            )
+        );
+
+        using var _ = new AssertionScope();
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        result.Config.Should().BeEmpty();
+        result.RegistrationPayload.Should().BeNull();
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SqlServerSingleDatabaseRequired
+                && diagnostic.PropertyName == "database.names"
+                && diagnostic.ObservedValue == "[redacted]"
+            );
+        result
+            .Diagnostics.SelectMany(DiagnosticText)
+            .Should()
+            .NotContain(value => value.Contains("edfi_datastore", StringComparison.Ordinal));
+    }
+
+    [Test]
     public void It_rejects_missing_capture_instance_artifacts_before_rendering()
     {
         CdcConnectorTemplateResult result = Render(
