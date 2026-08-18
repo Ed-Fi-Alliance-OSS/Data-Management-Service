@@ -8,9 +8,10 @@
 Import-Module ../Package-Management.psm1 -Force
 Import-Module ../Dms-Management.psm1 -Force
 Import-Module ../SchoolYear-Loader.psm1 -Force -Global
-# $PSScriptRoot-anchored (this module is cwd-independent) and without -Force: a forced
+# $PSScriptRoot-anchored (these modules are cwd-independent) and without -Force: a forced
 # nested import can strip an already-loaded copy from the caller's session.
 Import-Module (Join-Path $PSScriptRoot "Template-RestoreCore.psm1")
+Import-Module (Join-Path $PSScriptRoot "Template-RestoreTrust.psm1")
 
 <#
 .SYNOPSIS
@@ -1068,6 +1069,11 @@ function Build-TemplateNuGetPackage {
         [Parameter(Mandatory = $true)]
         [string]$PackageVersion,
 
+        # Minimal|Populated, recorded in the restore manifest's templateKind field.
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("Minimal", "Populated")]
+        [string]$TemplateKind,
+
         [string]$DatabaseName = "edfi_datamanagementservice",
 
         [switch]$DumpAllUserSchemas,
@@ -1103,9 +1109,35 @@ function Build-TemplateNuGetPackage {
             @("dms")
         }
 
+    # Capture the restore-manifest facts from the live source immediately before backup,
+    # and refuse to dump or package anything unless the source passes the DMS-only gate.
+    $sourceFacts = Get-TemplateSourceCatalogFacts `
+        -DatabaseEngine $DatabaseEngine `
+        -DatabaseName $DatabaseName `
+        -MssqlPassword $MssqlPassword `
+        -ArtifactSchemaName ([string[]]$databaseSchemas)
+    $schemaPartition = Assert-DmsOnlyTemplateSource `
+        -Facts $sourceFacts `
+        -DatabaseEngine $DatabaseEngine `
+        -DatabaseName $DatabaseName
+
     Invoke-DatabaseDump -DatabaseEngine $DatabaseEngine -DatabaseName $DatabaseName -DatabaseSchemas $databaseSchemas -BackupDirectory './' -BackupFileName $config.DatabaseBackupName -MssqlPassword $MssqlPassword
 
+    $restoreManifestPath = Write-TemplateRestoreManifest `
+        -Facts $sourceFacts `
+        -Partition $schemaPartition `
+        -Config $config `
+        -PackageVersion $PackageVersion `
+        -DatabaseEngine $DatabaseEngine `
+        -TemplateKind $TemplateKind `
+        -StandardVersion $StandardVersion `
+        -BackupDirectory './'
+
     New-DatabaseTemplateCsproj -Config $config -BackupDirectory './'
+
+    # The external restore manifest travels inside the package beside the database artifact.
+    $csprojPath = Join-Path (Resolve-Path './') $config.PackageProjectName
+    Add-FileToCsProjForNuget -CsprojPath $csprojPath -SourceTargetPair @{ source = $restoreManifestPath; target = "." }
 
     Build-NuGetPackage -PackageVersion $PackageVersion -Config $config -BackupDirectory './'
 }
@@ -1304,6 +1336,270 @@ function New-EducatorPreparationFilteredSampleDirectory {
     }
 
     return $destination
+}
+
+function Invoke-TemplateCatalogQuery {
+    <#
+    .SYNOPSIS
+    Runs one read-only catalog query against a database inside the running engine
+    container and returns the raw output rows. Uses the same psql/sqlcmd transports as the
+    rest of the template tooling.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The MSSQL password is handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); the account is always "sa" so there is no companion username parameter, and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The MSSQL password is handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); SecureString adds no protection across that boundary.')]
+    param (
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ContainerName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DatabaseName,
+
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!",
+
+        [Parameter(Mandatory = $true)]
+        [string]$Query,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FailureMessage
+    )
+
+    if ($DatabaseEngine -eq "mssql") {
+        $output = & docker exec -e "SQLCMDPASSWORD=$MssqlPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -d $DatabaseName -C -b -h -1 -W -Q $Query
+    }
+    else {
+        $output = & docker exec $ContainerName psql -U postgres -d $DatabaseName -tA -c $Query
+    }
+
+    if ($LASTEXITCODE -ne 0) {
+        throw $FailureMessage
+    }
+
+    return @($output)
+}
+
+function Get-TemplateSourceCatalogFacts {
+    <#
+    .SYNOPSIS
+    Reads the restore-manifest facts from the live source immediately before backup: the
+    dms.EffectiveSchema singleton, the engine version, the SQL Server compatibility level,
+    the physical DocumentJson storage type, and the canonical inventory (full-database
+    scope for the DMS-only gate, plus the artifact scope the manifest records).
+
+    .PARAMETER ArtifactSchemaName
+    The schemas the PostgreSQL dump will contain; the manifest inventory is scoped to them
+    plus the always-present "public" schema, with principals dropped (a SQL dump carries
+    none). Ignored for MSSQL, whose .bak always captures the entire database.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns one facts record; "facts" is the documented restore-manifest term of art, not a collection.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The MSSQL password is handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); the account is always "sa" so there is no companion username parameter, and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The MSSQL password is handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); SecureString adds no protection across that boundary.')]
+    param (
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine = "postgresql",
+
+        [string]$ContainerName = $(if ($DatabaseEngine -eq "mssql") { "dms-mssql" } else { "dms-postgresql" }),
+
+        [Parameter(Mandatory = $true)]
+        [string]$DatabaseName,
+
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!",
+
+        [string[]]$ArtifactSchemaName = @()
+    )
+
+    $queryParameters = @{
+        DatabaseEngine = $DatabaseEngine
+        ContainerName  = $ContainerName
+        DatabaseName   = $DatabaseName
+        MssqlPassword  = $MssqlPassword
+    }
+
+    $effectiveSchemaRow = Invoke-TemplateCatalogQuery @queryParameters `
+        -Query (Get-EffectiveSchemaRowQuerySql -DatabaseEngine $DatabaseEngine) `
+        -FailureMessage "Failed to read dms.EffectiveSchema from '$DatabaseName'; the source database is not a provisioned DMS datastore."
+    $effectiveSchema = ConvertFrom-EffectiveSchemaRow -Row $effectiveSchemaRow
+
+    $engineVersionRows = Invoke-TemplateCatalogQuery @queryParameters `
+        -Query (Get-EngineVersionQuerySql -DatabaseEngine $DatabaseEngine) `
+        -FailureMessage "Failed to read the engine version from '$ContainerName'."
+    $engineVersion = ([string]@($engineVersionRows | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1)).Trim()
+    if ([string]::IsNullOrWhiteSpace($engineVersion)) {
+        throw "The engine version query returned no value from '$ContainerName'."
+    }
+
+    $databaseCompatibilityLevel = $null
+    if ($DatabaseEngine -eq "mssql") {
+        $compatibilityRows = Invoke-TemplateCatalogQuery @queryParameters `
+            -Query (Get-DatabaseCompatibilityLevelQuerySql -DatabaseName $DatabaseName) `
+            -FailureMessage "Failed to read the compatibility level of '$DatabaseName'."
+        $compatibilityText = ([string]@($compatibilityRows | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1)).Trim()
+        $parsedCompatibilityLevel = 0
+        if (-not [int]::TryParse($compatibilityText, [ref]$parsedCompatibilityLevel)) {
+            throw "The compatibility level of '$DatabaseName' is not an integer: '$compatibilityText'."
+        }
+        $databaseCompatibilityLevel = $parsedCompatibilityLevel
+    }
+
+    $documentJsonRows = Invoke-TemplateCatalogQuery @queryParameters `
+        -Query (Get-DocumentJsonColumnTypeQuerySql -DatabaseEngine $DatabaseEngine) `
+        -FailureMessage "Failed to read the DocumentJson column type from '$DatabaseName'."
+    $documentJsonColumnType = ([string]@($documentJsonRows | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1)).Trim()
+    if ([string]::IsNullOrWhiteSpace($documentJsonColumnType)) {
+        throw "dms.Document.DocumentJson was not found in '$DatabaseName'; the source database is not a provisioned DMS datastore."
+    }
+
+    $schemaRows = Invoke-TemplateCatalogQuery @queryParameters `
+        -Query (Get-InventorySchemaQuerySql -DatabaseEngine $DatabaseEngine -Purpose InventoryEnumeration) `
+        -FailureMessage "Failed to enumerate the schemas of '$DatabaseName'."
+    $objectRows = Invoke-TemplateCatalogQuery @queryParameters `
+        -Query (Get-InventoryObjectQuerySql -DatabaseEngine $DatabaseEngine) `
+        -FailureMessage "Failed to enumerate the objects of '$DatabaseName'."
+    $principalRows = @()
+    if ($DatabaseEngine -eq "mssql") {
+        $principalRows = Invoke-TemplateCatalogQuery @queryParameters `
+            -Query (Get-InventoryPrincipalQuerySql -DatabaseEngine $DatabaseEngine) `
+            -FailureMessage "Failed to enumerate the database principals of '$DatabaseName'."
+    }
+
+    $fullInventory = ConvertFrom-InventoryQueryRow -SchemaRow $schemaRows -ObjectRow $objectRows -PrincipalRow $principalRows
+
+    # The manifest inventory describes the ARTIFACT's content, while the DMS-only gate
+    # judges the full source database. A SQL Server .bak always carries the whole database;
+    # a PostgreSQL dump carries only the dumped schemas plus the always-present "public"
+    # (whose only permitted content, allow-listed extension bootstrap, the inventory
+    # queries already filter) and never carries principals.
+    $artifactInventory = $fullInventory
+    if ($DatabaseEngine -eq "postgresql") {
+        if (@($ArtifactSchemaName).Count -eq 0) {
+            throw "ArtifactSchemaName is required for postgresql so the manifest inventory matches the dumped schema scope."
+        }
+        $artifactInventory = Select-InventorySchemaScope `
+            -Inventory $fullInventory `
+            -SchemaName ([string[]](@($ArtifactSchemaName) + @("public"))) `
+            -ExcludePrincipals
+    }
+
+    return [pscustomobject]@{
+        ApiSchemaFormatVersion     = $effectiveSchema.ApiSchemaFormatVersion
+        EffectiveSchemaHash        = $effectiveSchema.EffectiveSchemaHash
+        ResourceKeyCount           = $effectiveSchema.ResourceKeyCount
+        ResourceKeySeedHashB64     = $effectiveSchema.ResourceKeySeedHashB64
+        EngineVersion              = $engineVersion
+        DatabaseCompatibilityLevel = $databaseCompatibilityLevel
+        DocumentJsonColumnType     = $documentJsonColumnType
+        FullInventory              = $fullInventory
+        ArtifactInventory          = $artifactInventory
+    }
+}
+
+function Assert-DmsOnlyTemplateSource {
+    <#
+    .SYNOPSIS
+    The producer's DMS-only source gate: fails, before any dump or packaging, unless the
+    full source database contains only the exact DMS-owned surface (see
+    Assert-DmsOnlyInventory). Applies to every template build, including direct local use
+    against the default shared local database name.
+
+    .OUTPUTS
+    The validated schema partition, from which the manifest's project list is derived.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        $Facts,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DatabaseName
+    )
+
+    return Assert-DmsOnlyInventory `
+        -DatabaseEngine $DatabaseEngine `
+        -Inventory $Facts.FullInventory `
+        -SourceDescription "Template source database '$DatabaseName'"
+}
+
+function Write-TemplateRestoreManifest {
+    <#
+    .SYNOPSIS
+    Builds the external restore manifest from the captured source facts and the completed
+    database artifact, self-validates it against the version-1 contract, and writes
+    restore-manifest.json beside the artifact for packaging.
+
+    .OUTPUTS
+    The absolute path of the written manifest file.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Template build helper invoked non-interactively; it writes the manifest into the controlled package workspace.')]
+    param (
+        [Parameter(Mandatory = $true)]
+        $Facts,
+
+        [Parameter(Mandatory = $true)]
+        $Partition,
+
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Config,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PackageVersion,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("Minimal", "Populated")]
+        [string]$TemplateKind,
+
+        [Parameter(Mandatory = $true)]
+        [string]$StandardVersion,
+
+        [Parameter(Mandatory = $true)]
+        [string]$BackupDirectory
+    )
+
+    $artifactPath = Join-Path $BackupDirectory $Config.DatabaseBackupName
+    $artifactSha256 = Get-FileSha256Hex -Path $artifactPath
+
+    # RelationalMappingVersion is a hash-input constant, not a database column; the single
+    # in-repo source is SchemaHashConstants.cs.
+    $schemaHashConstantsPath = Join-Path $PSScriptRoot "../../src/dms/core/EdFi.DataManagementService.Core/Utilities/SchemaHashConstants.cs"
+    $relationalMappingVersion = Get-RelationalMappingVersionFromSource -SchemaHashConstantsPath $schemaHashConstantsPath
+
+    $manifestArguments = @{
+        PackageId                = $Config.Id
+        PackageVersion           = $PackageVersion
+        DatabaseEngine           = $DatabaseEngine
+        TemplateKind             = $TemplateKind
+        DataStandardVersion      = $StandardVersion
+        ProjectName              = $Partition.ProjectSchemaNames
+        ApiSchemaFormatVersion   = $Facts.ApiSchemaFormatVersion
+        EffectiveSchemaHash      = $Facts.EffectiveSchemaHash
+        ResourceKeyCount         = $Facts.ResourceKeyCount
+        ResourceKeySeedHashB64   = $Facts.ResourceKeySeedHashB64
+        RelationalMappingVersion = $relationalMappingVersion
+        EngineVersion            = $Facts.EngineVersion
+        DocumentJsonColumnType   = $Facts.DocumentJsonColumnType
+        Inventory                = $Facts.ArtifactInventory
+        ArtifactFileName         = $Config.DatabaseBackupName
+        ArtifactSha256           = $artifactSha256
+    }
+    if ($DatabaseEngine -eq "mssql") {
+        $manifestArguments.DatabaseCompatibilityLevel = $Facts.DatabaseCompatibilityLevel
+    }
+
+    $manifest = New-TemplateRestoreManifest @manifestArguments
+
+    $manifestPath = Join-Path (Resolve-Path $BackupDirectory) (Get-RestoreManifestFileName)
+    $manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $manifestPath -Encoding utf8
+
+    return $manifestPath
 }
 
 enum TemplateType {
@@ -1537,7 +1833,7 @@ function Build-Template {
             @bulkLoadTuning
     }
 
-    Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion -DatabaseName $DataStoreDatabaseName -DumpAllUserSchemas:$DumpAllUserSchemas -DatabaseEngine $DatabaseEngine -MssqlPassword $MssqlPassword
+    Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion -TemplateKind ([string]$TemplateType) -DatabaseName $DataStoreDatabaseName -DumpAllUserSchemas:$DumpAllUserSchemas -DatabaseEngine $DatabaseEngine -MssqlPassword $MssqlPassword
 }
 
 Export-ModuleMember -Function Build-Template, Get-UserSchemaNames, Restore-TemplatePackage

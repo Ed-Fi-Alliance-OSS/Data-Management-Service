@@ -702,3 +702,357 @@ Describe "Test-RestoredSourceIdentityValue" {
             Should -Throw "*is not a valid UUID*"
     }
 }
+
+Describe "inventory catalog query SQL builders" {
+    It "scopes the schema query to the purpose: dump discovery excludes public/dbo, inventory enumeration includes them" {
+        $pgDump = Get-InventorySchemaQuerySql -DatabaseEngine postgresql -Purpose DumpDiscovery
+        $pgDump | Should -BeLike "*'public'*"
+        $pgDump | Should -BeLike "*'information_schema'*"
+
+        $pgInventory = Get-InventorySchemaQuerySql -DatabaseEngine postgresql -Purpose InventoryEnumeration
+        $pgInventory | Should -Not -BeLike "*'public'*"
+        $pgInventory | Should -BeLike "*'information_schema'*"
+
+        $mssqlDump = Get-InventorySchemaQuerySql -DatabaseEngine mssql -Purpose DumpDiscovery
+        $mssqlDump | Should -BeLike "*'dbo'*"
+
+        $mssqlInventory = Get-InventorySchemaQuerySql -DatabaseEngine mssql -Purpose InventoryEnumeration
+        $mssqlInventory | Should -Not -BeLike "*'dbo'*"
+        $mssqlInventory.Contains("NOT LIKE 'db[_]%'") | Should -BeTrue
+    }
+
+    It "filters only allow-listed extension objects in the PostgreSQL object query and keeps overloads and triggers distinct" {
+        $sql = Get-InventoryObjectQuerySql -DatabaseEngine postgresql
+        $sql | Should -BeLike "*pgcrypto*"
+        $sql | Should -BeLike "*pg_get_function_identity_arguments*"
+        $sql | Should -BeLike "*tgisinternal*"
+        $sql | Should -BeLike "*deptype = 'e'*"
+    }
+
+    It "excludes shipped objects and maps type codes in the MSSQL object query" {
+        $sql = Get-InventoryObjectQuerySql -DatabaseEngine mssql
+        $sql | Should -BeLike "*is_ms_shipped = 0*"
+        $sql | Should -BeLike "*WHEN 'U' THEN 'table'*"
+        $sql | Should -BeLike "*WHEN 'TR' THEN 'trigger'*"
+    }
+
+    It "excludes the built-in public role and fixed roles from the MSSQL principal query" {
+        $sql = Get-InventoryPrincipalQuerySql -DatabaseEngine mssql
+        $sql | Should -BeLike "*is_fixed_role = 0*"
+        $sql | Should -BeLike "*'public'*"
+    }
+
+    It "rejects an unsafe database name in the compatibility-level query" {
+        { Get-DatabaseCompatibilityLevelQuerySql -DatabaseName "bad'name" } | Should -Throw "*unsupported characters*"
+        (Get-DatabaseCompatibilityLevelQuerySql -DatabaseName "edfi_dms") | Should -BeLike "*N'edfi_dms'*"
+    }
+
+    It "reads the DocumentJson physical type from the live catalog on both engines" {
+        (Get-DocumentJsonColumnTypeQuerySql -DatabaseEngine postgresql) | Should -BeLike "*information_schema.columns*DocumentJson*"
+        (Get-DocumentJsonColumnTypeQuerySql -DatabaseEngine mssql) | Should -BeLike "*sys.columns*DocumentJson*"
+    }
+}
+
+Describe "ConvertFrom-InventoryQueryRow" {
+    It "builds the inventory from rows, preserving zero-object schemas" {
+        $inventory = ConvertFrom-InventoryQueryRow `
+            -SchemaRow @("dms", "edfi", "public", "") `
+            -ObjectRow @("dms|Document|table", "edfi|School|table", "") `
+            -PrincipalRow @()
+
+        $schemaNames = @($inventory.schemas | ForEach-Object { $_.schemaName })
+        $schemaNames | Should -Be @("dms", "edfi", "public")
+        @(($inventory.schemas | Where-Object { $_.schemaName -eq "public" }).objects).Count | Should -Be 0
+        @(($inventory.schemas | Where-Object { $_.schemaName -eq "dms" }).objects).Count | Should -Be 1
+        @($inventory.principals).Count | Should -Be 0
+    }
+
+    It "rejects malformed object rows and objects in unreported schemas" {
+        { ConvertFrom-InventoryQueryRow -SchemaRow @("dms") -ObjectRow @("dms|Document") -PrincipalRow @() } |
+            Should -Throw "*malformed row*"
+        { ConvertFrom-InventoryQueryRow -SchemaRow @("dms") -ObjectRow @("ghost|Thing|table") -PrincipalRow @() } |
+            Should -Throw "*which the schema query did not report*"
+        { ConvertFrom-InventoryQueryRow -SchemaRow @("dms", "dms") -ObjectRow @() -PrincipalRow @() } |
+            Should -Throw "*duplicate schema*"
+    }
+
+    It "round-trips through the canonical inventory serializer" {
+        $inventory = ConvertFrom-InventoryQueryRow `
+            -SchemaRow @("edfi", "dms") `
+            -ObjectRow @("dms|Document|table") `
+            -PrincipalRow @("custom_reader")
+        { ConvertTo-CanonicalInventoryJson -Inventory $inventory } | Should -Not -Throw
+    }
+}
+
+Describe "Select-InventorySchemaScope" {
+    BeforeAll {
+        $script:scopedSource = @{
+            schemas    = @(
+                @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
+                @{ schemaName = "edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                @{ schemaName = "public"; objects = @() }
+            )
+            principals = @("someone")
+        }
+    }
+
+    It "keeps only the named schemas and optionally drops principals" {
+        $scoped = Select-InventorySchemaScope -Inventory $script:scopedSource -SchemaName @("dms", "public") -ExcludePrincipals
+        @($scoped.schemas | ForEach-Object { $_.schemaName }) | Should -Be @("dms", "public")
+        @($scoped.principals).Count | Should -Be 0
+
+        $withPrincipals = Select-InventorySchemaScope -Inventory $script:scopedSource -SchemaName @("dms")
+        @($withPrincipals.principals) | Should -Be @("someone")
+    }
+
+    It "silently skips scope names absent from the inventory" {
+        $scoped = Select-InventorySchemaScope -Inventory $script:scopedSource -SchemaName @("dms", "absent")
+        @($scoped.schemas | ForEach-Object { $_.schemaName }) | Should -Be @("dms")
+    }
+}
+
+Describe "ConvertFrom-EffectiveSchemaRow" {
+    It "parses the singleton row and converts the seed hash from hex to base64" {
+        $parsed = ConvertFrom-EffectiveSchemaRow -Row @("", "1.0.0|$('ab' * 32)|42|$('CD' * 32)")
+        $parsed.ApiSchemaFormatVersion | Should -Be "1.0.0"
+        $parsed.EffectiveSchemaHash | Should -Be ("ab" * 32)
+        $parsed.ResourceKeyCount | Should -Be 42
+        $parsed.ResourceKeySeedHashB64 | Should -Be ([System.Convert]::ToBase64String([System.Convert]::FromHexString(("cd" * 32))))
+    }
+
+    It "rejects zero rows, multiple rows, and malformed fields" {
+        { ConvertFrom-EffectiveSchemaRow -Row @() } | Should -Throw "*Expected exactly one dms.EffectiveSchema row, found 0*"
+        { ConvertFrom-EffectiveSchemaRow -Row @("a|b|1|cc", "a|b|1|cc") } | Should -Throw "*found 2*"
+        { ConvertFrom-EffectiveSchemaRow -Row @("1.0.0|$('ab' * 32)|42") } | Should -Throw "*malformed*"
+        { ConvertFrom-EffectiveSchemaRow -Row @("1.0.0|NOTAHASH|42|$('cd' * 32)") } | Should -Throw "*EffectiveSchemaHash*"
+        { ConvertFrom-EffectiveSchemaRow -Row @("1.0.0|$('ab' * 32)|zero|$('cd' * 32)") } | Should -Throw "*ResourceKeyCount*"
+        { ConvertFrom-EffectiveSchemaRow -Row @("1.0.0|$('ab' * 32)|42|deadbeef") } | Should -Throw "*ResourceKeySeedHash*"
+    }
+}
+
+Describe "Get-TemplateProjectSchemaPartition" {
+    It "partitions the DMS-owned roles and orders projects core-first" {
+        $partition = Get-TemplateProjectSchemaPartition -DatabaseEngine postgresql -SchemaName @(
+            "tracked_changes_tpdm", "tpdm", "public", "edfi", "dms", "auth", "tracked_changes_edfi"
+        )
+
+        $partition.HasDms | Should -BeTrue
+        $partition.HasAuth | Should -BeTrue
+        $partition.AlwaysPresentSchemaName | Should -Be @("public")
+        $partition.TrackedChangesProjectNames | Should -Be @("edfi", "tpdm")
+        $partition.ResourceSchemaNames | Should -Be @("edfi", "tpdm")
+        $partition.ProjectSchemaNames | Should -Be @("edfi", "tpdm")
+    }
+
+    It "partitions lookalike companion names as resource schemas so pairing can reject them" {
+        $partition = Get-TemplateProjectSchemaPartition -DatabaseEngine mssql -SchemaName @(
+            "dms", "dbo", "tracked_changesx", "tracked_changes_"
+        )
+        $partition.AlwaysPresentSchemaName | Should -Be @("dbo")
+        $partition.ResourceSchemaNames | Should -Be @("tracked_changes_", "tracked_changesx")
+        @($partition.TrackedChangesProjectNames).Count | Should -Be 0
+    }
+}
+
+Describe "Assert-DmsOnlyInventory" {
+    BeforeAll {
+        function script:New-GateInventory {
+            param (
+                [object[]]$Schema,
+                [string[]]$Principal = @()
+            )
+            return @{ schemas = @($Schema); principals = $Principal }
+        }
+
+        $script:cleanSchemas = @(
+            @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
+            @{ schemaName = "edfi"; objects = @(@{ name = "School"; type = "table" }) },
+            @{ schemaName = "tracked_changes_edfi"; objects = @(@{ name = "School"; type = "table" }) },
+            @{ schemaName = "public"; objects = @() }
+        )
+    }
+
+    It "accepts a clean full-database inventory and returns the partition" {
+        $partition = Assert-DmsOnlyInventory -DatabaseEngine postgresql -Inventory (New-GateInventory -Schema $script:cleanSchemas)
+        $partition.ProjectSchemaNames | Should -Be @("edfi")
+    }
+
+    It "accepts a dms-plus-public artifact-scope inventory (no resource schemas)" {
+        $schemas = @(
+            @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
+            @{ schemaName = "public"; objects = @() }
+        )
+        { Assert-DmsOnlyInventory -DatabaseEngine postgresql -Inventory (New-GateInventory -Schema $schemas) } | Should -Not -Throw
+    }
+
+    It "rejects the Configuration Service schema dmscs" {
+        $schemas = $script:cleanSchemas + @(@{ schemaName = "dmscs"; objects = @(@{ name = "Application"; type = "table" }) })
+        { Assert-DmsOnlyInventory -DatabaseEngine postgresql -Inventory (New-GateInventory -Schema $schemas) } |
+            Should -Throw "*contains the Configuration Service schema 'dmscs'*"
+    }
+
+    It "rejects OpenIddict identity-state objects anywhere, case-insensitively" {
+        $schemas = @(
+            @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }, @{ name = "OPENIDDICTKey"; type = "table" }) },
+            @{ schemaName = "public"; objects = @() }
+        )
+        { Assert-DmsOnlyInventory -DatabaseEngine postgresql -Inventory (New-GateInventory -Schema $schemas) } |
+            Should -Throw "*identity-state object 'dms.OPENIDDICTKey'*"
+    }
+
+    It "rejects lookalike and unpaired schemas through companion pairing" {
+        $auth2 = $script:cleanSchemas + @(@{ schemaName = "auth2"; objects = @() })
+        { Assert-DmsOnlyInventory -DatabaseEngine postgresql -Inventory (New-GateInventory -Schema $auth2) } |
+            Should -Throw "*schema 'auth2' has no tracked_changes_auth2 companion*"
+
+        $lookalikeCompanion = $script:cleanSchemas + @(@{ schemaName = "tracked_changesx"; objects = @() })
+        { Assert-DmsOnlyInventory -DatabaseEngine postgresql -Inventory (New-GateInventory -Schema $lookalikeCompanion) } |
+            Should -Throw "*schema 'tracked_changesx' has no tracked_changes_tracked_changesx companion*"
+
+        $orphanCompanion = $script:cleanSchemas + @(@{ schemaName = "tracked_changes_ghost"; objects = @() })
+        { Assert-DmsOnlyInventory -DatabaseEngine postgresql -Inventory (New-GateInventory -Schema $orphanCompanion) } |
+            Should -Throw "*companion schema 'tracked_changes_ghost' has no matching resource schema*"
+    }
+
+    It "rejects content hidden in the always-present public/dbo schemas" {
+        $publicContaminated = @(
+            @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
+            @{ schemaName = "public"; objects = @(@{ name = "evil"; type = "table" }) }
+        )
+        { Assert-DmsOnlyInventory -DatabaseEngine postgresql -Inventory (New-GateInventory -Schema $publicContaminated) } |
+            Should -Throw "*always-present 'public' schema contains unexpected objects*evil*"
+
+        $dboContaminated = @(
+            @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
+            @{ schemaName = "dbo"; objects = @(@{ name = "evil"; type = "table" }) }
+        )
+        { Assert-DmsOnlyInventory -DatabaseEngine mssql -Inventory (New-GateInventory -Schema $dboContaminated) } |
+            Should -Throw "*always-present 'dbo' schema contains unexpected objects*evil*"
+    }
+
+    It "rejects unexpected database principals" {
+        { Assert-DmsOnlyInventory -DatabaseEngine mssql -Inventory (New-GateInventory -Schema $script:cleanSchemas -Principal @("copied_cms_user")) } |
+            Should -Throw "*unexpected database principals: copied_cms_user*"
+    }
+
+    It "rejects a missing or empty dms schema" {
+        { Assert-DmsOnlyInventory -DatabaseEngine postgresql -Inventory (New-GateInventory -Schema @(@{ schemaName = "public"; objects = @() })) } |
+            Should -Throw "*the 'dms' schema is missing*"
+        { Assert-DmsOnlyInventory -DatabaseEngine postgresql -Inventory (New-GateInventory -Schema @(@{ schemaName = "dms"; objects = @() })) } |
+            Should -Throw "*the 'dms' schema contains no objects*"
+    }
+
+    It "rejects resource schemas without the core edfi schema" {
+        $schemas = @(
+            @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
+            @{ schemaName = "tpdm"; objects = @() },
+            @{ schemaName = "tracked_changes_tpdm"; objects = @() },
+            @{ schemaName = "public"; objects = @() }
+        )
+        { Assert-DmsOnlyInventory -DatabaseEngine postgresql -Inventory (New-GateInventory -Schema $schemas) } |
+            Should -Throw "*the core resource schema 'edfi' is missing*"
+    }
+
+    It "aggregates multiple violations into one message with the source description" {
+        $schemas = @(
+            @{ schemaName = "dmscs"; objects = @() },
+            @{ schemaName = "public"; objects = @(@{ name = "evil"; type = "table" }) }
+        )
+        $failure = { Assert-DmsOnlyInventory -DatabaseEngine postgresql -Inventory (New-GateInventory -Schema $schemas) -SourceDescription "Scratch database 'x'" }
+        $failure | Should -Throw "*Scratch database 'x' is not a dedicated DMS datastore*"
+        $failure | Should -Throw "*dmscs*"
+        $failure | Should -Throw "*'dms' schema is missing*"
+        $failure | Should -Throw "*unexpected objects*"
+    }
+}
+
+Describe "Get-RelationalMappingVersionFromSource" {
+    It "reads the authoritative constant from the real repo source file" {
+        $constantsPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../src/dms/core/EdFi.DataManagementService.Core/Utilities/SchemaHashConstants.cs"))
+        Get-RelationalMappingVersionFromSource -SchemaHashConstantsPath $constantsPath | Should -Be "v2"
+    }
+
+    It "fails on a missing file or an ambiguous constant" {
+        { Get-RelationalMappingVersionFromSource -SchemaHashConstantsPath (Join-Path $TestDrive "absent.cs") } |
+            Should -Throw "*was not found*"
+
+        $ambiguousPath = Join-Path $TestDrive "Ambiguous.cs"
+        @(
+            'public const string RelationalMappingVersion = "v2";',
+            'public const string RelationalMappingVersion = "v3";'
+        ) | Set-Content -LiteralPath $ambiguousPath -Encoding utf8
+        { Get-RelationalMappingVersionFromSource -SchemaHashConstantsPath $ambiguousPath } |
+            Should -Throw "*Expected exactly one RelationalMappingVersion constant*found 2*"
+    }
+}
+
+Describe "New-TemplateRestoreManifest" {
+    BeforeAll {
+        function script:New-ManifestArgumentSet {
+            param (
+                [ValidateSet("postgresql", "mssql")]
+                [string]$DatabaseEngine = "postgresql"
+            )
+
+            $arguments = @{
+                PackageId                = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0"
+                PackageVersion           = "1.0.123"
+                DatabaseEngine           = $DatabaseEngine
+                TemplateKind             = "Minimal"
+                DataStandardVersion      = "5.2.0"
+                ProjectName              = [string[]]@("edfi")
+                ApiSchemaFormatVersion   = "1.0.0"
+                EffectiveSchemaHash      = ("ab" * 32)
+                ResourceKeyCount         = 42
+                ResourceKeySeedHashB64   = [System.Convert]::ToBase64String([byte[]](1..32))
+                RelationalMappingVersion = "v2"
+                EngineVersion            = "16.8"
+                DocumentJsonColumnType   = "jsonb"
+                Inventory                = @{
+                    schemas    = @(
+                        @{ schemaName = "public"; objects = @() },
+                        @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "TABLE" }) }
+                    )
+                    principals = @()
+                }
+                ArtifactFileName         = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0.sql"
+                ArtifactSha256           = ("cd" * 32)
+            }
+            if ($DatabaseEngine -eq "mssql") {
+                $arguments.PackageId = "EdFi.Api.Minimal.Template.MsSql.5.2.0"
+                $arguments.EngineVersion = "17.0.900.7"
+                $arguments.DatabaseCompatibilityLevel = 170
+                $arguments.DocumentJsonColumnType = "nvarchar"
+                $arguments.ArtifactFileName = "EdFi.Api.Minimal.Template.MsSql.5.2.0.bak"
+            }
+            return $arguments
+        }
+    }
+
+    It "produces a shape-valid manifest with the canonical inventory embedded in sorted order" {
+        $arguments = New-ManifestArgumentSet
+        $manifest = New-TemplateRestoreManifest @arguments
+
+        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Not -Throw
+
+        # Embedded inventory is canonical: schemas sorted, types lowercased.
+        @($manifest.inventory.schemas | ForEach-Object { $_.schemaName }) | Should -Be @("dms", "public")
+        $manifest.inventory.schemas[0].objects[0].type | Should -Be "table"
+        $manifest.inventorySha256 | Should -Be (Get-CanonicalInventoryHash -Inventory $arguments.Inventory)
+
+        # And it survives a JSON round trip through the consumer-side validator.
+        $roundTripped = ($manifest | ConvertTo-Json -Depth 10) | ConvertFrom-Json
+        { Assert-RestoreManifestShape -Manifest $roundTripped } | Should -Not -Throw
+    }
+
+    It "enforces the engine-conditional compatibility-level rules at assembly time" {
+        $missingCompatibility = New-ManifestArgumentSet -DatabaseEngine mssql
+        $missingCompatibility.Remove("DatabaseCompatibilityLevel")
+        { New-TemplateRestoreManifest @missingCompatibility } | Should -Throw "*DatabaseCompatibilityLevel is required for mssql*"
+
+        $unwantedCompatibility = New-ManifestArgumentSet -DatabaseEngine postgresql
+        $unwantedCompatibility.DatabaseCompatibilityLevel = 160
+        { New-TemplateRestoreManifest @unwantedCompatibility } | Should -Throw "*must not be supplied for postgresql*"
+    }
+}

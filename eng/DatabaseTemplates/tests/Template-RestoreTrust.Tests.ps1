@@ -142,6 +142,18 @@ Describe "Get-FileSha256Hex" {
     It "throws for a missing file" {
         { Get-FileSha256Hex -Path (Join-Path $TestDrive "absent.bin") } | Should -Throw "*does not exist*"
     }
+
+    It "resolves relative paths against the PowerShell location, not the process working directory" {
+        $workspace = New-TestWorkspace
+        Set-Content -LiteralPath (Join-Path $workspace "rel.bin") -Value "relative bytes"
+        Push-Location $workspace
+        try {
+            Get-FileSha256Hex -Path "./rel.bin" | Should -Be (Get-FileSha256Hex -Path (Join-Path $workspace "rel.bin"))
+        }
+        finally {
+            Pop-Location
+        }
+    }
 }
 
 Describe "Get-TemplateAttestationFileName" {

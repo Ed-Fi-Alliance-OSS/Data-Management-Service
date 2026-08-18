@@ -1058,8 +1058,12 @@ Describe "Build-TemplateNuGetPackage package identity derivation" {
             Mock Invoke-DatabaseDump {}
             Mock New-DatabaseTemplateCsproj {}
             Mock Build-NuGetPackage {}
+            Mock Get-TemplateSourceCatalogFacts { [pscustomobject]@{} }
+            Mock Assert-DmsOnlyTemplateSource { [pscustomobject]@{ ProjectSchemaNames = [string[]]@("edfi") } }
+            Mock Write-TemplateRestoreManifest { "restore-manifest.json" }
+            Mock Add-FileToCsProjForNuget {}
 
-            Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion $standardVersion -PackageVersion "1.0.0" -DatabaseEngine $engine
+            Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion $standardVersion -PackageVersion "1.0.0" -TemplateKind $templateType -DatabaseEngine $engine
 
             $expectedId = "EdFi.Api.$templateType.Template.$engineToken.$standardVersion"
             $expectedBackupName = "EdFi.Api.$templateType.Template.$engineToken.$standardVersion.$extension"
@@ -1082,8 +1086,12 @@ Describe "Build-TemplateNuGetPackage package identity derivation" {
             Mock Invoke-DatabaseDump {}
             Mock New-DatabaseTemplateCsproj {}
             Mock Build-NuGetPackage {}
+            Mock Get-TemplateSourceCatalogFacts { [pscustomobject]@{} }
+            Mock Assert-DmsOnlyTemplateSource { [pscustomobject]@{ ProjectSchemaNames = [string[]]@("edfi") } }
+            Mock Write-TemplateRestoreManifest { "restore-manifest.json" }
+            Mock Add-FileToCsProjForNuget {}
 
-            Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0"
+            Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0" -TemplateKind "Minimal"
 
             Should -Invoke New-DatabaseTemplateCsproj -Times 1 -Exactly -ParameterFilter {
                 $Config.Id -eq 'EdFi.Api.Minimal.Template.PostgreSql.5.2.0' -and
@@ -1092,6 +1100,237 @@ Describe "Build-TemplateNuGetPackage package identity derivation" {
 
             # The dump must also see the default resolved to postgresql, not left blank/unset.
             Should -Invoke Invoke-DatabaseDump -Times 1 -Exactly -ParameterFilter { $DatabaseEngine -eq 'postgresql' }
+        }
+    }
+}
+
+Describe "Get-TemplateSourceCatalogFacts" {
+    BeforeAll {
+        $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Push-Location $script:templatesDir
+        try {
+            Import-Module (Join-Path $script:templatesDir "Template-Management.psm1") -Force
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    It "reads the PostgreSQL manifest facts from the live catalog and scopes the artifact inventory to the dumped schemas plus public" {
+        InModuleScope Template-Management {
+            $calls = [System.Collections.Generic.List[object]]::new()
+            Mock docker {
+                $calls.Add(@($args))
+                $query = [string]$args[-1]
+                $global:LASTEXITCODE = 0
+                if ($query -match 'EffectiveSchema') { return "1.0.0|$('ab' * 32)|42|$('cd' * 32)" }
+                if ($query -match 'server_version') { return '16.8' }
+                if ($query -match 'data_type') { return 'jsonb' }
+                if ($query -match 'relkind') {
+                    return @(
+                        'dms|Document|table',
+                        'dms|EffectiveSchema|table',
+                        'edfi|School|table',
+                        'tracked_changes_edfi|School|table'
+                    )
+                }
+                if ($query -match 'pg_namespace') { return @('dms', 'edfi', 'public', 'tracked_changes_edfi') }
+            }
+
+            $facts = Get-TemplateSourceCatalogFacts -DatabaseEngine postgresql -DatabaseName "edfi_datamanagementservice" -ArtifactSchemaName @("dms")
+
+            $facts.ApiSchemaFormatVersion | Should -Be "1.0.0"
+            $facts.EffectiveSchemaHash | Should -Be ("ab" * 32)
+            $facts.ResourceKeyCount | Should -Be 42
+            $facts.ResourceKeySeedHashB64 | Should -Be ([System.Convert]::ToBase64String([System.Convert]::FromHexString(("cd" * 32))))
+            $facts.EngineVersion | Should -Be "16.8"
+            $facts.DatabaseCompatibilityLevel | Should -BeNullOrEmpty
+            $facts.DocumentJsonColumnType | Should -Be "jsonb"
+
+            @($facts.FullInventory.schemas).Count | Should -Be 4
+
+            # Artifact scope: dumped schema (dms) plus always-present public, no principals.
+            $artifactSchemaNames = @($facts.ArtifactInventory.schemas | ForEach-Object { $_.schemaName })
+            $artifactSchemaNames | Should -Be @("dms", "public")
+            @($facts.ArtifactInventory.principals).Count | Should -Be 0
+
+            # Transport shape: catalog queries go through the standard psql idiom.
+            $psqlCall = @($calls | Where-Object { $_[2] -eq 'psql' } | Select-Object -First 1)[0]
+            ($psqlCall[0..8] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'edfi_datamanagementservice', '-tA', '-c') -join '|')
+        }
+    }
+
+    It "reads the MSSQL manifest facts including compatibility level and principals, with the artifact scoped to the whole database" {
+        InModuleScope Template-Management {
+            $calls = [System.Collections.Generic.List[object]]::new()
+            Mock docker {
+                $calls.Add(@($args))
+                $query = [string]$args[-1]
+                $global:LASTEXITCODE = 0
+                if ($query -match 'EffectiveSchema') { return "1.0.0|$('ab' * 32)|42|$('cd' * 32)" }
+                if ($query -match 'ProductVersion') { return '17.0.900.7' }
+                if ($query -match 'compatibility_level') { return '170' }
+                if ($query -match 'sys\.columns') { return 'nvarchar' }
+                if ($query -match 'sys\.objects') {
+                    return @('dms|Document|table', 'edfi|School|table', 'tracked_changes_edfi|School|table')
+                }
+                if ($query -match 'sys\.schemas') { return @('dbo', 'dms', 'edfi', 'tracked_changes_edfi') }
+                if ($query -match 'database_principals') { return @() }
+            }
+
+            $facts = Get-TemplateSourceCatalogFacts -DatabaseEngine mssql -DatabaseName "edfi_datamanagementservice"
+
+            $facts.EngineVersion | Should -Be "17.0.900.7"
+            $facts.DatabaseCompatibilityLevel | Should -Be 170
+            $facts.DocumentJsonColumnType | Should -Be "nvarchar"
+
+            # A .bak carries the whole database: artifact scope equals the full inventory,
+            # including the always-present dbo entry and the (empty) principals list.
+            $artifactSchemaNames = @($facts.ArtifactInventory.schemas | ForEach-Object { $_.schemaName })
+            $artifactSchemaNames | Should -Be @('dbo', 'dms', 'edfi', 'tracked_changes_edfi')
+            @($facts.ArtifactInventory.principals).Count | Should -Be 0
+
+            # Transport shape: catalog queries go through the standard sqlcmd idiom.
+            $sqlcmdCall = @($calls | Where-Object { $_[4] -eq '/opt/mssql-tools18/bin/sqlcmd' } | Select-Object -First 1)[0]
+            ($sqlcmdCall[0..15] -join '|') | Should -Be (@('exec', '-e', 'SQLCMDPASSWORD=abcdefgh1!', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-d', 'edfi_datamanagementservice', '-C', '-b', '-h', '-1', '-W') -join '|')
+        }
+    }
+
+    It "requires the artifact schema scope for PostgreSQL" {
+        InModuleScope Template-Management {
+            Mock docker {
+                $query = [string]$args[-1]
+                $global:LASTEXITCODE = 0
+                if ($query -match 'EffectiveSchema') { return "1.0.0|$('ab' * 32)|42|$('cd' * 32)" }
+                if ($query -match 'server_version') { return '16.8' }
+                if ($query -match 'data_type') { return 'jsonb' }
+                if ($query -match 'relkind') { return @('dms|Document|table') }
+                if ($query -match 'pg_namespace') { return @('dms', 'public') }
+            }
+
+            { Get-TemplateSourceCatalogFacts -DatabaseEngine postgresql -DatabaseName "edfi_datamanagementservice" } |
+                Should -Throw "*ArtifactSchemaName is required for postgresql*"
+        }
+    }
+}
+
+Describe "Build-TemplateNuGetPackage restore gate and manifest" {
+    BeforeAll {
+        $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Push-Location $script:templatesDir
+        try {
+            Import-Module (Join-Path $script:templatesDir "Template-Management.psm1") -Force
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    It "refuses to dump or package when the source fails the DMS-only gate (dmscs contamination)" {
+        InModuleScope Template-Management -Parameters @{ configPath = (Join-Path (Split-Path $PSScriptRoot -Parent) "MinimalTemplateSettings.psd1") } {
+            param($configPath)
+
+            $configPath | Should -Exist
+
+            $contaminatedFacts = [pscustomobject]@{
+                FullInventory = @{
+                    schemas    = @(
+                        @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
+                        @{ schemaName = "dmscs"; objects = @(@{ name = "Application"; type = "table" }) },
+                        @{ schemaName = "public"; objects = @() }
+                    )
+                    principals = @()
+                }
+            }
+
+            Mock Get-TemplateSourceCatalogFacts { $contaminatedFacts }
+            Mock Invoke-DatabaseDump {}
+            Mock Write-TemplateRestoreManifest {}
+            Mock New-DatabaseTemplateCsproj {}
+            Mock Add-FileToCsProjForNuget {}
+            Mock Build-NuGetPackage {}
+
+            { Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0" -TemplateKind "Minimal" } |
+                Should -Throw "*not a dedicated DMS datastore*dmscs*"
+
+            # The gate fires before any dump, manifest, or packaging work.
+            Should -Invoke Invoke-DatabaseDump -Times 0 -Exactly
+            Should -Invoke Write-TemplateRestoreManifest -Times 0 -Exactly
+            Should -Invoke New-DatabaseTemplateCsproj -Times 0 -Exactly
+            Should -Invoke Build-NuGetPackage -Times 0 -Exactly
+        }
+    }
+
+    It "writes a shape-valid restore manifest from the captured facts and the completed artifact and packages it beside the artifact" {
+        $workDir = Join-Path $TestDrive ([Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $workDir -Force | Out-Null
+        Push-Location $workDir
+        try {
+            InModuleScope Template-Management -Parameters @{ configPath = (Join-Path (Split-Path $PSScriptRoot -Parent) "MinimalTemplateSettings.psd1") } {
+                param($configPath)
+
+                $cleanFacts = [pscustomobject]@{
+                    ApiSchemaFormatVersion     = "1.0.0"
+                    EffectiveSchemaHash        = ("ab" * 32)
+                    ResourceKeyCount           = 42
+                    ResourceKeySeedHashB64     = [System.Convert]::ToBase64String([System.Convert]::FromHexString(("cd" * 32)))
+                    EngineVersion              = "16.8"
+                    DatabaseCompatibilityLevel = $null
+                    DocumentJsonColumnType     = "jsonb"
+                    FullInventory              = @{
+                        schemas    = @(
+                            @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }, @{ name = "EffectiveSchema"; type = "table" }) },
+                            @{ schemaName = "edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                            @{ schemaName = "tracked_changes_edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                            @{ schemaName = "public"; objects = @() }
+                        )
+                        principals = @()
+                    }
+                    ArtifactInventory          = @{
+                        schemas    = @(
+                            @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }, @{ name = "EffectiveSchema"; type = "table" }) },
+                            @{ schemaName = "public"; objects = @() }
+                        )
+                        principals = @()
+                    }
+                }
+
+                Mock Get-TemplateSourceCatalogFacts { $cleanFacts }
+                Mock Invoke-DatabaseDump {
+                    Set-Content -LiteralPath (Join-Path $BackupDirectory $BackupFileName) -Value "fake artifact bytes"
+                }
+                Mock New-DatabaseTemplateCsproj {}
+                Mock Add-FileToCsProjForNuget {}
+                Mock Build-NuGetPackage {}
+
+                Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.123" -TemplateKind "Minimal"
+
+                # Read-RestoreManifest shape-validates the written manifest as a consumer would.
+                $manifest = Read-RestoreManifest -Path "./restore-manifest.json"
+                $manifest.packageId | Should -Be "EdFi.Api.Minimal.Template.PostgreSql.5.2.0"
+                $manifest.packageVersion | Should -Be "1.0.123"
+                $manifest.databaseEngine | Should -Be "postgresql"
+                $manifest.templateKind | Should -Be "Minimal"
+                $manifest.dataStandardVersion | Should -Be "5.2.0"
+                $manifest.contentProfile | Should -Be "DmsDatastoreOnly"
+                @($manifest.projects) | Should -Be @("edfi")
+                $manifest.effectiveSchemaHash | Should -Be ("ab" * 32)
+                $manifest.relationalMappingVersion | Should -Be "v2"
+                $manifest.documentJsonColumnType | Should -Be "jsonb"
+                $manifest.artifactFileName | Should -Be "EdFi.Api.Minimal.Template.PostgreSql.5.2.0.sql"
+                $manifest.artifactSha256 | Should -Be (Get-FileSha256Hex -Path "./EdFi.Api.Minimal.Template.PostgreSql.5.2.0.sql")
+
+                # The manifest inventory is the artifact scope, not the full-database scope.
+                @($manifest.inventory.schemas | ForEach-Object { $_.schemaName }) | Should -Be @("dms", "public")
+
+                # The manifest is added to the package csproj beside the artifact.
+                Should -Invoke Add-FileToCsProjForNuget -Times 1 -Exactly -ParameterFilter {
+                    @($SourceTargetPair)[0].source -like "*restore-manifest.json" -and @($SourceTargetPair)[0].target -eq "."
+                }
+            }
+        }
+        finally {
+            Pop-Location
         }
     }
 }

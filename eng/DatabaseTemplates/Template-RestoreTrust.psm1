@@ -105,7 +105,11 @@ function Get-FileSha256Hex {
         throw "Cannot hash '$Path' because the file does not exist."
     }
 
-    $stream = [System.IO.File]::OpenRead($Path)
+    # Resolve through the PowerShell provider first: .NET static file APIs resolve relative
+    # paths against the process working directory, which Push-Location does not update.
+    $resolvedPath = (Resolve-Path -LiteralPath $Path).ProviderPath
+
+    $stream = [System.IO.File]::OpenRead($resolvedPath)
     try {
         $hashBytes = [System.Security.Cryptography.SHA256]::HashData($stream)
     }
