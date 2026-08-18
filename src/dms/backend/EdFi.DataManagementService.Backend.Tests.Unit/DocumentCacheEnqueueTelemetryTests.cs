@@ -244,6 +244,55 @@ public class Given_DocumentCacheEnqueueTelemetry
     }
 
     [Test]
+    public void It_records_classified_write_boundary_failures_with_unknown_target_without_retention()
+    {
+        using MetricCollector collector = new();
+        var logger = new CapturingLogger<DocumentCacheEnqueueTelemetry>();
+        DocumentCacheTargetObservation target = ResolvedTarget(TargetKey);
+        var registry = new StaticTargetRegistry([target], [ExecutionContext(target)]);
+        DocumentCacheEnqueueTelemetry telemetry = CreateTelemetry(
+            pageSize: 10,
+            targetRegistry: registry,
+            logger: logger,
+            meter: collector.Meter
+        );
+
+        DocumentCacheEnqueueTelemetryWriteBoundary.RecordFailureIfClassified(
+            telemetry,
+            new StubWriteExceptionClassifier(),
+            dataStoreSelection: null,
+            registry,
+            TargetKey.TenantKey,
+            SqlDialect.Pgsql,
+            DocumentCacheEnqueueTelemetryCanonicalOperation.Update,
+            DocumentCacheEnqueueTelemetryResourceKind.Resource,
+            new StubDbException("insert or update on table DocumentProjectionWork violates foreign key")
+        );
+
+        telemetry.GetFailureSnapshot(TargetKey).RecentEvents.Should().BeEmpty();
+
+        MetricMeasurement failure = collector
+            .MeasurementsFor(DocumentCacheEnqueueTelemetry.FailureCounterName)
+            .Should()
+            .ContainSingle()
+            .Which;
+        failure.Tags["provider"].Should().Be("postgresql");
+        failure.Tags["target"].Should().Be("unknown");
+        failure.Tags["canonical_operation"].Should().Be("update");
+        failure.Tags["resource_kind"].Should().Be("resource");
+        failure.Tags["category"].Should().Be("workPersistenceFailed");
+        failure.Tags.Should().NotContainKey("target_key");
+
+        CapturedLogEntry logEntry = logger.Entries.Should().ContainSingle().Which;
+        logEntry.Message.Should().Contain("DocumentCacheEnqueueFailed");
+        logEntry.Properties["Target"].Should().Be("unknown");
+        logEntry
+            .Properties.Values.OfType<string>()
+            .Should()
+            .NotContain(value => value.Contains(TargetKey.ToString(), StringComparison.Ordinal));
+    }
+
+    [Test]
     public void It_does_not_record_unclassified_non_enqueue_failures_from_the_write_boundary()
     {
         using MetricCollector collector = new();

@@ -253,10 +253,6 @@ internal static class DocumentCacheEnqueueTelemetryWriteBoundary
         ArgumentNullException.ThrowIfNull(exception);
 
         DocumentCacheTargetKey? targetKey = TryCreateTelemetryTargetKey(dataStoreSelection, tenantKey);
-        if (targetKey is null)
-        {
-            return;
-        }
 
         if (
             !DocumentCacheEnqueueFailureClassifier.TryClassify(
@@ -270,7 +266,9 @@ internal static class DocumentCacheEnqueueTelemetryWriteBoundary
             return;
         }
 
-        DocumentCacheTargetObservation? targetObservation = TryGetCurrentTarget(targetRegistry, targetKey);
+        DocumentCacheTargetObservation? targetObservation = targetKey is null
+            ? null
+            : TryGetCurrentTarget(targetRegistry, targetKey);
         var context = new DocumentCacheEnqueueTelemetryContext(
             targetKey,
             targetObservation?.ProviderToken ?? ProviderTokenForDialect(dialect),
