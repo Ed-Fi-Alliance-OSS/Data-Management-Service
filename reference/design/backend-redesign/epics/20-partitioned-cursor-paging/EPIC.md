@@ -197,10 +197,10 @@ provisioned a second time, plus a small descriptor set and a smoke set.
 
 - 10,000 candidates for smoke and setup validation;
 - one primary fixture of 500,000 accessible regular-resource candidates with at least 10%
-  `DocumentId` gaps. That count is where a requested `partitionCount=200` and the five-maximum-page
-  minimum partition size coincide exactly: the minimum is `500 * 5 = 2500`, and
-  `ceiling(500000 / 200)` is also exactly `2500`. It therefore exercises `partitionCount=200` at the
-  boundary where the minimum stops binding, with no headroom to hide a sizing error;
+  `DocumentId` gaps. That count is where a requested `number=200` and the five-maximum-page minimum
+  partition size coincide exactly: the minimum is `500 * 5 = 2500`, and `ceiling(500000 / 200)` is
+  also exactly `2500`. It therefore exercises `number=200` at the boundary where the minimum stops
+  binding, with no headroom to hide a sizing error;
 - the same primary fixture read by a second principal that can access approximately half of it,
   giving the representative row-level authorization variant without a second data load;
 - one filtered variant of the primary fixture at approximately 10% selectivity; and
@@ -208,7 +208,7 @@ provisioned a second time, plus a small descriptor set and a smoke set.
 
 Measure page sizes 25 and 500 at the first, middle, and last cursor ranges. Compare offset 0, a
 one-page shallow offset, and a recorded deep offset. Measure partition counts 1, 10, and 200 on the
-unfiltered primary fixture, and `partitionCount=10` on the filtered and authorized variants. Iteration
+unfiltered primary fixture, and `number=10` on the filtered and authorized variants. Iteration
 counts are not reduced, because iterations cost seconds while fixture provisioning dominates the
 run and a stable p95 depends on them: each scenario has at least five warmups and 30 measured
 warm-cache iterations on a pinned environment. Record p50, p95, command count, returned
@@ -229,8 +229,8 @@ Acceptance gates are:
 - middle/last cursor p50 is at most `1.20x` first-page cursor p50, and p95 is at most `1.30x`;
 - first-page cursor p50/p95 is at most `1.20x`/`1.30x` the offset-0 baseline;
 - existing shallow-offset p50/p95 is at most `1.20x`/`1.30x` its pre-change baseline;
-- partition `partitionCount=200` p50 is at most `1.25x` `partitionCount=1` on the same candidate
-  set, proving the requested count does not cause repeated scans; and
+- partition `number=200` p50 is at most `1.25x` `number=1` on the same candidate set, proving the
+  requested count does not cause repeated scans; and
 - deep-offset results are recorded for comparison but are not a cursor acceptance gate.
 
 Capture PostgreSQL `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` and SQL Server actual XML plans with
@@ -299,33 +299,37 @@ The approved intentional ODS differences are:
   blank and non-numeric values, where ODS's `int?` model binding reads a blank value as absent and
   returns HTTP 200, and fails binding on a non-numeric value before its validator can emit a range
   message;
-- name the desired partition count `partitionCount`, where ODS 7.3.2 names it `number` and the
-  consumed base ApiSchema publishes a `numberOfPartitions` component whose query `name` is `number`.
-  A partition-control parameter is removed from resource-filter matching before the query-field
-  lookup runs, so reserving a key as generic as `number` would leave a resource exposing a query
-  field of that name filterable on its collection GET and not on its `/partitions` sibling, and
-  Ed-Fi's flat query namespace has no qualification syntax that would let one raw key carry both
-  meanings. Under DMS, `number` is therefore an ordinary resource query field on `/partitions`: it
-  filters where the resource declares it and is answered by the unknown-query-field rule where it
-  does not. No alias or deprecated fallback is retained, because either would reinstate the
-  collision. DMS-1388 publishes a parameter named `partitionCount` rather than referencing the
-  `numberOfPartitions` component unchanged;
+- reserve the `number` count key out of resource-filter matching on `/partitions`, so a resource
+  exposing a query field of that name filters on it on its collection GET but cannot filter on it
+  here, where ODS 7.3.2 applies one supplied `?number=` as both meanings at once. DMS keeps the name
+  the consumed base ApiSchema's `numberOfPartitions` component publishes and ODS 7.3.2 serves; what
+  differs is the collision handling. ODS's `PartitionsController` takes `[FromQuery] int? number` and
+  then binds the same request against the generated `{Resource}GetByExample` with an empty prefix, so
+  a case-insensitive match carries the same value into the filter specification and into the
+  partition count. DMS answers with one meaning rather than two, because a partition-control
+  parameter is removed from filter matching before the query-field lookup runs, and Ed-Fi's flat
+  query namespace has no qualification syntax that would let one raw key carry both. Which deployed
+  resources declare a query field of that name depends on the extensions loaded at runtime, so the
+  parity harness can exercise this difference only against a schema that declares one. The general
+  problem — DMS reserving query keys that model validation does not protect against a colliding
+  resource property, which predates this epic in `minChangeVersion` and `maxChangeVersion` — is
+  raised as DMS-1442 for team triage rather than resolved here;
 - return `Number of partitions must be between 1 and 200.` for a non-numeric
-  `/partitions?partitionCount=abc`, where the corresponding ODS request is `?number=abc` and its
-  `[FromQuery] int? number` binding fails before its controller body runs. `PartitionsController` is
-  an `[ApiController]`, and `ApiBehaviorOptionsConfigurator`
+  `/partitions?number=abc`, where ODS's `[FromQuery] int? number` binding fails before its
+  controller body runs. `PartitionsController` is an `[ApiController]`, and
+  `ApiBehaviorOptionsConfigurator`
   supplies an `InvalidModelStateResponseFactory` without setting `SuppressModelStateInvalidFilter`,
   so automatic model-state validation answers with an `ErrorTranslator` ProblemDetails shell built
   from `ModelState`, and the controller's own range check — which is what produces ODS's otherwise
   identical `Number of partitions must be between 1 and 200.` text — never executes. This is the
   partition-side form of the cursor `int?` binding difference above, with a different endpoint and a
   different message;
-- return that same range error for a present-but-blank `/partitions?partitionCount=`, treating the
-  present query key as a malformed partition count, where ODS's nullable-int model binding reads an
-  empty `?number=` as absent, so its `number` arrives null, its range check does not trigger for
-  null, and the request succeeds with the configured default partition count. The
-  empty-value-binds-to-null step rests on ASP.NET Core's standard binding of an empty value to a
-  nullable simple type, the same basis as the recorded blank-`pageSize` behavior above;
+- return that same range error for a present-but-blank `/partitions?number=`, treating the present
+  query key as a malformed partition count, where ODS's nullable-int model binding reads an empty
+  value as absent, so `number` arrives null, its range check does not trigger for null, and the
+  request succeeds with the configured default partition count. The empty-value-binds-to-null step
+  rests on ASP.NET Core's standard binding of an empty value to a nullable simple type, the same
+  basis as the recorded blank-`pageSize` behavior above;
 - reject `pageToken` and `pageSize` on `/deletes` and `/keyChanges` under DMS's
   unknown-query-field rule, where ODS binds the same request model on those endpoints, accepts a
   valid token, and answers a malformed one with `The page token provided was invalid.`;
@@ -345,7 +349,7 @@ The approved intentional ODS differences are:
   sized for. When `number` is supplied, ODS still returns at most `number` tokens, because its token
   loop emits a final token spanning the second-to-last starting id through `int.MaxValue` and stops;
   the surplus partition is absorbed into a final range that can be roughly twice as wide as the
-  others rather than handed out as an extra token. When ODS's `number` is omitted, both of that loop's cap
+  others rather than handed out as an extra token. When `number` is omitted, both of that loop's cap
   expressions read the nullable request value and no cap applies, while the sizing SQL used the
   configured default partition count, so only in that default case can ODS return one more token
   than its configured `DefaultPartitionCount`. DMS honors its at-most-count promise for the default

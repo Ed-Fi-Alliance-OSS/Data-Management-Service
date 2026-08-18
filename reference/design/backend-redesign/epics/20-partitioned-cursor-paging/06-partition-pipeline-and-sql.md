@@ -39,8 +39,7 @@ first, exactly as it does for GET-many.
   `IPartitionQueryHandler` backend contract.
 - Apply shared resource/change-version validation, resource-action authorization, and row-level
   authorization before partition execution.
-- Integrate DMS-1384's approved partition-count validation and unsupported-parameter ordering,
-  under the approved `partitionCount` key, together with
+- Integrate DMS-1384's approved `number` validation and unsupported-parameter ordering together with
   DMS-1383's default count and five-page minimum sizing into the partition pipeline.
 - Compile the approved PostgreSQL and SQL Server row-number/count/partition-size queries using the
   shared candidate relation and provider-appropriate mathematical ceiling arithmetic; the exact
@@ -62,16 +61,16 @@ first, exactly as it does for GET-many.
 
 ## Acceptance Evidence and Test Expectations
 
-- Core tests assert dedicated pipeline order, exact ProblemDetails, `partitionCount` precedence, canonical
+- Core tests assert dedicated pipeline order, exact ProblemDetails, `number` precedence, canonical
   unsupported-parameter order, defaults, and empty response shape.
 - SQL-golden tests cover both provider CTEs, parameter roles, one-command output, and partition
   sizing semantics without requiring one algebraic spelling of ceiling division.
 - PostgreSQL and real SQL Server integration tests cover counts 1, 10, and 200; sparse/empty sets;
   filters; change versions; descriptors; and fewer-than-requested ranges.
-- Sizing tests prove the returned token count never exceeds the requested `partitionCount`,
-  including candidate counts that divide inexactly by it, where ODS's integer-division sizing reaches
+- Sizing tests prove the returned token count never exceeds the requested `number`, including
+  candidate counts that divide inexactly by `number`, where ODS's integer-division sizing reaches
   the same count only by widening its final partition, and returns an extra token only when
-  `partitionCount` is omitted.
+  `number` is omitted.
 - Stable-fixture tests prove ranges are non-overlapping, final ranges are unbounded, and starts are
   actual accessible candidate ids.
 - Profile tests cover the write-only profile outcome and prove it matches the collection GET

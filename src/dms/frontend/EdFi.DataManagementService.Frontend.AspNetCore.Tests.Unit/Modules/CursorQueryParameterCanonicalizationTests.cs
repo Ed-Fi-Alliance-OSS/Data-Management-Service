@@ -232,41 +232,22 @@ public class CursorQueryParameterCanonicalizationTests
     }
 
     /// <summary>
-    /// A resource may expose a query field named like the partition count, so its spelling is only
-    /// rewritten where it is a paging control. That scoping is what keeps such a field filterable on
-    /// its collection GET.
+    /// The partition count is generic enough to collide with a resource query field, so its spelling
+    /// is only rewritten where it is a paging control.
     /// </summary>
-    [TestCase("PARTITIONCOUNT")]
-    [TestCase("PartitionCount")]
+    [TestCase("NUMBER")]
+    [TestCase("Number")]
     public async Task It_leaves_the_partition_count_untouched_on_an_ordinary_collection(string suppliedName)
     {
         var queryParameters = await CapturedQueryParameters($"/data/ed-fi/schools?{suppliedName}=10");
 
         queryParameters.Should().ContainKey(suppliedName);
-        queryParameters.Should().NotContainKey("partitionCount");
+        queryParameters.Should().NotContainKey("number");
     }
 
-    /// <summary>
-    /// The count does not take the generic <c>number</c> key, so the boundary claims no interest in it
-    /// even on the partitions operation: it reaches Core exactly as supplied, to be matched against the
-    /// resource's own query fields.
-    /// </summary>
-    [TestCase("number")]
-    [TestCase("NUMBER")]
-    [TestCase("Number")]
-    public async Task It_leaves_a_number_parameter_untouched_on_the_partitions_operation(string suppliedName)
-    {
-        var queryParameters = await CapturedQueryParameters(
-            $"/data/ed-fi/schools/partitions?{suppliedName}=10"
-        );
-
-        queryParameters.Should().ContainKey(suppliedName);
-        queryParameters.Should().NotContainKey("partitionCount");
-    }
-
-    [TestCase("partitions", "PARTITIONCOUNT")]
-    [TestCase("PARTITIONS", "PartitionCount")]
-    [TestCase("Partitions", "partitionCount")]
+    [TestCase("partitions", "NUMBER")]
+    [TestCase("PARTITIONS", "Number")]
+    [TestCase("Partitions", "number")]
     public async Task It_canonicalizes_the_partition_count_on_the_partitions_operation(
         string partitionsSegment,
         string suppliedName
@@ -276,7 +257,7 @@ public class CursorQueryParameterCanonicalizationTests
             $"/data/ed-fi/schools/{partitionsSegment}?{suppliedName}=10"
         );
 
-        queryParameters.Should().ContainKey("partitionCount").WhoseValue.Should().Be("10");
+        queryParameters.Should().ContainKey("number").WhoseValue.Should().Be("10");
     }
 
     /// <summary>
@@ -290,20 +271,20 @@ public class CursorQueryParameterCanonicalizationTests
     public async Task It_canonicalizes_the_partition_count_on_the_segment_core_recognizes()
     {
         var queryParameters = await CapturedQueryParameters(
-            $"/data/ed-fi/schools/{ResourcePathParser.PartitionsSegment}?PARTITIONCOUNT=10"
+            $"/data/ed-fi/schools/{ResourcePathParser.PartitionsSegment}?NUMBER=10"
         );
 
-        queryParameters.Should().ContainKey("partitionCount").WhoseValue.Should().Be("10");
+        queryParameters.Should().ContainKey("number").WhoseValue.Should().Be("10");
     }
 
     /// <summary>
     /// Two segments name a resource collection, not a partitions operation, even when the resource
-    /// segment happens to be spelled <c>partitions</c>. On such a collection <c>partitionCount</c> is
-    /// an ordinary resource query field, and rewriting its spelling would change which field is
+    /// segment happens to be spelled <c>partitions</c>. On such a collection <c>number</c> is an
+    /// ordinary resource query field, and rewriting its spelling would change which field is
     /// filtered on or which name an unknown-field error reports.
     /// </summary>
-    [TestCase("/data/ed-fi/partitions", "PARTITIONCOUNT")]
-    [TestCase("/data/partitions", "PartitionCount")]
+    [TestCase("/data/ed-fi/partitions", "NUMBER")]
+    [TestCase("/data/partitions", "Number")]
     public async Task It_leaves_the_partition_count_untouched_on_a_collection_named_partitions(
         string path,
         string suppliedName
@@ -312,7 +293,7 @@ public class CursorQueryParameterCanonicalizationTests
         var queryParameters = await CapturedQueryParameters($"{path}?{suppliedName}=10");
 
         queryParameters.Should().ContainKey(suppliedName);
-        queryParameters.Should().NotContainKey("partitionCount");
+        queryParameters.Should().NotContainKey("number");
     }
 
     /// <summary>
@@ -324,42 +305,40 @@ public class CursorQueryParameterCanonicalizationTests
     public async Task It_leaves_the_partition_count_untouched_on_a_longer_path_ending_in_partitions()
     {
         var queryParameters = await CapturedQueryParameters(
-            "/data/ed-fi/schools/11111111-1111-1111-1111-111111111111/partitions?PARTITIONCOUNT=10"
+            "/data/ed-fi/schools/11111111-1111-1111-1111-111111111111/partitions?NUMBER=10"
         );
 
-        queryParameters.Should().ContainKey("PARTITIONCOUNT");
-        queryParameters.Should().NotContainKey("partitionCount");
+        queryParameters.Should().ContainKey("NUMBER");
+        queryParameters.Should().NotContainKey("number");
     }
 
     [Test]
     public async Task It_canonicalizes_the_partition_count_on_a_trailing_slash_partitions_path()
     {
-        var queryParameters = await CapturedQueryParameters(
-            "/data/ed-fi/schools/partitions/?PARTITIONCOUNT=10"
-        );
+        var queryParameters = await CapturedQueryParameters("/data/ed-fi/schools/partitions/?NUMBER=10");
 
-        queryParameters.Should().ContainKey("partitionCount").WhoseValue.Should().Be("10");
+        queryParameters.Should().ContainKey("number").WhoseValue.Should().Be("10");
     }
 
     [Test]
     public async Task It_keeps_the_last_partition_count_across_case_variants()
     {
         var queryParameters = await CapturedQueryParameters(
-            "/data/ed-fi/schools/partitions?partitionCount=1&PARTITIONCOUNT=2"
+            "/data/ed-fi/schools/partitions?number=1&NUMBER=2"
         );
 
-        queryParameters.Should().ContainKey("partitionCount").WhoseValue.Should().Be("2");
+        queryParameters.Should().ContainKey("number").WhoseValue.Should().Be("2");
     }
 
     [Test]
     public async Task It_does_not_canonicalize_the_partition_count_on_a_by_id_path()
     {
         var queryParameters = await CapturedQueryParameters(
-            "/data/ed-fi/schools/11111111-1111-1111-1111-111111111111?PARTITIONCOUNT=10"
+            "/data/ed-fi/schools/11111111-1111-1111-1111-111111111111?NUMBER=10"
         );
 
-        queryParameters.Should().ContainKey("PARTITIONCOUNT");
-        queryParameters.Should().NotContainKey("partitionCount");
+        queryParameters.Should().ContainKey("NUMBER");
+        queryParameters.Should().NotContainKey("number");
     }
 
     /// <summary>
@@ -379,12 +358,12 @@ public class CursorQueryParameterCanonicalizationTests
     )
     {
         var queryParameters = await CapturedQueryParameters(
-            $"{path}?PARTITIONCOUNT=10",
+            $"{path}?NUMBER=10",
             routeQualifierSegments,
             multiTenancy
         );
 
-        queryParameters.Should().ContainKey("partitionCount").WhoseValue.Should().Be("10");
+        queryParameters.Should().ContainKey("number").WhoseValue.Should().Be("10");
     }
 
     /// <summary>

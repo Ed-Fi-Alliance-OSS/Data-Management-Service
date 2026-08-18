@@ -25,7 +25,7 @@ public class PartitionRequestValidatorTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_A_Malformed_Or_Out_Of_Range_Partition_Count : PartitionRequestValidatorTests
+    public class Given_A_Malformed_Or_Out_Of_Range_Number : PartitionRequestValidatorTests
     {
         [TestCase("abc")]
         [TestCase("")]
@@ -34,21 +34,21 @@ public class PartitionRequestValidatorTests
         [TestCase("-1")]
         [TestCase("1.5")]
         [TestCase(" ")]
-        public void It_reports_only_the_range_error(string partitionCount)
+        public void It_reports_only_the_range_error(string number)
         {
-            Validate((PartitionRequestValidator.PartitionCountParameter, partitionCount))
+            Validate((PartitionRequestValidator.NumberParameter, number))
                 .Errors.Should()
                 .ContainSingle()
                 .Which.Should()
-                .Be(PartitionRequestValidator.PartitionCountOutOfRange);
+                .Be(PartitionRequestValidator.NumberOutOfRange);
         }
 
         [TestCase("abc")]
         [TestCase("")]
         [TestCase("201")]
-        public void It_reports_no_partition_count(string partitionCount)
+        public void It_reports_no_partition_count(string number)
         {
-            Validate((PartitionRequestValidator.PartitionCountParameter, partitionCount))
+            Validate((PartitionRequestValidator.NumberParameter, number))
                 .RequestedPartitionCount.Should()
                 .BeNull();
         }
@@ -57,7 +57,7 @@ public class PartitionRequestValidatorTests
         public void It_suppresses_every_reserved_parameter_error()
         {
             Validate(
-                (PartitionRequestValidator.PartitionCountParameter, "abc"),
+                (PartitionRequestValidator.NumberParameter, "abc"),
                 ("pageToken", "anything"),
                 ("pageSize", "5"),
                 ("limit", "10"),
@@ -67,39 +67,39 @@ public class PartitionRequestValidatorTests
                 .Errors.Should()
                 .ContainSingle()
                 .Which.Should()
-                .Be(PartitionRequestValidator.PartitionCountOutOfRange);
+                .Be(PartitionRequestValidator.NumberOutOfRange);
         }
 
         [Test]
         public void It_renders_the_configured_bounds_in_the_message()
         {
             PartitionRequestValidator
-                .PartitionCountOutOfRange.Should()
+                .NumberOutOfRange.Should()
                 .Be("Number of partitions must be between 1 and 200.");
         }
     }
 
     [TestFixture]
     [Parallelizable]
-    public class Given_A_Partition_Count_Within_Its_Bounds : PartitionRequestValidatorTests
+    public class Given_A_Number_Within_Its_Bounds : PartitionRequestValidatorTests
     {
         [TestCase(AppSettingsValidator.MinimumDefaultPartitionCount)]
         [TestCase(10)]
         [TestCase(AppSettingsValidator.MaximumDefaultPartitionCount)]
-        public void It_is_accepted_and_carried_through(int partitionCount)
+        public void It_is_accepted_and_carried_through(int number)
         {
             PartitionValidationResult result = Validate(
-                (PartitionRequestValidator.PartitionCountParameter, partitionCount.ToString())
+                (PartitionRequestValidator.NumberParameter, number.ToString())
             );
 
             result.Errors.Should().BeEmpty();
-            result.RequestedPartitionCount.Should().Be(partitionCount);
+            result.RequestedPartitionCount.Should().Be(number);
         }
     }
 
     [TestFixture]
     [Parallelizable]
-    public class Given_No_Partition_Count : PartitionRequestValidatorTests
+    public class Given_No_Number : PartitionRequestValidatorTests
     {
         [Test]
         public void It_is_accepted_with_no_requested_count()
@@ -164,9 +164,9 @@ public class PartitionRequestValidatorTests
         }
 
         [Test]
-        public void It_reports_them_alongside_a_valid_partition_count()
+        public void It_reports_them_alongside_a_valid_number()
         {
-            Validate((PartitionRequestValidator.PartitionCountParameter, "10"), ("limit", "10"))
+            Validate((PartitionRequestValidator.NumberParameter, "10"), ("limit", "10"))
                 .Errors.Should()
                 .ContainSingle()
                 .Which.Should()
@@ -176,7 +176,7 @@ public class PartitionRequestValidatorTests
         [Test]
         public void It_withholds_the_partition_count_from_a_rejected_request()
         {
-            Validate((PartitionRequestValidator.PartitionCountParameter, "10"), ("limit", "10"))
+            Validate((PartitionRequestValidator.NumberParameter, "10"), ("limit", "10"))
                 .RequestedPartitionCount.Should()
                 .BeNull("a count from a rejected request must not be usable by mistake");
         }
@@ -200,10 +200,10 @@ public class PartitionRequestValidatorTests
         }
 
         [Test]
-        public void It_accepts_them_alongside_a_valid_partition_count()
+        public void It_accepts_them_alongside_a_valid_number()
         {
             PartitionValidationResult result = Validate(
-                (PartitionRequestValidator.PartitionCountParameter, "10"),
+                (PartitionRequestValidator.NumberParameter, "10"),
                 ("schoolId", "255901001"),
                 ("minChangeVersion", "1")
             );
@@ -216,36 +216,6 @@ public class PartitionRequestValidatorTests
         public void It_leaves_other_unknown_fields_to_the_unknown_query_field_rule()
         {
             Validate(("notAKnownField", "value")).Errors.Should().BeEmpty();
-        }
-
-        /// <summary>
-        /// This validator claims no interest in <c>number</c>, so a resource exposing a query field of
-        /// that name can filter it here exactly as it can on the collection GET. Reserving it would
-        /// make that impossible, which is why the count is spelled <c>partitionCount</c>.
-        /// </summary>
-        [Test]
-        public void It_claims_no_interest_in_a_supplied_number_field()
-        {
-            PartitionValidationResult result = Validate(("number", "7"));
-
-            result.Errors.Should().BeEmpty();
-            result.RequestedPartitionCount.Should().BeNull();
-        }
-
-        /// <summary>
-        /// The two keys are independent, so one request can carry a filter named <c>number</c> and a
-        /// desired count without either displacing the other.
-        /// </summary>
-        [Test]
-        public void It_reads_the_count_while_leaving_a_number_filter_alone()
-        {
-            PartitionValidationResult result = Validate(
-                ("number", "7"),
-                (PartitionRequestValidator.PartitionCountParameter, "10")
-            );
-
-            result.Errors.Should().BeEmpty();
-            result.RequestedPartitionCount.Should().Be(10);
         }
     }
 }

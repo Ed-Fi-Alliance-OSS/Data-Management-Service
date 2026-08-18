@@ -36,13 +36,19 @@ internal sealed record PartitionValidationResult(IReadOnlyList<string> Errors, i
 internal static class PartitionRequestValidator
 {
     /// <summary>
-    /// The public query key carrying the desired partition count. Spelled <c>partitionCount</c> rather
-    /// than the <c>number</c> the consumed base ApiSchema's parameter component publishes: a key that
-    /// generic cannot be reserved out of the resource-filter namespace without making a resource
-    /// property of the same name unfilterable on this operation alone, and Ed-Fi's flat query namespace
-    /// offers no qualification syntax that would let one raw key carry both meanings.
+    /// The public query key carrying the desired partition count. Spelled <c>number</c>, which is the
+    /// query name the consumed base ApiSchema's <c>numberOfPartitions</c> parameter component
+    /// publishes.
     /// </summary>
-    internal const string PartitionCountParameter = "partitionCount";
+    /// <remarks>
+    /// A partition-control parameter is removed from resource-filter matching before the query-field
+    /// lookup runs, so a resource declaring a query field named <c>number</c> can filter on it on its
+    /// collection GET but not on its <c>/partitions</c> sibling. That asymmetry is a recorded approved
+    /// difference rather than an oversight. Ed-Fi's query namespace is flat and offers no qualification
+    /// syntax, so one raw key cannot carry both meanings on this operation, and serving the published
+    /// name is worth more than the filter the operation gives up for it.
+    /// </remarks>
+    internal const string NumberParameter = "number";
 
     /// <summary>
     /// The paging parameters the partitions operation reserves, in the canonical order they are
@@ -60,7 +66,7 @@ internal static class PartitionRequestValidator
         CursorRequestValidator.TotalCountParameter,
     ];
 
-    internal static string PartitionCountOutOfRange =>
+    internal static string NumberOutOfRange =>
         $"Number of partitions must be between {AppSettingsValidator.MinimumDefaultPartitionCount} and "
         + $"{AppSettingsValidator.MaximumDefaultPartitionCount}.";
 
@@ -80,32 +86,23 @@ internal static class PartitionRequestValidator
         int? requestedPartitionCount = null;
 
         // Phase 1, count syntax and range. A present-but-blank value is a malformed count rather than
-        // an absent one: a client that typed "partitionCount=" asked for a partition count, and the
-        // parameter it typed should not be silently ignored. This phase suppresses the reserved-
-        // parameter phase, because the count is the only parameter that controls the calculation. A
-        // client-supplied count is bounded by the same constants that bound the configured default,
-        // which is what keeps the accepted request range and the accepted configuration range from
-        // drifting apart.
-        if (queryParameters.TryGetValue(PartitionCountParameter, out string? partitionCountValue))
+        // an absent one: a client that typed "number=" asked for a partition count, and the parameter
+        // it typed should not be silently ignored. This phase suppresses the reserved-parameter phase,
+        // because the count is the only parameter that controls the calculation. A client-supplied
+        // count is bounded by the same constants that bound the configured default, which is what
+        // keeps the accepted request range and the accepted configuration range from drifting apart.
+        if (queryParameters.TryGetValue(NumberParameter, out string? numberValue))
         {
             if (
-                !int.TryParse(
-                    partitionCountValue,
-                    NumberStyles.Integer,
-                    CultureInfo.InvariantCulture,
-                    out int partitionCount
-                )
-                || partitionCount < AppSettingsValidator.MinimumDefaultPartitionCount
-                || partitionCount > AppSettingsValidator.MaximumDefaultPartitionCount
+                !int.TryParse(numberValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out int number)
+                || number < AppSettingsValidator.MinimumDefaultPartitionCount
+                || number > AppSettingsValidator.MaximumDefaultPartitionCount
             )
             {
-                return new PartitionValidationResult(
-                    [PartitionCountOutOfRange],
-                    RequestedPartitionCount: null
-                );
+                return new PartitionValidationResult([NumberOutOfRange], RequestedPartitionCount: null);
             }
 
-            requestedPartitionCount = partitionCount;
+            requestedPartitionCount = number;
         }
 
         // Phase 2, reserved paging parameters. Reported without parsing their values: the complaint is

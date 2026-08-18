@@ -45,10 +45,7 @@ public class ValidatePartitionQueryMiddlewareTests
             .WithEndProject()
             .ToApiSchemaDocuments();
 
-    private static RequestInfo RequestInfoFor(
-        ApiSchemaDocuments apiSchemaDocuments,
-        params (string Key, string Value)[] queryParameters
-    )
+    private static RequestInfo RequestInfoFor(params (string Key, string Value)[] queryParameters)
     {
         FrontendRequest frontendRequest = new(
             Path: "/ed-fi/academicWeeks/partitions",
@@ -66,7 +63,7 @@ public class ValidatePartitionQueryMiddlewareTests
 
         RequestInfo requestInfo = new(frontendRequest, RequestMethod.GET, No.ServiceProvider)
         {
-            ApiSchemaDocuments = apiSchemaDocuments,
+            ApiSchemaDocuments = NewApiSchemaDocuments(),
             PathComponents = new(
                 ProjectEndpointName: new("ed-fi"),
                 EndpointName: new("academicWeeks"),
@@ -85,15 +82,9 @@ public class ValidatePartitionQueryMiddlewareTests
         return requestInfo;
     }
 
-    private static Task<RequestInfo> Execute(params (string Key, string Value)[] queryParameters) =>
-        Execute(NewApiSchemaDocuments(), queryParameters);
-
-    private static async Task<RequestInfo> Execute(
-        ApiSchemaDocuments apiSchemaDocuments,
-        params (string Key, string Value)[] queryParameters
-    )
+    private static async Task<RequestInfo> Execute(params (string Key, string Value)[] queryParameters)
     {
-        RequestInfo requestInfo = RequestInfoFor(apiSchemaDocuments, queryParameters);
+        RequestInfo requestInfo = RequestInfoFor(queryParameters);
 
         IPipelineStep middleware = new ValidatePartitionQueryMiddleware(
             NullLogger.Instance,
@@ -150,11 +141,11 @@ public class ValidatePartitionQueryMiddlewareTests
         [TestCase("0", TestName = "below the minimum")]
         [TestCase("201", TestName = "above the maximum")]
         [TestCase("-1", TestName = "negative")]
-        public async Task It_returns_the_parameter_validation_shell(string partitionCount)
+        public async Task It_returns_the_parameter_validation_shell(string number)
         {
-            RequestInfo requestInfo = await Execute(("partitionCount", partitionCount));
+            RequestInfo requestInfo = await Execute(("number", number));
 
-            AssertParameterValidationShell(requestInfo, PartitionRequestValidator.PartitionCountOutOfRange);
+            AssertParameterValidationShell(requestInfo, PartitionRequestValidator.NumberOutOfRange);
             AssertNothingApplied(requestInfo);
         }
 
@@ -165,8 +156,8 @@ public class ValidatePartitionQueryMiddlewareTests
         public async Task It_suppresses_the_reserved_parameter_phase()
         {
             AssertParameterValidationShell(
-                await Execute(("partitionCount", "0"), ("limit", "5")),
-                PartitionRequestValidator.PartitionCountOutOfRange
+                await Execute(("number", "0"), ("limit", "5")),
+                PartitionRequestValidator.NumberOutOfRange
             );
         }
     }
@@ -248,7 +239,7 @@ public class ValidatePartitionQueryMiddlewareTests
         [Test]
         public async Task It_answers_before_the_partition_count_phase()
         {
-            RequestInfo requestInfo = await Execute(("partitionCount", "abc"), ("notAField", "1"));
+            RequestInfo requestInfo = await Execute(("number", "abc"), ("notAField", "1"));
 
             requestInfo.FrontendResponse.Body!["type"]!
                 .GetValue<string>()
@@ -304,16 +295,13 @@ public class ValidatePartitionQueryMiddlewareTests
         [Test]
         public async Task It_answers_before_the_partition_count_phase()
         {
-            RequestInfo requestInfo = await Execute(
-                ("partitionCount", "abc"),
-                ("minChangeVersion", "notANumber")
-            );
+            RequestInfo requestInfo = await Execute(("number", "abc"), ("minChangeVersion", "notANumber"));
 
             requestInfo.FrontendResponse.Body!["errors"]!
                 .AsArray()
                 .Select(error => error!.GetValue<string>())
                 .Should()
-                .NotContain(PartitionRequestValidator.PartitionCountOutOfRange)
+                .NotContain(PartitionRequestValidator.NumberOutOfRange)
                 .And.ContainSingle();
             AssertNothingApplied(requestInfo);
         }
@@ -326,7 +314,7 @@ public class ValidatePartitionQueryMiddlewareTests
         [Test]
         public async Task It_applies_the_client_count_when_one_was_supplied()
         {
-            RequestInfo requestInfo = await Execute(("partitionCount", "37"));
+            RequestInfo requestInfo = await Execute(("number", "37"));
 
             requestInfo.RequestedPartitionCount.Should().Be(37);
         }
@@ -346,7 +334,7 @@ public class ValidatePartitionQueryMiddlewareTests
                 ("schoolId", "255901"),
                 ("minChangeVersion", "10"),
                 ("maxChangeVersion", "20"),
-                ("partitionCount", "4")
+                ("number", "4")
             );
 
             requestInfo
@@ -363,7 +351,7 @@ public class ValidatePartitionQueryMiddlewareTests
         [Test]
         public async Task It_never_applies_collection_paging()
         {
-            RequestInfo requestInfo = await Execute(("partitionCount", "4"));
+            RequestInfo requestInfo = await Execute(("number", "4"));
 
             requestInfo.CollectionPaging.Should().Be(No.CollectionPaging);
         }
@@ -371,7 +359,7 @@ public class ValidatePartitionQueryMiddlewareTests
         [Test]
         public async Task It_continues_into_the_rest_of_the_pipeline()
         {
-            RequestInfo requestInfo = RequestInfoFor(NewApiSchemaDocuments(), ("partitionCount", "4"));
+            RequestInfo requestInfo = RequestInfoFor(("number", "4"));
             var reachedNext = false;
 
             await new ValidatePartitionQueryMiddleware(NullLogger.Instance, DefaultPartitionCount).Execute(
@@ -385,107 +373,6 @@ public class ValidatePartitionQueryMiddlewareTests
 
             reachedNext.Should().BeTrue();
             requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
-        }
-    }
-
-    /// <summary>
-    /// What the count being spelled <c>partitionCount</c> buys: a resource query field named
-    /// <c>number</c> is filterable here, and on the same request as a desired count. Reserving
-    /// <c>number</c> for the count would make both of these impossible, and no value-shape rule could
-    /// recover them, because one raw key cannot carry two independent meanings.
-    /// </summary>
-    [TestFixture]
-    [Parallelizable]
-    public class Given_A_Resource_Exposing_A_Number_Query_Field : ValidatePartitionQueryMiddlewareTests
-    {
-        /// <summary>
-        /// The same resource with a third query field named exactly like a parameter this operation
-        /// could have reserved, so the filter path is exercised over a field whose name is the one the
-        /// count deliberately does not take.
-        /// </summary>
-        private static ApiSchemaDocuments NewApiSchemaDocumentsWithANumberQueryField() =>
-            new ApiSchemaBuilder()
-                .WithStartProject()
-                .WithStartResource("AcademicWeek")
-                .WithStartQueryFieldMapping()
-                .WithQueryField("schoolId", [new("$.schoolId", "number")])
-                .WithQueryField("weekIdentifier", [new("$.weekIdentifier", "string")])
-                .WithQueryField("number", [new("$.number", "string")])
-                .WithEndQueryFieldMapping()
-                .WithEndResource()
-                .WithEndProject()
-                .ToApiSchemaDocuments();
-
-        [Test]
-        public async Task It_filters_on_that_field()
-        {
-            RequestInfo requestInfo = await Execute(
-                NewApiSchemaDocumentsWithANumberQueryField(),
-                ("number", "A-17")
-            );
-
-            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
-            requestInfo
-                .QueryElements.Select(queryElement => queryElement.QueryFieldName)
-                .Should()
-                .Equal("number");
-            requestInfo.QueryElements[0].Value.Should().Be("A-17");
-        }
-
-        [Test]
-        public async Task It_applies_the_filter_and_the_count_from_one_request()
-        {
-            RequestInfo requestInfo = await Execute(
-                NewApiSchemaDocumentsWithANumberQueryField(),
-                ("number", "A-17"),
-                ("partitionCount", "6")
-            );
-
-            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
-            requestInfo
-                .QueryElements.Select(queryElement => queryElement.QueryFieldName)
-                .Should()
-                .Equal("number");
-            requestInfo.QueryElements[0].Value.Should().Be("A-17");
-            requestInfo.RequestedPartitionCount.Should().Be(6);
-        }
-
-        // The count keeps its own defaulting when only the filter is supplied, so the filter cannot be
-        // read as a count by any path.
-        [Test]
-        public async Task It_still_defaults_the_count_when_only_the_filter_is_supplied()
-        {
-            RequestInfo requestInfo = await Execute(
-                NewApiSchemaDocumentsWithANumberQueryField(),
-                ("number", "6")
-            );
-
-            requestInfo.RequestedPartitionCount.Should().Be(DefaultPartitionCount);
-        }
-    }
-
-    /// <summary>
-    /// On a resource without such a field, <c>number</c> is an ordinary unknown query field. There is
-    /// no alias, no deprecated fallback, and no dual interpretation left behind: any of those would
-    /// preserve the collision the rename exists to remove.
-    /// </summary>
-    [TestFixture]
-    [Parallelizable]
-    public class Given_A_Number_Parameter_On_A_Resource_Without_That_Field
-        : ValidatePartitionQueryMiddlewareTests
-    {
-        [Test]
-        public async Task It_is_reported_as_an_unknown_query_field()
-        {
-            RequestInfo requestInfo = await Execute(("number", "4"));
-
-            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
-            requestInfo.FrontendResponse.Body!["errors"]!
-                .AsArray()
-                .Select(error => error!.GetValue<string>())
-                .Should()
-                .Equal("The query field 'number' is not valid for this resource.");
-            AssertNothingApplied(requestInfo);
         }
     }
 }
