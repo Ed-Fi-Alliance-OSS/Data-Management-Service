@@ -1662,6 +1662,22 @@ function Assert-RestoreManifestMatchesDatabase {
         $mismatches.Add("resourceKeySeedHashB64: manifest value differs from the database value")
     }
 
+    # Engine-major restorability: the live server's major version must be at least the
+    # manifest's engine major (SQL Server cannot restore a newer-version backup; PostgreSQL
+    # replay is held to the same rule for determinism). Leading-digit parsing tolerates
+    # suffixes such as "16.8 (Debian ...)"; an unparsable version on either side is a
+    # validation failure, never a silent pass.
+    $manifestEngineVersion = [string](Get-RestorePropertyValue -InputObject $Manifest -Name "engineVersion")
+    $databaseEngineVersion = [string]$Facts.EngineVersion
+    $manifestMajorMatch = [System.Text.RegularExpressions.Regex]::Match($manifestEngineVersion, '^\s*(\d+)')
+    $databaseMajorMatch = [System.Text.RegularExpressions.Regex]::Match($databaseEngineVersion, '^\s*(\d+)')
+    if (-not $manifestMajorMatch.Success -or -not $databaseMajorMatch.Success) {
+        $mismatches.Add("engineVersion: cannot parse a leading major version from manifest '$manifestEngineVersion' and database '$databaseEngineVersion'")
+    }
+    elseif ([int]$databaseMajorMatch.Groups[1].Value -lt [int]$manifestMajorMatch.Groups[1].Value) {
+        $mismatches.Add("engineVersion: the live server major $($databaseMajorMatch.Groups[1].Value) is lower than the manifest's engine major $($manifestMajorMatch.Groups[1].Value) (manifest '$manifestEngineVersion', database '$databaseEngineVersion'); a newer-engine artifact cannot be restored on an older server")
+    }
+
     $baselineDocumentJsonType = Get-RestoreDocumentJsonBaselineType -DatabaseEngine $DatabaseEngine
     $manifestDocumentJsonType = [string](Get-RestorePropertyValue -InputObject $Manifest -Name "documentJsonColumnType")
     $databaseDocumentJsonType = [string]$Facts.DocumentJsonColumnType

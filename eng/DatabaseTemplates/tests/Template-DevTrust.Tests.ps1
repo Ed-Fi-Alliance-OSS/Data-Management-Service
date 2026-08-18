@@ -101,6 +101,42 @@ Describe "new-template-dev-trust.ps1 -Purpose Dev" {
         @($policy.Producers | ForEach-Object { $_.Name }) | Should -Be @("local-dev", "second-dev")
     }
 
+    It "rejects a producer name that already exists in the tracked policy, before generating any key" {
+        $workspace = New-TestWorkspace
+        $keyDirectory = Join-Path $workspace ".dev-trust"
+
+        # A tracked policy already carrying the default producer name (as Step 2.4 will,
+        # once edfi-alliance-ci lands): the dev script must refuse rather than write an
+        # overlay the production loader would reject as a duplicate.
+        $trackedKey = New-TemplateAttestationSigningKey -PrivateKeyPath (Join-Path $workspace "tracked.pem")
+        $trackedPolicyPath = Join-Path $workspace "tracked-policy.json"
+        [ordered]@{
+            version   = 1
+            producers = @(
+                [ordered]@{
+                    name       = "local-dev"
+                    provider   = "detached-attestation"
+                    publicKeys = @(
+                        [ordered]@{
+                            keyId            = $trackedKey.KeyId
+                            algorithm        = $trackedKey.Algorithm
+                            publicKeySpkiB64 = $trackedKey.PublicKeySpkiB64
+                        }
+                    )
+                }
+            )
+        } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $trackedPolicyPath -Encoding utf8
+
+        { & $script:devTrustScript -Purpose Dev `
+                -KeyDirectory $keyDirectory `
+                -LocalPolicyPath (Join-Path $workspace "overlay.json") `
+                -TrackedPolicyPath $trackedPolicyPath 6>$null } |
+            Should -Throw "*already exists in the tracked policy*"
+
+        Test-Path -LiteralPath (Join-Path $keyDirectory "local-dev.pem") | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $workspace "overlay.json") | Should -BeFalse
+    }
+
     It "rejects an unsafe producer name and a malformed existing overlay" {
         $workspace = New-TestWorkspace
 

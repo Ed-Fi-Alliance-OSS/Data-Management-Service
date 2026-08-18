@@ -1244,6 +1244,32 @@ Describe "Assert-RestoreManifestMatchesDatabase" {
         $failure | Should -Throw "*resourceKeyCount*"
     }
 
+    It "accepts a live server whose major version is at or above the manifest's engine major" {
+        $pair = New-MatchingFactsAndManifest
+        $pair.Facts.EngineVersion = "17.2 (Debian 17.2-1.pgdg120+1)"
+        { Assert-RestoreManifestMatchesDatabase -Manifest $pair.Manifest -Facts $pair.Facts -DatabaseEngine postgresql } |
+            Should -Not -Throw
+    }
+
+    It "rejects a live server whose major version is below the manifest's engine major on both engines" {
+        $pair = New-MatchingFactsAndManifest
+        $pair.Facts.EngineVersion = "15.4"
+        { Assert-RestoreManifestMatchesDatabase -Manifest $pair.Manifest -Facts $pair.Facts -DatabaseEngine postgresql } |
+            Should -Throw "*engineVersion: the live server major 15 is lower than the manifest's engine major 16*cannot be restored on an older server*"
+
+        $pair = New-MatchingFactsAndManifest -DatabaseEngine mssql
+        $pair.Facts.EngineVersion = "16.0.1000.6"
+        { Assert-RestoreManifestMatchesDatabase -Manifest $pair.Manifest -Facts $pair.Facts -DatabaseEngine mssql } |
+            Should -Throw "*engineVersion: the live server major 16 is lower than the manifest's engine major 17*"
+    }
+
+    It "rejects an unparsable engine version on either side instead of silently passing" {
+        $pair = New-MatchingFactsAndManifest
+        $pair.Facts.EngineVersion = "unknown"
+        { Assert-RestoreManifestMatchesDatabase -Manifest $pair.Manifest -Facts $pair.Facts -DatabaseEngine postgresql } |
+            Should -Throw "*engineVersion: cannot parse a leading major version*"
+    }
+
     It "reports a manifest whose engine differs from the selected engine" {
         $pair = New-MatchingFactsAndManifest -DatabaseEngine postgresql
         $mssqlFacts = (New-MatchingFactsAndManifest -DatabaseEngine mssql).Facts

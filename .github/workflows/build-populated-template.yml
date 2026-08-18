@@ -336,6 +336,7 @@ jobs:
           $verifyParams = @{
             SourceDatabaseName = $env:TEMPLATE_DB_NAME
             DatabaseEngine = '${{ inputs.database_engine }}'
+            ExpectedTemplateKind = 'Populated'
           }
           if ([bool]::Parse('${{ inputs.require_populated_data }}')) {
             $verifyParams.RequirePopulatedData = $true
