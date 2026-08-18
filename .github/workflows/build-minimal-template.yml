@@ -57,6 +57,13 @@ on:
         # Consumed only on the release-promotion path (env.ARTIFACTS_USERNAME); restore uses the PAT
         # alone. Optional so non-publishing callers and forks without the secret do not hard-fail.
         required: false
+      TEMPLATE_ATTESTATION_PRIVATE_KEY:
+        # PKCS#8 ECDSA P-256 private key (PEM) for the 'edfi-alliance-ci' trust-policy
+        # producer. Optional: without it the build is UNATTESTED (loud notice) and restore
+        # consumers refuse the published package (fail-closed). Generate with
+        # eng/DatabaseTemplates/new-template-dev-trust.ps1 -Purpose CI; the matching public
+        # key belongs in eng/docker-compose/template-trust-policy.json via a reviewed commit.
+        required: false
     outputs:
       hash-code:
         description: "Hash code of the built package"
@@ -241,12 +248,42 @@ jobs:
             throw "DMS did not become ready within the timeout period"
           }
 
+      # Attestation signing is gated on the TEMPLATE_ATTESTATION_PRIVATE_KEY secret: with it,
+      # the packed template is attested for the tracked-policy producer 'edfi-alliance-ci'
+      # and the companion attestation package is built beside it; without it, the build
+      # proceeds UNATTESTED with a loud notice and restore consumers refuse the package
+      # (fail-closed). The key never touches the workspace: it lands under RUNNER_TEMP and
+      # is removed by the cleanup step below.
+      - name: Materialize attestation signing key
+        id: attestation-signer
+        env:
+          TEMPLATE_ATTESTATION_PRIVATE_KEY: ${{ secrets.TEMPLATE_ATTESTATION_PRIVATE_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TEMPLATE_ATTESTATION_PRIVATE_KEY)) {
+            Write-Host "::notice title=Unattested template build::TEMPLATE_ATTESTATION_PRIVATE_KEY is not configured; this template package will be UNATTESTED and restore consumers will refuse it (fail-closed)."
+            "signer-available=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+          else {
+            $signerKeyPath = Join-Path $env:RUNNER_TEMP "template-attestation-signer.pem"
+            Set-Content -LiteralPath $signerKeyPath -Value $env:TEMPLATE_ATTESTATION_PRIVATE_KEY
+            "signer-available=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            "signer-key-path=$signerKeyPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+
       - name: Generate Minimal Template package
         run: |
           Import-Module ./Template-Management.psm1 -Force
 
           # Generate unique application name for this run
           $uniqueAppName = "Demo application ${{ github.run_id }}"
+
+          # Attestation is secret-gated (see the attestation-signer step); the splat is empty
+          # on unattested builds so the invocation below is identical either way.
+          $attestationArguments = @{}
+          if ('${{ steps.attestation-signer.outputs.signer-available }}' -eq 'true') {
+            $attestationArguments.AttestationSignerKeyPath = '${{ steps.attestation-signer.outputs.signer-key-path }}'
+            $attestationArguments.AttestationProducer = 'edfi-alliance-ci'
+          }
 
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
           Build-Template `
@@ -262,8 +299,17 @@ jobs:
                   -DataStoreDatabaseName $env:RELATIONAL_DB_NAME `
                   -DataStoreId $env:RELATIONAL_DATA_STORE_ID `
                   -DumpAllUserSchemas `
-                  -DatabaseEngine '${{ inputs.database_engine }}'
+                  -DatabaseEngine '${{ inputs.database_engine }}' `
+                  @attestationArguments
         working-directory: eng/DatabaseTemplates/
+
+      - name: Remove attestation signing key
+        if: always()
+        run: |
+          $signerKeyPath = Join-Path $env:RUNNER_TEMP "template-attestation-signer.pem"
+          if (Test-Path -LiteralPath $signerKeyPath) {
+            Remove-Item -LiteralPath $signerKeyPath -Force
+          }
 
       # A loader that exits 0 does not guarantee it wrote anything: gate on descriptor content
       # here, before the package is uploaded or published, so an empty bulk load cannot slip
@@ -359,7 +405,9 @@ jobs:
         uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         with:
           name: "${{ inputs.package_name }}-NuGet"
-          path: ${{ github.workspace }}/eng/DatabaseTemplates/*.nupkg
+          path: |
+            ${{ github.workspace }}/eng/DatabaseTemplates/*.nupkg
+            ${{ github.workspace }}/eng/DatabaseTemplates/*.nupkg.attestation.json
           if-no-files-found: error
           retention-days: 30
 
@@ -461,15 +509,33 @@ jobs:
 
       - name: Push Minimal Template Package to Azure
         run: |
-          $artifact = (Get-ChildItem -Name -Include *.nupkg)
+          $allPackages = @(Get-ChildItem -Name -Include *.nupkg)
+          $companionPackages = @($allPackages | Where-Object { $_ -like "*.Attestation.*" })
+          $templatePackages = @($allPackages | Where-Object { $_ -notlike "*.Attestation.*" })
+          $attestationDocuments = @(Get-ChildItem -Name -Include *.nupkg.attestation.json)
+
+          # Publication coupling: a signed template must never publish without its companion
+          # attestation package. Companions publish FIRST, so the template cannot land on the
+          # feed unless its companion already has; any push failure fails this step.
+          if ($attestationDocuments.Count -gt 0 -and $companionPackages.Count -eq 0) {
+            throw "Attested build artifact carries an attestation document but no companion attestation package; refusing to publish a signed template without its companion."
+          }
+          if ($companionPackages.Count -gt 0 -and $attestationDocuments.Count -eq 0) {
+            throw "Build artifact carries a companion attestation package but no attestation document; refusing to publish an inconsistent artifact."
+          }
+
           $arguments = @{
             EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
             NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
           }
 
-          $artifact | ForEach-Object {
+          @($companionPackages) + @($templatePackages) | ForEach-Object {
               $arguments.PackageFile = $_
+              $global:LASTEXITCODE = 0
               ./build-dms.ps1 Push @arguments
+              if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+                throw "Package push failed for '$_' with exit code $LASTEXITCODE."
+              }
            }
 
   promote-azure-package:
