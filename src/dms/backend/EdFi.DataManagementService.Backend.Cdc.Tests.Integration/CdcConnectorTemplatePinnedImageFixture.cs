@@ -21,6 +21,13 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 {
     private const string ConnectorPasswordEnvironmentVariable = "CDC_DATABASE_PASSWORD";
     private const string ConnectorDatabasePassword = "EdFi_Dms1!";
+    private const string EnvConfigProviderName = "env";
+    private const string EnvConfigProviderClass =
+        "org.apache.kafka.common.config.provider.EnvVarConfigProvider";
+    private const string ConnectConfigProvidersEnvironmentVariable =
+        $"CONNECT_CONFIG_PROVIDERS={EnvConfigProviderName}";
+    private const string ConnectConfigProviderEnvClassEnvironmentVariable =
+        $"CONNECT_CONFIG_PROVIDERS_ENV_CLASS={EnvConfigProviderClass}";
     private const string PostgresqlDatabaseName = "edfi_datastore";
     private const string SqlServerDatabaseName = "edfi_datastore";
     private const string SqlServerGatingRoleName = "dms_binding_gate";
@@ -203,6 +210,22 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             artifact.SafeObservedValues["supports_net_changes"].Should().Be(false.ToString());
             artifact.SafeObservedValues["captured_columns"].Should().Be(definition.CapturedColumnCsv);
         }
+    }
+
+    public void AssertKafkaConnectWorkerConfigProviderStartupEnvironmentIsPinned()
+    {
+        IReadOnlyList<string> arguments = BuildKafkaConnectRunArguments();
+
+        using var _ = new AssertionScope();
+        HasDockerEnvironmentArgument(arguments, ConnectConfigProvidersEnvironmentVariable)
+            .Should()
+            .BeTrue("Kafka Connect must enable the env ConfigProvider before connector registration");
+        HasDockerEnvironmentArgument(arguments, ConnectConfigProviderEnvClassEnvironmentVariable)
+            .Should()
+            .BeTrue("Kafka Connect must know the env ConfigProvider implementation class");
+        HasDockerEnvironmentArgumentNamePrefix(arguments, "CONNECT_CONFIG_PROVIDERS_FILE")
+            .Should()
+            .BeFalse("the pinned-image fixture should not enable unused file ConfigProviders");
     }
 
     public static async Task<CdcConnectorTemplatePinnedImageFixture> StartAsync(
@@ -479,6 +502,9 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         CancellationToken cancellationToken
     )
     {
+        await AssertKafkaConnectWorkerEnvConfigProviderEnabledAsync(cancellationToken);
+        AssertRenderedProviderPasswordUsesEnvReference(rendered);
+
         string connectorName = rendered.ConnectorName.Value;
         using HttpResponseMessage deleteResponse = await _httpClient.DeleteAsync(
             $"/connectors/{Uri.EscapeDataString(connectorName)}",
@@ -748,42 +774,130 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 
     private async Task StartKafkaConnectAsync(CancellationToken cancellationToken)
     {
-        await _docker.RunAsync(
-            [
-                "run",
-                "--detach",
-                "--name",
-                ConnectContainerName,
-                "--network",
-                NetworkName,
-                "-p",
-                "127.0.0.1::8083",
-                "-e",
-                $"BOOTSTRAP_SERVERS={BrokerContainerName}:9092",
-                "-e",
-                $"GROUP_ID={_resourcePrefix}",
-                "-e",
-                $"CONFIG_STORAGE_TOPIC={_resourcePrefix}.connect.configs",
-                "-e",
-                $"OFFSET_STORAGE_TOPIC={_resourcePrefix}.connect.offsets",
-                "-e",
-                $"STATUS_STORAGE_TOPIC={_resourcePrefix}.connect.status",
-                "-e",
-                "CONFIG_STORAGE_REPLICATION_FACTOR=1",
-                "-e",
-                "OFFSET_STORAGE_REPLICATION_FACTOR=1",
-                "-e",
-                "STATUS_STORAGE_REPLICATION_FACTOR=1",
-                "-e",
-                $"CONNECT_REST_ADVERTISED_HOST_NAME={ConnectContainerName}",
-                "-e",
-                "OFFSET_FLUSH_INTERVAL_MS=1000",
-                "-e",
-                $"{ConnectorPasswordEnvironmentVariable}={ConnectorDatabasePassword}",
-                _settings.ConnectImage,
-            ],
-            cancellationToken
-        );
+        await _docker.RunAsync(BuildKafkaConnectRunArguments(), cancellationToken);
+    }
+
+    private IReadOnlyList<string> BuildKafkaConnectRunArguments() =>
+        [
+            "run",
+            "--detach",
+            "--name",
+            ConnectContainerName,
+            "--network",
+            NetworkName,
+            "-p",
+            "127.0.0.1::8083",
+            "-e",
+            $"BOOTSTRAP_SERVERS={BrokerContainerName}:9092",
+            "-e",
+            $"GROUP_ID={_resourcePrefix}",
+            "-e",
+            $"CONFIG_STORAGE_TOPIC={_resourcePrefix}.connect.configs",
+            "-e",
+            $"OFFSET_STORAGE_TOPIC={_resourcePrefix}.connect.offsets",
+            "-e",
+            $"STATUS_STORAGE_TOPIC={_resourcePrefix}.connect.status",
+            "-e",
+            "CONFIG_STORAGE_REPLICATION_FACTOR=1",
+            "-e",
+            "OFFSET_STORAGE_REPLICATION_FACTOR=1",
+            "-e",
+            "STATUS_STORAGE_REPLICATION_FACTOR=1",
+            "-e",
+            $"CONNECT_REST_ADVERTISED_HOST_NAME={ConnectContainerName}",
+            "-e",
+            "OFFSET_FLUSH_INTERVAL_MS=1000",
+            "-e",
+            ConnectConfigProvidersEnvironmentVariable,
+            "-e",
+            ConnectConfigProviderEnvClassEnvironmentVariable,
+            "-e",
+            $"{ConnectorPasswordEnvironmentVariable}={ConnectorDatabasePassword}",
+            _settings.ConnectImage,
+        ];
+
+    private async Task AssertKafkaConnectWorkerEnvConfigProviderEnabledAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        const string script = $$"""
+            set -eu
+            if [ "$(printenv CONNECT_CONFIG_PROVIDERS)" != "{{EnvConfigProviderName}}" ]; then
+              echo "CONNECT_CONFIG_PROVIDERS mismatch" >&2
+              exit 1
+            fi
+            if [ "$(printenv CONNECT_CONFIG_PROVIDERS_ENV_CLASS)" != "{{EnvConfigProviderClass}}" ]; then
+              echo "CONNECT_CONFIG_PROVIDERS_ENV_CLASS mismatch" >&2
+              exit 1
+            fi
+            if printenv CONNECT_CONFIG_PROVIDERS_FILE_CLASS >/dev/null 2>&1; then
+              echo "CONNECT_CONFIG_PROVIDERS_FILE_CLASS should not be set" >&2
+              exit 1
+            fi
+            """;
+
+        await _docker.RunAsync(["exec", ConnectContainerName, "sh", "-lc", script], cancellationToken);
+    }
+
+    private static void AssertRenderedProviderPasswordUsesEnvReference(CdcConnectorTemplateResult rendered)
+    {
+        string expectedReference = $"${{env:{ConnectorPasswordEnvironmentVariable}}}";
+
+        using var _ = new AssertionScope();
+        rendered
+            .Config.TryGetValue("database.password", out string? databasePassword)
+            .Should()
+            .BeTrue("rendered provider connection properties must include the database password reference");
+        string.Equals(databasePassword, expectedReference, StringComparison.Ordinal)
+            .Should()
+            .BeTrue("rendered provider connection properties must keep the externalized password reference");
+        rendered
+            .Config.Any(property =>
+                string.Equals(property.Value, ConnectorDatabasePassword, StringComparison.Ordinal)
+            )
+            .Should()
+            .BeFalse("rendered connector configs must not contain the raw provider password");
+    }
+
+    private static bool HasDockerEnvironmentArgument(IReadOnlyList<string> arguments, string environment)
+    {
+        for (int index = 1; index < arguments.Count; index++)
+        {
+            if (
+                string.Equals(arguments[index - 1], "-e", StringComparison.Ordinal)
+                && string.Equals(arguments[index], environment, StringComparison.Ordinal)
+            )
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool HasDockerEnvironmentArgumentNamePrefix(
+        IReadOnlyList<string> arguments,
+        string environmentNamePrefix
+    )
+    {
+        for (int index = 1; index < arguments.Count; index++)
+        {
+            if (!string.Equals(arguments[index - 1], "-e", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            string environment = arguments[index];
+            if (
+                environment.StartsWith($"{environmentNamePrefix}=", StringComparison.Ordinal)
+                || environment.StartsWith($"{environmentNamePrefix}_", StringComparison.Ordinal)
+            )
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private async Task WaitForPostgresqlAsync(CancellationToken cancellationToken)

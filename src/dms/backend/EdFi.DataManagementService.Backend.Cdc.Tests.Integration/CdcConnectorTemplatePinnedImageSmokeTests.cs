@@ -50,6 +50,24 @@ public abstract class Given_PinnedImageConnectorTemplateFixture
     }
 
     [Test]
+    public async Task It_configures_kafka_connect_env_config_provider_for_externalized_database_passwords()
+    {
+        await using CdcConnectorTemplatePinnedImageFixture fixture =
+            CdcConnectorTemplatePinnedImageFixture.CreateOffline(Provider);
+
+        fixture.AssertKafkaConnectWorkerConfigProviderStartupEnvironmentIsPinned();
+
+        CdcConnectorTemplateResult rendered = fixture.Render(fixture.BuildRequest());
+
+        using var _ = new AssertionScope();
+        rendered.Config["database.password"].Should().Be("${env:CDC_DATABASE_PASSWORD}");
+        rendered
+            .Config.Any(property => string.Equals(property.Value, "EdFi_Dms1!", StringComparison.Ordinal))
+            .Should()
+            .BeFalse("rendered connector configs must not contain the raw provider password");
+    }
+
+    [Test]
     public async Task It_exposes_reusable_render_preflight_and_live_validation_assertions()
     {
         await using CdcConnectorTemplatePinnedImageFixture fixture =
