@@ -1081,8 +1081,30 @@ function Build-TemplateNuGetPackage {
         [ValidateSet("postgresql", "mssql")]
         [string]$DatabaseEngine = "postgresql",
 
-        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!"
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!",
+
+        # PKCS#8 ECDSA P-256 private key used to attest the exact packed .nupkg bytes.
+        # Optional: without it the package is built unattested (and a restore consumer will
+        # fail closed on it). Key material must live outside the repo or in a git-ignored
+        # location; requires -AttestationProducer.
+        [string]$AttestationSignerKeyPath = "",
+
+        # Trust-policy producer name the attestation payload is bound to. Requires
+        # -AttestationSignerKeyPath.
+        [string]$AttestationProducer = ""
     )
+
+    # Attestation preflight: both-or-neither, and the key must exist. Checked before any
+    # catalog read or dump work so a misconfigured signer fails in seconds, not after a
+    # full dump and pack.
+    $attestationRequested = -not [string]::IsNullOrWhiteSpace($AttestationSignerKeyPath)
+    $attestationProducerSupplied = -not [string]::IsNullOrWhiteSpace($AttestationProducer)
+    if ($attestationRequested -ne $attestationProducerSupplied) {
+        throw "-AttestationSignerKeyPath and -AttestationProducer must be supplied together: the attestation binds the package to a specific trust-policy producer identity."
+    }
+    if ($attestationRequested -and -not (Test-Path -LiteralPath $AttestationSignerKeyPath -PathType Leaf)) {
+        throw "Attestation signing key was not found at '$AttestationSignerKeyPath'."
+    }
 
     $config = Import-PowerShellDataFile -Path $ConfigFilePath
 
@@ -1147,6 +1169,18 @@ function Build-TemplateNuGetPackage {
     Add-FileToCsProjForNuget -CsprojPath $csprojPath -SourceTargetPair @{ source = $restoreManifestPath; target = "." }
 
     Build-NuGetPackage -PackageVersion $PackageVersion -Config $config -BackupDirectory './'
+
+    if ($attestationRequested) {
+        Invoke-TemplatePackageAttestation `
+            -Config $config `
+            -PackageVersion $PackageVersion `
+            -BackupDirectory './' `
+            -AttestationSignerKeyPath $AttestationSignerKeyPath `
+            -AttestationProducer $AttestationProducer
+    }
+    else {
+        Write-Host "No attestation signer was supplied; the package is unattested and a restore consumer will refuse it (fail-closed). Supply -AttestationSignerKeyPath and -AttestationProducer to attest." -ForegroundColor Yellow
+    }
 }
 
 function Add-TemplateDataStore {
@@ -1606,6 +1640,132 @@ function Write-TemplateRestoreManifest {
     return $manifestPath
 }
 
+function Build-TemplateAttestationCompanionPackage {
+    <#
+    .SYNOPSIS
+    Packs the companion attestation NuGet package for a template package: id
+    "<PackageId>.Attestation" at the identical version, containing exactly the detached
+    attestation document. HTTP NuGet feeds serve only .nupkg files, so this companion is
+    how a feed-resolved restore locates the attestation; it needs no independent trust
+    because authenticity comes from the signature verified against policy anchors.
+
+    .OUTPUTS
+    The path of the packed companion .nupkg.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Template tooling intentionally writes operator progress to the console; the function returns the package path, so Write-Output would corrupt the pipeline result.')]
+    param (
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Config,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PackageVersion,
+
+        [Parameter(Mandatory = $true)]
+        [string]$BackupDirectory,
+
+        [Parameter(Mandatory = $true)]
+        [string]$AttestationPath
+    )
+
+    $resolvedBackupDirectory = (Resolve-Path -LiteralPath $BackupDirectory).ProviderPath
+    $companionId = "$($Config.Id).Attestation"
+
+    # The companion gets its own transient workspace so its csproj can never collide with
+    # the template package's csproj or be swept into that package's payload.
+    $companionWorkspace = Join-Path $resolvedBackupDirectory ".attestation-package"
+    New-Item -ItemType Directory -Path $companionWorkspace -Force | Out-Null
+    $companionCsprojPath = Join-Path $companionWorkspace "$companionId.csproj"
+
+    New-CsprojForNuget `
+        -CsprojPath $companionCsprojPath `
+        -Id $companionId `
+        -Title $companionId `
+        -Description "Detached restore attestation for $($Config.Id)" `
+        -Authors $Config.Authors `
+        -ProjectUrl $Config.ProjectUrl `
+        -License $Config.License `
+        -ForceOverwrite
+
+    Add-FileToCsProjForNuget -CsprojPath $companionCsprojPath -SourceTargetPair @{ source = $AttestationPath; target = "." }
+
+    & dotnet restore $companionCsprojPath | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "dotnet restore failed for the attestation companion package '$companionId'."
+    }
+
+    & dotnet pack $companionCsprojPath `
+        --no-build `
+        --no-restore `
+        --output $resolvedBackupDirectory `
+        -p:NoDefaultExcludes=true `
+        -p:Version="$PackageVersion"
+    if ($LASTEXITCODE -ne 0) {
+        throw "dotnet pack failed for the attestation companion package '$companionId'."
+    }
+
+    $companionPackagePath = Join-Path $resolvedBackupDirectory "$companionId.$PackageVersion.nupkg"
+
+    Write-Host "Attestation Companion Package Created: " -ForegroundColor Green -NoNewline
+    Write-Host $companionPackagePath
+
+    return $companionPackagePath
+}
+
+function Invoke-TemplatePackageAttestation {
+    <#
+    .SYNOPSIS
+    Attests the exact bytes of the packed template .nupkg: hashes the final package file,
+    signs the detached attestation document with the supplied key, writes the sibling
+    "<nupkg>.attestation.json", and packs the companion attestation package for feed
+    distribution. Runs strictly after dotnet pack, so any repack invalidates a previous
+    attestation by construction.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Template tooling intentionally writes operator progress to the console.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Template build helper invoked non-interactively; it writes attestation artifacts into the controlled package workspace.')]
+    param (
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Config,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PackageVersion,
+
+        [Parameter(Mandatory = $true)]
+        [string]$BackupDirectory,
+
+        [Parameter(Mandatory = $true)]
+        [string]$AttestationSignerKeyPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$AttestationProducer
+    )
+
+    $packageFileName = "$($Config.Id).$PackageVersion.nupkg"
+    $packagePath = Join-Path $BackupDirectory $packageFileName
+    if (-not (Test-Path -LiteralPath $packagePath -PathType Leaf)) {
+        throw "Packed template package was not found at '$packagePath'; nothing to attest."
+    }
+
+    $packageSha256 = Get-FileSha256Hex -Path $packagePath
+    $attestationJson = New-TemplateAttestation `
+        -PackageId $Config.Id `
+        -PackageVersion $PackageVersion `
+        -PackageSha256 $packageSha256 `
+        -Producer $AttestationProducer `
+        -PrivateKeyPath $AttestationSignerKeyPath
+
+    $attestationPath = Join-Path (Resolve-Path -LiteralPath $BackupDirectory).ProviderPath (Get-TemplateAttestationFileName -PackageFileName $packageFileName)
+    Set-Content -LiteralPath $attestationPath -Value $attestationJson -Encoding utf8
+
+    Write-Host "Attestation Created: " -ForegroundColor Green -NoNewline
+    Write-Host $attestationPath
+
+    Build-TemplateAttestationCompanionPackage `
+        -Config $Config `
+        -PackageVersion $PackageVersion `
+        -BackupDirectory $BackupDirectory `
+        -AttestationPath $attestationPath | Out-Null
+}
+
 enum TemplateType {
     Minimal
     Populated
@@ -1727,7 +1887,14 @@ function Build-Template {
         [ValidateSet("postgresql", "mssql")]
         [string]$DatabaseEngine = "postgresql",
 
-        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!"
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!",
+
+        # Forwarded to Build-TemplateNuGetPackage: attest the exact packed .nupkg bytes with
+        # this PKCS#8 ECDSA P-256 key, bound to -AttestationProducer. Key material must live
+        # outside the repo or in a git-ignored location.
+        [string]$AttestationSignerKeyPath = "",
+
+        [string]$AttestationProducer = ""
     )
 
     if ($PSBoundParameters.ContainsKey('DataStoreId') -and -not $PSBoundParameters.ContainsKey('DataStoreDatabaseName')) {
@@ -1837,7 +2004,7 @@ function Build-Template {
             @bulkLoadTuning
     }
 
-    Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion -TemplateKind ([string]$TemplateType) -DatabaseName $DataStoreDatabaseName -DumpAllUserSchemas:$DumpAllUserSchemas -DatabaseEngine $DatabaseEngine -MssqlPassword $MssqlPassword
+    Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion -TemplateKind ([string]$TemplateType) -DatabaseName $DataStoreDatabaseName -DumpAllUserSchemas:$DumpAllUserSchemas -DatabaseEngine $DatabaseEngine -MssqlPassword $MssqlPassword -AttestationSignerKeyPath $AttestationSignerKeyPath -AttestationProducer $AttestationProducer
 }
 
 Export-ModuleMember -Function Build-Template, Get-UserSchemaNames, Restore-TemplatePackage
