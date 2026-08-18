@@ -222,23 +222,17 @@ internal static class DocumentCacheEnqueueTelemetryWriteBoundary
             return;
         }
 
-        if (
-            !TryCreateContext(
-                dataStoreSelection,
-                targetRegistry,
-                tenantKey,
-                dialect,
-                canonicalOperation,
-                resourceKind,
-                message,
-                out DocumentCacheEnqueueTelemetryContext? context
-            )
-        )
-        {
-            return;
-        }
+        DocumentCacheEnqueueTelemetryContext context = CreateContext(
+            dataStoreSelection,
+            targetRegistry,
+            tenantKey,
+            dialect,
+            canonicalOperation,
+            resourceKind,
+            message
+        );
 
-        telemetry.RecordSuccess(context!);
+        telemetry.RecordSuccess(context);
     }
 
     public static void RecordFailureIfClassified(
@@ -285,31 +279,27 @@ internal static class DocumentCacheEnqueueTelemetryWriteBoundary
         telemetry.RecordFailure(context, category);
     }
 
-    private static bool TryCreateContext(
+    private static DocumentCacheEnqueueTelemetryContext CreateContext(
         IDataStoreSelection? dataStoreSelection,
         IDocumentCacheTargetRegistry? targetRegistry,
         string tenantKey,
         SqlDialect dialect,
         DocumentCacheEnqueueTelemetryCanonicalOperation canonicalOperation,
         DocumentCacheEnqueueTelemetryResourceKind resourceKind,
-        string message,
-        out DocumentCacheEnqueueTelemetryContext? context
+        string message
     )
     {
-        context = null;
-
         DocumentCacheTargetKey? targetKey = TryCreateTelemetryTargetKey(dataStoreSelection, tenantKey);
         DocumentCacheTargetObservation? targetObservation = targetKey is null
             ? null
             : TryGetCurrentTarget(targetRegistry, targetKey);
-        context = new DocumentCacheEnqueueTelemetryContext(
+        return new DocumentCacheEnqueueTelemetryContext(
             targetKey,
             targetObservation?.ProviderToken ?? ProviderTokenForDialect(dialect),
             canonicalOperation,
             resourceKind,
             message
         );
-        return true;
     }
 
     private static DocumentCacheTargetKey? TryCreateTelemetryTargetKey(
