@@ -764,8 +764,8 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
             return;
         }
 
-        string[] databaseNames = value.Split(',', StringSplitOptions.TrimEntries);
-        if (databaseNames.Length == 1 && databaseNames[0].Length > 0)
+        string[] databaseNames = value.Split(',', StringSplitOptions.None);
+        if (databaseNames.Length == 1 && databaseNames[0].Length > 0 && value == databaseNames[0].Trim())
         {
             return;
         }

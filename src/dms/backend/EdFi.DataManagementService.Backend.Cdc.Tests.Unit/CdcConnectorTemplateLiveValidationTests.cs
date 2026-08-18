@@ -138,6 +138,40 @@ public class Given_CdcConnectorTemplateLiveValidation
     }
 
     [Test]
+    public void It_accepts_sqlserver_source_partition_for_the_canonical_single_database_name()
+    {
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(CdcProvider.SqlServer);
+        CdcConnectorTemplateResult rendered = service.Render(request);
+
+        CdcConnectorTemplateResult result = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                new CdcConnectorProviderSetupEvidence(
+                    bindingGeneration: 7,
+                    BuildProviderSetupResult(CdcProvider.SqlServer)
+                ),
+                new CdcConnectorTemplateSourcePartitionEvidence(
+                    new Dictionary<string, string>
+                    {
+                        ["server"] = request.ConnectorName.Value,
+                        ["database"] = "edfi_datastore",
+                    }
+                )
+            )
+        );
+
+        using var _ = new AssertionScope();
+        rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        rendered.Config.Should().Contain("database.names", "edfi_datastore");
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        result.Diagnostics.Should().BeEmpty();
+    }
+
+    [Test]
     public void It_rejects_unmasked_or_missing_secret_read_back_values_without_leaking_them()
     {
         const string rawSecret =

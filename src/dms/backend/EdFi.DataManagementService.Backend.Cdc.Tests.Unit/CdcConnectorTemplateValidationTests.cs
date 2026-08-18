@@ -285,6 +285,45 @@ public class Given_CdcConnectorTemplateInputValidation
             );
     }
 
+    [TestCase(" edfi_datastore")]
+    [TestCase("edfi_datastore ")]
+    [TestCase("edfi_datastore, other_datastore")]
+    [TestCase("edfi_datastore,")]
+    public void It_rejects_sqlserver_database_names_that_are_not_one_canonical_token(string databaseNames)
+    {
+        CdcConnectorTemplateValidationResult result = Validate(
+            CdcProvider.SqlServer,
+            new Dictionary<string, string>
+            {
+                ["database.hostname"] = "sqlserver.internal",
+                ["database.user"] = "connector_user",
+                ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
+                ["database.names"] = databaseNames,
+            }
+        );
+
+        CdcConnectorTemplateDiagnostic diagnostic = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SqlServerSingleDatabaseRequired
+                && diagnostic.PropertyName == "database.names"
+            )
+            .Subject;
+
+        using var _ = new AssertionScope();
+        result.IsValid.Should().BeFalse();
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.ConnectionProperty);
+        diagnostic.ExpectedValue.Should().Be("exactly one SQL Server database name");
+        diagnostic.ObservedValue.Should().Be("[redacted]");
+        diagnostic
+            .RedactionClassification.Should()
+            .Be(CdcConnectorTemplateRedactionClassification.PhysicalIdentifier);
+        result
+            .Diagnostics.SelectMany(DiagnosticText)
+            .Should()
+            .NotContain(value => value.Contains("edfi_datastore", StringComparison.Ordinal));
+    }
+
     [Test]
     public void It_rejects_reserved_generated_connector_keys_even_when_the_value_matches_the_contract()
     {
