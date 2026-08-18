@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.Ddl;
+using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using FluentAssertions.Execution;
 using Microsoft.Extensions.DependencyInjection;
@@ -1052,6 +1053,102 @@ public class Given_CdcConnectorTemplateLiveValidation
             {
                 SourceTableInventory = null!,
                 ExpectedMessageKeyColumns = null!,
+            }
+        );
+
+        CdcConnectorTemplateResult preflightResult = service.ValidateRegistrationPreflight(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                malformedProviderSetupEvidence
+            )
+        );
+        CdcConnectorTemplateResult liveReadBackResult = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                malformedProviderSetupEvidence,
+                BuildSourcePartitionEvidence(request)
+            )
+        );
+
+        using var _ = new AssertionScope();
+        preflightResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        liveReadBackResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        preflightResult
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch
+                && diagnostic.PropertyName == "providerSetup.sourceTableInventory"
+                && diagnostic.ObservedValue == "[redacted]"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.RegistrationPreflight
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch
+                && diagnostic.PropertyName == "providerSetup.expectedMessageKeyColumns"
+                && diagnostic.ObservedValue == "[redacted]"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.RegistrationPreflight
+            );
+        liveReadBackResult
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch
+                && diagnostic.PropertyName == "providerSetup.sourceTableInventory"
+                && diagnostic.ObservedValue == "[redacted]"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch
+                && diagnostic.PropertyName == "providerSetup.expectedMessageKeyColumns"
+                && diagnostic.ObservedValue == "[redacted]"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack
+            );
+        preflightResult
+            .Diagnostics.Concat(liveReadBackResult.Diagnostics)
+            .Should()
+            .OnlyContain(diagnostic =>
+                diagnostic.RedactionClassification
+                == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            );
+    }
+
+    [Test]
+    public void It_rejects_null_nested_fresh_provider_setup_evidence_for_preflight_and_live_read_back()
+    {
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(CdcProvider.Postgresql);
+        CdcConnectorTemplateResult rendered = service.Render(request);
+        CdcConnectorProviderSetupEvidence malformedProviderSetupEvidence = new(
+            BindingGeneration,
+            BuildProviderSetupResult(CdcProvider.Postgresql) with
+            {
+                SourceTableInventory =
+                [
+                    BuildSourceTable(
+                        CdcProvider.Postgresql,
+                        CdcSourceTableKind.DocumentCache,
+                        "DocumentCache",
+                        [BuildColumn(CdcProvider.Postgresql, "DocumentUuid")]
+                    ),
+                    null!,
+                    BuildSourceTable(
+                        CdcProvider.Postgresql,
+                        CdcSourceTableKind.CdcHeartbeat,
+                        "CdcHeartbeat",
+                        [
+                            BuildColumn(CdcProvider.Postgresql, "HeartbeatId"),
+                            BuildColumn(CdcProvider.Postgresql, "HeartbeatSequence", 2),
+                            BuildColumn(CdcProvider.Postgresql, "HeartbeatAt", 3),
+                        ]
+                    ),
+                ],
+                ExpectedMessageKeyColumns =
+                [
+                    new(CdcSourceTableKind.DocumentCache, [new DbColumnName("DocumentUuid")]),
+                    new(CdcSourceTableKind.Document, null!),
+                ],
             }
         );
 

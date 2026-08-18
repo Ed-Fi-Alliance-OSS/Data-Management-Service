@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Reflection;
 using EdFi.DataManagementService.Backend.Ddl;
 using FluentAssertions;
 using FluentAssertions.Execution;
@@ -703,6 +704,42 @@ public class Given_CdcConnectorTemplateInputValidation
     }
 
     [Test]
+    public void It_rejects_malformed_source_column_inventory_during_public_request_validation()
+    {
+        CdcConnectorTemplateValidationResult result = Validate(
+            BuildRequest(
+                CdcProvider.Postgresql,
+                sourceTableInventory: BuildSourceInventoryReplacing(
+                    CdcProvider.Postgresql,
+                    BuildSourceTableWithNullColumnEntry(
+                        CdcProvider.Postgresql,
+                        CdcSourceTableKind.DocumentCache,
+                        "DocumentCache"
+                    )
+                )
+            )
+        );
+
+        CdcConnectorTemplateDiagnostic diagnostic = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch
+            )
+            .Subject;
+
+        using var _ = new AssertionScope();
+        result.IsValid.Should().BeFalse();
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.MessageKey);
+        diagnostic.PropertyName.Should().Be("providerSetup.sourceTableInventory.columns");
+        diagnostic.ExpectedValue.Should().Be("non-null source column inventory for dms.DocumentCache");
+        diagnostic.ObservedValue.Should().Be("malformed");
+        diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.RequestValidation);
+        diagnostic
+            .RedactionClassification.Should()
+            .Be(CdcConnectorTemplateRedactionClassification.PhysicalIdentifier);
+    }
+
+    [Test]
     public void It_rejects_sqlserver_capture_instance_artifact_inventory_drift_during_public_request_validation()
     {
         CdcConnectorTemplateValidationResult emptyInventory = Validate(
@@ -1003,4 +1040,26 @@ public class Given_CdcConnectorTemplateInputValidation
 
     private static IEnumerable<string> DiagnosticText(CdcConnectorTemplateDiagnostic diagnostic) =>
         [diagnostic.ExpectedValue ?? string.Empty, diagnostic.ObservedValue ?? string.Empty];
+
+    private static CdcSourceTableInventory BuildSourceTableWithNullColumnEntry(
+        CdcProvider provider,
+        CdcSourceTableKind tableKind,
+        string tableName
+    )
+    {
+        CdcSourceTableInventory sourceTable = BuildSourceTable(
+            provider,
+            tableKind,
+            tableName,
+            [BuildColumn(provider, "DocumentUuid")]
+        );
+        FieldInfo columnsField =
+            typeof(CdcSourceTableInventory).GetField(
+                "<Columns>k__BackingField",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            ) ?? throw new InvalidOperationException("Could not locate CdcSourceTableInventory.Columns.");
+        columnsField.SetValue(sourceTable, new CdcSourceColumnInventory[] { null! });
+
+        return sourceTable;
+    }
 }
