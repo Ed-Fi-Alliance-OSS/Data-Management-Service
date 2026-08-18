@@ -907,7 +907,11 @@ function Restore-TemplatePackage {
         throw "Database name '$DatabaseName' contains unsupported characters."
     }
 
-    $package = Get-ChildItem -Path $PackageDirectory -Filter *.nupkg | Select-Object -First 1
+    # Companion attestation packages ("<Id>.Attestation.<version>.nupkg") sit beside the
+    # template package after an attested build and must never be selected as the template.
+    $package = Get-ChildItem -Path $PackageDirectory -Filter *.nupkg |
+        Where-Object { $_.Name -notlike "*.Attestation.*" } |
+        Select-Object -First 1
 
     if ($null -eq $package) {
         throw "No .nupkg found in '$PackageDirectory'."
@@ -2008,4 +2012,4 @@ function Build-Template {
     Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion -TemplateKind ([string]$TemplateType) -DatabaseName $DataStoreDatabaseName -DumpAllUserSchemas:$DumpAllUserSchemas -DatabaseEngine $DatabaseEngine -MssqlPassword $MssqlPassword -AttestationSignerKeyPath $AttestationSignerKeyPath -AttestationProducer $AttestationProducer
 }
 
-Export-ModuleMember -Function Build-Template, Get-UserSchemaNames, Restore-TemplatePackage
+Export-ModuleMember -Function Build-Template, Get-UserSchemaNames, Restore-TemplatePackage, Get-TemplateSourceCatalogFacts

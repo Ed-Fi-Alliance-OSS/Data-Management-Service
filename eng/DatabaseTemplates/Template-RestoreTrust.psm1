@@ -559,9 +559,12 @@ function Test-TemplateAttestation {
     .SYNOPSIS
     Verifies a detached attestation document against the exact package bytes' SHA-256, the
     requested package identity, and the merged trust policy. Returns a verdict object
-    { IsTrusted, Producer, Reason } and never throws for untrusted input: every defect in
-    the document, signature, payload binding, or policy anchoring yields IsTrusted=$false
-    with a specific reason, so callers fail closed with actionable diagnostics.
+    { IsTrusted, Producer, Reason } and never throws for untrusted ATTESTATION input:
+    every defect in the document, signature, payload binding, or policy anchoring yields
+    IsTrusted=$false with a specific reason, so callers fail closed with actionable
+    diagnostics. Caller-defect inputs are the exception and throw: a malformed
+    PackageSha256 parameter and a non-P-256 key inside the supplied trust policy are
+    configuration errors, not verdicts about the package.
     #>
     param (
         [Parameter(Mandatory = $true)]
