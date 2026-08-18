@@ -54,7 +54,7 @@ public class Given_A_Postgresql_Compiled_Candidate_Relation
     private const string UnauthorizedNamespace = "uri://other.org/Probe";
     private const string MatchingDescriptorCodeValue = "Probe";
     private const string NonMatchingDescriptorCodeValue = "Other";
-    private const long MinimumChangeVersion = 30L;
+    private const long MinimumChangeVersion = 29L;
 
     /// <summary>
     /// Both claim EducationOrganization ids the probe binds. Three distinct hierarchy tuples fan into
@@ -100,8 +100,9 @@ public class Given_A_Postgresql_Compiled_Candidate_Relation
     private static readonly long[] _allDocumentIds = [10L, 20L, 30L, 40L, 50L];
 
     /// <summary>
-    /// The root <c>DocumentId</c>s inside the change-version window the planner probes request. A strict
-    /// subset of <see cref="_allDocumentIds" />, so a planner that dropped the window would be caught.
+    /// The root <c>DocumentId</c>s inside the exclusive-minimum change-version window the planner probes
+    /// request. A strict subset of <see cref="_allDocumentIds" />, so a planner that dropped the window
+    /// would be caught.
     /// </summary>
     private static readonly long[] _documentIdsInChangeVersionWindow = [30L, 40L, 50L];
 
