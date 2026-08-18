@@ -140,8 +140,7 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
                     registrySnapshot.ObservedAt,
                     observedAt,
                     projectionSnapshot,
-                    EndpointTimeoutNotStartedMessage,
-                    forceEndpointTimeoutClassification: true
+                    EndpointTimeoutNotStartedMessage
                 );
         }
 
@@ -458,20 +457,17 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         DocumentCacheProjectionObservationSnapshot projectionSnapshot,
         string message,
         DocumentCacheProjectionTargetHealthSnapshot? targetHealth = null,
-        DocumentCacheStatusRuntimeObservation? runtimeObservation = null,
-        bool forceEndpointTimeoutClassification = false
+        DocumentCacheStatusRuntimeObservation? runtimeObservation = null
     )
     {
         targetHealth ??= GetCurrentGenerationTargetHealth(targetObservation, projectionSnapshot);
         runtimeObservation ??= ToRuntimeObservation(targetHealth);
 
-        DocumentCacheStatusClassificationResult classification = forceEndpointTimeoutClassification
-            ? CreateEndpointTimeoutClassification(message)
-            : DocumentCacheStatusClassifier.Classify(
-                targetObservation,
-                runtimeObservation,
-                DocumentCacheStatusDurableObservation.EndpointTimeout(message)
-            );
+        DocumentCacheStatusClassificationResult classification = DocumentCacheStatusClassifier.Classify(
+            targetObservation,
+            runtimeObservation,
+            DocumentCacheStatusDurableObservation.EndpointTimeout(message)
+        );
 
         return BuildStatusTarget(
             targetObservation,
@@ -480,47 +476,6 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             projectionSnapshot,
             targetHealth,
             classification
-        );
-    }
-
-    private static DocumentCacheStatusClassificationResult CreateEndpointTimeoutClassification(string message)
-    {
-        DocumentCacheStatusProcessEligibility processEligibility =
-            DocumentCacheStatusProcessEligibility.Unknown(
-                DocumentCacheStatusReason.StatusEndpointTimeout,
-                message
-            );
-
-        return new(
-            processEligibility,
-            DurableObservationRequired: false,
-            DurableObservedAt: null,
-            new DocumentCacheStatusLifecycleComponent(
-                DocumentCacheStatusLifecycleState.Unknown,
-                DocumentCacheStatusAvailability.Unknown,
-                message
-            ),
-            new DocumentCacheStatusCacheAheadComponent(
-                DocumentCacheStatusCacheAheadState.Unknown,
-                recoveryRequired: null,
-                message
-            ),
-            new DocumentCacheStatusQueueSummary(
-                DocumentCacheStatusQueuePresence.Unknown,
-                oldestWorkFirstEnqueuedAt: null,
-                oldestWorkAgeSeconds: null,
-                DocumentCacheStatusBacklogEstimate.Unavailable
-            ),
-            new DocumentCacheOperationalHealthComponent(
-                DocumentCacheOperationalHealthStatus.Unknown,
-                DocumentCacheStatusReason.StatusEndpointTimeout,
-                message
-            ),
-            new DocumentCacheCaughtUpComponent(
-                DocumentCacheCaughtUpStatus.Unknown,
-                DocumentCacheStatusReason.StatusEndpointTimeout,
-                message
-            )
         );
     }
 

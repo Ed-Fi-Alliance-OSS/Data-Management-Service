@@ -532,8 +532,13 @@ public class Given_DocumentCacheStatusService
         DocumentCacheStatusTarget secondStatus = response.Targets.Single(target =>
             target.TargetKey.DataStoreId == 2
         );
+        secondStatus.OperationalHealth.Status.Should().Be(DocumentCacheOperationalHealthStatus.Unknown);
         secondStatus.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.StatusEndpointTimeout);
         secondStatus.OperationalHealth.Message.Should().Contain("did not start");
+        secondStatus.CaughtUp.Status.Should().Be(DocumentCacheCaughtUpStatus.Unknown);
+        secondStatus.CaughtUp.Reason.Should().Be(DocumentCacheStatusReason.StatusEndpointTimeout);
+        secondStatus.Lifecycle.Availability.Should().Be(DocumentCacheStatusAvailability.Unknown);
+        secondStatus.QueueSummary.Presence.Should().Be(DocumentCacheStatusQueuePresence.Unknown);
         observer.StartedKeys.Should().ContainSingle(key => key.Equals(firstTarget.TargetKey));
 
         CapturedProviderObservation providerObservation = telemetry
@@ -545,6 +550,82 @@ public class Given_DocumentCacheStatusService
             .Outcome.Should()
             .Be(DocumentCacheStatusProviderObservationTelemetryOutcome.TimedOut);
         providerObservation.Reason.Should().Be(DocumentCacheStatusReason.StatusEndpointTimeout);
+    }
+
+    [Test]
+    public async Task It_preserves_process_failure_for_unstarted_targets_when_endpoint_budget_expires()
+    {
+        DocumentCacheTargetEffectiveSettings effectiveSettings = EffectiveSettings(
+            maxConcurrentTargets: 1,
+            statusObservationTimeout: TimeSpan.FromSeconds(5),
+            endpointTimeout: TimeSpan.FromMilliseconds(50)
+        );
+        DocumentCacheTargetObservation startedTarget = ResolvedTarget(
+            DocumentCacheTargetKey.Create("", 1),
+            effectiveSettings
+        );
+        DocumentCacheInventoryValidationResult invalidInventory = new(
+            DocumentCacheInventoryStatus.Invalid,
+            "Inventory invalid."
+        );
+        DocumentCacheTargetObservation unstartedInvalidTarget = ResolvedInventoryInvalidTarget(
+            DocumentCacheTargetKey.Create("", 2),
+            invalidInventory,
+            new DocumentCacheInventoryValidationComponents(
+                invalidInventory,
+                new DocumentCacheInventoryValidationResult(
+                    DocumentCacheInventoryStatus.Satisfied,
+                    "Work inventory satisfied."
+                ),
+                new DocumentCacheInventoryValidationResult(
+                    DocumentCacheInventoryStatus.Satisfied,
+                    "Cache inventory satisfied."
+                ),
+                new DocumentCacheInventoryValidationResult(
+                    DocumentCacheInventoryStatus.Satisfied,
+                    "Data store identity inventory satisfied."
+                )
+            )
+        );
+        StaticTargetRegistry registry = new(
+            [startedTarget, unstartedInvalidTarget],
+            [ExecutionContext(startedTarget)]
+        );
+        ScriptedStatusObserver observer = new(
+            async (_, cancellationToken) =>
+            {
+                await WaitForCancellationAsync(cancellationToken);
+                return DocumentCacheStatusCurrentSourceObservationResult.Cancelled("cancelled");
+            }
+        );
+        DocumentCacheStatusService service = CreateService(
+            registry,
+            ObservationStore(startedTarget),
+            observer
+        );
+
+        DocumentCacheStatusResponse response = await service.GetStatusAsync();
+
+        DocumentCacheStatusTarget startedStatus = response.Targets.Single(target =>
+            target.TargetKey.DataStoreId == 1
+        );
+        startedStatus.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.StatusEndpointTimeout);
+
+        DocumentCacheStatusTarget unstartedStatus = response.Targets.Single(target =>
+            target.TargetKey.DataStoreId == 2
+        );
+        unstartedStatus.Eligibility.Status.Should().Be(DocumentCacheStatusEligibilityStatus.Ineligible);
+        unstartedStatus.Eligibility.Reason.Should().Be(DocumentCacheStatusReason.InventoryInvalid);
+        unstartedStatus
+            .OperationalHealth.Status.Should()
+            .Be(DocumentCacheOperationalHealthStatus.NonOperational);
+        unstartedStatus.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.InventoryInvalid);
+        unstartedStatus.CaughtUp.Status.Should().Be(DocumentCacheCaughtUpStatus.NotCaughtUp);
+        unstartedStatus.CaughtUp.Reason.Should().Be(DocumentCacheStatusReason.InventoryInvalid);
+        unstartedStatus.Lifecycle.Availability.Should().Be(DocumentCacheStatusAvailability.Unavailable);
+        unstartedStatus.QueueSummary.Presence.Should().Be(DocumentCacheStatusQueuePresence.Unavailable);
+        unstartedStatus.DurableObservedAt.Should().BeNull();
+        observer.StartedKeys.Should().ContainSingle(key => key.Equals(startedTarget.TargetKey));
     }
 
     [Test]
