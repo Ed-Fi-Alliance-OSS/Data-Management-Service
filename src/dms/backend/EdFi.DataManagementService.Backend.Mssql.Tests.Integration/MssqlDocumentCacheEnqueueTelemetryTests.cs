@@ -39,7 +39,12 @@ public class Given_Mssql_DocumentCacheEnqueueTelemetry
 
         classified.Should().BeTrue();
         category.Should().Be(DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed);
-        message.Should().Contain("DocumentProjectionWork");
+        message.Should().Be(DocumentCacheEnqueueFailureClassifier.MessageFor(category));
+        message
+            .Should()
+            .NotContain("547")
+            .And.NotContain("DocumentProjectionWork")
+            .And.NotContain("FK_DocumentProjectionWork_Document");
     }
 
     [Test]
@@ -59,7 +64,13 @@ public class Given_Mssql_DocumentCacheEnqueueTelemetry
 
         classified.Should().BeTrue();
         category.Should().Be(DocumentCacheEnqueueFailureCategory.EnqueueTriggerUnavailable);
-        message.Should().Contain("TF_Document_EnqueueProjection");
+        message.Should().Be(DocumentCacheEnqueueFailureClassifier.MessageFor(category));
+        message
+            .Should()
+            .NotContain("229")
+            .And.NotContain("TF_Document_EnqueueProjection")
+            .And.NotContain("edfi")
+            .And.NotContain("permission was denied");
     }
 
     [TestCase(1205)]

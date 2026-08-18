@@ -1310,7 +1310,7 @@ public sealed class CoreDdlEmitter
             using (writer.Indent())
             {
                 writer.AppendLine(
-                    "RAISE EXCEPTION 'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value % for projection enqueue.', _lifecycle_state;"
+                    "RAISE EXCEPTION 'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value for projection enqueue.';"
                 );
             }
             writer.AppendLine("END IF;");

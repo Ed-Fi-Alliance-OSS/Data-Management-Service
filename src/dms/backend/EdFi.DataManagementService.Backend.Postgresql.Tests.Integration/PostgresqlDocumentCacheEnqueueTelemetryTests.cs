@@ -38,7 +38,12 @@ public class Given_Postgresql_DocumentCacheEnqueueTelemetry
 
         classified.Should().BeTrue();
         category.Should().Be(DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed);
-        message.Should().Contain("DocumentProjectionWork");
+        message.Should().Be(DocumentCacheEnqueueFailureClassifier.MessageFor(category));
+        message
+            .Should()
+            .NotContain("23503")
+            .And.NotContain("DocumentProjectionWork")
+            .And.NotContain("FK_DocumentProjectionWork_Document");
     }
 
     [Test]
@@ -58,7 +63,12 @@ public class Given_Postgresql_DocumentCacheEnqueueTelemetry
 
         classified.Should().BeTrue();
         category.Should().Be(DocumentCacheEnqueueFailureCategory.EnqueueTriggerUnavailable);
-        message.Should().Contain("TF_Document_EnqueueProjection");
+        message.Should().Be(DocumentCacheEnqueueFailureClassifier.MessageFor(category));
+        message
+            .Should()
+            .NotContain("42501")
+            .And.NotContain("TF_Document_EnqueueProjection")
+            .And.NotContain("permission denied");
     }
 
     [TestCase(PostgresErrorCodes.DeadlockDetected)]

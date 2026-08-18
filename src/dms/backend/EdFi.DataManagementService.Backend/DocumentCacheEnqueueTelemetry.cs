@@ -438,7 +438,7 @@ internal sealed class DocumentCacheEnqueueTelemetry(
             category,
             context.CanonicalOperation,
             context.ResourceKind,
-            context.Message
+            DocumentCacheEnqueueFailureClassifier.MessageFor(category)
         );
 
         ImmutableHashSet<DocumentCacheTargetKey>? currentTargetKeys = PruneRemovedTargetBuckets();
@@ -593,56 +593,61 @@ internal static class DocumentCacheEnqueueFailureClassifier
         ArgumentNullException.ThrowIfNull(exception);
         ArgumentNullException.ThrowIfNull(providerCommandTimeoutClassifier);
 
-        string sanitizedMessage = DocumentCacheEnqueueTelemetryText.Sanitize(
+        string classificationText = DocumentCacheEnqueueTelemetryText.Sanitize(
             string.IsNullOrWhiteSpace(exception.Message)
                 ? "DocumentCache enqueue provider failure."
                 : exception.Message
         );
-        message = sanitizedMessage;
 
         if (
-            sanitizedMessage.Contains(StateMissingMessage, StringComparison.Ordinal)
-            || sanitizedMessage.Contains(UnsupportedLifecycleValueMessage, StringComparison.Ordinal)
+            classificationText.Contains(StateMissingMessage, StringComparison.Ordinal)
+            || classificationText.Contains(UnsupportedLifecycleValueMessage, StringComparison.Ordinal)
         )
         {
             category = DocumentCacheEnqueueFailureCategory.StateMissingOrInvalid;
+            message = MessageFor(category);
             return true;
         }
 
         if (
-            sanitizedMessage.Contains(EnqueueFunctionPrefix, StringComparison.OrdinalIgnoreCase)
-            || sanitizedMessage.Contains(EnqueueTriggerName, StringComparison.OrdinalIgnoreCase)
+            classificationText.Contains(EnqueueFunctionPrefix, StringComparison.OrdinalIgnoreCase)
+            || classificationText.Contains(EnqueueTriggerName, StringComparison.OrdinalIgnoreCase)
         )
         {
             category = DocumentCacheEnqueueFailureCategory.EnqueueTriggerUnavailable;
+            message = MessageFor(category);
             return true;
         }
 
-        bool hasEnqueueArtifactEvidence = HasEnqueueArtifactEvidence(sanitizedMessage);
+        bool hasEnqueueArtifactEvidence = HasEnqueueArtifactEvidence(classificationText);
 
         if (
             hasEnqueueArtifactEvidence && providerCommandTimeoutClassifier.IsProviderCommandTimeout(exception)
         )
         {
             category = DocumentCacheEnqueueFailureCategory.ProviderTimeout;
+            message = MessageFor(category);
             return true;
         }
 
-        if (IsProviderUnavailable(sanitizedMessage) && hasEnqueueArtifactEvidence)
+        if (IsProviderUnavailable(classificationText) && hasEnqueueArtifactEvidence)
         {
             category = DocumentCacheEnqueueFailureCategory.ProviderUnavailable;
+            message = MessageFor(category);
             return true;
         }
 
-        if (sanitizedMessage.Contains(DocumentProjectionWorkName, StringComparison.OrdinalIgnoreCase))
+        if (classificationText.Contains(DocumentProjectionWorkName, StringComparison.OrdinalIgnoreCase))
         {
             category = DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed;
+            message = MessageFor(category);
             return true;
         }
 
         if (hasEnqueueArtifactEvidence)
         {
             category = DocumentCacheEnqueueFailureCategory.UnclassifiedProviderFailure;
+            message = MessageFor(category);
             return true;
         }
 
@@ -651,8 +656,31 @@ internal static class DocumentCacheEnqueueFailureClassifier
         // and must not pollute DocumentCache enqueue telemetry unless the provider message names a
         // known enqueue artifact above.
         category = default;
+        message = string.Empty;
         return false;
     }
+
+    internal static string MessageFor(DocumentCacheEnqueueFailureCategory category) =>
+        category switch
+        {
+            DocumentCacheEnqueueFailureCategory.StateMissingOrInvalid =>
+                "DocumentCache state required for projection enqueue is missing or invalid.",
+            DocumentCacheEnqueueFailureCategory.EnqueueTriggerUnavailable =>
+                "DocumentCache projection enqueue trigger or function is unavailable.",
+            DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed =>
+                "DocumentCache projection work could not be persisted.",
+            DocumentCacheEnqueueFailureCategory.ProviderTimeout =>
+                "DocumentCache enqueue provider command timed out.",
+            DocumentCacheEnqueueFailureCategory.ProviderUnavailable =>
+                "DocumentCache enqueue provider is unavailable.",
+            DocumentCacheEnqueueFailureCategory.UnclassifiedProviderFailure =>
+                "DocumentCache enqueue provider failure.",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(category),
+                category,
+                "Unsupported enqueue failure category."
+            ),
+        };
 
     private static bool HasEnqueueArtifactEvidence(string message) =>
         message.Contains("DocumentCacheState", StringComparison.OrdinalIgnoreCase)
