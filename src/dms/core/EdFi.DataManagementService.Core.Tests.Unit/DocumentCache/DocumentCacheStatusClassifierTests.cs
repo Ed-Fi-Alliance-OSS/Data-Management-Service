@@ -426,8 +426,7 @@ public class DocumentCacheStatusClassifierTests
         DocumentCacheStatusProcessEligibility processEligibility =
             DocumentCacheStatusClassifier.ClassifyProcessEligibility(
                 TargetWithFailures(activeReasons),
-                RuntimeForFailures(activeReasons),
-                CurrentnessForFailures(activeReasons)
+                RuntimeForFailures(activeReasons)
             );
 
         processEligibility.Reason.Should().Be(expectedReason);
@@ -481,8 +480,6 @@ public class DocumentCacheStatusClassifierTests
             DocumentCacheStatusReason.EnqueueTriggerUnavailable,
             DocumentCacheStatusReason.SqlServerPrerequisiteFailed,
             DocumentCacheStatusReason.UnsupportedPrerequisiteIncident,
-            DocumentCacheStatusReason.TargetRemoved,
-            DocumentCacheStatusReason.TargetReplaced,
             DocumentCacheStatusReason.RuntimeNotObserved,
             DocumentCacheStatusReason.RuntimeCancelled,
             DocumentCacheStatusReason.TargetBackoff,
@@ -491,15 +488,8 @@ public class DocumentCacheStatusClassifierTests
     private static DocumentCacheStatusClassificationResult Classify(
         DocumentCacheTargetObservation targetObservation,
         DocumentCacheStatusRuntimeObservation? runtimeObservation,
-        DocumentCacheStatusDurableObservation? durableObservation,
-        DocumentCacheStatusProcessCurrentness currentness = DocumentCacheStatusProcessCurrentness.Current
-    ) =>
-        DocumentCacheStatusClassifier.Classify(
-            targetObservation,
-            runtimeObservation,
-            durableObservation,
-            currentness
-        );
+        DocumentCacheStatusDurableObservation? durableObservation
+    ) => DocumentCacheStatusClassifier.Classify(targetObservation, runtimeObservation, durableObservation);
 
     private static DocumentCacheTargetObservation EligibleTarget() =>
         DocumentCacheTargetObservation.ResolvedEligible(
@@ -997,20 +987,6 @@ public class DocumentCacheStatusClassifierTests
 
     private static DocumentCacheStatusRuntimeObservation RunningRuntime() =>
         new(DocumentCacheStatusExecutionState.WaitingForPoll, ProcessObservedAt);
-
-    private static DocumentCacheStatusProcessCurrentness CurrentnessForFailures(
-        IReadOnlyCollection<DocumentCacheStatusReason> reasons
-    )
-    {
-        if (reasons.Contains(DocumentCacheStatusReason.TargetRemoved))
-        {
-            return DocumentCacheStatusProcessCurrentness.Removed;
-        }
-
-        return reasons.Contains(DocumentCacheStatusReason.TargetReplaced)
-            ? DocumentCacheStatusProcessCurrentness.Replaced
-            : DocumentCacheStatusProcessCurrentness.Current;
-    }
 
     private static DocumentCacheStatusProcessEligibilityStatus ExpectedProcessEligibilityStatus(
         DocumentCacheStatusReason reason

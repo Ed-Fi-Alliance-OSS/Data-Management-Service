@@ -61,8 +61,6 @@ public enum DocumentCacheStatusReason
     EnqueueTriggerUnavailable,
     SqlServerPrerequisiteFailed,
     UnsupportedPrerequisiteIncident,
-    TargetRemoved,
-    TargetReplaced,
     RuntimeNotObserved,
     RuntimeCancelled,
     TargetBackoff,

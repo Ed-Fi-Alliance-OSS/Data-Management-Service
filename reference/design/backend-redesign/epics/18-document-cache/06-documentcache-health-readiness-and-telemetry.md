@@ -462,8 +462,8 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   `connectionInputMissing`, `physicalSourceFingerprintFailure`,
   `effectiveSchemaCompatibilityFailure`, `resourceKeyCompatibilityFailure`,
   `inventoryInvalid`, `enqueueTriggerUnavailable`, SQL Server prerequisite reasons
-  `sqlServerPrerequisiteFailed` then `unsupportedPrerequisiteIncident`, `targetRemoved`,
-  `targetReplaced`, `runtimeNotObserved`, `runtimeCancelled`, `targetBackoff`, then
+  `sqlServerPrerequisiteFailed` then `unsupportedPrerequisiteIncident`,
+  `runtimeNotObserved`, `runtimeCancelled`, `targetBackoff`, then
   `statusEndpointTimeout` as `unknown` when process eligibility
   otherwise passed but the endpoint budget prevented the target's durable observation from
   starting or completing, then `statusObservationTimeout` as `unknown` when process

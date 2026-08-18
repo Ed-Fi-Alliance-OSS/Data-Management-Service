@@ -12,13 +12,6 @@ public enum DocumentCacheStatusProcessEligibilityStatus
     Unknown,
 }
 
-public enum DocumentCacheStatusProcessCurrentness
-{
-    Current,
-    Removed,
-    Replaced,
-}
-
 public sealed record DocumentCacheStatusRuntimeObservation
 {
     public DocumentCacheStatusRuntimeObservation(
@@ -420,12 +413,10 @@ public static class DocumentCacheStatusClassifier
 
     public static DocumentCacheStatusProcessEligibility ClassifyProcessEligibility(
         DocumentCacheTargetObservation targetObservation,
-        DocumentCacheStatusRuntimeObservation? runtimeObservation,
-        DocumentCacheStatusProcessCurrentness currentness = DocumentCacheStatusProcessCurrentness.Current
+        DocumentCacheStatusRuntimeObservation? runtimeObservation
     )
     {
         ArgumentNullException.ThrowIfNull(targetObservation);
-        RequireDefined(currentness, nameof(currentness));
 
         if (targetObservation.ResolutionState != DocumentCacheTargetResolutionState.Resolved)
         {
@@ -465,22 +456,6 @@ public static class DocumentCacheStatusClassifier
             return fieldFailure;
         }
 
-        if (currentness == DocumentCacheStatusProcessCurrentness.Removed)
-        {
-            return DocumentCacheStatusProcessEligibility.Ineligible(
-                DocumentCacheStatusReason.TargetRemoved,
-                "DocumentCache target context was removed."
-            );
-        }
-
-        if (currentness == DocumentCacheStatusProcessCurrentness.Replaced)
-        {
-            return DocumentCacheStatusProcessEligibility.Ineligible(
-                DocumentCacheStatusReason.TargetReplaced,
-                "DocumentCache target context generation was replaced."
-            );
-        }
-
         if (runtimeObservation is null)
         {
             return DocumentCacheStatusProcessEligibility.Unknown(
@@ -515,14 +490,12 @@ public static class DocumentCacheStatusClassifier
     public static DocumentCacheStatusClassificationResult Classify(
         DocumentCacheTargetObservation targetObservation,
         DocumentCacheStatusRuntimeObservation? runtimeObservation,
-        DocumentCacheStatusDurableObservation? durableObservation,
-        DocumentCacheStatusProcessCurrentness currentness = DocumentCacheStatusProcessCurrentness.Current
+        DocumentCacheStatusDurableObservation? durableObservation
     )
     {
         DocumentCacheStatusProcessEligibility processEligibility = ClassifyProcessEligibility(
             targetObservation,
-            runtimeObservation,
-            currentness
+            runtimeObservation
         );
 
         if (!processEligibility.IsEligible)
@@ -994,14 +967,5 @@ public static class DocumentCacheStatusClassifier
     {
         string sanitized = DocumentCacheDiagnosticText.Sanitize(message);
         return string.IsNullOrWhiteSpace(sanitized) ? null : sanitized;
-    }
-
-    private static void RequireDefined<TEnum>(TEnum value, string parameterName)
-        where TEnum : struct, Enum
-    {
-        if (!Enum.IsDefined(value))
-        {
-            throw new ArgumentOutOfRangeException(parameterName, value, "Unsupported status value.");
-        }
     }
 }
