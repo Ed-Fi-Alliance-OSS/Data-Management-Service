@@ -295,7 +295,7 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
 
     internal static bool IsKafkaSecurityMaterialRenderedProperty(string propertyName)
     {
-        string? suffix = GeneratedKafkaSecurityPropertySuffix(propertyName);
+        string? suffix = GeneratedKafkaSecurityPropertySuffix(propertyName) ?? propertyName;
 
         return suffix
             is "ssl.truststore.location"

@@ -257,6 +257,60 @@ public class Given_CdcConnectorTemplateArtifacts
     }
 
     [Test]
+    public void It_preserves_and_redacts_multiline_kafka_certificate_chain_material()
+    {
+        const string truststoreCertificateChain =
+            "-----BEGIN CERTIFICATE-----\nMIIDTRUSTSTORE\n-----END CERTIFICATE-----";
+        const string keystoreCertificateChain =
+            "-----BEGIN CERTIFICATE-----\r\nMIIDKEYSTORE\r\n-----END CERTIFICATE-----";
+
+        CdcConnectorTemplateResult result = Render(
+            BuildRequest(
+                CdcProvider.Postgresql,
+                artifactOutput: new CdcConnectorTemplateArtifactOutputRequest(
+                    includeRedactedArtifactPayload: true
+                ),
+                kafkaSecurityProperties: new Dictionary<string, string>
+                {
+                    ["security.protocol"] = "SSL",
+                    ["ssl.truststore.certificates"] = truststoreCertificateChain,
+                    ["ssl.keystore.certificate.chain"] = keystoreCertificateChain,
+                }
+            )
+        );
+
+        result.RedactedArtifactPayload.Should().NotBeNull();
+        CdcConnectorTemplateArtifactPayload payload = result.RedactedArtifactPayload!;
+        using JsonDocument document = JsonDocument.Parse(payload.Json);
+        JsonElement redactedConfig = document.RootElement.GetProperty("redactedConfig");
+
+        using var _ = new AssertionScope();
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        result
+            .Config["producer.override.ssl.truststore.certificates"]
+            .Should()
+            .Be(truststoreCertificateChain);
+        result
+            .Config["producer.override.ssl.keystore.certificate.chain"]
+            .Should()
+            .Be(keystoreCertificateChain);
+        redactedConfig
+            .GetProperty("producer.override.ssl.truststore.certificates")
+            .GetString()
+            .Should()
+            .Be("[redacted]");
+        redactedConfig
+            .GetProperty("producer.override.ssl.keystore.certificate.chain")
+            .GetString()
+            .Should()
+            .Be("[redacted]");
+        payload.Json.Should().NotContain(truststoreCertificateChain);
+        payload.Json.Should().NotContain(keystoreCertificateChain);
+        payload.Json.Should().NotContain("MIIDTRUSTSTORE");
+        payload.Json.Should().NotContain("MIIDKEYSTORE");
+    }
+
+    [Test]
     public void It_keeps_artifact_output_optional()
     {
         CdcConnectorTemplateResult result = Render(

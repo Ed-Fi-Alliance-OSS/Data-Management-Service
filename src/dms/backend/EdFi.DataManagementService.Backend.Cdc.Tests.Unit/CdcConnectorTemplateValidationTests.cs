@@ -60,6 +60,71 @@ public class Given_CdcConnectorTemplateInputValidation
     }
 
     [Test]
+    public void It_accepts_multiline_kafka_certificate_chain_material()
+    {
+        const string truststoreCertificateChain =
+            "-----BEGIN CERTIFICATE-----\nMIIDTRUSTSTORE\n-----END CERTIFICATE-----";
+        const string keystoreCertificateChain =
+            "-----BEGIN CERTIFICATE-----\r\nMIIDKEYSTORE\r\n-----END CERTIFICATE-----";
+
+        CdcConnectorTemplateValidationResult result = Validate(
+            CdcProvider.Postgresql,
+            kafkaSecurityProperties: new Dictionary<string, string>
+            {
+                ["security.protocol"] = "SSL",
+                ["ssl.truststore.certificates"] = truststoreCertificateChain,
+                ["ssl.keystore.certificate.chain"] = keystoreCertificateChain,
+            }
+        );
+
+        using var _ = new AssertionScope();
+        result.IsValid.Should().BeTrue();
+        result.Diagnostics.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_rejects_control_characters_outside_kafka_certificate_chain_material()
+    {
+        const string multilineValue = "first line\nsecond line";
+
+        Action providerConnectionValue = () =>
+        {
+            var properties = new CdcProviderConnectionProperties(
+                CdcProvider.Postgresql,
+                new Dictionary<string, string> { ["database.hostname"] = multilineValue }
+            );
+            GC.KeepAlive(properties);
+        };
+        Action kafkaPropertyName = () =>
+        {
+            var properties = new CdcKafkaClientSecurityProperties(
+                new Dictionary<string, string> { ["ssl.protocol\n"] = "TLSv1.3" }
+            );
+            GC.KeepAlive(properties);
+        };
+        Action unrelatedKafkaSecurityValue = () =>
+        {
+            var properties = new CdcKafkaClientSecurityProperties(
+                new Dictionary<string, string> { ["ssl.protocol"] = multilineValue }
+            );
+            GC.KeepAlive(properties);
+        };
+        Action secretReferenceValue = () =>
+        {
+            var properties = new CdcKafkaClientSecurityProperties(
+                new Dictionary<string, string> { ["sasl.jaas.config"] = "${env:CDC\nPASSWORD}" }
+            );
+            GC.KeepAlive(properties);
+        };
+
+        using var _ = new AssertionScope();
+        providerConnectionValue.Should().Throw<ArgumentException>().WithMessage("*control characters*");
+        kafkaPropertyName.Should().Throw<ArgumentException>().WithMessage("*control characters*");
+        unrelatedKafkaSecurityValue.Should().Throw<ArgumentException>().WithMessage("*control characters*");
+        secretReferenceValue.Should().Throw<ArgumentException>().WithMessage("*control characters*");
+    }
+
+    [Test]
     public void It_accepts_allow_listed_sqlserver_driver_connection_properties()
     {
         CdcConnectorTemplateValidationResult result = Validate(
