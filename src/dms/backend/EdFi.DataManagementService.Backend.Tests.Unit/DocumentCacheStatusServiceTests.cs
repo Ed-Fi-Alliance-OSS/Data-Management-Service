@@ -196,7 +196,7 @@ public class Given_DocumentCacheStatusService
         DocumentCacheOperationalHealthStatus.Unknown,
         DocumentCacheCaughtUpStatus.Unknown
     )]
-    public async Task It_maps_lifecycle_read_failures_without_reporting_inventory_invalid(
+    public async Task It_maps_lifecycle_read_failures_when_no_higher_priority_process_failure_exists(
         DocumentCacheLifecycleReadStatus lifecycleReadStatus,
         DocumentCacheStatusReason expectedReason,
         DocumentCacheStatusEligibilityStatus expectedEligibilityStatus,
@@ -221,6 +221,40 @@ public class Given_DocumentCacheStatusService
         statusTarget.OperationalHealth.Status.Should().Be(expectedOperationalHealthStatus);
         statusTarget.OperationalHealth.Reason.Should().Be(expectedReason);
         statusTarget.CaughtUp.Status.Should().Be(expectedCaughtUpStatus);
+        statusTarget.CaughtUp.Reason.Should().Be(expectedReason);
+        statusTarget.Lifecycle.Availability.Should().Be(DocumentCacheStatusAvailability.Unavailable);
+        statusTarget.QueueSummary.Presence.Should().Be(DocumentCacheStatusQueuePresence.Unavailable);
+        statusTarget.DurableObservedAt.Should().BeNull();
+        observer.StartedKeys.Should().BeEmpty();
+    }
+
+    [TestCase(DocumentCacheStatusReason.InventoryInvalid)]
+    [TestCase(DocumentCacheStatusReason.EnqueueTriggerUnavailable)]
+    [TestCase(DocumentCacheStatusReason.SqlServerPrerequisiteFailed)]
+    [TestCase(DocumentCacheStatusReason.UnsupportedPrerequisiteIncident)]
+    public async Task It_maps_higher_priority_process_failures_before_lifecycle_read_failures(
+        DocumentCacheStatusReason expectedReason
+    )
+    {
+        DocumentCacheTargetObservation target = ResolvedLifecycleReadFailureTargetWithHigherPriorityFailure(
+            DocumentCacheTargetKey.Create("", 1),
+            expectedReason
+        );
+        ScriptedStatusObserver observer = new(Success);
+        DocumentCacheStatusService service = CreateService(
+            new StaticTargetRegistry([target], []),
+            observer: observer
+        );
+
+        DocumentCacheStatusTarget statusTarget = (await service.GetStatusAsync()).Targets.Single();
+
+        statusTarget.Eligibility.Status.Should().Be(DocumentCacheStatusEligibilityStatus.Ineligible);
+        statusTarget.Eligibility.Reason.Should().Be(expectedReason);
+        statusTarget
+            .OperationalHealth.Status.Should()
+            .Be(DocumentCacheOperationalHealthStatus.NonOperational);
+        statusTarget.OperationalHealth.Reason.Should().Be(expectedReason);
+        statusTarget.CaughtUp.Status.Should().Be(DocumentCacheCaughtUpStatus.NotCaughtUp);
         statusTarget.CaughtUp.Reason.Should().Be(expectedReason);
         statusTarget.Lifecycle.Availability.Should().Be(DocumentCacheStatusAvailability.Unavailable);
         statusTarget.QueueSummary.Presence.Should().Be(DocumentCacheStatusQueuePresence.Unavailable);
@@ -748,9 +782,9 @@ public class Given_DocumentCacheStatusService
         DocumentCacheLifecycleReadStatus lifecycleReadStatus
     )
     {
-        DocumentCacheInventoryValidationResult invalidInventory = new(
-            DocumentCacheInventoryStatus.Invalid,
-            "Inventory invalid."
+        DocumentCacheInventoryValidationResult inventory = new(
+            DocumentCacheInventoryStatus.Satisfied,
+            "Inventory satisfied."
         );
         DocumentCacheEnqueueTriggerValidationResult enqueueTrigger = new(
             DocumentCacheEnqueueTriggerStatus.Satisfied,
@@ -767,26 +801,12 @@ public class Given_DocumentCacheStatusService
                 Generation,
                 Fingerprint(targetKey.DataStoreId),
                 lifecycle: null,
-                inventory: invalidInventory,
+                inventory,
                 enqueueTrigger,
                 sqlServerPrerequisites: prerequisites,
                 retryState: null,
                 category: DocumentCacheTargetDiagnosticCategory.LifecycleObservationFailure,
                 message: "Lifecycle read failed."
-            ),
-            new(
-                targetKey,
-                DocumentCacheTargetResolutionState.Resolved,
-                RelationalProviderToken.Postgresql,
-                Generation,
-                Fingerprint(targetKey.DataStoreId),
-                lifecycle: null,
-                inventory: invalidInventory,
-                enqueueTrigger,
-                sqlServerPrerequisites: prerequisites,
-                retryState: null,
-                category: DocumentCacheTargetDiagnosticCategory.InventoryFailure,
-                message: "Inventory invalid."
             ),
         ];
 
@@ -797,12 +817,131 @@ public class Given_DocumentCacheStatusService
             RelationalProviderToken.Postgresql,
             Fingerprint(targetKey.DataStoreId),
             lifecycle: null,
-            inventory: invalidInventory,
+            inventory,
             enqueueTrigger,
             sqlServerPrerequisites: prerequisites,
             retryState: null,
             diagnostics,
             lifecycleReadStatus: lifecycleReadStatus
+        );
+    }
+
+    private static DocumentCacheTargetObservation ResolvedLifecycleReadFailureTargetWithHigherPriorityFailure(
+        DocumentCacheTargetKey targetKey,
+        DocumentCacheStatusReason higherPriorityReason
+    )
+    {
+        DocumentCacheInventoryValidationResult? inventory = new(
+            DocumentCacheInventoryStatus.Satisfied,
+            "Inventory satisfied."
+        );
+        DocumentCacheEnqueueTriggerValidationResult? enqueueTrigger = new(
+            DocumentCacheEnqueueTriggerStatus.Satisfied,
+            "Enqueue trigger satisfied."
+        );
+        DocumentCacheSqlServerPrerequisiteDetails? prerequisites =
+            DocumentCacheSqlServerPrerequisiteDetails.NotApplicable();
+        List<DocumentCacheTargetDiagnostic> diagnostics =
+        [
+            new(
+                targetKey,
+                DocumentCacheTargetResolutionState.Resolved,
+                RelationalProviderToken.Postgresql,
+                Generation,
+                Fingerprint(targetKey.DataStoreId),
+                lifecycle: null,
+                inventory,
+                enqueueTrigger,
+                sqlServerPrerequisites: prerequisites,
+                retryState: null,
+                category: DocumentCacheTargetDiagnosticCategory.LifecycleObservationFailure,
+                message: "Lifecycle read failed."
+            ),
+        ];
+
+        void AddHigherPriorityDiagnostic(DocumentCacheTargetDiagnosticCategory category, string message)
+        {
+            diagnostics.Add(
+                new(
+                    targetKey,
+                    DocumentCacheTargetResolutionState.Resolved,
+                    RelationalProviderToken.Postgresql,
+                    Generation,
+                    Fingerprint(targetKey.DataStoreId),
+                    lifecycle: null,
+                    inventory,
+                    enqueueTrigger,
+                    sqlServerPrerequisites: prerequisites,
+                    retryState: null,
+                    category,
+                    message
+                )
+            );
+        }
+
+        switch (higherPriorityReason)
+        {
+            case DocumentCacheStatusReason.InventoryInvalid:
+                inventory = new DocumentCacheInventoryValidationResult(
+                    DocumentCacheInventoryStatus.Invalid,
+                    "Inventory invalid."
+                );
+                AddHigherPriorityDiagnostic(
+                    DocumentCacheTargetDiagnosticCategory.InventoryFailure,
+                    "Inventory invalid."
+                );
+                break;
+            case DocumentCacheStatusReason.EnqueueTriggerUnavailable:
+                enqueueTrigger = new DocumentCacheEnqueueTriggerValidationResult(
+                    DocumentCacheEnqueueTriggerStatus.Disabled,
+                    "Enqueue trigger disabled."
+                );
+                AddHigherPriorityDiagnostic(
+                    DocumentCacheTargetDiagnosticCategory.EnqueueTriggerFailure,
+                    "Enqueue trigger disabled."
+                );
+                break;
+            case DocumentCacheStatusReason.SqlServerPrerequisiteFailed:
+                prerequisites = SqlServerPrerequisites(
+                    DocumentCacheProviderPrerequisiteStatus.Disabled,
+                    DocumentCacheProviderPrerequisiteStatus.Satisfied
+                );
+                AddHigherPriorityDiagnostic(
+                    DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed,
+                    "SQL Server prerequisite failed."
+                );
+                break;
+            case DocumentCacheStatusReason.UnsupportedPrerequisiteIncident:
+                prerequisites = SqlServerPrerequisites(
+                    DocumentCacheProviderPrerequisiteStatus.Unreadable,
+                    DocumentCacheProviderPrerequisiteStatus.Unreadable
+                );
+                AddHigherPriorityDiagnostic(
+                    DocumentCacheTargetDiagnosticCategory.UnsupportedPrerequisiteIncident,
+                    "SQL Server prerequisite incident."
+                );
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(higherPriorityReason),
+                    higherPriorityReason,
+                    "Unsupported higher-priority lifecycle failure case."
+                );
+        }
+
+        return DocumentCacheTargetObservation.ResolvedIneligible(
+            targetKey,
+            EffectiveSettings(),
+            Generation,
+            RelationalProviderToken.Postgresql,
+            Fingerprint(targetKey.DataStoreId),
+            lifecycle: null,
+            inventory,
+            enqueueTrigger,
+            sqlServerPrerequisites: prerequisites,
+            retryState: null,
+            diagnostics,
+            lifecycleReadStatus: DocumentCacheLifecycleReadStatus.Missing
         );
     }
 
@@ -842,6 +981,23 @@ public class Given_DocumentCacheStatusService
 
     private static DocumentCachePhysicalSourceFingerprint Fingerprint(long dataStoreId) =>
         new($"sha256:{dataStoreId:x64}");
+
+    private static DocumentCacheSqlServerPrerequisiteDetails SqlServerPrerequisites(
+        DocumentCacheProviderPrerequisiteStatus readCommittedSnapshotStatus,
+        DocumentCacheProviderPrerequisiteStatus nestedTriggersStatus
+    ) =>
+        new(
+            new DocumentCacheProviderPrerequisiteResult(
+                DocumentCacheProviderPrerequisiteName.ReadCommittedSnapshot,
+                readCommittedSnapshotStatus,
+                "Read committed snapshot."
+            ),
+            new DocumentCacheProviderPrerequisiteResult(
+                DocumentCacheProviderPrerequisiteName.NestedTriggers,
+                nestedTriggersStatus,
+                "Nested triggers."
+            )
+        );
 
     private static DocumentCacheTargetDiagnostic TargetDiagnostic(
         DocumentCacheTargetObservation target,

@@ -346,10 +346,6 @@ public static class DocumentCacheStatusClassifier
             DocumentCacheTargetDiagnosticCategory.ResourceKeyCompatibilityFailure,
             DocumentCacheStatusReason.ResourceKeyCompatibilityFailure
         ),
-        (
-            DocumentCacheTargetDiagnosticCategory.LifecycleObservationFailure,
-            DocumentCacheStatusReason.ProviderObservationFailed
-        ),
         (DocumentCacheTargetDiagnosticCategory.InventoryFailure, DocumentCacheStatusReason.InventoryInvalid),
         (
             DocumentCacheTargetDiagnosticCategory.EnqueueTriggerFailure,
@@ -402,15 +398,6 @@ public static class DocumentCacheStatusClassifier
             DocumentCacheTargetDiagnostic? diagnostic = LatestDiagnostic(targetObservation, category);
             if (diagnostic is not null)
             {
-                if (category == DocumentCacheTargetDiagnosticCategory.LifecycleObservationFailure)
-                {
-                    return SelectLifecycleObservationFailure(targetObservation, diagnostic)
-                        ?? DocumentCacheStatusProcessEligibility.Unknown(
-                            DocumentCacheStatusReason.ProviderObservationFailed,
-                            diagnostic.Message
-                        );
-                }
-
                 return DocumentCacheStatusProcessEligibility.Ineligible(reason, diagnostic.Message);
             }
         }
@@ -799,18 +786,6 @@ public static class DocumentCacheStatusClassifier
             );
         }
 
-        DocumentCacheStatusProcessEligibility? lifecycleFailure = SelectLifecycleObservationFailure(
-            targetObservation,
-            LatestDiagnostic(
-                targetObservation,
-                DocumentCacheTargetDiagnosticCategory.LifecycleObservationFailure
-            )
-        );
-        if (lifecycleFailure is not null)
-        {
-            return lifecycleFailure;
-        }
-
         if (targetObservation.Inventory is null)
         {
             return DocumentCacheStatusProcessEligibility.Ineligible(
@@ -849,6 +824,18 @@ public static class DocumentCacheStatusClassifier
         if (prerequisiteFailure is not null)
         {
             return prerequisiteFailure;
+        }
+
+        DocumentCacheStatusProcessEligibility? lifecycleFailure = SelectLifecycleObservationFailure(
+            targetObservation,
+            LatestDiagnostic(
+                targetObservation,
+                DocumentCacheTargetDiagnosticCategory.LifecycleObservationFailure
+            )
+        );
+        if (lifecycleFailure is not null)
+        {
+            return lifecycleFailure;
         }
 
         if (targetObservation.EligibilityState != DocumentCacheTargetEligibilityState.Eligible)
