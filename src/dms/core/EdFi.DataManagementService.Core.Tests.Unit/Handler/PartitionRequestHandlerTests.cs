@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Response;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -223,24 +224,37 @@ public class PartitionRequestHandlerTests
         // Matches the GET-many path: once retries are exhausted the client receives a generic system
         // error rather than a retryable status code.
         [Test]
-        public async Task It_maps_retryable_to_500()
+        public async Task It_maps_retryable_to_500_problem_json()
         {
             RequestInfo requestInfo = await Execute(
                 new Handler(new PartitionResult.PartitionFailureRetryable())
             );
 
             requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+            requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
         }
 
+        /// <summary>
+        /// The failure message names internal components and is written for diagnosis, so it is logged
+        /// rather than served: the client receives the same problem-details envelope every other
+        /// handler serves for a failure the backend could not classify.
+        /// </summary>
         [Test]
-        public async Task It_maps_unknown_to_500()
+        public async Task It_maps_unknown_to_500_problem_json_without_the_failure_message()
         {
             RequestInfo requestInfo = await Execute(
                 new Handler(new PartitionResult.UnknownPartitionFailure("boom"))
             );
 
             requestInfo.FrontendResponse.StatusCode.Should().Be(500);
-            requestInfo.FrontendResponse.Body!["error"]!.GetValue<string>().Should().Be("boom");
+            requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+
+            JsonNode body = requestInfo.FrontendResponse.Body!;
+            body.ToJsonString().Should().NotContain("boom");
+            JsonNode
+                .DeepEquals(body, FailureResponse.ForSystemError(requestInfo.FrontendRequest.TraceId))
+                .Should()
+                .BeTrue();
         }
     }
 
