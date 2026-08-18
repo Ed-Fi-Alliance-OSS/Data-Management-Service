@@ -141,6 +141,41 @@ public class Given_DocumentCacheStatusService
     }
 
     [Test]
+    public async Task It_preserves_target_diagnostic_event_observed_at_values()
+    {
+        DocumentCacheTargetObservation target = ResolvedTarget(DocumentCacheTargetKey.Create("", 1));
+        DocumentCacheProjectionObservationStore observationStore = ObservationStore(target);
+        DocumentCacheProjectionTargetContextKey contextKey = observationStore
+            .CurrentSnapshot.GetCurrentTarget(target.TargetKey)!
+            .ContextKey;
+        DateTimeOffset firstDiagnosticObservedAt = RuntimeObservedAt.AddSeconds(10);
+        DateTimeOffset secondDiagnosticObservedAt = RuntimeObservedAt.AddSeconds(20);
+        DocumentCacheStatusService service = CreateService(
+            new StaticTargetRegistry([target], [ExecutionContext(target)]),
+            observationStore,
+            new ScriptedStatusObserver(Success)
+        );
+
+        observationStore.AppendTargetDiagnostic(
+            contextKey,
+            TargetDiagnostic(target, DocumentCacheTargetDiagnosticCategory.ProviderMetadataMissing),
+            firstDiagnosticObservedAt
+        );
+        observationStore.AppendTargetDiagnostic(
+            contextKey,
+            TargetDiagnostic(target, DocumentCacheTargetDiagnosticCategory.CacheAheadLatchSet),
+            secondDiagnosticObservedAt
+        );
+
+        DocumentCacheStatusTarget statusTarget = (await service.GetStatusAsync()).Targets.Single();
+
+        statusTarget
+            .TargetDiagnostics.RecentEvents.Select(diagnostic => diagnostic.ObservedAt)
+            .Should()
+            .Equal(firstDiagnosticObservedAt, secondDiagnosticObservedAt);
+    }
+
+    [Test]
     public async Task It_serializes_per_target_observation_timeout_without_blocking_peer_targets()
     {
         DocumentCacheTargetObservation slowTarget = ResolvedTarget(
@@ -484,6 +519,25 @@ public class Given_DocumentCacheStatusService
 
     private static DocumentCachePhysicalSourceFingerprint Fingerprint(long dataStoreId) =>
         new($"sha256:{dataStoreId:x64}");
+
+    private static DocumentCacheTargetDiagnostic TargetDiagnostic(
+        DocumentCacheTargetObservation target,
+        DocumentCacheTargetDiagnosticCategory category
+    ) =>
+        new(
+            target.TargetKey,
+            DocumentCacheTargetResolutionState.Resolved,
+            target.ProviderToken,
+            target.Generation,
+            target.PhysicalSourceFingerprint,
+            target.Lifecycle,
+            target.Inventory,
+            target.EnqueueTrigger,
+            target.SqlServerPrerequisites,
+            retryState: null,
+            category,
+            $"Diagnostic {category}"
+        );
 
     private static Task<DocumentCacheStatusCurrentSourceObservationResult> Success(
         DocumentCacheStatusCurrentSourceObservationRequest request,

@@ -112,6 +112,47 @@ public class Given_DocumentCacheStatusMapping
     }
 
     [Test]
+    public async Task It_maps_target_diagnostic_event_observed_at_values()
+    {
+        DocumentCacheTargetObservation target = ResolvedTarget(generation: 3, pageSize: 10);
+        DocumentCacheProjectionObservationStore observationStore = new(
+            new FixedTimeProvider(ProcessObservedAt)
+        );
+        DocumentCacheProjectionTargetHealthSnapshot targetHealth = TargetHealth(target);
+        DateTimeOffset firstDiagnosticObservedAt = RuntimeObservedAt.AddSeconds(10);
+        DateTimeOffset secondDiagnosticObservedAt = RuntimeObservedAt.AddSeconds(20);
+
+        observationStore.ObserveTarget(targetHealth);
+        observationStore.AppendTargetDiagnostic(
+            targetHealth.ContextKey,
+            TargetDiagnostic(target, DocumentCacheTargetDiagnosticCategory.ProviderMetadataMissing),
+            firstDiagnosticObservedAt
+        );
+        observationStore.AppendTargetDiagnostic(
+            targetHealth.ContextKey,
+            TargetDiagnostic(target, DocumentCacheTargetDiagnosticCategory.CacheAheadLatchSet),
+            secondDiagnosticObservedAt
+        );
+        DocumentCacheStatusService service = CreateService(
+            new StaticTargetRegistry([target], [ExecutionContext(target)]),
+            observationStore
+        );
+
+        DocumentCacheStatusTarget statusTarget = (await service.GetStatusAsync()).Targets.Single();
+        JsonObject root = JsonNode.Parse(JsonSerializer.Serialize(statusTarget))!.AsObject();
+        JsonArray recentEvents = root["targetDiagnostics"]!["recentEvents"]!.AsArray();
+
+        statusTarget
+            .TargetDiagnostics.RecentEvents.Select(diagnostic => diagnostic.ObservedAt)
+            .Should()
+            .Equal(firstDiagnosticObservedAt, secondDiagnosticObservedAt);
+        recentEvents
+            .Select(diagnostic => diagnostic!["observedAt"]!.GetValue<string>())
+            .Should()
+            .Equal("2026-08-17T14:00:12Z", "2026-08-17T14:00:22Z");
+    }
+
+    [Test]
     public async Task It_maps_only_current_generation_commands_without_generation_fields()
     {
         DocumentCacheTargetObservation oldTarget = ResolvedTarget(generation: 1);

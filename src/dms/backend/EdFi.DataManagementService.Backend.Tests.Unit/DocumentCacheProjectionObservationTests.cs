@@ -323,6 +323,10 @@ public class Given_DocumentCacheProjectionObservationProvider
             TargetKey
         )!;
         current.TargetDiagnostics.Select(diagnostic => diagnostic.Message).Should().Equal("second", "third");
+        current
+            .TargetDiagnosticEvents.Select(diagnostic => diagnostic.ObservedAt)
+            .Should()
+            .Equal(ObservedAt.AddSeconds(2), ObservedAt.AddSeconds(3));
         current.TargetDiagnosticEvictionCount.Should().Be(1);
         current.FailureDiagnostics.DocumentIds.Should().Equal(401);
     }
@@ -384,6 +388,10 @@ public class Given_DocumentCacheProjectionObservationProvider
             TargetKey
         )!;
         current.TargetDiagnostics.Select(diagnostic => diagnostic.Message).Should().Equal("second", "third");
+        current
+            .TargetDiagnosticEvents.Select(diagnostic => diagnostic.ObservedAt)
+            .Should()
+            .Equal(ObservedAt.AddSeconds(2), ObservedAt.AddSeconds(3));
     }
 
     [Test]

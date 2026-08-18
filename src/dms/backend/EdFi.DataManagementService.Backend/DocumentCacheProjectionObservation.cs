@@ -33,7 +33,7 @@ using DocumentCacheNoncurrentTargetHealthSnapshots = System.Collections.Immutabl
 >;
 using DocumentCachePendingTargetDiagnostics = System.Collections.Immutable.ImmutableDictionary<
     EdFi.DataManagementService.Backend.DocumentCacheProjectionTargetContextKey,
-    System.Collections.Immutable.ImmutableArray<EdFi.DataManagementService.Core.DocumentCache.DocumentCacheTargetDiagnostic>
+    System.Collections.Immutable.ImmutableArray<EdFi.DataManagementService.Backend.DocumentCacheProjectionTargetDiagnosticEvent>
 >;
 
 namespace EdFi.DataManagementService.Backend;
@@ -409,6 +409,26 @@ public sealed record DocumentCacheProjectionLifecycleFenceSnapshot
     public string Message { get; }
 }
 
+public sealed record DocumentCacheProjectionTargetDiagnosticEvent
+{
+    public DocumentCacheProjectionTargetDiagnosticEvent(
+        DocumentCacheTargetDiagnostic diagnostic,
+        DateTimeOffset observedAt
+    )
+    {
+        Diagnostic = diagnostic ?? throw new ArgumentNullException(nameof(diagnostic));
+        ObservedAt = observedAt;
+    }
+
+    public DocumentCacheTargetDiagnostic Diagnostic { get; }
+
+    public DateTimeOffset ObservedAt { get; }
+
+    public DocumentCacheTargetDiagnosticCategory Category => Diagnostic.Category;
+
+    public string Message => Diagnostic.Message;
+}
+
 public sealed record DocumentCacheProjectionTargetHealthSnapshot
 {
     public DocumentCacheProjectionTargetHealthSnapshot(
@@ -429,7 +449,8 @@ public sealed record DocumentCacheProjectionTargetHealthSnapshot
         DocumentCacheAdministrativeCommand? activeAdministrativeCommand = null,
         DocumentCacheAdministrativeCommandPhase? activeAdministrativePhase = null,
         IEnumerable<DocumentCacheTargetDiagnostic>? targetDiagnostics = null,
-        long targetDiagnosticEvictionCount = 0
+        long targetDiagnosticEvictionCount = 0,
+        IEnumerable<DocumentCacheProjectionTargetDiagnosticEvent>? targetDiagnosticEvents = null
     )
     {
         EffectiveProjectorPageSize = DocumentCacheProjectionObservationGuard.RequirePositive(
@@ -450,6 +471,14 @@ public sealed record DocumentCacheProjectionTargetHealthSnapshot
         {
             throw new ArgumentException(
                 "Active administrative command observations require the command value."
+            );
+        }
+
+        if (targetDiagnostics is not null && targetDiagnosticEvents is not null)
+        {
+            throw new ArgumentException(
+                "Target diagnostics must be supplied either as diagnostics or timestamped events, not both.",
+                nameof(targetDiagnosticEvents)
             );
         }
 
@@ -480,17 +509,21 @@ public sealed record DocumentCacheProjectionTargetHealthSnapshot
             targetDiagnosticEvictionCount,
             nameof(targetDiagnosticEvictionCount)
         );
-        ImmutableArray<DocumentCacheTargetDiagnostic> targetDiagnosticItems = (
-            targetDiagnostics ?? []
-        ).ToImmutableArray();
+        ImmutableArray<DocumentCacheProjectionTargetDiagnosticEvent> targetDiagnosticItems =
+            targetDiagnosticEvents is not null
+                ? targetDiagnosticEvents.ToImmutableArray()
+                : ToTargetDiagnosticEvents(targetDiagnostics, observedAt);
         TargetDiagnosticEvictionCount += Math.Max(
             0,
             targetDiagnosticItems.Length - EffectiveProjectorPageSize
         );
-        TargetDiagnostics = DocumentCacheProjectionObservationBounds.CapLatest(
+        TargetDiagnosticEvents = DocumentCacheProjectionObservationBounds.CapLatest(
             targetDiagnosticItems,
             EffectiveProjectorPageSize
         );
+        TargetDiagnostics = TargetDiagnosticEvents
+            .Select(diagnostic => diagnostic.Diagnostic)
+            .ToImmutableArray();
     }
 
     public DocumentCacheProjectionTargetContextKey ContextKey { get; }
@@ -531,8 +564,10 @@ public sealed record DocumentCacheProjectionTargetHealthSnapshot
 
     public ImmutableArray<DocumentCacheTargetDiagnostic> TargetDiagnostics { get; }
 
+    public ImmutableArray<DocumentCacheProjectionTargetDiagnosticEvent> TargetDiagnosticEvents { get; }
+
     internal DocumentCacheProjectionTargetHealthSnapshot WithTargetDiagnostics(
-        IEnumerable<DocumentCacheTargetDiagnostic> targetDiagnostics,
+        IEnumerable<DocumentCacheProjectionTargetDiagnosticEvent> targetDiagnostics,
         DateTimeOffset observedAt,
         long? targetDiagnosticEvictionCount = null
     ) =>
@@ -553,9 +588,18 @@ public sealed record DocumentCacheProjectionTargetHealthSnapshot
             activeCommandExecutionId: ActiveCommandExecutionId,
             activeAdministrativeCommand: ActiveAdministrativeCommand,
             activeAdministrativePhase: ActiveAdministrativePhase,
-            targetDiagnostics: targetDiagnostics,
-            targetDiagnosticEvictionCount: targetDiagnosticEvictionCount ?? TargetDiagnosticEvictionCount
+            targetDiagnostics: null,
+            targetDiagnosticEvictionCount: targetDiagnosticEvictionCount ?? TargetDiagnosticEvictionCount,
+            targetDiagnosticEvents: targetDiagnostics
         );
+
+    private static ImmutableArray<DocumentCacheProjectionTargetDiagnosticEvent> ToTargetDiagnosticEvents(
+        IEnumerable<DocumentCacheTargetDiagnostic>? targetDiagnostics,
+        DateTimeOffset observedAt
+    ) =>
+        (targetDiagnostics ?? [])
+            .Select(diagnostic => new DocumentCacheProjectionTargetDiagnosticEvent(diagnostic, observedAt))
+            .ToImmutableArray();
 
     private static DocumentCacheProjectionPoisonTraversalSnapshot EnsureMatchingPageSize(
         DocumentCacheProjectionPoisonTraversalSnapshot snapshot,
@@ -1195,6 +1239,7 @@ public sealed class DocumentCacheProjectionObservationStore
 
         DocumentCacheProjectionTargetHealthSnapshot? snapshotToRecord = null;
         DateTimeOffset diagnosticObservedAt = observedAt ?? _timeProvider.GetUtcNow();
+        DocumentCacheProjectionTargetDiagnosticEvent diagnosticEvent = new(diagnostic, diagnosticObservedAt);
 
         lock (_sync)
         {
@@ -1205,7 +1250,11 @@ public sealed class DocumentCacheProjectionObservationStore
 
             if (currentSnapshot is not null && currentSnapshot.Generation == contextKey.Generation)
             {
-                snapshotToRecord = AppendTargetDiagnostic(currentSnapshot, diagnostic, diagnosticObservedAt);
+                snapshotToRecord = AppendTargetDiagnostic(
+                    currentSnapshot,
+                    diagnosticEvent,
+                    diagnosticObservedAt
+                );
                 _currentTargets = _currentTargets.SetItem(contextKey.TargetKey, snapshotToRecord);
             }
             else if (
@@ -1217,22 +1266,23 @@ public sealed class DocumentCacheProjectionObservationStore
             {
                 _noncurrentTargets = _noncurrentTargets.SetItem(
                     contextKey,
-                    AppendTargetDiagnostic(noncurrentSnapshot, diagnostic, diagnosticObservedAt)
+                    AppendTargetDiagnostic(noncurrentSnapshot, diagnosticEvent, diagnosticObservedAt)
                 );
             }
             else if (!hasCurrentTarget)
             {
                 bool hasPendingDiagnostics = _pendingTargetDiagnostics.TryGetValue(
                     contextKey,
-                    out ImmutableArray<DocumentCacheTargetDiagnostic> existingDiagnostics
+                    out ImmutableArray<DocumentCacheProjectionTargetDiagnosticEvent> existingDiagnostics
                 );
 
-                ImmutableArray<DocumentCacheTargetDiagnostic> pendingDiagnostics = hasPendingDiagnostics
-                    ? DocumentCacheProjectionObservationBounds.CapLatest(
-                        existingDiagnostics.Add(diagnostic),
-                        _pendingTargetDiagnosticLimit
-                    )
-                    : [diagnostic];
+                ImmutableArray<DocumentCacheProjectionTargetDiagnosticEvent> pendingDiagnostics =
+                    hasPendingDiagnostics
+                        ? DocumentCacheProjectionObservationBounds.CapLatest(
+                            existingDiagnostics.Add(diagnosticEvent),
+                            _pendingTargetDiagnosticLimit
+                        )
+                        : [diagnosticEvent];
 
                 if (hasPendingDiagnostics && existingDiagnostics.Length >= _pendingTargetDiagnosticLimit)
                 {
@@ -1509,7 +1559,7 @@ public sealed class DocumentCacheProjectionObservationStore
         if (
             !_pendingTargetDiagnostics.TryGetValue(
                 snapshot.ContextKey,
-                out ImmutableArray<DocumentCacheTargetDiagnostic> pendingDiagnostics
+                out ImmutableArray<DocumentCacheProjectionTargetDiagnosticEvent> pendingDiagnostics
             )
         )
         {
@@ -1534,7 +1584,7 @@ public sealed class DocumentCacheProjectionObservationStore
                 snapshot.TargetDiagnosticEvictionCount + pendingEvictionCount
             )
             : snapshot.WithTargetDiagnostics(
-                [.. pendingDiagnostics, .. snapshot.TargetDiagnostics],
+                [.. pendingDiagnostics, .. snapshot.TargetDiagnosticEvents],
                 snapshot.ObservedAt,
                 snapshot.TargetDiagnosticEvictionCount + pendingEvictionCount
             );
@@ -1572,7 +1622,7 @@ public sealed class DocumentCacheProjectionObservationStore
         if (incomingSnapshot.TargetDiagnostics.IsEmpty)
         {
             return incomingSnapshot.WithTargetDiagnostics(
-                existingSnapshot.TargetDiagnostics,
+                existingSnapshot.TargetDiagnosticEvents,
                 incomingSnapshot.ObservedAt,
                 existingSnapshot.TargetDiagnosticEvictionCount
                     + incomingSnapshot.TargetDiagnosticEvictionCount
@@ -1580,7 +1630,7 @@ public sealed class DocumentCacheProjectionObservationStore
         }
 
         return incomingSnapshot.WithTargetDiagnostics(
-            [.. existingSnapshot.TargetDiagnostics, .. incomingSnapshot.TargetDiagnostics],
+            [.. existingSnapshot.TargetDiagnosticEvents, .. incomingSnapshot.TargetDiagnosticEvents],
             incomingSnapshot.ObservedAt,
             existingSnapshot.TargetDiagnosticEvictionCount + incomingSnapshot.TargetDiagnosticEvictionCount
         );
@@ -1588,9 +1638,9 @@ public sealed class DocumentCacheProjectionObservationStore
 
     private static DocumentCacheProjectionTargetHealthSnapshot AppendTargetDiagnostic(
         DocumentCacheProjectionTargetHealthSnapshot snapshot,
-        DocumentCacheTargetDiagnostic diagnostic,
+        DocumentCacheProjectionTargetDiagnosticEvent diagnostic,
         DateTimeOffset observedAt
-    ) => snapshot.WithTargetDiagnostics([.. snapshot.TargetDiagnostics, diagnostic], observedAt);
+    ) => snapshot.WithTargetDiagnostics([.. snapshot.TargetDiagnosticEvents, diagnostic], observedAt);
 }
 
 internal static class DocumentCacheProjectionObservationBounds

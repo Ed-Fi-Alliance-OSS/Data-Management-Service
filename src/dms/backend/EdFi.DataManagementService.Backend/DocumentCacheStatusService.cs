@@ -991,8 +991,8 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             ? new()
             : new(
                 targetHealth
-                    .TargetDiagnostics.Select(diagnostic => new DocumentCacheStatusTargetDiagnosticEvent(
-                        targetHealth.ObservedAt,
+                    .TargetDiagnosticEvents.Select(diagnostic => new DocumentCacheStatusTargetDiagnosticEvent(
+                        diagnostic.ObservedAt,
                         ToTargetDiagnosticCategory(diagnostic.Category),
                         diagnostic.Message
                     ))
