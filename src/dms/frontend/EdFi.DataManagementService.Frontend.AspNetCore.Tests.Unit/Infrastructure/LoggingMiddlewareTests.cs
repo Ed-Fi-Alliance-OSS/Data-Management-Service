@@ -478,7 +478,7 @@ public class Given_LoggingMiddleware
 
         await invoke.Should().ThrowAsync<InvalidOperationException>();
 
-        var truncated = new string('a', 255);
+        var truncated = new string('a', AppSettings.DefaultCorrelationIdMaxLength);
         var body = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(responseBody.ToArray()));
         (body?["traceId"]?.GetValue<string>()).Should().Be(truncated);
 
