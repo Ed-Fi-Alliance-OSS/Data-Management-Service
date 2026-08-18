@@ -100,6 +100,7 @@ public static class CdcConnectorTemplateDiagnosticCodes
         "CDC_TEMPLATE_SQLSERVER_CAPTURE_INSTANCE_METADATA_REQUIRED";
     public const string SourceTableInventoryMismatch = "CDC_TEMPLATE_SOURCE_TABLE_INVENTORY_MISMATCH";
     public const string SourceColumnInventoryMismatch = "CDC_TEMPLATE_SOURCE_COLUMN_INVENTORY_MISMATCH";
+    public const string SqlServerPollIntervalRequired = "CDC_TEMPLATE_SQLSERVER_POLL_INTERVAL_REQUIRED";
     public const string SqlServerPollIntervalExceedsHeartbeatInterval =
         "CDC_TEMPLATE_SQLSERVER_POLL_INTERVAL_EXCEEDS_HEARTBEAT_INTERVAL";
     public const string LiveReadBackProviderSetupMismatch =
@@ -563,6 +564,18 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
     {
         if (request.DeploymentPolicy.SqlServerPollInterval is null)
         {
+            diagnostics.Add(
+                BuildDiagnostic(
+                    CdcConnectorTemplateDiagnosticCodes.SqlServerPollIntervalRequired,
+                    CdcConnectorTemplateDiagnosticCategory.Heartbeat,
+                    "poll.interval.ms",
+                    "positive SQL Server poll interval",
+                    null,
+                    request,
+                    sourcePhase,
+                    CdcConnectorTemplateRedactionClassification.Safe
+                )
+            );
             return;
         }
 

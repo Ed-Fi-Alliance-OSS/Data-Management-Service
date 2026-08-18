@@ -200,13 +200,9 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
         );
         config["time.precision.mode"] = "isostring";
         config["unavailable.value.placeholder"] = "__debezium_unavailable_value";
-
-        if (request.DeploymentPolicy.SqlServerPollInterval is not null)
-        {
-            config["poll.interval.ms"] = CdcConnectorTemplateSharedRules
-                .PollIntervalMilliseconds(request)
-                .ToString();
-        }
+        config["poll.interval.ms"] = CdcConnectorTemplateSharedRules
+            .PollIntervalMilliseconds(request)
+            .ToString();
 
         config["schema.history.internal.kafka.bootstrap.servers"] = request
             .DeploymentPolicy

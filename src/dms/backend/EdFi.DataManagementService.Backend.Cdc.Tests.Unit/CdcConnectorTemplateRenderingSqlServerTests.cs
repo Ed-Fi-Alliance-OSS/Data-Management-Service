@@ -400,6 +400,38 @@ public class Given_CdcConnectorTemplateSqlServerRendering
     }
 
     [Test]
+    public void It_rejects_missing_poll_interval_before_rendering()
+    {
+        CdcConnectorTemplateResult result = Render(
+            BuildRequest(
+                CdcProvider.SqlServer,
+                deploymentPolicy: new CdcConnectorTemplateDeploymentPolicy(
+                    "broker:9092",
+                    maxRecordBytes: 1_048_576,
+                    heartbeatInterval: TimeSpan.FromSeconds(5)
+                )
+            )
+        );
+
+        CdcConnectorTemplateDiagnostic diagnostic = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SqlServerPollIntervalRequired
+            )
+            .Subject;
+
+        using var _ = new AssertionScope();
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        result.Config.Should().BeEmpty();
+        result.RegistrationPayload.Should().BeNull();
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.Heartbeat);
+        diagnostic.PropertyName.Should().Be("poll.interval.ms");
+        diagnostic.ExpectedValue.Should().Be("positive SQL Server poll interval");
+        diagnostic.ObservedValue.Should().BeNull();
+        diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.Rendering);
+    }
+
+    [Test]
     public void It_rejects_poll_intervals_that_exceed_the_heartbeat_interval()
     {
         CdcConnectorTemplateResult result = Render(

@@ -836,6 +836,36 @@ public class Given_CdcConnectorTemplateInputValidation
     }
 
     [Test]
+    public void It_rejects_missing_sqlserver_poll_interval_during_public_request_validation()
+    {
+        CdcConnectorTemplateValidationResult result = Validate(
+            BuildRequest(
+                CdcProvider.SqlServer,
+                deploymentPolicy: new CdcConnectorTemplateDeploymentPolicy(
+                    "broker:9092",
+                    maxRecordBytes: 1_048_576,
+                    heartbeatInterval: TimeSpan.FromSeconds(5)
+                )
+            )
+        );
+
+        CdcConnectorTemplateDiagnostic diagnostic = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SqlServerPollIntervalRequired
+            )
+            .Subject;
+
+        using var _ = new AssertionScope();
+        result.IsValid.Should().BeFalse();
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.Heartbeat);
+        diagnostic.PropertyName.Should().Be("poll.interval.ms");
+        diagnostic.ExpectedValue.Should().Be("positive SQL Server poll interval");
+        diagnostic.ObservedValue.Should().BeNull();
+        diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.RequestValidation);
+    }
+
+    [Test]
     public void It_rejects_sqlserver_poll_interval_greater_than_heartbeat_during_public_request_validation()
     {
         CdcConnectorTemplateValidationResult result = Validate(

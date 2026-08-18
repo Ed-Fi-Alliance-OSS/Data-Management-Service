@@ -155,7 +155,8 @@ public class Given_CdcConnectorTemplateCommonRendering
                     "broker:9092",
                     maxRecordBytes: 1_048_576,
                     producerBufferBytes: 67_108_864,
-                    heartbeatInterval: TimeSpan.FromSeconds(12)
+                    heartbeatInterval: TimeSpan.FromSeconds(12),
+                    sqlServerPollInterval: TimeSpan.FromSeconds(3)
                 ),
                 new Dictionary<string, string>
                 {
@@ -177,6 +178,7 @@ public class Given_CdcConnectorTemplateCommonRendering
         result.Config.Should().Contain("transforms.documentState.provider", "sqlserver");
         result.Config.Should().Contain("producer.override.buffer.memory", "67108864");
         result.Config.Should().Contain("heartbeat.interval.ms", "12000");
+        result.Config.Should().Contain("poll.interval.ms", "3000");
         result.Config.Should().Contain("database.names", "edfi_datastore");
         result.Config.Should().Contain("producer.override.security.protocol", "SSL");
     }

@@ -81,8 +81,7 @@ internal static class CdcConnectorTemplateTestData
         return new CdcConnectorTemplateRequest(
             bindingIdentity,
             new CdcConnectorProviderSetupEvidence(providerSetupBindingGeneration, providerSetupResult),
-            deploymentPolicy
-                ?? new CdcConnectorTemplateDeploymentPolicy("broker:9092", maxRecordBytes: 1_048_576),
+            deploymentPolicy ?? BuildDeploymentPolicy(providerSetupResult.Provider),
             providerConnectionProperties ?? CdcProviderConnectionProperties.Empty(bindingIdentity.Provider),
             kafkaClientSecurityProperties ?? CdcKafkaClientSecurityProperties.Empty,
             artifactOutput
