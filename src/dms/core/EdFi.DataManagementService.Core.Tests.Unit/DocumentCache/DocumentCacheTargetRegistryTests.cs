@@ -386,6 +386,31 @@ public class DocumentCacheTargetRegistryTests
         }
 
         [Test]
+        public async Task It_exposes_a_status_snapshot_with_matching_observation_and_runtime_context()
+        {
+            RegistryFixture fixture = new(Targets: [("TenantA", 7)]);
+            fixture.DataStoreProvider.QueueLoadResult("TenantA", CreateDataStore(7, "connection-a"));
+
+            await fixture.Registry.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+
+            DocumentCacheTargetStatusSnapshot statusSnapshot = fixture.Registry.CurrentStatusSnapshot;
+
+            DocumentCacheTargetObservation observation = statusSnapshot
+                .Targets.Should()
+                .ContainSingle()
+                .Which;
+            DocumentCacheTargetExecutionContext executionContext = statusSnapshot.GetExecutionContext(
+                observation.TargetKey,
+                observation.Generation!
+            )!;
+            executionContext.Should().NotBeNull();
+            executionContext.Generation.Should().Be(observation.Generation);
+            executionContext.TargetKey.Should().Be(observation.TargetKey);
+            executionContext.ConnectionInput.Value.Should().Be("connection-a");
+            statusSnapshot.RegistryObservedAt.Should().Be(fixture.TimeProvider.GetUtcNow());
+        }
+
+        [Test]
         public async Task It_builds_a_generation_from_the_same_resolved_data_store_used_for_the_signature()
         {
             RegistryWithRealBuilderFixture fixture = new(Targets: [("TenantA", 7)]);

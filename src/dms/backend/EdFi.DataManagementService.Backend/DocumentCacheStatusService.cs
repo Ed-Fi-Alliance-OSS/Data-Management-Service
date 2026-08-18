@@ -70,8 +70,9 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        DocumentCacheTargetRegistrySnapshot registrySnapshot = _targetRegistry.CurrentSnapshot;
-        DocumentCacheTargetRuntimeSnapshot runtimeSnapshot = _targetRegistry.CurrentRuntimeSnapshot;
+        DocumentCacheTargetStatusSnapshot statusSnapshot = _targetRegistry.CurrentStatusSnapshot;
+        DocumentCacheTargetRegistrySnapshot registrySnapshot = statusSnapshot.RegistrySnapshot;
+        DocumentCacheTargetRuntimeSnapshot runtimeSnapshot = statusSnapshot.RuntimeSnapshot;
         DocumentCacheProjectionObservationSnapshot projectionSnapshot =
             _projectionObservationProvider.CurrentSnapshot;
         DateTimeOffset observedAt = _timeProvider.GetUtcNow();

@@ -77,6 +77,41 @@ public class Given_DocumentCacheStatusService
     }
 
     [Test]
+    public async Task It_uses_the_coherent_registry_status_snapshot_for_runtime_context_lookup()
+    {
+        DocumentCacheTargetKey targetKey = DocumentCacheTargetKey.Create("", 1);
+        DocumentCacheTargetObservation statusSnapshotTarget = ResolvedTarget(
+            targetKey,
+            generation: new DocumentCacheTargetContextGeneration(3)
+        );
+        DocumentCacheTargetObservation replacementGeneration = ResolvedTarget(
+            targetKey,
+            generation: new DocumentCacheTargetContextGeneration(4)
+        );
+        StatusSnapshotTargetRegistry registry = new(
+            statusSnapshotTarget,
+            ExecutionContext(statusSnapshotTarget),
+            ExecutionContext(replacementGeneration)
+        );
+        ScriptedStatusObserver observer = new(Success);
+        DocumentCacheStatusService service = CreateService(
+            registry,
+            ObservationStore(statusSnapshotTarget),
+            observer
+        );
+
+        DocumentCacheStatusTarget statusTarget = (await service.GetStatusAsync()).Targets.Single();
+
+        statusTarget.TargetGeneration.Should().Be(3);
+        statusTarget.OperationalHealth.Status.Should().Be(DocumentCacheOperationalHealthStatus.Operational);
+        statusTarget.DurableObservedAt.Should().Be(DurableObservedAt);
+        observer.StartedKeys.Should().ContainSingle(key => key.Equals(targetKey));
+        registry.StatusSnapshotAccessCount.Should().Be(1);
+        registry.CurrentSnapshotAccessCount.Should().Be(0);
+        registry.CurrentRuntimeSnapshotAccessCount.Should().Be(0);
+    }
+
+    [Test]
     public async Task It_skips_provider_observation_for_process_ineligible_targets()
     {
         DocumentCacheTargetObservation target = ResolvedTarget(DocumentCacheTargetKey.Create("", 1));
@@ -550,7 +585,7 @@ public class Given_DocumentCacheStatusService
     }
 
     private static DocumentCacheStatusService CreateService(
-        StaticTargetRegistry registry,
+        IDocumentCacheTargetRegistry registry,
         DocumentCacheProjectionObservationStore? observationStore = null,
         ScriptedStatusObserver? observer = null,
         IDocumentCacheStatusTelemetry? statusTelemetry = null,
@@ -605,14 +640,15 @@ public class Given_DocumentCacheStatusService
 
     private static DocumentCacheTargetObservation ResolvedTarget(
         DocumentCacheTargetKey targetKey,
-        DocumentCacheTargetEffectiveSettings? effectiveSettings = null
+        DocumentCacheTargetEffectiveSettings? effectiveSettings = null,
+        DocumentCacheTargetContextGeneration? generation = null
     )
     {
         DocumentCacheTargetEffectiveSettings settings = effectiveSettings ?? EffectiveSettings();
         return DocumentCacheTargetObservation.ResolvedEligible(
             targetKey,
             settings,
-            Generation,
+            generation ?? Generation,
             RelationalProviderToken.Postgresql,
             Fingerprint(targetKey.DataStoreId),
             new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false),
@@ -777,6 +813,60 @@ public class Given_DocumentCacheStatusService
             RefreshCallCount++;
             throw new InvalidOperationException("Status service must not refresh DocumentCache targets.");
         }
+    }
+
+    private sealed class StatusSnapshotTargetRegistry(
+        DocumentCacheTargetObservation statusSnapshotTarget,
+        DocumentCacheTargetExecutionContext statusSnapshotExecutionContext,
+        DocumentCacheTargetExecutionContext currentRuntimeExecutionContext
+    ) : IDocumentCacheTargetRegistry
+    {
+        public int CurrentSnapshotAccessCount { get; private set; }
+
+        public int CurrentRuntimeSnapshotAccessCount { get; private set; }
+
+        public int StatusSnapshotAccessCount { get; private set; }
+
+        public DocumentCacheTargetRegistrySnapshot CurrentSnapshot
+        {
+            get
+            {
+                CurrentSnapshotAccessCount++;
+                return new DocumentCacheTargetRegistrySnapshot([statusSnapshotTarget], RegistryObservedAt);
+            }
+        }
+
+        public DocumentCacheTargetRuntimeSnapshot CurrentRuntimeSnapshot
+        {
+            get
+            {
+                CurrentRuntimeSnapshotAccessCount++;
+                return new DocumentCacheTargetRuntimeSnapshot(
+                    [currentRuntimeExecutionContext],
+                    RegistryObservedAt
+                );
+            }
+        }
+
+        public DocumentCacheTargetStatusSnapshot CurrentStatusSnapshot
+        {
+            get
+            {
+                StatusSnapshotAccessCount++;
+                return new DocumentCacheTargetStatusSnapshot(
+                    new DocumentCacheTargetRegistrySnapshot([statusSnapshotTarget], RegistryObservedAt),
+                    new DocumentCacheTargetRuntimeSnapshot(
+                        [statusSnapshotExecutionContext],
+                        RegistryObservedAt
+                    )
+                );
+            }
+        }
+
+        public Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
+            DocumentCacheTargetRefreshReason reason,
+            CancellationToken cancellationToken = default
+        ) => throw new InvalidOperationException("Status service must not refresh DocumentCache targets.");
     }
 
     private sealed class ScriptedStatusObserver(
