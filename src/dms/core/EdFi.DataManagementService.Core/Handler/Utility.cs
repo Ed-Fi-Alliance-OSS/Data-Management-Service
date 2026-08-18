@@ -45,6 +45,26 @@ public static class Utility
                 or UpsertResult.UpsertFailureWriteConflict;
 
     /// <summary>
+    /// Returns true if the given result represents an unknown backend or system failure. This is the
+    /// single source of truth for the circuit-breaker predicate used by the resilience pipeline.
+    /// </summary>
+    /// <remarks>
+    /// Extracted alongside <see cref="IsRetryableResult" /> so the two predicates guarding the same
+    /// pipeline are declared the same way and are equally testable. Held here rather than inline at the
+    /// composition site because an operation that adds a result type has to extend both, and a
+    /// classification that only exists inside a pipeline builder cannot be asserted without building
+    /// the pipeline.
+    /// </remarks>
+    internal static bool IsUnknownFailureResult(object result) =>
+        result
+            is DeleteResult.UnknownFailure
+                or GetResult.UnknownFailure
+                or PartitionResult.UnknownPartitionFailure
+                or QueryResult.UnknownFailure
+                or UpdateResult.UnknownFailure
+                or UpsertResult.UnknownFailure;
+
+    /// <summary>
     /// Creates the OnRetry callback used by the deadlock retry policy.
     /// Extracted so the production pipeline and tests share the same implementation.
     /// </summary>

@@ -74,7 +74,12 @@ rule it governs.
 3. **No extra roundtrip.** A cursor page MUST use the existing single-command page-keyset
    hydration architecture and add no database command, transaction, or roundtrip.
 4. **One command for `/partitions`.** The partition endpoint MUST perform exactly one database
-   command, return identifiers only, and hydrate nothing.
+   command for its boundary selection, return identifiers only, and hydrate nothing. Where a
+   view-based authorization strategy is configured, the pre-existing custom-view validation probe
+   runs first, exactly as it does for GET-many. That probe is authorization validation rather than
+   boundary retrieval, and keeping it separate is what preserves the configured check ordering: a
+   view that may be validated only after an earlier check has passed cannot be co-batched behind
+   that check without letting a relation masquerading as the view answer the membership SQL.
 5. **Authorization parity.** Cursor pages and partition boundaries MUST be computed over the same
    filtered, authorized candidate set. A forged or hand-edited range MUST NOT expose an
    inaccessible identifier.
@@ -598,8 +603,8 @@ The database returns starting ids only. Backend code converts each non-final sta
 range `start..nextStart-1` and the final start to `start..Int64.MaxValue`; Core token-encodes those
 typed ranges.
 
-The endpoint performs one database command and does not hydrate documents, project profiles,
-resolve descriptors, inject links, or return a total count.
+The endpoint performs one database command for its boundary selection and does not hydrate
+documents, project profiles, resolve descriptors, inject links, or return a total count.
 
 **The linear cost is deliberate.** The partition query is `O(n)` over accessible candidates. That
 cost is paid once, per client, to enable an arbitrary number of subsequent depth-insensitive range
@@ -781,7 +786,9 @@ violates one of these has not implemented this design.
   hydration batches are the explicit exceptions.
 - Cursor hydration performs one database command and adds no roundtrip over the existing
   single-command page-keyset architecture.
-- `/partitions` performs one database command and returns identifiers only.
+- `/partitions` performs one database command for its boundary selection and returns identifiers
+  only. The separate custom-view validation probe described in the requirement above is the explicit
+  exception, and it is present only where a view-based authorization strategy is configured.
 
 ### Latency invariants
 
