@@ -33,8 +33,6 @@ The spike reviewed:
 - template selection, tenant isolation, authorization, retries, crash recovery, failure reporting, and observability;
 - how a successfully managed data store enters the existing CMS catalog and becomes discoverable by DMS.
 
-The spike does not design Admin API changes, implement CMS/DMS code, run tests, or create Jira issues.
-
 ## Sources used
 
 ### Governing sources
