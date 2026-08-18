@@ -524,16 +524,11 @@ jobs:
             throw "Build artifact carries a companion attestation package but no attestation document; refusing to publish an inconsistent artifact."
           }
 
-          $arguments = @{
-            EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
-          }
-
           @($companionPackages) + @($templatePackages) | ForEach-Object {
-              $arguments.PackageFile = $_
+              Write-Host "Pushing $_ to ${{ env.ARTIFACTS_FEED_URL }}"
               $global:LASTEXITCODE = 0
-              ./build-dms.ps1 Push @arguments
-              if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+              dotnet nuget push $_ --api-key "${{ env.ARTIFACTS_API_KEY }}" --source "${{ env.ARTIFACTS_FEED_URL }}" --skip-duplicate
+              if ($LASTEXITCODE -ne 0) {
                 throw "Package push failed for '$_' with exit code $LASTEXITCODE."
               }
            }
@@ -551,16 +546,41 @@ jobs:
 
       - name: Promote Minimal Template Azure Package
         run: |
+          Import-Module ./package-helpers.psm1
+
+          $releaseVersion = "${{ github.ref_name }}" -replace "v", ""
+          $companionPackageName = "${{ inputs.package_name }}.Attestation"
+          $credential = New-Object -TypeName PSCredential -ArgumentList "${{ env.ARTIFACTS_USERNAME }}", (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
+
+          # Promotion coupling mirrors publication: when the companion attestation package
+          # exists at this version (attested-era release), it promotes FIRST so the template
+          # cannot reach the release view without it. A 404 means an unattested-era release:
+          # the template still promotes and restore consumers refuse it (fail-closed). Any
+          # other probe outcome is fatal rather than guessed at.
+          $probeUri = "${{ env.ARTIFACTS_PACKAGES_URL }}/nuget/packages/$companionPackageName/versions/${releaseVersion}?api-version=5.0-preview.1"
+          $probeResponse = Invoke-WebRequest -Uri $probeUri -Method Get -Credential $credential -SkipHttpErrorCheck
+          $promoteCompanion = $probeResponse.StatusCode -eq 200
+          if (-not $promoteCompanion -and $probeResponse.StatusCode -ne 404) {
+            throw "Companion attestation package probe failed with HTTP $($probeResponse.StatusCode) for $companionPackageName@$releaseVersion."
+          }
+          if (-not $promoteCompanion) {
+            Write-Host "::notice title=Unattested-era release::Companion attestation package $companionPackageName@$releaseVersion is not on the feed; promoting the template package only. Restore consumers refuse unattested packages (fail-closed)."
+          }
+
           $arguments = @{
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
             Username    = "${{ env.ARTIFACTS_USERNAME }}"
             ViewId      = "release"
             ReleaseRef  = "${{ github.ref_name }}"
             Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
-            PackageName = "${{ inputs.package_name }}"
           }
 
-          Import-Module ./package-helpers.psm1
+          if ($promoteCompanion) {
+            $arguments.PackageName = $companionPackageName
+            Invoke-Promote @arguments
+          }
+
+          $arguments.PackageName = "${{ inputs.package_name }}"
           Invoke-Promote @arguments
 
   attach-sbom-and-provenance-to-release:

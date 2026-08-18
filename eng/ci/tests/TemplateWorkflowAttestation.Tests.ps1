@@ -76,8 +76,32 @@ Describe "template build workflow attestation wiring (<WorkflowFile>)" -ForEach 
         # companion already has.
         $pushStep.Contains('@($companionPackages) + @($templatePackages) | ForEach-Object') | Should -BeTrue
 
-        # Every push is individually failure-visible.
+        # Every push is individually failure-visible AND retry-safe: --skip-duplicate keeps
+        # a rerun from failing on an already-published companion before the template pushes.
         $pushStep.Contains("Package push failed for") | Should -BeTrue
+        $pushStep.Contains("--skip-duplicate") | Should -BeTrue
+    }
+
+    It "couples release promotion: probes the companion, promotes it before the template when present, and tolerates only unattested-era absence" {
+        $promoteIndex = $script:content.IndexOf("Template Azure Package")
+        $promoteIndex | Should -BeGreaterThan 0
+        $promoteStep = $script:content.Substring($promoteIndex)
+
+        # Existence probe with strict outcome classification: 200 promotes the companion,
+        # 404 is the unattested-era notice, anything else is fatal.
+        $promoteStep.Contains("/nuget/packages/") | Should -BeTrue
+        $promoteStep.Contains("Companion attestation package probe failed with HTTP") | Should -BeTrue
+        $promoteStep.Contains("Unattested-era release") | Should -BeTrue
+
+        # Companion promotion comes before the template promotion.
+        $companionPromoteIndex = $promoteStep.IndexOf('$arguments.PackageName = $companionPackageName')
+        $templatePromoteToken = '$arguments.PackageName = "' + '${{ inputs.package_name }}' + '"'
+        $templatePromoteIndex = $promoteStep.IndexOf($templatePromoteToken)
+        $companionPromoteIndex | Should -BeGreaterThan 0
+        $templatePromoteIndex | Should -BeGreaterThan $companionPromoteIndex
+
+        # Both promotions go through Invoke-Promote.
+        ([regex]::Matches($promoteStep, [regex]::Escape("Invoke-Promote @arguments"))).Count | Should -Be 2
     }
 }
 
