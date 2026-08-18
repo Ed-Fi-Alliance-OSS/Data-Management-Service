@@ -8,6 +8,9 @@
 Import-Module ../Package-Management.psm1 -Force
 Import-Module ../Dms-Management.psm1 -Force
 Import-Module ../SchoolYear-Loader.psm1 -Force -Global
+# $PSScriptRoot-anchored (this module is cwd-independent) and without -Force: a forced
+# nested import can strip an already-loaded copy from the caller's session.
+Import-Module (Join-Path $PSScriptRoot "Template-RestoreCore.psm1")
 
 <#
 .SYNOPSIS
@@ -948,61 +951,16 @@ function Restore-TemplatePackage {
             $fileListOutput = & docker exec -e "SQLCMDPASSWORD=$MssqlPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -d master -C -b -h -1 -W -s "|" -Q $fileListQuery
             if ($LASTEXITCODE -ne 0) { throw "Failed to read the file list from backup '$($bakFile.Name)'." }
 
-            # Collect every data (D) and log (L) row, not just the first of each: a multi-file backup
-            # (secondary data file, extra filegroup, additional log) must relocate every file it lists,
-            # or RESTORE DATABASE fails because some file is left pointing at its original in-container
-            # path. Today's DMS templates are single data + single log, but this keeps a multi-file
-            # .bak restorable too.
-            $dataLogicalNames = [System.Collections.Generic.List[string]]::new()
-            $logLogicalNames = [System.Collections.Generic.List[string]]::new()
-            foreach ($line in $fileListOutput) {
-                if ([string]::IsNullOrWhiteSpace($line)) { continue }
-                $fields = $line -split '\|'
-                if ($fields.Count -lt 3) { continue }
-                $logicalName = $fields[0].Trim()
-                $fileType = $fields[2].Trim()
-                if ($fileType -eq "D") { $dataLogicalNames.Add($logicalName) }
-                elseif ($fileType -eq "L") { $logLogicalNames.Add($logicalName) }
-            }
-
-            if ($dataLogicalNames.Count -eq 0 -or $logLogicalNames.Count -eq 0) {
-                throw "Could not determine the data and log logical file names from backup '$($bakFile.Name)'."
-            }
-
-            # Emit one MOVE clause per file. The primary data file and first log keep today's plain
-            # $DatabaseName-derived names, so a single-file .bak still produces the exact same RESTORE
-            # command as before; every additional file gets a name suffixed with its own logical name,
-            # so each lands at its own deterministic path under the same target data directory. Unlike
-            # the MOVE...FROM side (which only needs single-quote escaping inside its N'' literal), an
-            # extra logical name is interpolated into a new physical path here, so it is validated
-            # against the same safe-character allow-list already used for $DatabaseName before use.
-            $moveClauses = [System.Collections.Generic.List[string]]::new()
-            for ($i = 0; $i -lt $dataLogicalNames.Count; $i++) {
-                $logicalName = $dataLogicalNames[$i]
-                if ($i -eq 0) {
-                    $physicalName = "$DatabaseName.mdf"
-                }
-                else {
-                    if ($logicalName -notmatch "^[A-Za-z0-9_]+$") {
-                        throw "Data file logical name '$logicalName' from backup '$($bakFile.Name)' contains unsupported characters and cannot be used to derive a restore path."
-                    }
-                    $physicalName = "${DatabaseName}_${logicalName}.ndf"
-                }
-                $moveClauses.Add("MOVE N'$($logicalName.Replace("'", "''"))' TO N'/var/opt/mssql/data/$physicalName'")
-            }
-            for ($i = 0; $i -lt $logLogicalNames.Count; $i++) {
-                $logicalName = $logLogicalNames[$i]
-                if ($i -eq 0) {
-                    $physicalName = "${DatabaseName}_log.ldf"
-                }
-                else {
-                    if ($logicalName -notmatch "^[A-Za-z0-9_]+$") {
-                        throw "Log file logical name '$logicalName' from backup '$($bakFile.Name)' contains unsupported characters and cannot be used to derive a restore path."
-                    }
-                    $physicalName = "${DatabaseName}_${logicalName}.ldf"
-                }
-                $moveClauses.Add("MOVE N'$($logicalName.Replace("'", "''"))' TO N'/var/opt/mssql/data/$physicalName'")
-            }
+            # File-list parsing and MOVE construction are shared with the bootstrap restore
+            # consumer through Template-RestoreCore.psm1: every data and log file gets its own
+            # MOVE clause, the primary pair keeps the plain database-derived names, and extra
+            # logical names are allow-list validated before being interpolated into a path.
+            $backupFileList = ConvertFrom-MssqlBackupFileList -FileListOutput $fileListOutput -BackupFileName $bakFile.Name
+            $moveClauses = New-MssqlRestoreMoveClause `
+                -DatabaseName $DatabaseName `
+                -DataLogicalNames $backupFileList.DataLogicalNames `
+                -LogLogicalNames $backupFileList.LogLogicalNames `
+                -BackupFileName $bakFile.Name
 
             $restoreSql = "RESTORE DATABASE [$DatabaseName] FROM DISK = N'$containerBakPath' WITH $($moveClauses -join ', '), REPLACE;"
             & docker exec -e "SQLCMDPASSWORD=$MssqlPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -d master -C -b -Q $restoreSql | Out-Null
