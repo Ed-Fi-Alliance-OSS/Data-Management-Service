@@ -379,7 +379,10 @@ implements those contracts.
 
    where `config` is the complete deterministic flat string map. When artifact output is
    requested, write one redacted deterministic snapshot named
-   `cdc-connector-template.<provider>.manifest.json`. Its JSON shape should be:
+   `cdc-connector-template.<provider>.<connectorName>.manifest.json`, where
+   `connectorName` is the validated binding connector name. Including the connector name
+   keeps two same-provider bindings that write to one artifact directory from overwriting
+   each other's redacted manifest. Its JSON shape should be:
 
    ```json
    {
