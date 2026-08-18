@@ -299,7 +299,15 @@ internal static class DocumentCacheMaterializerLinkBearingMappingSet
                 WHERE source."DocumentId" = @DocumentId
                 ORDER BY source."DocumentId";
                 """,
-            SqlDialect.Mssql => null,
+            SqlDialect.Mssql => """
+                SELECT
+                    source.[DocumentId],
+                    source.[School_DocumentId],
+                    source.[SchoolReference_SchoolId]
+                FROM [edfi].[StudentSchoolAssociation] source
+                WHERE source.[DocumentId] = @DocumentId
+                ORDER BY source.[DocumentId];
+                """,
             _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported dialect."),
         };
 
@@ -347,7 +355,17 @@ internal static class DocumentCacheMaterializerLinkBearingMappingSet
                 WHERE source."DocumentId" = @DocumentId
                 ORDER BY referenced."DocumentId";
                 """,
-            SqlDialect.Mssql => null,
+            SqlDialect.Mssql => """
+                SELECT DISTINCT
+                    referenced.[DocumentId],
+                    referenced.[DocumentUuid],
+                    referenced.[ResourceKeyId]
+                FROM [edfi].[StudentSchoolAssociation] source
+                INNER JOIN [dms].[Document] referenced
+                    ON referenced.[DocumentId] = source.[School_DocumentId]
+                WHERE source.[DocumentId] = @DocumentId
+                ORDER BY referenced.[DocumentId];
+                """,
             _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported dialect."),
         };
 }

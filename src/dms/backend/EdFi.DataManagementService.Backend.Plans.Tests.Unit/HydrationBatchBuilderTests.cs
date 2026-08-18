@@ -625,13 +625,13 @@ public class Given_HydrationBatchBuilder_With_Pgsql_Single_Document_Fast_Path
     }
 
     [Test]
-    public void It_should_keep_the_keyset_path_for_sql_server_even_when_the_feature_flag_is_enabled()
+    public void It_should_emit_the_sql_server_keyset_batch_when_the_feature_flag_is_disabled()
     {
         var batch = HydrationBatchBuilder.Build(
-            BuildTestReadPlan(SqlDialect.Mssql),
+            BuildTestReadPlan(SqlDialect.Mssql, includeSingleDocumentSql: true),
             new PageKeysetSpec.Single(42L),
             SqlDialect.Mssql,
-            new HydrationExecutionOptions(UseSingleDocumentFastPath: true)
+            new HydrationExecutionOptions(UseSingleDocumentFastPath: false)
         );
 
         batch.Should().Contain("CREATE TABLE [#page]");
@@ -641,25 +641,60 @@ public class Given_HydrationBatchBuilder_With_Pgsql_Single_Document_Fast_Path
     }
 
     [Test]
-    public void It_should_match_the_existing_sql_server_keyset_batch_when_the_feature_flag_is_enabled()
+    public void It_should_not_emit_sql_server_page_temp_table_work_when_the_single_document_fast_path_is_enabled()
     {
-        var readPlan = BuildTestReadPlan(SqlDialect.Mssql);
+        var batch = HydrationBatchBuilder.Build(
+            BuildTestReadPlan(SqlDialect.Mssql, includeSingleDocumentSql: true),
+            new PageKeysetSpec.Single(42L),
+            SqlDialect.Mssql,
+            new HydrationExecutionOptions(UseSingleDocumentFastPath: true)
+        );
+
+        batch.Should().NotContain("CREATE TABLE [#page]");
+        batch.Should().NotContain("DROP TABLE [#page]");
+        batch.Should().NotContain("INSERT INTO [#page]");
+        batch
+            .Should()
+            .Contain(
+                """
+                SELECT
+                    d.[DocumentId],
+                    d.[DocumentUuid],
+                    d.[ContentVersion],
+                    d.[IdentityVersion],
+                    d.[ContentLastModifiedAt],
+                    d.[IdentityLastModifiedAt],
+                    d.[ResourceKeyId]
+                FROM [dms].[Document] d
+                WHERE d.[DocumentId] = @DocumentId
+                ORDER BY d.[DocumentId];
+                """
+            );
+    }
+
+    [Test]
+    public void It_should_emit_the_sql_server_single_document_fast_path_when_the_feature_flag_is_enabled()
+    {
+        var readPlan = BuildTestReadPlan(SqlDialect.Mssql, includeSingleDocumentSql: true);
         var keyset = new PageKeysetSpec.Single(42L);
 
-        var expectedKeysetBatch = HydrationBatchBuilder.Build(
+        var keysetBatch = HydrationBatchBuilder.Build(
             readPlan,
             keyset,
             SqlDialect.Mssql,
             new HydrationExecutionOptions(UseSingleDocumentFastPath: false)
         );
-        var fastPathFlaggedBatch = HydrationBatchBuilder.Build(
+        var fastPathBatch = HydrationBatchBuilder.Build(
             readPlan,
             keyset,
             SqlDialect.Mssql,
             new HydrationExecutionOptions(UseSingleDocumentFastPath: true)
         );
 
-        fastPathFlaggedBatch.Should().Be(expectedKeysetBatch);
+        fastPathBatch.Should().NotBe(keysetBatch);
+        fastPathBatch.Should().NotContain("CREATE TABLE [#page]");
+        fastPathBatch.Should().Contain(HydrationBatchBuilderTestHelper.RootSingleDocumentSql);
+        fastPathBatch.Should().Contain(HydrationBatchBuilderTestHelper.ChildSingleDocumentSql);
     }
 
     private static DescriptorProjectionPlan[] BuildDescriptorPlans() =>
