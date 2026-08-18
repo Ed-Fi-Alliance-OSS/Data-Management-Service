@@ -35,6 +35,113 @@ public class Given_CdcConnectorTemplateContracts
     }
 
     [Test]
+    public void It_accepts_valid_connector_and_kafka_topic_binding_names()
+    {
+        CdcConnectorTemplateBindingIdentity binding = BuildBindingWithIdentityValues(
+            CdcProvider.SqlServer,
+            connectorName: "dms.binding-connector_01",
+            publicTopicName: "edfi.documents-v1_2026"
+        );
+
+        using var _ = new AssertionScope();
+        binding.ConnectorName.Should().Be(new CdcSafeName("dms.binding-connector_01"));
+        binding.PublicTopicName.Should().Be("edfi.documents-v1_2026");
+        binding.ProgressTopicName.Should().Be("edfi.documents-v1_2026.cdc-progress");
+        binding.SchemaHistoryTopicName.Should().Be("edfi.documents-v1_2026.schema-history");
+    }
+
+    [Test]
+    public void It_rejects_connector_names_that_are_not_valid_debezium_topic_prefixes()
+    {
+        string[] invalidConnectorNames =
+        [
+            "dms binding connector",
+            "dms/binding/connector",
+            "dms:binding:connector",
+            "dms(binding)connector",
+            new('a', 250),
+            ".",
+            "..",
+        ];
+
+        using var _ = new AssertionScope();
+        foreach (string invalidConnectorName in invalidConnectorNames)
+        {
+            Action act = () =>
+                BuildBindingWithIdentityValues(
+                    CdcProvider.Postgresql,
+                    connectorName: invalidConnectorName,
+                    publicTopicName: "edfi.documents"
+                );
+
+            act.Should()
+                .Throw<ArgumentException>()
+                .WithParameterName("connectorName")
+                .WithMessage("*Kafka topic names*");
+        }
+    }
+
+    [Test]
+    public void It_rejects_public_topic_names_that_are_not_valid_kafka_topic_names()
+    {
+        string[] invalidPublicTopicNames =
+        [
+            "edfi documents",
+            "edfi/documents",
+            "edfi:documents",
+            "edfi(documents)",
+            new('a', 250),
+            ".",
+            "..",
+        ];
+
+        using var _ = new AssertionScope();
+        foreach (string invalidPublicTopicName in invalidPublicTopicNames)
+        {
+            Action act = () =>
+                BuildBindingWithIdentityValues(
+                    CdcProvider.Postgresql,
+                    connectorName: "dms_binding_connector",
+                    publicTopicName: invalidPublicTopicName
+                );
+
+            act.Should()
+                .Throw<ArgumentException>()
+                .WithParameterName("publicTopicName")
+                .WithMessage("*Kafka topic names*");
+        }
+    }
+
+    [Test]
+    public void It_rejects_derived_topic_names_that_are_not_valid_kafka_topic_names()
+    {
+        Action overlongProgressTopic = () =>
+            BuildBindingWithIdentityValues(
+                CdcProvider.Postgresql,
+                connectorName: "dms_binding_connector",
+                publicTopicName: new string('a', 237)
+            );
+        Action overlongSchemaHistoryTopic = () =>
+            BuildBindingWithIdentityValues(
+                CdcProvider.SqlServer,
+                connectorName: "dms_binding_connector",
+                publicTopicName: new string('a', 235)
+            );
+
+        using var _ = new AssertionScope();
+        overlongProgressTopic
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("progressTopicName")
+            .WithMessage("*Kafka topic names*");
+        overlongSchemaHistoryTopic
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("schemaHistoryTopicName")
+            .WithMessage("*Kafka topic names*");
+    }
+
+    [Test]
     public void It_accepts_successful_provider_setup_evidence_that_matches_the_binding()
     {
         var policy = new CdcConnectorTemplateDeploymentPolicy(
@@ -435,6 +542,20 @@ public class Given_CdcConnectorTemplateContracts
         CdcSourceFingerprintMetadata
             .Compute(CdcProvider.Postgresql, "f81d4fae-7dec-11d0-a765-00a0c91e6bf6")
             .Value;
+
+    private static CdcConnectorTemplateBindingIdentity BuildBindingWithIdentityValues(
+        CdcProvider provider,
+        string connectorName,
+        string publicTopicName
+    ) =>
+        new(
+            provider,
+            new CdcSafeName(connectorName),
+            publicTopicName,
+            bindingGeneration: 7,
+            partitionerAlgorithm: CdcConnectorTemplateBindingIdentity.KafkaMurmur2V1PartitionerAlgorithm,
+            SourceFingerprintFor(provider)
+        );
 
     [Test]
     public void It_rejects_registration_payloads_that_conflict_with_binding_identity_or_result_config()

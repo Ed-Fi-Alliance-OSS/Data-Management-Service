@@ -79,11 +79,15 @@ public sealed record CdcConnectorTemplateBindingIdentity
         ArgumentNullException.ThrowIfNull(boundPhysicalSourceFingerprint);
 
         Provider = provider;
-        ConnectorName = connectorName;
-        PublicTopicName = CdcConnectorTemplateContractValidation.ValidateRequiredSafeText(
+        ConnectorName = CdcConnectorTemplateTopicNames.ValidateDebeziumTopicPrefix(
+            connectorName,
+            nameof(connectorName)
+        );
+        PublicTopicName = CdcConnectorTemplateTopicNames.ValidateKafkaTopicName(
             publicTopicName,
             nameof(publicTopicName)
         );
+        CdcConnectorTemplateTopicNames.ValidateDerivedTopicNames(provider, PublicTopicName);
         BindingGeneration =
             bindingGeneration > 0
                 ? bindingGeneration
@@ -741,11 +745,73 @@ public sealed record CdcConnectorTemplateDiagnostic
 
 public static class CdcConnectorTemplateTopicNames
 {
+    private const int KafkaTopicNameMaxLength = 249;
+
     public static string ProgressTopicName(string publicTopicName) =>
-        $"{CdcConnectorTemplateContractValidation.ValidateRequiredSafeText(publicTopicName, nameof(publicTopicName))}.cdc-progress";
+        ValidateKafkaTopicName(
+            $"{ValidateKafkaTopicName(publicTopicName, nameof(publicTopicName))}.cdc-progress",
+            "progressTopicName"
+        );
 
     public static string SqlServerSchemaHistoryTopicName(string publicTopicName) =>
-        $"{CdcConnectorTemplateContractValidation.ValidateRequiredSafeText(publicTopicName, nameof(publicTopicName))}.schema-history";
+        ValidateKafkaTopicName(
+            $"{ValidateKafkaTopicName(publicTopicName, nameof(publicTopicName))}.schema-history",
+            "schemaHistoryTopicName"
+        );
+
+    internal static CdcSafeName ValidateDebeziumTopicPrefix(CdcSafeName connectorName, string parameterName)
+    {
+        ValidateKafkaTopicName(connectorName.Value, parameterName);
+
+        return connectorName;
+    }
+
+    internal static string ValidateKafkaTopicName(string topicName, string parameterName)
+    {
+        string value = CdcConnectorTemplateContractValidation.ValidateRequiredSafeText(
+            topicName,
+            parameterName
+        );
+
+        if (value.Length > KafkaTopicNameMaxLength)
+        {
+            throw new ArgumentException(
+                $"CDC connector template Kafka topic names must be {KafkaTopicNameMaxLength} characters or fewer.",
+                parameterName
+            );
+        }
+
+        if (value is "." or "..")
+        {
+            throw new ArgumentException(
+                "CDC connector template Kafka topic names cannot be '.' or '..'.",
+                parameterName
+            );
+        }
+
+        if (value.Any(character => !IsKafkaTopicNameCharacter(character)))
+        {
+            throw new ArgumentException(
+                "CDC connector template Kafka topic names must contain only ASCII letters, digits, dots, underscores, and hyphens.",
+                parameterName
+            );
+        }
+
+        return value;
+    }
+
+    internal static void ValidateDerivedTopicNames(CdcProvider provider, string publicTopicName)
+    {
+        _ = ProgressTopicName(publicTopicName);
+
+        if (provider == CdcProvider.SqlServer)
+        {
+            _ = SqlServerSchemaHistoryTopicName(publicTopicName);
+        }
+    }
+
+    private static bool IsKafkaTopicNameCharacter(char character) =>
+        character is >= 'a' and <= 'z' or >= 'A' and <= 'Z' or >= '0' and <= '9' or '.' or '_' or '-';
 }
 
 internal static class CdcConnectorTemplateContractValidation
