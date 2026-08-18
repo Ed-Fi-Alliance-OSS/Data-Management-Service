@@ -365,7 +365,7 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
             return null;
         }
 
-        CdcSafeName fileName = ManifestFileName(request.Provider);
+        CdcSafeName fileName = ManifestFileName(request.Provider, request.ConnectorName);
         string json = SerializeManifest(request, config, configSha256);
         var payload = new CdcConnectorTemplateArtifactPayload(fileName, json);
 
@@ -382,8 +382,8 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
         return payload;
     }
 
-    private static CdcSafeName ManifestFileName(CdcProvider provider) =>
-        new($"cdc-connector-template.{ProviderToken(provider)}.manifest.json");
+    private static CdcSafeName ManifestFileName(CdcProvider provider, CdcSafeName connectorName) =>
+        new($"cdc-connector-template.{ProviderToken(provider)}.{connectorName.Value}.manifest.json");
 
     private static string SerializeManifest(
         CdcConnectorTemplateRequest request,
