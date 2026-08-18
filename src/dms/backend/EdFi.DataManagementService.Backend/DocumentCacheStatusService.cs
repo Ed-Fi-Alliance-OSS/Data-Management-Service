@@ -21,6 +21,16 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
 
     private const string ObservationTimeoutMessage = "DocumentCache status observation timed out.";
 
+    private static readonly ImmutableArray<DocumentCacheEnqueueFailureCategory> EnqueueFailureCategoryOrder =
+    [
+        DocumentCacheEnqueueFailureCategory.StateMissingOrInvalid,
+        DocumentCacheEnqueueFailureCategory.EnqueueTriggerUnavailable,
+        DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed,
+        DocumentCacheEnqueueFailureCategory.ProviderTimeout,
+        DocumentCacheEnqueueFailureCategory.ProviderUnavailable,
+        DocumentCacheEnqueueFailureCategory.UnclassifiedProviderFailure,
+    ];
+
     private readonly IDocumentCacheTargetRegistry _targetRegistry;
     private readonly IDocumentCacheProjectionObservationProvider _projectionObservationProvider;
     private readonly ImmutableDictionary<
@@ -580,13 +590,21 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             ))
             .ToImmutableArray();
 
-        ImmutableArray<DocumentCacheStatusEnqueueFailureCategoryCount> byCategory = snapshot
-            .RecentEvents.GroupBy(failureEvent => failureEvent.Category)
-            .Select(group => new DocumentCacheStatusEnqueueFailureCategoryCount(
-                ToStatusCategory(group.Key),
-                group.Count()
-            ))
-            .ToImmutableArray();
+        ImmutableArray<DocumentCacheStatusEnqueueFailureCategoryCount> byCategory =
+        [
+            .. EnqueueFailureCategoryOrder
+                .Select(category =>
+                    (
+                        Category: category,
+                        Count: snapshot.RecentEvents.Count(failureEvent => failureEvent.Category == category)
+                    )
+                )
+                .Where(categoryCount => categoryCount.Count > 0)
+                .Select(categoryCount => new DocumentCacheStatusEnqueueFailureCategoryCount(
+                    ToStatusCategory(categoryCount.Category),
+                    categoryCount.Count
+                )),
+        ];
 
         return new DocumentCacheStatusEnqueueFailures(recentEvents, byCategory, snapshot.EvictedCount);
     }

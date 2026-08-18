@@ -176,6 +176,85 @@ public class Given_DocumentCacheStatusService
     }
 
     [Test]
+    public async Task It_orders_enqueue_failure_category_counts_by_fixed_public_order()
+    {
+        DocumentCacheTargetObservation target = ResolvedTarget(DocumentCacheTargetKey.Create("", 1));
+        DocumentCacheEnqueueFailureSnapshot snapshot = new(
+            [
+                EnqueueFailureEvent(
+                    target.TargetKey,
+                    DocumentCacheEnqueueFailureCategory.ProviderUnavailable,
+                    1
+                ),
+                EnqueueFailureEvent(
+                    target.TargetKey,
+                    DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed,
+                    2
+                ),
+                EnqueueFailureEvent(
+                    target.TargetKey,
+                    DocumentCacheEnqueueFailureCategory.StateMissingOrInvalid,
+                    3
+                ),
+                EnqueueFailureEvent(
+                    target.TargetKey,
+                    DocumentCacheEnqueueFailureCategory.ProviderUnavailable,
+                    4
+                ),
+                EnqueueFailureEvent(
+                    target.TargetKey,
+                    DocumentCacheEnqueueFailureCategory.UnclassifiedProviderFailure,
+                    5
+                ),
+                EnqueueFailureEvent(
+                    target.TargetKey,
+                    DocumentCacheEnqueueFailureCategory.EnqueueTriggerUnavailable,
+                    6
+                ),
+            ],
+            evictedCount: 7
+        );
+        DocumentCacheStatusService service = CreateService(
+            new StaticTargetRegistry([target], [ExecutionContext(target)]),
+            ObservationStore(target),
+            new ScriptedStatusObserver(Success),
+            enqueueFailureObservationProvider: new StaticEnqueueFailureObservationProvider(
+                target.TargetKey,
+                snapshot
+            )
+        );
+
+        DocumentCacheStatusTarget statusTarget = (await service.GetStatusAsync()).Targets.Single();
+
+        statusTarget
+            .EnqueueFailures.RecentEvents.Select(enqueueFailure => enqueueFailure.Category)
+            .Should()
+            .Equal(
+                DocumentCacheStatusEnqueueFailureCategory.ProviderUnavailable,
+                DocumentCacheStatusEnqueueFailureCategory.WorkPersistenceFailed,
+                DocumentCacheStatusEnqueueFailureCategory.StateMissingOrInvalid,
+                DocumentCacheStatusEnqueueFailureCategory.ProviderUnavailable,
+                DocumentCacheStatusEnqueueFailureCategory.UnclassifiedProviderFailure,
+                DocumentCacheStatusEnqueueFailureCategory.EnqueueTriggerUnavailable
+            );
+        statusTarget
+            .EnqueueFailures.ByCategory.Select(categoryCount => (categoryCount.Category, categoryCount.Count))
+            .Should()
+            .Equal(
+                (DocumentCacheStatusEnqueueFailureCategory.StateMissingOrInvalid, 1),
+                (DocumentCacheStatusEnqueueFailureCategory.EnqueueTriggerUnavailable, 1),
+                (DocumentCacheStatusEnqueueFailureCategory.WorkPersistenceFailed, 1),
+                (DocumentCacheStatusEnqueueFailureCategory.ProviderUnavailable, 2),
+                (DocumentCacheStatusEnqueueFailureCategory.UnclassifiedProviderFailure, 1)
+            );
+        statusTarget
+            .EnqueueFailures.ByCategory.Select(categoryCount => categoryCount.Category)
+            .Should()
+            .NotContain(DocumentCacheStatusEnqueueFailureCategory.ProviderTimeout);
+        statusTarget.EnqueueFailures.EvictedCount.Should().Be(7);
+    }
+
+    [Test]
     public async Task It_serializes_per_target_observation_timeout_without_blocking_peer_targets()
     {
         DocumentCacheTargetObservation slowTarget = ResolvedTarget(
@@ -474,7 +553,8 @@ public class Given_DocumentCacheStatusService
         StaticTargetRegistry registry,
         DocumentCacheProjectionObservationStore? observationStore = null,
         ScriptedStatusObserver? observer = null,
-        IDocumentCacheStatusTelemetry? statusTelemetry = null
+        IDocumentCacheStatusTelemetry? statusTelemetry = null,
+        IDocumentCacheEnqueueFailureObservationProvider? enqueueFailureObservationProvider = null
     ) =>
         new(
             registry,
@@ -482,6 +562,7 @@ public class Given_DocumentCacheStatusService
                 ?? new DocumentCacheProjectionObservationStore(new FixedTimeProvider(ProcessObservedAt)),
             observer is null ? [] : [observer],
             new FixedTimeProvider(ProcessObservedAt),
+            enqueueFailureObservationProvider,
             statusTelemetry: statusTelemetry
         );
 
@@ -629,6 +710,20 @@ public class Given_DocumentCacheStatusService
             $"Diagnostic {category}"
         );
 
+    private static DocumentCacheEnqueueFailureTelemetryEvent EnqueueFailureEvent(
+        DocumentCacheTargetKey targetKey,
+        DocumentCacheEnqueueFailureCategory category,
+        int secondsAfterRuntimeObservation
+    ) =>
+        new(
+            RuntimeObservedAt.AddSeconds(secondsAfterRuntimeObservation),
+            targetKey,
+            category,
+            DocumentCacheEnqueueTelemetryCanonicalOperation.Update,
+            DocumentCacheEnqueueTelemetryResourceKind.Resource,
+            $"Failure {category}"
+        );
+
     private static Task<DocumentCacheStatusCurrentSourceObservationResult> Success(
         DocumentCacheStatusCurrentSourceObservationRequest request,
         CancellationToken cancellationToken
@@ -734,6 +829,18 @@ public class Given_DocumentCacheStatusService
             } while (
                 Interlocked.CompareExchange(ref _maxActiveCount, activeCount, observedMax) != observedMax
             );
+        }
+    }
+
+    private sealed class StaticEnqueueFailureObservationProvider(
+        DocumentCacheTargetKey retainedTargetKey,
+        DocumentCacheEnqueueFailureSnapshot snapshot
+    ) : IDocumentCacheEnqueueFailureObservationProvider
+    {
+        public DocumentCacheEnqueueFailureSnapshot GetFailureSnapshot(DocumentCacheTargetKey targetKey)
+        {
+            ArgumentNullException.ThrowIfNull(targetKey);
+            return targetKey.Equals(retainedTargetKey) ? snapshot : new DocumentCacheEnqueueFailureSnapshot();
         }
     }
 
