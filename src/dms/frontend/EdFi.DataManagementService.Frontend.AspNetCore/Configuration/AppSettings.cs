@@ -77,6 +77,13 @@ public class AppSettingsValidator : IValidateOptions<AppSettings>
             );
         }
 
+        if (options.CorrelationIdMaxLength <= 0)
+        {
+            return ValidateOptionsResult.Fail(
+                "AppSettings value CorrelationIdMaxLength must be greater than 0"
+            );
+        }
+
         return ValidateOptionsResult.Success;
     }
 }
