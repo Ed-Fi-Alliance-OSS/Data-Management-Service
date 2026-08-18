@@ -455,6 +455,12 @@ function Read-ApiSchemaIdentity {
         -ProjectName $projectName `
         -ProjectEndpointName $projectEndpointName
 
+    # apiSchemaVersion (top-level) and projectSchema.projectVersion are contract-required by
+    # JsonSchemaForApiSchema.json. They are captured leniently here and enforced for the core
+    # project at staging time, where the manifest schema section records them.
+    $apiSchemaVersion = if ($schema.ContainsKey("apiSchemaVersion")) { [string]$schema["apiSchemaVersion"] } else { "" }
+    $projectVersion = if ($projectSchema.ContainsKey("projectVersion")) { [string]$projectSchema["projectVersion"] } else { "" }
+
     return [pscustomobject]@{
         SourcePath = [System.IO.Path]::GetFullPath($Path)
         SourceDirectory = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($Path))
@@ -462,6 +468,8 @@ function Read-ApiSchemaIdentity {
         ProjectEndpointName = $projectEndpointName
         IsExtensionProject = $isExtensionProject
         ProjectDirectoryName = $projectDirectoryName
+        ApiSchemaVersion = $apiSchemaVersion
+        ProjectVersion = $projectVersion
     }
 }
 
@@ -678,6 +686,19 @@ function Invoke-SchemaWorkspaceStaging {
     if ($coreProjects.Count -ne 1) {
         throw "ApiSchemaPath must stage exactly one core schema. Found $($coreProjects.Count)."
     }
+    $coreProject = $coreProjects[0]
+
+    # The manifest schema section records the core schema's Data Standard version
+    # (projectSchema.projectVersion, e.g. 5.2.0) and ApiSchema format version (apiSchemaVersion).
+    # Both are contract-required by JsonSchemaForApiSchema.json, and the database-template restore
+    # flow proves a template package against them, so a core schema without them is an input
+    # defect this stage must reject rather than record blanks for.
+    if ([string]::IsNullOrWhiteSpace($coreProject.ProjectVersion)) {
+        throw "Core ApiSchema file '$(Format-LogSafeText $coreProject.SourcePath)' is missing projectSchema.projectVersion (the Data Standard version, e.g. 5.2.0)."
+    }
+    if ([string]::IsNullOrWhiteSpace($coreProject.ApiSchemaVersion)) {
+        throw "Core ApiSchema file '$(Format-LogSafeText $coreProject.SourcePath)' is missing apiSchemaVersion."
+    }
 
     $extensionProjects = @(
         $schemaProjects |
@@ -820,6 +841,8 @@ function Invoke-SchemaWorkspaceStaging {
             effectiveSchemaHash = $effectiveSchemaHash
             workspaceFingerprint = $workspaceFingerprint
             apiSchemaManifestPath = "ApiSchema/bootstrap-api-schema-manifest.json"
+            dataStandardVersion = $coreProject.ProjectVersion
+            apiSchemaFormatVersion = $coreProject.ApiSchemaVersion
         }
         if ($null -ne $SelectedPackages) {
             $schemaSection.Insert(2, "selectedPackages", @($SelectedPackages))
