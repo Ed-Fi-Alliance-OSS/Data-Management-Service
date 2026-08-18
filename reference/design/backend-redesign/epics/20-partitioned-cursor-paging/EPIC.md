@@ -382,6 +382,23 @@ The approved intentional ODS differences are:
 - omit the next header rather than overflowing at `Int64.MaxValue`; and
 - use the stricter approved base64url and decimal decoder contract.
 
+### Approved Behavior Changes to Existing Endpoints
+
+`/partitions` reuses GET-many's resource-property filter validation rather than reimplementing it,
+so extracting that validation into one shared component is part of this epic. One behavior of the
+existing collection GET changed in the extraction, deliberately, and is recorded here so DMS-1390
+compares against the post-change behavior rather than capturing the pre-change one as the DMS
+baseline:
+
+- canonicalize a boolean filter value from the parsed boolean rather than by lowercasing the
+  supplied text. `bool.TryParse` ignores surrounding whitespace while `ToLower` does not, so
+  `?isActive=%20true%20` previously reached the candidate query as `" true "` and matched nothing at
+  HTTP 200; it now reaches it as `"true"` and matches. The same change removes a culture-sensitive
+  fold on a fixed protocol token. This applies to GET-many and `/partitions` alike, because both
+  operations must accept the same filters over the same candidate set. The plain extraction alone
+  would have preserved the previous behavior; the canonicalization is a separate, deliberate
+  correction carried in the same work.
+
 ## Likely Affected Areas
 
 - `Core.External`: paging/range, query-result, and partition repository contracts.

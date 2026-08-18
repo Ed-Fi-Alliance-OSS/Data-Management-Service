@@ -90,9 +90,12 @@ internal sealed class MssqlPlanDialect : IPlanSqlDialect
     /// a scalar recomputation over an already-materialized row rather than a second pass over the
     /// candidate set.
     ///
-    /// <c>decimal(28,0) / decimal(10,0)</c> yields <c>decimal(38,11)</c> — 27 integral digits, above the
-    /// 19 a <c>bigint</c> count can need — so the quotient cannot lose an integral digit. Both operands
-    /// are cast explicitly so the result type does not depend on how a driver infers a parameter's type.
+    /// <c>decimal(28,0) / decimal(10,0)</c> yields <c>decimal(38,10)</c>: the division rule asks for
+    /// scale <c>max(6, s1 + p2 + 1)</c> = 11 at precision <c>p1 - s1 + s2 + scale</c> = 39, which exceeds
+    /// the 38 maximum, so precision caps at 38 and scale drops to 10. That leaves 28 integral digits,
+    /// above the 19 a <c>bigint</c> count can need, so the quotient cannot lose an integral digit. Both
+    /// operands are cast explicitly so the result type does not depend on how a driver infers a
+    /// parameter's type.
     /// </remarks>
     /// <param name="writer">The SQL writer to append to.</param>
     /// <param name="candidateCountExpression">The already-qualified candidate count expression.</param>

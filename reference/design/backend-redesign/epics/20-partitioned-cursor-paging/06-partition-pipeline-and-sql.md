@@ -50,7 +50,8 @@ first, exactly as it does for GET-many.
   planning with equivalent inputs. Change-version parameters already have a standalone validator this
   pipeline can call; resource-filter parsing must be extracted from `ValidateQueryMiddleware` rather
   than duplicated, and `PartitionRequestValidator` reserves neither parameter family for exactly this
-  caller.
+  caller. That extraction also carries the epic's approved boolean-filter canonicalization, which
+  changes GET-many behavior for a padded value such as `?isActive=%20true%20`.
 - Return starting ids only, convert them to typed inclusive ranges, and token-encode them in Core.
 - Support regular resources, extension resources, descriptors, route qualifiers, tenants, and
   profile routing without document hydration or profile projection.
