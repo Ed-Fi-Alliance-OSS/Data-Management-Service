@@ -1,0 +1,650 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+BeforeAll {
+    $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+    Import-Module (Join-Path $script:templatesDir "Template-RestoreCore.psm1") -Force
+
+    function script:New-TestInventory {
+        # A small but representative DMS-only inventory covering multiple schemas, object
+        # types, and (optionally) principals, built deliberately out of order so canonical
+        # sorting is exercised by default.
+        param (
+            [string[]]$Principal = @()
+        )
+
+        return @{
+            schemas    = @(
+                @{
+                    schemaName = "edfi"
+                    objects    = @(
+                        @{ name = "School"; type = "table" },
+                        @{ name = "AcademicWeek"; type = "table" }
+                    )
+                },
+                @{
+                    schemaName = "dms"
+                    objects    = @(
+                        @{ name = "uuidv5"; type = "function" },
+                        @{ name = "Document"; type = "TABLE" },
+                        @{ name = "EffectiveSchema"; type = "table" }
+                    )
+                }
+            )
+            principals = $Principal
+        }
+    }
+
+    function script:New-ValidRestoreManifest {
+        # Builds a fully valid version-1 restore manifest as an ordered hashtable. The
+        # inventory hash is computed with the module's own canonical hash so shape tests
+        # start from a passing baseline and mutate exactly one field at a time.
+        param (
+            [ValidateSet("postgresql", "mssql")]
+            [string]$DatabaseEngine = "postgresql"
+        )
+
+        $inventory = New-TestInventory
+        $manifest = [ordered]@{
+            version                  = 1
+            packageId                = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0"
+            packageVersion           = "1.0.123"
+            databaseEngine           = $DatabaseEngine
+            templateKind             = "Minimal"
+            dataStandardVersion      = "5.2.0"
+            contentProfile           = "DmsDatastoreOnly"
+            projects                 = @("ed-fi", "tpdm")
+            apiSchemaFormatVersion   = "1.0.0"
+            effectiveSchemaHash      = ("ab" * 32)
+            resourceKeyCount         = 42
+            resourceKeySeedHashB64   = [System.Convert]::ToBase64String([byte[]](1..32))
+            relationalMappingVersion = "v2"
+            engineVersion            = "16.8"
+            documentJsonColumnType   = "jsonb"
+            inventory                = $inventory
+            inventorySha256          = (Get-CanonicalInventoryHash -Inventory $inventory)
+            artifactFileName         = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0.sql"
+            artifactSha256           = ("cd" * 32)
+        }
+
+        if ($DatabaseEngine -eq "mssql") {
+            $manifest.packageId = "EdFi.Api.Minimal.Template.MsSql.5.2.0"
+            $manifest.engineVersion = "17.0.900.7"
+            $manifest.databaseCompatibilityLevel = 170
+            $manifest.documentJsonColumnType = "nvarchar"
+            $manifest.artifactFileName = "EdFi.Api.Minimal.Template.MsSql.5.2.0.bak"
+        }
+
+        return $manifest
+    }
+}
+
+Describe "Test-ReservedDatabaseName" {
+    It "reports every reserved PostgreSQL system database, case-insensitively and whitespace-trimmed" {
+        foreach ($name in @("postgres", "template0", "template1", "POSTGRES", "Template1", " postgres ")) {
+            Test-ReservedDatabaseName -DatabaseEngine postgresql -DatabaseName $name | Should -BeTrue
+        }
+    }
+
+    It "reports every reserved SQL Server system database, case-insensitively" {
+        foreach ($name in @("master", "model", "msdb", "tempdb", "MASTER", "TempDb")) {
+            Test-ReservedDatabaseName -DatabaseEngine mssql -DatabaseName $name | Should -BeTrue
+        }
+    }
+
+    It "does not treat ordinary datastore names as reserved" {
+        Test-ReservedDatabaseName -DatabaseEngine postgresql -DatabaseName "edfi_datamanagementservice" | Should -BeFalse
+        Test-ReservedDatabaseName -DatabaseEngine mssql -DatabaseName "edfi_datamanagementservice" | Should -BeFalse
+    }
+
+    It "applies each engine's own denylist, not the union" {
+        Test-ReservedDatabaseName -DatabaseEngine postgresql -DatabaseName "master" | Should -BeFalse
+        Test-ReservedDatabaseName -DatabaseEngine mssql -DatabaseName "postgres" | Should -BeFalse
+    }
+}
+
+Describe "Assert-SafeRestoreDatabaseName" {
+    It "accepts a plain safe datastore name on both engines" {
+        { Assert-SafeRestoreDatabaseName -DatabaseEngine postgresql -DatabaseName "edfi_datamanagementservice" } | Should -Not -Throw
+        { Assert-SafeRestoreDatabaseName -DatabaseEngine mssql -DatabaseName "edfi_datamanagementservice" } | Should -Not -Throw
+    }
+
+    It "rejects an empty or whitespace name" {
+        { Assert-SafeRestoreDatabaseName -DatabaseEngine postgresql -DatabaseName "" } | Should -Throw "*must not be empty*"
+        { Assert-SafeRestoreDatabaseName -DatabaseEngine postgresql -DatabaseName "   " } | Should -Throw "*must not be empty*"
+    }
+
+    It "rejects names outside the safe identifier charset" {
+        foreach ($name in @("bad-name", "bad name", "x';DROP DATABASE d;--", "name`n")) {
+            { Assert-SafeRestoreDatabaseName -DatabaseEngine mssql -DatabaseName $name } | Should -Throw "*unsupported characters*"
+        }
+    }
+
+    It "rejects every reserved name for the selected engine even though the charset is valid" {
+        foreach ($name in @("postgres", "template0", "template1", "TEMPLATE0")) {
+            { Assert-SafeRestoreDatabaseName -DatabaseEngine postgresql -DatabaseName $name } | Should -Throw "*reserved postgresql system database*"
+        }
+        foreach ($name in @("master", "model", "msdb", "tempdb", "Master")) {
+            { Assert-SafeRestoreDatabaseName -DatabaseEngine mssql -DatabaseName $name } | Should -Throw "*reserved mssql system database*"
+        }
+    }
+
+    It "names the caller-supplied purpose in the failure so a refusal identifies which selection was rejected" {
+        { Assert-SafeRestoreDatabaseName -DatabaseEngine mssql -DatabaseName "master" -Purpose "restore target" } | Should -Throw "*restore target database name 'master' is a reserved*"
+    }
+}
+
+Describe "New-RestoreGeneratedDatabaseName" {
+    It "produces prefix plus a 12-hex-character unpredictable suffix" {
+        $name = New-RestoreGeneratedDatabaseName -Prefix "edfi_dms_restore_scratch"
+        $name | Should -Match '^edfi_dms_restore_scratch_[0-9a-f]{12}$'
+    }
+
+    It "produces a different name on each call" {
+        (New-RestoreGeneratedDatabaseName -Prefix "edfi_test") | Should -Not -Be (New-RestoreGeneratedDatabaseName -Prefix "edfi_test")
+    }
+
+    It "rejects a prefix outside the lowercase safe charset" {
+        { New-RestoreGeneratedDatabaseName -Prefix "Edfi_Bad" } | Should -Throw "*prefix*"
+        { New-RestoreGeneratedDatabaseName -Prefix "1leading" } | Should -Throw "*prefix*"
+        { New-RestoreGeneratedDatabaseName -Prefix "has-dash" } | Should -Throw "*prefix*"
+    }
+
+    It "rejects a prefix that would exceed the PostgreSQL identifier limit" {
+        { New-RestoreGeneratedDatabaseName -Prefix ("a" * 60) } | Should -Throw "*63-character*"
+    }
+
+    It "provides the scratch and preflight product prefixes through dedicated wrappers" {
+        (New-RestoreScratchDatabaseName) | Should -Match '^edfi_dms_restore_scratch_[0-9a-f]{12}$'
+        (New-RestorePreflightDatabaseName) | Should -Match '^edfi_dms_restore_preflight_[0-9a-f]{12}$'
+    }
+
+    It "generates names that pass the safe-name assertion on both engines" {
+        $name = New-RestorePreflightDatabaseName
+        { Assert-SafeRestoreDatabaseName -DatabaseEngine postgresql -DatabaseName $name } | Should -Not -Throw
+        { Assert-SafeRestoreDatabaseName -DatabaseEngine mssql -DatabaseName $name } | Should -Not -Throw
+    }
+}
+
+Describe "Get-RestoreSchemaNameExclusion" {
+    # The two purposes deliberately disagree on PostgreSQL "public" and SQL Server "dbo".
+    # DumpDiscovery mirrors the existing template dump discovery: package contents are scoped
+    # to discovered user schemas, so "public"/"dbo" are excluded. InventoryEnumeration feeds
+    # the DMS-only content gates, which must SEE those always-present schemas so contamination
+    # hidden inside them is visible; only permitted extension bootstrap (e.g. pgcrypto created
+    # by the template's own CREATE EXTENSION line) is allowed there by the gate.
+    It "excludes PostgreSQL 'public' from dump discovery, matching the existing template dump scope" {
+        $exclusion = Get-RestoreSchemaNameExclusion -DatabaseEngine postgresql -Purpose DumpDiscovery
+        $exclusion.ExcludedSchemaName | Should -Contain "public"
+        $exclusion.ExcludedSchemaName | Should -Contain "information_schema"
+        $exclusion.ExcludedSchemaNamePrefix | Should -Be @("pg_")
+    }
+
+    It "includes PostgreSQL 'public' in inventory enumeration so the DMS-only gate can see contamination there" {
+        $exclusion = Get-RestoreSchemaNameExclusion -DatabaseEngine postgresql -Purpose InventoryEnumeration
+        $exclusion.ExcludedSchemaName | Should -Not -Contain "public"
+        $exclusion.ExcludedSchemaName | Should -Contain "information_schema"
+        $exclusion.ExcludedSchemaNamePrefix | Should -Be @("pg_")
+    }
+
+    It "excludes SQL Server 'dbo' from dump discovery but includes it in inventory enumeration" {
+        $dumpExclusion = Get-RestoreSchemaNameExclusion -DatabaseEngine mssql -Purpose DumpDiscovery
+        $dumpExclusion.ExcludedSchemaName | Should -Contain "dbo"
+
+        $inventoryExclusion = Get-RestoreSchemaNameExclusion -DatabaseEngine mssql -Purpose InventoryEnumeration
+        $inventoryExclusion.ExcludedSchemaName | Should -Not -Contain "dbo"
+    }
+
+    It "always excludes the SQL Server built-in schemas and fixed-role schema prefix" {
+        foreach ($purpose in @("DumpDiscovery", "InventoryEnumeration")) {
+            $exclusion = Get-RestoreSchemaNameExclusion -DatabaseEngine mssql -Purpose $purpose
+            foreach ($builtIn in @("guest", "sys", "INFORMATION_SCHEMA")) {
+                $exclusion.ExcludedSchemaName | Should -Contain $builtIn
+            }
+            $exclusion.ExcludedSchemaNamePrefix | Should -Be @("db_")
+        }
+    }
+}
+
+Describe "Get-RestoreDocumentJsonBaselineType" {
+    It "pins the current physical DocumentJson baseline per engine" {
+        Get-RestoreDocumentJsonBaselineType -DatabaseEngine postgresql | Should -Be "jsonb"
+        Get-RestoreDocumentJsonBaselineType -DatabaseEngine mssql | Should -Be "nvarchar"
+    }
+}
+
+Describe "ConvertTo-CanonicalInventoryJson" {
+    It "serializes to the exact canonical form: sorted schemas, type-then-name sorted objects, lowercased types, principals always present" {
+        $json = ConvertTo-CanonicalInventoryJson -Inventory (New-TestInventory)
+
+        $json | Should -Be ('{"schemas":[' +
+            '{"schemaName":"dms","objects":[{"name":"uuidv5","type":"function"},{"name":"Document","type":"table"},{"name":"EffectiveSchema","type":"table"}]},' +
+            '{"schemaName":"edfi","objects":[{"name":"AcademicWeek","type":"table"},{"name":"School","type":"table"}]}' +
+            '],"principals":[]}')
+    }
+
+    It "produces identical output regardless of input ordering" {
+        $reordered = @{
+            schemas    = @(
+                @{
+                    schemaName = "dms"
+                    objects    = @(
+                        @{ name = "EffectiveSchema"; type = "table" },
+                        @{ name = "Document"; type = "table" },
+                        @{ name = "uuidv5"; type = "FUNCTION" }
+                    )
+                },
+                @{
+                    schemaName = "edfi"
+                    objects    = @(
+                        @{ name = "AcademicWeek"; type = "table" },
+                        @{ name = "School"; type = "table" }
+                    )
+                }
+            )
+            principals = @()
+        }
+
+        (ConvertTo-CanonicalInventoryJson -Inventory $reordered) | Should -Be (ConvertTo-CanonicalInventoryJson -Inventory (New-TestInventory))
+    }
+
+    It "accepts ConvertFrom-Json output (PSCustomObject) and produces the same canonical form as hashtable input" {
+        $roundTripped = (New-TestInventory | ConvertTo-Json -Depth 10) | ConvertFrom-Json
+        (ConvertTo-CanonicalInventoryJson -Inventory $roundTripped) | Should -Be (ConvertTo-CanonicalInventoryJson -Inventory (New-TestInventory))
+    }
+
+    It "sorts principals ordinally" {
+        $json = ConvertTo-CanonicalInventoryJson -Inventory (New-TestInventory -Principal @("zeta_reader", "alpha_writer"))
+        $json.Contains('"principals":["alpha_writer","zeta_reader"]') | Should -BeTrue
+    }
+
+    It "escapes quotes, backslashes, and non-printable-ASCII characters deterministically" {
+        $inventory = @{
+            schemas = @(
+                @{
+                    schemaName = 'we"ird\schema'
+                    objects    = @(@{ name = "nam`u{00E9}"; type = "table" })
+                }
+            )
+        }
+
+        $json = ConvertTo-CanonicalInventoryJson -Inventory $inventory
+        # The e-acute input character must serialize as a lowercase four-digit unicode escape;
+        # the expected text is concatenated so this test file itself stays ASCII.
+        $expectedJson = '{"schemas":[{"schemaName":"we\"ird\\schema","objects":[{"name":"nam' + '\' + 'u00e9","type":"table"}]}],"principals":[]}'
+        $json | Should -Be $expectedJson
+    }
+
+    It "throws on a duplicate schema name" {
+        $inventory = @{
+            schemas = @(
+                @{ schemaName = "dms"; objects = @() },
+                @{ schemaName = "dms"; objects = @() }
+            )
+        }
+        { ConvertTo-CanonicalInventoryJson -Inventory $inventory } | Should -Throw "*duplicate schema entry 'dms'*"
+    }
+
+    It "throws on a duplicate (type, name) object pair, including across type casing" {
+        $inventory = @{
+            schemas = @(
+                @{
+                    schemaName = "dms"
+                    objects    = @(
+                        @{ name = "Document"; type = "table" },
+                        @{ name = "Document"; type = "TABLE" }
+                    )
+                }
+            )
+        }
+        { ConvertTo-CanonicalInventoryJson -Inventory $inventory } | Should -Throw "*duplicate object entry*"
+    }
+
+    It "throws on a duplicate or empty principal" {
+        { ConvertTo-CanonicalInventoryJson -Inventory (New-TestInventory -Principal @("reader", "reader")) } | Should -Throw "*duplicate principal*"
+        { ConvertTo-CanonicalInventoryJson -Inventory (New-TestInventory -Principal @(" ")) } | Should -Throw "*empty principal*"
+    }
+
+    It "throws when the schemas array or a required entry field is missing" {
+        { ConvertTo-CanonicalInventoryJson -Inventory (@{ principals = @() }) } | Should -Throw "*missing the required 'schemas'*"
+        { ConvertTo-CanonicalInventoryJson -Inventory (@{ schemas = @(@{ objects = @() }) }) } | Should -Throw "*without a non-empty 'schemaName'*"
+        { ConvertTo-CanonicalInventoryJson -Inventory (@{ schemas = @(@{ schemaName = "dms"; objects = @(@{ name = "x" }) }) }) } | Should -Throw "*both a non-empty 'name' and 'type'*"
+    }
+}
+
+Describe "Get-CanonicalInventoryHash" {
+    It "is the lowercase-hex SHA-256 of the canonical JSON's UTF-8 bytes" {
+        $inventory = New-TestInventory
+        $expectedBytes = [System.Security.Cryptography.SHA256]::HashData(
+            [System.Text.Encoding]::UTF8.GetBytes((ConvertTo-CanonicalInventoryJson -Inventory $inventory)))
+        $expectedHash = [System.Convert]::ToHexString($expectedBytes).ToLowerInvariant()
+
+        Get-CanonicalInventoryHash -Inventory $inventory | Should -Be $expectedHash
+    }
+
+    It "changes when any inventory entry changes" {
+        $baseline = Get-CanonicalInventoryHash -Inventory (New-TestInventory)
+        Get-CanonicalInventoryHash -Inventory (New-TestInventory -Principal @("reader")) | Should -Not -Be $baseline
+    }
+}
+
+Describe "Assert-RestoreManifestShape" {
+    It "accepts a fully valid PostgreSQL manifest" {
+        { Assert-RestoreManifestShape -Manifest (New-ValidRestoreManifest -DatabaseEngine postgresql) } | Should -Not -Throw
+    }
+
+    It "accepts a fully valid MSSQL manifest" {
+        { Assert-RestoreManifestShape -Manifest (New-ValidRestoreManifest -DatabaseEngine mssql) } | Should -Not -Throw
+    }
+
+    It "accepts the same manifest after a JSON round trip (PSCustomObject input)" {
+        $roundTripped = (New-ValidRestoreManifest -DatabaseEngine mssql | ConvertTo-Json -Depth 10) | ConvertFrom-Json
+        { Assert-RestoreManifestShape -Manifest $roundTripped } | Should -Not -Throw
+    }
+
+    It "rejects a manifest missing any required field, naming the field" {
+        $requiredFields = @(
+            "version", "packageId", "packageVersion", "databaseEngine", "templateKind",
+            "dataStandardVersion", "contentProfile", "projects", "apiSchemaFormatVersion",
+            "effectiveSchemaHash", "resourceKeyCount", "resourceKeySeedHashB64",
+            "relationalMappingVersion", "engineVersion", "documentJsonColumnType",
+            "inventory", "inventorySha256", "artifactFileName", "artifactSha256"
+        )
+        foreach ($field in $requiredFields) {
+            $manifest = New-ValidRestoreManifest
+            $manifest.Remove($field)
+            { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*'$field'*" -Because "field '$field' is required"
+        }
+    }
+
+    It "rejects a non-integer or unsupported manifest version" {
+        $manifest = New-ValidRestoreManifest
+        $manifest.version = "1"
+        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*'version' must be an integer*"
+
+        $manifest = New-ValidRestoreManifest
+        $manifest.version = 2
+        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*only version 1 is supported*"
+    }
+
+    It "rejects an unknown databaseEngine and a wrongly cased one" {
+        foreach ($engine in @("oracle", "PostgreSQL", "MSSQL")) {
+            $manifest = New-ValidRestoreManifest
+            $manifest.databaseEngine = $engine
+            { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*'databaseEngine' must be exactly*"
+        }
+    }
+
+    It "rejects an unknown templateKind and a wrongly cased one" {
+        foreach ($kind in @("Full", "minimal", "POPULATED")) {
+            $manifest = New-ValidRestoreManifest
+            $manifest.templateKind = $kind
+            { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*'templateKind' must be exactly*"
+        }
+    }
+
+    It "rejects any contentProfile other than the exact DmsDatastoreOnly literal" {
+        foreach ($contentProfileValue in @("dmsdatastoreonly", "Everything", "DmsDatastoreOnly ")) {
+            $manifest = New-ValidRestoreManifest
+            $manifest.contentProfile = $contentProfileValue
+            { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*'contentProfile' must be exactly 'DmsDatastoreOnly'*"
+        }
+    }
+
+    It "rejects an empty, duplicate-bearing, or non-string projects array" {
+        $manifest = New-ValidRestoreManifest
+        $manifest.projects = @()
+        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*'projects' must be a non-empty array*"
+
+        $manifest = New-ValidRestoreManifest
+        $manifest.projects = @("ed-fi", "ED-FI")
+        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*duplicate entry*"
+
+        $manifest = New-ValidRestoreManifest
+        $manifest.projects = @("ed-fi", 5)
+        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*not a non-empty JSON string*"
+    }
+
+    It "rejects hash fields that are not 64-character lowercase hex" {
+        foreach ($field in @("effectiveSchemaHash", "inventorySha256", "artifactSha256")) {
+            $manifest = New-ValidRestoreManifest
+            $manifest[$field] = ("AB" * 32)
+            { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*'$field' must be a 64-character lowercase hex*"
+
+            $manifest = New-ValidRestoreManifest
+            $manifest[$field] = "abc123"
+            { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*'$field' must be a 64-character lowercase hex*"
+        }
+    }
+
+    It "rejects a non-positive or non-integer resourceKeyCount" {
+        $manifest = New-ValidRestoreManifest
+        $manifest.resourceKeyCount = 0
+        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*'resourceKeyCount' must be a positive integer*"
+
+        $manifest = New-ValidRestoreManifest
+        $manifest.resourceKeyCount = "42"
+        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*'resourceKeyCount' must be a positive integer*"
+    }
+
+    It "rejects a resourceKeySeedHashB64 that is not base64 or not 32 bytes" {
+        $manifest = New-ValidRestoreManifest
+        $manifest.resourceKeySeedHashB64 = "not base64!!"
+        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*not valid base64*"
+
+        $manifest = New-ValidRestoreManifest
+        $manifest.resourceKeySeedHashB64 = [System.Convert]::ToBase64String([byte[]](1..16))
+        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*exactly 32 bytes*"
+    }
+
+    It "requires databaseCompatibilityLevel for mssql and forbids it for postgresql" {
+        $manifest = New-ValidRestoreManifest -DatabaseEngine mssql
+        $manifest.Remove("databaseCompatibilityLevel")
+        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*'databaseCompatibilityLevel' is required for mssql*"
+
+        $manifest = New-ValidRestoreManifest -DatabaseEngine mssql
+        $manifest.databaseCompatibilityLevel = 80
+        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*'databaseCompatibilityLevel' is required for mssql*"
+
+        $manifest = New-ValidRestoreManifest -DatabaseEngine postgresql
+        $manifest.databaseCompatibilityLevel = 160
+        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*must be omitted or null for postgresql*"
+    }
+
+    It "rejects a manifest whose recomputed canonical inventory hash differs from inventorySha256" {
+        $manifest = New-ValidRestoreManifest
+        $manifest.inventorySha256 = ("00" * 32)
+        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*internally inconsistent*"
+    }
+
+    It "rejects an artifactFileName carrying path separators or the wrong extension for the engine" {
+        $manifest = New-ValidRestoreManifest
+        $manifest.artifactFileName = "nested/dump.sql"
+        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*'artifactFileName' contains unsupported characters*"
+
+        $manifest = New-ValidRestoreManifest -DatabaseEngine postgresql
+        $manifest.artifactFileName = "backup.bak"
+        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*must end with '.sql' for databaseEngine 'postgresql'*"
+
+        $manifest = New-ValidRestoreManifest -DatabaseEngine mssql
+        $manifest.artifactFileName = "dump.sql"
+        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*must end with '.bak' for databaseEngine 'mssql'*"
+    }
+}
+
+Describe "Read-RestoreManifest" {
+    It "reads and validates a manifest file round-tripped through JSON" {
+        $manifestPath = Join-Path $TestDrive "restore-manifest.json"
+        New-ValidRestoreManifest -DatabaseEngine mssql | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $manifestPath -Encoding utf8
+
+        $manifest = Read-RestoreManifest -Path $manifestPath
+        $manifest.packageId | Should -Be "EdFi.Api.Minimal.Template.MsSql.5.2.0"
+        $manifest.templateKind | Should -Be "Minimal"
+    }
+
+    It "fails with restore-eligibility guidance when the manifest file is absent (legacy package)" {
+        { Read-RestoreManifest -Path (Join-Path $TestDrive "missing.json") } | Should -Throw "*not eligible for restore*"
+    }
+
+    It "fails on an empty or malformed manifest file" {
+        $emptyPath = Join-Path $TestDrive "empty.json"
+        Set-Content -LiteralPath $emptyPath -Value "" -Encoding utf8 -NoNewline
+        { Read-RestoreManifest -Path $emptyPath } | Should -Throw "*is empty*"
+
+        $malformedPath = Join-Path $TestDrive "malformed.json"
+        Set-Content -LiteralPath $malformedPath -Value "{ not json" -Encoding utf8
+        { Read-RestoreManifest -Path $malformedPath } | Should -Throw "*not valid JSON*"
+    }
+}
+
+Describe "ConvertFrom-MssqlBackupFileList" {
+    It "collects every data and log logical name, skipping blank and short rows" {
+        $fileList = ConvertFrom-MssqlBackupFileList -BackupFileName "backup.bak" -FileListOutput @(
+            "",
+            "MyDb|/var/opt/mssql/data/MyDb.mdf|D|PRIMARY",
+            "shortrow",
+            "MyDb2|/var/opt/mssql/data/MyDb2.ndf|D|SECONDARY",
+            "MyDb_log|/var/opt/mssql/data/MyDb_log.ldf|L|NULL",
+            "MyDb_log2|/var/opt/mssql/data/MyDb_log2.ldf|L|NULL"
+        )
+
+        $fileList.DataLogicalNames | Should -Be @("MyDb", "MyDb2")
+        $fileList.LogLogicalNames | Should -Be @("MyDb_log", "MyDb_log2")
+    }
+
+    It "throws the file-list diagnostic, naming the backup, when output is null, empty, or one-sided" {
+        { ConvertFrom-MssqlBackupFileList -BackupFileName "b.bak" -FileListOutput $null } | Should -Throw "*Could not determine the data and log logical file names from backup 'b.bak'*"
+        { ConvertFrom-MssqlBackupFileList -BackupFileName "b.bak" -FileListOutput @() } | Should -Throw "*Could not determine*"
+        { ConvertFrom-MssqlBackupFileList -BackupFileName "b.bak" -FileListOutput @("OnlyData|/p|D|X") } | Should -Throw "*Could not determine*"
+        { ConvertFrom-MssqlBackupFileList -BackupFileName "b.bak" -FileListOutput @("OnlyLog|/p|L|X") } | Should -Throw "*Could not determine*"
+    }
+}
+
+Describe "New-MssqlRestoreMoveClause" {
+    It "keeps the plain database-derived names for the primary data file and first log" {
+        $clauses = New-MssqlRestoreMoveClause -DatabaseName "testdb" -DataLogicalNames @("MyDb") -LogLogicalNames @("MyDb_log") -BackupFileName "backup.bak"
+        $clauses | Should -Be @(
+            "MOVE N'MyDb' TO N'/var/opt/mssql/data/testdb.mdf'",
+            "MOVE N'MyDb_log' TO N'/var/opt/mssql/data/testdb_log.ldf'"
+        )
+    }
+
+    It "suffixes every additional file with its own logical name (multi-file golden)" {
+        $clauses = New-MssqlRestoreMoveClause -DatabaseName "testdb" `
+            -DataLogicalNames @("MyDb", "MyDb2") `
+            -LogLogicalNames @("MyDb_log", "MyDb_log2") `
+            -BackupFileName "backup.bak"
+
+        $clauses | Should -Be @(
+            "MOVE N'MyDb' TO N'/var/opt/mssql/data/testdb.mdf'",
+            "MOVE N'MyDb2' TO N'/var/opt/mssql/data/testdb_MyDb2.ndf'",
+            "MOVE N'MyDb_log' TO N'/var/opt/mssql/data/testdb_log.ldf'",
+            "MOVE N'MyDb_log2' TO N'/var/opt/mssql/data/testdb_MyDb_log2.ldf'"
+        )
+    }
+
+    It "escapes single quotes in a primary logical name inside the N'' literal" {
+        $clauses = New-MssqlRestoreMoveClause -DatabaseName "testdb" -DataLogicalNames @("My'Db") -LogLogicalNames @("MyDb_log") -BackupFileName "backup.bak"
+        $clauses[0] | Should -Be "MOVE N'My''Db' TO N'/var/opt/mssql/data/testdb.mdf'"
+    }
+
+    It "rejects an additional data or log logical name outside the safe path charset" {
+        { New-MssqlRestoreMoveClause -DatabaseName "testdb" -DataLogicalNames @("MyDb", "bad'name") -LogLogicalNames @("MyDb_log") -BackupFileName "b.bak" } |
+            Should -Throw "*Data file logical name*contains unsupported characters*"
+        { New-MssqlRestoreMoveClause -DatabaseName "testdb" -DataLogicalNames @("MyDb") -LogLogicalNames @("MyDb_log", "bad log") -BackupFileName "b.bak" } |
+            Should -Throw "*Log file logical name*contains unsupported characters*"
+    }
+
+    It "rejects an unsafe database name" {
+        { New-MssqlRestoreMoveClause -DatabaseName "bad-db" -DataLogicalNames @("d") -LogLogicalNames @("l") -BackupFileName "b.bak" } |
+            Should -Throw "*Database name 'bad-db' contains unsupported characters*"
+    }
+}
+
+Describe "Get-SourceIdentityReseedSql" {
+    It "builds the MSSQL reseed that requires exactly the singleton row, joined with LF" {
+        $sql = Get-SourceIdentityReseedSql -DatabaseEngine mssql
+        $sql | Should -Be (@(
+                "SET NOCOUNT ON;",
+                "UPDATE [dms].[DataStoreIdentity]",
+                "SET [SourceIdentity] = NEWID()",
+                "WHERE [DataStoreIdentitySingletonId] = 1;",
+                "IF @@ROWCOUNT <> 1",
+                "    THROW 50000, N'Restored database is missing the dms.DataStoreIdentity singleton row.', 1;"
+            ) -join "`n")
+        $sql | Should -Not -Match "`r"
+    }
+
+    It "builds the PostgreSQL reseed with gen_random_uuid and the row-count guard, joined with LF" {
+        $sql = Get-SourceIdentityReseedSql -DatabaseEngine postgresql
+        $sql | Should -Match 'UPDATE "dms"\."DataStoreIdentity"'
+        $sql | Should -Match 'SET "SourceIdentity" = gen_random_uuid\(\)'
+        $sql | Should -Match 'GET DIAGNOSTICS _updated_count = ROW_COUNT'
+        $sql | Should -Match "RAISE EXCEPTION 'Restored database is missing the dms.DataStoreIdentity singleton row.'"
+        $sql | Should -Not -Match "`r"
+    }
+}
+
+Describe "Get-SourceIdentitySelectSql" {
+    It "selects every SourceIdentity row as text per engine" {
+        Get-SourceIdentitySelectSql -DatabaseEngine mssql | Should -Be "SET NOCOUNT ON; SELECT CONVERT(nvarchar(36), [SourceIdentity]) FROM [dms].[DataStoreIdentity];"
+        Get-SourceIdentitySelectSql -DatabaseEngine postgresql | Should -Be 'SELECT "SourceIdentity"::text FROM "dms"."DataStoreIdentity";'
+    }
+}
+
+Describe "Test-RestoredSourceIdentityValue" {
+    BeforeAll {
+        $script:packageIdentity = "3f2504e0-4f89-11d3-9a0c-0305e82c3301"
+    }
+
+    It "is valid for exactly one well-formed UUID row that differs from the package value" {
+        $verdict = Test-RestoredSourceIdentityValue -SourceIdentityRow @("7c9e6679-7425-40de-944b-e07fc1f90ae7") -PackageSourceIdentity $script:packageIdentity
+        $verdict.IsValid | Should -BeTrue
+    }
+
+    It "ignores blank transport rows around the single value" {
+        $verdict = Test-RestoredSourceIdentityValue -SourceIdentityRow @("", " 7c9e6679-7425-40de-944b-e07fc1f90ae7 ", "") -PackageSourceIdentity $script:packageIdentity
+        $verdict.IsValid | Should -BeTrue
+    }
+
+    It "fails when zero rows are present" {
+        $verdict = Test-RestoredSourceIdentityValue -SourceIdentityRow @() -PackageSourceIdentity $script:packageIdentity
+        $verdict.IsValid | Should -BeFalse
+        $verdict.Reason | Should -Be "Expected exactly one dms.DataStoreIdentity row after restore, found 0."
+    }
+
+    It "fails when more than one row is present" {
+        $verdict = Test-RestoredSourceIdentityValue `
+            -SourceIdentityRow @("7c9e6679-7425-40de-944b-e07fc1f90ae7", "9b2c1b0a-2f6a-4d5e-8b8e-0a1b2c3d4e5f") `
+            -PackageSourceIdentity $script:packageIdentity
+        $verdict.IsValid | Should -BeFalse
+        $verdict.Reason | Should -Be "Expected exactly one dms.DataStoreIdentity row after restore, found 2."
+    }
+
+    It "fails when the stored value is not a UUID" {
+        $verdict = Test-RestoredSourceIdentityValue -SourceIdentityRow @("not-a-uuid") -PackageSourceIdentity $script:packageIdentity
+        $verdict.IsValid | Should -BeFalse
+        $verdict.Reason | Should -Be "Restored dms.DataStoreIdentity.SourceIdentity is not a valid UUID."
+    }
+
+    It "fails when the stored value is the empty UUID" {
+        $verdict = Test-RestoredSourceIdentityValue -SourceIdentityRow @("00000000-0000-0000-0000-000000000000") -PackageSourceIdentity $script:packageIdentity
+        $verdict.IsValid | Should -BeFalse
+        $verdict.Reason | Should -Be "Restored dms.DataStoreIdentity.SourceIdentity is the empty UUID."
+    }
+
+    It "fails when the stored value still equals the package value, regardless of casing or brace format" {
+        foreach ($spelling in @($script:packageIdentity.ToUpperInvariant(), "{$($script:packageIdentity)}")) {
+            $verdict = Test-RestoredSourceIdentityValue -SourceIdentityRow @($spelling) -PackageSourceIdentity $script:packageIdentity
+            $verdict.IsValid | Should -BeFalse
+            $verdict.Reason | Should -Be "Restored dms.DataStoreIdentity.SourceIdentity still matches the package value; the reseed did not take effect."
+        }
+    }
+
+    It "throws when the package value itself is not a UUID (caller defect, not a target verdict)" {
+        { Test-RestoredSourceIdentityValue -SourceIdentityRow @("7c9e6679-7425-40de-944b-e07fc1f90ae7") -PackageSourceIdentity "garbage" } |
+            Should -Throw "*is not a valid UUID*"
+    }
+}
