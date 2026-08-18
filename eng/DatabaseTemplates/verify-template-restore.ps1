@@ -35,6 +35,12 @@
 .PARAMETER PackageDirectory
     Directory containing the generated .nupkg (default: current directory).
 
+.PARAMETER ExpectedTemplateKind
+    The templateKind the package's restore manifest must declare (Minimal or Populated).
+    Deliberately independent of -RequirePopulatedData, which only adds the populated
+    sample-data and serveability probes: a populated package can be structurally verified
+    without those probes, and the manifest kind must still be right.
+
 .PARAMETER DatabaseEngine
     "postgresql" or "mssql". Defaults to "postgresql". Selects the engine used
     to restore and inspect the verification database.
@@ -56,6 +62,10 @@ param (
     [string]$SourceDatabaseName,
 
     [string]$PackageDirectory = ".",
+
+    [Parameter(Mandatory = $true)]
+    [ValidateSet("Minimal", "Populated")]
+    [string]$ExpectedTemplateKind,
 
     [string]$VerificationDatabaseName = "template_restore_verification",
 
@@ -171,9 +181,8 @@ try {
         }
         $restoreManifest = Read-RestoreManifest -Path $manifestFile.FullName
 
-        $expectedTemplateKind = if ($RequirePopulatedData) { "Populated" } else { "Minimal" }
-        if ([string]$restoreManifest.templateKind -cne $expectedTemplateKind) {
-            throw "Restore manifest declares templateKind '$($restoreManifest.templateKind)' but this verification expects '$expectedTemplateKind'."
+        if ([string]$restoreManifest.templateKind -cne $ExpectedTemplateKind) {
+            throw "Restore manifest declares templateKind '$($restoreManifest.templateKind)' but this verification expects '$ExpectedTemplateKind'."
         }
         if ([string]$restoreManifest.databaseEngine -cne $DatabaseEngine) {
             throw "Restore manifest declares databaseEngine '$($restoreManifest.databaseEngine)' but this verification runs against '$DatabaseEngine'."

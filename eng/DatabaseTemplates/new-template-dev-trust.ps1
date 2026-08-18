@@ -44,6 +44,12 @@
     Dev only: the operator-local trust-policy overlay to register the public key in.
     Defaults to the git-ignored eng/docker-compose/template-trust-policy.local.json.
 
+.PARAMETER TrackedPolicyPath
+    Dev only: the tracked trust policy the overlay merges onto. Producer names must be
+    unique across both files, so a name already present in the tracked policy is refused
+    before any key is generated - otherwise the production loader would later reject the
+    overlay this script wrote. Defaults to eng/docker-compose/template-trust-policy.json.
+
 .PARAMETER OutputDirectory
     CI only (required): directory receiving the generated private key PEM. Point this at a
     location outside the repository; the private half must never be committed.
@@ -74,6 +80,8 @@ param (
     [string]$KeyDirectory = "",
 
     [string]$LocalPolicyPath = "",
+
+    [string]$TrackedPolicyPath = "",
 
     [string]$OutputDirectory = ""
 )
@@ -149,6 +157,19 @@ if ([string]::IsNullOrWhiteSpace($KeyDirectory)) {
 }
 if ([string]::IsNullOrWhiteSpace($LocalPolicyPath)) {
     $LocalPolicyPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../docker-compose/template-trust-policy.local.json"))
+}
+if ([string]::IsNullOrWhiteSpace($TrackedPolicyPath)) {
+    $TrackedPolicyPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../docker-compose/template-trust-policy.json"))
+}
+
+# Producer names must be unique across the tracked policy and the local overlay, so a
+# collision with the TRACKED policy is refused before any key is generated - otherwise the
+# production loader would later reject the overlay this script wrote.
+$trackedPolicy = Read-TemplateTrustPolicy -TrackedPolicyPath $TrackedPolicyPath
+foreach ($trackedProducer in @($trackedPolicy.Producers)) {
+    if (([string]$trackedProducer.Name).Equals($ProducerName, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Producer '$ProducerName' already exists in the tracked policy '$TrackedPolicyPath'. Choose a different -ProducerName; tracked producers are managed through reviewed commits, not this script."
+    }
 }
 
 # Validate the overlay BEFORE generating the key so a duplicate producer never leaves an

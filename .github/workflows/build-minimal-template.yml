@@ -316,7 +316,7 @@ jobs:
 
       - name: Verify template package restore
         run: |
-          ./verify-template-restore.ps1 -SourceDatabaseName $env:RELATIONAL_DB_NAME -DatabaseEngine '${{ inputs.database_engine }}'
+          ./verify-template-restore.ps1 -SourceDatabaseName $env:RELATIONAL_DB_NAME -DatabaseEngine '${{ inputs.database_engine }}' -ExpectedTemplateKind Minimal
         working-directory: eng/DatabaseTemplates/
 
       - name: Upload Bulk Load Logs
