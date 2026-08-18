@@ -29,6 +29,11 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
     private const string ConnectConfigProviderEnvClassEnvironmentVariable =
         $"CONNECT_CONFIG_PROVIDERS_ENV_CLASS={EnvConfigProviderClass}";
     private const string PostgresqlDatabaseName = "edfi_datastore";
+    private const string PostgresqlPublicationName = "dms_binding_publication";
+    private const string PostgresqlReplicationSlotName = "dms_binding_slot";
+    private const string PostgresqlExpectedSourceTables = "dms.DocumentCache,dms.Document,dms.CdcHeartbeat";
+    private const string PostgresqlObservedPublicationTables =
+        "dms.CdcHeartbeat,dms.Document,dms.DocumentCache";
     private const string SqlServerDatabaseName = "edfi_datastore";
     private const string SqlServerGatingRoleName = "dms_binding_gate";
     private const string DocumentStateTransformClass = "org.edfi.kafka.connect.transforms.DocumentState";
@@ -210,6 +215,33 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             artifact.SafeObservedValues["supports_net_changes"].Should().Be(false.ToString());
             artifact.SafeObservedValues["captured_columns"].Should().Be(definition.CapturedColumnCsv);
         }
+    }
+
+    public static void AssertPostgresqlPublicationSetupMirrorsProviderSetupEvidence()
+    {
+        string sql = BuildMinimalPostgresqlObjectsSql();
+        CdcProviderArtifactObservation publication = BuildArtifactInventory(CdcProvider.Postgresql)
+            .Single(artifact => artifact.ArtifactKind == CdcProviderArtifactKind.PostgresqlPublication);
+
+        using var _ = new AssertionScope();
+        sql.Should().Contain($"CREATE PUBLICATION {PostgresqlPublicationName}");
+        sql.Should()
+            .Contain("FOR TABLE \"dms\".\"DocumentCache\", \"dms\".\"Document\", \"dms\".\"CdcHeartbeat\"");
+        sql.Should().Contain("WITH (publish = 'insert, update, delete')");
+        sql.Should().NotContain("DocumentProjectionWork");
+
+        publication.SafeArtifactName.Value.Should().Be(PostgresqlPublicationName);
+        publication.State.Should().Be(CdcProviderArtifactState.Matched);
+        publication.SafeObservedValues["tables"].Should().Be(PostgresqlObservedPublicationTables);
+        publication.SafeObservedValues["expected_tables"].Should().Be(PostgresqlExpectedSourceTables);
+        publication
+            .SafeObservedValues["publish"]
+            .Should()
+            .Be($"{true},{true},{true}", "PostgreSQL provider setup expects insert/update/delete");
+        publication.SafeObservedValues["publishes_truncate"].Should().Be(false.ToString());
+        publication.SafeObservedValues["publishes_all_tables"].Should().Be(false.ToString());
+        publication.SafeObservedValues["row_filters"].Should().Be("absent");
+        publication.SafeObservedValues["column_lists"].Should().Be("absent");
     }
 
     public void AssertKafkaConnectWorkerConfigProviderStartupEnvironmentIsPinned()
@@ -1131,41 +1163,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 
     private async Task CreateMinimalPostgresqlObjectsAsync(CancellationToken cancellationToken)
     {
-        const string sql = """
-            CREATE SCHEMA IF NOT EXISTS "dms";
-            CREATE TABLE IF NOT EXISTS "dms"."DocumentCache" ("DocumentUuid" text NOT NULL PRIMARY KEY);
-            CREATE TABLE IF NOT EXISTS "dms"."Document" ("DocumentUuid" text NOT NULL PRIMARY KEY);
-            CREATE TABLE IF NOT EXISTS "dms"."CdcHeartbeat"
-            (
-                "HeartbeatId" smallint NOT NULL PRIMARY KEY,
-                "HeartbeatSequence" bigint NOT NULL,
-                "HeartbeatAt" timestamp with time zone NOT NULL,
-                CONSTRAINT "CK_CdcHeartbeat_Singleton" CHECK ("HeartbeatId" = 1),
-                CONSTRAINT "CK_CdcHeartbeat_Sequence" CHECK ("HeartbeatSequence" >= 0)
-            );
-            INSERT INTO "dms"."CdcHeartbeat" ("HeartbeatId", "HeartbeatSequence", "HeartbeatAt")
-            VALUES (1, 0, now())
-            ON CONFLICT ("HeartbeatId") DO NOTHING;
-            ALTER TABLE "dms"."DocumentCache" REPLICA IDENTITY FULL;
-            ALTER TABLE "dms"."Document" REPLICA IDENTITY FULL;
-            ALTER TABLE "dms"."CdcHeartbeat" REPLICA IDENTITY FULL;
-            DO $$
-            BEGIN
-                IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'dms_binding_publication') THEN
-                    CREATE PUBLICATION dms_binding_publication
-                    FOR TABLE "dms"."DocumentCache", "dms"."Document", "dms"."CdcHeartbeat";
-                END IF;
-            END
-            $$;
-            SELECT
-                CASE
-                    WHEN NOT EXISTS (
-                        SELECT 1 FROM pg_replication_slots WHERE slot_name = 'dms_binding_slot'
-                    )
-                    THEN pg_create_logical_replication_slot('dms_binding_slot', 'pgoutput')::text
-                    ELSE NULL
-                END;
-            """;
+        string sql = BuildMinimalPostgresqlObjectsSql();
 
         await _docker.RunAsync(
             [
@@ -1185,7 +1183,151 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             ],
             cancellationToken
         );
+
+        await AssertPostgresqlPublicationMatchesProviderSetupEvidenceAsync(cancellationToken);
     }
+
+    private static string BuildMinimalPostgresqlObjectsSql() =>
+        $$"""
+            CREATE SCHEMA IF NOT EXISTS "dms";
+            CREATE TABLE IF NOT EXISTS "dms"."DocumentCache" ("DocumentUuid" text NOT NULL PRIMARY KEY);
+            CREATE TABLE IF NOT EXISTS "dms"."Document" ("DocumentUuid" text NOT NULL PRIMARY KEY);
+            CREATE TABLE IF NOT EXISTS "dms"."CdcHeartbeat"
+            (
+                "HeartbeatId" smallint NOT NULL PRIMARY KEY,
+                "HeartbeatSequence" bigint NOT NULL,
+                "HeartbeatAt" timestamp with time zone NOT NULL,
+                CONSTRAINT "CK_CdcHeartbeat_Singleton" CHECK ("HeartbeatId" = 1),
+                CONSTRAINT "CK_CdcHeartbeat_Sequence" CHECK ("HeartbeatSequence" >= 0)
+            );
+            INSERT INTO "dms"."CdcHeartbeat" ("HeartbeatId", "HeartbeatSequence", "HeartbeatAt")
+            VALUES (1, 0, now())
+            ON CONFLICT ("HeartbeatId") DO NOTHING;
+            ALTER TABLE "dms"."DocumentCache" REPLICA IDENTITY FULL;
+            ALTER TABLE "dms"."Document" REPLICA IDENTITY FULL;
+            ALTER TABLE "dms"."CdcHeartbeat" REPLICA IDENTITY FULL;
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = '{{PostgresqlPublicationName}}') THEN
+                    CREATE PUBLICATION {{PostgresqlPublicationName}}
+                    FOR TABLE "dms"."DocumentCache", "dms"."Document", "dms"."CdcHeartbeat"
+                    WITH (publish = 'insert, update, delete');
+                END IF;
+            END
+            $$;
+            SELECT
+                CASE
+                    WHEN NOT EXISTS (
+                        SELECT 1 FROM pg_replication_slots WHERE slot_name = '{{PostgresqlReplicationSlotName}}'
+                    )
+                    THEN pg_create_logical_replication_slot('{{PostgresqlReplicationSlotName}}', 'pgoutput')::text
+                    ELSE NULL
+                END;
+            """;
+
+    private async Task AssertPostgresqlPublicationMatchesProviderSetupEvidenceAsync(
+        CancellationToken cancellationToken
+    )
+    {
+        string publicationPropertiesOutput = await ReadPostgresqlScalarAsync(
+            $$"""
+            SELECT
+                publication.pubinsert::text
+                || '|' || publication.pubupdate::text
+                || '|' || publication.pubdelete::text
+                || '|' || publication.pubtruncate::text
+                || '|' || publication.puballtables::text
+            FROM pg_catalog.pg_publication publication
+            WHERE publication.pubname = '{{PostgresqlPublicationName}}';
+            """,
+            cancellationToken
+        );
+        string[] publicationPropertyRows = publicationPropertiesOutput.Split(
+            '\n',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+        );
+        publicationPropertyRows.Should().HaveCount(1, "the fixture publication must exist");
+
+        PostgresqlPublicationMetadata metadata = ParsePostgresqlPublicationMetadata(
+            publicationPropertyRows[0]
+        );
+
+        string publicationTablesOutput = await ReadPostgresqlScalarAsync(
+            $$"""
+            SELECT namespace_info.nspname || '.' || table_info.relname
+            FROM pg_catalog.pg_publication_rel publication_table
+            INNER JOIN pg_catalog.pg_publication publication
+                ON publication.oid = publication_table.prpubid
+            INNER JOIN pg_catalog.pg_class table_info
+                ON table_info.oid = publication_table.prrelid
+            INNER JOIN pg_catalog.pg_namespace namespace_info
+                ON namespace_info.oid = table_info.relnamespace
+            WHERE publication.pubname = '{{PostgresqlPublicationName}}'
+            ORDER BY namespace_info.nspname, table_info.relname;
+            """,
+            cancellationToken
+        );
+        string[] publishedTables = publicationTablesOutput.Split(
+            '\n',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+        );
+
+        CdcProviderArtifactObservation publication = BuildArtifactInventory(CdcProvider.Postgresql)
+            .Single(artifact => artifact.ArtifactKind == CdcProviderArtifactKind.PostgresqlPublication);
+
+        using var _ = new AssertionScope();
+        metadata.PublishesInsert.Should().BeTrue();
+        metadata.PublishesUpdate.Should().BeTrue();
+        metadata.PublishesDelete.Should().BeTrue();
+        metadata.PublishesTruncate.Should().BeFalse();
+        metadata.PublishesAllTables.Should().BeFalse();
+        publishedTables.Should().Equal("dms.CdcHeartbeat", "dms.Document", "dms.DocumentCache");
+        publishedTables.Should().NotContain("dms.DocumentProjectionWork");
+
+        publication.SafeObservedValues["tables"].Should().Be(string.Join(",", publishedTables));
+        publication.SafeObservedValues["expected_tables"].Should().Be(PostgresqlExpectedSourceTables);
+        publication
+            .SafeObservedValues["publish"]
+            .Should()
+            .Be($"{metadata.PublishesInsert},{metadata.PublishesUpdate},{metadata.PublishesDelete}");
+        publication
+            .SafeObservedValues["publishes_truncate"]
+            .Should()
+            .Be(metadata.PublishesTruncate.ToString());
+        publication
+            .SafeObservedValues["publishes_all_tables"]
+            .Should()
+            .Be(metadata.PublishesAllTables.ToString());
+    }
+
+    private static PostgresqlPublicationMetadata ParsePostgresqlPublicationMetadata(string value)
+    {
+        string[] parts = value.Split('|', StringSplitOptions.TrimEntries);
+        if (parts.Length != 5)
+        {
+            throw new InvalidOperationException(
+                $"Unexpected PostgreSQL publication metadata shape: {SanitizeForAssertion(value)}"
+            );
+        }
+
+        return new PostgresqlPublicationMetadata(
+            PublishesInsert: ParsePostgresqlBool(parts[0]),
+            PublishesUpdate: ParsePostgresqlBool(parts[1]),
+            PublishesDelete: ParsePostgresqlBool(parts[2]),
+            PublishesTruncate: ParsePostgresqlBool(parts[3]),
+            PublishesAllTables: ParsePostgresqlBool(parts[4])
+        );
+    }
+
+    private static bool ParsePostgresqlBool(string value) =>
+        value switch
+        {
+            "true" or "t" => true,
+            "false" or "f" => false,
+            _ => throw new InvalidOperationException(
+                $"Unexpected PostgreSQL boolean metadata value: {SanitizeForAssertion(value)}"
+            ),
+        };
 
     private async Task CreateMinimalSqlServerObjectsAsync(CancellationToken cancellationToken)
     {
@@ -1929,13 +2071,24 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             [
                 new(
                     CdcProviderArtifactKind.PostgresqlPublication,
-                    new CdcSafeName("dms_binding_publication"),
+                    new CdcSafeName(PostgresqlPublicationName),
                     CdcProviderArtifactState.Matched,
-                    new Dictionary<string, string>()
+                    new Dictionary<string, string>
+                    {
+                        ["tables"] = PostgresqlObservedPublicationTables,
+                        ["expected_tables"] = PostgresqlExpectedSourceTables,
+                        ["publish"] = $"{true},{true},{true}",
+                        ["publishes_truncate"] = false.ToString(),
+                        ["publishes_all_tables"] = false.ToString(),
+                        ["tables_in_schema"] = string.Empty,
+                        ["publish_via_partition_root"] = false.ToString(),
+                        ["row_filters"] = "absent",
+                        ["column_lists"] = "absent",
+                    }
                 ),
                 new(
                     CdcProviderArtifactKind.PostgresqlReplicationSlot,
-                    new CdcSafeName("dms_binding_slot"),
+                    new CdcSafeName(PostgresqlReplicationSlotName),
                     CdcProviderArtifactState.Matched,
                     new Dictionary<string, string>()
                 ),
@@ -2107,6 +2260,14 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         string ColumnName,
         string ProviderDataType,
         bool IsNullable = false
+    );
+
+    private sealed record PostgresqlPublicationMetadata(
+        bool PublishesInsert,
+        bool PublishesUpdate,
+        bool PublishesDelete,
+        bool PublishesTruncate,
+        bool PublishesAllTables
     );
 
     private sealed record SqlServerCaptureInstanceMetadata(

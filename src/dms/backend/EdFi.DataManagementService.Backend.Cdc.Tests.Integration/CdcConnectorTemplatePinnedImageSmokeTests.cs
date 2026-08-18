@@ -22,9 +22,9 @@ public abstract class Given_PinnedImageConnectorTemplateFixture
             await CdcConnectorTemplatePinnedImageFixture.StartAsync(Provider, cancellation.Token);
 
         CdcConnectorTemplateRequest request = fixture.BuildRequest();
+        await fixture.CreateMinimalTopicsAndProviderObjectsAsync(request, cancellation.Token);
         CdcConnectorTemplateResult rendered = fixture.Render(request);
 
-        await fixture.CreateMinimalTopicsAndProviderObjectsAsync(request, cancellation.Token);
         await fixture.AssertRuntimeLoadsRequiredClassesAsync(rendered, cancellation.Token);
         await fixture.AssertKafkaMurmur2PartitionerVectorsAsync(cancellation.Token);
         await fixture.AssertConnectorConfigValidatesAsync(rendered, cancellation.Token);
@@ -40,9 +40,9 @@ public abstract class Given_PinnedImageConnectorTemplateFixture
             await CdcConnectorTemplatePinnedImageFixture.StartAsync(Provider, cancellation.Token);
 
         CdcConnectorTemplateRequest request = fixture.BuildRequest();
+        await fixture.CreateMinimalTopicsAndProviderObjectsAsync(request, cancellation.Token);
         CdcConnectorTemplateResult rendered = fixture.Render(request);
 
-        await fixture.CreateMinimalTopicsAndProviderObjectsAsync(request, cancellation.Token);
         await fixture.AssertConnectorConfigValidatesAsync(rendered, cancellation.Token);
         await fixture.RegisterRenderedConnectorConfigDirectlyAsync(rendered, cancellation.Token);
         await fixture.AssertHeartbeatAndCommittedOffsetProgressAsync(request, cancellation.Token);
@@ -168,6 +168,12 @@ public sealed class Given_PostgresqlPinnedImageConnectorTemplateFixture
     : Given_PinnedImageConnectorTemplateFixture
 {
     protected override CdcProvider Provider => CdcProvider.Postgresql;
+
+    [Test]
+    public void It_uses_the_provider_setup_publication_shape_in_fixture_sql_and_evidence()
+    {
+        CdcConnectorTemplatePinnedImageFixture.AssertPostgresqlPublicationSetupMirrorsProviderSetupEvidence();
+    }
 }
 
 [TestFixture]
