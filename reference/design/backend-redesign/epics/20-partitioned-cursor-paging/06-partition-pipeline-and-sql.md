@@ -10,7 +10,9 @@ status: proposed
 ## Outcome
 
 Expose authorized regular-resource and descriptor `/partitions` operations that calculate typed,
-balanced cursor ranges in one identifiers-only database command.
+balanced cursor ranges in one identifiers-only database command for boundary selection. Where a
+view-based authorization strategy is configured, the pre-existing custom-view validation probe runs
+first, exactly as it does for GET-many.
 
 ## Design References
 

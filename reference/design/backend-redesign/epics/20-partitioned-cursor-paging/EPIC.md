@@ -197,10 +197,10 @@ provisioned a second time, plus a small descriptor set and a smoke set.
 
 - 10,000 candidates for smoke and setup validation;
 - one primary fixture of 500,000 accessible regular-resource candidates with at least 10%
-  `DocumentId` gaps. That count is where a requested `number=200` and the five-maximum-page minimum
-  partition size coincide exactly: the minimum is `500 * 5 = 2500`, and `ceiling(500000 / 200)` is
-  also exactly `2500`. It therefore exercises `number=200` at the boundary where the minimum stops
-  binding, with no headroom to hide a sizing error;
+  `DocumentId` gaps. That count is where a requested `partitionCount=200` and the five-maximum-page
+  minimum partition size coincide exactly: the minimum is `500 * 5 = 2500`, and
+  `ceiling(500000 / 200)` is also exactly `2500`. It therefore exercises `partitionCount=200` at the
+  boundary where the minimum stops binding, with no headroom to hide a sizing error;
 - the same primary fixture read by a second principal that can access approximately half of it,
   giving the representative row-level authorization variant without a second data load;
 - one filtered variant of the primary fixture at approximately 10% selectivity; and
@@ -208,7 +208,7 @@ provisioned a second time, plus a small descriptor set and a smoke set.
 
 Measure page sizes 25 and 500 at the first, middle, and last cursor ranges. Compare offset 0, a
 one-page shallow offset, and a recorded deep offset. Measure partition counts 1, 10, and 200 on the
-unfiltered primary fixture, and `number=10` on the filtered and authorized variants. Iteration
+unfiltered primary fixture, and `partitionCount=10` on the filtered and authorized variants. Iteration
 counts are not reduced, because iterations cost seconds while fixture provisioning dominates the
 run and a stable p95 depends on them: each scenario has at least five warmups and 30 measured
 warm-cache iterations on a pinned environment. Record p50, p95, command count, returned
@@ -223,12 +223,14 @@ Acceptance gates are:
   gate;
 - cursor hydration performs one database command, uses the existing single-command page-keyset
   architecture, and adds no roundtrip;
-- `/partitions` performs one database command and returns identifiers only;
+- `/partitions` performs one database command for its boundary selection and returns identifiers
+  only; the separate custom-view validation probe, present only where a view-based authorization
+  strategy is configured, is the explicit exception;
 - middle/last cursor p50 is at most `1.20x` first-page cursor p50, and p95 is at most `1.30x`;
 - first-page cursor p50/p95 is at most `1.20x`/`1.30x` the offset-0 baseline;
 - existing shallow-offset p50/p95 is at most `1.20x`/`1.30x` its pre-change baseline;
-- partition `number=200` p50 is at most `1.25x` `number=1` on the same candidate set, proving the
-  requested count does not cause repeated scans; and
+- partition `partitionCount=200` p50 is at most `1.25x` `partitionCount=1` on the same candidate
+  set, proving the requested count does not cause repeated scans; and
 - deep-offset results are recorded for comparison but are not a cursor acceptance gate.
 
 Capture PostgreSQL `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` and SQL Server actual XML plans with

@@ -859,3 +859,13 @@ identifiers. Decoded bounds are candidate identifiers by another name.
 7. **Edge conditions are not errors.** `pageSize=0`, inverted ranges, sparse identifiers, an empty
    candidate set, and `Int64.MaxValue` are valid conditions with defined behavior, not server
    errors.
+8. **Custom-view validation is a second command.** Where a view-based authorization strategy is
+   configured, a read issues the custom-view validation probe before its boundary or page command,
+   on `/partitions` and GET-many alike. Collapsing the two into one provider command is deferred,
+   not rejected: it would change shared authorization behavior for both endpoints, needs
+   provider-specific multi-result-set composition on PostgreSQL and SQL Server, and must preserve
+   the configured check ordering — a view validatable only after an earlier check has passed cannot
+   be co-batched behind that check without letting a relation masquerading as the view answer the
+   membership SQL. Until that work is scheduled, the boundary-selection qualification above is the
+   contract, and neither endpoint may be changed alone, because cursor pages and partition
+   boundaries must keep resolving authorization identically.

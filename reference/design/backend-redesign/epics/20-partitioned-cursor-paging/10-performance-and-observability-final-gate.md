@@ -33,7 +33,7 @@ that cursor latency is depth-insensitive without regressing traditional paging.
   traditional comparison is like-for-like.
 - Execute the epic's cursor/partition/final-comparison matrix on the pinned providers: page sizes 25
   and 500 at first/middle/last cursor ranges, partition counts 1/10/200 on the unfiltered primary
-  fixture, and `number=10` on the filtered and authorized variants.
+  fixture, and `partitionCount=10` on the filtered and authorized variants.
 - Re-run the three traditional offset scenarios with the DMS-1391 definitions for comparable
   post-change evidence.
 - Capture PostgreSQL and SQL Server plan and I/O evidence using the mechanisms specified by the
