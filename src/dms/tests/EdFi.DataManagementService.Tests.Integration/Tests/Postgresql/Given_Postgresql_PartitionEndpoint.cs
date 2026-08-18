@@ -22,6 +22,13 @@ public sealed class Given_Postgresql_PartitionEndpoint : PostgresqlApiIntegratio
 {
     protected override FixtureKey Fixture => FixtureKey.DescriptorRuntime;
 
+    /// <summary>
+    /// The mandatory minimum partition size is a multiple of this, so at the deployed value the seeded
+    /// collections below would each be a single partition and every multi-partition assertion would pass
+    /// without ever crossing a range boundary.
+    /// </summary>
+    protected override int? MaximumPageSizeOverride => PartitionEndpointScenario.HostMaximumPageSize;
+
     [Test]
     public Task It_covers_a_regular_resource_collection_across_its_partitions() =>
         PartitionEndpointScenario.It_covers_a_regular_resource_collection_across_its_partitions(Harness);

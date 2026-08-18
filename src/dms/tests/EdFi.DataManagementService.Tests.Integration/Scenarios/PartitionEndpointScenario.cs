@@ -23,9 +23,10 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 /// </para>
 ///
 /// <para>
-/// Each walk tolerates documents other scenarios sharing this fixture may have left behind: it asserts
-/// that its own seeded documents each arrive exactly once and that no document arrives twice, which
-/// holds regardless of what else the collection contains.
+/// Each test leases its own database, so a walk sees only what it seeded. The assertions are still
+/// written as containment and uniqueness rather than exact equality, because the partition count a seed
+/// produces depends on the configured sizing, and pinning it would make the sizing rule an assumption of
+/// every walk instead of the subject of the one test that asserts it.
 /// </para>
 /// </summary>
 internal static class PartitionEndpointScenario
@@ -37,10 +38,24 @@ internal static class PartitionEndpointScenario
     private const string StandardJsonContentType = "application/json";
 
     /// <summary>
-    /// Enough documents that several partitions can be non-empty, so a walk that silently visited only
-    /// one of them would leave seeded documents unaccounted for.
+    /// The maximum page size the fixtures binding this scenario must configure their host with.
     /// </summary>
-    private const int SeededDocumentCount = 5;
+    /// <remarks>
+    /// The mandatory minimum partition size is <c>MaximumPageSize * 5</c>, so at the deployed value of
+    /// 500 no collection this scenario could seed over HTTP would ever be cut into more than one
+    /// partition, and every multi-partition assertion below would pass vacuously. Lowering the page size
+    /// to two puts the minimum at ten rows, which a seed of
+    /// <see cref="SeededDocumentCount" /> documents clears. The wrappers read this constant rather than
+    /// restating it, so the sizing this scenario depends on cannot drift from the host it runs against.
+    /// </remarks>
+    internal const int HostMaximumPageSize = 2;
+
+    /// <summary>
+    /// Enough documents to exceed the minimum partition size that <see cref="HostMaximumPageSize" />
+    /// implies, so a request for three partitions really produces three and the disjointness assertion
+    /// runs across separate ranges rather than inside one.
+    /// </summary>
+    private const int SeededDocumentCount = 25;
 
     /// <summary>
     /// A walk inside one partition cannot loop forever on a token that fails to advance: it exhausts
@@ -58,7 +73,13 @@ internal static class PartitionEndpointScenario
 
         var pageTokens = await ReadPageTokensAsync(harness, $"{MergeItemsPartitionsEndpoint}?number=3");
 
-        pageTokens.Should().NotBeEmpty("a collection with documents in it has at least one partition");
+        pageTokens
+            .Should()
+            .HaveCountGreaterThan(
+                1,
+                "the seed exceeds the minimum partition size, so the collection really is cut into "
+                    + "several partitions and the disjointness assertion below runs across separate ranges"
+            );
 
         var returnedIds = await WalkEveryPartitionAsync(harness, MergeItemsEndpoint, pageTokens);
 
@@ -77,7 +98,7 @@ internal static class PartitionEndpointScenario
 
         var pageTokens = await ReadPageTokensAsync(harness, $"{DescriptorPartitionsEndpoint}?number=3");
 
-        pageTokens.Should().NotBeEmpty();
+        pageTokens.Should().HaveCountGreaterThan(1);
 
         var returnedIds = await WalkEveryPartitionAsync(harness, DescriptorEndpoint, pageTokens);
 
@@ -96,6 +117,13 @@ internal static class PartitionEndpointScenario
 
         var pageTokens = await ReadPageTokensAsync(harness, $"{MergeItemsPartitionsEndpoint}?number=2");
 
+        pageTokens
+            .Should()
+            .HaveCountGreaterThan(
+                1,
+                "the seed is large enough for the requested count to be reachable, so the bound below "
+                    + "is not satisfied merely by there being one partition"
+            );
         pageTokens.Should().HaveCountLessThanOrEqualTo(2);
     }
 
@@ -309,7 +337,8 @@ internal static class PartitionEndpointScenario
             for (var page = 0; page < MaximumWalkedPages; page++)
             {
                 using HttpResponseMessage response = await harness.HttpClient.GetAsync(
-                    $"{collectionEndpoint}{separator}pageToken={Uri.EscapeDataString(pageToken!)}&pageSize=2"
+                    $"{collectionEndpoint}{separator}pageToken={Uri.EscapeDataString(pageToken!)}"
+                        + $"&pageSize={HostMaximumPageSize}"
                 );
                 string body = await response.Content.ReadAsStringAsync();
 
