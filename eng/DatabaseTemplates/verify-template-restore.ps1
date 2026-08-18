@@ -124,6 +124,8 @@ Assert-SafeDatabaseName -DatabaseName $VerificationDatabaseName
 Push-Location $PSScriptRoot
 try {
     Import-Module ./Template-Management.psm1 -Force
+    Import-Module ./Template-RestoreCore.psm1 -Force
+    Import-Module ./Template-RestoreTrust.psm1 -Force
     Import-Module ../Dms-Management.psm1 -Force
 
     # --- Restore the package into a fresh verification database ---
@@ -143,6 +145,80 @@ try {
     }
 
     Write-Host "Restored schemas match: $($restoredSchemas -join ', ')" -ForegroundColor Green
+
+    # --- Restore-manifest assertions (version-1 restore contract) ---
+    # Prove the package carries a shape-valid restore manifest that matches the restored
+    # database exactly, using the same independent derivation a restore consumer performs:
+    # kind, engine, artifact identity and hash, effective-schema fields, physical baseline,
+    # canonical inventory, projects, and the DMS-only content gate.
+    $manifestExtractDirectory = Join-Path ([System.IO.Path]::GetTempPath()) "template-manifest-verify-$([Guid]::NewGuid().ToString('N'))"
+    try {
+        $manifestPackage = Get-ChildItem -Path $PackageDirectory -Filter *.nupkg |
+            Where-Object { $_.Name -notlike "*.Attestation.*" } |
+            Select-Object -First 1
+        if ($null -eq $manifestPackage) {
+            throw "No template .nupkg found in '$PackageDirectory' for manifest verification."
+        }
+
+        New-Item -ItemType Directory -Path $manifestExtractDirectory -Force | Out-Null
+        $manifestZipPath = Join-Path $manifestExtractDirectory "package.zip"
+        Copy-Item -LiteralPath $manifestPackage.FullName -Destination $manifestZipPath
+        Expand-Archive -Path $manifestZipPath -DestinationPath (Join-Path $manifestExtractDirectory "contents")
+
+        $manifestFile = Get-ChildItem -Path (Join-Path $manifestExtractDirectory "contents") -Filter (Get-RestoreManifestFileName) -Recurse | Select-Object -First 1
+        if ($null -eq $manifestFile) {
+            throw "Package '$($manifestPackage.Name)' does not contain a $(Get-RestoreManifestFileName); packages without a restore manifest are not eligible for restore."
+        }
+        $restoreManifest = Read-RestoreManifest -Path $manifestFile.FullName
+
+        $expectedTemplateKind = if ($RequirePopulatedData) { "Populated" } else { "Minimal" }
+        if ([string]$restoreManifest.templateKind -cne $expectedTemplateKind) {
+            throw "Restore manifest declares templateKind '$($restoreManifest.templateKind)' but this verification expects '$expectedTemplateKind'."
+        }
+        if ([string]$restoreManifest.databaseEngine -cne $DatabaseEngine) {
+            throw "Restore manifest declares databaseEngine '$($restoreManifest.databaseEngine)' but this verification runs against '$DatabaseEngine'."
+        }
+
+        $manifestArtifact = Get-ChildItem -Path (Join-Path $manifestExtractDirectory "contents") -Filter ([string]$restoreManifest.artifactFileName) -Recurse | Select-Object -First 1
+        if ($null -eq $manifestArtifact) {
+            throw "Package '$($manifestPackage.Name)' does not contain the manifest-declared artifact '$($restoreManifest.artifactFileName)'."
+        }
+        $actualArtifactSha256 = Get-FileSha256Hex -Path $manifestArtifact.FullName
+        if ($actualArtifactSha256 -cne [string]$restoreManifest.artifactSha256) {
+            throw "The packaged artifact's SHA-256 '$actualArtifactSha256' does not match the manifest's artifactSha256 '$($restoreManifest.artifactSha256)'."
+        }
+
+        $restoredFacts = Get-TemplateSourceCatalogFacts `
+            -DatabaseEngine $DatabaseEngine `
+            -ContainerName $ContainerName `
+            -DatabaseName $VerificationDatabaseName `
+            -MssqlPassword $MssqlPassword `
+            -ArtifactSchemaName ([string[]]$restoredSchemas)
+
+        $restoredPartition = Assert-DmsOnlyInventory `
+            -DatabaseEngine $DatabaseEngine `
+            -Inventory $restoredFacts.FullInventory `
+            -SourceDescription "Restored verification database '$VerificationDatabaseName'"
+
+        Assert-RestoreManifestMatchesDatabase `
+            -Manifest $restoreManifest `
+            -Facts $restoredFacts `
+            -DatabaseEngine $DatabaseEngine `
+            -DatabaseDescription "Restored verification database '$VerificationDatabaseName'"
+
+        $manifestProjects = @($restoreManifest.projects)
+        $restoredProjects = @($restoredPartition.ProjectSchemaNames)
+        if (($manifestProjects -join "|") -cne ($restoredProjects -join "|")) {
+            throw "Restore manifest declares projects [$($manifestProjects -join ', ')] but the restored database contains [$($restoredProjects -join ', ')]."
+        }
+
+        Write-Host "Restore-manifest assertions passed: kind=$($restoreManifest.templateKind), engine=$($restoreManifest.databaseEngine), projects=[$($manifestProjects -join ', ')], inventory and effective-schema facts match." -ForegroundColor Green
+    }
+    finally {
+        if (Test-Path -LiteralPath $manifestExtractDirectory) {
+            Remove-Item -LiteralPath $manifestExtractDirectory -Recurse -Force
+        }
+    }
 
     if ($DatabaseEngine -eq "mssql") {
         $effectiveSchemaCount = Invoke-SqlcmdScalar -DatabaseName $VerificationDatabaseName -Query 'SELECT COUNT(*) FROM [dms].[EffectiveSchema];'

@@ -1609,6 +1609,87 @@ function Assert-DmsOnlyInventory {
     return $partition
 }
 
+function Assert-RestoreManifestMatchesDatabase {
+    <#
+    .SYNOPSIS
+    Fails unless a database's independently derived catalog facts match a restore
+    manifest exactly: the effective schema fields, the physical baseline (DocumentJson
+    storage type against both the manifest and the engine's repo baseline, plus the SQL
+    Server compatibility level), and the canonical inventory hash recomputed from the
+    database's artifact-scope inventory. Shared by the producer-side verification script
+    and the restore consumer's scratch validation; every mismatch is aggregated into one
+    diagnostic.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Compares against one facts record; "Facts" is the documented restore-manifest term of art, not a collection.')]
+    param (
+        [Parameter(Mandatory = $true)]
+        $Manifest,
+
+        [Parameter(Mandatory = $true)]
+        $Facts,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [string]$DatabaseDescription = "The database"
+    )
+
+    $mismatches = [System.Collections.Generic.List[string]]::new()
+
+    $manifestEngine = [string](Get-RestorePropertyValue -InputObject $Manifest -Name "databaseEngine")
+    if ($manifestEngine -cne $DatabaseEngine) {
+        $mismatches.Add("databaseEngine: manifest '$manifestEngine' vs selected engine '$DatabaseEngine'")
+    }
+
+    $manifestEffectiveSchemaHash = [string](Get-RestorePropertyValue -InputObject $Manifest -Name "effectiveSchemaHash")
+    if ($manifestEffectiveSchemaHash -cne [string]$Facts.EffectiveSchemaHash) {
+        $mismatches.Add("effectiveSchemaHash: manifest '$manifestEffectiveSchemaHash' vs database '$($Facts.EffectiveSchemaHash)'")
+    }
+
+    $manifestApiSchemaFormatVersion = [string](Get-RestorePropertyValue -InputObject $Manifest -Name "apiSchemaFormatVersion")
+    if ($manifestApiSchemaFormatVersion -cne [string]$Facts.ApiSchemaFormatVersion) {
+        $mismatches.Add("apiSchemaFormatVersion: manifest '$manifestApiSchemaFormatVersion' vs database '$($Facts.ApiSchemaFormatVersion)'")
+    }
+
+    $manifestResourceKeyCount = Get-RestorePropertyValue -InputObject $Manifest -Name "resourceKeyCount"
+    if ([int]$manifestResourceKeyCount -ne [int]$Facts.ResourceKeyCount) {
+        $mismatches.Add("resourceKeyCount: manifest '$manifestResourceKeyCount' vs database '$($Facts.ResourceKeyCount)'")
+    }
+
+    $manifestResourceKeySeedHashB64 = [string](Get-RestorePropertyValue -InputObject $Manifest -Name "resourceKeySeedHashB64")
+    if ($manifestResourceKeySeedHashB64 -cne [string]$Facts.ResourceKeySeedHashB64) {
+        $mismatches.Add("resourceKeySeedHashB64: manifest value differs from the database value")
+    }
+
+    $baselineDocumentJsonType = Get-RestoreDocumentJsonBaselineType -DatabaseEngine $DatabaseEngine
+    $manifestDocumentJsonType = [string](Get-RestorePropertyValue -InputObject $Manifest -Name "documentJsonColumnType")
+    $databaseDocumentJsonType = [string]$Facts.DocumentJsonColumnType
+    if ($manifestDocumentJsonType -cne $databaseDocumentJsonType) {
+        $mismatches.Add("documentJsonColumnType: manifest '$manifestDocumentJsonType' vs database '$databaseDocumentJsonType'")
+    }
+    if ($databaseDocumentJsonType -cne $baselineDocumentJsonType) {
+        $mismatches.Add("documentJsonColumnType: database '$databaseDocumentJsonType' vs the $DatabaseEngine baseline '$baselineDocumentJsonType'")
+    }
+
+    if ($DatabaseEngine -eq "mssql") {
+        $manifestCompatibilityLevel = Get-RestorePropertyValue -InputObject $Manifest -Name "databaseCompatibilityLevel"
+        if ([int]$manifestCompatibilityLevel -ne [int]$Facts.DatabaseCompatibilityLevel) {
+            $mismatches.Add("databaseCompatibilityLevel: manifest '$manifestCompatibilityLevel' vs database '$($Facts.DatabaseCompatibilityLevel)'")
+        }
+    }
+
+    $manifestInventorySha256 = [string](Get-RestorePropertyValue -InputObject $Manifest -Name "inventorySha256")
+    $databaseInventorySha256 = Get-CanonicalInventoryHash -Inventory $Facts.ArtifactInventory
+    if ($manifestInventorySha256 -cne $databaseInventorySha256) {
+        $mismatches.Add("inventorySha256: manifest '$manifestInventorySha256' vs the database's independently derived '$databaseInventorySha256'")
+    }
+
+    if ($mismatches.Count -gt 0) {
+        throw "$DatabaseDescription does not match the restore manifest: $($mismatches -join '; ')."
+    }
+}
+
 function Get-RelationalMappingVersionFromSource {
     <#
     .SYNOPSIS
@@ -1803,6 +1884,7 @@ Export-ModuleMember -Function `
     ConvertFrom-EffectiveSchemaRow, `
     Get-TemplateProjectSchemaPartition, `
     Assert-DmsOnlyInventory, `
+    Assert-RestoreManifestMatchesDatabase, `
     Get-RelationalMappingVersionFromSource, `
     New-TemplateRestoreManifest, `
     ConvertFrom-MssqlBackupFileList, `

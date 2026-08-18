@@ -835,6 +835,19 @@ IF @@ROWCOUNT <> 1
             ($calls[0][0..9] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c') -join '|')
         }
 
+        It "ignores companion attestation packages when locating the template package" {
+            # After an attested build, "<Id>.Attestation.<version>.nupkg" sits beside the
+            # template package; alphabetically it sorts FIRST here, so without the exclusion
+            # the restore would pick the companion instead of the template.
+            Set-Content -LiteralPath (Join-Path $script:packageDir "A.Template.Attestation.1.0.1.nupkg") -Value "not a template package"
+            New-FakeTemplatePackage -Directory $script:packageDir -ArtifactFileName "dump.sql" -PackageFileName "MyPgTemplate.nupkg" | Out-Null
+
+            Mock docker -ModuleName Template-Management { $global:LASTEXITCODE = 0 }
+
+            $result = Restore-TemplatePackage -PackageDirectory $script:packageDir -DatabaseName "testdb" -DatabaseEngine postgresql -ContainerName "dms-postgresql"
+            $result | Should -Be "MyPgTemplate.nupkg"
+        }
+
         It "produces byte-identical restore arguments whether or not -DatabaseEngine is supplied" {
             $explicitDir = Join-Path $TestDrive ([Guid]::NewGuid().ToString('N'))
             New-Item -ItemType Directory -Path $explicitDir -Force | Out-Null

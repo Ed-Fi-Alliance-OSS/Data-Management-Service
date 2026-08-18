@@ -1114,3 +1114,140 @@ Describe "New-TemplateRestoreManifest" {
         { New-TemplateRestoreManifest @unwantedCompatibility } | Should -Throw "*must not be supplied for postgresql*"
     }
 }
+
+Describe "Assert-RestoreManifestMatchesDatabase" {
+    BeforeAll {
+        function script:New-MatchingFactsAndManifest {
+            param (
+                [ValidateSet("postgresql", "mssql")]
+                [string]$DatabaseEngine = "postgresql"
+            )
+
+            $inventory = @{
+                schemas    = @(
+                    @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
+                    @{ schemaName = "edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                    @{ schemaName = "tracked_changes_edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                    @{ schemaName = $(if ($DatabaseEngine -eq "mssql") { "dbo" } else { "public" }); objects = @() }
+                )
+                principals = @()
+            }
+
+            $facts = [pscustomobject]@{
+                ApiSchemaFormatVersion     = "1.0.0"
+                EffectiveSchemaHash        = ("ab" * 32)
+                ResourceKeyCount           = 42
+                ResourceKeySeedHashB64     = [System.Convert]::ToBase64String([byte[]](1..32))
+                EngineVersion              = $(if ($DatabaseEngine -eq "mssql") { "17.0.900.7" } else { "16.8" })
+                DatabaseCompatibilityLevel = $(if ($DatabaseEngine -eq "mssql") { 170 } else { $null })
+                DocumentJsonColumnType     = (Get-RestoreDocumentJsonBaselineType -DatabaseEngine $DatabaseEngine)
+                FullInventory              = $inventory
+                ArtifactInventory          = $inventory
+            }
+
+            $manifestArguments = @{
+                PackageId                = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0"
+                PackageVersion           = "1.0.123"
+                DatabaseEngine           = $DatabaseEngine
+                TemplateKind             = "Minimal"
+                DataStandardVersion      = "5.2.0"
+                ProjectName              = [string[]]@("edfi")
+                ApiSchemaFormatVersion   = $facts.ApiSchemaFormatVersion
+                EffectiveSchemaHash      = $facts.EffectiveSchemaHash
+                ResourceKeyCount         = $facts.ResourceKeyCount
+                ResourceKeySeedHashB64   = $facts.ResourceKeySeedHashB64
+                RelationalMappingVersion = "v2"
+                EngineVersion            = $facts.EngineVersion
+                DocumentJsonColumnType   = $facts.DocumentJsonColumnType
+                Inventory                = $facts.ArtifactInventory
+                ArtifactFileName         = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0.sql"
+                ArtifactSha256           = ("cd" * 32)
+            }
+            if ($DatabaseEngine -eq "mssql") {
+                $manifestArguments.PackageId = "EdFi.Api.Minimal.Template.MsSql.5.2.0"
+                $manifestArguments.DatabaseCompatibilityLevel = 170
+                $manifestArguments.ArtifactFileName = "EdFi.Api.Minimal.Template.MsSql.5.2.0.bak"
+            }
+
+            return [pscustomobject]@{
+                Facts    = $facts
+                Manifest = (New-TemplateRestoreManifest @manifestArguments)
+            }
+        }
+    }
+
+    It "passes when the database facts match the manifest exactly on both engines" {
+        foreach ($engine in @("postgresql", "mssql")) {
+            $pair = New-MatchingFactsAndManifest -DatabaseEngine $engine
+            { Assert-RestoreManifestMatchesDatabase -Manifest $pair.Manifest -Facts $pair.Facts -DatabaseEngine $engine } |
+                Should -Not -Throw
+        }
+    }
+
+    It "reports each effective-schema field mismatch by name" {
+        $pair = New-MatchingFactsAndManifest
+        $pair.Facts.EffectiveSchemaHash = ("ee" * 32)
+        { Assert-RestoreManifestMatchesDatabase -Manifest $pair.Manifest -Facts $pair.Facts -DatabaseEngine postgresql } |
+            Should -Throw "*effectiveSchemaHash: manifest*"
+
+        $pair = New-MatchingFactsAndManifest
+        $pair.Facts.ApiSchemaFormatVersion = "9.9.9"
+        { Assert-RestoreManifestMatchesDatabase -Manifest $pair.Manifest -Facts $pair.Facts -DatabaseEngine postgresql } |
+            Should -Throw "*apiSchemaFormatVersion: manifest '1.0.0' vs database '9.9.9'*"
+
+        $pair = New-MatchingFactsAndManifest
+        $pair.Facts.ResourceKeyCount = 41
+        { Assert-RestoreManifestMatchesDatabase -Manifest $pair.Manifest -Facts $pair.Facts -DatabaseEngine postgresql } |
+            Should -Throw "*resourceKeyCount: manifest '42' vs database '41'*"
+
+        $pair = New-MatchingFactsAndManifest
+        $pair.Facts.ResourceKeySeedHashB64 = [System.Convert]::ToBase64String([byte[]](32..63))
+        { Assert-RestoreManifestMatchesDatabase -Manifest $pair.Manifest -Facts $pair.Facts -DatabaseEngine postgresql } |
+            Should -Throw "*resourceKeySeedHashB64*differs*"
+    }
+
+    It "reports the physical-baseline mismatches: DocumentJson type against the manifest and against the engine baseline, and the MSSQL compatibility level" {
+        $pair = New-MatchingFactsAndManifest
+        $pair.Facts.DocumentJsonColumnType = "varchar"
+        $failure = { Assert-RestoreManifestMatchesDatabase -Manifest $pair.Manifest -Facts $pair.Facts -DatabaseEngine postgresql }
+        $failure | Should -Throw "*documentJsonColumnType: manifest 'jsonb' vs database 'varchar'*"
+        $failure | Should -Throw "*database 'varchar' vs the postgresql baseline 'jsonb'*"
+
+        $pair = New-MatchingFactsAndManifest -DatabaseEngine mssql
+        $pair.Facts.DatabaseCompatibilityLevel = 160
+        { Assert-RestoreManifestMatchesDatabase -Manifest $pair.Manifest -Facts $pair.Facts -DatabaseEngine mssql } |
+            Should -Throw "*databaseCompatibilityLevel: manifest '170' vs database '160'*"
+    }
+
+    It "reports an inventory divergence through the independently recomputed canonical hash" {
+        $pair = New-MatchingFactsAndManifest
+        $pair.Facts.ArtifactInventory = @{
+            schemas    = @(
+                @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }, @{ name = "Contaminant"; type = "table" }) },
+                @{ schemaName = "edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                @{ schemaName = "tracked_changes_edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                @{ schemaName = "public"; objects = @() }
+            )
+            principals = @()
+        }
+        { Assert-RestoreManifestMatchesDatabase -Manifest $pair.Manifest -Facts $pair.Facts -DatabaseEngine postgresql } |
+            Should -Throw "*inventorySha256: manifest*independently derived*"
+    }
+
+    It "aggregates multiple mismatches under the caller's database description" {
+        $pair = New-MatchingFactsAndManifest
+        $pair.Facts.EffectiveSchemaHash = ("ee" * 32)
+        $pair.Facts.ResourceKeyCount = 1
+        $failure = { Assert-RestoreManifestMatchesDatabase -Manifest $pair.Manifest -Facts $pair.Facts -DatabaseEngine postgresql -DatabaseDescription "Scratch database 'x'" }
+        $failure | Should -Throw "*Scratch database 'x' does not match the restore manifest*"
+        $failure | Should -Throw "*effectiveSchemaHash*"
+        $failure | Should -Throw "*resourceKeyCount*"
+    }
+
+    It "reports a manifest whose engine differs from the selected engine" {
+        $pair = New-MatchingFactsAndManifest -DatabaseEngine postgresql
+        $mssqlFacts = (New-MatchingFactsAndManifest -DatabaseEngine mssql).Facts
+        { Assert-RestoreManifestMatchesDatabase -Manifest $pair.Manifest -Facts $mssqlFacts -DatabaseEngine mssql } |
+            Should -Throw "*databaseEngine: manifest 'postgresql' vs selected engine 'mssql'*"
+    }
+}
