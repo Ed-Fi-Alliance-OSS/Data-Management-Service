@@ -219,6 +219,44 @@ public partial class Given_DescriptorReadHandler
             .MustNotHaveHappened();
     }
 
+    // The non-provider fault set the page path catches, asserted here because a condition both
+    // operations can reach must leave the backend as the same kind of result. One that escaped would
+    // reach the client as the generic unhandled 500 rather than the logged problem+json unknown
+    // failure the collection GET produces for the identical condition.
+    [TestCaseSource(nameof(_boundaryFaultsReportedAsUnknownFailures))]
+    public async Task It_reports_a_boundary_fault_as_an_unknown_partition_failure(Exception fault)
+    {
+        var commandExecutor = A.Fake<IRelationalCommandExecutor>();
+
+        A.CallTo(() =>
+                commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<IReadOnlyList<long>>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Throws(fault);
+
+        var sut = CreateHandler(commandExecutor);
+
+        var result = await sut.HandlePartitionsAsync(CreatePartitionRequest(SqlDialect.Pgsql));
+
+        result
+            .Should()
+            .BeOfType<PartitionResult.UnknownPartitionFailure>()
+            .Which.FailureMessage.Should()
+            .Be(fault.Message);
+    }
+
+    private static readonly Exception[] _boundaryFaultsReportedAsUnknownFailures =
+    [
+        new NotSupportedException("boundary statement is not supported"),
+        new DescriptorReadInvariantException("boundary reader invariant broken"),
+        new InvalidOperationException("boundary parameter binding is incomplete"),
+        new ArgumentException("boundary binding kind is unsupported"),
+        new KeyNotFoundException("boundary plan is missing a key"),
+    ];
+
     [Test]
     public async Task It_rejects_a_null_descriptor_partition_request()
     {

@@ -1077,11 +1077,26 @@ internal sealed class DescriptorReadHandler(
         {
             throw new CustomViewAuthorizationValidationException(ex);
         }
+        // The same non-provider fault set the page path catches. A condition both operations can reach
+        // has to leave the backend as the same kind of result, or one answers with the logged
+        // problem+json unknown failure while the other escapes to the generic unhandled 500.
+        catch (NotSupportedException ex)
+        {
+            return new PartitionResult.UnknownPartitionFailure(ex.Message);
+        }
+        catch (DescriptorReadInvariantException ex)
+        {
+            return new PartitionResult.UnknownPartitionFailure(ex.Message);
+        }
         catch (InvalidOperationException ex)
         {
             return new PartitionResult.UnknownPartitionFailure(ex.Message);
         }
         catch (ArgumentException ex)
+        {
+            return new PartitionResult.UnknownPartitionFailure(ex.Message);
+        }
+        catch (KeyNotFoundException ex)
         {
             return new PartitionResult.UnknownPartitionFailure(ex.Message);
         }
