@@ -776,6 +776,138 @@ function Read-RestoreManifest {
     return $manifest
 }
 
+function New-TemplateRestoreManifest {
+    <#
+    .SYNOPSIS
+    Assembles the version-1 restore manifest from live-catalog facts and package identity,
+    computes the canonical inventory hash, and self-validates the result against
+    Assert-RestoreManifestShape before returning it, so a producer can never package a
+    manifest the consumer contract would reject.
+
+    .OUTPUTS
+    Ordered hashtable in the documented field order, ready for JSON serialization.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Returns a manifest object; no system state is created or changed.')]
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$PackageId,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PackageVersion,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("Minimal", "Populated")]
+        [string]$TemplateKind,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DataStandardVersion,
+
+        [Parameter(Mandatory = $true)]
+        [string[]]$ProjectName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ApiSchemaFormatVersion,
+
+        [Parameter(Mandatory = $true)]
+        [string]$EffectiveSchemaHash,
+
+        [Parameter(Mandatory = $true)]
+        [int]$ResourceKeyCount,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ResourceKeySeedHashB64,
+
+        [Parameter(Mandatory = $true)]
+        [string]$RelationalMappingVersion,
+
+        [Parameter(Mandatory = $true)]
+        [string]$EngineVersion,
+
+        [System.Nullable[int]]$DatabaseCompatibilityLevel = $null,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DocumentJsonColumnType,
+
+        [Parameter(Mandatory = $true)]
+        $Inventory,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ArtifactFileName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ArtifactSha256
+    )
+
+    $manifest = [ordered]@{
+        version                  = $script:SupportedRestoreManifestVersion
+        packageId                = $PackageId
+        packageVersion           = $PackageVersion
+        databaseEngine           = $DatabaseEngine
+        templateKind             = $TemplateKind
+        dataStandardVersion      = $DataStandardVersion
+        contentProfile           = $script:RestoreContentProfileDmsDatastoreOnly
+        projects                 = [string[]]$ProjectName
+        apiSchemaFormatVersion   = $ApiSchemaFormatVersion
+        effectiveSchemaHash      = $EffectiveSchemaHash
+        resourceKeyCount         = $ResourceKeyCount
+        resourceKeySeedHashB64   = $ResourceKeySeedHashB64
+        relationalMappingVersion = $RelationalMappingVersion
+        engineVersion            = $EngineVersion
+        documentJsonColumnType   = $DocumentJsonColumnType
+        inventory                = (ConvertTo-CanonicalInventoryDocument -Inventory $Inventory)
+        inventorySha256          = (Get-CanonicalInventoryHash -Inventory $Inventory)
+        artifactFileName         = $ArtifactFileName
+        artifactSha256           = $ArtifactSha256
+    }
+
+    if ($DatabaseEngine -eq "mssql") {
+        if ($null -eq $DatabaseCompatibilityLevel) {
+            throw "DatabaseCompatibilityLevel is required for mssql restore manifests."
+        }
+        $manifest["databaseCompatibilityLevel"] = [int]$DatabaseCompatibilityLevel
+    }
+    elseif ($null -ne $DatabaseCompatibilityLevel) {
+        throw "DatabaseCompatibilityLevel must not be supplied for postgresql restore manifests."
+    }
+
+    Assert-RestoreManifestShape -Manifest $manifest
+
+    return $manifest
+}
+
+function ConvertTo-CanonicalInventoryDocument {
+    <#
+    .SYNOPSIS
+    Returns the canonical inventory as plain ordered hashtables (sorted schemas/objects/
+    principals with lowercase keys) for embedding in the restore manifest, so the packaged
+    JSON is itself in canonical order.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        $Inventory
+    )
+
+    $canonical = ConvertTo-CanonicalInventory -Inventory $Inventory
+
+    $schemas = [System.Collections.Generic.List[object]]::new()
+    foreach ($schemaEntry in $canonical.Schemas) {
+        $objects = [System.Collections.Generic.List[object]]::new()
+        foreach ($objectEntry in $schemaEntry.Objects) {
+            $objects.Add([ordered]@{ name = $objectEntry.Name; type = $objectEntry.Type })
+        }
+        $schemas.Add([ordered]@{ schemaName = $schemaEntry.SchemaName; objects = @($objects) })
+    }
+
+    return [ordered]@{
+        schemas    = @($schemas)
+        principals = [string[]]@($canonical.Principals)
+    }
+}
+
 function ConvertFrom-MssqlBackupFileList {
     <#
     .SYNOPSIS
@@ -879,6 +1011,545 @@ function New-MssqlRestoreMoveClause {
     }
 
     return [string[]]$moveClauses.ToArray()
+}
+
+function Get-PostgresqlAllowedExtensionName {
+    <#
+    .SYNOPSIS
+    PostgreSQL extensions whose objects are permitted extension bootstrap: template dumps
+    inject CREATE EXTENSION pgcrypto (dms.uuidv5 requires digest()), and its objects install
+    into "public". Inventory queries filter ONLY these extensions' objects out, so objects
+    from any other extension remain visible to the DMS-only gate as contamination.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns the allow-list of extension names; the singular Name suffix is the repo convention for list-returning helpers.')]
+    param ()
+
+    return [string[]]@("pgcrypto")
+}
+
+function Get-InventorySchemaQuerySql {
+    <#
+    .SYNOPSIS
+    Engine SQL listing schema names for the given enumeration purpose (one name per row).
+    Exclusions come from Get-RestoreSchemaNameExclusion, so dump discovery and the DMS-only
+    gate's inventory enumeration stay on their documented, deliberately different scopes.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("DumpDiscovery", "InventoryEnumeration")]
+        [string]$Purpose
+    )
+
+    $exclusion = Get-RestoreSchemaNameExclusion -DatabaseEngine $DatabaseEngine -Purpose $Purpose
+    $quotedNames = ($exclusion.ExcludedSchemaName | ForEach-Object { "'" + $_ + "'" }) -join ", "
+
+    if ($DatabaseEngine -eq "mssql") {
+        return "SET NOCOUNT ON; SELECT name FROM sys.schemas WHERE name NOT IN ($quotedNames) AND name NOT LIKE 'db[_]%' ORDER BY name;"
+    }
+
+    return "SELECT nspname FROM pg_catalog.pg_namespace WHERE nspname !~ '^pg_' AND nspname NOT IN ($quotedNames) ORDER BY nspname;"
+}
+
+function Get-InventoryObjectQuerySql {
+    <#
+    .SYNOPSIS
+    Engine SQL listing every inventoried object as pipe-separated "schema|name|type" rows
+    over the InventoryEnumeration schema scope. PostgreSQL function names carry their
+    identity-argument signature (overloads must stay distinct), triggers are qualified by
+    their table, and objects owned by the allow-listed bootstrap extensions are filtered so
+    everything else an artifact creates stays visible to the DMS-only gate.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine
+    )
+
+    if ($DatabaseEngine -eq "mssql") {
+        return @(
+            "SET NOCOUNT ON;",
+            "SELECT s.name + '|' + o.name + '|' +",
+            "  CASE o.type WHEN 'U' THEN 'table' WHEN 'V' THEN 'view' WHEN 'P' THEN 'procedure'",
+            "    WHEN 'FN' THEN 'function' WHEN 'IF' THEN 'function' WHEN 'TF' THEN 'function' WHEN 'AF' THEN 'aggregate'",
+            "    WHEN 'TR' THEN 'trigger' WHEN 'SO' THEN 'sequence' ELSE LOWER(RTRIM(o.type)) END",
+            "FROM sys.objects o JOIN sys.schemas s ON s.schema_id = o.schema_id",
+            "WHERE o.is_ms_shipped = 0",
+            "  AND o.type IN ('U','V','P','FN','IF','TF','AF','TR','SO')",
+            "  AND s.name NOT IN ('guest','sys','INFORMATION_SCHEMA') AND s.name NOT LIKE 'db[_]%'",
+            "ORDER BY 1;"
+        ) -join "`n"
+    }
+
+    $allowedExtensionList = (@(Get-PostgresqlAllowedExtensionName) | ForEach-Object { "'" + $_ + "'" }) -join ", "
+
+    return @(
+        "SELECT n.nspname || '|' || c.relname || '|' ||",
+        "  CASE c.relkind WHEN 'r' THEN 'table' WHEN 'p' THEN 'table' WHEN 'v' THEN 'view' WHEN 'm' THEN 'materializedview' WHEN 'S' THEN 'sequence' END",
+        "FROM pg_catalog.pg_class c",
+        "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace",
+        "WHERE c.relkind IN ('r','p','v','m','S')",
+        "  AND n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'",
+        "  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d JOIN pg_catalog.pg_extension e ON e.oid = d.refobjid",
+        "                  WHERE d.classid = 'pg_catalog.pg_class'::regclass AND d.objid = c.oid AND d.deptype = 'e' AND e.extname IN ($allowedExtensionList))",
+        "UNION ALL",
+        "SELECT n.nspname || '|' || p.proname || '(' || pg_catalog.pg_get_function_identity_arguments(p.oid) || ')' || '|' ||",
+        "  CASE p.prokind WHEN 'f' THEN 'function' WHEN 'p' THEN 'procedure' WHEN 'a' THEN 'aggregate' WHEN 'w' THEN 'window' END",
+        "FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace",
+        "WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'",
+        "  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d JOIN pg_catalog.pg_extension e ON e.oid = d.refobjid",
+        "                  WHERE d.classid = 'pg_catalog.pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e' AND e.extname IN ($allowedExtensionList))",
+        "UNION ALL",
+        "SELECT n.nspname || '|' || c.relname || '.' || t.tgname || '|' || 'trigger'",
+        "FROM pg_catalog.pg_trigger t JOIN pg_catalog.pg_class c ON c.oid = t.tgrelid JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace",
+        "WHERE NOT t.tgisinternal AND n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'",
+        "ORDER BY 1;"
+    ) -join "`n"
+}
+
+function Get-InventoryPrincipalQuerySql {
+    <#
+    .SYNOPSIS
+    SQL Server SQL listing non-built-in database principals (one name per row). The built-in
+    dbo/guest/sys/INFORMATION_SCHEMA principals, fixed database roles, the db_* role
+    schemas' principals, and the built-in 'public' database role are excluded; anything else
+    a backup carries (copied users, roles) is contamination the gate must see. PostgreSQL
+    has no per-database principals in a schema-scoped SQL dump, so this query is
+    MSSQL-only.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'DatabaseEngine', Justification = 'The ValidateSet-pinned engine parameter IS the contract: it makes a postgresql call site fail at bind time and keeps the query-builder surface uniform across engines.')]
+    param (
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("mssql")]
+        [string]$DatabaseEngine
+    )
+
+    return "SET NOCOUNT ON; SELECT name FROM sys.database_principals WHERE is_fixed_role = 0 AND name NOT IN ('dbo','guest','sys','INFORMATION_SCHEMA','public') AND name NOT LIKE 'db[_]%' ORDER BY name;"
+}
+
+function Get-EffectiveSchemaRowQuerySql {
+    <#
+    .SYNOPSIS
+    Engine SQL returning the dms.EffectiveSchema singleton as one pipe-separated row:
+    ApiSchemaFormatVersion|EffectiveSchemaHash|ResourceKeyCount|ResourceKeySeedHash(hex).
+    The seed hash travels as lowercase hex (both engines can render it) and is converted to
+    the manifest's base64 form by ConvertFrom-EffectiveSchemaRow.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine
+    )
+
+    if ($DatabaseEngine -eq "mssql") {
+        return "SET NOCOUNT ON; SELECT [ApiSchemaFormatVersion] + '|' + [EffectiveSchemaHash] + '|' + CONVERT(nvarchar(8), [ResourceKeyCount]) + '|' + LOWER(CONVERT(nvarchar(64), [ResourceKeySeedHash], 2)) FROM [dms].[EffectiveSchema];"
+    }
+
+    return 'SELECT "ApiSchemaFormatVersion" || ''|'' || "EffectiveSchemaHash" || ''|'' || "ResourceKeyCount"::text || ''|'' || encode("ResourceKeySeedHash", ''hex'') FROM dms."EffectiveSchema";'
+}
+
+function Get-EngineVersionQuerySql {
+    <#
+    .SYNOPSIS
+    Engine SQL returning the live server version as a single scalar row.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine
+    )
+
+    if ($DatabaseEngine -eq "mssql") {
+        return "SET NOCOUNT ON; SELECT CONVERT(nvarchar(128), SERVERPROPERTY('ProductVersion'));"
+    }
+
+    return "SELECT current_setting('server_version');"
+}
+
+function Get-DatabaseCompatibilityLevelQuerySql {
+    <#
+    .SYNOPSIS
+    SQL Server SQL returning a database's compatibility level. The database name is
+    interpolated into an N'' literal, so it is charset-validated first.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$DatabaseName
+    )
+
+    if ($DatabaseName -notmatch "^[A-Za-z0-9_]+\z") {
+        throw "Database name '$DatabaseName' contains unsupported characters."
+    }
+
+    return "SET NOCOUNT ON; SELECT compatibility_level FROM sys.databases WHERE name = N'$DatabaseName';"
+}
+
+function Get-DocumentJsonColumnTypeQuerySql {
+    <#
+    .SYNOPSIS
+    Engine SQL returning the physical storage type of dms.Document.DocumentJson from the
+    live catalog (the D8a physical-baseline fact; never assumed from configuration).
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine
+    )
+
+    if ($DatabaseEngine -eq "mssql") {
+        return "SET NOCOUNT ON; SELECT t.name FROM sys.columns c JOIN sys.types t ON t.user_type_id = c.user_type_id WHERE c.object_id = OBJECT_ID(N'[dms].[Document]') AND c.name = N'DocumentJson';"
+    }
+
+    return "SELECT data_type FROM information_schema.columns WHERE table_schema = 'dms' AND table_name = 'Document' AND column_name = 'DocumentJson';"
+}
+
+function ConvertFrom-InventoryQueryRow {
+    <#
+    .SYNOPSIS
+    Builds the canonical-inventory input object from raw query rows: every schema row
+    becomes a schema entry (including zero-object schemas such as PostgreSQL "public" or
+    SQL Server "dbo"), every "schema|name|type" object row lands under its schema, and
+    principal rows become the principals list. An object row naming a schema absent from
+    the schema rows is a data-integrity failure.
+    #>
+    param (
+        [AllowEmptyCollection()]
+        [AllowNull()]
+        [string[]]$SchemaRow,
+
+        [AllowEmptyCollection()]
+        [AllowNull()]
+        [string[]]$ObjectRow,
+
+        [AllowEmptyCollection()]
+        [AllowNull()]
+        [string[]]$PrincipalRow
+    )
+
+    $schemaObjects = [ordered]@{}
+    foreach ($rawSchemaRow in @($SchemaRow)) {
+        if ([string]::IsNullOrWhiteSpace($rawSchemaRow)) { continue }
+        $schemaName = $rawSchemaRow.Trim()
+        if ($schemaObjects.Contains($schemaName)) {
+            throw "Inventory schema query returned duplicate schema '$schemaName'."
+        }
+        $schemaObjects[$schemaName] = [System.Collections.Generic.List[object]]::new()
+    }
+
+    foreach ($rawObjectRow in @($ObjectRow)) {
+        if ([string]::IsNullOrWhiteSpace($rawObjectRow)) { continue }
+        $fields = $rawObjectRow -split '\|'
+        if ($fields.Count -ne 3) {
+            throw "Inventory object query returned a malformed row (expected 'schema|name|type'): '$rawObjectRow'."
+        }
+        $schemaName = $fields[0].Trim()
+        $objectName = $fields[1].Trim()
+        $objectType = $fields[2].Trim()
+        if ([string]::IsNullOrWhiteSpace($schemaName) -or [string]::IsNullOrWhiteSpace($objectName) -or [string]::IsNullOrWhiteSpace($objectType)) {
+            throw "Inventory object query returned a row with an empty field: '$rawObjectRow'."
+        }
+        if (-not $schemaObjects.Contains($schemaName)) {
+            throw "Inventory object query returned object '$objectName' in schema '$schemaName', which the schema query did not report."
+        }
+        $schemaObjects[$schemaName].Add(@{ name = $objectName; type = $objectType })
+    }
+
+    $schemas = [System.Collections.Generic.List[object]]::new()
+    foreach ($schemaName in $schemaObjects.Keys) {
+        $schemas.Add(@{ schemaName = $schemaName; objects = @($schemaObjects[$schemaName]) })
+    }
+
+    $principals = [System.Collections.Generic.List[string]]::new()
+    foreach ($rawPrincipalRow in @($PrincipalRow)) {
+        if ([string]::IsNullOrWhiteSpace($rawPrincipalRow)) { continue }
+        $principals.Add($rawPrincipalRow.Trim())
+    }
+
+    return @{
+        schemas    = @($schemas)
+        principals = [string[]]$principals.ToArray()
+    }
+}
+
+function Select-InventorySchemaScope {
+    <#
+    .SYNOPSIS
+    Returns a copy of an inventory restricted to the named schemas (used to scope the
+    manifest inventory to what the artifact actually contains, e.g. a dms-schema-only
+    PostgreSQL dump). Principals are preserved unless -ExcludePrincipals is set (a
+    PostgreSQL SQL dump carries no principals, so its artifact scope drops them).
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        $Inventory,
+
+        [Parameter(Mandatory = $true)]
+        [string[]]$SchemaName,
+
+        [switch]$ExcludePrincipals
+    )
+
+    $canonical = ConvertTo-CanonicalInventory -Inventory $Inventory
+    $selectedNames = [System.Collections.Generic.HashSet[string]]::new([string[]]$SchemaName, [System.StringComparer]::Ordinal)
+
+    $schemas = [System.Collections.Generic.List[object]]::new()
+    foreach ($schemaEntry in $canonical.Schemas) {
+        if (-not $selectedNames.Contains($schemaEntry.SchemaName)) { continue }
+        $objects = [System.Collections.Generic.List[object]]::new()
+        foreach ($objectEntry in $schemaEntry.Objects) {
+            $objects.Add(@{ name = $objectEntry.Name; type = $objectEntry.Type })
+        }
+        $schemas.Add(@{ schemaName = $schemaEntry.SchemaName; objects = @($objects) })
+    }
+
+    $principals = [string[]]@()
+    if (-not $ExcludePrincipals) {
+        $principals = [string[]]@($canonical.Principals)
+    }
+
+    return @{
+        schemas    = @($schemas)
+        principals = $principals
+    }
+}
+
+function ConvertFrom-EffectiveSchemaRow {
+    <#
+    .SYNOPSIS
+    Parses the pipe-separated dms.EffectiveSchema singleton row into typed fields,
+    requiring exactly one row, a 64-hex effective schema hash, a positive integer resource
+    key count, and a 32-byte hex seed hash (returned base64-encoded for the manifest).
+    #>
+    param (
+        [AllowEmptyCollection()]
+        [AllowNull()]
+        [string[]]$Row
+    )
+
+    $rows = @(@($Row) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($rows.Count -ne 1) {
+        throw "Expected exactly one dms.EffectiveSchema row, found $($rows.Count). The source database is not a provisioned DMS datastore."
+    }
+
+    $fields = $rows[0].Trim() -split '\|'
+    if ($fields.Count -ne 4) {
+        throw "dms.EffectiveSchema row is malformed (expected 4 pipe-separated fields): '$($rows[0])'."
+    }
+
+    $apiSchemaFormatVersion = $fields[0].Trim()
+    $effectiveSchemaHash = $fields[1].Trim()
+    $resourceKeyCountText = $fields[2].Trim()
+    $seedHashHex = $fields[3].Trim().ToLowerInvariant()
+
+    if ([string]::IsNullOrWhiteSpace($apiSchemaFormatVersion)) {
+        throw "dms.EffectiveSchema.ApiSchemaFormatVersion is empty."
+    }
+    if ($effectiveSchemaHash -cnotmatch "^[0-9a-f]{64}\z") {
+        throw "dms.EffectiveSchema.EffectiveSchemaHash is not a 64-character lowercase hex SHA-256: '$effectiveSchemaHash'."
+    }
+
+    $resourceKeyCount = 0
+    if (-not [int]::TryParse($resourceKeyCountText, [ref]$resourceKeyCount) -or $resourceKeyCount -lt 1) {
+        throw "dms.EffectiveSchema.ResourceKeyCount is not a positive integer: '$resourceKeyCountText'."
+    }
+
+    if ($seedHashHex -cnotmatch "^[0-9a-f]{64}\z") {
+        throw "dms.EffectiveSchema.ResourceKeySeedHash is not 32 bytes of hex: '$seedHashHex'."
+    }
+    $seedHashBytes = [System.Convert]::FromHexString($seedHashHex)
+
+    return [pscustomobject]@{
+        ApiSchemaFormatVersion = $apiSchemaFormatVersion
+        EffectiveSchemaHash    = $effectiveSchemaHash
+        ResourceKeyCount       = $resourceKeyCount
+        ResourceKeySeedHashB64 = [System.Convert]::ToBase64String($seedHashBytes)
+    }
+}
+
+function Get-TemplateProjectSchemaPartition {
+    <#
+    .SYNOPSIS
+    Partitions inventoried schema names into the DMS-owned roles: the dms schema, the
+    optional auth companion, the engine's always-present schema (PostgreSQL public /
+    SQL Server dbo), tracked_changes_<project> companions, and resource-project schemas.
+    A name is a tracked_changes companion only with the full 'tracked_changes_' prefix
+    including the underscore, so lookalikes such as 'tracked_changesx' partition as
+    resource schemas and then fail the companion-pairing gate.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [AllowEmptyCollection()]
+        [string[]]$SchemaName = @()
+    )
+
+    $alwaysPresentSchemaName = if ($DatabaseEngine -eq "mssql") { "dbo" } else { "public" }
+
+    $hasDms = $false
+    $hasAuth = $false
+    $alwaysPresent = [System.Collections.Generic.List[string]]::new()
+    $trackedChangesProjects = [System.Collections.Generic.List[string]]::new()
+    $resourceSchemas = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($name in @($SchemaName)) {
+        if ([string]::IsNullOrWhiteSpace($name)) { continue }
+        if ($name -ceq "dms") { $hasDms = $true; continue }
+        if ($name -ceq "auth") { $hasAuth = $true; continue }
+        if ($name.Equals($alwaysPresentSchemaName, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $alwaysPresent.Add($name)
+            continue
+        }
+        if ($name.StartsWith("tracked_changes_", [System.StringComparison]::Ordinal) -and $name.Length -gt "tracked_changes_".Length) {
+            $trackedChangesProjects.Add($name.Substring("tracked_changes_".Length))
+            continue
+        }
+        $resourceSchemas.Add($name)
+    }
+
+    $trackedChangesProjects.Sort([System.StringComparer]::Ordinal)
+    $resourceSchemas.Sort([System.StringComparer]::Ordinal)
+
+    # Project list order: core first, then the remaining resource schemas in ordinal order.
+    $projectSchemaNames = [System.Collections.Generic.List[string]]::new()
+    if ($resourceSchemas.Contains("edfi")) {
+        $projectSchemaNames.Add("edfi")
+    }
+    foreach ($resourceSchema in $resourceSchemas) {
+        if ($resourceSchema -cne "edfi") { $projectSchemaNames.Add($resourceSchema) }
+    }
+
+    return [pscustomobject]@{
+        HasDms                     = $hasDms
+        HasAuth                    = $hasAuth
+        AlwaysPresentSchemaName    = [string[]]$alwaysPresent.ToArray()
+        TrackedChangesProjectNames = [string[]]$trackedChangesProjects.ToArray()
+        ResourceSchemaNames        = [string[]]$resourceSchemas.ToArray()
+        ProjectSchemaNames         = [string[]]$projectSchemaNames.ToArray()
+    }
+}
+
+function Assert-DmsOnlyInventory {
+    <#
+    .SYNOPSIS
+    The DMS-only content gate shared by the template producer (before dump/packaging) and
+    the restore consumer (against the scratch database). Fails, aggregating every
+    violation, unless the inventory contains only the exact DMS-owned surface: the dms
+    schema (non-empty), the optional auth companion, resource-project schemas each paired
+    with their tracked_changes_<project> companion (and vice versa), an empty
+    always-present public/dbo schema (beyond allow-listed extension bootstrap, which the
+    inventory queries already filter), no dmscs schema, no OpenIddict objects anywhere, and
+    (SQL Server) no non-built-in database principals.
+
+    .OUTPUTS
+    The schema partition (Get-TemplateProjectSchemaPartition) on success, so callers derive
+    the manifest's project list from the same validated facts.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [Parameter(Mandatory = $true)]
+        $Inventory,
+
+        [string]$SourceDescription = "The database"
+    )
+
+    $canonical = ConvertTo-CanonicalInventory -Inventory $Inventory
+    $schemaNames = [string[]]@($canonical.Schemas | ForEach-Object { $_.SchemaName })
+    $partition = Get-TemplateProjectSchemaPartition -DatabaseEngine $DatabaseEngine -SchemaName $schemaNames
+
+    $violations = [System.Collections.Generic.List[string]]::new()
+
+    if (-not $partition.HasDms) {
+        $violations.Add("the 'dms' schema is missing")
+    }
+
+    foreach ($schemaEntry in $canonical.Schemas) {
+        if ($schemaEntry.SchemaName -ceq "dms" -and @($schemaEntry.Objects).Count -eq 0) {
+            $violations.Add("the 'dms' schema contains no objects")
+        }
+
+        if ($schemaEntry.SchemaName.Equals("dmscs", [System.StringComparison]::OrdinalIgnoreCase)) {
+            $violations.Add("it contains the Configuration Service schema 'dmscs'")
+        }
+
+        foreach ($objectEntry in $schemaEntry.Objects) {
+            if ($objectEntry.Name.StartsWith("OpenIddict", [System.StringComparison]::OrdinalIgnoreCase)) {
+                $violations.Add("it contains identity-state object '$($schemaEntry.SchemaName).$($objectEntry.Name)'")
+            }
+        }
+
+        foreach ($alwaysPresentName in $partition.AlwaysPresentSchemaName) {
+            if ($schemaEntry.SchemaName -ceq $alwaysPresentName -and @($schemaEntry.Objects).Count -gt 0) {
+                $objectList = (@($schemaEntry.Objects) | ForEach-Object { $_.Name }) -join ", "
+                $violations.Add("the always-present '$alwaysPresentName' schema contains unexpected objects beyond allow-listed extension bootstrap: $objectList")
+            }
+        }
+    }
+
+    # dmscs partitions as a resource schema; skip its (already-reported) pairing violation
+    # so the aggregate message stays focused on the real defect.
+    $resourceSchemasForPairing = @($partition.ResourceSchemaNames | Where-Object { -not $_.Equals("dmscs", [System.StringComparison]::OrdinalIgnoreCase) })
+
+    foreach ($resourceSchema in $resourceSchemasForPairing) {
+        if ($partition.TrackedChangesProjectNames -cnotcontains $resourceSchema) {
+            $violations.Add("schema '$resourceSchema' has no tracked_changes_$resourceSchema companion, so it is not an authoritative DMS resource schema")
+        }
+    }
+    foreach ($trackedChangesProject in $partition.TrackedChangesProjectNames) {
+        if ($partition.ResourceSchemaNames -cnotcontains $trackedChangesProject) {
+            $violations.Add("companion schema 'tracked_changes_$trackedChangesProject' has no matching resource schema '$trackedChangesProject'")
+        }
+    }
+
+    if ($partition.HasDms -and $resourceSchemasForPairing.Count -gt 0 -and $partition.ResourceSchemaNames -cnotcontains "edfi") {
+        $violations.Add("the core resource schema 'edfi' is missing")
+    }
+
+    if (@($canonical.Principals).Count -gt 0) {
+        $violations.Add("it carries unexpected database principals: $($canonical.Principals -join ', ')")
+    }
+
+    if ($violations.Count -gt 0) {
+        throw "$SourceDescription is not a dedicated DMS datastore: $($violations -join '; ')."
+    }
+
+    return $partition
+}
+
+function Get-RelationalMappingVersionFromSource {
+    <#
+    .SYNOPSIS
+    Reads the authoritative RelationalMappingVersion constant from
+    SchemaHashConstants.cs, the single in-repo source of that value (it is a hash input,
+    not a database column). A missing file or anything other than exactly one constant
+    match fails rather than guessing.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$SchemaHashConstantsPath
+    )
+
+    if (-not (Test-Path -LiteralPath $SchemaHashConstantsPath -PathType Leaf)) {
+        throw "SchemaHashConstants.cs was not found at '$SchemaHashConstantsPath'; the relational mapping version cannot be determined."
+    }
+
+    $content = Get-Content -LiteralPath $SchemaHashConstantsPath -Raw -ErrorAction Stop
+    $constantMatches = [System.Text.RegularExpressions.Regex]::Matches(
+        $content,
+        'const\s+string\s+RelationalMappingVersion\s*=\s*"([^"]+)"')
+
+    if ($constantMatches.Count -ne 1) {
+        throw "Expected exactly one RelationalMappingVersion constant in '$SchemaHashConstantsPath', found $($constantMatches.Count)."
+    }
+
+    return $constantMatches[0].Groups[1].Value
 }
 
 function Get-SourceIdentityReseedSql {
@@ -1031,6 +1702,21 @@ Export-ModuleMember -Function `
     Get-CanonicalInventoryHash, `
     Assert-RestoreManifestShape, `
     Read-RestoreManifest, `
+    Get-PostgresqlAllowedExtensionName, `
+    Get-InventorySchemaQuerySql, `
+    Get-InventoryObjectQuerySql, `
+    Get-InventoryPrincipalQuerySql, `
+    Get-EffectiveSchemaRowQuerySql, `
+    Get-EngineVersionQuerySql, `
+    Get-DatabaseCompatibilityLevelQuerySql, `
+    Get-DocumentJsonColumnTypeQuerySql, `
+    ConvertFrom-InventoryQueryRow, `
+    Select-InventorySchemaScope, `
+    ConvertFrom-EffectiveSchemaRow, `
+    Get-TemplateProjectSchemaPartition, `
+    Assert-DmsOnlyInventory, `
+    Get-RelationalMappingVersionFromSource, `
+    New-TemplateRestoreManifest, `
     ConvertFrom-MssqlBackupFileList, `
     New-MssqlRestoreMoveClause, `
     Get-SourceIdentityReseedSql, `
