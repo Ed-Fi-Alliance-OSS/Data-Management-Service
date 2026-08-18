@@ -27,6 +27,33 @@ public class Given_DocumentCacheEnqueueTelemetry
     private const string TargetLabel = "t1_22dea2068aad74fc28655d36";
 
     [Test]
+    public void It_builds_target_surrogate_labels_from_case_insensitive_tenant_identity()
+    {
+        DocumentCacheTargetKey configuredCasing = DocumentCacheTargetKey.Create("Tenant-A", 7);
+        DocumentCacheTargetKey requestCasing = DocumentCacheTargetKey.Create("tenant-a", 7);
+        DocumentCacheTargetKey upperCasing = DocumentCacheTargetKey.Create("TENANT-A", 7);
+
+        string targetLabel = DocumentCacheTelemetryTargetLabel.FromTargetKey(configuredCasing);
+
+        targetLabel.Should().Be("t1_5da94bdd25fe3bd6fe2e4b0e");
+        DocumentCacheTelemetryTargetLabel.FromTargetKey(requestCasing).Should().Be(targetLabel);
+        DocumentCacheTelemetryTargetLabel.FromTargetKey(upperCasing).Should().Be(targetLabel);
+        DocumentCacheTelemetryTargetLabel
+            .FromTargetKey(DocumentCacheTargetKey.Create("", 1))
+            .Should()
+            .Be(TargetLabel);
+        DocumentCacheTelemetryTargetLabel.FromTargetKey(null).Should().Be("unknown");
+        DocumentCacheTelemetryTargetLabel
+            .FromTargetKey(DocumentCacheTargetKey.Create("tenant-a", 8))
+            .Should()
+            .NotBe(targetLabel);
+        DocumentCacheTelemetryTargetLabel
+            .FromTargetKey(DocumentCacheTargetKey.Create("tenant-b", 7))
+            .Should()
+            .NotBe(targetLabel);
+    }
+
+    [Test]
     public void It_retains_bounded_failures_by_current_target_oldest_to_newest()
     {
         DocumentCacheEnqueueTelemetry telemetry = CreateTelemetry(pageSize: 2);
@@ -240,6 +267,63 @@ public class Given_DocumentCacheEnqueueTelemetry
             .Entries.SelectMany(entry => entry.Properties.Values.OfType<string>())
             .Should()
             .NotContain(TargetKey.ToString());
+    }
+
+    [Test]
+    public async Task It_uses_one_target_surrogate_for_configured_and_request_tenant_casing()
+    {
+        using MetricCollector collector = new();
+        DocumentCacheTargetKey configuredTargetKey = DocumentCacheTargetKey.Create("Tenant-A", 1);
+        DocumentCacheTargetKey requestTargetKey = DocumentCacheTargetKey.Create("tenant-a", 1);
+        DocumentCacheTargetObservation target = ResolvedTarget(configuredTargetKey);
+        var registry = new StaticTargetRegistry([target], [ExecutionContext(target)]);
+        DocumentCacheEnqueueTelemetry telemetry = CreateTelemetry(
+            pageSize: 10,
+            targetRegistry: registry,
+            meter: collector.Meter
+        );
+        string targetLabel = DocumentCacheTelemetryTargetLabel.FromTargetKey(configuredTargetKey);
+
+        telemetry.RecordSuccess(
+            Context(requestTargetKey, DocumentCacheEnqueueTelemetryCanonicalOperation.Insert, "committed")
+        );
+        telemetry.RecordFailure(
+            Context(requestTargetKey, DocumentCacheEnqueueTelemetryCanonicalOperation.Update, "failed"),
+            DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed
+        );
+
+        DocumentCacheTelemetryTargetLabel.FromTargetKey(requestTargetKey).Should().Be(targetLabel);
+        collector
+            .MeasurementsFor(DocumentCacheEnqueueTelemetry.SuccessCounterName)
+            .Should()
+            .ContainSingle()
+            .Which.Tags["target"]
+            .Should()
+            .Be(targetLabel);
+        collector
+            .MeasurementsFor(DocumentCacheEnqueueTelemetry.FailureCounterName)
+            .Should()
+            .ContainSingle()
+            .Which.Tags["target"]
+            .Should()
+            .Be(targetLabel);
+
+        DocumentCacheStatusService service = new(
+            registry,
+            new DocumentCacheProjectionObservationStore(new FixedTimeProvider(ObservedAt)),
+            [new ScriptedStatusObserver()],
+            new FixedTimeProvider(ObservedAt),
+            telemetry
+        );
+
+        DocumentCacheStatusTarget statusTarget = (await service.GetStatusAsync()).Targets.Single();
+
+        statusTarget.TargetKey.TenantKey.Should().Be("Tenant-A");
+        statusTarget.EnqueueFailures.RecentEvents.Should().ContainSingle();
+        statusTarget
+            .EnqueueFailures.RecentEvents[0]
+            .Category.Should()
+            .Be(DocumentCacheStatusEnqueueFailureCategory.WorkPersistenceFailed);
     }
 
     [Test]

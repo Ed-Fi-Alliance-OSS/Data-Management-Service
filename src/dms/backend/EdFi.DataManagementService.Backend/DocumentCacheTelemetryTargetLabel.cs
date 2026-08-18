@@ -44,17 +44,18 @@ internal static class DocumentCacheTelemetryTargetLabel
             ? DocumentCacheTelemetryLabel.Unknown
             : FromParts(targetKey.TenantKey, targetKey.DataStoreId.Value);
 
-    private static string FromParts(string normalizedTenantKey, long dataStoreId)
+    private static string FromParts(string tenantKey, long dataStoreId)
     {
         if (dataStoreId <= 0)
         {
             return DocumentCacheTelemetryLabel.Unknown;
         }
 
+        string canonicalTenantKey = tenantKey.ToLowerInvariant();
         string material =
             HashDomain
             + '\0'
-            + normalizedTenantKey
+            + canonicalTenantKey
             + '\0'
             + dataStoreId.ToString(CultureInfo.InvariantCulture);
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(material));

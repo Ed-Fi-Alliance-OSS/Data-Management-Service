@@ -18,7 +18,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_DocumentCacheReadTelemetry
 {
     private static readonly DocumentCacheTargetKey TargetKey = DocumentCacheTargetKey.Create("Tenant-A", 7);
-    private const string TargetLabel = "t1_8cd00c0cef8519ef483c8981";
+    private const string TargetLabel = "t1_5da94bdd25fe3bd6fe2e4b0e";
     private static readonly DocumentCachePhysicalSourceFingerprint Fingerprint = new(
         "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     );

@@ -23,7 +23,7 @@ public class Given_DocumentCacheProjectionTelemetry
 {
     private static readonly DateTimeOffset ObservedAt = new(2026, 8, 1, 12, 0, 0, TimeSpan.Zero);
     private static readonly DocumentCacheTargetKey TargetKey = DocumentCacheTargetKey.Create("Tenant-A", 7);
-    private const string TargetLabel = "t1_8cd00c0cef8519ef483c8981";
+    private const string TargetLabel = "t1_5da94bdd25fe3bd6fe2e4b0e";
     private static readonly DocumentCacheTargetContextGeneration Generation = new(3);
     private static readonly DocumentCachePhysicalSourceFingerprint Fingerprint = new(
         "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
