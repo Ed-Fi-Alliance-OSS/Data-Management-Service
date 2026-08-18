@@ -738,6 +738,7 @@ public sealed record DocumentCacheTargetObservation
         RelationalProviderToken? providerToken,
         DocumentCachePhysicalSourceFingerprint? physicalSourceFingerprint,
         DocumentCacheLifecycleObservation? lifecycle,
+        DocumentCacheLifecycleReadStatus? lifecycleReadStatus,
         DocumentCacheInventoryValidationResult? inventory,
         DocumentCacheInventoryValidationComponents? inventoryComponents,
         DocumentCacheEnqueueTriggerValidationResult? enqueueTrigger,
@@ -754,6 +755,7 @@ public sealed record DocumentCacheTargetObservation
         ProviderToken = providerToken;
         PhysicalSourceFingerprint = physicalSourceFingerprint;
         Lifecycle = lifecycle;
+        LifecycleReadStatus = lifecycleReadStatus;
         Inventory = inventory;
         InventoryComponents = inventoryComponents;
         EnqueueTrigger = enqueueTrigger;
@@ -777,6 +779,8 @@ public sealed record DocumentCacheTargetObservation
     public DocumentCachePhysicalSourceFingerprint? PhysicalSourceFingerprint { get; }
 
     public DocumentCacheLifecycleObservation? Lifecycle { get; }
+
+    public DocumentCacheLifecycleReadStatus? LifecycleReadStatus { get; }
 
     public DocumentCacheInventoryValidationResult? Inventory { get; }
 
@@ -803,6 +807,7 @@ public sealed record DocumentCacheTargetObservation
             providerToken: null,
             physicalSourceFingerprint: null,
             lifecycle: null,
+            lifecycleReadStatus: null,
             inventory: null,
             inventoryComponents: null,
             enqueueTrigger: null,
@@ -826,6 +831,7 @@ public sealed record DocumentCacheTargetObservation
             providerToken: null,
             physicalSourceFingerprint: null,
             lifecycle: null,
+            lifecycleReadStatus: null,
             inventory: null,
             inventoryComponents: null,
             enqueueTrigger: null,
@@ -856,6 +862,7 @@ public sealed record DocumentCacheTargetObservation
             providerToken,
             physicalSourceFingerprint,
             lifecycle,
+            DocumentCacheLifecycleReadStatus.Succeeded,
             inventory,
             inventoryComponents ?? DocumentCacheInventoryValidationComponents.FromAggregate(inventory),
             enqueueTrigger,
@@ -876,7 +883,8 @@ public sealed record DocumentCacheTargetObservation
         DocumentCacheSqlServerPrerequisiteDetails? sqlServerPrerequisites,
         DocumentCacheResolutionRetryState? retryState,
         IEnumerable<DocumentCacheTargetDiagnostic>? diagnostics,
-        DocumentCacheInventoryValidationComponents? inventoryComponents = null
+        DocumentCacheInventoryValidationComponents? inventoryComponents = null,
+        DocumentCacheLifecycleReadStatus? lifecycleReadStatus = null
     ) =>
         new(
             targetKey,
@@ -887,6 +895,7 @@ public sealed record DocumentCacheTargetObservation
             providerToken,
             physicalSourceFingerprint,
             lifecycle,
+            lifecycleReadStatus,
             inventory,
             inventoryComponents
                 ?? (
@@ -913,6 +922,7 @@ public sealed record DocumentCacheTargetObservation
             ProviderToken,
             PhysicalSourceFingerprint,
             Lifecycle,
+            LifecycleReadStatus,
             Inventory,
             InventoryComponents,
             EnqueueTrigger,
@@ -939,6 +949,7 @@ public sealed record DocumentCacheTargetObservation
             ProviderToken,
             PhysicalSourceFingerprint,
             Lifecycle,
+            LifecycleReadStatus,
             Inventory,
             InventoryComponents,
             EnqueueTrigger,

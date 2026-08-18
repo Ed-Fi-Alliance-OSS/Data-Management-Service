@@ -209,6 +209,78 @@ public class DocumentCacheStatusClassifierTests
         result.CaughtUp.Reason.Should().Be(DocumentCacheStatusReason.InventoryInvalid);
     }
 
+    [TestCase(
+        DocumentCacheLifecycleReadStatus.Missing,
+        DocumentCacheStatusReason.StateMissingOrInvalid,
+        DocumentCacheStatusProcessEligibilityStatus.Ineligible,
+        DocumentCacheOperationalHealthStatus.NonOperational,
+        DocumentCacheCaughtUpStatus.NotCaughtUp
+    )]
+    [TestCase(
+        DocumentCacheLifecycleReadStatus.Invalid,
+        DocumentCacheStatusReason.StateMissingOrInvalid,
+        DocumentCacheStatusProcessEligibilityStatus.Ineligible,
+        DocumentCacheOperationalHealthStatus.NonOperational,
+        DocumentCacheCaughtUpStatus.NotCaughtUp
+    )]
+    [TestCase(
+        DocumentCacheLifecycleReadStatus.Unreadable,
+        DocumentCacheStatusReason.ProviderObservationFailed,
+        DocumentCacheStatusProcessEligibilityStatus.Unknown,
+        DocumentCacheOperationalHealthStatus.Unknown,
+        DocumentCacheCaughtUpStatus.Unknown
+    )]
+    public void It_classifies_lifecycle_read_failures_before_inventory_fallback(
+        DocumentCacheLifecycleReadStatus lifecycleReadStatus,
+        DocumentCacheStatusReason expectedReason,
+        DocumentCacheStatusProcessEligibilityStatus expectedEligibilityStatus,
+        DocumentCacheOperationalHealthStatus expectedOperationalHealthStatus,
+        DocumentCacheCaughtUpStatus expectedCaughtUpStatus
+    )
+    {
+        DocumentCacheStatusClassificationResult result = Classify(
+            TargetWithLifecycleReadFailure(lifecycleReadStatus),
+            RunningRuntime(),
+            DocumentCacheStatusDurableObservation.Success(
+                DocumentCacheLifecycleState.Tracking,
+                cacheAheadRecoveryRequired: false,
+                DocumentCacheStatusQueuePresence.Empty,
+                oldestWorkFirstEnqueuedAt: null,
+                oldestWorkAgeSeconds: null,
+                DurableObservedAt
+            )
+        );
+
+        result.ProcessEligibility.Status.Should().Be(expectedEligibilityStatus);
+        result.ProcessEligibility.Reason.Should().Be(expectedReason);
+        result.DurableObservedAt.Should().BeNull();
+        result.Lifecycle.Availability.Should().Be(DocumentCacheStatusAvailability.Unavailable);
+        result.QueueSummary.Presence.Should().Be(DocumentCacheStatusQueuePresence.Unavailable);
+        result.OperationalHealth.Status.Should().Be(expectedOperationalHealthStatus);
+        result.OperationalHealth.Reason.Should().Be(expectedReason);
+        result.CaughtUp.Status.Should().Be(expectedCaughtUpStatus);
+        result.CaughtUp.Reason.Should().Be(expectedReason);
+    }
+
+    [Test]
+    public void It_classifies_lifecycle_observation_failures_without_state_fact_as_provider_observation_failed()
+    {
+        DocumentCacheStatusClassificationResult result = Classify(
+            TargetWithLifecycleReadFailure(lifecycleReadStatus: null),
+            RunningRuntime(),
+            durableObservation: null
+        );
+
+        result.ProcessEligibility.Status.Should().Be(DocumentCacheStatusProcessEligibilityStatus.Unknown);
+        result.ProcessEligibility.Reason.Should().Be(DocumentCacheStatusReason.ProviderObservationFailed);
+        result.OperationalHealth.Status.Should().Be(DocumentCacheOperationalHealthStatus.Unknown);
+        result.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.ProviderObservationFailed);
+        result.CaughtUp.Status.Should().Be(DocumentCacheCaughtUpStatus.Unknown);
+        result.CaughtUp.Reason.Should().Be(DocumentCacheStatusReason.ProviderObservationFailed);
+        result.Lifecycle.Availability.Should().Be(DocumentCacheStatusAvailability.Unavailable);
+        result.QueueSummary.Presence.Should().Be(DocumentCacheStatusQueuePresence.Unavailable);
+    }
+
     [TestCaseSource(nameof(DurableUnknownCases))]
     public void It_uses_unknown_durable_fields_when_current_source_observation_does_not_return_facts(
         DocumentCacheStatusDurableObservation durableObservation,
@@ -332,6 +404,62 @@ public class DocumentCacheStatusClassifierTests
             SatisfiedEnqueueTrigger,
             DocumentCacheSqlServerPrerequisiteDetails.NotApplicable()
         );
+
+    private static DocumentCacheTargetObservation TargetWithLifecycleReadFailure(
+        DocumentCacheLifecycleReadStatus? lifecycleReadStatus
+    )
+    {
+        DocumentCacheTargetContextGeneration generation = new(3);
+        DocumentCacheInventoryValidationResult invalidInventory = new(
+            DocumentCacheInventoryStatus.Invalid,
+            "Inventory invalid."
+        );
+        DocumentCacheEnqueueTriggerValidationResult enqueueTrigger = SatisfiedEnqueueTrigger;
+        DocumentCacheSqlServerPrerequisiteDetails prerequisites =
+            DocumentCacheSqlServerPrerequisiteDetails.NotApplicable();
+        List<DocumentCacheTargetDiagnostic> diagnostics =
+        [
+            new(
+                TargetKey,
+                DocumentCacheTargetResolutionState.Resolved,
+                RelationalProviderToken.Postgresql,
+                generation,
+                Fingerprint,
+                lifecycle: null,
+                inventory: invalidInventory,
+                enqueueTrigger,
+                sqlServerPrerequisites: prerequisites,
+                retryState: null,
+                category: DocumentCacheTargetDiagnosticCategory.LifecycleObservationFailure,
+                message: "Lifecycle read failed."
+            ),
+            Diagnostic(
+                DocumentCacheTargetDiagnosticCategory.InventoryFailure,
+                generation,
+                RelationalProviderToken.Postgresql,
+                Fingerprint,
+                invalidInventory,
+                enqueueTrigger,
+                prerequisites,
+                "Inventory invalid."
+            ),
+        ];
+
+        return DocumentCacheTargetObservation.ResolvedIneligible(
+            TargetKey,
+            EffectiveSettings,
+            generation,
+            RelationalProviderToken.Postgresql,
+            Fingerprint,
+            lifecycle: null,
+            inventory: invalidInventory,
+            enqueueTrigger,
+            sqlServerPrerequisites: prerequisites,
+            retryState: null,
+            diagnostics,
+            lifecycleReadStatus: lifecycleReadStatus
+        );
+    }
 
     private static DocumentCacheTargetObservation TargetWithFailures(
         IReadOnlyCollection<DocumentCacheStatusReason> reasons

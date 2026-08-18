@@ -316,7 +316,8 @@ public sealed class DocumentCacheTargetContextBuilder(
                     prerequisiteResult?.SqlServerPrerequisites,
                     retryState: null,
                     diagnostics,
-                    combinedInventoryResult.InventoryComponents
+                    combinedInventoryResult.InventoryComponents,
+                    lifecycleResult.Status
                 ),
                 ExecutionContext: null
             );

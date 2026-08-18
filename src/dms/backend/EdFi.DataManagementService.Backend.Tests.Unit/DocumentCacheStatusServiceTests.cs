@@ -175,6 +175,59 @@ public class Given_DocumentCacheStatusService
         statusTarget.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.InventoryInvalid);
     }
 
+    [TestCase(
+        DocumentCacheLifecycleReadStatus.Missing,
+        DocumentCacheStatusReason.StateMissingOrInvalid,
+        DocumentCacheStatusEligibilityStatus.Ineligible,
+        DocumentCacheOperationalHealthStatus.NonOperational,
+        DocumentCacheCaughtUpStatus.NotCaughtUp
+    )]
+    [TestCase(
+        DocumentCacheLifecycleReadStatus.Invalid,
+        DocumentCacheStatusReason.StateMissingOrInvalid,
+        DocumentCacheStatusEligibilityStatus.Ineligible,
+        DocumentCacheOperationalHealthStatus.NonOperational,
+        DocumentCacheCaughtUpStatus.NotCaughtUp
+    )]
+    [TestCase(
+        DocumentCacheLifecycleReadStatus.Unreadable,
+        DocumentCacheStatusReason.ProviderObservationFailed,
+        DocumentCacheStatusEligibilityStatus.Unknown,
+        DocumentCacheOperationalHealthStatus.Unknown,
+        DocumentCacheCaughtUpStatus.Unknown
+    )]
+    public async Task It_maps_lifecycle_read_failures_without_reporting_inventory_invalid(
+        DocumentCacheLifecycleReadStatus lifecycleReadStatus,
+        DocumentCacheStatusReason expectedReason,
+        DocumentCacheStatusEligibilityStatus expectedEligibilityStatus,
+        DocumentCacheOperationalHealthStatus expectedOperationalHealthStatus,
+        DocumentCacheCaughtUpStatus expectedCaughtUpStatus
+    )
+    {
+        DocumentCacheTargetObservation target = ResolvedLifecycleReadFailureTarget(
+            DocumentCacheTargetKey.Create("", 1),
+            lifecycleReadStatus
+        );
+        ScriptedStatusObserver observer = new(Success);
+        DocumentCacheStatusService service = CreateService(
+            new StaticTargetRegistry([target], []),
+            observer: observer
+        );
+
+        DocumentCacheStatusTarget statusTarget = (await service.GetStatusAsync()).Targets.Single();
+
+        statusTarget.Eligibility.Status.Should().Be(expectedEligibilityStatus);
+        statusTarget.Eligibility.Reason.Should().Be(expectedReason);
+        statusTarget.OperationalHealth.Status.Should().Be(expectedOperationalHealthStatus);
+        statusTarget.OperationalHealth.Reason.Should().Be(expectedReason);
+        statusTarget.CaughtUp.Status.Should().Be(expectedCaughtUpStatus);
+        statusTarget.CaughtUp.Reason.Should().Be(expectedReason);
+        statusTarget.Lifecycle.Availability.Should().Be(DocumentCacheStatusAvailability.Unavailable);
+        statusTarget.QueueSummary.Presence.Should().Be(DocumentCacheStatusQueuePresence.Unavailable);
+        statusTarget.DurableObservedAt.Should().BeNull();
+        observer.StartedKeys.Should().BeEmpty();
+    }
+
     [Test]
     public async Task It_preserves_target_diagnostic_event_observed_at_values()
     {
@@ -687,6 +740,69 @@ public class Given_DocumentCacheStatusService
             retryState: null,
             diagnostics: [],
             inventoryComponents: inventoryComponents
+        );
+    }
+
+    private static DocumentCacheTargetObservation ResolvedLifecycleReadFailureTarget(
+        DocumentCacheTargetKey targetKey,
+        DocumentCacheLifecycleReadStatus lifecycleReadStatus
+    )
+    {
+        DocumentCacheInventoryValidationResult invalidInventory = new(
+            DocumentCacheInventoryStatus.Invalid,
+            "Inventory invalid."
+        );
+        DocumentCacheEnqueueTriggerValidationResult enqueueTrigger = new(
+            DocumentCacheEnqueueTriggerStatus.Satisfied,
+            "Enqueue trigger satisfied."
+        );
+        DocumentCacheSqlServerPrerequisiteDetails prerequisites =
+            DocumentCacheSqlServerPrerequisiteDetails.NotApplicable();
+        List<DocumentCacheTargetDiagnostic> diagnostics =
+        [
+            new(
+                targetKey,
+                DocumentCacheTargetResolutionState.Resolved,
+                RelationalProviderToken.Postgresql,
+                Generation,
+                Fingerprint(targetKey.DataStoreId),
+                lifecycle: null,
+                inventory: invalidInventory,
+                enqueueTrigger,
+                sqlServerPrerequisites: prerequisites,
+                retryState: null,
+                category: DocumentCacheTargetDiagnosticCategory.LifecycleObservationFailure,
+                message: "Lifecycle read failed."
+            ),
+            new(
+                targetKey,
+                DocumentCacheTargetResolutionState.Resolved,
+                RelationalProviderToken.Postgresql,
+                Generation,
+                Fingerprint(targetKey.DataStoreId),
+                lifecycle: null,
+                inventory: invalidInventory,
+                enqueueTrigger,
+                sqlServerPrerequisites: prerequisites,
+                retryState: null,
+                category: DocumentCacheTargetDiagnosticCategory.InventoryFailure,
+                message: "Inventory invalid."
+            ),
+        ];
+
+        return DocumentCacheTargetObservation.ResolvedIneligible(
+            targetKey,
+            EffectiveSettings(),
+            Generation,
+            RelationalProviderToken.Postgresql,
+            Fingerprint(targetKey.DataStoreId),
+            lifecycle: null,
+            inventory: invalidInventory,
+            enqueueTrigger,
+            sqlServerPrerequisites: prerequisites,
+            retryState: null,
+            diagnostics,
+            lifecycleReadStatus: lifecycleReadStatus
         );
     }
 

@@ -438,13 +438,17 @@ public class DocumentCacheTargetContextBuilderTests
             inventoryDiagnostic.Message.Should().Be("Source identity inventory failure.");
         }
 
-        [Test]
-        public async Task It_marks_lifecycle_read_failures_ineligible_without_running_prerequisites()
+        [TestCase(DocumentCacheLifecycleReadStatus.Missing)]
+        [TestCase(DocumentCacheLifecycleReadStatus.Invalid)]
+        [TestCase(DocumentCacheLifecycleReadStatus.Unreadable)]
+        public async Task It_marks_lifecycle_read_failures_ineligible_without_running_prerequisites(
+            DocumentCacheLifecycleReadStatus lifecycleReadStatus
+        )
         {
             BuilderFixture fixture = new(
                 LifecycleResult: DocumentCacheLifecycleReadResult.Failure(
-                    DocumentCacheLifecycleReadStatus.Invalid,
-                    "Lifecycle invalid."
+                    lifecycleReadStatus,
+                    "Lifecycle failed."
                 )
             );
 
@@ -456,6 +460,7 @@ public class DocumentCacheTargetContextBuilderTests
 
             result.HasExecutionContext.Should().BeFalse();
             result.Observation.Lifecycle.Should().BeNull();
+            result.Observation.LifecycleReadStatus.Should().Be(lifecycleReadStatus);
             result
                 .Observation.Diagnostics.Should()
                 .Contain(diagnostic =>
