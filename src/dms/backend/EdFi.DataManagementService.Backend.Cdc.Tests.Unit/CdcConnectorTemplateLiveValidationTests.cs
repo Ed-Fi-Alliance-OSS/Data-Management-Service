@@ -41,11 +41,14 @@ public class Given_CdcConnectorTemplateLiveValidation
 
         using var _ = new AssertionScope();
         rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
-        rendered.Config["table.include.list"].Should().Be("dms.DocumentCache,dms.Document,dms.CdcHeartbeat");
+        rendered
+            .Config["table.include.list"]
+            .Should()
+            .Be(@"dms\.DocumentCache,dms\.Document,dms\.CdcHeartbeat");
         rendered
             .Config["message.key.columns"]
             .Should()
-            .Be("dms.DocumentCache:DocumentUuid;dms.Document:DocumentUuid");
+            .Be(@"dms\.DocumentCache:DocumentUuid;dms\.Document:DocumentUuid");
         result.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
         result.Config.Should().Equal(rendered.Config);
         result.RegistrationPayload!.Config.Should().Equal(rendered.RegistrationPayload!.Config);
@@ -207,9 +210,9 @@ public class Given_CdcConnectorTemplateLiveValidation
         effectiveConfig["schema.history.internal.kafka.topic"] = "edfi.documents.wrong-history";
         effectiveConfig["topic.heartbeat.name"] = "unexpected-heartbeat-name";
         effectiveConfig["table.include.list"] =
-            $"{rendered.Config["table.include.list"]},dms.DocumentProjectionWork";
+            $"{rendered.Config["table.include.list"]},dms\\.DocumentProjectionWork";
         effectiveConfig["message.key.columns"] =
-            $"{rendered.Config["message.key.columns"]};dms.CdcHeartbeat:HeartbeatId";
+            $"{rendered.Config["message.key.columns"]};dms\\.CdcHeartbeat:HeartbeatId";
         effectiveConfig["topic.creation.default.replication.factor"] = "1";
 
         CdcConnectorTemplateResult result = service.ValidateLiveReadBack(

@@ -35,10 +35,10 @@ public class Given_CdcConnectorTemplatePostgresqlRendering
         result.Config.Should().Contain("slot.name", "dms_binding_slot");
         result
             .Config.Should()
-            .Contain("table.include.list", "dms.DocumentCache,dms.Document,dms.CdcHeartbeat");
+            .Contain("table.include.list", @"dms\.DocumentCache,dms\.Document,dms\.CdcHeartbeat");
         result
             .Config.Should()
-            .Contain("message.key.columns", "dms.DocumentCache:DocumentUuid;dms.Document:DocumentUuid");
+            .Contain("message.key.columns", @"dms\.DocumentCache:DocumentUuid;dms\.Document:DocumentUuid");
         result.Config.Should().Contain("unavailable.value.placeholder", "__debezium_unavailable_value");
         result.Config.Should().NotContainKey("slot.drop.on.stop");
         result.Config.Should().NotContainKey("topic.creation.default.replication.factor");
@@ -102,11 +102,14 @@ public class Given_CdcConnectorTemplatePostgresqlRendering
 
         using var _ = new AssertionScope();
         result.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
-        result.Config["table.include.list"].Should().Be("dms.DocumentCache,dms.Document,dms.CdcHeartbeat");
+        result
+            .Config["table.include.list"]
+            .Should()
+            .Be(@"dms\.DocumentCache,dms\.Document,dms\.CdcHeartbeat");
         result
             .Config["message.key.columns"]
             .Should()
-            .Be("dms.DocumentCache:DocumentUuid;dms.Document:DocumentUuid");
+            .Be(@"dms\.DocumentCache:DocumentUuid;dms\.Document:DocumentUuid");
     }
 
     [Test]
