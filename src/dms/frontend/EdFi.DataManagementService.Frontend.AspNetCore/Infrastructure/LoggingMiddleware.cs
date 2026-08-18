@@ -13,13 +13,27 @@ using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 
-public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSettings)
+public class LoggingMiddleware
 {
-    private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));
-    private readonly IOptions<AppSettings> _appSettings =
-        appSettings ?? throw new ArgumentNullException(nameof(appSettings));
+    private readonly RequestDelegate _next;
+    private readonly IOptions<AppSettings> _appSettings;
+    private readonly int _correlationIdMaxLength;
     private const string ApplicationName = "EdFi.DataManagementService";
     private const string RequestLayer = "Frontend";
+
+    public LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSettings)
+    {
+        _next = next ?? throw new ArgumentNullException(nameof(next));
+        _appSettings = appSettings ?? throw new ArgumentNullException(nameof(appSettings));
+        try
+        {
+            _correlationIdMaxLength = appSettings.Value.CorrelationIdMaxLength;
+        }
+        catch (OptionsValidationException)
+        {
+            _correlationIdMaxLength = AppSettings.DefaultCorrelationIdMaxLength;
+        }
+    }
 
     public async Task Invoke(HttpContext context, ILogger<LoggingMiddleware> logger)
     {
@@ -28,8 +42,8 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
         var sanitizedPath = LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value);
         var pathBase = LoggingSanitizer.SanitizeForLogging(context.Request.PathBase.Value);
         var rawTraceId = ExtractTraceId(context) ?? string.Empty;
-        var maxLength = GetCorrelationIdMaxLength();
-        var truncatedTraceId = rawTraceId.Length > maxLength ? rawTraceId[..maxLength] : rawTraceId;
+        var truncatedTraceId =
+            rawTraceId.Length > _correlationIdMaxLength ? rawTraceId[.._correlationIdMaxLength] : rawTraceId;
         var traceId = LoggingSanitizer.SanitizeForLogging(truncatedTraceId);
 
         var scopeValues = new Dictionary<string, object>
@@ -199,18 +213,6 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
         catch (OptionsValidationException)
         {
             return context.TraceIdentifier;
-        }
-    }
-
-    private int GetCorrelationIdMaxLength()
-    {
-        try
-        {
-            return _appSettings.Value.CorrelationIdMaxLength;
-        }
-        catch (OptionsValidationException)
-        {
-            return AppSettings.DefaultCorrelationIdMaxLength;
         }
     }
 
