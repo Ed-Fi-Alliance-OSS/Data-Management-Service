@@ -1975,7 +1975,15 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append(Quote(DocumentIdColumn));
             writer.Append(" = r.");
             writer.Append(Quote(DocumentIdColumn));
-            writer.AppendLine(";");
+            writer.AppendLine();
+            // @stamped is a table variable, so with deferred compilation the plan for this join is
+            // built from whichever cardinality the statement first executed with and then cached.
+            // Sampled at compatibility level 170 with DEFERRED_COMPILATION_TV ON: a one-row @stamped
+            // seeks the mirror table's primary key, but a firing that carries many rows compiles a
+            // merge or hash join over a full scan of the mirror table - which then takes update locks
+            // across rows the transaction never touched. RECOMPILE keeps each firing on a plan built
+            // for its own cardinality.
+            writer.AppendLine("OPTION (RECOMPILE);");
         }
         writer.AppendLine("END");
 

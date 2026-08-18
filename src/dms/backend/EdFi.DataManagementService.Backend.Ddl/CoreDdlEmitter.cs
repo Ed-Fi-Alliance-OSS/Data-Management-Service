@@ -1909,7 +1909,13 @@ public sealed class CoreDdlEmitter
                 writer.Append(quotedKeyColumn);
                 writer.Append(" = r.");
                 writer.Append(quotedKeyColumn);
-                writer.AppendLine(";");
+                writer.AppendLine();
+                // Same reason as the resource mirror stamp: @stamped is a table variable, so the
+                // cached plan reflects the cardinality of whichever firing compiled it. Sampled at
+                // compatibility level 170 with DEFERRED_COMPILATION_TV ON, a one-row @stamped seeks
+                // PK_Descriptor but a many-row firing compiles a hash join over a full scan of
+                // dms.Descriptor, taking update locks across rows the transaction never touched.
+                writer.AppendLine("OPTION (RECOMPILE);");
             }
             writer.AppendLine("END");
             if (_sharedDescriptorTrackedChangeTable is not null)
