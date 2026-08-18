@@ -88,11 +88,14 @@ public abstract class Given_PinnedImageConnectorTemplateFixture
         rendered
             .Config.Keys.Should()
             .NotContain(key => key.Contains("offset.storage", StringComparison.Ordinal));
-        rendered.Config["table.include.list"].Should().Be("dms.DocumentCache,dms.Document,dms.CdcHeartbeat");
+        rendered
+            .Config["table.include.list"]
+            .Should()
+            .Be(@"dms\.DocumentCache,dms\.Document,dms\.CdcHeartbeat");
         rendered
             .Config["message.key.columns"]
             .Should()
-            .Be("dms.DocumentCache:DocumentUuid;dms.Document:DocumentUuid");
+            .Be(@"dms\.DocumentCache:DocumentUuid;dms\.Document:DocumentUuid");
         if (Provider == CdcProvider.SqlServer)
         {
             rendered

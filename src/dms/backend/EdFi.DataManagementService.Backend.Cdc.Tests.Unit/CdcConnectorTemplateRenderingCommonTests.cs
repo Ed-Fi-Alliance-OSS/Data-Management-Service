@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Backend.Ddl;
 using FluentAssertions;
 using FluentAssertions.Execution;
@@ -178,6 +179,35 @@ public class Given_CdcConnectorTemplateCommonRendering
         result.Config.Should().Contain("heartbeat.interval.ms", "12000");
         result.Config.Should().Contain("database.names", "edfi_datastore");
         result.Config.Should().Contain("producer.override.security.protocol", "SSL");
+    }
+
+    [TestCase(CdcProvider.Postgresql)]
+    [TestCase(CdcProvider.SqlServer)]
+    public void It_renders_debezium_selectors_with_literal_schema_table_separators(CdcProvider provider)
+    {
+        CdcConnectorTemplateResult result = Render(BuildRequest(provider));
+
+        string documentCacheSelector = result.Config["table.include.list"].Split(',')[0];
+        string documentCacheMessageKeySelector = result.Config["message.key.columns"].Split(':')[0];
+
+        using var _ = new AssertionScope();
+        result
+            .Config["table.include.list"]
+            .Should()
+            .Be(@"dms\.DocumentCache,dms\.Document,dms\.CdcHeartbeat");
+        result
+            .Config["message.key.columns"]
+            .Should()
+            .Be(@"dms\.DocumentCache:DocumentUuid;dms\.Document:DocumentUuid");
+        new Regex($"^{documentCacheSelector}$")
+            .IsMatch("dms.DocumentCache")
+            .Should()
+            .BeTrue("the selector should match the intended fully qualified table name");
+        new Regex($"^{documentCacheSelector}$")
+            .IsMatch("dmsXDocumentCache")
+            .Should()
+            .BeFalse("the schema/table separator must be a literal dot");
+        documentCacheMessageKeySelector.Should().Be(documentCacheSelector);
     }
 
     [TestCaseSource(nameof(ProducerBufferMemoryCases))]

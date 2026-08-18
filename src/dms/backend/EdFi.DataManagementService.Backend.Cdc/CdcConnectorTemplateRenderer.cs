@@ -258,7 +258,7 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
             .ToArray();
 
     private static string DebeziumTableSelector(CdcSourceTableInventory table) =>
-        $"{EscapeDebeziumRegexIdentifier(table.TableName.Schema.Value)}.{EscapeDebeziumRegexIdentifier(table.TableName.Name)}";
+        $"{EscapeDebeziumRegexIdentifier(table.TableName.Schema.Value)}\\.{EscapeDebeziumRegexIdentifier(table.TableName.Name)}";
 
     private static string DebeziumKeyColumnList(
         CdcSourceTableInventory table,
