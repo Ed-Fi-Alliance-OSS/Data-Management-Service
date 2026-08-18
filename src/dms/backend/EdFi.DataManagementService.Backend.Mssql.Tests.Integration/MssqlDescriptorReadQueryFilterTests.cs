@@ -435,7 +435,7 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
             changeVersionRange: new ChangeVersionRange(middleContentVersion - 1, middleContentVersion)
         );
 
-        AssertDescriptorPage(result, [PagingSecondSeed], expectedTotalCount: 1);
+        AssertDescriptorPage(result, [PagingFirstSeed, PagingSecondSeed], expectedTotalCount: 2);
     }
 
     [Test]
