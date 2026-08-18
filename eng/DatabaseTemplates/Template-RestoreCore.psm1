@@ -1190,8 +1190,12 @@ function Get-DatabaseCompatibilityLevelQuerySql {
 function Get-DocumentJsonColumnTypeQuerySql {
     <#
     .SYNOPSIS
-    Engine SQL returning the physical storage type of dms.Document.DocumentJson from the
-    live catalog (the D8a physical-baseline fact; never assumed from configuration).
+    Engine SQL returning every DocumentJson column in the dms schema as pipe-separated
+    "table|type" rows (the physical-baseline fact; read from the live catalog, never
+    assumed from configuration). In the redesigned schema dms.DocumentCache is the sole
+    carrier; enumerating the whole schema rather than a fixed table list means a future
+    additional carrier is captured automatically and a divergent type anywhere fails
+    validation instead of hiding.
     #>
     param (
         [Parameter(Mandatory = $true)]
@@ -1200,10 +1204,92 @@ function Get-DocumentJsonColumnTypeQuerySql {
     )
 
     if ($DatabaseEngine -eq "mssql") {
-        return "SET NOCOUNT ON; SELECT t.name FROM sys.columns c JOIN sys.types t ON t.user_type_id = c.user_type_id WHERE c.object_id = OBJECT_ID(N'[dms].[Document]') AND c.name = N'DocumentJson';"
+        return "SET NOCOUNT ON; SELECT o.name + '|' + t.name FROM sys.columns c JOIN sys.types t ON t.user_type_id = c.user_type_id JOIN sys.objects o ON o.object_id = c.object_id JOIN sys.schemas s ON s.schema_id = o.schema_id WHERE s.name = N'dms' AND c.name = N'DocumentJson' ORDER BY o.name;"
     }
 
-    return "SELECT data_type FROM information_schema.columns WHERE table_schema = 'dms' AND table_name = 'Document' AND column_name = 'DocumentJson';"
+    return "SELECT table_name || '|' || data_type FROM information_schema.columns WHERE table_schema = 'dms' AND column_name = 'DocumentJson' ORDER BY table_name;"
+}
+
+function ConvertFrom-DocumentJsonColumnTypeRow {
+    <#
+    .SYNOPSIS
+    Parses the "table|type" DocumentJson rows into the single physical storage type. The
+    rows must include dms.DocumentCache (the authoritative carrier in the redesigned
+    schema; dms.Document has no DocumentJson column), and every carrier must report the
+    same type - a divergent type on any table is a physical-baseline violation, not a
+    value to pick from.
+    #>
+    param (
+        [AllowEmptyCollection()]
+        [AllowNull()]
+        [string[]]$Row
+    )
+
+    $rows = @(@($Row) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($rows.Count -eq 0) {
+        throw "No DocumentJson column was found in the dms schema; the database is not a provisioned DMS datastore."
+    }
+
+    $typesByTable = [ordered]@{}
+    foreach ($rawRow in $rows) {
+        $fields = $rawRow.Trim() -split '\|'
+        if ($fields.Count -ne 2 -or [string]::IsNullOrWhiteSpace($fields[0]) -or [string]::IsNullOrWhiteSpace($fields[1])) {
+            throw "DocumentJson column query returned a malformed row (expected 'table|type'): '$rawRow'."
+        }
+        $typesByTable[$fields[0].Trim()] = $fields[1].Trim().ToLowerInvariant()
+    }
+
+    if (-not $typesByTable.Contains("DocumentCache")) {
+        throw "dms.DocumentCache.DocumentJson was not found; the database is not a provisioned DMS datastore."
+    }
+
+    $distinctTypes = @(@($typesByTable.Values) | Sort-Object -Unique)
+    if ($distinctTypes.Count -ne 1) {
+        $carrierList = ($typesByTable.Keys | ForEach-Object { "$_=$($typesByTable[$_])" }) -join ", "
+        throw "The dms DocumentJson columns do not share one physical storage type: $carrierList."
+    }
+
+    return [string]$distinctTypes[0]
+}
+
+function Assert-CompleteRestoreArtifactScope {
+    <#
+    .SYNOPSIS
+    Fails unless a PostgreSQL restore artifact's dumped schema set carries the complete
+    validated datastore: the dms schema, every resource-project schema, every
+    tracked_changes companion, and the auth companion when present. Without this, a
+    dms-schema-only dump could ship a restore manifest declaring projects its artifact
+    does not contain - restore-eligible in shape but non-restorable in content, with
+    provisioning skipped on the restore path. SQL Server needs no equivalent because its
+    backups always capture the entire database. (A line of this help must never begin
+    with a period: help parsing reads it as a keyword and voids the whole block.)
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        $Partition,
+
+        [AllowEmptyCollection()]
+        [string[]]$ArtifactSchemaName = @()
+    )
+
+    $requiredSchemaNames = [System.Collections.Generic.List[string]]::new()
+    $requiredSchemaNames.Add("dms")
+    if ($Partition.HasAuth) {
+        $requiredSchemaNames.Add("auth")
+    }
+    foreach ($resourceSchema in @($Partition.ResourceSchemaNames)) {
+        $requiredSchemaNames.Add($resourceSchema)
+    }
+    foreach ($trackedChangesProject in @($Partition.TrackedChangesProjectNames)) {
+        $requiredSchemaNames.Add("tracked_changes_$trackedChangesProject")
+    }
+
+    $artifactSchemaSet = [System.Collections.Generic.HashSet[string]]::new([string[]]@($ArtifactSchemaName), [System.StringComparer]::Ordinal)
+    $missingSchemaNames = @($requiredSchemaNames | Where-Object { -not $artifactSchemaSet.Contains($_) })
+
+    if ($missingSchemaNames.Count -gt 0) {
+        throw "The PostgreSQL restore artifact would omit required DMS-owned schemas: $($missingSchemaNames -join ', '). A restorable template must dump the complete validated datastore; pass -DumpAllUserSchemas so the artifact matches the source the manifest describes."
+    }
 }
 
 function ConvertFrom-InventoryQueryRow {
@@ -1710,6 +1796,8 @@ Export-ModuleMember -Function `
     Get-EngineVersionQuerySql, `
     Get-DatabaseCompatibilityLevelQuerySql, `
     Get-DocumentJsonColumnTypeQuerySql, `
+    ConvertFrom-DocumentJsonColumnTypeRow, `
+    Assert-CompleteRestoreArtifactScope, `
     ConvertFrom-InventoryQueryRow, `
     Select-InventorySchemaScope, `
     ConvertFrom-EffectiveSchemaRow, `
