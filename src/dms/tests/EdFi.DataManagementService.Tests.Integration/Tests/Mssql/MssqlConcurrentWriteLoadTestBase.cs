@@ -17,6 +17,23 @@ using Microsoft.Data.SqlClient;
 namespace EdFi.DataManagementService.Tests.Integration.Tests.Mssql;
 
 /// <summary>
+/// A <c>LCK[_]%</c> wait-stats reading: how many tasks waited on a lock, and how long they waited in
+/// total. Named rather than a tuple because the two are both counters of the same shape and Gate C
+/// reads them against different thresholds, so transposing them would produce a plausible number.
+/// </summary>
+public sealed record LockWaitTotals(long WaitingTasks, long WaitTimeMs)
+{
+    /// <summary>
+    /// The growth from <paramref name="before"/> to this reading. Only this load's work when nothing
+    /// else runs against the instance; the underlying counters are instance-wide and cumulative.
+    /// </summary>
+    public LockWaitTotals Since(LockWaitTotals before) =>
+        new(WaitingTasks - before.WaitingTasks, WaitTimeMs - before.WaitTimeMs);
+
+    public override string ToString() => $"{WaitingTasks} lock wait(s), {WaitTimeMs} ms";
+}
+
+/// <summary>
 /// One load's deadlock evidence, read from a capture session that belongs to that load alone.
 ///
 /// <para><see cref="Signatures"/> is only a comparable description of what deadlocked when
@@ -617,6 +634,40 @@ public abstract class MssqlConcurrentWriteLoadTestBase : MssqlApiIntegrationTest
             """;
 
         return Convert.ToInt64(await command.ExecuteScalarAsync());
+    }
+
+    /// <summary>
+    /// Both halves of the lock-wait reading, because waiting-task count alone does not describe
+    /// contention: a load can trade many short waits for few long ones and leave the count flat.
+    /// Wait <em>time</em> is the field metric - the Northridge run's headline number was
+    /// <c>LCK_M_U</c> at 4,339,447 ms across 4,086 waits, 38x the tempdb latch time - and
+    /// <see cref="CountLockWaitsAsync"/> returns the count only.
+    ///
+    /// Carries the same caveat as that method: these are instance-wide cumulative counters, so a
+    /// delta is only this load's work when nothing else is running against the instance.
+    /// </summary>
+    protected static async Task<LockWaitTotals> CaptureLockWaitsAsync()
+    {
+        await using var connection = new SqlConnection(
+            MssqlTestDatabaseHelper.BuildConnectionString("master")
+        );
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT ISNULL(SUM(waiting_tasks_count), 0), ISNULL(SUM(wait_time_ms), 0)
+            FROM sys.dm_os_wait_stats
+            WHERE wait_type LIKE 'LCK[_]%';
+            """;
+
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
+        {
+            throw new InvalidOperationException(
+                "The LCK[_]% wait-stats aggregate returned no row; sys.dm_os_wait_stats was unreadable."
+            );
+        }
+
+        return new LockWaitTotals(reader.GetInt64(0), reader.GetInt64(1));
     }
 
     protected async Task SeedCoreDescriptorsAsync(string ns)
