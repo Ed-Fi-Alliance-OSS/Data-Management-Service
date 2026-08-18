@@ -88,6 +88,29 @@ BeforeAll {
             } | ConvertTo-Json -Depth 5)
     }
 
+    function script:New-NonP256SigningKey {
+        # A P-384 keypair for negative tests: the ECDSA_P256_SHA256 label must never accept it.
+        param (
+            [Parameter(Mandatory = $true)]
+            [string]$PrivateKeyPath
+        )
+
+        $ecdsa = [System.Security.Cryptography.ECDsa]::Create([System.Security.Cryptography.ECCurve+NamedCurves]::nistP384)
+        try {
+            $pem = [System.Security.Cryptography.PemEncoding]::WriteString("PRIVATE KEY", $ecdsa.ExportPkcs8PrivateKey())
+            [System.IO.File]::WriteAllText($PrivateKeyPath, $pem, [System.Text.UTF8Encoding]::new($false))
+            $spkiBytes = $ecdsa.ExportSubjectPublicKeyInfo()
+            return [pscustomobject]@{
+                PrivateKeyPath   = $PrivateKeyPath
+                PublicKeySpkiB64 = [System.Convert]::ToBase64String($spkiBytes)
+                KeyId            = [System.Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($spkiBytes)).ToLowerInvariant()
+            }
+        }
+        finally {
+            $ecdsa.Dispose()
+        }
+    }
+
     function script:New-TestTrustSetup {
         # One self-consistent trust world: a signing key, a tracked policy trusting it under
         # producer name "local-dev", a fake package file, its hash, and a valid attestation.
@@ -628,5 +651,108 @@ Describe "New-TemplateAttestation and Test-TemplateAttestation round trip" {
                 -Producer $setup.ProducerName `
                 -PrivateKeyPath $setup.SigningKey.PrivateKeyPath } |
             Should -Throw "*must be a 64-character lowercase hex*"
+    }
+}
+
+Describe "ECDSA P-256 curve enforcement" {
+    It "refuses to sign with a non-P-256 private key even under the P-256 algorithm label" {
+        $workspace = New-TestWorkspace
+        $p384Key = New-NonP256SigningKey -PrivateKeyPath (Join-Path $workspace "p384.pem")
+
+        { New-TemplateAttestation `
+                -PackageId "EdFi.Api.Minimal.Template.PostgreSql.5.2.0" `
+                -PackageVersion "1.0.123" `
+                -PackageSha256 ("ab" * 32) `
+                -Producer "local-dev" `
+                -PrivateKeyPath $p384Key.PrivateKeyPath } |
+            Should -Throw "*not a NIST P-256 ECDSA key*1.2.840.10045.3.1.7*"
+    }
+
+    It "validates signer keys up front: P-256 passes, P-384 and RSA and missing files fail" {
+        $workspace = New-TestWorkspace
+
+        $p256Key = New-TemplateAttestationSigningKey -PrivateKeyPath (Join-Path $workspace "p256.pem")
+        { Assert-TemplateAttestationSignerKey -PrivateKeyPath $p256Key.PrivateKeyPath } | Should -Not -Throw
+
+        $p384Key = New-NonP256SigningKey -PrivateKeyPath (Join-Path $workspace "p384.pem")
+        { Assert-TemplateAttestationSignerKey -PrivateKeyPath $p384Key.PrivateKeyPath } |
+            Should -Throw "*not a NIST P-256 ECDSA key*"
+
+        $rsa = [System.Security.Cryptography.RSA]::Create(2048)
+        try {
+            $rsaPem = [System.Security.Cryptography.PemEncoding]::WriteString("PRIVATE KEY", $rsa.ExportPkcs8PrivateKey())
+            Set-Content -LiteralPath (Join-Path $workspace "rsa.pem") -Value $rsaPem -Encoding utf8
+        }
+        finally {
+            $rsa.Dispose()
+        }
+        { Assert-TemplateAttestationSignerKey -PrivateKeyPath (Join-Path $workspace "rsa.pem") } |
+            Should -Throw "*not an importable ECDSA private key*"
+
+        { Assert-TemplateAttestationSignerKey -PrivateKeyPath (Join-Path $workspace "absent.pem") } |
+            Should -Throw "*was not found*"
+    }
+
+    It "rejects a non-P-256 public key at trust-policy load even with a correct keyId and the P-256 label" {
+        $workspace = New-TestWorkspace
+        $p384Key = New-NonP256SigningKey -PrivateKeyPath (Join-Path $workspace "p384.pem")
+
+        $policyPath = Write-TrustPolicyFile -Path (Join-Path $workspace "p384-policy.json") -Producer @(
+            [ordered]@{
+                name       = "rogue"
+                provider   = "detached-attestation"
+                publicKeys = @(
+                    [ordered]@{
+                        keyId            = $p384Key.KeyId
+                        algorithm        = "ECDSA_P256_SHA256"
+                        publicKeySpkiB64 = $p384Key.PublicKeySpkiB64
+                    }
+                )
+            }
+        )
+
+        { Read-TemplateTrustPolicy -TrackedPolicyPath $policyPath } |
+            Should -Throw "*not a NIST P-256 ECDSA key*1.2.840.10045.3.1.7*"
+    }
+
+    It "throws on a caller-constructed policy carrying a non-P-256 key at verification (the load-bypass probe)" {
+        $workspace = New-TestWorkspace
+        $p384Key = New-NonP256SigningKey -PrivateKeyPath (Join-Path $workspace "p384.pem")
+
+        # A policy object built by hand, bypassing Read-TemplateTrustPolicy's load-time curve
+        # check, paired with an attestation signed by the matching P-384 private key. Before
+        # the curve enforcement this verified as trusted; now it is a configuration defect.
+        $roguePolicy = [pscustomobject]@{
+            Producers = @(
+                [pscustomobject]@{
+                    Name       = "rogue"
+                    Provider   = "detached-attestation"
+                    PublicKeys = @(
+                        [pscustomobject]@{
+                            KeyId            = $p384Key.KeyId
+                            Algorithm        = "ECDSA_P256_SHA256"
+                            PublicKeySpkiB64 = $p384Key.PublicKeySpkiB64
+                        }
+                    )
+                }
+            )
+        }
+
+        $forged = New-ForgedAttestation -PrivateKeyPath $p384Key.PrivateKeyPath -PayloadObject ([ordered]@{
+                attestationVersion = 1
+                packageId          = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0"
+                packageVersion     = "1.0.123"
+                packageSha256      = ("ab" * 32)
+                producer           = "rogue"
+                createdUtc         = "2026-08-18T00:00:00.0000000Z"
+            })
+
+        { Test-TemplateAttestation `
+                -AttestationJson $forged `
+                -PackageSha256 ("ab" * 32) `
+                -ExpectedPackageId "EdFi.Api.Minimal.Template.PostgreSql.5.2.0" `
+                -ExpectedPackageVersion "1.0.123" `
+                -TrustPolicy $roguePolicy } |
+            Should -Throw "*not a NIST P-256 ECDSA key*"
     }
 }

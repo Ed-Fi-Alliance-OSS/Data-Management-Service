@@ -1568,7 +1568,21 @@ Describe "Build-TemplateNuGetPackage attestation" {
                 Should -Throw "*must be supplied together*"
 
             { Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0" -TemplateKind "Minimal" -AttestationSignerKeyPath (Join-Path $TestDrive "absent.pem") -AttestationProducer "local-dev" } |
-                Should -Throw "*signing key was not found*"
+                Should -Throw "*Signing key was not found*"
+
+            # A key on the wrong curve is refused before any catalog read or dump work: the
+            # ECDSA_P256_SHA256 label must never be emitted for a non-P-256 key.
+            $p384 = [System.Security.Cryptography.ECDsa]::Create([System.Security.Cryptography.ECCurve+NamedCurves]::nistP384)
+            try {
+                $p384Pem = [System.Security.Cryptography.PemEncoding]::WriteString("PRIVATE KEY", $p384.ExportPkcs8PrivateKey())
+            }
+            finally {
+                $p384.Dispose()
+            }
+            $p384KeyPath = Join-Path $TestDrive "p384-signer.pem"
+            Set-Content -LiteralPath $p384KeyPath -Value $p384Pem -Encoding utf8
+            { Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0" -TemplateKind "Minimal" -AttestationSignerKeyPath $p384KeyPath -AttestationProducer "local-dev" } |
+                Should -Throw "*not a NIST P-256 ECDSA key*"
 
             Should -Invoke Get-TemplateSourceCatalogFacts -Times 0 -Exactly
             Should -Invoke Invoke-DatabaseDump -Times 0 -Exactly

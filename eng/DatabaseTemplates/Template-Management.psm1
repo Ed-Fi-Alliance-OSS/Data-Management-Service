@@ -1094,16 +1094,17 @@ function Build-TemplateNuGetPackage {
         [string]$AttestationProducer = ""
     )
 
-    # Attestation preflight: both-or-neither, and the key must exist. Checked before any
-    # catalog read or dump work so a misconfigured signer fails in seconds, not after a
-    # full dump and pack.
+    # Attestation preflight: both-or-neither, and the key must exist, import as an ECDSA
+    # private key, and be on the NIST P-256 curve the attestation algorithm label claims.
+    # Checked before any catalog read or dump work so a misconfigured signer fails in
+    # seconds, not after a full dump and pack.
     $attestationRequested = -not [string]::IsNullOrWhiteSpace($AttestationSignerKeyPath)
     $attestationProducerSupplied = -not [string]::IsNullOrWhiteSpace($AttestationProducer)
     if ($attestationRequested -ne $attestationProducerSupplied) {
         throw "-AttestationSignerKeyPath and -AttestationProducer must be supplied together: the attestation binds the package to a specific trust-policy producer identity."
     }
-    if ($attestationRequested -and -not (Test-Path -LiteralPath $AttestationSignerKeyPath -PathType Leaf)) {
-        throw "Attestation signing key was not found at '$AttestationSignerKeyPath'."
+    if ($attestationRequested) {
+        Assert-TemplateAttestationSignerKey -PrivateKeyPath $AttestationSignerKeyPath
     }
 
     $config = Import-PowerShellDataFile -Path $ConfigFilePath

@@ -120,6 +120,71 @@ function Get-FileSha256Hex {
     return [System.Convert]::ToHexString($hashBytes).ToLowerInvariant()
 }
 
+function Assert-EcdsaP256Key {
+    <#
+    .SYNOPSIS
+    Fails unless an ECDSA key is actually on the NIST P-256 curve. The
+    ECDSA_P256_SHA256 algorithm label is a claim; this assertion is the proof - without it
+    a key on any other curve would sign and verify under the P-256 label. The named-curve
+    OID (1.2.840.10045.3.1.7) is the primary check, with the platform friendly names
+    accepted only when the provider reports no OID value, and the 256-bit key size is
+    required in every case.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [System.Security.Cryptography.ECDsa]$Ecdsa,
+
+        [Parameter(Mandatory = $true)]
+        [string]$KeyDescription
+    )
+
+    $curve = $Ecdsa.ExportParameters($false).Curve
+    $curveOidValue = ""
+    $curveFriendlyName = ""
+    if ($null -ne $curve.Oid) {
+        $curveOidValue = [string]$curve.Oid.Value
+        $curveFriendlyName = [string]$curve.Oid.FriendlyName
+    }
+
+    $hasP256Oid = $curveOidValue -ceq "1.2.840.10045.3.1.7"
+    $hasP256FriendlyName = @("nistP256", "ECDSA_P256", "prime256v1", "secp256r1") -contains $curveFriendlyName
+    $curveAccepted = $hasP256Oid -or ([string]::IsNullOrEmpty($curveOidValue) -and $hasP256FriendlyName)
+
+    if ($Ecdsa.KeySize -ne 256 -or -not $curveAccepted) {
+        throw "$KeyDescription is not a NIST P-256 ECDSA key (curve OID '$curveOidValue', friendly name '$curveFriendlyName', key size $($Ecdsa.KeySize)); the $script:AttestationAlgorithmEcdsaP256Sha256 contract requires curve 1.2.840.10045.3.1.7."
+    }
+}
+
+function Assert-TemplateAttestationSignerKey {
+    <#
+    .SYNOPSIS
+    Validates a signer private key file before any expensive producer work: the file must
+    exist, import as an ECDSA private key, and be on the NIST P-256 curve.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$PrivateKeyPath
+    )
+
+    if (-not (Test-Path -LiteralPath $PrivateKeyPath -PathType Leaf)) {
+        throw "Signing key was not found at '$PrivateKeyPath'."
+    }
+
+    $ecdsa = [System.Security.Cryptography.ECDsa]::Create()
+    try {
+        try {
+            $ecdsa.ImportFromPem((Get-Content -LiteralPath $PrivateKeyPath -Raw))
+        }
+        catch {
+            throw "Signing key at '$PrivateKeyPath' is not an importable ECDSA private key PEM: $($_.Exception.Message)"
+        }
+        Assert-EcdsaP256Key -Ecdsa $ecdsa -KeyDescription "Signing key at '$PrivateKeyPath'"
+    }
+    finally {
+        $ecdsa.Dispose()
+    }
+}
+
 function Get-TemplateAttestationFileName {
     <#
     .SYNOPSIS
@@ -163,6 +228,7 @@ function New-TemplateAttestationSigningKey {
 
     $ecdsa = [System.Security.Cryptography.ECDsa]::Create([System.Security.Cryptography.ECCurve+NamedCurves]::nistP256)
     try {
+        Assert-EcdsaP256Key -Ecdsa $ecdsa -KeyDescription "The generated signing key"
         $privateKeyPem = [System.Security.Cryptography.PemEncoding]::WriteString("PRIVATE KEY", $ecdsa.ExportPkcs8PrivateKey())
         [System.IO.File]::WriteAllText($PrivateKeyPath, $privateKeyPem + "`n", [System.Text.UTF8Encoding]::new($false))
 
@@ -281,15 +347,19 @@ function Read-TrustPolicyDocument {
                     throw "Trust policy '$Path' producer '$producerName' key '$keyId' does not match the SHA-256 of its own publicKeySpkiB64; the policy entry is corrupt or mispasted."
                 }
 
-                # Prove importability at load time so a malformed key fails here with policy
-                # context rather than at verification time.
+                # Prove importability AND the P-256 curve at load time so a malformed or
+                # off-curve key fails here with policy context rather than at verification
+                # time (the algorithm label alone is a claim, not proof of the curve).
                 $probe = [System.Security.Cryptography.ECDsa]::Create()
                 try {
-                    $bytesRead = 0
-                    $probe.ImportSubjectPublicKeyInfo($spkiBytes, [ref]$bytesRead)
-                }
-                catch {
-                    throw "Trust policy '$Path' producer '$producerName' key '$keyId' is not an importable SubjectPublicKeyInfo: $($_.Exception.Message)"
+                    try {
+                        $bytesRead = 0
+                        $probe.ImportSubjectPublicKeyInfo($spkiBytes, [ref]$bytesRead)
+                    }
+                    catch {
+                        throw "Trust policy '$Path' producer '$producerName' key '$keyId' is not an importable SubjectPublicKeyInfo: $($_.Exception.Message)"
+                    }
+                    Assert-EcdsaP256Key -Ecdsa $probe -KeyDescription "Trust policy '$Path' producer '$producerName' key '$keyId'"
                 }
                 finally {
                     $probe.Dispose()
@@ -436,7 +506,15 @@ function New-TemplateAttestation {
 
     $ecdsa = [System.Security.Cryptography.ECDsa]::Create()
     try {
-        $ecdsa.ImportFromPem((Get-Content -LiteralPath $PrivateKeyPath -Raw))
+        try {
+            $ecdsa.ImportFromPem((Get-Content -LiteralPath $PrivateKeyPath -Raw))
+        }
+        catch {
+            throw "Signing key at '$PrivateKeyPath' is not an importable ECDSA private key PEM: $($_.Exception.Message)"
+        }
+        # The emitted algorithm label is ECDSA_P256_SHA256; prove the curve before signing
+        # so no other-curve key can ever produce an attestation under that label.
+        Assert-EcdsaP256Key -Ecdsa $ecdsa -KeyDescription "Signing key at '$PrivateKeyPath'"
         $signatureBytes = $ecdsa.SignData($payloadBytes, [System.Security.Cryptography.HashAlgorithmName]::SHA256)
         $keyId = Get-ByteSha256Hex -Byte $ecdsa.ExportSubjectPublicKeyInfo()
     }
@@ -579,6 +657,10 @@ function Test-TemplateAttestation {
     try {
         $bytesRead = 0
         $ecdsa.ImportSubjectPublicKeyInfo([System.Convert]::FromBase64String($matchedKey.PublicKeySpkiB64), [ref]$bytesRead)
+        # Defense in depth: Read-TemplateTrustPolicy already proves the curve at load time,
+        # but a caller-constructed policy object must not bypass the P-256 contract. A
+        # non-P-256 policy key is a configuration defect and throws, not a verdict.
+        Assert-EcdsaP256Key -Ecdsa $ecdsa -KeyDescription "Trust policy key '$keyId' (producer '$($matchedProducer.Name)')"
         $signatureValid = $ecdsa.VerifyData($payloadBytes, $signatureBytes, [System.Security.Cryptography.HashAlgorithmName]::SHA256)
     }
     finally {
@@ -631,6 +713,7 @@ Export-ModuleMember -Function `
     Get-FileSha256Hex, `
     Get-TemplateAttestationFileName, `
     New-TemplateAttestationSigningKey, `
+    Assert-TemplateAttestationSignerKey, `
     Read-TemplateTrustPolicy, `
     New-TemplateAttestation, `
     Test-TemplateAttestation
