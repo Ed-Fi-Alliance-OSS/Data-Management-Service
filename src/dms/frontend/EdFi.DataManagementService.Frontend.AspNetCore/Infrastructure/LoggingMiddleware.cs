@@ -27,7 +27,9 @@ public class LoggingMiddleware
         _appSettings = appSettings ?? throw new ArgumentNullException(nameof(appSettings));
         try
         {
-            _correlationIdMaxLength = appSettings.Value.CorrelationIdMaxLength;
+            var configuredMaxLength = appSettings.Value.CorrelationIdMaxLength;
+            _correlationIdMaxLength =
+                configuredMaxLength > 0 ? configuredMaxLength : AppSettings.DefaultCorrelationIdMaxLength;
         }
         catch (OptionsValidationException)
         {
