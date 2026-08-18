@@ -138,6 +138,103 @@ public class Given_CdcConnectorTemplateLiveValidation
     }
 
     [Test]
+    public void It_reports_sqlserver_driver_read_back_drift_as_connection_property_diagnostics()
+    {
+        const string unsafeHostName = "unsafe-sql.internal";
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(
+            CdcProvider.SqlServer,
+            providerConnectionProperties: new Dictionary<string, string>(BuildSqlServerConnectionProperties())
+            {
+                ["driver.encrypt"] = "true",
+                ["driver.trustStorePassword"] = "${env:CDC_SQLSERVER_TRUSTSTORE_PASSWORD}",
+                ["driver.hostNameInCertificate"] = unsafeHostName,
+            }
+        );
+        CdcConnectorTemplateResult rendered = service.Render(request);
+        Dictionary<string, string> effectiveConfig = CopyConfig(rendered.Config);
+        effectiveConfig["driver.encrypt"] = "false";
+        effectiveConfig.Remove("driver.trustStorePassword");
+        effectiveConfig.Remove("driver.hostNameInCertificate");
+        effectiveConfig["driver.trustServerCertificate"] = "true";
+        effectiveConfig["driver.loginTimeout"] = "30";
+
+        CdcConnectorTemplateResult result = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                effectiveConfig,
+                new CdcConnectorProviderSetupEvidence(
+                    bindingGeneration: 7,
+                    BuildProviderSetupResult(CdcProvider.SqlServer)
+                ),
+                BuildSourcePartitionEvidence(request)
+            )
+        );
+
+        using var _ = new AssertionScope();
+        rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackPropertyMismatch
+                && diagnostic.PropertyName == "driver.encrypt"
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ConnectionProperty
+                && diagnostic.ExpectedValue == "[redacted]"
+                && diagnostic.ObservedValue == "[redacted]"
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackPropertyMissing
+                && diagnostic.PropertyName == "driver.trustStorePassword"
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ConnectionProperty
+                && diagnostic.ExpectedValue == "[redacted]"
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.SecretValue
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackPropertyMissing
+                && diagnostic.PropertyName == "driver.hostNameInCertificate"
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ConnectionProperty
+                && diagnostic.ExpectedValue == "[redacted]"
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackUnexpectedProperty
+                && diagnostic.PropertyName == "driver.trustServerCertificate"
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ConnectionProperty
+                && diagnostic.ExpectedValue == "absent"
+                && diagnostic.ObservedValue == "[redacted]"
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackUnexpectedProperty
+                && diagnostic.PropertyName == "driver.loginTimeout"
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.LiveReadBack
+            );
+        result
+            .Diagnostics.Single(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackPropertyMissing
+                && diagnostic.PropertyName == "driver.trustStorePassword"
+            )
+            .ObservedValue.Should()
+            .BeNull();
+        result
+            .Diagnostics.Single(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackPropertyMissing
+                && diagnostic.PropertyName == "driver.hostNameInCertificate"
+            )
+            .ObservedValue.Should()
+            .BeNull();
+        result.ToString().Contains(unsafeHostName, StringComparison.Ordinal).Should().BeFalse();
+    }
+
+    [Test]
     public void It_accepts_sqlserver_source_partition_for_the_canonical_single_database_name()
     {
         using ServiceProvider serviceProvider = BuildServiceProvider();
