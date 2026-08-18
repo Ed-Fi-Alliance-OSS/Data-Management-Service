@@ -21,7 +21,7 @@ public interface ICdcConnectorTemplateService
 
     CdcConnectorTemplateValidationResult ValidateRequest(
         CdcConnectorTemplateRequest request,
-        CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.RequestValidation
+        CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.Render
     );
 
     CdcConnectorTemplateResult Render(CdcConnectorTemplateRequest request);
@@ -59,18 +59,14 @@ internal sealed class CdcConnectorTemplateService(
 
     public CdcConnectorTemplateValidationResult ValidateRequest(
         CdcConnectorTemplateRequest request,
-        CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.RequestValidation
+        CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.Render
     ) => inputValidator.ValidateRequest(request, sourcePhase);
 
     public CdcConnectorTemplateResult Render(CdcConnectorTemplateRequest request) => renderer.Render(request);
 
     public CdcConnectorTemplateResult ValidateRegistrationPreflight(
         CdcConnectorTemplateEffectiveConfigValidationRequest request
-    ) =>
-        effectiveConfigValidator.ValidateEffectiveConfig(
-            request,
-            CdcConnectorTemplateSourcePhase.RegistrationPreflight
-        );
+    ) => effectiveConfigValidator.ValidateEffectiveConfig(request, CdcConnectorTemplateSourcePhase.Preflight);
 
     public CdcConnectorTemplateResult ValidateLiveReadBack(
         CdcConnectorTemplateEffectiveConfigValidationRequest request
@@ -126,7 +122,7 @@ internal static class CdcProviderSetupReadinessRules
             CdcProviderSetupPrerequisiteRules.Validate(
                 providerSetupResult,
                 safeArtifactOrObjectName: null,
-                CdcConnectorTemplateSourcePhase.RequestValidation
+                CdcConnectorTemplateSourcePhase.Render
             )
         );
 
@@ -150,7 +146,7 @@ internal static class CdcProviderSetupReadinessRules
         diagnostics.Add(
             BuildDiagnostic(
                 CdcConnectorTemplateDiagnosticCodes.ProviderSetupResultNotReady,
-                CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult,
+                CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
                 "providerSetup.outcome",
                 "CreatedOrMatched or ExactMatch",
                 providerSetupResult.Outcome.ToString(),
@@ -173,7 +169,7 @@ internal static class CdcProviderSetupReadinessRules
             diagnostics.Add(
                 BuildDiagnostic(
                     CdcConnectorTemplateDiagnosticCodes.SourceFingerprintEvidenceRequired,
-                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult,
+                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
                     "providerSetup.boundPhysicalSourceFingerprint",
                     "valid bound physical-source fingerprint",
                     RedactedValue,
@@ -198,7 +194,7 @@ internal static class CdcProviderSetupReadinessRules
         diagnostics.Add(
             BuildDiagnostic(
                 CdcConnectorTemplateDiagnosticCodes.SourceFingerprintEvidenceRequired,
-                CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult,
+                CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
                 "providerSetup.observedPhysicalSourceFingerprint",
                 "matching observed physical-source fingerprint",
                 providerSetupResult.ObservedSourceFingerprint is null ? "missing" : RedactedValue,
@@ -221,7 +217,7 @@ internal static class CdcProviderSetupReadinessRules
         diagnostics.Add(
             BuildDiagnostic(
                 CdcConnectorTemplateDiagnosticCodes.HeartbeatActionQueryRequired,
-                CdcConnectorTemplateDiagnosticCategory.Heartbeat,
+                CdcConnectorTemplateDiagnosticCategory.HeartbeatConfigurationViolation,
                 "providerSetup.heartbeatActionQuery",
                 "fresh provider heartbeat action query",
                 "missing",
@@ -249,7 +245,7 @@ internal static class CdcProviderSetupReadinessRules
             expectedValue,
             observedValue,
             provider,
-            CdcConnectorTemplateSourcePhase.RequestValidation,
+            CdcConnectorTemplateSourcePhase.Render,
             redactionClassification
         );
 

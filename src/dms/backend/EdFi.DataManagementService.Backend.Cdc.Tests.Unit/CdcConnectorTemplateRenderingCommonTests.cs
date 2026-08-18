@@ -265,7 +265,7 @@ public class Given_CdcConnectorTemplateCommonRendering
             .ContainSingle(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.ReservedKey
                 && diagnostic.PropertyName == "producer.override.acks"
-                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Rendering
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Render
             );
     }
 

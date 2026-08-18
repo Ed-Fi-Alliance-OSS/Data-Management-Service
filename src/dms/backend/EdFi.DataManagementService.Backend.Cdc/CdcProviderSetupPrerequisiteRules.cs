@@ -72,7 +72,7 @@ internal static class CdcProviderSetupPrerequisiteRules
         diagnostics.Add(
             BuildDiagnostic(
                 CdcConnectorTemplateDiagnosticCodes.SourceTableInventoryMismatch,
-                CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult,
+                CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
                 "providerSetup.sourceTableInventory",
                 "dms.DocumentCache, dms.Document, and dms.CdcHeartbeat",
                 ObservedCountOrMissing(sourceTableInventory),
@@ -108,7 +108,7 @@ internal static class CdcProviderSetupPrerequisiteRules
             diagnostics.Add(
                 BuildDiagnostic(
                     CdcConnectorTemplateDiagnosticCodes.SourceTableInventoryMismatch,
-                    CdcConnectorTemplateDiagnosticCategory.IncludeList,
+                    CdcConnectorTemplateDiagnosticCategory.IncludeListViolation,
                     "table.include.list",
                     $"{expectedTableName.Schema.Value}.{expectedTableName.Name}",
                     SanitizePhysicalIdentifier(
@@ -140,7 +140,7 @@ internal static class CdcProviderSetupPrerequisiteRules
             diagnostics.Add(
                 BuildDiagnostic(
                     CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch,
-                    CdcConnectorTemplateDiagnosticCategory.MessageKey,
+                    CdcConnectorTemplateDiagnosticCategory.MessageKeyViolation,
                     "providerSetup.expectedMessageKeyColumns",
                     "DocumentUuid keys for document sources",
                     ObservedCountOrMissing(expectedMessageKeyColumns),
@@ -174,7 +174,7 @@ internal static class CdcProviderSetupPrerequisiteRules
                 diagnostics.Add(
                     BuildDiagnostic(
                         CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch,
-                        CdcConnectorTemplateDiagnosticCategory.MessageKey,
+                        CdcConnectorTemplateDiagnosticCategory.MessageKeyViolation,
                         "providerSetup.sourceTableInventory.columns",
                         $"non-null source column inventory for {CdcConnectorTemplateSharedRules.ExpectedSourceTableName(sourceTable.TableKind)}",
                         "malformed",
@@ -192,7 +192,7 @@ internal static class CdcProviderSetupPrerequisiteRules
                 diagnostics.Add(
                     BuildDiagnostic(
                         CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch,
-                        CdcConnectorTemplateDiagnosticCategory.MessageKey,
+                        CdcConnectorTemplateDiagnosticCategory.MessageKeyViolation,
                         "message.key.columns",
                         $"unique source column names for {CdcConnectorTemplateSharedRules.ExpectedSourceTableName(sourceTable.TableKind)}",
                         "duplicate",
@@ -214,7 +214,7 @@ internal static class CdcProviderSetupPrerequisiteRules
                 diagnostics.Add(
                     BuildDiagnostic(
                         CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch,
-                        CdcConnectorTemplateDiagnosticCategory.MessageKey,
+                        CdcConnectorTemplateDiagnosticCategory.MessageKeyViolation,
                         "message.key.columns",
                         $"source column {keyColumn.Value} for {CdcConnectorTemplateSharedRules.ExpectedSourceTableName(sourceTable.TableKind)}",
                         "missing",
@@ -289,7 +289,7 @@ internal static class CdcProviderSetupPrerequisiteRules
         diagnostics.Add(
             BuildDiagnostic(
                 code,
-                CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult,
+                CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
                 propertyName,
                 "one matched provider setup artifact",
                 artifacts.Length == 0 ? "missing" : artifacts.Length.ToString(),
@@ -337,7 +337,7 @@ internal static class CdcProviderSetupPrerequisiteRules
             diagnostics.Add(
                 BuildDiagnostic(
                     CdcConnectorTemplateDiagnosticCodes.SqlServerCaptureInstanceMetadataRequired,
-                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult,
+                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
                     "providerSetup.artifactInventory.sqlServerCaptureInstance",
                     $"one usable SQL Server capture-instance artifact for {CdcConnectorTemplateSharedRules.ExpectedSourceTableName(tableKind)}",
                     SqlServerCaptureInstanceObservedValue(tableCaptureInstances),
@@ -362,7 +362,7 @@ internal static class CdcProviderSetupPrerequisiteRules
         diagnostics.Add(
             BuildDiagnostic(
                 CdcConnectorTemplateDiagnosticCodes.SqlServerCaptureInstanceMetadataRequired,
-                CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult,
+                CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
                 "providerSetup.artifactInventory.sqlServerCaptureInstance",
                 "only SQL Server capture-instance artifacts for dms.DocumentCache, dms.Document, and dms.CdcHeartbeat",
                 extraCaptureInstanceCount.ToString(),

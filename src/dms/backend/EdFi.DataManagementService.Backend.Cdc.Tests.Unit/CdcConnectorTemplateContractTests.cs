@@ -503,14 +503,14 @@ public class Given_CdcConnectorTemplateContracts
         );
         var diagnostic = new CdcConnectorTemplateDiagnostic(
             code: "CDC_TEMPLATE_CONTRACT_SENTINEL",
-            category: CdcConnectorTemplateDiagnosticCategory.BindingIdentity,
+            category: CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure,
             severity: CdcConnectorTemplateDiagnosticSeverity.Info,
             propertyName: "topic.prefix",
             safeArtifactOrObjectName: binding.ConnectorName,
             expectedValue: binding.ConnectorName.Value,
             observedValue: binding.ConnectorName.Value,
             provider: CdcProvider.SqlServer,
-            sourcePhase: CdcConnectorTemplateSourcePhase.Rendering,
+            sourcePhase: CdcConnectorTemplateSourcePhase.Render,
             redactionClassification: CdcConnectorTemplateRedactionClassification.Safe
         );
 
@@ -602,24 +602,38 @@ public class Given_CdcConnectorTemplateContracts
     {
         string[] expectedCategories =
         [
-            nameof(CdcConnectorTemplateDiagnosticCategory.BindingIdentity),
-            nameof(CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult),
-            nameof(CdcConnectorTemplateDiagnosticCategory.MissingInput),
-            nameof(CdcConnectorTemplateDiagnosticCategory.ReservedKey),
-            nameof(CdcConnectorTemplateDiagnosticCategory.ConnectionProperty),
-            nameof(CdcConnectorTemplateDiagnosticCategory.KafkaSecurityProperty),
-            nameof(CdcConnectorTemplateDiagnosticCategory.ProducerPolicy),
-            nameof(CdcConnectorTemplateDiagnosticCategory.Heartbeat),
-            nameof(CdcConnectorTemplateDiagnosticCategory.TopicNaming),
-            nameof(CdcConnectorTemplateDiagnosticCategory.Transform),
-            nameof(CdcConnectorTemplateDiagnosticCategory.Converter),
-            nameof(CdcConnectorTemplateDiagnosticCategory.IncludeList),
-            nameof(CdcConnectorTemplateDiagnosticCategory.MessageKey),
-            nameof(CdcConnectorTemplateDiagnosticCategory.SchemaHistory),
-            nameof(CdcConnectorTemplateDiagnosticCategory.LiveReadBack),
-            nameof(CdcConnectorTemplateDiagnosticCategory.SecretRedactionFailure),
+            nameof(CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure),
+            nameof(CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure),
+            nameof(CdcConnectorTemplateDiagnosticCategory.MissingRequiredInput),
+            nameof(CdcConnectorTemplateDiagnosticCategory.ReservedKeyViolation),
+            nameof(CdcConnectorTemplateDiagnosticCategory.ConnectionPropertyViolation),
+            nameof(CdcConnectorTemplateDiagnosticCategory.KafkaSecurityPropertyViolation),
+            nameof(CdcConnectorTemplateDiagnosticCategory.ProducerPolicyViolation),
+            nameof(CdcConnectorTemplateDiagnosticCategory.HeartbeatConfigurationViolation),
+            nameof(CdcConnectorTemplateDiagnosticCategory.TopicNamingConfigurationViolation),
+            nameof(CdcConnectorTemplateDiagnosticCategory.TransformConfigurationViolation),
+            nameof(CdcConnectorTemplateDiagnosticCategory.ConverterConfigurationViolation),
+            nameof(CdcConnectorTemplateDiagnosticCategory.IncludeListViolation),
+            nameof(CdcConnectorTemplateDiagnosticCategory.MessageKeyViolation),
+            nameof(CdcConnectorTemplateDiagnosticCategory.SchemaHistoryConfigurationViolation),
+            nameof(CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch),
+            nameof(CdcConnectorTemplateDiagnosticCategory.SecretRedactionViolation),
         ];
 
         Enum.GetNames<CdcConnectorTemplateDiagnosticCategory>().Should().BeEquivalentTo(expectedCategories);
+    }
+
+    [Test]
+    public void It_defines_the_required_stable_diagnostic_source_phases()
+    {
+        string[] expectedSourcePhases =
+        [
+            nameof(CdcConnectorTemplateSourcePhase.Render),
+            nameof(CdcConnectorTemplateSourcePhase.Preflight),
+            nameof(CdcConnectorTemplateSourcePhase.LiveReadBack),
+            nameof(CdcConnectorTemplateSourcePhase.PinnedImageSmoke),
+        ];
+
+        Enum.GetNames<CdcConnectorTemplateSourcePhase>().Should().BeEquivalentTo(expectedSourcePhases);
     }
 }

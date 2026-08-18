@@ -29,7 +29,7 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
 
         CdcConnectorTemplateValidationResult requestValidationResult = inputValidator.ValidateRequest(
             request,
-            CdcConnectorTemplateSourcePhase.Rendering
+            CdcConnectorTemplateSourcePhase.Render
         );
         IReadOnlyList<CdcConnectorTemplateDiagnostic> diagnostics = requestValidationResult.Diagnostics;
 

@@ -190,7 +190,7 @@ public class Given_CdcConnectorTemplateInputValidation
             .Should()
             .AllSatisfy(diagnostic =>
             {
-                diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.MissingInput);
+                diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.MissingRequiredInput);
                 diagnostic
                     .ExpectedValue.Should()
                     .BeOneOf(
@@ -248,21 +248,22 @@ public class Given_CdcConnectorTemplateInputValidation
             .ContainSingle(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.ConnectionPropertyNotAllowed
                 && diagnostic.PropertyName == "database.server.name"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ConnectionProperty
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ConnectionPropertyViolation
             );
         sqlServerResult
             .Diagnostics.Should()
             .ContainSingle(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.ConnectionPropertyNotAllowed
                 && diagnostic.PropertyName == "database.dbname"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ConnectionProperty
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ConnectionPropertyViolation
             );
         kafkaResult
             .Diagnostics.Should()
             .ContainSingle(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.KafkaSecurityPropertyNotAllowed
                 && diagnostic.PropertyName == "ssl.unknown"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.KafkaSecurityProperty
+                && diagnostic.Category
+                    == CdcConnectorTemplateDiagnosticCategory.KafkaSecurityPropertyViolation
             );
     }
 
@@ -309,7 +310,9 @@ public class Given_CdcConnectorTemplateInputValidation
             .Diagnostics.Should()
             .AllSatisfy(diagnostic =>
             {
-                diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.ConnectionProperty);
+                diagnostic
+                    .Category.Should()
+                    .Be(CdcConnectorTemplateDiagnosticCategory.ConnectionPropertyViolation);
                 diagnostic.ObservedValue.Should().BeNull();
             });
     }
@@ -336,7 +339,7 @@ public class Given_CdcConnectorTemplateInputValidation
             .ContainSingle(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SqlServerDatabaseNamesRequired
                 && diagnostic.PropertyName == "database.names"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.MissingInput
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.MissingRequiredInput
                 && diagnostic.RedactionClassification
                     == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
             );
@@ -378,7 +381,7 @@ public class Given_CdcConnectorTemplateInputValidation
 
         using var _ = new AssertionScope();
         result.IsValid.Should().BeFalse();
-        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.ConnectionProperty);
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.ConnectionPropertyViolation);
         diagnostic.ExpectedValue.Should().Be("exactly one SQL Server database name");
         diagnostic.ObservedValue.Should().Be("[redacted]");
         diagnostic
@@ -418,7 +421,7 @@ public class Given_CdcConnectorTemplateInputValidation
         result
             .Diagnostics.Select(diagnostic => diagnostic.Category)
             .Should()
-            .OnlyContain(category => category == CdcConnectorTemplateDiagnosticCategory.ReservedKey);
+            .OnlyContain(category => category == CdcConnectorTemplateDiagnosticCategory.ReservedKeyViolation);
         result
             .Diagnostics.Select(diagnostic => diagnostic.PropertyName)
             .Should()
@@ -457,7 +460,7 @@ public class Given_CdcConnectorTemplateInputValidation
             .Diagnostics.Should()
             .OnlyContain(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.ExternalizedSecretReferenceRequired
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.SecretRedactionFailure
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.SecretRedactionViolation
                 && diagnostic.ObservedValue == "[redacted]"
                 && diagnostic.RedactionClassification
                     == CdcConnectorTemplateRedactionClassification.SecretValue
@@ -497,7 +500,7 @@ public class Given_CdcConnectorTemplateInputValidation
         using var _ = new AssertionScope();
         result.IsValid.Should().BeFalse();
         diagnostic.Code.Should().Be(CdcConnectorTemplateDiagnosticCodes.ExternalizedSecretReferenceRequired);
-        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.SecretRedactionFailure);
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.SecretRedactionViolation);
         diagnostic.PropertyName.Should().Be("driver.trustStorePassword");
         diagnostic.ObservedValue.Should().Be("[redacted]");
         diagnostic
@@ -525,14 +528,14 @@ public class Given_CdcConnectorTemplateInputValidation
                 ["database.names"] = "edfi_datastore",
                 ["connector.class"] = "io.debezium.connector.sqlserver.SqlServerConnector",
             },
-            sourcePhase: CdcConnectorTemplateSourcePhase.RegistrationPreflight
+            sourcePhase: CdcConnectorTemplateSourcePhase.Preflight
         );
 
         CdcConnectorTemplateDiagnostic diagnostic = result.Diagnostics.Should().ContainSingle().Subject;
 
         using var _ = new AssertionScope();
         diagnostic.Provider.Should().Be(CdcProvider.SqlServer);
-        diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.RegistrationPreflight);
+        diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.Preflight);
         diagnostic.SafeArtifactOrObjectName.Should().Be(new CdcSafeName("dms_binding_connector"));
         diagnostic.Severity.Should().Be(CdcConnectorTemplateDiagnosticSeverity.Error);
     }
@@ -556,8 +559,8 @@ public class Given_CdcConnectorTemplateInputValidation
         result
             .Diagnostics.Should()
             .OnlyContain(diagnostic =>
-                diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult
-                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.RequestValidation
+                diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Render
                 && diagnostic.ExpectedValue == "one matched provider setup artifact"
             );
     }
@@ -593,7 +596,7 @@ public class Given_CdcConnectorTemplateInputValidation
         result
             .Diagnostics.Should()
             .OnlyContain(diagnostic =>
-                diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult
+                diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure
                 && diagnostic.ObservedValue == "missing"
             );
     }
@@ -625,11 +628,11 @@ public class Given_CdcConnectorTemplateInputValidation
 
         using var _ = new AssertionScope();
         result.IsValid.Should().BeFalse();
-        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.IncludeList);
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.IncludeListViolation);
         diagnostic.PropertyName.Should().Be("table.include.list");
         diagnostic.ExpectedValue.Should().Be("dms.Document");
         diagnostic.ObservedValue.Should().Be("dms.DocumentProjectionWork_DROP_TABLE");
-        diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.RequestValidation);
+        diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.Render);
         diagnostic
             .RedactionClassification.Should()
             .Be(CdcConnectorTemplateRedactionClassification.PhysicalIdentifier);
@@ -678,19 +681,19 @@ public class Given_CdcConnectorTemplateInputValidation
             .Diagnostics.Should()
             .Contain(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.MessageKey
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.MessageKeyViolation
                 && diagnostic.PropertyName == "message.key.columns"
                 && diagnostic.ExpectedValue == "source column DocumentUuid for dms.DocumentCache"
                 && diagnostic.ObservedValue == "missing"
-                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.RequestValidation
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Render
             )
             .And.Contain(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.MessageKey
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.MessageKeyViolation
                 && diagnostic.PropertyName == "message.key.columns"
                 && diagnostic.ExpectedValue == "unique source column names for dms.Document"
                 && diagnostic.ObservedValue == "duplicate"
-                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.RequestValidation
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Render
             );
         result
             .Diagnostics.Should()
@@ -729,11 +732,11 @@ public class Given_CdcConnectorTemplateInputValidation
 
         using var _ = new AssertionScope();
         result.IsValid.Should().BeFalse();
-        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.MessageKey);
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.MessageKeyViolation);
         diagnostic.PropertyName.Should().Be("providerSetup.sourceTableInventory.columns");
         diagnostic.ExpectedValue.Should().Be("non-null source column inventory for dms.DocumentCache");
         diagnostic.ObservedValue.Should().Be("malformed");
-        diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.RequestValidation);
+        diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.Render);
         diagnostic
             .RedactionClassification.Should()
             .Be(CdcConnectorTemplateRedactionClassification.PhysicalIdentifier);
@@ -825,8 +828,8 @@ public class Given_CdcConnectorTemplateInputValidation
             .HaveCount(3)
             .And.OnlyContain(diagnostic =>
                 diagnostic.ObservedValue == "missing"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult
-                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.RequestValidation
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Render
             );
         missingDocument
             .Diagnostics.Should()
@@ -884,7 +887,7 @@ public class Given_CdcConnectorTemplateInputValidation
             .SelectMany(result => result.Diagnostics)
             .Should()
             .OnlyContain(diagnostic =>
-                diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult
+                diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure
                 && diagnostic.PropertyName == "providerSetup.artifactInventory.sqlServerCaptureInstance"
                 && diagnostic.RedactionClassification
                     == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
@@ -923,7 +926,7 @@ public class Given_CdcConnectorTemplateInputValidation
                 && diagnostic.ExpectedValue
                     == "one usable SQL Server capture-instance artifact for dms.Document"
                 && diagnostic.ObservedValue == "missing"
-                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.RequestValidation
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Render
             )
             .And.ContainSingle(diagnostic =>
                 diagnostic.Code
@@ -960,11 +963,13 @@ public class Given_CdcConnectorTemplateInputValidation
 
         using var _ = new AssertionScope();
         result.IsValid.Should().BeFalse();
-        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.Heartbeat);
+        diagnostic
+            .Category.Should()
+            .Be(CdcConnectorTemplateDiagnosticCategory.HeartbeatConfigurationViolation);
         diagnostic.PropertyName.Should().Be("poll.interval.ms");
         diagnostic.ExpectedValue.Should().Be("positive SQL Server poll interval");
         diagnostic.ObservedValue.Should().BeNull();
-        diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.RequestValidation);
+        diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.Render);
     }
 
     [Test]
@@ -992,18 +997,20 @@ public class Given_CdcConnectorTemplateInputValidation
 
         using var _ = new AssertionScope();
         result.IsValid.Should().BeFalse();
-        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.Heartbeat);
+        diagnostic
+            .Category.Should()
+            .Be(CdcConnectorTemplateDiagnosticCategory.HeartbeatConfigurationViolation);
         diagnostic.PropertyName.Should().Be("poll.interval.ms");
         diagnostic.ExpectedValue.Should().Be("<= heartbeat.interval.ms (5000)");
         diagnostic.ObservedValue.Should().Be("6000");
-        diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.RequestValidation);
+        diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.Render);
     }
 
     private static CdcConnectorTemplateValidationResult Validate(
         CdcProvider provider,
         IReadOnlyDictionary<string, string>? providerConnectionProperties = null,
         IReadOnlyDictionary<string, string>? kafkaSecurityProperties = null,
-        CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.RequestValidation
+        CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.Render
     )
     {
         using ServiceProvider serviceProvider = new ServiceCollection()
@@ -1025,7 +1032,7 @@ public class Given_CdcConnectorTemplateInputValidation
 
     private static CdcConnectorTemplateValidationResult Validate(
         CdcConnectorTemplateRequest request,
-        CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.RequestValidation
+        CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.Render
     )
     {
         using ServiceProvider serviceProvider = new ServiceCollection()

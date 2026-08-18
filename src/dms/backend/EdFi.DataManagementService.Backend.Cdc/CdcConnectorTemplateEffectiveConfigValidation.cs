@@ -30,10 +30,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
 
         if (
             sourcePhase
-            is not (
-                CdcConnectorTemplateSourcePhase.RegistrationPreflight
-                or CdcConnectorTemplateSourcePhase.LiveReadBack
-            )
+            is not (CdcConnectorTemplateSourcePhase.Preflight or CdcConnectorTemplateSourcePhase.LiveReadBack)
         )
         {
             throw new ArgumentOutOfRangeException(
@@ -121,7 +118,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
             diagnostics.Add(
                 BuildDiagnostic(
                     CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch,
-                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult,
+                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
                     "providerSetup.provider",
                     bindingIdentity.Provider.ToString(),
                     result.Provider.ToString(),
@@ -140,7 +137,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
             diagnostics.Add(
                 BuildDiagnostic(
                     CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch,
-                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult,
+                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
                     "providerSetup.outcome",
                     "CreatedOrMatched or ExactMatch",
                     result.Outcome.ToString(),
@@ -156,7 +153,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
             diagnostics.Add(
                 BuildDiagnostic(
                     CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch,
-                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult,
+                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
                     "providerSetup.bindingGeneration",
                     bindingIdentity.BindingGeneration.ToString(),
                     providerSetupEvidence.BindingGeneration.ToString(),
@@ -172,7 +169,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
             diagnostics.Add(
                 BuildDiagnostic(
                     CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch,
-                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult,
+                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
                     "providerSetup.boundPhysicalSourceFingerprint",
                     "binding physical-source fingerprint",
                     RedactedValue,
@@ -191,7 +188,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
             diagnostics.Add(
                 BuildDiagnostic(
                     CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch,
-                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult,
+                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
                     "providerSetup.observedPhysicalSourceFingerprint",
                     "binding physical-source fingerprint",
                     RedactedValue,
@@ -207,7 +204,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
             diagnostics.Add(
                 BuildDiagnostic(
                     CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch,
-                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult,
+                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
                     "providerSetup.sourceTableInventory",
                     "dms.DocumentCache, dms.Document, and dms.CdcHeartbeat",
                     RedactedValue,
@@ -223,7 +220,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
             diagnostics.Add(
                 BuildDiagnostic(
                     CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch,
-                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult,
+                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
                     "providerSetup.expectedMessageKeyColumns",
                     "DocumentUuid keys for document sources",
                     RedactedValue,
@@ -239,7 +236,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
             diagnostics.Add(
                 BuildDiagnostic(
                     CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch,
-                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult,
+                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
                     "providerSetup.heartbeatActionQuery",
                     "fresh provider heartbeat action query",
                     null,
@@ -357,7 +354,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
                 diagnostics.Add(
                     BuildDiagnostic(
                         CdcConnectorTemplateDiagnosticCodes.LiveReadBackSourcePartitionMismatch,
-                        CdcConnectorTemplateDiagnosticCategory.LiveReadBack,
+                        CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch,
                         "source.partition",
                         "actual connector source partition evidence",
                         null,
@@ -501,7 +498,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
     ) =>
         BuildDiagnostic(
             CdcConnectorTemplateDiagnosticCodes.LiveReadBackSecretMismatch,
-            CdcConnectorTemplateDiagnosticCategory.SecretRedactionFailure,
+            CdcConnectorTemplateDiagnosticCategory.SecretRedactionViolation,
             propertyName,
             "exact externalized reference or masked secret evidence",
             RedactedValue,
@@ -523,7 +520,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
 
         return BuildDiagnostic(
             CdcConnectorTemplateDiagnosticCodes.LiveReadBackSourcePartitionMismatch,
-            CdcConnectorTemplateDiagnosticCategory.LiveReadBack,
+            CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch,
             propertyName,
             RedactUnexpectedExpectedValueForDiagnostic(expectedValue, redactionClassification),
             RedactValueForDiagnostic(observedValue, redactionClassification),
@@ -598,17 +595,17 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
     {
         if (propertyName == "table.include.list")
         {
-            return CdcConnectorTemplateDiagnosticCategory.IncludeList;
+            return CdcConnectorTemplateDiagnosticCategory.IncludeListViolation;
         }
 
         if (propertyName == "message.key.columns")
         {
-            return CdcConnectorTemplateDiagnosticCategory.MessageKey;
+            return CdcConnectorTemplateDiagnosticCategory.MessageKeyViolation;
         }
 
         if (propertyName == "transforms" || propertyName.StartsWith("transforms.", StringComparison.Ordinal))
         {
-            return CdcConnectorTemplateDiagnosticCategory.Transform;
+            return CdcConnectorTemplateDiagnosticCategory.TransformConfigurationViolation;
         }
 
         if (
@@ -621,12 +618,12 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
                 or "tombstones.on.delete"
         )
         {
-            return CdcConnectorTemplateDiagnosticCategory.Converter;
+            return CdcConnectorTemplateDiagnosticCategory.ConverterConfigurationViolation;
         }
 
         if (propertyName.StartsWith("topic.", StringComparison.Ordinal) || propertyName == "topic.prefix")
         {
-            return CdcConnectorTemplateDiagnosticCategory.TopicNaming;
+            return CdcConnectorTemplateDiagnosticCategory.TopicNamingConfigurationViolation;
         }
 
         if (
@@ -634,17 +631,17 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
             || propertyName == "poll.interval.ms"
         )
         {
-            return CdcConnectorTemplateDiagnosticCategory.Heartbeat;
+            return CdcConnectorTemplateDiagnosticCategory.HeartbeatConfigurationViolation;
         }
 
         if (propertyName.StartsWith("schema.history.", StringComparison.Ordinal))
         {
-            return CdcConnectorTemplateDiagnosticCategory.SchemaHistory;
+            return CdcConnectorTemplateDiagnosticCategory.SchemaHistoryConfigurationViolation;
         }
 
         if (propertyName.StartsWith("producer.override.", StringComparison.Ordinal))
         {
-            return CdcConnectorTemplateDiagnosticCategory.ProducerPolicy;
+            return CdcConnectorTemplateDiagnosticCategory.ProducerPolicyViolation;
         }
 
         if (
@@ -652,15 +649,15 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
             || CdcConnectorTemplateInputValidator.IsSqlServerDriverConnectionProperty(propertyName)
         )
         {
-            return CdcConnectorTemplateDiagnosticCategory.ConnectionProperty;
+            return CdcConnectorTemplateDiagnosticCategory.ConnectionPropertyViolation;
         }
 
         if (CdcConnectorTemplateInputValidator.IsKafkaClientSecurityProperty(propertyName))
         {
-            return CdcConnectorTemplateDiagnosticCategory.KafkaSecurityProperty;
+            return CdcConnectorTemplateDiagnosticCategory.KafkaSecurityPropertyViolation;
         }
 
-        return CdcConnectorTemplateDiagnosticCategory.LiveReadBack;
+        return CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch;
     }
 
     private static CdcConnectorTemplateRedactionClassification RedactionClassificationForUnexpectedEffectiveConfigProperty(

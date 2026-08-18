@@ -84,7 +84,7 @@ public class Given_CdcConnectorTemplateLiveValidation
             .Diagnostics.Should()
             .ContainSingle(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackSourcePartitionMismatch
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.LiveReadBack
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch
                 && diagnostic.PropertyName == "source.partition"
                 && diagnostic.ExpectedValue == "actual connector source partition evidence"
                 && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack
@@ -182,7 +182,7 @@ public class Given_CdcConnectorTemplateLiveValidation
             .Contain(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackPropertyMismatch
                 && diagnostic.PropertyName == "driver.encrypt"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ConnectionProperty
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ConnectionPropertyViolation
                 && diagnostic.ExpectedValue == "[redacted]"
                 && diagnostic.ObservedValue == "[redacted]"
                 && diagnostic.RedactionClassification
@@ -191,7 +191,7 @@ public class Given_CdcConnectorTemplateLiveValidation
             .And.Contain(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackPropertyMissing
                 && diagnostic.PropertyName == "driver.trustStorePassword"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ConnectionProperty
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ConnectionPropertyViolation
                 && diagnostic.ExpectedValue == "[redacted]"
                 && diagnostic.RedactionClassification
                     == CdcConnectorTemplateRedactionClassification.SecretValue
@@ -199,7 +199,7 @@ public class Given_CdcConnectorTemplateLiveValidation
             .And.Contain(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackPropertyMissing
                 && diagnostic.PropertyName == "driver.hostNameInCertificate"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ConnectionProperty
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ConnectionPropertyViolation
                 && diagnostic.ExpectedValue == "[redacted]"
                 && diagnostic.RedactionClassification
                     == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
@@ -207,7 +207,7 @@ public class Given_CdcConnectorTemplateLiveValidation
             .And.Contain(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackUnexpectedProperty
                 && diagnostic.PropertyName == "driver.trustServerCertificate"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ConnectionProperty
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ConnectionPropertyViolation
                 && diagnostic.ExpectedValue == "absent"
                 && diagnostic.ObservedValue == "[redacted]"
                 && diagnostic.RedactionClassification
@@ -216,7 +216,7 @@ public class Given_CdcConnectorTemplateLiveValidation
             .And.Contain(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackUnexpectedProperty
                 && diagnostic.PropertyName == "driver.loginTimeout"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.LiveReadBack
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch
             );
         result
             .Diagnostics.Single(diagnostic =>
@@ -310,7 +310,7 @@ public class Given_CdcConnectorTemplateLiveValidation
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackSecretMismatch
                 && diagnostic.PropertyName == "database.password"
                 && diagnostic.ObservedValue == "[redacted]"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.SecretRedactionFailure
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.SecretRedactionViolation
             );
         CdcConnectorTemplateDiagnostic missingSecretDiagnostic = result.Diagnostics.Single(diagnostic =>
             diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackPropertyMissing
@@ -366,19 +366,23 @@ public class Given_CdcConnectorTemplateLiveValidation
             .Diagnostics.Should()
             .Contain(diagnostic =>
                 diagnostic.PropertyName == "value.converter"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.Converter
+                && diagnostic.Category
+                    == CdcConnectorTemplateDiagnosticCategory.ConverterConfigurationViolation
             )
             .And.Contain(diagnostic =>
                 diagnostic.PropertyName == "tombstones.on.delete"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.Converter
+                && diagnostic.Category
+                    == CdcConnectorTemplateDiagnosticCategory.ConverterConfigurationViolation
             )
             .And.Contain(diagnostic =>
                 diagnostic.PropertyName == "transforms.documentState.progress.topic"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.Transform
+                && diagnostic.Category
+                    == CdcConnectorTemplateDiagnosticCategory.TransformConfigurationViolation
             )
             .And.Contain(diagnostic =>
                 diagnostic.PropertyName == "schema.history.internal.kafka.topic"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.SchemaHistory
+                && diagnostic.Category
+                    == CdcConnectorTemplateDiagnosticCategory.SchemaHistoryConfigurationViolation
             )
             .And.Contain(diagnostic =>
                 diagnostic.PropertyName == "topic.heartbeat.name"
@@ -386,12 +390,12 @@ public class Given_CdcConnectorTemplateLiveValidation
             )
             .And.Contain(diagnostic =>
                 diagnostic.PropertyName == "table.include.list"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.IncludeList
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.IncludeListViolation
                 && diagnostic.ObservedValue == "[redacted]"
             )
             .And.Contain(diagnostic =>
                 diagnostic.PropertyName == "message.key.columns"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.MessageKey
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.MessageKeyViolation
                 && diagnostic.ObservedValue == "[redacted]"
             )
             .And.Contain(diagnostic =>
@@ -438,7 +442,7 @@ public class Given_CdcConnectorTemplateLiveValidation
                 && diagnostic.PropertyName == "skipped.operations"
                 && diagnostic.ExpectedValue == "absent"
                 && diagnostic.ObservedValue == "[redacted]"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.LiveReadBack
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch
                 && diagnostic.RedactionClassification
                     == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
             )
@@ -447,7 +451,7 @@ public class Given_CdcConnectorTemplateLiveValidation
                 && diagnostic.PropertyName == "decimal.handling.mode"
                 && diagnostic.ExpectedValue == "absent"
                 && diagnostic.ObservedValue == "[redacted]"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.LiveReadBack
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch
                 && diagnostic.RedactionClassification
                     == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
             )
@@ -456,7 +460,7 @@ public class Given_CdcConnectorTemplateLiveValidation
                 && diagnostic.PropertyName == "signal.data.collection"
                 && diagnostic.ExpectedValue == "absent"
                 && diagnostic.ObservedValue == "[redacted]"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.LiveReadBack
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch
                 && diagnostic.RedactionClassification
                     == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
             )
@@ -465,7 +469,7 @@ public class Given_CdcConnectorTemplateLiveValidation
                 && diagnostic.PropertyName == "database.connection.string"
                 && diagnostic.ExpectedValue == "absent"
                 && diagnostic.ObservedValue == "[redacted]"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ConnectionProperty
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ConnectionPropertyViolation
                 && diagnostic.RedactionClassification
                     == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
             );
@@ -532,21 +536,22 @@ public class Given_CdcConnectorTemplateLiveValidation
             )
             .And.Contain(diagnostic =>
                 diagnostic.PropertyName == "sasl.jaas.config"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.KafkaSecurityProperty
+                && diagnostic.Category
+                    == CdcConnectorTemplateDiagnosticCategory.KafkaSecurityPropertyViolation
                 && diagnostic.ObservedValue == "[redacted]"
                 && diagnostic.RedactionClassification
                     == CdcConnectorTemplateRedactionClassification.SecretValue
             )
             .And.Contain(diagnostic =>
                 diagnostic.PropertyName == "database.connection.string"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ConnectionProperty
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ConnectionPropertyViolation
                 && diagnostic.ObservedValue == "[redacted]"
                 && diagnostic.RedactionClassification
                     == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
             )
             .And.Contain(diagnostic =>
                 diagnostic.PropertyName == "document.payload"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.LiveReadBack
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch
                 && diagnostic.ObservedValue == "[redacted]"
                 && diagnostic.RedactionClassification
                     == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
@@ -656,7 +661,7 @@ public class Given_CdcConnectorTemplateLiveValidation
         exactReadBack.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
         exactReadBack.Diagnostics.Should().BeEmpty();
         mismatch.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
-        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.ProducerPolicy);
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.ProducerPolicyViolation);
         diagnostic.ExpectedValue.Should().Be("[redacted]");
         diagnostic.ObservedValue.Should().Be("[redacted]");
         diagnostic
@@ -902,19 +907,19 @@ public class Given_CdcConnectorTemplateLiveValidation
             .ContainSingle(diagnostic =>
                 diagnostic.Code
                     == CdcConnectorTemplateDiagnosticCodes.SqlServerCaptureInstanceMetadataRequired
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure
                 && diagnostic.PropertyName == "providerSetup.artifactInventory.sqlServerCaptureInstance"
                 && diagnostic.ExpectedValue
                     == "one usable SQL Server capture-instance artifact for dms.Document"
                 && diagnostic.ObservedValue == "Unavailable"
-                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.RegistrationPreflight
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Preflight
             );
         liveReadBackResult
             .Diagnostics.Should()
             .ContainSingle(diagnostic =>
                 diagnostic.Code
                     == CdcConnectorTemplateDiagnosticCodes.SqlServerCaptureInstanceMetadataRequired
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure
                 && diagnostic.PropertyName == "providerSetup.artifactInventory.sqlServerCaptureInstance"
                 && diagnostic.ExpectedValue
                     == "one usable SQL Server capture-instance artifact for dms.Document"
@@ -992,25 +997,25 @@ public class Given_CdcConnectorTemplateLiveValidation
             .Diagnostics.Should()
             .Contain(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.MessageKey
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.MessageKeyViolation
                 && diagnostic.PropertyName == "message.key.columns"
                 && diagnostic.ExpectedValue == "source column DocumentUuid for dms.DocumentCache"
                 && diagnostic.ObservedValue == "missing"
-                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.RegistrationPreflight
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Preflight
             )
             .And.Contain(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.MessageKey
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.MessageKeyViolation
                 && diagnostic.PropertyName == "message.key.columns"
                 && diagnostic.ExpectedValue == "unique source column names for dms.Document"
                 && diagnostic.ObservedValue == "duplicate"
-                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.RegistrationPreflight
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Preflight
             );
         liveReadBackResult
             .Diagnostics.Should()
             .Contain(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.MessageKey
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.MessageKeyViolation
                 && diagnostic.PropertyName == "message.key.columns"
                 && diagnostic.ExpectedValue == "source column DocumentUuid for dms.DocumentCache"
                 && diagnostic.ObservedValue == "missing"
@@ -1018,7 +1023,7 @@ public class Given_CdcConnectorTemplateLiveValidation
             )
             .And.Contain(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.MessageKey
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.MessageKeyViolation
                 && diagnostic.PropertyName == "message.key.columns"
                 && diagnostic.ExpectedValue == "unique source column names for dms.Document"
                 && diagnostic.ObservedValue == "duplicate"
@@ -1081,13 +1086,13 @@ public class Given_CdcConnectorTemplateLiveValidation
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch
                 && diagnostic.PropertyName == "providerSetup.sourceTableInventory"
                 && diagnostic.ObservedValue == "[redacted]"
-                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.RegistrationPreflight
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Preflight
             )
             .And.Contain(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch
                 && diagnostic.PropertyName == "providerSetup.expectedMessageKeyColumns"
                 && diagnostic.ObservedValue == "[redacted]"
-                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.RegistrationPreflight
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Preflight
             );
         liveReadBackResult
             .Diagnostics.Should()
@@ -1177,13 +1182,13 @@ public class Given_CdcConnectorTemplateLiveValidation
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch
                 && diagnostic.PropertyName == "providerSetup.sourceTableInventory"
                 && diagnostic.ObservedValue == "[redacted]"
-                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.RegistrationPreflight
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Preflight
             )
             .And.Contain(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch
                 && diagnostic.PropertyName == "providerSetup.expectedMessageKeyColumns"
                 && diagnostic.ObservedValue == "[redacted]"
-                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.RegistrationPreflight
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Preflight
             );
         liveReadBackResult
             .Diagnostics.Should()

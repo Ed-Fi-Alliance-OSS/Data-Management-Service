@@ -16,22 +16,22 @@ public enum CdcConnectorTemplateOutcome
 
 public enum CdcConnectorTemplateDiagnosticCategory
 {
-    BindingIdentity,
-    ProviderSetupResult,
-    MissingInput,
-    ReservedKey,
-    ConnectionProperty,
-    KafkaSecurityProperty,
-    ProducerPolicy,
-    Heartbeat,
-    TopicNaming,
-    Transform,
-    Converter,
-    IncludeList,
-    MessageKey,
-    SchemaHistory,
-    LiveReadBack,
-    SecretRedactionFailure,
+    BindingIdentityFailure,
+    ProviderSetupResultFailure,
+    MissingRequiredInput,
+    ReservedKeyViolation,
+    ConnectionPropertyViolation,
+    KafkaSecurityPropertyViolation,
+    ProducerPolicyViolation,
+    HeartbeatConfigurationViolation,
+    TopicNamingConfigurationViolation,
+    TransformConfigurationViolation,
+    ConverterConfigurationViolation,
+    IncludeListViolation,
+    MessageKeyViolation,
+    SchemaHistoryConfigurationViolation,
+    LiveReadBackMismatch,
+    SecretRedactionViolation,
 }
 
 public enum CdcConnectorTemplateDiagnosticSeverity
@@ -43,11 +43,10 @@ public enum CdcConnectorTemplateDiagnosticSeverity
 
 public enum CdcConnectorTemplateSourcePhase
 {
-    RequestValidation,
-    Rendering,
-    RegistrationPreflight,
+    Render,
+    Preflight,
     LiveReadBack,
-    ArtifactOutput,
+    PinnedImageSmoke,
 }
 
 public enum CdcConnectorTemplateRedactionClassification

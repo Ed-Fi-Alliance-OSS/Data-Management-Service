@@ -215,7 +215,7 @@ public class Given_CdcConnectorTemplateSqlServerRendering
         using var _ = new AssertionScope();
         result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
         result.Config.Should().BeEmpty();
-        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.IncludeList);
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.IncludeListViolation);
         diagnostic.PropertyName.Should().Be("table.include.list");
         diagnostic.ExpectedValue.Should().Be("dms.Document");
         diagnostic.ObservedValue.Should().Be("dms.DocumentProjectionWork_DROP_TABLE");
@@ -259,7 +259,7 @@ public class Given_CdcConnectorTemplateSqlServerRendering
         using var _ = new AssertionScope();
         result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
         result.Config.Should().BeEmpty();
-        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.MessageKey);
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.MessageKeyViolation);
         diagnostic.PropertyName.Should().Be("message.key.columns");
         diagnostic.ExpectedValue.Should().Be($"source column DocumentUuid for dms.{tableName}");
         diagnostic.ObservedValue.Should().Be("missing");
@@ -302,7 +302,7 @@ public class Given_CdcConnectorTemplateSqlServerRendering
         using var _ = new AssertionScope();
         result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
         result.Config.Should().BeEmpty();
-        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.MessageKey);
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.MessageKeyViolation);
         diagnostic.PropertyName.Should().Be("message.key.columns");
         diagnostic.ExpectedValue.Should().Be("unique source column names for dms.Document");
         diagnostic.ObservedValue.Should().Be("duplicate");
@@ -392,10 +392,10 @@ public class Given_CdcConnectorTemplateSqlServerRendering
             .Should()
             .HaveCount(3)
             .And.OnlyContain(diagnostic =>
-                diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult
+                diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure
                 && diagnostic.PropertyName == "providerSetup.artifactInventory.sqlServerCaptureInstance"
                 && diagnostic.ObservedValue == "missing"
-                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Rendering
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Render
             );
     }
 
@@ -424,11 +424,13 @@ public class Given_CdcConnectorTemplateSqlServerRendering
         result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
         result.Config.Should().BeEmpty();
         result.RegistrationPayload.Should().BeNull();
-        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.Heartbeat);
+        diagnostic
+            .Category.Should()
+            .Be(CdcConnectorTemplateDiagnosticCategory.HeartbeatConfigurationViolation);
         diagnostic.PropertyName.Should().Be("poll.interval.ms");
         diagnostic.ExpectedValue.Should().Be("positive SQL Server poll interval");
         diagnostic.ObservedValue.Should().BeNull();
-        diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.Rendering);
+        diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.Render);
     }
 
     [Test]
@@ -457,7 +459,9 @@ public class Given_CdcConnectorTemplateSqlServerRendering
         using var _ = new AssertionScope();
         result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
         result.Config.Should().BeEmpty();
-        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.Heartbeat);
+        diagnostic
+            .Category.Should()
+            .Be(CdcConnectorTemplateDiagnosticCategory.HeartbeatConfigurationViolation);
         diagnostic.PropertyName.Should().Be("poll.interval.ms");
         diagnostic.ExpectedValue.Should().Be("<= heartbeat.interval.ms (5000)");
         diagnostic.ObservedValue.Should().Be("6000");
@@ -505,7 +509,7 @@ public class Given_CdcConnectorTemplateSqlServerRendering
             .Diagnostics.Should()
             .OnlyContain(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.ReservedKey
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ReservedKey
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ReservedKeyViolation
             );
     }
 

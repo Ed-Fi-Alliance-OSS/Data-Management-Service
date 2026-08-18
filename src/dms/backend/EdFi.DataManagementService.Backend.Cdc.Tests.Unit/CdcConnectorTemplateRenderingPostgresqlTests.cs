@@ -133,8 +133,8 @@ public class Given_CdcConnectorTemplatePostgresqlRendering
         result
             .Diagnostics.Should()
             .OnlyContain(diagnostic =>
-                diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult
-                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Rendering
+                diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Render
             );
     }
 
@@ -182,7 +182,7 @@ public class Given_CdcConnectorTemplatePostgresqlRendering
         using var _ = new AssertionScope();
         result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
         result.Config.Should().BeEmpty();
-        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.IncludeList);
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.IncludeListViolation);
         diagnostic.PropertyName.Should().Be("table.include.list");
         diagnostic.ExpectedValue.Should().Be("dms.Document");
         diagnostic.ObservedValue.Should().Be("dms.DocumentProjectionWork_DROP_TABLE");
@@ -226,7 +226,7 @@ public class Given_CdcConnectorTemplatePostgresqlRendering
         using var _ = new AssertionScope();
         result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
         result.Config.Should().BeEmpty();
-        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.MessageKey);
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.MessageKeyViolation);
         diagnostic.PropertyName.Should().Be("message.key.columns");
         diagnostic.ExpectedValue.Should().Be($"source column DocumentUuid for dms.{tableName}");
         diagnostic.ObservedValue.Should().Be("missing");
@@ -269,7 +269,7 @@ public class Given_CdcConnectorTemplatePostgresqlRendering
         using var _ = new AssertionScope();
         result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
         result.Config.Should().BeEmpty();
-        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.MessageKey);
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.MessageKeyViolation);
         diagnostic.PropertyName.Should().Be("message.key.columns");
         diagnostic.ExpectedValue.Should().Be("unique source column names for dms.Document");
         diagnostic.ObservedValue.Should().Be("duplicate");
@@ -307,7 +307,7 @@ public class Given_CdcConnectorTemplatePostgresqlRendering
             .Diagnostics.Should()
             .OnlyContain(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.ReservedKey
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ReservedKey
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ReservedKeyViolation
             );
     }
 

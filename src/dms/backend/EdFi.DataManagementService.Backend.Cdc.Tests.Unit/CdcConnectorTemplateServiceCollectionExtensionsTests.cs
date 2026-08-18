@@ -59,8 +59,8 @@ public class Given_CdcConnectorTemplateServiceRegistration
             .ContainSingle(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.ProviderSetupResultNotReady
                 && diagnostic.PropertyName == "providerSetup.outcome"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult
-                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.RequestValidation
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Render
             );
     }
 
@@ -98,7 +98,7 @@ public class Given_CdcConnectorTemplateServiceRegistration
             .AllSatisfy(diagnostic =>
             {
                 diagnostic.SafeArtifactOrObjectName.Should().BeNull();
-                diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.RequestValidation);
+                diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.Render);
                 diagnostic.Severity.Should().Be(CdcConnectorTemplateDiagnosticSeverity.Error);
             });
     }
@@ -130,7 +130,7 @@ public class Given_CdcConnectorTemplateServiceRegistration
 
         using var _ = new AssertionScope();
         readiness.CanRenderTemplate.Should().BeFalse();
-        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.IncludeList);
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.IncludeListViolation);
         diagnostic.PropertyName.Should().Be("table.include.list");
         diagnostic.ExpectedValue.Should().Be("dms.Document");
         diagnostic.ObservedValue.Should().Be("dms.DocumentProjectionWork_DROP_TABLE");
@@ -157,8 +157,8 @@ public class Given_CdcConnectorTemplateServiceRegistration
             .HaveCount(3)
             .And.OnlyContain(diagnostic =>
                 diagnostic.PropertyName == "providerSetup.artifactInventory.sqlServerCaptureInstance"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult
-                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.RequestValidation
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Render
                 && diagnostic.RedactionClassification
                     == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
             );
@@ -264,7 +264,7 @@ public class Given_CdcConnectorTemplateServiceRegistration
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceTableInventoryMismatch
                 && diagnostic.PropertyName == "providerSetup.sourceTableInventory"
                 && diagnostic.ObservedValue == "3"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure
                 && diagnostic.RedactionClassification
                     == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
             )
@@ -272,7 +272,7 @@ public class Given_CdcConnectorTemplateServiceRegistration
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch
                 && diagnostic.PropertyName == "providerSetup.expectedMessageKeyColumns"
                 && diagnostic.ObservedValue == "2"
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.MessageKey
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.MessageKeyViolation
                 && diagnostic.RedactionClassification
                     == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
             );
