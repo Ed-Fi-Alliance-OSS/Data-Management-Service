@@ -523,13 +523,13 @@
       },
       "Polly.Core": {
         "type": "CentralTransitive",
-        "requested": "[8.4.2, )",
+        "requested": "[8.5.2, )",
         "resolved": "8.4.2",
         "contentHash": "BpE2I6HBYYA5tF0Vn4eoQOGYTYIK1BlF5EXVgkWGn3mqUUjbXAr13J6fZVbp7Q3epRR8yshacBMlsHMhpOiV3g=="
       },
       "Polly.Extensions": {
         "type": "CentralTransitive",
-        "requested": "[8.4.2, )",
+        "requested": "[8.5.2, )",
         "resolved": "8.4.2",
         "contentHash": "GZ9vRVmR0jV2JtZavt+pGUsQ1O1cuRKG7R7VOZI6ZDy9y6RNPvRvXK1tuS4ffUrv8L0FTea59oEuQzgS0R7zSA==",
         "dependencies": {

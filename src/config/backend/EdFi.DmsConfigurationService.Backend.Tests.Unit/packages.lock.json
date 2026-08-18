@@ -613,7 +613,7 @@
           "Microsoft.IdentityModel.Protocols": "[8.12.0, )",
           "OpenIddict.Core": "[7.0.0, )",
           "Polly": "[8.5.2, )",
-          "Polly.Extensions": "[8.4.2, )",
+          "Polly.Extensions": "[8.5.2, )",
           "System.IdentityModel.Tokens.Jwt": "[8.12.0, )",
           "dbup-core": "[5.0.87, )",
           "dbup-sqlserver": "[5.0.40, )"
@@ -650,7 +650,7 @@
           "Npgsql.DependencyInjection": "[8.0.3, )",
           "OpenIddict.Core": "[7.0.0, )",
           "Polly": "[8.5.2, )",
-          "Polly.Extensions": "[8.4.2, )",
+          "Polly.Extensions": "[8.5.2, )",
           "System.IdentityModel.Tokens.Jwt": "[8.12.0, )",
           "System.Linq.Async": "[6.0.3, )",
           "dbup-core": "[5.0.87, )",
@@ -1018,19 +1018,19 @@
       },
       "Polly.Core": {
         "type": "CentralTransitive",
-        "requested": "[8.4.2, )",
+        "requested": "[8.5.2, )",
         "resolved": "8.5.2",
         "contentHash": "1MJKdxv4zwDmiWvYvVN24DsrWUfgQ4F83voH8bhbtLMdPuGy8CfTUzsgQhvyrl1a7hrM6f/ydwLVdVUI0xooUw=="
       },
       "Polly.Extensions": {
         "type": "CentralTransitive",
-        "requested": "[8.4.2, )",
-        "resolved": "8.4.2",
-        "contentHash": "GZ9vRVmR0jV2JtZavt+pGUsQ1O1cuRKG7R7VOZI6ZDy9y6RNPvRvXK1tuS4ffUrv8L0FTea59oEuQzgS0R7zSA==",
+        "requested": "[8.5.2, )",
+        "resolved": "8.5.2",
+        "contentHash": "NcUEkeMB7LMsLBXzY9PuuKP7ylXngUEuhmaWxCrlXqYLbVQQzG1ulAnaEQ2LM1zlSoxRftAjCuhPIH40qeWAlg==",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "8.0.0",
           "Microsoft.Extensions.Options": "8.0.0",
-          "Polly.Core": "8.4.2"
+          "Polly.Core": "8.5.2"
         }
       },
       "System.IdentityModel.Tokens.Jwt": {
