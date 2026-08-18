@@ -458,6 +458,42 @@ public class Given_CdcConnectorTemplateInputValidation
     }
 
     [Test]
+    public void It_treats_null_postgresql_provider_artifacts_as_missing_during_public_request_validation()
+    {
+        CdcProviderSetupResult providerSetupResult = BuildProviderSetupResult(CdcProvider.Postgresql) with
+        {
+            ArtifactInventory = null!,
+        };
+
+        CdcConnectorTemplateValidationResult result = Validate(
+            BuildRequest(
+                providerSetupResult,
+                providerConnectionProperties: new CdcProviderConnectionProperties(
+                    CdcProvider.Postgresql,
+                    BuildProviderConnectionProperties(CdcProvider.Postgresql)
+                ),
+                deploymentPolicy: BuildDeploymentPolicy(CdcProvider.Postgresql)
+            )
+        );
+
+        using var _ = new AssertionScope();
+        result.IsValid.Should().BeFalse();
+        result
+            .Diagnostics.Select(diagnostic => diagnostic.Code)
+            .Should()
+            .BeEquivalentTo(
+                CdcConnectorTemplateDiagnosticCodes.PostgresqlPublicationMetadataRequired,
+                CdcConnectorTemplateDiagnosticCodes.PostgresqlReplicationSlotMetadataRequired
+            );
+        result
+            .Diagnostics.Should()
+            .OnlyContain(diagnostic =>
+                diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResult
+                && diagnostic.ObservedValue == "missing"
+            );
+    }
+
+    [Test]
     public void It_rejects_provider_setup_source_table_name_drift_during_public_request_validation()
     {
         CdcConnectorTemplateValidationResult result = Validate(
@@ -712,6 +748,52 @@ public class Given_CdcConnectorTemplateInputValidation
                 && diagnostic.RedactionClassification
                     == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
             );
+    }
+
+    [Test]
+    public void It_treats_null_sqlserver_capture_instance_observed_values_as_missing_during_public_request_validation()
+    {
+        CdcProviderArtifactObservation malformedDocumentArtifact = BuildSqlServerCaptureInstanceArtifact(
+            CdcSourceTableKind.Document
+        ) with
+        {
+            SafeObservedValues = null!,
+        };
+
+        CdcConnectorTemplateValidationResult result = Validate(
+            BuildRequest(
+                CdcProvider.SqlServer,
+                artifactInventory:
+                [
+                    BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
+                    malformedDocumentArtifact,
+                    BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.CdcHeartbeat),
+                ]
+            )
+        );
+
+        using var _ = new AssertionScope();
+        result.IsValid.Should().BeFalse();
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code
+                    == CdcConnectorTemplateDiagnosticCodes.SqlServerCaptureInstanceMetadataRequired
+                && diagnostic.ExpectedValue
+                    == "one usable SQL Server capture-instance artifact for dms.Document"
+                && diagnostic.ObservedValue == "missing"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.RequestValidation
+            )
+            .And.ContainSingle(diagnostic =>
+                diagnostic.Code
+                    == CdcConnectorTemplateDiagnosticCodes.SqlServerCaptureInstanceMetadataRequired
+                && diagnostic.ExpectedValue
+                    == "only SQL Server capture-instance artifacts for dms.DocumentCache, dms.Document, and dms.CdcHeartbeat"
+                && diagnostic.ObservedValue == "1"
+            );
+        string.Join("|", result.Diagnostics.SelectMany(DiagnosticText))
+            .Should()
+            .NotContain("${env:CDC_DATABASE_PASSWORD}");
     }
 
     [Test]
