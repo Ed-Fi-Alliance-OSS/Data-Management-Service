@@ -117,8 +117,22 @@ public abstract record RelationalWriteTargetLookupResult
 internal sealed record RelationalWritePersistResult(
     long DocumentId,
     DocumentUuid DocumentUuid,
-    long ContentVersion = 0
+    long ContentVersion = 0,
+    DocumentCacheEnqueueOutcome DocumentCacheEnqueueOutcome = DocumentCacheEnqueueOutcome.NotObserved
 );
+
+/// <summary>
+/// Same-transaction observation of whether the committed canonical write has durable
+/// DocumentCache projection work satisfying the persisted <c>ContentVersion</c>.
+/// </summary>
+internal enum DocumentCacheEnqueueOutcome
+{
+    NotObserved = 0,
+    NoWorkQueued = 1,
+    Inserted = 2,
+    Advanced = 3,
+    AlreadySatisfied = 4,
+}
 
 /// <summary>
 /// Backend-local input contract for flattening a validated write body into relational buffers and candidates.

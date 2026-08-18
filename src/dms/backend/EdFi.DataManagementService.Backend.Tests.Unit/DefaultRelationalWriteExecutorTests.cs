@@ -326,6 +326,64 @@ public class Given_Default_Relational_Write_Executor
         telemetry.Successes[0].ResourceKind.Should().Be(DocumentCacheEnqueueTelemetryResourceKind.Resource);
     }
 
+    [TestCase(nameof(DocumentCacheEnqueueOutcome.Inserted))]
+    [TestCase(nameof(DocumentCacheEnqueueOutcome.Advanced))]
+    [TestCase(nameof(DocumentCacheEnqueueOutcome.AlreadySatisfied))]
+    public async Task It_records_DocumentCacheEnqueueTelemetry_success_for_committed_enqueue_outcomes(
+        string enqueueOutcomeName
+    )
+    {
+        var enqueueOutcome = Enum.Parse<DocumentCacheEnqueueOutcome>(enqueueOutcomeName);
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry()
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
+        );
+        _noProfilePersister.ResultToReturn = new RelationalWritePersistResult(
+            910L,
+            CreateDocumentUuid,
+            77L,
+            enqueueOutcome
+        );
+
+        await _sut.ExecuteAsync(request);
+
+        telemetry.Successes.Should().ContainSingle();
+        telemetry.Successes[0].TargetKey.Should().Be(DocumentCacheTelemetryTargetKey);
+    }
+
+    [Test]
+    public async Task It_does_not_record_DocumentCacheEnqueueTelemetry_success_when_registry_is_enabled_but_transaction_reports_no_work()
+    {
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry()
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
+        );
+        _noProfilePersister.ResultToReturn = new RelationalWritePersistResult(
+            910L,
+            CreateDocumentUuid,
+            77L,
+            DocumentCacheEnqueueOutcome.NoWorkQueued
+        );
+
+        await _sut.ExecuteAsync(request);
+
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        telemetry.Successes.Should().BeEmpty();
+        telemetry.Failures.Should().BeEmpty();
+    }
+
     [Test]
     public async Task It_records_DocumentCacheEnqueueTelemetry_success_for_exact_request_tenant_when_targets_share_data_store()
     {
@@ -9097,11 +9155,17 @@ public class Given_Default_Relational_Write_Executor
         ) =>
             request.TargetContext switch
             {
-                RelationalWriteTargetContext.CreateNew(var documentUuid) => new(910L, documentUuid, 77L),
+                RelationalWriteTargetContext.CreateNew(var documentUuid) => new(
+                    910L,
+                    documentUuid,
+                    77L,
+                    DocumentCacheEnqueueOutcome.Inserted
+                ),
                 RelationalWriteTargetContext.ExistingDocument(var documentId, var documentUuid, _) => new(
                     documentId,
                     documentUuid,
-                    77L
+                    77L,
+                    DocumentCacheEnqueueOutcome.Advanced
                 ),
                 _ => throw new ArgumentOutOfRangeException(nameof(request), request, null),
             };

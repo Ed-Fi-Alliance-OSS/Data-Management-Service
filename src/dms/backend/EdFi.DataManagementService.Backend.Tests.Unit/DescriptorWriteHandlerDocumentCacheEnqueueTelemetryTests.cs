@@ -69,6 +69,65 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         telemetry.Failures.Should().BeEmpty();
     }
 
+    [TestCase(nameof(DocumentCacheEnqueueOutcome.Inserted))]
+    [TestCase(nameof(DocumentCacheEnqueueOutcome.Advanced))]
+    [TestCase(nameof(DocumentCacheEnqueueOutcome.AlreadySatisfied))]
+    public async Task It_records_descriptor_insert_success_for_committed_enqueue_outcomes(
+        string enqueueOutcomeName
+    )
+    {
+        var enqueueOutcome = Enum.Parse<DocumentCacheEnqueueOutcome>(enqueueOutcomeName);
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PostResult = new RelationalWriteTargetLookupResult.CreateNew(documentUuid),
+        };
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([
+            CreateContentVersionResultSet(42L, enqueueOutcome),
+        ]);
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry(
+            () => sessionFactory.Session.CommitCallCount,
+            () => sessionFactory.Session.RollbackCallCount
+        );
+        var sut = CreateSut(targetLookupService, sessionFactory, telemetry);
+
+        await sut.HandlePostAsync(CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid));
+
+        sessionFactory.Session.CommitCallCount.Should().Be(1);
+        telemetry.Successes.Should().ContainSingle();
+        telemetry.Successes[0].CommitCallCountAtRecord.Should().Be(1);
+        telemetry.Successes[0].Context.TargetKey.Should().Be(TargetKey);
+    }
+
+    [Test]
+    public async Task It_does_not_record_descriptor_insert_success_when_registry_is_enabled_but_transaction_reports_no_work()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PostResult = new RelationalWriteTargetLookupResult.CreateNew(documentUuid),
+        };
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([
+            CreateContentVersionResultSet(42L, DocumentCacheEnqueueOutcome.NoWorkQueued),
+        ]);
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry(
+            () => sessionFactory.Session.CommitCallCount,
+            () => sessionFactory.Session.RollbackCallCount
+        );
+        var sut = CreateSut(targetLookupService, sessionFactory, telemetry);
+
+        var result = await sut.HandlePostAsync(
+            CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid)
+        );
+
+        result.Should().BeOfType<UpsertResult.InsertSuccess>();
+        sessionFactory.Session.CommitCallCount.Should().Be(1);
+        telemetry.Successes.Should().BeEmpty();
+        telemetry.Failures.Should().BeEmpty();
+    }
+
     [TestCase(DescriptorWritePath.PostAsUpdate)]
     [TestCase(DescriptorWritePath.PutUpdate)]
     public async Task It_records_descriptor_update_success_after_the_enqueue_enabled_transaction_commits(
@@ -495,9 +554,16 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         )!;
     }
 
-    private static InMemoryRelationalResultSet CreateContentVersionResultSet(long contentVersion) =>
+    private static InMemoryRelationalResultSet CreateContentVersionResultSet(
+        long contentVersion,
+        DocumentCacheEnqueueOutcome enqueueOutcome = DocumentCacheEnqueueOutcome.AlreadySatisfied
+    ) =>
         InMemoryRelationalResultSet.Create(
-            new Dictionary<string, object?> { ["ContentVersion"] = contentVersion }
+            new Dictionary<string, object?>
+            {
+                ["ContentVersion"] = contentVersion,
+                ["DocumentCacheEnqueueOutcome"] = (int)enqueueOutcome,
+            }
         );
 
     private static InMemoryRelationalResultSet CreatePersistedDescriptorResultSet(

@@ -7,6 +7,7 @@ using System.Collections;
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -78,7 +79,8 @@ public class Given_Relational_Write_No_Profile_Persister
                 new RelationalWritePersistResult(
                     910L,
                     new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
-                    77L
+                    77L,
+                    DocumentCacheEnqueueOutcome.AlreadySatisfied
                 )
             );
         writeSession.Commands.Should().HaveCount(4);
@@ -459,7 +461,8 @@ public class Given_Relational_Write_No_Profile_Persister
                 new RelationalWritePersistResult(
                     345L,
                     new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-                    77L
+                    77L,
+                    DocumentCacheEnqueueOutcome.AlreadySatisfied
                 )
             );
         writeSession.Commands.Should().HaveCount(2);
@@ -2852,7 +2855,7 @@ public class Given_Relational_Write_No_Profile_Persister
             Commands.Add(command);
             var response = _responses.Count == 0 ? new CommandResponse() : _responses.Dequeue();
 
-            return new RecordingDbCommand(response);
+            return new RecordingDbCommand(response) { CommandText = command.CommandText };
         }
 
         public Task CommitAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
@@ -2893,7 +2896,7 @@ public class Given_Relational_Write_No_Profile_Persister
         protected override DbParameter CreateDbParameter() => new StubDbParameter();
 
         protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior) =>
-            CreateReservationReader(response);
+            CreateReader(response, CommandText);
 
         protected override Task<DbDataReader> ExecuteDbDataReaderAsync(
             CommandBehavior behavior,
@@ -2906,7 +2909,7 @@ public class Given_Relational_Write_No_Profile_Persister
                 throw response.ExceptionToThrow;
             }
 
-            return Task.FromResult<DbDataReader>(CreateReservationReader(response));
+            return Task.FromResult<DbDataReader>(CreateReader(response, CommandText));
         }
 
         public override Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken)
@@ -2921,7 +2924,7 @@ public class Given_Relational_Write_No_Profile_Persister
             return Task.FromResult(response.ScalarResult);
         }
 
-        private static DbDataReader CreateReservationReader(CommandResponse response)
+        private static DbDataReader CreateReader(CommandResponse response, string commandText)
         {
             if (response.ReaderResultSets is not null)
             {
@@ -2933,6 +2936,22 @@ public class Given_Relational_Write_No_Profile_Persister
                 }
 
                 return dataSet.CreateDataReader();
+            }
+
+            if (
+                response.ScalarResult is not null
+                && commandText.Contains("ContentVersion", StringComparison.Ordinal)
+            )
+            {
+                var contentVersionTable = new DataTable();
+                contentVersionTable.Columns.Add("ContentVersion", typeof(long));
+                contentVersionTable.Columns.Add("DocumentCacheEnqueueOutcome", typeof(int));
+                contentVersionTable.Rows.Add(
+                    Convert.ToInt64(response.ScalarResult, CultureInfo.InvariantCulture),
+                    (int)DocumentCacheEnqueueOutcome.AlreadySatisfied
+                );
+
+                return contentVersionTable.CreateDataReader();
             }
 
             var table = new DataTable();

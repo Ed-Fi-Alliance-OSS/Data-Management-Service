@@ -1911,7 +1911,11 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
 
     private static InMemoryRelationalResultSet CreateContentVersionRow(long contentVersion = 44L) =>
         InMemoryRelationalResultSet.Create(
-            new Dictionary<string, object?> { ["ContentVersion"] = contentVersion }
+            new Dictionary<string, object?>
+            {
+                ["ContentVersion"] = contentVersion,
+                ["DocumentCacheEnqueueOutcome"] = (int)DocumentCacheEnqueueOutcome.AlreadySatisfied,
+            }
         );
 
     private static InMemoryRelationalResultSet CreatePersistedDescriptorRow() =>

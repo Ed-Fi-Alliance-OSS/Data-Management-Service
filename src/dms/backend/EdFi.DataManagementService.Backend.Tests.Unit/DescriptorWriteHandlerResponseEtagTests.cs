@@ -62,7 +62,8 @@ public class Given_Descriptor_Write_Response_Etags
         sessionFactory
             .Session.Executor.Commands[0]
             .CommandText.Should()
-            .Contain("RETURNING \"DocumentId\", \"ContentVersion\"");
+            .Contain("RETURNING \"DocumentId\"")
+            .And.Contain("\"DocumentCacheEnqueueOutcome\"");
     }
 
     [Test]
@@ -366,7 +367,11 @@ public class Given_Descriptor_Write_Response_Etags
 
     private static InMemoryRelationalResultSet CreateContentVersionResultSet(long contentVersion) =>
         InMemoryRelationalResultSet.Create(
-            new Dictionary<string, object?> { ["ContentVersion"] = contentVersion }
+            new Dictionary<string, object?>
+            {
+                ["ContentVersion"] = contentVersion,
+                ["DocumentCacheEnqueueOutcome"] = (int)DocumentCacheEnqueueOutcome.AlreadySatisfied,
+            }
         );
 
     private static DescriptorWriteHandler CreateSut(

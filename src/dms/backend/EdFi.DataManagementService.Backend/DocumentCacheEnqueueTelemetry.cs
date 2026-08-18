@@ -203,18 +203,24 @@ internal sealed class NoOpDocumentCacheEnqueueTelemetry : IDocumentCacheEnqueueT
 
 internal static class DocumentCacheEnqueueTelemetryWriteBoundary
 {
-    public static void RecordSuccessIfEnqueueEnabled(
+    public static void RecordSuccessIfEnqueueSucceeded(
         IDocumentCacheEnqueueTelemetry telemetry,
         IDataStoreSelection? dataStoreSelection,
         IDocumentCacheTargetRegistry? targetRegistry,
         string tenantKey,
         SqlDialect dialect,
+        DocumentCacheEnqueueOutcome enqueueOutcome,
         DocumentCacheEnqueueTelemetryCanonicalOperation canonicalOperation,
         DocumentCacheEnqueueTelemetryResourceKind resourceKind,
         string message
     )
     {
         ArgumentNullException.ThrowIfNull(telemetry);
+
+        if (!IsSuccessfulOutcome(enqueueOutcome))
+        {
+            return;
+        }
 
         if (
             !TryCreateContext(
@@ -225,7 +231,6 @@ internal static class DocumentCacheEnqueueTelemetryWriteBoundary
                 canonicalOperation,
                 resourceKind,
                 message,
-                requireEnqueueEnabled: true,
                 out DocumentCacheEnqueueTelemetryContext? context
             )
         )
@@ -288,7 +293,6 @@ internal static class DocumentCacheEnqueueTelemetryWriteBoundary
         DocumentCacheEnqueueTelemetryCanonicalOperation canonicalOperation,
         DocumentCacheEnqueueTelemetryResourceKind resourceKind,
         string message,
-        bool requireEnqueueEnabled,
         out DocumentCacheEnqueueTelemetryContext? context
     )
     {
@@ -301,11 +305,6 @@ internal static class DocumentCacheEnqueueTelemetryWriteBoundary
         }
 
         DocumentCacheTargetObservation? targetObservation = TryGetCurrentTarget(targetRegistry, targetKey);
-        if (requireEnqueueEnabled && (targetObservation is null || !IsEnqueueEnabled(targetObservation)))
-        {
-            return false;
-        }
-
         context = new DocumentCacheEnqueueTelemetryContext(
             targetKey,
             targetObservation?.ProviderToken ?? ProviderTokenForDialect(dialect),
@@ -352,12 +351,11 @@ internal static class DocumentCacheEnqueueTelemetryWriteBoundary
     ) =>
         targetRegistry?.CurrentSnapshot.Targets.SingleOrDefault(target => target.TargetKey.Equals(targetKey));
 
-    private static bool IsEnqueueEnabled(DocumentCacheTargetObservation targetObservation) =>
-        targetObservation.EnqueueTrigger?.Status == DocumentCacheEnqueueTriggerStatus.Satisfied
-        && targetObservation.Lifecycle?.State
-            is DocumentCacheLifecycleState.Resetting
-                or DocumentCacheLifecycleState.Rebuilding
-                or DocumentCacheLifecycleState.Tracking;
+    private static bool IsSuccessfulOutcome(DocumentCacheEnqueueOutcome enqueueOutcome) =>
+        enqueueOutcome
+            is DocumentCacheEnqueueOutcome.Inserted
+                or DocumentCacheEnqueueOutcome.Advanced
+                or DocumentCacheEnqueueOutcome.AlreadySatisfied;
 
     private static RelationalProviderToken ProviderTokenForDialect(SqlDialect dialect) =>
         dialect switch

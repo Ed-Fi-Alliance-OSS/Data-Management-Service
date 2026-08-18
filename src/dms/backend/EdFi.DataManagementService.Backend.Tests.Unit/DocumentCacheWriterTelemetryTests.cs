@@ -473,7 +473,11 @@ public class Given_DocumentCacheWriterTelemetry
 
     private static InMemoryRelationalResultSet CreateContentVersionResultSet(long contentVersion) =>
         InMemoryRelationalResultSet.Create(
-            new Dictionary<string, object?> { ["ContentVersion"] = contentVersion }
+            new Dictionary<string, object?>
+            {
+                ["ContentVersion"] = contentVersion,
+                ["DocumentCacheEnqueueOutcome"] = (int)DocumentCacheEnqueueOutcome.AlreadySatisfied,
+            }
         );
 
     private static InMemoryRelationalResultSet CreatePersistedDescriptorResultSet(

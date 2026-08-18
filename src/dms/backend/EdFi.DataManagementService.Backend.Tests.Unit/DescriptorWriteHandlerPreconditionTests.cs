@@ -1366,7 +1366,11 @@ public class Given_Descriptor_Write_Preconditions
 
     private static InMemoryRelationalResultSet CreateContentVersionRow(long contentVersion) =>
         InMemoryRelationalResultSet.Create(
-            new Dictionary<string, object?> { ["ContentVersion"] = contentVersion }
+            new Dictionary<string, object?>
+            {
+                ["ContentVersion"] = contentVersion,
+                ["DocumentCacheEnqueueOutcome"] = (int)DocumentCacheEnqueueOutcome.AlreadySatisfied,
+            }
         );
 
     private static InMemoryRelationalResultSet CreateResolvedExistingDocumentRow(DocumentUuid documentUuid)

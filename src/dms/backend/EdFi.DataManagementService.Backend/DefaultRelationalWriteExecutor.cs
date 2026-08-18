@@ -128,6 +128,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         // the commit succeeds. Carrying it out of the try is what lets the commit itself sit outside
         // every handler that rolls back.
         RelationalWriteExecutorResult? committedResult = null;
+        RelationalWritePersistResult? committedPersistResult = null;
 
         IRelationalWriteSession createdSession;
         try
@@ -396,6 +397,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                     ?? throw new InvalidOperationException(
                         "The second command ran in DML mode but returned no persisted target."
                     );
+                committedPersistResult = persistedTarget;
 
                 RecordCanonicalWriterWait(
                     executionRequest,
@@ -553,7 +555,7 @@ internal sealed class DefaultRelationalWriteExecutor(
             throw;
         }
 
-        RecordEnqueueSuccessIfApplicable(executionRequest!, committedResult!);
+        RecordEnqueueSuccessIfApplicable(executionRequest!, committedResult!, committedPersistResult);
 
         return committedResult!;
     }
@@ -631,20 +633,25 @@ internal sealed class DefaultRelationalWriteExecutor(
 
     private void RecordEnqueueSuccessIfApplicable(
         RelationalWriteExecutorRequest request,
-        RelationalWriteExecutorResult result
+        RelationalWriteExecutorResult result,
+        RelationalWritePersistResult? persistedTarget
     )
     {
-        if (result.AttemptOutcome is not RelationalWriteExecutorAttemptOutcome.AppliedWrite)
+        if (
+            result.AttemptOutcome is not RelationalWriteExecutorAttemptOutcome.AppliedWrite
+            || persistedTarget is null
+        )
         {
             return;
         }
 
-        DocumentCacheEnqueueTelemetryWriteBoundary.RecordSuccessIfEnqueueEnabled(
+        DocumentCacheEnqueueTelemetryWriteBoundary.RecordSuccessIfEnqueueSucceeded(
             _documentCacheEnqueueTelemetry,
             _dataStoreSelection,
             _documentCacheTargetRegistry,
             request.TenantKey,
             request.MappingSet.Key.Dialect,
+            persistedTarget.DocumentCacheEnqueueOutcome,
             ToCanonicalOperation(request),
             DocumentCacheEnqueueTelemetryResourceKind.Resource,
             "DocumentCache enqueue succeeded."

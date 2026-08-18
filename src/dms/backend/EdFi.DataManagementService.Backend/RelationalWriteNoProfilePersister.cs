@@ -110,7 +110,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                 .ConfigureAwait(false);
         }
 
-        var contentVersion = await ReadCommittedContentVersionAsync(
+        var persistObservation = await ReadCommittedPersistObservationAsync(
                 dialect,
                 rootDocumentId,
                 writeSession,
@@ -121,7 +121,8 @@ internal sealed class RelationalWriteNoProfilePersister(
         return new RelationalWritePersistResult(
             rootDocumentId,
             GetTargetDocumentUuid(targetContext),
-            contentVersion
+            persistObservation.ContentVersion,
+            persistObservation.DocumentCacheEnqueueOutcome
         );
     }
 
@@ -305,7 +306,7 @@ internal sealed class RelationalWriteNoProfilePersister(
         return Convert.ToInt64(scalarResult, CultureInfo.InvariantCulture);
     }
 
-    private static async Task<long> ReadCommittedContentVersionAsync(
+    private static async Task<RelationalWritePersistObservation> ReadCommittedPersistObservationAsync(
         SqlDialect dialect,
         long rootDocumentId,
         IRelationalWriteSession writeSession,
@@ -313,20 +314,60 @@ internal sealed class RelationalWriteNoProfilePersister(
     )
     {
         await using var command = writeSession.CreateCommand(
-            RelationalDocumentLockCommandBuilder.BuildContentVersionCommand(dialect, rootDocumentId)
+            RelationalDocumentLockCommandBuilder.BuildContentVersionWithDocumentCacheEnqueueOutcomeCommand(
+                dialect,
+                rootDocumentId
+            )
         );
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
-        var scalarResult = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-
-        if (scalarResult is null or DBNull)
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             throw new InvalidOperationException(
                 $"Relational write persistence found no ContentVersion for committed document id {rootDocumentId}."
             );
         }
 
-        return Convert.ToInt64(scalarResult, CultureInfo.InvariantCulture);
+        var observation = new RelationalWritePersistObservation(
+            Convert.ToInt64(
+                reader.GetValue(reader.GetOrdinal("ContentVersion")),
+                CultureInfo.InvariantCulture
+            ),
+            RequireEnqueueOutcome(
+                Convert.ToInt32(
+                    reader.GetValue(reader.GetOrdinal("DocumentCacheEnqueueOutcome")),
+                    CultureInfo.InvariantCulture
+                )
+            )
+        );
+
+        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException(
+                "Relational write persistence returned more than one persisted-target observation."
+            );
+        }
+
+        return observation;
     }
+
+    private static DocumentCacheEnqueueOutcome RequireEnqueueOutcome(int value)
+    {
+        var outcome = (DocumentCacheEnqueueOutcome)value;
+        if (!Enum.IsDefined(outcome))
+        {
+            throw new InvalidOperationException(
+                $"Relational write persistence returned unsupported DocumentCache enqueue outcome '{value}'."
+            );
+        }
+
+        return outcome;
+    }
+
+    private sealed record RelationalWritePersistObservation(
+        long ContentVersion,
+        DocumentCacheEnqueueOutcome DocumentCacheEnqueueOutcome
+    );
 
     private static async Task<long> ExecuteAuthorizedInsertDocumentAsync(
         IRelationalWriteSession writeSession,
