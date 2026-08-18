@@ -1625,6 +1625,11 @@ function Invoke-BulkLoadClient {
 # Skip orchestration when dot-sourced (tests load helpers without running the pipeline).
 if ($MyInvocation.InvocationName -eq '.') { return }
 
+# Refuse to run under a leaked restore-candidate override before resolving anything (the
+# resolver below can seed .env from .env.example): seed loading talks to the live API and must
+# only ever see the ACTIVE bootstrap workspace.
+Assert-NoBootstrapRootOverride -PhaseName "load-dms-seed-data.ps1"
+
 # Resolve environment file through the shared resolver (explicit path, else .env - seeded
 # once from .env.example when absent, so the example itself is never consumed at runtime).
 $EnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path $EnvironmentFile
