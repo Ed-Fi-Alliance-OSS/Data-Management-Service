@@ -64,8 +64,8 @@
     <PackageVersion Include="NuGet.Packaging" Version="6.13.1" />
     <PackageVersion Include="NuGet.Protocol" Version="6.13.1" />
     <PackageVersion Include="Polly" Version="8.5.2" />
-    <PackageVersion Include="Polly.Core" Version="8.4.2" />
-    <PackageVersion Include="Polly.Extensions" Version="8.4.2" />
+    <PackageVersion Include="Polly.Core" Version="8.5.2" />
+    <PackageVersion Include="Polly.Extensions" Version="8.5.2" />
     <PackageVersion Include="Respawn" Version="7.0.0" />
     <PackageVersion Include="Sandwych.QuickGraph.Core" Version="1.0.0" />
     <PackageVersion Include="Serilog" Version="4.2.0" />
