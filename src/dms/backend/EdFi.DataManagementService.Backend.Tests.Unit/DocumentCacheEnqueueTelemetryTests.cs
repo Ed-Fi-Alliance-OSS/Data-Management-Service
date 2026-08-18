@@ -388,10 +388,52 @@ public class Given_DocumentCacheEnqueueTelemetry
     }
 
     [Test]
-    public void It_classifies_known_provider_unavailable_failures()
+    public void It_does_not_classify_transient_provider_failures_without_enqueue_artifacts()
+    {
+        bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
+            new StubDbException("deadlock detected while writing the canonical resource row"),
+            new StubWriteExceptionClassifier(isTransientFailure: true),
+            out DocumentCacheEnqueueFailureCategory category,
+            out _
+        );
+
+        classified.Should().BeFalse();
+        category.Should().Be(default(DocumentCacheEnqueueFailureCategory));
+    }
+
+    [Test]
+    public void It_classifies_transient_provider_failures_with_enqueue_artifacts_as_provider_timeouts()
+    {
+        bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
+            new StubDbException("deadlock detected while inserting into dms.DocumentProjectionWork"),
+            new StubWriteExceptionClassifier(isTransientFailure: true),
+            out DocumentCacheEnqueueFailureCategory category,
+            out _
+        );
+
+        classified.Should().BeTrue();
+        category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderTimeout);
+    }
+
+    [Test]
+    public void It_does_not_classify_provider_unavailable_failures_without_enqueue_artifacts()
     {
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             new StubDbException("connection refused while opening the provider connection"),
+            new StubWriteExceptionClassifier(),
+            out DocumentCacheEnqueueFailureCategory category,
+            out _
+        );
+
+        classified.Should().BeFalse();
+        category.Should().Be(default(DocumentCacheEnqueueFailureCategory));
+    }
+
+    [Test]
+    public void It_classifies_provider_unavailable_failures_with_enqueue_artifacts()
+    {
+        bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
+            new StubDbException("connection refused while reading dms.DocumentCacheState"),
             new StubWriteExceptionClassifier(),
             out DocumentCacheEnqueueFailureCategory category,
             out _

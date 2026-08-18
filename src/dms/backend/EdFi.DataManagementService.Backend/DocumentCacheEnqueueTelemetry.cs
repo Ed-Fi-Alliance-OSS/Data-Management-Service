@@ -623,21 +623,23 @@ internal static class DocumentCacheEnqueueFailureClassifier
             return true;
         }
 
-        if (sanitizedMessage.Contains(DocumentProjectionWorkName, StringComparison.OrdinalIgnoreCase))
-        {
-            category = DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed;
-            return true;
-        }
+        bool hasEnqueueArtifactEvidence = HasEnqueueArtifactEvidence(sanitizedMessage);
 
-        if (writeExceptionClassifier.IsTransientFailure(exception))
+        if (hasEnqueueArtifactEvidence && writeExceptionClassifier.IsTransientFailure(exception))
         {
             category = DocumentCacheEnqueueFailureCategory.ProviderTimeout;
             return true;
         }
 
-        if (IsProviderUnavailable(sanitizedMessage))
+        if (IsProviderUnavailable(sanitizedMessage) && hasEnqueueArtifactEvidence)
         {
             category = DocumentCacheEnqueueFailureCategory.ProviderUnavailable;
+            return true;
+        }
+
+        if (sanitizedMessage.Contains(DocumentProjectionWorkName, StringComparison.OrdinalIgnoreCase))
+        {
+            category = DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed;
             return true;
         }
 
@@ -648,6 +650,12 @@ internal static class DocumentCacheEnqueueFailureClassifier
         category = default;
         return false;
     }
+
+    private static bool HasEnqueueArtifactEvidence(string message) =>
+        message.Contains("DocumentCacheState", StringComparison.OrdinalIgnoreCase)
+        || message.Contains(EnqueueFunctionPrefix, StringComparison.OrdinalIgnoreCase)
+        || message.Contains(EnqueueTriggerName, StringComparison.OrdinalIgnoreCase)
+        || message.Contains(DocumentProjectionWorkName, StringComparison.OrdinalIgnoreCase);
 
     private static bool IsProviderUnavailable(string message) =>
         Array.Exists(

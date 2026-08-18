@@ -64,11 +64,32 @@ public class Given_Mssql_DocumentCacheEnqueueTelemetry
     [TestCase(1205)]
     [TestCase(1222)]
     [TestCase(3960)]
-    public void It_classifies_transient_provider_failures_as_provider_timeouts(int errorNumber)
+    public void It_does_not_classify_transient_provider_failures_without_enqueue_artifacts(int errorNumber)
     {
         SqlException exception = CreateSqlException(
             errorNumber,
-            "DocumentCache enqueue provider transient failure."
+            "canonical resource write transient failure."
+        );
+
+        bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
+            exception,
+            _writeExceptionClassifier,
+            out DocumentCacheEnqueueFailureCategory category,
+            out _
+        );
+
+        classified.Should().BeFalse();
+        category.Should().Be(default(DocumentCacheEnqueueFailureCategory));
+    }
+
+    [TestCase(1205)]
+    [TestCase(1222)]
+    [TestCase(3960)]
+    public void It_classifies_transient_enqueue_artifact_failures_as_provider_timeouts(int errorNumber)
+    {
+        SqlException exception = CreateSqlException(
+            errorNumber,
+            "Transient provider failure while inserting into dms.DocumentProjectionWork."
         );
 
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(

@@ -63,9 +63,30 @@ public class Given_Postgresql_DocumentCacheEnqueueTelemetry
     [TestCase(PostgresErrorCodes.DeadlockDetected)]
     [TestCase(PostgresErrorCodes.SerializationFailure)]
     [TestCase(PostgresErrorCodes.LockNotAvailable)]
-    public void It_classifies_transient_provider_failures_as_provider_timeouts(string sqlState)
+    public void It_does_not_classify_transient_provider_failures_without_enqueue_artifacts(string sqlState)
     {
-        var exception = CreateException(sqlState, "DocumentCache enqueue provider transient failure.");
+        var exception = CreateException(sqlState, "canonical resource write transient failure.");
+
+        bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
+            exception,
+            _writeExceptionClassifier,
+            out DocumentCacheEnqueueFailureCategory category,
+            out _
+        );
+
+        classified.Should().BeFalse();
+        category.Should().Be(default(DocumentCacheEnqueueFailureCategory));
+    }
+
+    [TestCase(PostgresErrorCodes.DeadlockDetected)]
+    [TestCase(PostgresErrorCodes.SerializationFailure)]
+    [TestCase(PostgresErrorCodes.LockNotAvailable)]
+    public void It_classifies_transient_enqueue_artifact_failures_as_provider_timeouts(string sqlState)
+    {
+        var exception = CreateException(
+            sqlState,
+            "transient provider failure while inserting into dms.DocumentProjectionWork"
+        );
 
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             exception,

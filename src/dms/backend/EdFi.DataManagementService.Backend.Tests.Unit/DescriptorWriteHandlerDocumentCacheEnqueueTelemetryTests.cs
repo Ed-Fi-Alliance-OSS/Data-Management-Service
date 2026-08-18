@@ -6,6 +6,7 @@
 using System.Collections.Immutable;
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
@@ -302,6 +303,80 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
             .Be(DocumentCacheEnqueueTelemetryResourceKind.Descriptor);
     }
 
+    [TestCase(DescriptorWritePath.PostInsert, typeof(UpsertResult.UpsertFailureWriteConflict))]
+    [TestCase(DescriptorWritePath.PostAsUpdate, typeof(UpsertResult.UpsertFailureWriteConflict))]
+    [TestCase(DescriptorWritePath.PutUpdate, typeof(UpdateResult.UpdateFailureWriteConflict))]
+    public async Task It_does_not_record_descriptor_enqueue_failure_when_commit_throws_transient_exception_without_enqueue_artifacts(
+        DescriptorWritePath writePath,
+        Type expectedResultType
+    )
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService();
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.CommitExceptionToThrow = new StubDbException(
+            "deadlock detected while committing the canonical descriptor row"
+        );
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry(
+            () => sessionFactory.Session.CommitCallCount,
+            () => sessionFactory.Session.RollbackCallCount
+        );
+        var sut = CreateSut(
+            targetLookupService,
+            sessionFactory,
+            telemetry,
+            writeExceptionClassifier: new TransientRelationalWriteExceptionClassifier()
+        );
+        var mappingSet = CreateMappingSet(SqlDialect.Pgsql);
+
+        object result;
+        if (writePath == DescriptorWritePath.PostInsert)
+        {
+            targetLookupService.PostResult = new RelationalWriteTargetLookupResult.CreateNew(documentUuid);
+            sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(46L)]);
+
+            result = await sut.HandlePostAsync(CreatePostRequest(mappingSet, documentUuid));
+        }
+        else if (writePath == DescriptorWritePath.PostAsUpdate)
+        {
+            targetLookupService.PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(
+                345L,
+                documentUuid,
+                44L
+            );
+            sessionFactory.Session.ScalarResults.Enqueue(44L);
+            sessionFactory.Session.Executor.ResultSets.Enqueue([
+                CreatePersistedDescriptorResultSet(description: "Previous Description"),
+            ]);
+            sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(45L)]);
+
+            result = await sut.HandlePostAsync(CreatePostRequest(mappingSet, documentUuid));
+        }
+        else
+        {
+            targetLookupService.PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(
+                345L,
+                documentUuid,
+                44L
+            );
+            sessionFactory.Session.ScalarResults.Enqueue(44L);
+            sessionFactory.Session.Executor.ResultSets.Enqueue([
+                CreatePersistedDescriptorResultSet(description: "Previous Description"),
+            ]);
+            sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(45L)]);
+
+            result = await sut.HandlePutAsync(
+                CreatePutRequest(mappingSet, documentUuid, description: "Updated Description")
+            );
+        }
+
+        result.Should().BeOfType(expectedResultType);
+        sessionFactory.Session.CommitCallCount.Should().Be(1);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+        telemetry.Successes.Should().BeEmpty();
+        telemetry.Failures.Should().BeEmpty();
+    }
+
     public enum DescriptorWritePath
     {
         PostInsert,
@@ -314,12 +389,13 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         IRelationalWriteSessionFactory writeSessionFactory,
         IDocumentCacheEnqueueTelemetry telemetry,
         IDocumentCacheTargetRegistry? targetRegistry = null,
-        string tenantKey = TargetKeyTenant
+        string tenantKey = TargetKeyTenant,
+        IRelationalWriteExceptionClassifier? writeExceptionClassifier = null
     )
     {
         return new DescriptorWriteHandler(
             targetLookupService,
-            new NoOpRelationalWriteExceptionClassifier(),
+            writeExceptionClassifier ?? new NoOpRelationalWriteExceptionClassifier(),
             A.Fake<IRelationalDeleteConstraintResolver>(),
             writeSessionFactory,
             NullLogger<DescriptorWriteHandler>.Instance,
@@ -599,6 +675,24 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         DocumentCacheEnqueueFailureCategory Category,
         int RollbackCallCountAtRecord
     );
+
+    private sealed class TransientRelationalWriteExceptionClassifier : IRelationalWriteExceptionClassifier
+    {
+        public bool TryClassify(
+            DbException exception,
+            [NotNullWhen(true)] out RelationalWriteExceptionClassification? classification
+        )
+        {
+            classification = null;
+            return false;
+        }
+
+        public bool IsForeignKeyViolation(DbException exception) => false;
+
+        public bool IsUniqueConstraintViolation(DbException exception) => false;
+
+        public bool IsTransientFailure(DbException exception) => true;
+    }
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
