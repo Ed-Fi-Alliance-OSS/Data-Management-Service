@@ -181,6 +181,60 @@ public class DocumentCacheStatusClassifierTests
     }
 
     [Test]
+    public void It_preserves_observed_empty_queue_facts_when_state_is_missing_or_invalid()
+    {
+        DocumentCacheStatusClassificationResult result = Classify(
+            EligibleTarget(),
+            RunningRuntime(),
+            DocumentCacheStatusDurableObservation.StateMissingOrInvalid(
+                DurableObservedAt,
+                DocumentCacheStatusQueuePresence.Empty,
+                oldestWorkFirstEnqueuedAt: null,
+                oldestWorkAgeSeconds: null,
+                "DocumentCacheState row was missing."
+            )
+        );
+
+        result.DurableObservedAt.Should().Be(DurableObservedAt);
+        result.Lifecycle.State.Should().Be(DocumentCacheStatusLifecycleState.Invalid);
+        result.CacheAhead.State.Should().Be(DocumentCacheStatusCacheAheadState.Unknown);
+        result.QueueSummary.Presence.Should().Be(DocumentCacheStatusQueuePresence.Empty);
+        result.QueueSummary.OldestWorkFirstEnqueuedAt.Should().BeNull();
+        result.QueueSummary.OldestWorkAgeSeconds.Should().BeNull();
+        result.OperationalHealth.Status.Should().Be(DocumentCacheOperationalHealthStatus.NonOperational);
+        result.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.StateMissingOrInvalid);
+        result.CaughtUp.Status.Should().Be(DocumentCacheCaughtUpStatus.NotCaughtUp);
+        result.CaughtUp.Reason.Should().Be(DocumentCacheStatusReason.StateMissingOrInvalid);
+    }
+
+    [Test]
+    public void It_preserves_observed_nonempty_queue_facts_when_state_is_missing_or_invalid()
+    {
+        DocumentCacheStatusClassificationResult result = Classify(
+            EligibleTarget(),
+            RunningRuntime(),
+            DocumentCacheStatusDurableObservation.StateMissingOrInvalid(
+                DurableObservedAt,
+                DocumentCacheStatusQueuePresence.NotEmpty,
+                OldestWorkFirstEnqueuedAt,
+                oldestWorkAgeSeconds: 300,
+                "DocumentCacheState row was missing."
+            )
+        );
+
+        result.DurableObservedAt.Should().Be(DurableObservedAt);
+        result.Lifecycle.State.Should().Be(DocumentCacheStatusLifecycleState.Invalid);
+        result.CacheAhead.State.Should().Be(DocumentCacheStatusCacheAheadState.Unknown);
+        result.QueueSummary.Presence.Should().Be(DocumentCacheStatusQueuePresence.NotEmpty);
+        result.QueueSummary.OldestWorkFirstEnqueuedAt.Should().Be(OldestWorkFirstEnqueuedAt);
+        result.QueueSummary.OldestWorkAgeSeconds.Should().Be(300);
+        result.OperationalHealth.Status.Should().Be(DocumentCacheOperationalHealthStatus.NonOperational);
+        result.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.StateMissingOrInvalid);
+        result.CaughtUp.Status.Should().Be(DocumentCacheCaughtUpStatus.NotCaughtUp);
+        result.CaughtUp.Reason.Should().Be(DocumentCacheStatusReason.StateMissingOrInvalid);
+    }
+
+    [Test]
     public void It_uses_unavailable_durable_fields_when_process_eligibility_fails()
     {
         DocumentCacheStatusClassificationResult result = Classify(

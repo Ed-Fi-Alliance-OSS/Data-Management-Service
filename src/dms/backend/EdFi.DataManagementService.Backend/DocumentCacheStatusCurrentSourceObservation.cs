@@ -119,13 +119,28 @@ internal sealed record DocumentCacheStatusCurrentSourceObservationResult
         DateTimeOffset durableObservedAt,
         string message
     ) =>
+        StateMissingOrInvalid(
+            durableObservedAt,
+            queuePresence: null,
+            oldestWorkFirstEnqueuedAt: null,
+            oldestWorkAgeSeconds: null,
+            message
+        );
+
+    public static DocumentCacheStatusCurrentSourceObservationResult StateMissingOrInvalid(
+        DateTimeOffset durableObservedAt,
+        DocumentCacheStatusDurableQueuePresence? queuePresence,
+        DateTimeOffset? oldestWorkFirstEnqueuedAt,
+        double? oldestWorkAgeSeconds,
+        string message
+    ) =>
         new(
             DocumentCacheStatusCurrentSourceObservationOutcome.StateMissingOrInvalid,
             lifecycleState: null,
             cacheAheadRecoveryRequired: null,
-            queuePresence: null,
-            oldestWorkFirstEnqueuedAt: null,
-            oldestWorkAgeSeconds: null,
+            queuePresence,
+            oldestWorkFirstEnqueuedAt,
+            oldestWorkAgeSeconds,
             durableObservedAt,
             message
         );
@@ -175,17 +190,7 @@ internal sealed record DocumentCacheStatusCurrentSourceObservationResult
                 );
             }
 
-            if (QueuePresence == DocumentCacheStatusDurableQueuePresence.Empty)
-            {
-                if (OldestWorkFirstEnqueuedAt is not null || OldestWorkAgeSeconds is not null)
-                {
-                    throw new ArgumentException("Empty queue observations must not carry oldest-work facts.");
-                }
-            }
-            else if (OldestWorkFirstEnqueuedAt is null || OldestWorkAgeSeconds is null)
-            {
-                throw new ArgumentException("Non-empty queue observations require oldest-work facts.");
-            }
+            ValidateQueueFacts(queuePresenceRequired: true);
 
             return;
         }
@@ -198,6 +203,15 @@ internal sealed record DocumentCacheStatusCurrentSourceObservationResult
                     "Missing or invalid state observations require the provider timestamp observed by the statement."
                 );
             }
+
+            if (LifecycleState is not null || CacheAheadRecoveryRequired is not null)
+            {
+                throw new ArgumentException(
+                    "Missing or invalid state observations must not carry lifecycle or cache-ahead facts."
+                );
+            }
+
+            ValidateQueueFacts(queuePresenceRequired: false);
 
             return;
         }
@@ -212,6 +226,44 @@ internal sealed record DocumentCacheStatusCurrentSourceObservationResult
         )
         {
             throw new ArgumentException("Failed current-source observations must not carry durable facts.");
+        }
+    }
+
+    private void ValidateQueueFacts(bool queuePresenceRequired)
+    {
+        if (QueuePresence is null)
+        {
+            if (queuePresenceRequired)
+            {
+                throw new ArgumentException("Queue observations require queue presence.");
+            }
+
+            if (OldestWorkFirstEnqueuedAt is not null || OldestWorkAgeSeconds is not null)
+            {
+                throw new ArgumentException(
+                    "Queue observations without queue presence must not carry oldest-work facts."
+                );
+            }
+
+            return;
+        }
+
+        DocumentCacheStatusCurrentSourceObservationGuard.RequireDefined(
+            QueuePresence.Value,
+            nameof(QueuePresence),
+            "Unsupported queue presence."
+        );
+
+        if (QueuePresence == DocumentCacheStatusDurableQueuePresence.Empty)
+        {
+            if (OldestWorkFirstEnqueuedAt is not null || OldestWorkAgeSeconds is not null)
+            {
+                throw new ArgumentException("Empty queue observations must not carry oldest-work facts.");
+            }
+        }
+        else if (OldestWorkFirstEnqueuedAt is null || OldestWorkAgeSeconds is null)
+        {
+            throw new ArgumentException("Non-empty queue observations require oldest-work facts.");
         }
     }
 

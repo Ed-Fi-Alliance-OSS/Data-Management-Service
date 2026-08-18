@@ -21,6 +21,7 @@ public class Given_DocumentCacheStatusService
     private static readonly DateTimeOffset ProcessObservedAt = new(2026, 8, 17, 12, 0, 1, TimeSpan.Zero);
     private static readonly DateTimeOffset RuntimeObservedAt = new(2026, 8, 17, 12, 0, 2, TimeSpan.Zero);
     private static readonly DateTimeOffset DurableObservedAt = new(2026, 8, 17, 12, 0, 3, TimeSpan.Zero);
+    private static readonly DateTimeOffset OldestWorkFirstEnqueuedAt = DurableObservedAt.AddMinutes(-5);
     private static readonly DocumentCacheTargetContextGeneration Generation = new(3);
 
     [Test]
@@ -552,6 +553,46 @@ public class Given_DocumentCacheStatusService
         healthyStatus.CaughtUp.Status.Should().Be(DocumentCacheCaughtUpStatus.CaughtUp);
         healthyStatus.DurableObservedAt.Should().Be(DurableObservedAt);
         observer.StartedKeys.Should().BeEquivalentTo([failedTarget.TargetKey, healthyTarget.TargetKey]);
+    }
+
+    [Test]
+    public async Task It_preserves_same_statement_queue_facts_when_provider_reports_state_missing_or_invalid()
+    {
+        DocumentCacheTargetObservation target = ResolvedTarget(DocumentCacheTargetKey.Create("", 1));
+        StaticTargetRegistry registry = new([target], [ExecutionContext(target)]);
+        DocumentCacheProjectionObservationStore observationStore = ObservationStore(target);
+        ScriptedStatusObserver observer = new(
+            (request, cancellationToken) =>
+            {
+                _ = request;
+                cancellationToken.ThrowIfCancellationRequested();
+                return Task.FromResult(
+                    DocumentCacheStatusCurrentSourceObservationResult.StateMissingOrInvalid(
+                        DurableObservedAt,
+                        DocumentCacheStatusDurableQueuePresence.NotEmpty,
+                        OldestWorkFirstEnqueuedAt,
+                        oldestWorkAgeSeconds: 300,
+                        "dms.DocumentCacheState singleton row is missing or invalid."
+                    )
+                );
+            }
+        );
+        DocumentCacheStatusService service = CreateService(registry, observationStore, observer);
+
+        DocumentCacheStatusTarget statusTarget = (await service.GetStatusAsync()).Targets.Single();
+
+        statusTarget.DurableObservedAt.Should().Be(DurableObservedAt);
+        statusTarget.Lifecycle.State.Should().Be(DocumentCacheStatusLifecycleState.Invalid);
+        statusTarget.Lifecycle.Availability.Should().Be(DocumentCacheStatusAvailability.Available);
+        statusTarget.QueueSummary.Presence.Should().Be(DocumentCacheStatusQueuePresence.NotEmpty);
+        statusTarget.QueueSummary.OldestWorkFirstEnqueuedAt.Should().Be(OldestWorkFirstEnqueuedAt);
+        statusTarget.QueueSummary.OldestWorkAgeSeconds.Should().Be(300);
+        statusTarget
+            .OperationalHealth.Status.Should()
+            .Be(DocumentCacheOperationalHealthStatus.NonOperational);
+        statusTarget.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.StateMissingOrInvalid);
+        statusTarget.CaughtUp.Status.Should().Be(DocumentCacheCaughtUpStatus.NotCaughtUp);
+        statusTarget.CaughtUp.Reason.Should().Be(DocumentCacheStatusReason.StateMissingOrInvalid);
     }
 
     [Test]

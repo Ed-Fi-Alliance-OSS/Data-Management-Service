@@ -133,13 +133,28 @@ public sealed record DocumentCacheStatusDurableObservation
         DateTimeOffset durableObservedAt,
         string message
     ) =>
+        StateMissingOrInvalid(
+            durableObservedAt,
+            queuePresence: null,
+            oldestWorkFirstEnqueuedAt: null,
+            oldestWorkAgeSeconds: null,
+            message
+        );
+
+    public static DocumentCacheStatusDurableObservation StateMissingOrInvalid(
+        DateTimeOffset durableObservedAt,
+        DocumentCacheStatusQueuePresence? queuePresence,
+        DateTimeOffset? oldestWorkFirstEnqueuedAt,
+        double? oldestWorkAgeSeconds,
+        string message
+    ) =>
         new(
             DocumentCacheStatusDurableObservationOutcome.StateMissingOrInvalid,
             lifecycleState: null,
             cacheAheadRecoveryRequired: null,
-            queuePresence: null,
-            oldestWorkFirstEnqueuedAt: null,
-            oldestWorkAgeSeconds: null,
+            queuePresence,
+            oldestWorkFirstEnqueuedAt,
+            oldestWorkAgeSeconds,
             durableObservedAt,
             message
         );
@@ -200,17 +215,7 @@ public sealed record DocumentCacheStatusDurableObservation
                 );
             }
 
-            if (QueuePresence == DocumentCacheStatusQueuePresence.Empty)
-            {
-                if (OldestWorkFirstEnqueuedAt is not null || OldestWorkAgeSeconds is not null)
-                {
-                    throw new ArgumentException("Empty queue observations must not carry oldest-work facts.");
-                }
-            }
-            else if (OldestWorkFirstEnqueuedAt is null || OldestWorkAgeSeconds is null)
-            {
-                throw new ArgumentException("Non-empty queue observations require oldest-work facts.");
-            }
+            ValidateObservedQueueFacts(queuePresenceRequired: true);
 
             return;
         }
@@ -223,6 +228,15 @@ public sealed record DocumentCacheStatusDurableObservation
                     "Missing or invalid state observations require a durable observation timestamp."
                 );
             }
+
+            if (LifecycleState is not null || CacheAheadRecoveryRequired is not null)
+            {
+                throw new ArgumentException(
+                    "Missing or invalid state observations must not carry lifecycle or cache-ahead facts."
+                );
+            }
+
+            ValidateObservedQueueFacts(queuePresenceRequired: false);
 
             return;
         }
@@ -237,6 +251,49 @@ public sealed record DocumentCacheStatusDurableObservation
         )
         {
             throw new ArgumentException("Unknown durable observations must not carry stale durable facts.");
+        }
+    }
+
+    private void ValidateObservedQueueFacts(bool queuePresenceRequired)
+    {
+        if (QueuePresence is null)
+        {
+            if (queuePresenceRequired)
+            {
+                throw new ArgumentException("Queue observations require queue presence.");
+            }
+
+            if (OldestWorkFirstEnqueuedAt is not null || OldestWorkAgeSeconds is not null)
+            {
+                throw new ArgumentException(
+                    "Queue observations without queue presence must not carry oldest-work facts."
+                );
+            }
+
+            return;
+        }
+
+        if (
+            QueuePresence
+            is not DocumentCacheStatusQueuePresence.Empty
+                and not DocumentCacheStatusQueuePresence.NotEmpty
+        )
+        {
+            throw new ArgumentException(
+                "Durable queue observations require empty or not-empty queue presence."
+            );
+        }
+
+        if (QueuePresence == DocumentCacheStatusQueuePresence.Empty)
+        {
+            if (OldestWorkFirstEnqueuedAt is not null || OldestWorkAgeSeconds is not null)
+            {
+                throw new ArgumentException("Empty queue observations must not carry oldest-work facts.");
+            }
+        }
+        else if (OldestWorkFirstEnqueuedAt is null || OldestWorkAgeSeconds is null)
+        {
+            throw new ArgumentException("Non-empty queue observations require oldest-work facts.");
         }
     }
 
@@ -591,7 +648,9 @@ public static class DocumentCacheStatusClassifier
                 recoveryRequired: null,
                 message
             ),
-            QueueUnknown(),
+            durableObservation.QueuePresence is null
+                ? QueueUnknown()
+                : QueueSummaryFromDurableObservation(durableObservation),
             new DocumentCacheOperationalHealthComponent(
                 DocumentCacheOperationalHealthStatus.NonOperational,
                 DocumentCacheStatusReason.StateMissingOrInvalid,
@@ -649,12 +708,7 @@ public static class DocumentCacheStatusClassifier
                 cacheAheadRecoveryRequired,
                 message: null
             ),
-            new DocumentCacheStatusQueueSummary(
-                durableObservation.QueuePresence!.Value,
-                durableObservation.OldestWorkFirstEnqueuedAt,
-                durableObservation.OldestWorkAgeSeconds,
-                DocumentCacheStatusBacklogEstimate.Unavailable
-            ),
+            QueueSummaryFromDurableObservation(durableObservation),
             operationalHealth,
             caughtUp
         );
@@ -757,6 +811,16 @@ public static class DocumentCacheStatusClassifier
             DocumentCacheStatusQueuePresence.Unknown,
             oldestWorkFirstEnqueuedAt: null,
             oldestWorkAgeSeconds: null,
+            DocumentCacheStatusBacklogEstimate.Unavailable
+        );
+
+    private static DocumentCacheStatusQueueSummary QueueSummaryFromDurableObservation(
+        DocumentCacheStatusDurableObservation durableObservation
+    ) =>
+        new(
+            durableObservation.QueuePresence!.Value,
+            durableObservation.OldestWorkFirstEnqueuedAt,
+            durableObservation.OldestWorkAgeSeconds,
             DocumentCacheStatusBacklogEstimate.Unavailable
         );
 

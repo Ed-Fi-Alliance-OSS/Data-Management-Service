@@ -168,6 +168,22 @@ internal sealed class PostgresqlDocumentCacheStatusCurrentSourceObserver(
         DateTimeOffset durableObservedAt = ReadRequiredTimestamp(reader, DurableObservedAtColumnName);
         string? lifecycleText = ReadOptionalString(reader, LifecycleColumnName);
         bool? cacheAheadRecoveryRequired = ReadOptionalBoolean(reader, CacheAheadRecoveryRequiredColumnName);
+        bool hasWork = ReadRequiredBoolean(reader, HasWorkColumnName);
+        DateTimeOffset? oldestWorkFirstEnqueuedAt = ReadOptionalTimestamp(
+            reader,
+            OldestWorkFirstEnqueuedAtColumnName
+        );
+        double? oldestWorkAgeSeconds = ReadOptionalDouble(reader, OldestWorkAgeSecondsColumnName);
+        DocumentCacheStatusDurableQueuePresence queuePresence = hasWork
+            ? DocumentCacheStatusDurableQueuePresence.NotEmpty
+            : DocumentCacheStatusDurableQueuePresence.Empty;
+
+        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return DocumentCacheStatusCurrentSourceObservationResult.Failed(
+                "PostgreSQL DocumentCache status current-source observation returned multiple rows."
+            );
+        }
 
         if (
             lifecycleText is null
@@ -180,30 +196,17 @@ internal sealed class PostgresqlDocumentCacheStatusCurrentSourceObserver(
         {
             return DocumentCacheStatusCurrentSourceObservationResult.StateMissingOrInvalid(
                 durableObservedAt,
+                queuePresence,
+                oldestWorkFirstEnqueuedAt,
+                oldestWorkAgeSeconds,
                 "dms.DocumentCacheState singleton row is missing or invalid."
-            );
-        }
-
-        bool hasWork = ReadRequiredBoolean(reader, HasWorkColumnName);
-        DateTimeOffset? oldestWorkFirstEnqueuedAt = ReadOptionalTimestamp(
-            reader,
-            OldestWorkFirstEnqueuedAtColumnName
-        );
-        double? oldestWorkAgeSeconds = ReadOptionalDouble(reader, OldestWorkAgeSecondsColumnName);
-
-        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            return DocumentCacheStatusCurrentSourceObservationResult.Failed(
-                "PostgreSQL DocumentCache status current-source observation returned multiple rows."
             );
         }
 
         return DocumentCacheStatusCurrentSourceObservationResult.Success(
             lifecycleState,
             cacheAheadRecoveryRequired.Value,
-            hasWork
-                ? DocumentCacheStatusDurableQueuePresence.NotEmpty
-                : DocumentCacheStatusDurableQueuePresence.Empty,
+            queuePresence,
             oldestWorkFirstEnqueuedAt,
             oldestWorkAgeSeconds,
             durableObservedAt

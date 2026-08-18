@@ -145,14 +145,42 @@ public class Given_A_Mssql_DocumentCacheStatusCurrentSourceObserver
         result.DurableObservedAt.Should().NotBeNull();
     }
 
-    [Test]
-    public async Task It_returns_state_missing_or_invalid_without_reusing_queue_facts()
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task It_preserves_same_statement_queue_facts_when_state_is_missing_or_invalid(
+        bool deleteState
+    )
     {
-        await _database.ExecuteNonQueryAsync(
-            """
-            DELETE FROM [dms].[DocumentCacheState];
-            """
+        long documentId = await InsertDocumentAsync(contentVersion: 10);
+        await ClearProjectionWorkAsync();
+        await InsertProjectionWorkAsync(
+            documentId,
+            requiredContentVersion: 10,
+            FirstEnqueuedAt,
+            FirstEnqueuedAt.AddSeconds(5)
         );
+
+        if (deleteState)
+        {
+            await _database.ExecuteNonQueryAsync(
+                """
+                DELETE FROM [dms].[DocumentCacheState];
+                """
+            );
+        }
+        else
+        {
+            await _database.ExecuteNonQueryAsync(
+                """
+                ALTER TABLE [dms].[DocumentCacheState]
+                DROP CONSTRAINT [CK_DocumentCacheState_Lifecycle];
+
+                UPDATE [dms].[DocumentCacheState]
+                SET [ProjectionLifecycleState] = N'InvalidLifecycle'
+                WHERE [StateId] = 1;
+                """
+            );
+        }
 
         DocumentCacheStatusCurrentSourceObservationResult result = await _observer.ObserveAsync(
             new(CreateExecutionContext())
@@ -162,9 +190,9 @@ public class Given_A_Mssql_DocumentCacheStatusCurrentSourceObserver
         result.DurableObservedAt.Should().NotBeNull();
         result.LifecycleState.Should().BeNull();
         result.CacheAheadRecoveryRequired.Should().BeNull();
-        result.QueuePresence.Should().BeNull();
-        result.OldestWorkFirstEnqueuedAt.Should().BeNull();
-        result.OldestWorkAgeSeconds.Should().BeNull();
+        result.QueuePresence.Should().Be(DocumentCacheStatusDurableQueuePresence.NotEmpty);
+        result.OldestWorkFirstEnqueuedAt.Should().BeCloseTo(FirstEnqueuedAt, TimeSpan.FromSeconds(1));
+        result.OldestWorkAgeSeconds.Should().BeGreaterThan(0);
     }
 
     [Test]

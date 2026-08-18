@@ -91,6 +91,42 @@ public class Given_DocumentCacheStatusCurrentSourceObservation
     }
 
     [Test]
+    public void It_allows_state_missing_or_invalid_observations_with_same_statement_queue_facts()
+    {
+        DocumentCacheStatusCurrentSourceObservationResult result =
+            DocumentCacheStatusCurrentSourceObservationResult.StateMissingOrInvalid(
+                DurableObservedAt,
+                DocumentCacheStatusDurableQueuePresence.NotEmpty,
+                OldestWorkFirstEnqueuedAt,
+                oldestWorkAgeSeconds: 300,
+                "dms.DocumentCacheState singleton row is missing or invalid."
+            );
+
+        result.Outcome.Should().Be(DocumentCacheStatusCurrentSourceObservationOutcome.StateMissingOrInvalid);
+        result.LifecycleState.Should().BeNull();
+        result.CacheAheadRecoveryRequired.Should().BeNull();
+        result.QueuePresence.Should().Be(DocumentCacheStatusDurableQueuePresence.NotEmpty);
+        result.OldestWorkFirstEnqueuedAt.Should().Be(OldestWorkFirstEnqueuedAt);
+        result.OldestWorkAgeSeconds.Should().Be(300);
+        result.DurableObservedAt.Should().Be(DurableObservedAt);
+    }
+
+    [Test]
+    public void It_rejects_state_missing_or_invalid_nonempty_queue_observations_without_oldest_work_facts()
+    {
+        Action create = () =>
+            DocumentCacheStatusCurrentSourceObservationResult.StateMissingOrInvalid(
+                DurableObservedAt,
+                DocumentCacheStatusDurableQueuePresence.NotEmpty,
+                oldestWorkFirstEnqueuedAt: null,
+                oldestWorkAgeSeconds: null,
+                "dms.DocumentCacheState singleton row is missing or invalid."
+            );
+
+        create.Should().Throw<ArgumentException>().WithMessage("*Non-empty queue*oldest-work*");
+    }
+
+    [Test]
     public void It_returns_failed_outcomes_without_stale_durable_facts()
     {
         DocumentCacheStatusCurrentSourceObservationResult result =

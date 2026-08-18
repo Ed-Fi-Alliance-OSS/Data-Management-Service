@@ -485,6 +485,9 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             DocumentCacheStatusCurrentSourceObservationOutcome.StateMissingOrInvalid =>
                 DocumentCacheStatusDurableObservation.StateMissingOrInvalid(
                     result.DurableObservedAt!.Value,
+                    ToStatusQueuePresence(result.QueuePresence),
+                    result.OldestWorkFirstEnqueuedAt,
+                    result.OldestWorkAgeSeconds,
                     result.Message
                 ),
             DocumentCacheStatusCurrentSourceObservationOutcome.ProviderTimeout =>
@@ -506,6 +509,21 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             ),
         };
     }
+
+    private static DocumentCacheStatusQueuePresence? ToStatusQueuePresence(
+        DocumentCacheStatusDurableQueuePresence? queuePresence
+    ) =>
+        queuePresence switch
+        {
+            DocumentCacheStatusDurableQueuePresence.Empty => DocumentCacheStatusQueuePresence.Empty,
+            DocumentCacheStatusDurableQueuePresence.NotEmpty => DocumentCacheStatusQueuePresence.NotEmpty,
+            null => null,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(queuePresence),
+                queuePresence,
+                "Unsupported queue presence."
+            ),
+        };
 
     private DocumentCacheStatusTarget CreateEndpointTimeoutTarget(
         DocumentCacheTargetObservation targetObservation,
