@@ -20,7 +20,7 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 {
     private const string ConnectorPasswordEnvironmentVariable = "CDC_DATABASE_PASSWORD";
-    private const string ConnectorDatabasePassword = "EdFi_Dms1!";
+    internal const string ConnectorDatabasePassword = "EdFi_Dms1!";
     private const string EnvConfigProviderName = "env";
     private const string EnvConfigProviderClass =
         "org.apache.kafka.common.config.provider.EnvVarConfigProvider";
@@ -2468,7 +2468,7 @@ internal sealed class DockerCli
 
         return new DockerCommandResult(
             process.ExitCode,
-            await stdout,
+            DockerCommandResult.Sanitize(await stdout),
             DockerCommandResult.Sanitize(await stderr)
         );
     }
@@ -2478,8 +2478,10 @@ internal sealed record DockerCommandResult(int ExitCode, string StandardOutput, 
 {
     public string ToFailureMessage()
     {
-        string stderr = string.IsNullOrWhiteSpace(StandardError) ? "<empty>" : StandardError.Trim();
-        string stdout = string.IsNullOrWhiteSpace(StandardOutput) ? "<empty>" : StandardOutput.Trim();
+        string stderr = string.IsNullOrWhiteSpace(StandardError) ? "<empty>" : Sanitize(StandardError).Trim();
+        string stdout = string.IsNullOrWhiteSpace(StandardOutput)
+            ? "<empty>"
+            : Sanitize(StandardOutput).Trim();
 
         return string.Create(
             CultureInfo.InvariantCulture,
@@ -2488,5 +2490,9 @@ internal sealed record DockerCommandResult(int ExitCode, string StandardOutput, 
     }
 
     public static string Sanitize(string value) =>
-        value.Replace("EdFi_Dms1!", "[redacted]", StringComparison.Ordinal);
+        value.Replace(
+            CdcConnectorTemplatePinnedImageFixture.ConnectorDatabasePassword,
+            "[redacted]",
+            StringComparison.Ordinal
+        );
 }

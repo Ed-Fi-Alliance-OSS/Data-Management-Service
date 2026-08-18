@@ -160,6 +160,28 @@ public abstract class Given_PinnedImageConnectorTemplateFixture
 }
 
 [TestFixture]
+[Parallelizable]
+[Category("CdcConnectorTemplateSmoke")]
+public sealed class Given_PinnedImageFixtureDockerCommandResult
+{
+    [Test]
+    public void It_sanitizes_stdout_and_stderr_before_formatting_failure_messages()
+    {
+        DockerCommandResult result = new(
+            1,
+            $"stdout leaked {CdcConnectorTemplatePinnedImageFixture.ConnectorDatabasePassword}",
+            $"stderr leaked {CdcConnectorTemplatePinnedImageFixture.ConnectorDatabasePassword}"
+        );
+
+        string failureMessage = result.ToFailureMessage();
+
+        using var _ = new AssertionScope();
+        failureMessage.Should().Contain("[redacted]");
+        failureMessage.Should().NotContain(CdcConnectorTemplatePinnedImageFixture.ConnectorDatabasePassword);
+    }
+}
+
+[TestFixture]
 [NonParallelizable]
 [Category("DatabaseIntegration")]
 [Category("CdcConnectorTemplateSmoke")]
