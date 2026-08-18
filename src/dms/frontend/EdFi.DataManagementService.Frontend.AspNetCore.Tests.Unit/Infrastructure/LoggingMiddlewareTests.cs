@@ -427,7 +427,7 @@ public class Given_LoggingMiddleware
     }
 
     [Test]
-    public async Task It_writes_the_raw_correlation_id_in_the_500_error_body_and_sanitizes_only_the_logs()
+    public async Task It_sanitizes_the_correlation_id_in_the_500_error_body_to_match_the_log_value()
     {
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Method = "POST";
@@ -446,13 +446,45 @@ public class Given_LoggingMiddleware
         await invoke.Should().ThrowAsync<InvalidOperationException>();
 
         var body = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(responseBody.ToArray()));
-        (body?["traceId"]?.GetValue<string>()).Should().Be("operator{correlation}id\t");
+        // Response must reflect the sanitized (not raw) value so it matches what is searchable in logs
+        (body?["traceId"]?.GetValue<string>())
+            .Should()
+            .Be("operatorcorrelationid");
 
         var entry = logger.Entries.Single(e => e.EventId.Name == "HttpRequestFailed");
         entry.State.ContainStructuredProperty("TraceId", "operatorcorrelationid");
         entry
             .ActiveScopes.Should()
             .Contain(scope => scope.HasStructuredProperty("TraceId", "operatorcorrelationid"));
+    }
+
+    [Test]
+    public async Task It_truncates_an_oversized_correlation_id_consistently_in_response_and_log()
+    {
+        var oversized = new string('a', 300);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Method = "POST";
+        httpContext.Request.Path = "/ed-fi/students";
+        httpContext.Request.Headers["x-correlation-id"] = oversized;
+        var responseBody = new MemoryStream();
+        httpContext.Response.Body = responseBody;
+        var logger = new TestLogger<LoggingMiddleware>();
+        var middleware = new LoggingMiddleware(
+            _ => throw new InvalidOperationException("boom"),
+            AppSettingsWithCorrelationHeader("x-correlation-id")
+        );
+
+        Func<Task> invoke = () => middleware.Invoke(httpContext, logger);
+
+        await invoke.Should().ThrowAsync<InvalidOperationException>();
+
+        var truncated = new string('a', 255);
+        var body = JsonNode.Parse(System.Text.Encoding.UTF8.GetString(responseBody.ToArray()));
+        (body?["traceId"]?.GetValue<string>()).Should().Be(truncated);
+
+        var entry = logger.Entries.Single(e => e.EventId.Name == "HttpRequestFailed");
+        entry.State.ContainStructuredProperty("TraceId", truncated);
+        entry.ActiveScopes.Should().Contain(scope => scope.HasStructuredProperty("TraceId", truncated));
     }
 
     [Test]
