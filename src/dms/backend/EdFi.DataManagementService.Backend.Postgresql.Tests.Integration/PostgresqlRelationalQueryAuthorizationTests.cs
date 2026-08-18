@@ -2933,10 +2933,11 @@ public class Given_A_Postgresql_Relational_Query_Authorization_With_The_Authorit
     [Test]
     public async Task It_composes_the_change_version_window_with_relationship_authorization_filtering()
     {
-        // The stamping triggers assign strictly increasing ContentVersion values in insert order, so a
-        // window from Beta to Gamma holds Beta — SchoolId 200, authorized under the normal strategy —
-        // and unauthorized Gamma, SchoolId 300. The window excludes authorized Alpha and Delta, and
-        // authorization excludes in-window Gamma, so only the intersection survives.
+        // The stamping triggers assign strictly increasing ContentVersion values in insert order, and
+        // minChangeVersion is exclusive. A window after Alpha through Gamma holds authorized Beta
+        // (SchoolId 200) and unauthorized Gamma (SchoolId 300). The window excludes authorized Alpha and
+        // Delta, and authorization excludes in-window Gamma, so only the intersection survives.
+        var alphaSchool = _persistedSchoolsInDocumentOrder[0];
         var betaSchool = _persistedSchoolsInDocumentOrder[1];
         var gammaSchool = _persistedSchoolsInDocumentOrder[2];
 
@@ -2946,7 +2947,7 @@ public class Given_A_Postgresql_Relational_Query_Authorization_With_The_Authorit
             [ClaimEducationOrganizationId],
             _normalStrategy,
             totalCount: true,
-            changeVersionRange: new ChangeVersionRange(betaSchool.ContentVersion, gammaSchool.ContentVersion)
+            changeVersionRange: new ChangeVersionRange(alphaSchool.ContentVersion, gammaSchool.ContentVersion)
         );
 
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
