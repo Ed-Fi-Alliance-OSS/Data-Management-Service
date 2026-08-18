@@ -487,7 +487,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
             totalCount: true,
             traceId: "mssql-query-change-version-window",
             changeVersionRange: new ChangeVersionRange(
-                middleByContentVersion.ContentVersion,
+                middleByContentVersion.ContentVersion - 1,
                 middleByContentVersion.ContentVersion
             )
         );
@@ -536,7 +536,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
             totalCount: true,
             traceId: "mssql-query-change-version-composed-match",
             changeVersionRange: new ChangeVersionRange(
-                _persistedSchoolsInDocumentOrder[0].ContentVersion,
+                _persistedSchoolsInDocumentOrder[0].ContentVersion - 1,
                 _persistedSchoolsInDocumentOrder[^1].ContentVersion
             )
         );
@@ -641,7 +641,10 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         expectedProgression.Should().NotEqual(byDocumentId, "the scenario must discriminate the orders");
 
         var walkedDocumentUuids = await WalkPagesAsync(
-            new ChangeVersionRange(byContentVersion[0].ContentVersion, byContentVersion[^1].ContentVersion),
+            new ChangeVersionRange(
+                byContentVersion[0].ContentVersion - 1,
+                byContentVersion[^1].ContentVersion
+            ),
             pageCount: refreshedSchools.Count,
             traceIdPrefix: "mssql-cv-ordering-bounded"
         );
@@ -674,7 +677,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         var expectedProgression = refreshedSchools.Select(s => s.DocumentUuid).ToArray();
 
         var walkedDocumentUuids = await WalkPagesAsync(
-            new ChangeVersionRange(minContentVersion, null),
+            new ChangeVersionRange(minContentVersion - 1, null),
             pageCount: refreshedSchools.Count,
             traceIdPrefix: "mssql-cv-ordering-min-only"
         );
@@ -694,7 +697,10 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         );
 
         var walkedDocumentUuids = await WalkPagesAsync(
-            new ChangeVersionRange(byContentVersion[0].ContentVersion, byContentVersion[^1].ContentVersion),
+            new ChangeVersionRange(
+                byContentVersion[0].ContentVersion - 1,
+                byContentVersion[^1].ContentVersion
+            ),
             pageCount: refreshedSchools.Count,
             traceIdPrefix: "mssql-cv-ordering-legacy",
             serviceProvider: legacyProvider
