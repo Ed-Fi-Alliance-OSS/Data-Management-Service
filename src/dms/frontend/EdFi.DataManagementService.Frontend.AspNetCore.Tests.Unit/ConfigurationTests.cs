@@ -521,6 +521,28 @@ public class ConfigurationTests
         }
     }
 
+    [TestFixture]
+    public class Given_A_Bound_App_Settings_With_Nonpositive_Correlation_Id_Max_Length
+    {
+        [Test]
+        public void It_fails_validation()
+        {
+            var appSettings = new AppSettings
+            {
+                AuthenticationService = "http://localhost:5126/connect/token",
+                Datastore = "postgresql",
+                CorrelationIdHeader = "correlationid",
+                CorrelationIdMaxLength = 0,
+            };
+
+            var validator = new AppSettingsValidator();
+            var result = validator.Validate(null, appSettings);
+
+            result.Succeeded.Should().BeFalse();
+            result.FailureMessage.Should().Contain(nameof(AppSettings.CorrelationIdMaxLength));
+        }
+    }
+
     /// <summary>
     /// Regression coverage for the ConfigureEndpoints failure catch. Duplicate route qualifier
     /// segments survive AppSettingsValidator and reach CoreEndpointModule.BuildRoutePattern
@@ -528,8 +550,8 @@ public class ConfigurationTests
     /// endpoint mapping throw. Before the catch existed the status file was stranded at Starting
     /// with no ErrorType or ErrorMessage.
     /// The trigger works only because <c>AppSettingsValidator</c> does not validate
-    /// <c>RouteQualifierSegments</c> at all - it checks AuthenticationService, Datastore, and
-    /// MaxRequestBodySizeMegabytes and nothing else. Adding a duplicate or format check there
+    /// <c>RouteQualifierSegments</c> at all - it checks AuthenticationService, Datastore,
+    /// MaxRequestBodySizeMegabytes, and CorrelationIdMaxLength. Adding a duplicate or format check there
     /// would intercept "districtId,districtId" as an <see cref="OptionsValidationException"/>
     /// before endpoint mapping runs, and this test would start failing for a reason that has
     /// nothing to do with the catch it guards. If that happens, replace the trigger rather than
