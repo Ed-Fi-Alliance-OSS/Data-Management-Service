@@ -133,6 +133,111 @@ public class Given_DocumentCacheStatusService
     }
 
     [Test]
+    public async Task It_filters_command_diagnostics_by_the_serialized_target_generation()
+    {
+        DocumentCacheTargetContextGeneration commandGeneration = new(3);
+        DocumentCacheTargetObservation staleCommandTarget = ResolvedTarget(
+            DocumentCacheTargetKey.Create("", 1),
+            generation: commandGeneration
+        );
+        DocumentCacheTargetObservation replacementTarget = ResolvedTarget(
+            staleCommandTarget.TargetKey,
+            generation: new DocumentCacheTargetContextGeneration(4)
+        );
+        DocumentCacheTargetObservation matchingTarget = ResolvedTarget(
+            DocumentCacheTargetKey.Create("", 2),
+            generation: commandGeneration
+        );
+        DocumentCacheProjectionObservationStore observationStore = ObservationStore(
+            staleCommandTarget,
+            matchingTarget
+        );
+
+        DocumentCacheAdministrativeCommandExecutionId staleActiveExecutionId = new(
+            Guid.Parse("11111111-2222-3333-4444-555555555555")
+        );
+        DocumentCacheAdministrativeCommandExecutionId staleEndedExecutionId = new(
+            Guid.Parse("22222222-3333-4444-5555-666666666666")
+        );
+        DocumentCacheAdministrativeCommandExecutionId matchingActiveExecutionId = new(
+            Guid.Parse("33333333-4444-5555-6666-777777777777")
+        );
+        DocumentCacheAdministrativeCommandExecutionId matchingEndedExecutionId = new(
+            Guid.Parse("44444444-5555-6666-7777-888888888888")
+        );
+
+        observationStore.ObserveAdministrativeCommand(
+            CommandObservation(
+                staleActiveExecutionId,
+                staleCommandTarget,
+                DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation
+            )
+        );
+        observationStore.ObserveAdministrativeCommand(
+            CommandObservation(
+                staleEndedExecutionId,
+                staleCommandTarget,
+                DocumentCacheAdministrativeCommand.OnlineCacheRebuild
+            )
+        );
+        observationStore.EndAdministrativeCommand(
+            staleEndedExecutionId,
+            CommandResult(staleCommandTarget, DocumentCacheAdministrativeCommand.OnlineCacheRebuild),
+            RuntimeObservedAt.AddSeconds(10)
+        );
+        observationStore.ObserveAdministrativeCommand(
+            CommandObservation(
+                matchingActiveExecutionId,
+                matchingTarget,
+                DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation
+            )
+        );
+        observationStore.ObserveAdministrativeCommand(
+            CommandObservation(
+                matchingEndedExecutionId,
+                matchingTarget,
+                DocumentCacheAdministrativeCommand.OnlineCacheRebuild
+            )
+        );
+        observationStore.EndAdministrativeCommand(
+            matchingEndedExecutionId,
+            CommandResult(matchingTarget, DocumentCacheAdministrativeCommand.OnlineCacheRebuild),
+            RuntimeObservedAt.AddSeconds(10)
+        );
+
+        DocumentCacheStatusService service = CreateService(
+            new StaticTargetRegistry(
+                [replacementTarget, matchingTarget],
+                [ExecutionContext(replacementTarget), ExecutionContext(matchingTarget)]
+            ),
+            observationStore,
+            new ScriptedStatusObserver(Success)
+        );
+
+        DocumentCacheStatusResponse response = await service.GetStatusAsync();
+
+        DocumentCacheStatusTarget staleStatusTarget = response.Targets.Single(target =>
+            target.TargetKey.DataStoreId == 1
+        );
+        staleStatusTarget.TargetGeneration.Should().Be(4);
+        staleStatusTarget.ActiveCommand.Should().BeNull();
+        staleStatusTarget.LastEndedDiagnostic.Should().BeNull();
+
+        DocumentCacheStatusTarget matchingStatusTarget = response.Targets.Single(target =>
+            target.TargetKey.DataStoreId == 2
+        );
+        matchingStatusTarget.TargetGeneration.Should().Be(3);
+        matchingStatusTarget.ActiveCommand.Should().NotBeNull();
+        matchingStatusTarget
+            .ActiveCommand!.Command.Should()
+            .Be(DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation);
+        matchingStatusTarget.LastEndedDiagnostic.Should().NotBeNull();
+        matchingStatusTarget
+            .LastEndedDiagnostic!.Command.Should()
+            .Be(DocumentCacheAdministrativeCommand.OnlineCacheRebuild);
+    }
+
+    [Test]
     public async Task It_skips_provider_observation_for_process_ineligible_targets()
     {
         DocumentCacheTargetObservation target = ResolvedTarget(DocumentCacheTargetKey.Create("", 1));
@@ -1205,6 +1310,56 @@ public class Given_DocumentCacheStatusService
             retryState: null,
             category,
             $"Diagnostic {category}"
+        );
+
+    private static DocumentCacheAdministrativeCommandObservationSnapshot CommandObservation(
+        DocumentCacheAdministrativeCommandExecutionId executionId,
+        DocumentCacheTargetObservation target,
+        DocumentCacheAdministrativeCommand command
+    ) =>
+        new(
+            executionId,
+            command,
+            target.TargetKey,
+            target.Generation!,
+            target.EffectiveSettings.ProjectorPageSize,
+            effectiveWorkflowTimeout: TimeSpan.FromHours(1),
+            startedAt: RuntimeObservedAt.AddMinutes(-5),
+            observedAt: RuntimeObservedAt,
+            currentPhase: DocumentCacheAdministrativeCommandPhase.DrainWork,
+            lastCompletedPhase: DocumentCacheAdministrativeCommandPhase.SeedBaseline,
+            mutated: true,
+            physicalSourceFingerprint: target.PhysicalSourceFingerprint,
+            lifecycle: DocumentCacheLifecycleState.Rebuilding,
+            cacheAheadRecoveryRequired: false,
+            phaseDiagnostics:
+            [
+                new DocumentCacheAdministrativePhaseDiagnostic(
+                    DocumentCacheAdministrativeCommandPhase.DrainWork,
+                    DocumentCacheAdministrativeCommandPhase.SeedBaseline,
+                    retryable: true,
+                    DocumentCacheAdministrativeDiagnosticCategory.ProviderCommandTimeout,
+                    affectedDocumentIds: [99],
+                    "provider timeout"
+                ),
+            ]
+        );
+
+    private static DocumentCacheAdministrativeCommandResult CommandResult(
+        DocumentCacheTargetObservation target,
+        DocumentCacheAdministrativeCommand command
+    ) =>
+        new(
+            command,
+            DocumentCacheAdministrativeTargetKey.FromTargetKey(target.TargetKey),
+            DocumentCacheAdministrativeCommandStatus.Completed,
+            DocumentCacheAdministrativeCommandClassification.Succeeded,
+            mutated: true,
+            targetGeneration: target.Generation!.Value,
+            physicalSourceFingerprint: target.PhysicalSourceFingerprint,
+            lifecycle: DocumentCacheLifecycleState.Tracking,
+            cacheAheadRecoveryRequired: false,
+            phaseDiagnostics: []
         );
 
     private static DocumentCacheEnqueueFailureTelemetryEvent EnqueueFailureEvent(

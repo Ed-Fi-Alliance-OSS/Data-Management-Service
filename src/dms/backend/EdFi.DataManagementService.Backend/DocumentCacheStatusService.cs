@@ -581,12 +581,11 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             classification.CaughtUp,
             classification.QueueSummary,
             ToExecutionStateComponent(targetHealth),
-            ToActiveCommand(
-                projectionSnapshot.GetCurrentGenerationActiveCommand(targetObservation.TargetKey)
-            ),
+            ToActiveCommand(GetCurrentGenerationActiveCommand(targetObservation, projectionSnapshot)),
             ToLastEndedDiagnostic(
-                projectionSnapshot.GetCurrentGenerationLastEndedAdministrativeCommandDiagnostic(
-                    targetObservation.TargetKey
+                GetCurrentGenerationLastEndedAdministrativeCommandDiagnostic(
+                    targetObservation,
+                    projectionSnapshot
                 )
             ),
             ToTargetDiagnostics(targetHealth),
@@ -694,6 +693,40 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
                 targetObservation.Generation
             )
         );
+    }
+
+    private static DocumentCacheAdministrativeCommandObservationSnapshot? GetCurrentGenerationActiveCommand(
+        DocumentCacheTargetObservation targetObservation,
+        DocumentCacheProjectionObservationSnapshot projectionSnapshot
+    )
+    {
+        if (targetObservation.Generation is null)
+        {
+            return null;
+        }
+
+        DocumentCacheAdministrativeCommandObservationSnapshot? snapshot =
+            projectionSnapshot.GetCurrentGenerationActiveCommand(targetObservation.TargetKey);
+
+        return snapshot?.TargetGeneration == targetObservation.Generation ? snapshot : null;
+    }
+
+    private static DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot? GetCurrentGenerationLastEndedAdministrativeCommandDiagnostic(
+        DocumentCacheTargetObservation targetObservation,
+        DocumentCacheProjectionObservationSnapshot projectionSnapshot
+    )
+    {
+        if (targetObservation.Generation is null)
+        {
+            return null;
+        }
+
+        DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot? snapshot =
+            projectionSnapshot.GetCurrentGenerationLastEndedAdministrativeCommandDiagnostic(
+                targetObservation.TargetKey
+            );
+
+        return snapshot?.TargetGeneration == targetObservation.Generation ? snapshot : null;
     }
 
     private static DocumentCacheStatusRuntimeObservation? ToRuntimeObservation(
