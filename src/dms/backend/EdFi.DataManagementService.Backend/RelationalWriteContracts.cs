@@ -129,8 +129,6 @@ internal enum DocumentCacheEnqueueOutcome
 {
     NotObserved = 0,
     NoWorkQueued = 1,
-    Inserted = 2,
-    Advanced = 3,
     AlreadySatisfied = 4,
 }
 

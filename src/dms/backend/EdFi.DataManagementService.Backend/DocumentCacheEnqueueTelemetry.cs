@@ -349,10 +349,7 @@ internal static class DocumentCacheEnqueueTelemetryWriteBoundary
         targetRegistry?.CurrentSnapshot.Targets.SingleOrDefault(target => target.TargetKey.Equals(targetKey));
 
     private static bool IsSuccessfulOutcome(DocumentCacheEnqueueOutcome enqueueOutcome) =>
-        enqueueOutcome
-            is DocumentCacheEnqueueOutcome.Inserted
-                or DocumentCacheEnqueueOutcome.Advanced
-                or DocumentCacheEnqueueOutcome.AlreadySatisfied;
+        enqueueOutcome is DocumentCacheEnqueueOutcome.AlreadySatisfied;
 
     private static RelationalProviderToken ProviderTokenForDialect(SqlDialect dialect) =>
         dialect switch

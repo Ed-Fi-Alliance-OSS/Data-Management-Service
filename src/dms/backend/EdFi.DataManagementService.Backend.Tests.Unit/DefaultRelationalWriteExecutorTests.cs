@@ -328,14 +328,9 @@ public class Given_Default_Relational_Write_Executor
         telemetry.Successes[0].ResourceKind.Should().Be(DocumentCacheEnqueueTelemetryResourceKind.Resource);
     }
 
-    [TestCase(nameof(DocumentCacheEnqueueOutcome.Inserted))]
-    [TestCase(nameof(DocumentCacheEnqueueOutcome.Advanced))]
-    [TestCase(nameof(DocumentCacheEnqueueOutcome.AlreadySatisfied))]
-    public async Task It_records_DocumentCacheEnqueueTelemetry_success_for_committed_enqueue_outcomes(
-        string enqueueOutcomeName
-    )
+    [Test]
+    public async Task It_records_DocumentCacheEnqueueTelemetry_success_for_committed_already_satisfied_enqueue_outcome()
     {
-        var enqueueOutcome = Enum.Parse<DocumentCacheEnqueueOutcome>(enqueueOutcomeName);
         var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
         _sut = CreateExecutor(
             documentCacheEnqueueTelemetry: telemetry,
@@ -350,7 +345,7 @@ public class Given_Default_Relational_Write_Executor
             910L,
             CreateDocumentUuid,
             77L,
-            enqueueOutcome
+            DocumentCacheEnqueueOutcome.AlreadySatisfied
         );
 
         await _sut.ExecuteAsync(request);
@@ -9238,13 +9233,13 @@ public class Given_Default_Relational_Write_Executor
                     910L,
                     documentUuid,
                     77L,
-                    DocumentCacheEnqueueOutcome.Inserted
+                    DocumentCacheEnqueueOutcome.AlreadySatisfied
                 ),
                 RelationalWriteTargetContext.ExistingDocument(var documentId, var documentUuid, _) => new(
                     documentId,
                     documentUuid,
                     77L,
-                    DocumentCacheEnqueueOutcome.Advanced
+                    DocumentCacheEnqueueOutcome.AlreadySatisfied
                 ),
                 _ => throw new ArgumentOutOfRangeException(nameof(request), request, null),
             };

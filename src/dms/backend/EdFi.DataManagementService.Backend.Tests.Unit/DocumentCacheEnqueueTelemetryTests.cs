@@ -415,12 +415,8 @@ public class Given_DocumentCacheEnqueueTelemetry
             .And.NotContain(value => value.Contains("DocumentProjectionWork", StringComparison.Ordinal));
     }
 
-    [TestCase(nameof(DocumentCacheEnqueueOutcome.Inserted))]
-    [TestCase(nameof(DocumentCacheEnqueueOutcome.Advanced))]
-    [TestCase(nameof(DocumentCacheEnqueueOutcome.AlreadySatisfied))]
-    public void It_records_successful_write_boundary_outcomes_with_unknown_target_without_retention(
-        string enqueueOutcomeName
-    )
+    [Test]
+    public void It_records_already_satisfied_write_boundary_outcome_with_unknown_target_without_retention()
     {
         using MetricCollector collector = new();
         var logger = new CapturingLogger<DocumentCacheEnqueueTelemetry>();
@@ -439,7 +435,7 @@ public class Given_DocumentCacheEnqueueTelemetry
             registry,
             TargetKey.TenantKey,
             SqlDialect.Pgsql,
-            Enum.Parse<DocumentCacheEnqueueOutcome>(enqueueOutcomeName),
+            DocumentCacheEnqueueOutcome.AlreadySatisfied,
             DocumentCacheEnqueueTelemetryCanonicalOperation.Insert,
             DocumentCacheEnqueueTelemetryResourceKind.Resource,
             "committed"

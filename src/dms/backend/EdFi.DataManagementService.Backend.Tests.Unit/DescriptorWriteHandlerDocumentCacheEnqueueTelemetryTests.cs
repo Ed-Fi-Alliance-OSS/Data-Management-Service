@@ -69,14 +69,9 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         telemetry.Failures.Should().BeEmpty();
     }
 
-    [TestCase(nameof(DocumentCacheEnqueueOutcome.Inserted))]
-    [TestCase(nameof(DocumentCacheEnqueueOutcome.Advanced))]
-    [TestCase(nameof(DocumentCacheEnqueueOutcome.AlreadySatisfied))]
-    public async Task It_records_descriptor_insert_success_for_committed_enqueue_outcomes(
-        string enqueueOutcomeName
-    )
+    [Test]
+    public async Task It_records_descriptor_insert_success_for_committed_already_satisfied_enqueue_outcome()
     {
-        var enqueueOutcome = Enum.Parse<DocumentCacheEnqueueOutcome>(enqueueOutcomeName);
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var targetLookupService = new StubRelationalWriteTargetLookupService
         {
@@ -84,7 +79,7 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         };
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.Executor.ResultSets.Enqueue([
-            CreateContentVersionResultSet(42L, enqueueOutcome),
+            CreateContentVersionResultSet(42L, DocumentCacheEnqueueOutcome.AlreadySatisfied),
         ]);
         var telemetry = new RecordingDocumentCacheEnqueueTelemetry(
             () => sessionFactory.Session.CommitCallCount,
