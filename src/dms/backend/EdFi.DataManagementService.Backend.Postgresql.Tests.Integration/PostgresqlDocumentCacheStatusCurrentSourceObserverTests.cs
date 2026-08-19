@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Postgresql;
@@ -26,6 +27,9 @@ public class Given_A_Postgresql_DocumentCacheStatusCurrentSourceObserver
 {
     private const string FixtureRelativePath =
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/minimal";
+    private const int ScaleDocumentCount = 160;
+    private const int ScaleCacheRowCount = 120;
+    private const int ScaleWorkRowCount = 80;
 
     private static readonly QualifiedResourceName PersonResource = new("Ed-Fi", "Person");
     private static readonly DateTimeOffset FirstEnqueuedAt = DateTimeOffset.UtcNow.AddMinutes(-10);
@@ -260,32 +264,34 @@ public class Given_A_Postgresql_DocumentCacheStatusCurrentSourceObserver
     [Test]
     public async Task It_uses_the_ordered_single_row_projection_work_index_and_not_source_or_cache_scans()
     {
-        long laterDocumentId = await InsertDocumentAsync(contentVersion: 20);
-        long oldestDocumentId = await InsertDocumentAsync(contentVersion: 10);
-        await ClearProjectionWorkAsync();
-        await InsertProjectionWorkAsync(
-            laterDocumentId,
-            requiredContentVersion: 20,
-            LaterEnqueuedAt,
-            LaterEnqueuedAt.AddSeconds(5)
-        );
-        await InsertProjectionWorkAsync(
-            oldestDocumentId,
-            requiredContentVersion: 10,
-            FirstEnqueuedAt,
-            FirstEnqueuedAt.AddSeconds(5)
-        );
+        await InsertScaleDocumentsCacheAndWorkAsync();
+        DocumentCacheScaleCounts counts = await ReadScaleCountsAsync();
 
-        string plan = await ExplainStatusObservationSqlAsync();
+        counts.DocumentCount.Should().Be(ScaleDocumentCount);
+        counts.DocumentCacheCount.Should().Be(ScaleCacheRowCount);
+        counts.WorkRowCount.Should().Be(ScaleWorkRowCount);
 
-        plan.Should().Contain("IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId");
-        plan.Should().NotContain(" on \"Document\" ");
-        plan.Should().NotContain(" on \"DocumentCache\" ");
+        JsonElement plan = await ExplainStatusObservationPlanAsync();
+        IReadOnlyCollection<string> relationNames = CollectPlanPropertyValues(plan, "Relation Name");
+        IReadOnlyCollection<string> indexNames = CollectPlanPropertyValues(plan, "Index Name");
+
+        indexNames.Should().Contain("IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId");
+        relationNames.Should().Contain("DocumentProjectionWork");
+        relationNames.Should().NotContain("Document");
+        relationNames.Should().NotContain("DocumentCache");
         PostgresqlDocumentCacheStatusCurrentSourceObserver
             .StatusObservationSql.ToUpperInvariant()
             .Should()
             .NotContain("COUNT");
         PostgresqlDocumentCacheStatusCurrentSourceObserver.StatusObservationSql.Should().Contain("LIMIT 1");
+
+        DocumentCacheStatusCurrentSourceObservationResult result = await _observer.ObserveAsync(
+            new(CreateExecutionContext())
+        );
+
+        result.Outcome.Should().Be(DocumentCacheStatusCurrentSourceObservationOutcome.Succeeded);
+        result.QueuePresence.Should().Be(DocumentCacheStatusDurableQueuePresence.NotEmpty);
+        result.OldestWorkAgeSeconds.Should().BeGreaterThan(0);
     }
 
     private DocumentCacheTargetExecutionContext CreateExecutionContext(
@@ -407,26 +413,184 @@ public class Given_A_Postgresql_DocumentCacheStatusCurrentSourceObserver
             new NpgsqlParameter("lastEnqueuedAt", NpgsqlDbType.TimestampTz) { Value = lastEnqueuedAt }
         );
 
-    private async Task<string> ExplainStatusObservationSqlAsync()
+    private async Task InsertScaleDocumentsCacheAndWorkAsync()
+    {
+        short resourceKeyId = _fixture.MappingSet.ResourceKeyIdByResource[PersonResource];
+        ResourceKeyEntry resourceKey = _fixture.MappingSet.ResourceKeyById[resourceKeyId];
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "dms"."Document" (
+                "DocumentUuid",
+                "ResourceKeyId",
+                "ContentVersion",
+                "ContentLastModifiedAt"
+            )
+            SELECT
+                ('00000000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
+                @resourceKeyId,
+                series,
+                @lastModifiedAt
+            FROM generate_series(1, @documentCount) AS series;
+
+            INSERT INTO "dms"."DocumentCache" (
+                "DocumentId",
+                "DocumentUuid",
+                "ProjectName",
+                "ResourceName",
+                "ResourceVersion",
+                "ContentVersion",
+                "StreamEtag",
+                "LastModifiedAt",
+                "DocumentJson",
+                "ComputedAt"
+            )
+            SELECT
+                source."DocumentId",
+                source."DocumentUuid",
+                @projectName,
+                @resourceName,
+                @resourceVersion,
+                source."ContentVersion",
+                'status-etag-' || source."ContentVersion",
+                @lastModifiedAt,
+                jsonb_build_object('value', 'cache-' || source."ContentVersion"),
+                @computedAt
+            FROM "dms"."Document" AS source
+            ORDER BY source."DocumentId"
+            LIMIT @cacheRowCount;
+
+            DELETE FROM "dms"."DocumentProjectionWork";
+
+            INSERT INTO "dms"."DocumentProjectionWork" (
+                "DocumentId",
+                "RequiredContentVersion",
+                "FirstEnqueuedAt",
+                "LastEnqueuedAt"
+            )
+            SELECT
+                source."DocumentId",
+                source."ContentVersion",
+                @firstEnqueuedAt + (source."DocumentId" * INTERVAL '1 millisecond'),
+                @firstEnqueuedAt + (source."DocumentId" * INTERVAL '1 millisecond')
+            FROM "dms"."Document" AS source
+            ORDER BY source."DocumentId"
+            LIMIT @workRowCount;
+
+            ANALYZE "dms"."Document";
+            ANALYZE "dms"."DocumentCache";
+            ANALYZE "dms"."DocumentProjectionWork";
+            """,
+            new NpgsqlParameter("resourceKeyId", NpgsqlDbType.Smallint) { Value = resourceKeyId },
+            new NpgsqlParameter("documentCount", NpgsqlDbType.Integer) { Value = ScaleDocumentCount },
+            new NpgsqlParameter("cacheRowCount", NpgsqlDbType.Integer) { Value = ScaleCacheRowCount },
+            new NpgsqlParameter("workRowCount", NpgsqlDbType.Integer) { Value = ScaleWorkRowCount },
+            new NpgsqlParameter("projectName", NpgsqlDbType.Varchar)
+            {
+                Value = resourceKey.Resource.ProjectName,
+            },
+            new NpgsqlParameter("resourceName", NpgsqlDbType.Varchar)
+            {
+                Value = resourceKey.Resource.ResourceName,
+            },
+            new NpgsqlParameter("resourceVersion", NpgsqlDbType.Varchar)
+            {
+                Value = resourceKey.ResourceVersion,
+            },
+            new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz) { Value = LaterEnqueuedAt },
+            new NpgsqlParameter("computedAt", NpgsqlDbType.TimestampTz)
+            {
+                Value = LaterEnqueuedAt.AddMinutes(1),
+            },
+            new NpgsqlParameter("firstEnqueuedAt", NpgsqlDbType.TimestampTz) { Value = FirstEnqueuedAt }
+        );
+    }
+
+    private async Task<DocumentCacheScaleCounts> ReadScaleCountsAsync()
+    {
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await _database.QueryRowsAsync(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM "dms"."Document") AS "DocumentCount",
+                (SELECT COUNT(*) FROM "dms"."DocumentCache") AS "DocumentCacheCount",
+                (SELECT COUNT(*) FROM "dms"."DocumentProjectionWork") AS "WorkRowCount";
+            """
+        );
+
+        IReadOnlyDictionary<string, object?> row = rows.Single();
+        return new DocumentCacheScaleCounts(
+            Convert.ToInt32(row["DocumentCount"]),
+            Convert.ToInt32(row["DocumentCacheCount"]),
+            Convert.ToInt32(row["WorkRowCount"])
+        );
+    }
+
+    private async Task<JsonElement> ExplainStatusObservationPlanAsync()
     {
         await using NpgsqlConnection connection = new(_database.ConnectionString);
         await connection.OpenAsync();
 
+        // The row-count assertions above are the cardinality evidence. This setting only makes
+        // the indexed oldest-work access deterministic in the plan.
         await using NpgsqlCommand disableSeqScanCommand = connection.CreateCommand();
         disableSeqScanCommand.CommandText = "SET enable_seqscan = off;";
         await disableSeqScanCommand.ExecuteNonQueryAsync();
 
         await using NpgsqlCommand explainCommand = connection.CreateCommand();
         explainCommand.CommandText =
-            "EXPLAIN (COSTS OFF) " + PostgresqlDocumentCacheStatusCurrentSourceObserver.StatusObservationSql;
+            "EXPLAIN (FORMAT JSON, COSTS OFF) "
+            + PostgresqlDocumentCacheStatusCurrentSourceObserver.StatusObservationSql;
 
-        List<string> lines = [];
         await using NpgsqlDataReader reader = await explainCommand.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        if (!await reader.ReadAsync())
         {
-            lines.Add(reader.GetString(0));
+            throw new InvalidOperationException("PostgreSQL EXPLAIN returned no rows.");
         }
 
-        return string.Join(Environment.NewLine, lines);
+        string explainJson = reader.GetString(0);
+        using var document = JsonDocument.Parse(explainJson);
+        return document.RootElement[0].GetProperty("Plan").Clone();
     }
+
+    private static IReadOnlyCollection<string> CollectPlanPropertyValues(
+        JsonElement plan,
+        string propertyName
+    )
+    {
+        List<string> values = [];
+        VisitPlan(
+            plan,
+            node =>
+            {
+                if (node.TryGetProperty(propertyName, out JsonElement property))
+                {
+                    string? value = property.GetString();
+                    if (!string.IsNullOrEmpty(value))
+                    {
+                        values.Add(value);
+                    }
+                }
+            }
+        );
+
+        return values;
+    }
+
+    private static void VisitPlan(JsonElement node, Action<JsonElement> visit)
+    {
+        visit(node);
+        if (node.TryGetProperty("Plans", out JsonElement children))
+        {
+            foreach (JsonElement child in children.EnumerateArray())
+            {
+                VisitPlan(child, visit);
+            }
+        }
+    }
+
+    private sealed record DocumentCacheScaleCounts(
+        int DocumentCount,
+        int DocumentCacheCount,
+        int WorkRowCount
+    );
 }

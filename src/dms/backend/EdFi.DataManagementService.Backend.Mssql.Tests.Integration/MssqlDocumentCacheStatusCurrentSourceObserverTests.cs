@@ -5,6 +5,7 @@
 
 using System.Data;
 using System.Text;
+using System.Xml.Linq;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Mssql;
@@ -28,6 +29,9 @@ public class Given_A_Mssql_DocumentCacheStatusCurrentSourceObserver
 {
     private const string FixtureRelativePath =
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/minimal";
+    private const int ScaleDocumentCount = 160;
+    private const int ScaleCacheRowCount = 120;
+    private const int ScaleWorkRowCount = 80;
 
     private static readonly QualifiedResourceName PersonResource = new("Ed-Fi", "Person");
     private static readonly DateTimeOffset FirstEnqueuedAt = DateTimeOffset.UtcNow.AddMinutes(-10);
@@ -266,39 +270,44 @@ public class Given_A_Mssql_DocumentCacheStatusCurrentSourceObserver
     [Test]
     public async Task It_uses_the_ordered_single_row_projection_work_index_and_not_source_or_cache_scans()
     {
-        long laterDocumentId = await InsertDocumentAsync(contentVersion: 20);
-        long oldestDocumentId = await InsertDocumentAsync(contentVersion: 10);
-        await ClearProjectionWorkAsync();
-        await InsertProjectionWorkAsync(
-            laterDocumentId,
-            requiredContentVersion: 20,
-            LaterEnqueuedAt,
-            LaterEnqueuedAt.AddSeconds(5)
-        );
-        await InsertProjectionWorkAsync(
-            oldestDocumentId,
-            requiredContentVersion: 10,
-            FirstEnqueuedAt,
-            FirstEnqueuedAt.AddSeconds(5)
-        );
-        await _database.ExecuteNonQueryAsync(
-            """
-            UPDATE STATISTICS [dms].[DocumentProjectionWork];
-            """
-        );
+        await InsertScaleDocumentsCacheAndWorkAsync();
+        DocumentCacheScaleCounts counts = await ReadScaleCountsAsync();
 
-        string plan = await ReadStatisticsXmlPlanAsync(
+        counts.DocumentCount.Should().Be(ScaleDocumentCount);
+        counts.DocumentCacheCount.Should().Be(ScaleCacheRowCount);
+        counts.WorkRowCount.Should().Be(ScaleWorkRowCount);
+
+        string planXml = await ReadStatisticsXmlPlanAsync(
             MssqlDocumentCacheStatusCurrentSourceObserver.StatusObservationSql
         );
+        IReadOnlyCollection<SqlServerPlanObjectReference> objectReferences = CollectObjectReferences(planXml);
 
-        plan.Should().Contain("IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId");
-        plan.Should().NotContain("[dms].[Document]");
-        plan.Should().NotContain("[dms].[DocumentCache]");
+        objectReferences
+            .Should()
+            .Contain(reference =>
+                reference.Schema == "dms"
+                && reference.Table == "DocumentProjectionWork"
+                && reference.Index == "IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId"
+            );
+        objectReferences
+            .Should()
+            .NotContain(reference => reference.Schema == "dms" && reference.Table == "Document");
+        objectReferences
+            .Should()
+            .NotContain(reference => reference.Schema == "dms" && reference.Table == "DocumentCache");
         MssqlDocumentCacheStatusCurrentSourceObserver
             .StatusObservationSql.ToUpperInvariant()
             .Should()
             .NotContain("COUNT");
         MssqlDocumentCacheStatusCurrentSourceObserver.StatusObservationSql.Should().Contain("TOP (1)");
+
+        DocumentCacheStatusCurrentSourceObservationResult result = await _observer.ObserveAsync(
+            new(CreateExecutionContext())
+        );
+
+        result.Outcome.Should().Be(DocumentCacheStatusCurrentSourceObservationOutcome.Succeeded);
+        result.QueuePresence.Should().Be(DocumentCacheStatusDurableQueuePresence.NotEmpty);
+        result.OldestWorkAgeSeconds.Should().BeGreaterThan(0);
     }
 
     private DocumentCacheTargetExecutionContext CreateExecutionContext(
@@ -424,6 +433,123 @@ public class Given_A_Mssql_DocumentCacheStatusCurrentSourceObserver
             new SqlParameter("@lastEnqueuedAt", SqlDbType.DateTime2) { Value = lastEnqueuedAt.UtcDateTime }
         );
 
+    private async Task InsertScaleDocumentsCacheAndWorkAsync()
+    {
+        short resourceKeyId = _fixture.MappingSet.ResourceKeyIdByResource[PersonResource];
+        ResourceKeyEntry resourceKey = _fixture.MappingSet.ResourceKeyById[resourceKeyId];
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            WITH numbers AS (
+                SELECT TOP (@documentCount)
+                    ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS [Number]
+                FROM sys.all_objects AS first_source
+                CROSS JOIN sys.all_objects AS second_source
+            )
+            INSERT INTO [dms].[Document] (
+                [DocumentUuid],
+                [ResourceKeyId],
+                [ContentVersion],
+                [ContentLastModifiedAt]
+            )
+            SELECT
+                NEWID(),
+                @resourceKeyId,
+                [Number],
+                @lastModifiedAt
+            FROM numbers
+            ORDER BY [Number];
+
+            INSERT INTO [dms].[DocumentCache] (
+                [DocumentId],
+                [DocumentUuid],
+                [ProjectName],
+                [ResourceName],
+                [ResourceVersion],
+                [ContentVersion],
+                [StreamEtag],
+                [LastModifiedAt],
+                [DocumentJson],
+                [ComputedAt]
+            )
+            SELECT TOP (@cacheRowCount)
+                source.[DocumentId],
+                source.[DocumentUuid],
+                @projectName,
+                @resourceName,
+                @resourceVersion,
+                source.[ContentVersion],
+                CONCAT('status-etag-', CONVERT(varchar(20), source.[ContentVersion])),
+                @lastModifiedAt,
+                CONCAT(N'{"value":"cache-', CONVERT(nvarchar(20), source.[ContentVersion]), N'"}'),
+                @computedAt
+            FROM [dms].[Document] AS source
+            ORDER BY source.[DocumentId];
+
+            DELETE FROM [dms].[DocumentProjectionWork];
+
+            INSERT INTO [dms].[DocumentProjectionWork] (
+                [DocumentId],
+                [RequiredContentVersion],
+                [FirstEnqueuedAt],
+                [LastEnqueuedAt]
+            )
+            SELECT TOP (@workRowCount)
+                source.[DocumentId],
+                source.[ContentVersion],
+                DATEADD(millisecond, CONVERT(int, source.[DocumentId]), @firstEnqueuedAt),
+                DATEADD(millisecond, CONVERT(int, source.[DocumentId]), @firstEnqueuedAt)
+            FROM [dms].[Document] AS source
+            ORDER BY source.[DocumentId];
+
+            UPDATE STATISTICS [dms].[Document];
+            UPDATE STATISTICS [dms].[DocumentCache];
+            UPDATE STATISTICS [dms].[DocumentProjectionWork];
+            """,
+            new SqlParameter("@resourceKeyId", SqlDbType.SmallInt) { Value = resourceKeyId },
+            new SqlParameter("@documentCount", SqlDbType.Int) { Value = ScaleDocumentCount },
+            new SqlParameter("@cacheRowCount", SqlDbType.Int) { Value = ScaleCacheRowCount },
+            new SqlParameter("@workRowCount", SqlDbType.Int) { Value = ScaleWorkRowCount },
+            new SqlParameter("@projectName", SqlDbType.NVarChar, 256)
+            {
+                Value = resourceKey.Resource.ProjectName,
+            },
+            new SqlParameter("@resourceName", SqlDbType.NVarChar, 256)
+            {
+                Value = resourceKey.Resource.ResourceName,
+            },
+            new SqlParameter("@resourceVersion", SqlDbType.NVarChar, 32)
+            {
+                Value = resourceKey.ResourceVersion,
+            },
+            new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = LaterEnqueuedAt.UtcDateTime },
+            new SqlParameter("@computedAt", SqlDbType.DateTime2)
+            {
+                Value = LaterEnqueuedAt.AddMinutes(1).UtcDateTime,
+            },
+            new SqlParameter("@firstEnqueuedAt", SqlDbType.DateTime2) { Value = FirstEnqueuedAt.UtcDateTime }
+        );
+    }
+
+    private async Task<DocumentCacheScaleCounts> ReadScaleCountsAsync()
+    {
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await _database.QueryRowsAsync(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM [dms].[Document]) AS [DocumentCount],
+                (SELECT COUNT(*) FROM [dms].[DocumentCache]) AS [DocumentCacheCount],
+                (SELECT COUNT(*) FROM [dms].[DocumentProjectionWork]) AS [WorkRowCount];
+            """
+        );
+
+        IReadOnlyDictionary<string, object?> row = rows.Single();
+        return new DocumentCacheScaleCounts(
+            Convert.ToInt32(row["DocumentCount"]),
+            Convert.ToInt32(row["DocumentCacheCount"]),
+            Convert.ToInt32(row["WorkRowCount"])
+        );
+    }
+
     private async Task<string> ReadStatisticsXmlPlanAsync(string sql)
     {
         await using SqlConnection connection = new(_database.ConnectionString);
@@ -469,6 +595,23 @@ public class Given_A_Mssql_DocumentCacheStatusCurrentSourceObserver
         await command.ExecuteNonQueryAsync();
     }
 
+    private static IReadOnlyCollection<SqlServerPlanObjectReference> CollectObjectReferences(string planXml)
+    {
+        XDocument document = XDocument.Parse(planXml);
+        return document
+            .Descendants()
+            .Where(element => element.Name.LocalName == "Object")
+            .Select(element => new SqlServerPlanObjectReference(
+                NormalizeSqlServerIdentifier(element.Attribute("Schema")?.Value),
+                NormalizeSqlServerIdentifier(element.Attribute("Table")?.Value),
+                NormalizeSqlServerIdentifier(element.Attribute("Index")?.Value)
+            ))
+            .ToArray();
+    }
+
+    private static string NormalizeSqlServerIdentifier(string? identifier) =>
+        string.IsNullOrWhiteSpace(identifier) ? string.Empty : identifier.Trim('[', ']');
+
     private static DocumentCacheSqlServerPrerequisiteDetails SatisfiedSqlServerPrerequisites() =>
         new(
             new DocumentCacheProviderPrerequisiteResult(
@@ -482,4 +625,12 @@ public class Given_A_Mssql_DocumentCacheStatusCurrentSourceObserver
                 "SQL Server nested triggers are enabled."
             )
         );
+
+    private sealed record DocumentCacheScaleCounts(
+        int DocumentCount,
+        int DocumentCacheCount,
+        int WorkRowCount
+    );
+
+    private sealed record SqlServerPlanObjectReference(string Schema, string Table, string Index);
 }
