@@ -18,6 +18,23 @@ public class Given_DocumentCacheStatusSerialization
 {
     private static readonly DateTimeOffset ObservedAt = new(2026, 8, 17, 13, 10, 11, TimeSpan.Zero);
 
+    [TestCase("\r\n\t")]
+    [TestCase("{}[]<>")]
+    public void It_serializes_messages_that_sanitize_to_empty_as_null(string message)
+    {
+        var component = new DocumentCacheStatusResolutionComponent(
+            DocumentCacheStatusResolutionStatus.Unknown,
+            DocumentCacheStatusResolutionReason.InvalidCmsResponse,
+            ObservedAt,
+            message
+        );
+
+        JsonObject root = JsonNode.Parse(JsonSerializer.Serialize(component))!.AsObject();
+
+        component.Message.Should().BeNull();
+        root["message"].Should().BeNull();
+    }
+
     [Test]
     public void It_serializes_diagnostics_with_public_lower_camel_values_and_bounded_safe_messages()
     {

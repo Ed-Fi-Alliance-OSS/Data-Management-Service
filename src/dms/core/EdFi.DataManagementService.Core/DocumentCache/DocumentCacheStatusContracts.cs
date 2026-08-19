@@ -1714,6 +1714,9 @@ internal static class DocumentCacheStatusTimestamp
 
 file static class DocumentCacheStatusText
 {
-    public static string? SanitizeNullable(string? message) =>
-        message is null ? null : DocumentCacheDiagnosticText.Sanitize(message);
+    public static string? SanitizeNullable(string? message)
+    {
+        string sanitized = DocumentCacheDiagnosticText.Sanitize(message);
+        return string.IsNullOrWhiteSpace(sanitized) ? null : sanitized;
+    }
 }
