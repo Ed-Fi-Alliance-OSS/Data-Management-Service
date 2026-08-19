@@ -10,3 +10,7 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("EdFi.DataManagementService.Backend")]
 [assembly: InternalsVisibleTo("EdFi.DataManagementService.Backend.Postgresql.Tests.Integration")]
 [assembly: InternalsVisibleTo("EdFi.DataManagementService.Backend.Mssql.Tests.Integration")]
+
+// Lets FakeItEasy's Castle proxy generator fake the internal dialect interfaces from the test
+// assemblies above, as EdFi.DataManagementService.Backend and .Core already allow.
+[assembly: InternalsVisibleTo("DynamicProxyGenAssembly2")]

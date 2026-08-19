@@ -3,10 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using FakeItEasy;
 using FluentAssertions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Backend.Plans.Tests.Unit.ReadPlanProjectionMutationHelper;
@@ -381,10 +381,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     {
         var readPlan = CreateReadPlanWithTableSingleDocumentSql(_mssqlProjectionReadPlan, "SELECT 1;");
 
-        var act = ValidateSingleDocumentSql(
-            readPlan,
-            new DialectWithoutSingleDocumentHydration(PlanSqlDialectFactory.Create(SqlDialect.Mssql))
-        );
+        var act = ValidateSingleDocumentSql(readPlan, DialectWithoutSingleDocumentHydration());
 
         act.Should()
             .Throw<InvalidOperationException>()
@@ -401,10 +398,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             "SELECT 1;"
         );
 
-        var act = ValidateSingleDocumentSql(
-            readPlan,
-            new DialectWithoutSingleDocumentHydration(PlanSqlDialectFactory.Create(SqlDialect.Mssql))
-        );
+        var act = ValidateSingleDocumentSql(readPlan, DialectWithoutSingleDocumentHydration());
 
         act.Should()
             .Throw<InvalidOperationException>()
@@ -421,10 +415,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             "SELECT 1;"
         );
 
-        var act = ValidateSingleDocumentSql(
-            readPlan,
-            new DialectWithoutSingleDocumentHydration(PlanSqlDialectFactory.Create(SqlDialect.Mssql))
-        );
+        var act = ValidateSingleDocumentSql(readPlan, DialectWithoutSingleDocumentHydration());
 
         act.Should()
             .Throw<InvalidOperationException>()
@@ -3433,56 +3424,19 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     /// <summary>
-    /// A dialect that declines single-document hydration while behaving like its inner dialect in
-    /// every other respect. Both shipped dialects now support single-document hydration, so this is
-    /// the only way to reach the validator's absent-SQL arm, which is the contract a future dialect
-    /// would land against.
+    /// A dialect that declines single-document hydration while behaving like SQL Server in every other
+    /// respect. Both shipped dialects support single-document hydration, so this is the only way to
+    /// reach the validator's absent-SQL arm, which is the contract a future dialect would land against.
+    /// Wrapping a real dialect rather than hand-implementing the interface keeps this test from
+    /// breaking every time <see cref="IPlanSqlDialect"/> gains a member.
     /// </summary>
-    private sealed class DialectWithoutSingleDocumentHydration(IPlanSqlDialect inner) : IPlanSqlDialect
+    private static IPlanSqlDialect DialectWithoutSingleDocumentHydration()
     {
-        public SqlDialect Dialect => inner.Dialect;
-
-        public string DisplayName => inner.DisplayName;
-
-        public bool SupportsSingleDocumentHydration => false;
-
-        public string CorrelatedRowSetJoinKeyword => inner.CorrelatedRowSetJoinKeyword;
-
-        public void AppendPagingClause(
-            SqlWriter writer,
-            string offsetParameterName,
-            string limitParameterName
-        ) => inner.AppendPagingClause(writer, offsetParameterName, limitParameterName);
-
-        public void AppendCursorSelectRowLimitPrefix(SqlWriter writer, string pageSizeParameterName) =>
-            inner.AppendCursorSelectRowLimitPrefix(writer, pageSizeParameterName);
-
-        public void AppendCursorPagingClause(SqlWriter writer, string pageSizeParameterName) =>
-            inner.AppendCursorPagingClause(writer, pageSizeParameterName);
-
-        public void AppendCreateKeysetTempTable(SqlWriter writer, KeysetTableContract keyset) =>
-            inner.AppendCreateKeysetTempTable(writer, keyset);
-
-        public void AppendKeysetSelectedIdOutputClause(SqlWriter writer, KeysetTableContract keyset) =>
-            inner.AppendKeysetSelectedIdOutputClause(writer, keyset);
-
-        public void AppendKeysetSelectedIdReturningClause(SqlWriter writer, KeysetTableContract keyset) =>
-            inner.AppendKeysetSelectedIdReturningClause(writer, keyset);
-
-        public void AppendDocumentMetadataSelect(SqlWriter writer, KeysetTableContract keyset) =>
-            inner.AppendDocumentMetadataSelect(writer, keyset);
-
-        public void AppendSingleDocumentMetadataSelect(SqlWriter writer, string documentIdParameterName) =>
-            inner.AppendSingleDocumentMetadataSelect(writer, documentIdParameterName);
-
-        public void AppendComparisonSql(
-            SqlWriter writer,
-            string tableAlias,
-            DbColumnName column,
-            string operatorToken,
-            string parameterName,
-            ScalarKind? scalarKind
-        ) => inner.AppendComparisonSql(writer, tableAlias, column, operatorToken, parameterName, scalarKind);
+        var dialect = A.Fake<IPlanSqlDialect>(options =>
+            options.Wrapping(PlanSqlDialectFactory.Create(SqlDialect.Mssql))
+        );
+        A.CallTo(() => dialect.SupportsSingleDocumentHydration).Returns(false);
+        return dialect;
     }
 
     private static ResourceReadPlan CreateReadPlanWithTableSingleDocumentSql(
