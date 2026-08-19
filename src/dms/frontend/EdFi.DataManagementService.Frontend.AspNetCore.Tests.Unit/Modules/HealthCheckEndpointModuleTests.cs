@@ -17,6 +17,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
@@ -32,7 +33,8 @@ public class Given_HealthCheckEndpointModule
     private static WebApplicationFactory<Program> CreateFactory(
         ScriptedDocumentCacheStatusService documentCacheStatusService,
         string? requiredRole,
-        ScriptedJwtValidationService? jwtValidationService = null
+        ScriptedJwtValidationService? jwtValidationService = null,
+        string? roleClaimType = RoleClaimType
     )
     {
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -51,13 +53,16 @@ public class Given_HealthCheckEndpointModule
                         );
                     }
 
-                    configuration.AddInMemoryCollection(
-                        new Dictionary<string, string?>
-                        {
-                            ["JwtAuthentication:RoleClaimType"] = RoleClaimType,
-                            ["JwtAuthentication:ClientRole"] = "legacy-service",
-                        }
-                    );
+                    Dictionary<string, string?> jwtConfiguration = new()
+                    {
+                        ["JwtAuthentication:ClientRole"] = "legacy-service",
+                    };
+                    if (roleClaimType is not null)
+                    {
+                        jwtConfiguration["JwtAuthentication:RoleClaimType"] = roleClaimType;
+                    }
+
+                    configuration.AddInMemoryCollection(jwtConfiguration);
                 }
             );
             builder.ConfigureServices(services =>
@@ -86,6 +91,23 @@ public class Given_HealthCheckEndpointModule
         new(new Dictionary<string, ClaimsPrincipal?> { [ValidBearerToken] = Principal(claims) });
 
     [Test]
+    public void It_ships_the_self_contained_issuer_role_claim_type_as_the_default()
+    {
+        ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
+        using WebApplicationFactory<Program> factory = CreateFactory(
+            documentCacheStatusService,
+            requiredRole: null,
+            roleClaimType: null
+        );
+        using HttpClient client = factory.CreateClient();
+
+        factory
+            .Services.GetRequiredService<IOptions<JwtAuthenticationOptions>>()
+            .Value.RoleClaimType.Should()
+            .Be(ClaimTypes.Role);
+    }
+
+    [Test]
     public async Task It_omits_document_cache_status_when_required_role_is_missing()
     {
         ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
@@ -108,6 +130,24 @@ public class Given_HealthCheckEndpointModule
         await using WebApplicationFactory<Program> factory = CreateFactory(
             documentCacheStatusService,
             requiredRole: "dms document cache operator"
+        );
+        using HttpClient client = factory.CreateClient();
+
+        HttpResponseMessage response = await client.GetAsync("/health/document-cache");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        documentCacheStatusService.CallCount.Should().Be(0);
+    }
+
+    [TestCase("")]
+    [TestCase("   ")]
+    public async Task It_omits_document_cache_status_when_role_claim_type_is_blank(string roleClaimType)
+    {
+        ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
+        await using WebApplicationFactory<Program> factory = CreateFactory(
+            documentCacheStatusService,
+            ValidRequiredRole,
+            roleClaimType: roleClaimType
         );
         using HttpClient client = factory.CreateClient();
 

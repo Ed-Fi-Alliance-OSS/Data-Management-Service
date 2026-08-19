@@ -7,6 +7,7 @@ using System.Security.Claims;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -99,7 +100,8 @@ internal sealed class DocumentCacheStatusAuthorizationService(
         if (!HasExactRequiredRoleClaim(principal, _jwtAuthenticationOptions.RoleClaimType, requiredRole))
         {
             logger.LogWarning(
-                "DocumentCache status authorization failed: token missing exact required role claim"
+                "DocumentCache status authorization failed: token missing exact required role claim under configured claim type {RoleClaimType}",
+                LoggingSanitizer.SanitizeForLogging(_jwtAuthenticationOptions.RoleClaimType)
             );
             return DocumentCacheStatusAuthorizationResult.Forbidden(InsufficientPermissionsMessage);
         }

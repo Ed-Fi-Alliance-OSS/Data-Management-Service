@@ -7,22 +7,37 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Response;
+using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
-public class HealthCheckEndpointModule(IOptions<DocumentCacheOptions> documentCacheOptions) : IEndpointModule
+public class HealthCheckEndpointModule(
+    IOptions<DocumentCacheOptions> documentCacheOptions,
+    IOptions<JwtAuthenticationOptions> jwtAuthenticationOptions,
+    ILogger<HealthCheckEndpointModule> logger
+) : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/health", GetHealthStatus);
 
-        if (documentCacheOptions.Value.Status.TryGetRequiredRoleForEndpointMapping(out _))
+        if (!documentCacheOptions.Value.Status.TryGetRequiredRoleForEndpointMapping(out _))
         {
-            endpoints.MapGet("/health/document-cache", GetDocumentCacheStatus).ExcludeFromDescription();
+            return;
         }
+
+        if (string.IsNullOrWhiteSpace(jwtAuthenticationOptions.Value.RoleClaimType))
+        {
+            logger.LogWarning(
+                "DocumentCache status endpoint was not mapped because JwtAuthentication:RoleClaimType is missing or blank"
+            );
+            return;
+        }
+
+        endpoints.MapGet("/health/document-cache", GetDocumentCacheStatus).ExcludeFromDescription();
     }
 
     internal static async Task GetHealthStatus(HttpContext httpContext, HealthCheckService healthCheckService)

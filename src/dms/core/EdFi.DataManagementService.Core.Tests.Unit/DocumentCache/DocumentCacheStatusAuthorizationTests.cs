@@ -10,8 +10,10 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols;
@@ -38,7 +40,8 @@ public class DocumentCacheStatusAuthorizationTests
         ClaimsPrincipal? principal,
         string requiredRole = RequiredRole,
         string roleClaimType = RoleClaimType,
-        string clientRole = "legacy-service"
+        string clientRole = "legacy-service",
+        ILogger<DocumentCacheStatusAuthorizationService>? logger = null
     )
     {
         var jwtValidationService = A.Fake<IJwtValidationService>();
@@ -68,7 +71,7 @@ public class DocumentCacheStatusAuthorizationTests
             jwtValidationService,
             Options.Create(documentCacheOptions),
             Options.Create(jwtAuthenticationOptions),
-            NullLogger<DocumentCacheStatusAuthorizationService>.Instance
+            logger ?? NullLogger<DocumentCacheStatusAuthorizationService>.Instance
         );
 
         return (service, jwtValidationService);
@@ -145,6 +148,12 @@ public class DocumentCacheStatusAuthorizationTests
         );
 
         return tokenHandler.WriteToken(jwt);
+    }
+
+    [Test]
+    public void It_defaults_role_claim_type_to_the_self_contained_issuer_claim_type()
+    {
+        new JwtAuthenticationOptions().RoleClaimType.Should().Be(ClaimTypes.Role);
     }
 
     [Test]
@@ -227,6 +236,21 @@ public class DocumentCacheStatusAuthorizationTests
     }
 
     [Test]
+    public async Task It_authorizes_self_contained_issuer_role_claim_from_real_signed_jwt()
+    {
+        var (service, _, token) = CreateServiceWithRealJwtValidation(
+            [new Claim(ClaimTypes.Role, RequiredRole)],
+            roleClaimType: ClaimTypes.Role,
+            configureTokenHandler: handler => handler.OutboundClaimTypeMap.Clear()
+        );
+
+        DocumentCacheStatusAuthorizationResult result = await service.AuthorizeAsync($"Bearer {token}");
+
+        result.Outcome.Should().Be(DocumentCacheStatusAuthorizationOutcome.Authorized);
+        result.Message.Should().BeNull();
+    }
+
+    [Test]
     public async Task It_authorizes_custom_role_claim_type_from_real_signed_jwt()
     {
         const string customRoleClaimType = "status_role";
@@ -264,6 +288,22 @@ public class DocumentCacheStatusAuthorizationTests
 
         result.Outcome.Should().Be(DocumentCacheStatusAuthorizationOutcome.Forbidden);
         result.Message.Should().Be("Insufficient permissions");
+    }
+
+    [Test]
+    public async Task It_logs_the_configured_claim_type_when_the_required_role_is_missing()
+    {
+        var logger = new RecordingLogger<DocumentCacheStatusAuthorizationService>();
+        ClaimsPrincipal principal = Principal(new Claim(RoleClaimType, "other-role"));
+        var (service, _) = CreateService(principal, logger: logger);
+
+        await service.AuthorizeAsync($"Bearer {Token}");
+
+        LogRecord warning = logger
+            .Records.Should()
+            .ContainSingle(record => record.Level == LogLevel.Warning)
+            .Which;
+        warning.Properties["RoleClaimType"].Should().Be(RoleClaimType);
     }
 
     [Test]
