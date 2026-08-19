@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
+using System.Xml.Linq;
 using Be.Vlaanderen.Basisregisters.Generators.Guid;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
@@ -29,6 +30,8 @@ internal sealed record AuthoritativeSampleSmokeSeedData(
     long SchoolDocumentId,
     long SchoolYearTypeDocumentId
 );
+
+internal sealed record ExecutedPlanStatement(int ParentObjectId, string StatementText);
 
 internal sealed record DocumentStampState(
     long ContentVersion,
@@ -472,6 +475,100 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
         after.IdentityVersion.Should().Be(before.IdentityVersion);
         after.IdentityLastModifiedAt.Should().Be(before.IdentityLastModifiedAt);
+    }
+
+    [Test]
+    public async Task It_should_not_run_the_root_affected_docs_update_when_a_child_insert_re_fires_the_root_stamp_trigger()
+    {
+        // A child collection insert stamps its root document, and the child trigger's mirror
+        // UPDATE on [edfi].[Contact] re-fires TR_Contact_Stamp as an UPDATE whose SET list holds
+        // only mirrored stamp columns. That re-firing's affectedDocs workset is provably empty,
+        // so the emitted guard must skip the statement outright instead of letting it resolve a
+        // join against [dms].[Document]. Every stamping assertion in this fixture is satisfied
+        // identically by "the statement was skipped" and by "the statement ran and found
+        // nothing", so this test reads the actual execution plan: a skipped statement executes
+        // no plan and therefore contributes no plan node at all.
+        var rootStampTriggerObjectId = await GetTriggerObjectIdAsync("edfi.TR_Contact_Stamp");
+        var childStampTriggerObjectId = await GetTriggerObjectIdAsync("edfi.TR_ContactAddress_Stamp");
+        var addressTypeDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
+            "Ed-Fi:AddressTypeDescriptor",
+            "Home"
+        );
+        var stateAbbreviationDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
+            "Ed-Fi:StateAbbreviationDescriptor",
+            "TX"
+        );
+        var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
+
+        await DelayForDistinctTimestampsAsync();
+        var childInsertStatements = await ReadExecutedPlanStatementsAsync(
+            """
+            INSERT INTO [edfi].[ContactAddress] (
+                [Contact_DocumentId],
+                [Ordinal],
+                [AddressTypeDescriptor_DescriptorId],
+                [StateAbbreviationDescriptor_DescriptorId],
+                [City],
+                [PostalCode],
+                [StreetNumberName]
+            )
+            VALUES (
+                @contactDocumentId,
+                3,
+                @addressTypeDescriptorDocumentId,
+                @stateAbbreviationDescriptorDocumentId,
+                N'Austin',
+                N'78703',
+                N'300 Congress Ave'
+            );
+            """,
+            new SqlParameter("@contactDocumentId", _seedData.ContactDocumentId),
+            new SqlParameter("@addressTypeDescriptorDocumentId", addressTypeDescriptorDocumentId),
+            new SqlParameter("@stateAbbreviationDescriptorDocumentId", stateAbbreviationDescriptorDocumentId)
+        );
+
+        var after = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
+        var childTriggerStatements = PlanStatementTextsFor(childInsertStatements, childStampTriggerObjectId);
+        var rootTriggerStatements = PlanStatementTextsFor(childInsertStatements, rootStampTriggerObjectId);
+
+        // The capture is only evidence if it reads statements executed inside triggers at all,
+        // and the child's own affectedDocs UPDATE is the statement that must still run.
+        childTriggerStatements
+            .Should()
+            .ContainSingle(statementText => statementText.Contains("affectedDocs", StringComparison.Ordinal));
+
+        // The root trigger did re-fire and did evaluate the guard.
+        rootTriggerStatements
+            .Should()
+            .Contain(statementText =>
+                statementText.Contains(
+                    "IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE(",
+                    StringComparison.Ordinal
+                )
+            );
+
+        // The defect itself: the guarded statement contributed no plan, so it did not execute.
+        rootTriggerStatements
+            .Should()
+            .NotContain(statementText => statementText.Contains("affectedDocs", StringComparison.Ordinal));
+
+        after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
+
+        // Control arm. The same statement is captured when the guard admits real work, so its
+        // absence above is "it did not execute", not "it is not visible to this capture".
+        var rootUpdateStatements = await ReadExecutedPlanStatementsAsync(
+            """
+            UPDATE [edfi].[Contact]
+            SET [FirstName] = @firstName
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@firstName", "Rowan"),
+            new SqlParameter("@documentId", _seedData.ContactDocumentId)
+        );
+
+        PlanStatementTextsFor(rootUpdateStatements, rootStampTriggerObjectId)
+            .Should()
+            .ContainSingle(statementText => statementText.Contains("affectedDocs", StringComparison.Ordinal));
     }
 
     [Test]
@@ -4142,6 +4239,114 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     private async Task DelayForDistinctTimestampsAsync()
     {
         await _database.ExecuteNonQueryAsync("""WAITFOR DELAY '00:00:00.050';""");
+    }
+
+    private async Task<int> GetTriggerObjectIdAsync(string qualifiedTriggerName)
+    {
+        var objectId = await _database.ExecuteScalarOrDefaultAsync<int>(
+            "SELECT OBJECT_ID(@qualifiedTriggerName, N'TR');",
+            new SqlParameter("@qualifiedTriggerName", qualifiedTriggerName)
+        );
+
+        return objectId != 0
+            ? objectId
+            : throw new InvalidOperationException(
+                $"Trigger '{qualifiedTriggerName}' does not exist in the generated schema."
+            );
+    }
+
+    /// <summary>
+    /// Executes <paramref name="sql"/> under SET STATISTICS XML ON and returns every statement
+    /// that actually executed, including statements executed inside triggers. Statements in a
+    /// conditional branch that was not taken produce no plan, so their absence here is the
+    /// evidence that the branch was skipped rather than run against an empty workset.
+    /// <para>
+    /// SQL Server truncates each plan's StatementText at 4000 characters, and the generated
+    /// stamping statements routinely exceed that, so callers must match on text near the start of
+    /// a statement rather than on a table or join that appears late in it.
+    /// </para>
+    /// </summary>
+    private async Task<IReadOnlyList<ExecutedPlanStatement>> ReadExecutedPlanStatementsAsync(
+        string sql,
+        params SqlParameter[] parameters
+    )
+    {
+        await using SqlConnection connection = new(_database.ConnectionString);
+        await connection.OpenAsync();
+
+        await SetStatisticsXmlAsync(connection, enabled: true);
+        try
+        {
+            await using SqlCommand command = connection.CreateCommand();
+            command.CommandText = sql;
+            command.CommandTimeout = 300;
+            command.Parameters.AddRange(parameters);
+
+            List<ExecutedPlanStatement> statements = [];
+            await using SqlDataReader reader = await command.ExecuteReaderAsync();
+            do
+            {
+                while (await reader.ReadAsync())
+                {
+                    if (
+                        reader.FieldCount != 1
+                        || reader.GetFieldType(0) != typeof(string)
+                        || await reader.IsDBNullAsync(0)
+                    )
+                    {
+                        continue;
+                    }
+
+                    statements.AddRange(ParseExecutedPlanStatements(reader.GetString(0)));
+                }
+            } while (await reader.NextResultAsync());
+
+            return statements;
+        }
+        finally
+        {
+            await SetStatisticsXmlAsync(connection, enabled: false);
+        }
+    }
+
+    private static async Task SetStatisticsXmlAsync(SqlConnection connection, bool enabled)
+    {
+        await using SqlCommand command = connection.CreateCommand();
+        command.CommandText = enabled ? "SET STATISTICS XML ON;" : "SET STATISTICS XML OFF;";
+        command.CommandTimeout = 300;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static IEnumerable<ExecutedPlanStatement> ParseExecutedPlanStatements(string planFragment)
+    {
+        if (!planFragment.TrimStart().StartsWith("<ShowPlanXML", StringComparison.Ordinal))
+        {
+            return [];
+        }
+
+        XNamespace showPlan = "http://schemas.microsoft.com/sqlserver/2004/07/showplan";
+
+        return XDocument
+            .Parse(planFragment)
+            .Descendants(showPlan + "StmtSimple")
+            .Select(statement => new ExecutedPlanStatement(
+                int.Parse(statement.Attribute("ParentObjectId")?.Value ?? "0", CultureInfo.InvariantCulture),
+                statement.Attribute("StatementText")?.Value ?? ""
+            ))
+            .ToArray();
+    }
+
+    private static IReadOnlyList<string> PlanStatementTextsFor(
+        IReadOnlyList<ExecutedPlanStatement> statements,
+        int moduleObjectId
+    )
+    {
+        return
+        [
+            .. statements
+                .Where(statement => statement.ParentObjectId == moduleObjectId)
+                .Select(statement => statement.StatementText),
+        ];
     }
 
     private static DateTimeOffset ReadDateTimeOffset(object? value)
