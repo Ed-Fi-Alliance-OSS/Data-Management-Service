@@ -285,7 +285,8 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         CdcConnectorTemplateSmokeSettings settings,
         IDockerCli docker,
         string resourcePrefix,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        bool applyPrerequisitePolicy = true
     )
     {
         var fixture = new CdcConnectorTemplatePinnedImageFixture(
@@ -310,6 +311,11 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         {
             await fixture.DisposeAfterStartupFailureAsync();
             if (ex is OperationCanceledException)
+            {
+                throw;
+            }
+
+            if (!applyPrerequisitePolicy)
             {
                 throw;
             }
@@ -1011,15 +1017,77 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             ["port", ConnectContainerName, "8083/tcp"],
             cancellationToken
         );
-        string[] mappedPortLines = result.StandardOutput.Split(
+        return ParseMappedConnectBaseUri(ConnectContainerName, result.StandardOutput);
+    }
+
+    internal static Uri ParseMappedConnectBaseUri(string connectContainerName, string dockerPortOutput)
+    {
+        string[] mappedPortLines = dockerPortOutput.Split(
             '\n',
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
         );
+
+        if (mappedPortLines.Length == 0)
+        {
+            throw InvalidMappedPortOutput(
+                connectContainerName,
+                dockerPortOutput,
+                "expected one mapped host port line but Docker returned no output"
+            );
+        }
+
         string mappedPortLine = mappedPortLines[0];
         int delimiterIndex = mappedPortLine.LastIndexOf(':');
-        string port = mappedPortLine[(delimiterIndex + 1)..];
+        if (delimiterIndex < 0)
+        {
+            throw InvalidMappedPortOutput(
+                connectContainerName,
+                dockerPortOutput,
+                "expected mapped port line to contain a ':' delimiter"
+            );
+        }
 
-        return new Uri($"http://127.0.0.1:{port}");
+        string port = mappedPortLine[(delimiterIndex + 1)..];
+        if (
+            string.IsNullOrWhiteSpace(port)
+            || !int.TryParse(port, NumberStyles.None, CultureInfo.InvariantCulture, out int mappedPort)
+            || mappedPort <= 0
+            || mappedPort > ushort.MaxValue
+        )
+        {
+            throw InvalidMappedPortOutput(
+                connectContainerName,
+                dockerPortOutput,
+                "expected mapped port line to end with a non-empty numeric TCP port"
+            );
+        }
+
+        return new Uri(string.Create(CultureInfo.InvariantCulture, $"http://127.0.0.1:{mappedPort}"));
+    }
+
+    private static InvalidOperationException InvalidMappedPortOutput(
+        string connectContainerName,
+        string dockerPortOutput,
+        string reason
+    ) =>
+        new(
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"Invalid docker port output for Kafka Connect container '{connectContainerName}': {reason}. Docker output: {FormatDockerOutputForDiagnostic(dockerPortOutput)}"
+            )
+        );
+
+    private static string FormatDockerOutputForDiagnostic(string dockerOutput)
+    {
+        string sanitized = DockerCommandResult.Sanitize(dockerOutput).Trim();
+        if (string.IsNullOrEmpty(sanitized))
+        {
+            return "<empty>";
+        }
+
+        return sanitized
+            .Replace("\r", "\\r", StringComparison.Ordinal)
+            .Replace("\n", "\\n", StringComparison.Ordinal);
     }
 
     private async Task WaitForKafkaConnectAsync(CancellationToken cancellationToken)
