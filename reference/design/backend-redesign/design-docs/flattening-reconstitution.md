@@ -712,6 +712,7 @@ The page case must not become “GET by id repeated N times”.
 ### 6.1 Fetch strategy (keyset-first, batched hydration)
 
 - **GET by id**: resolve `DocumentUuid → DocumentId`, then the keyset is a single `DocumentId`.
+  A single-document keyset is **not** materialized; see [Single-document fast path](#single-document-fast-path-no-keyset-materialization).
 - **GET by query**: compile a parameterized SQL over the **resource root table** that selects the `DocumentId`s in the requested page (filters + `ORDER BY r.DocumentId` + paging).
 
 Authorization integration:
@@ -787,8 +788,8 @@ Build one command that:
 
 WITH page_ids AS (
   -- Provided by DMS query compilation (ApiSchema-driven):
-  -- GET by id:    SELECT @DocumentId AS DocumentId
   -- GET by query: SELECT r.DocumentId FROM <schema>.<ResourceRoot> r WHERE ... ORDER BY r.DocumentId OFFSET/FETCH ...
+  -- A single known DocumentId does not come through here; see 6.3.
   <PageDocumentIdSql>
 )
 INSERT INTO page (DocumentId)
@@ -821,6 +822,47 @@ ORDER BY c.<RootDocumentIdColumn>, c.<ParentScopeColumn>, c.Ordinal;
 ```
 
 This avoids N+1 queries and keeps network round-trips minimal (one command, multiple result sets).
+
+#### Single-document fast path: no keyset materialization
+
+The shape above materializes a keyset because a page is a set of ids the database has to compute or receive.
+When the caller already knows the one `DocumentId` it wants, there is nothing to materialize, and the keyset table is pure overhead: it costs a `CREATE`, an `INSERT`, and a `DROP` against catalog tables on every request, plus a join per result set.
+
+So a single-document hydration skips it and filters each result set directly on the id:
+
+```sql
+-- Document metadata
+SELECT
+  d.DocumentId,
+  d.DocumentUuid,
+  d.ContentVersion,
+  d.IdentityVersion,
+  d.ContentLastModifiedAt,
+  d.IdentityLastModifiedAt,
+  d.ResourceKeyId
+FROM dms.Document d
+WHERE d.DocumentId = @DocumentId
+ORDER BY d.DocumentId;
+
+-- Root table rows
+SELECT r.*
+FROM <schema>.<ResourceRoot> r
+WHERE r.DocumentId = @DocumentId
+ORDER BY r.DocumentId;
+
+-- Child table rows (one result set per child table)
+SELECT c.*
+FROM <schema>.<ChildTable> c
+WHERE c.<RootDocumentIdColumn> = @DocumentId
+ORDER BY c.<RootDocumentIdColumn>, c.<ParentScopeColumn>, c.Ordinal;
+```
+
+The result-set order, column order, and ordering guarantees are identical to the keyset shape, so the reader consuming them does not branch.
+The batch is pure `SELECT`s, which has a second consequence the keyset shape does not have: it can be co-batched into a composite write command, where the write path substitutes its captured-target id for `@DocumentId`.
+An absent captured target compares as `= NULL` and yields zero rows from every statement, which is the same outcome an empty keyset table produced.
+
+This applies to both engines and to every caller that hydrates one known document: GET by id, current-state loads during a write, and document-cache materialization.
+It is a per-dialect capability rather than an assumption, because a dialect could exist that cannot express it; dialects that decline it fall back to the keyset shape above with a guard predicate.
 
 #### Example: what the multi-result response looks like
 
