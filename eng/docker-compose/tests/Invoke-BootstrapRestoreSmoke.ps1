@@ -403,7 +403,12 @@ function Build-SmokeSourceAndPackage {
                 -AttestationProducer $script:SmokeProducerName
 
             # Collect the outputs into the private work directory and clear the build artifacts
-            # out of the repo tree.
+            # out of the repo tree (including the transient restore-manifest.json the producer
+            # writes beside them).
+            $transientManifestPath = Join-Path $script:TemplatesRoot "restore-manifest.json"
+            if (Test-Path -LiteralPath $transientManifestPath) {
+                Remove-Item -LiteralPath $transientManifestPath -Force
+            }
             foreach ($builtFile in @(Get-ChildItem -Path $script:TemplatesRoot -File |
                         Where-Object { $_.Name -like "EdFi.Api.$TemplateKind.Template.*" })) {
                 if ($builtFile.Extension -in @(".nupkg", ".json")) {
