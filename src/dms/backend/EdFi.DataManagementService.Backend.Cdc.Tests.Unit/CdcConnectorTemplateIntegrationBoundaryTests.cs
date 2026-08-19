@@ -15,7 +15,7 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 [TestFixture]
 [Parallelizable]
 [Category("CdcConnectorTemplateIntegrationBoundaries")]
-public class Given_CdcConnectorTemplateIntegrationBoundaries
+public class Given_CdcConnectorTemplateIntegrationBoundaryTests
 {
     private static readonly IReadOnlyList<ForbiddenSourceToken> ForbiddenSourceTokens =
     [
@@ -27,6 +27,12 @@ public class Given_CdcConnectorTemplateIntegrationBoundaries
         new("ACL", IsNeverAllowed),
         new("offset.storage", IsNeverAllowed),
         new("topic.creation", IsAllowedTopicCreationGuardrail),
+    ];
+
+    private static readonly IReadOnlyList<string> GeneratedSourceFileSuffixes =
+    [
+        ".AssemblyInfo.cs",
+        ".GlobalUsings.g.cs",
     ];
 
     [Test]
@@ -120,6 +126,49 @@ public class Given_CdcConnectorTemplateIntegrationBoundaries
     }
 
     [Test]
+    public void It_ignores_generated_build_output_when_scanning_boundary_source()
+    {
+        string sourceDirectory = CdcSourceDirectory();
+        string objDirectory = Path.Combine(sourceDirectory, "obj", "CdcBoundaryGuardrailTests");
+        string binDirectory = Path.Combine(sourceDirectory, "bin", "CdcBoundaryGuardrailTests");
+        string objGeneratedFilePath = Path.Combine(objDirectory, "Generated.AssemblyInfo.cs");
+        string binGeneratedFilePath = Path.Combine(binDirectory, "Generated.GlobalUsings.g.cs");
+
+        Directory.CreateDirectory(objDirectory);
+        Directory.CreateDirectory(binDirectory);
+        File.WriteAllText(
+            objGeneratedFilePath,
+            "public static class GeneratedObjSource { public const string Forbidden = \"HttpClient\"; }"
+        );
+        File.WriteAllText(
+            binGeneratedFilePath,
+            "public static class GeneratedBinSource { public const string Forbidden = \"topic.creation\"; }"
+        );
+
+        try
+        {
+            IReadOnlyList<string> sourceFiles = CdcSourceFiles();
+
+            using var _ = new AssertionScope();
+            sourceFiles.Should().NotContain(objGeneratedFilePath);
+            sourceFiles.Should().NotContain(binGeneratedFilePath);
+            IsScannedCSharpSourceFile(Path.Combine(sourceDirectory, "Generated.AssemblyInfo.cs"))
+                .Should()
+                .BeFalse();
+            IsScannedCSharpSourceFile(Path.Combine(sourceDirectory, "Generated.GlobalUsings.g.cs"))
+                .Should()
+                .BeFalse();
+        }
+        finally
+        {
+            DeleteFileIfExists(objGeneratedFilePath);
+            DeleteFileIfExists(binGeneratedFilePath);
+            DeleteDirectoryIfEmpty(objDirectory);
+            DeleteDirectoryIfEmpty(binDirectory);
+        }
+    }
+
+    [Test]
     public void It_documents_that_the_pinned_runtime_must_supply_the_murmur2_partitioner_class()
     {
         using ServiceProvider serviceProvider = BuildServiceProvider();
@@ -165,17 +214,67 @@ public class Given_CdcConnectorTemplateIntegrationBoundaries
             )
             .ToArray();
 
-    private static IReadOnlyList<string> CdcSourceFiles()
-    {
-        string sourceDirectory = Path.Combine(
-            FindRepositoryRoot(),
-            "src",
-            "dms",
-            "backend",
-            "EdFi.DataManagementService.Backend.Cdc"
-        );
+    private static IReadOnlyList<string> CdcSourceFiles() =>
+        EnumerateCdcSourceFiles(CdcSourceDirectory()).ToArray();
 
-        return Directory.EnumerateFiles(sourceDirectory, "*.cs", SearchOption.AllDirectories).ToArray();
+    private static IEnumerable<string> EnumerateCdcSourceFiles(string directoryPath)
+    {
+        foreach (
+            string filePath in Directory.EnumerateFiles(directoryPath, "*.cs", SearchOption.TopDirectoryOnly)
+        )
+        {
+            if (IsScannedCSharpSourceFile(filePath))
+            {
+                yield return filePath;
+            }
+        }
+
+        foreach (string childDirectoryPath in Directory.EnumerateDirectories(directoryPath))
+        {
+            if (IsScannedSourceDirectory(childDirectoryPath))
+            {
+                foreach (string filePath in EnumerateCdcSourceFiles(childDirectoryPath))
+                {
+                    yield return filePath;
+                }
+            }
+        }
+    }
+
+    private static string CdcSourceDirectory() =>
+        Path.Combine(FindRepositoryRoot(), "src", "dms", "backend", "EdFi.DataManagementService.Backend.Cdc");
+
+    private static bool IsScannedSourceDirectory(string directoryPath)
+    {
+        string directoryName = Path.GetFileName(directoryPath);
+
+        return !directoryName.Equals("bin", StringComparison.OrdinalIgnoreCase)
+            && !directoryName.Equals("obj", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsScannedCSharpSourceFile(string filePath)
+    {
+        string fileName = Path.GetFileName(filePath);
+
+        return !GeneratedSourceFileSuffixes.Any(suffix =>
+            fileName.EndsWith(suffix, StringComparison.Ordinal)
+        );
+    }
+
+    private static void DeleteFileIfExists(string filePath)
+    {
+        if (File.Exists(filePath))
+        {
+            File.Delete(filePath);
+        }
+    }
+
+    private static void DeleteDirectoryIfEmpty(string directoryPath)
+    {
+        if (Directory.Exists(directoryPath) && !Directory.EnumerateFileSystemEntries(directoryPath).Any())
+        {
+            Directory.Delete(directoryPath);
+        }
     }
 
     private static string FindRepositoryRoot()
