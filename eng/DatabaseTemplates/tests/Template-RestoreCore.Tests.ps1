@@ -617,6 +617,90 @@ Describe "New-MssqlRestoreMoveClause" {
     }
 }
 
+Describe "Compare-RestoreObjectInventory" {
+    BeforeAll {
+        function script:New-CompareInventory {
+            param(
+                [hashtable]$SchemaObject = @{ dms = @("Document"); edfi = @("School") },
+                [string[]]$Principal = @()
+            )
+
+            $schemas = foreach ($schemaName in ($SchemaObject.Keys | Sort-Object)) {
+                @{
+                    schemaName = $schemaName
+                    objects    = @($SchemaObject[$schemaName] | ForEach-Object { @{ name = $_; type = "table" } })
+                }
+            }
+            return @{ schemas = @($schemas); principals = [string[]]$Principal }
+        }
+    }
+
+    It "matches identical inventories regardless of catalog ordering" {
+        $expected = New-CompareInventory -SchemaObject @{ dms = @("Document", "EffectiveSchema"); edfi = @("School") }
+        $actual = New-CompareInventory -SchemaObject @{ edfi = @("School"); dms = @("EffectiveSchema", "Document") }
+
+        $verdict = Compare-RestoreObjectInventory -ExpectedInventory $expected -ActualInventory $actual
+        $verdict.IsMatch | Should -BeTrue
+        @($verdict.ExtraObjects) | Should -BeNullOrEmpty
+        @($verdict.MissingObjects) | Should -BeNullOrEmpty
+    }
+
+    It "reports an extra object by qualified name and type, in <SchemaName>" -ForEach @(
+        @{ SchemaName = "dms" }
+        @{ SchemaName = "edfi" }
+    ) {
+        $expected = New-CompareInventory
+        $contaminated = New-CompareInventory
+        $targetSchema = @($contaminated.schemas | Where-Object { $_.schemaName -eq $SchemaName })[0]
+        $targetSchema.objects += @{ name = "ExtraTable"; type = "table" }
+
+        $verdict = Compare-RestoreObjectInventory -ExpectedInventory $expected -ActualInventory $contaminated
+        $verdict.IsMatch | Should -BeFalse
+        @($verdict.ExtraObjects) | Should -Be @("$SchemaName.ExtraTable (table)")
+        @($verdict.MissingObjects) | Should -BeNullOrEmpty
+    }
+
+    It "reports a missing object and distinguishes it from an extra one" {
+        $expected = New-CompareInventory -SchemaObject @{ dms = @("Document", "Required") }
+        $actual = New-CompareInventory -SchemaObject @{ dms = @("Document", "Surprise") }
+
+        $verdict = Compare-RestoreObjectInventory -ExpectedInventory $expected -ActualInventory $actual
+        $verdict.IsMatch | Should -BeFalse
+        @($verdict.ExtraObjects) | Should -Be @("dms.Surprise (table)")
+        @($verdict.MissingObjects) | Should -Be @("dms.Required (table)")
+    }
+
+    It "treats a type change as both an extra and a missing object" {
+        $expected = New-CompareInventory -SchemaObject @{ dms = @("Document") }
+        $actual = @{ schemas = @(@{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "view" }) }); principals = [string[]]@() }
+
+        $verdict = Compare-RestoreObjectInventory -ExpectedInventory $expected -ActualInventory $actual
+        $verdict.IsMatch | Should -BeFalse
+        @($verdict.ExtraObjects) | Should -Be @("dms.Document (view)")
+        @($verdict.MissingObjects) | Should -Be @("dms.Document (table)")
+    }
+
+    It "reports schema-level differences separately" {
+        $expected = New-CompareInventory -SchemaObject @{ dms = @("Document") }
+        $actual = New-CompareInventory -SchemaObject @{ dms = @("Document"); smuggled = @() }
+
+        $verdict = Compare-RestoreObjectInventory -ExpectedInventory $expected -ActualInventory $actual
+        $verdict.IsMatch | Should -BeFalse
+        @($verdict.ExtraSchemas) | Should -Be @("smuggled")
+        @($verdict.MissingSchemas) | Should -BeNullOrEmpty
+    }
+
+    It "ignores principals: this comparison is object-level only" {
+        # A backup legitimately carries principals a freshly provisioned database does not, and
+        # the DMS-only gate already judges them; including them here would false-positive.
+        $expected = New-CompareInventory
+        $actual = New-CompareInventory -Principal @("copied_user")
+
+        (Compare-RestoreObjectInventory -ExpectedInventory $expected -ActualInventory $actual).IsMatch |
+            Should -BeTrue
+    }
+}
+
 Describe "Get-PostgresqlRestoreGlobalRoleSql" {
     It "ensures the locked-down enqueue-owner role idempotently and refuses a compromised pre-existing role" {
         $roleSql = Get-PostgresqlRestoreGlobalRoleSql

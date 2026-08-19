@@ -27,6 +27,7 @@ $script:ReservedDatabaseNames = @{
 
 $script:RestoreScratchDatabaseNamePrefix = "edfi_dms_restore_scratch"
 $script:RestorePreflightDatabaseNamePrefix = "edfi_dms_restore_preflight"
+$script:RestoreExpectedDatabaseNamePrefix = "edfi_dms_restore_expected"
 
 $script:SupportedRestoreManifestVersion = 1
 $script:RestoreManifestFileName = "restore-manifest.json"
@@ -153,6 +154,18 @@ function New-RestoreScratchDatabaseName {
     param ()
 
     return New-RestoreGeneratedDatabaseName -Prefix $script:RestoreScratchDatabaseNamePrefix
+}
+
+function New-RestoreExpectedDatabaseName {
+    <#
+    .SYNOPSIS
+    Generated name for the throwaway database the candidate schema's own DDL is replayed into,
+    producing the AUTHORITATIVE object inventory a restored artifact is judged against.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Returns a generated name string; no system state is created or changed.')]
+    param ()
+
+    return New-RestoreGeneratedDatabaseName -Prefix $script:RestoreExpectedDatabaseNamePrefix
 }
 
 function New-RestorePreflightDatabaseName {
@@ -1609,6 +1622,72 @@ function Assert-DmsOnlyInventory {
     return $partition
 }
 
+function Compare-RestoreObjectInventory {
+    <#
+    .SYNOPSIS
+    Compares two inventories at schema+object granularity and reports every difference.
+
+    .DESCRIPTION
+    Used to judge a restored artifact against an AUTHORITATIVE inventory derived from the
+    candidate schema (the DDL the candidate would provision), rather than against the package's
+    own manifest - a manifest cannot detect contamination it also describes. Principals are
+    deliberately out of scope: this comparison is object-level only, and a backup legitimately
+    carries principals a freshly provisioned database does not.
+
+    Object identity is "<schema>.<name>" with its type tag, so an extra table in an otherwise
+    expected schema is reported by name. Both sides are canonicalized first, making the result
+    independent of catalog ordering.
+
+    .OUTPUTS
+    PSCustomObject { IsMatch = [bool]; ExtraObjects = [string[]]; MissingObjects = [string[]];
+    ExtraSchemas = [string[]]; MissingSchemas = [string[]] }. "Extra" means present in Actual but
+    not Expected.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Compares two whole inventories; the plural noun names the compared artifact, matching the other inventory helpers here.')]
+    param (
+        [Parameter(Mandatory = $true)]
+        $ExpectedInventory,
+
+        [Parameter(Mandatory = $true)]
+        $ActualInventory
+    )
+
+    $expectedCanonical = ConvertTo-CanonicalInventory -Inventory $ExpectedInventory
+    $actualCanonical = ConvertTo-CanonicalInventory -Inventory $ActualInventory
+
+    $expectedSchemas = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    $expectedObjects = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($schemaEntry in $expectedCanonical.Schemas) {
+        $null = $expectedSchemas.Add($schemaEntry.SchemaName)
+        foreach ($objectEntry in $schemaEntry.Objects) {
+            $null = $expectedObjects.Add("$($schemaEntry.SchemaName).$($objectEntry.Name) ($($objectEntry.Type))")
+        }
+    }
+
+    $actualSchemas = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    $actualObjects = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($schemaEntry in $actualCanonical.Schemas) {
+        $null = $actualSchemas.Add($schemaEntry.SchemaName)
+        foreach ($objectEntry in $schemaEntry.Objects) {
+            $null = $actualObjects.Add("$($schemaEntry.SchemaName).$($objectEntry.Name) ($($objectEntry.Type))")
+        }
+    }
+
+    $extraSchemas = [string[]]@($actualSchemas | Where-Object { -not $expectedSchemas.Contains($_) } | Sort-Object)
+    $missingSchemas = [string[]]@($expectedSchemas | Where-Object { -not $actualSchemas.Contains($_) } | Sort-Object)
+    $extraObjects = [string[]]@($actualObjects | Where-Object { -not $expectedObjects.Contains($_) } | Sort-Object)
+    $missingObjects = [string[]]@($expectedObjects | Where-Object { -not $actualObjects.Contains($_) } | Sort-Object)
+
+    return [pscustomobject]@{
+        IsMatch        = ($extraSchemas.Count -eq 0 -and $missingSchemas.Count -eq 0 -and
+                          $extraObjects.Count -eq 0 -and $missingObjects.Count -eq 0)
+        ExtraObjects   = $extraObjects
+        MissingObjects = $missingObjects
+        ExtraSchemas   = $extraSchemas
+        MissingSchemas = $missingSchemas
+    }
+}
+
 function Assert-RestoreManifestMatchesDatabase {
     <#
     .SYNOPSIS
@@ -1917,6 +1996,8 @@ Export-ModuleMember -Function `
     New-RestoreGeneratedDatabaseName, `
     New-RestoreScratchDatabaseName, `
     New-RestorePreflightDatabaseName, `
+    New-RestoreExpectedDatabaseName, `
+    Compare-RestoreObjectInventory, `
     Get-RestoreSchemaNameExclusion, `
     Get-RestoreDocumentJsonBaselineType, `
     ConvertTo-CanonicalInventoryJson, `

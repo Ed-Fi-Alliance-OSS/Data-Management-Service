@@ -1662,6 +1662,238 @@ function Get-RestoreDatabaseCatalogFact {
     }
 }
 
+function Remove-RestoreExpectedDatabase {
+    <#
+    .SYNOPSIS
+    Drops the generated database the candidate schema's DDL was replayed into. The name must
+    match the expected-database generator's exact shape, so this helper can never be pointed at
+    a real database.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Drops only generator-shaped throwaway expected databases; the restore flow does not expose -WhatIf end to end.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to the sqlcmd transport, which carries the password via SQLCMDPASSWORD on docker exec; the account is always "sa" and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Forwarded to the sqlcmd transport; SecureString adds no protection across the docker exec boundary.')]
+    param (
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ExpectedDatabaseName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ContainerName,
+
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!"
+    )
+
+    if ($ExpectedDatabaseName -cnotmatch '^edfi_dms_restore_expected_[0-9a-f]{12}\z') {
+        throw "Refusing to drop '$ExpectedDatabaseName': only generated restore expected databases (edfi_dms_restore_expected_<12 hex>) may be dropped by this helper."
+    }
+
+    $adminQueryArguments = @{
+        DatabaseEngine = $DatabaseEngine
+        ContainerName  = $ContainerName
+        DatabaseName   = $(if ($DatabaseEngine -eq "mssql") { "master" } else { "postgres" })
+        MssqlPassword  = $MssqlPassword
+    }
+
+    if ($DatabaseEngine -eq "postgresql") {
+        $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
+            -Query "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$ExpectedDatabaseName' AND pid <> pg_backend_pid();" `
+            -FailureMessage "Failed to terminate connections to expected database '$ExpectedDatabaseName' during cleanup."
+        $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
+            -Query "DROP DATABASE IF EXISTS `"$ExpectedDatabaseName`";" `
+            -FailureMessage "Failed to drop expected database '$ExpectedDatabaseName'."
+    }
+    else {
+        $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
+            -Query "IF DB_ID(N'$ExpectedDatabaseName') IS NOT NULL BEGIN ALTER DATABASE [$ExpectedDatabaseName] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [$ExpectedDatabaseName]; END" `
+            -FailureMessage "Failed to drop expected database '$ExpectedDatabaseName'."
+    }
+}
+
+function Get-RestoreAuthoritativeObjectInventory {
+    <#
+    .SYNOPSIS
+    Derives the AUTHORITATIVE object inventory from the candidate schema itself: emits the
+    candidate's DDL with api-schema-tools, replays it into a generated throwaway database, and
+    inventories that database with the same catalog reader used for the restored scratch.
+
+    .DESCRIPTION
+    This is the only inventory in the flow the package cannot influence. The package manifest
+    describes the artifact, so a signed package carrying an extra object that its own manifest
+    also declares passes every manifest-versus-database comparison; judging the restored scratch
+    against the candidate's own DDL closes that hole. The expected database and the transient
+    in-container DDL file are removed in finally on every path.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Restore-internal derivation against a generated throwaway database; the restore flow does not expose -WhatIf end to end.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to the sqlcmd transport, which carries the password via SQLCMDPASSWORD on docker exec; the account is always "sa" and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Forwarded to the sqlcmd transport; SecureString adds no protection across the docker exec boundary.')]
+    param (
+        [Parameter(Mandatory = $true)]
+        [string[]]$SchemaFilePath,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ContainerName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$OutputRoot,
+
+        [string]$SchemaToolPath = "",
+
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!"
+    )
+
+    # Emit the candidate schema set's DDL into the private stage (never the candidate tree).
+    $toolPath = Resolve-DmsSchemaTool -RequestedPath $SchemaToolPath
+    $dialect = if ($DatabaseEngine -eq "mssql") { "mssql" } else { "pgsql" }
+    $emitDirectory = Join-Path $OutputRoot "expected-ddl-$([Guid]::NewGuid().ToString('N'))"
+    $emitArguments = @("ddl", "emit", "--schema") + $SchemaFilePath + @("--output", $emitDirectory, "--dialect", $dialect)
+
+    $global:LASTEXITCODE = 0
+    $emitOutput = if ($toolPath.EndsWith(".ps1", [System.StringComparison]::OrdinalIgnoreCase)) {
+        & pwsh -NoLogo -NoProfile -File $toolPath @emitArguments 2>&1
+    } else {
+        & $toolPath @emitArguments 2>&1
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw "api-schema-tools ddl emit failed with exit code $LASTEXITCODE while deriving the authoritative object inventory. Output: $(($emitOutput | Out-String).Trim())"
+    }
+
+    $ddlPath = Join-Path $emitDirectory "$dialect.sql"
+    if (-not (Test-Path -LiteralPath $ddlPath -PathType Leaf)) {
+        throw "api-schema-tools ddl emit reported success but produced no '$dialect.sql' at '$ddlPath'."
+    }
+
+    $expectedDatabaseName = New-RestoreExpectedDatabaseName
+    Assert-SafeRestoreDatabaseName -DatabaseEngine $DatabaseEngine -DatabaseName $expectedDatabaseName -Purpose "restore expected database"
+
+    $adminQueryArguments = @{
+        DatabaseEngine = $DatabaseEngine
+        ContainerName  = $ContainerName
+        DatabaseName   = $(if ($DatabaseEngine -eq "mssql") { "master" } else { "postgres" })
+        MssqlPassword  = $MssqlPassword
+    }
+    $containerDdlPath = $null
+
+    try {
+        if ($DatabaseEngine -eq "postgresql") {
+            # The candidate DDL references the locked-down restore-global role and pgcrypto's
+            # digest() (via dms.uuidv5), exactly as a restored artifact does.
+            $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
+                -Query (Get-PostgresqlRestoreGlobalRoleSql) `
+                -FailureMessage "Failed to ensure the PostgreSQL restore-global role before the expected-schema replay."
+            $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
+                -Query "DROP DATABASE IF EXISTS `"$expectedDatabaseName`";" `
+                -FailureMessage "Failed to drop a pre-existing expected database '$expectedDatabaseName'."
+            $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
+                -Query "CREATE DATABASE `"$expectedDatabaseName`";" `
+                -FailureMessage "Failed to create expected database '$expectedDatabaseName'."
+            $null = Invoke-RestoreCatalogQuery `
+                -DatabaseEngine $DatabaseEngine `
+                -ContainerName $ContainerName `
+                -DatabaseName $expectedDatabaseName `
+                -MssqlPassword $MssqlPassword `
+                -Query "CREATE EXTENSION IF NOT EXISTS `"pgcrypto`";" `
+                -FailureMessage "Failed to create the pgcrypto extension in expected database '$expectedDatabaseName'."
+
+            $containerDdlPath = "/tmp/restore-expected-$([Guid]::NewGuid().ToString('N')).sql"
+            $null = Invoke-RestoreDockerCommand `
+                -ArgumentList @("cp", $ddlPath, "$($ContainerName):$containerDdlPath") `
+                -FailureMessage "Failed to copy the candidate DDL into container '$ContainerName'."
+            $null = Invoke-RestoreDockerCommand `
+                -ArgumentList @("exec", $ContainerName, "psql", "-U", "postgres", "-d", $expectedDatabaseName, "-v", "ON_ERROR_STOP=1", "-f", $containerDdlPath) `
+                -FailureMessage "Replay of the candidate DDL into expected database '$expectedDatabaseName' failed."
+        }
+        else {
+            $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
+                -Query "IF DB_ID(N'$expectedDatabaseName') IS NULL CREATE DATABASE [$expectedDatabaseName];" `
+                -FailureMessage "Failed to create expected database '$expectedDatabaseName'."
+
+            $containerDdlPath = "/tmp/restore-expected-$([Guid]::NewGuid().ToString('N')).sql"
+            $null = Invoke-RestoreDockerCommand `
+                -ArgumentList @("cp", $ddlPath, "$($ContainerName):$containerDdlPath") `
+                -FailureMessage "Failed to copy the candidate DDL into container '$ContainerName'."
+            $null = Invoke-RestoreDockerCommand `
+                -ArgumentList @("exec", "-e", "SQLCMDPASSWORD=$MssqlPassword", $ContainerName, "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-d", $expectedDatabaseName, "-C", "-b", "-i", $containerDdlPath) `
+                -FailureMessage "Replay of the candidate DDL into expected database '$expectedDatabaseName' failed."
+        }
+
+        $expectedFacts = Get-RestoreDatabaseCatalogFact `
+            -DatabaseEngine $DatabaseEngine `
+            -ContainerName $ContainerName `
+            -DatabaseName $expectedDatabaseName `
+            -MssqlPassword $MssqlPassword
+
+        return $expectedFacts.FullInventory
+    }
+    finally {
+        try {
+            if ($null -ne $containerDdlPath) {
+                $null = Invoke-RestoreDockerCommand `
+                    -ArgumentList @("exec", $ContainerName, "rm", "-f", $containerDdlPath) `
+                    -FailureMessage "Failed to remove the transient in-container DDL '$containerDdlPath'."
+            }
+            Remove-RestoreExpectedDatabase `
+                -DatabaseEngine $DatabaseEngine `
+                -ExpectedDatabaseName $expectedDatabaseName `
+                -ContainerName $ContainerName `
+                -MssqlPassword $MssqlPassword
+        }
+        catch {
+            Write-Warning "Expected-database cleanup did not complete: $(($_.Exception.Message | Out-String).Trim()) Remove expected database '$expectedDatabaseName' in container '$ContainerName' manually if it remains."
+        }
+    }
+}
+
+function Assert-RestoreScratchMatchesAuthoritativeInventory {
+    <#
+    .SYNOPSIS
+    Fails unless the restored scratch database's schema/object inventory matches the
+    authoritative inventory derived from the candidate schema's own DDL, naming every extra and
+    missing object. Object-level only: principals are out of scope here (a backup legitimately
+    carries principals a freshly provisioned database does not, and the DMS-only gate already
+    judges them).
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        $AuthoritativeInventory,
+
+        [Parameter(Mandatory = $true)]
+        $ScratchInventory,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ScratchDatabaseName
+    )
+
+    $verdict = Compare-RestoreObjectInventory `
+        -ExpectedInventory $AuthoritativeInventory `
+        -ActualInventory $ScratchInventory
+    if ($verdict.IsMatch) {
+        return
+    }
+
+    $differences = [System.Collections.Generic.List[string]]::new()
+    if (@($verdict.ExtraSchemas).Count -gt 0) {
+        $differences.Add("schemas the candidate schema does not define: $(@($verdict.ExtraSchemas) -join ', ')")
+    }
+    if (@($verdict.MissingSchemas).Count -gt 0) {
+        $differences.Add("schemas the candidate schema defines but the artifact lacks: $(@($verdict.MissingSchemas) -join ', ')")
+    }
+    if (@($verdict.ExtraObjects).Count -gt 0) {
+        $differences.Add("objects the candidate schema does not define: $(@($verdict.ExtraObjects) -join ', ')")
+    }
+    if (@($verdict.MissingObjects).Count -gt 0) {
+        $differences.Add("objects the candidate schema defines but the artifact lacks: $(@($verdict.MissingObjects) -join ', ')")
+    }
+
+    throw "Restore scratch database '$ScratchDatabaseName' does not match the authoritative inventory derived from the candidate schema - $($differences -join '; '). The package manifest cannot vouch for this: it describes the artifact, so contamination the manifest also declares is only visible against the candidate's own DDL."
+}
+
 function Invoke-RestoreScratchValidation {
     <#
     .SYNOPSIS
@@ -1699,6 +1931,8 @@ function Invoke-RestoreScratchValidation {
         [string]$DatabaseEngine,
 
         [string]$ContainerName = "",
+
+        [string]$SchemaToolPath = "",
 
         [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!"
     )
@@ -1798,6 +2032,24 @@ function Invoke-RestoreScratchValidation {
         if (-not ([string]$manifest.apiSchemaFormatVersion).Equals([string]$CandidateFact.ApiSchemaFormatVersion, [System.StringComparison]::OrdinalIgnoreCase)) {
             throw "The restore manifest's apiSchemaFormatVersion '$($manifest.apiSchemaFormatVersion)' does not match the candidate workspace's '$($CandidateFact.ApiSchemaFormatVersion)'."
         }
+
+        # The AUTHORITATIVE gate: judge the restored scratch against an inventory derived from
+        # the candidate schema's own DDL, not against the package's manifest. Everything above
+        # compares the artifact to claims the artifact itself carries, so a signed package whose
+        # manifest declares its own extra objects would pass; this is the only comparison the
+        # package cannot influence. It runs before the workspace commit and before any target
+        # replacement, and its expected database is dropped by the helper's own finally.
+        $authoritativeInventory = Get-RestoreAuthoritativeObjectInventory `
+            -SchemaFilePath $CandidateFact.SchemaFilePaths `
+            -DatabaseEngine $DatabaseEngine `
+            -ContainerName $ContainerName `
+            -OutputRoot $Stage.StageDirectory `
+            -SchemaToolPath $SchemaToolPath `
+            -MssqlPassword $MssqlPassword
+        Assert-RestoreScratchMatchesAuthoritativeInventory `
+            -AuthoritativeInventory $authoritativeInventory `
+            -ScratchInventory $scratchFacts.FullInventory `
+            -ScratchDatabaseName $scratchDatabaseName
 
         $manifestProjects = @($manifest.projects)
         $scratchProjects = @($scratchPartition.ProjectSchemaNames)
@@ -2184,6 +2436,9 @@ Export-ModuleMember -Function `
     Get-RestoreDatabaseCatalogFact, `
     Invoke-RestoreScratchValidation, `
     Remove-RestoreScratchDatabase, `
+    Remove-RestoreExpectedDatabase, `
+    Get-RestoreAuthoritativeObjectInventory, `
+    Assert-RestoreScratchMatchesAuthoritativeInventory, `
     Remove-RestorePreflightDatabase, `
     Invoke-RestoreTargetReplacement, `
     Resolve-RestoreTargetDatabaseName, `
