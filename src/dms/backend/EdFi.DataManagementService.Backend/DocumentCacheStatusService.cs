@@ -94,7 +94,9 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             return new DocumentCacheStatusResponse(observedAt, []);
         }
 
-        TimeSpan endpointTimeout = targetObservations[0].EffectiveSettings.StatusEndpointTimeout;
+        TimeSpan endpointTimeout = targetObservations.Min(target =>
+            target.EffectiveSettings.StatusEndpointTimeout
+        );
         using CancellationTokenSource endpointTimeoutSource = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken
         );

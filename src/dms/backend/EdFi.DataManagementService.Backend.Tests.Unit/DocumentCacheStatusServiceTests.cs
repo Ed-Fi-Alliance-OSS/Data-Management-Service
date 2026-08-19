@@ -866,6 +866,54 @@ public class Given_DocumentCacheStatusService
     }
 
     [Test]
+    public async Task It_uses_the_shortest_effective_endpoint_timeout_when_target_settings_diverge()
+    {
+        DocumentCacheTargetEffectiveSettings firstSettings = EffectiveSettings(
+            maxConcurrentTargets: 1,
+            statusObservationTimeout: TimeSpan.FromSeconds(1),
+            endpointTimeout: TimeSpan.FromSeconds(2)
+        );
+        DocumentCacheTargetEffectiveSettings secondSettings = EffectiveSettings(
+            maxConcurrentTargets: 1,
+            statusObservationTimeout: TimeSpan.FromSeconds(1),
+            endpointTimeout: TimeSpan.FromMilliseconds(30)
+        );
+        DocumentCacheTargetObservation firstTarget = ResolvedTarget(
+            DocumentCacheTargetKey.Create("", 1),
+            firstSettings
+        );
+        DocumentCacheTargetObservation secondTarget = ResolvedTarget(
+            DocumentCacheTargetKey.Create("", 2),
+            secondSettings
+        );
+        StaticTargetRegistry registry = new(
+            [firstTarget, secondTarget],
+            [ExecutionContext(firstTarget), ExecutionContext(secondTarget)]
+        );
+        ScriptedStatusObserver observer = new(
+            async (request, cancellationToken) =>
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken);
+                return await Success(request, cancellationToken);
+            }
+        );
+        DocumentCacheStatusService service = CreateService(
+            registry,
+            ObservationStore(firstTarget, secondTarget),
+            observer
+        );
+
+        DocumentCacheStatusResponse response = await service.GetStatusAsync();
+
+        response
+            .Targets.Should()
+            .AllSatisfy(target =>
+                target.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.StatusEndpointTimeout)
+            );
+        observer.StartedKeys.Should().ContainSingle().Which.Should().Be(firstTarget.TargetKey);
+    }
+
+    [Test]
     public async Task It_returns_endpoint_timeout_when_provider_ignores_cancellation()
     {
         DocumentCacheTargetEffectiveSettings effectiveSettings = EffectiveSettings(
