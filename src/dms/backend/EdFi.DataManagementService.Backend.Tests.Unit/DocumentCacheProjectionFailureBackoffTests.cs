@@ -392,6 +392,56 @@ public class Given_DocumentCacheProjectionFailureBackoff
     }
 
     [Test]
+    public async Task It_does_not_record_page_capacity_exhausted_when_a_full_page_exits_early_on_an_administrative_failure()
+    {
+        RecordingObservationSink observationSink = new();
+        ScriptedWorkPager pager = new(
+            RelationalProviderToken.Postgresql,
+            [
+                Page(
+                    WorkItem(101, requiredContentVersion: 10, FirstEnqueuedAt),
+                    WorkItem(102, requiredContentVersion: 11, LaterEnqueuedAt),
+                    WorkItem(103, requiredContentVersion: 12, LaterEnqueuedAt.AddSeconds(1))
+                ),
+            ]
+        );
+        DocumentCacheProjectionDrainPageProcessor sut = new(
+            pager,
+            new AdministrativeFailureItemProcessor(),
+            NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
+            new FixedTimeProvider(ObservedAt)
+        );
+        DocumentCacheProjectionTargetRuntimeContext targetContext = RuntimeContext(
+            RelationalProviderToken.Postgresql,
+            observationSink: observationSink
+        );
+        targetContext.FailureBackoffState.RecordFailure(
+            101,
+            DocumentCacheProjectionDocumentDiagnosticCategory.WorkAnomaly,
+            "work anomaly",
+            ObservedAt,
+            TimeSpan.FromSeconds(10)
+        );
+
+        DocumentCacheProjectionDrainPageResult result = await sut.ProcessPageAsync(
+            new DocumentCacheProjectionDrainPageRequest(
+                targetContext,
+                DocumentCacheProjectionDrainInvocationKind.Administrative
+            )
+        );
+
+        result.Outcome.Should().Be(DocumentCacheProjectionDrainPageOutcome.AdministrativeFailure);
+        observationSink
+            .TargetSnapshots.Should()
+            .ContainSingle()
+            .Subject.PoisonTraversal.DiagnosticEvents.Should()
+            .NotContain(diagnostic =>
+                diagnostic.Category
+                == DocumentCacheProjectionPoisonTraversalDiagnosticCategory.PageCapacityExhausted
+            );
+    }
+
+    [Test]
     public async Task It_sleeps_until_the_earlier_retry_after_a_wrapped_cursor_pass_without_eligible_work()
     {
         TimeSpan failureBackoff = TimeSpan.FromSeconds(2);
@@ -585,6 +635,30 @@ public class Given_DocumentCacheProjectionFailureBackoff
             cancellationToken.ThrowIfCancellationRequested();
             request.TargetContext.FailureBackoffState.ClearFailure(request.WorkItem.DocumentId);
             return Task.FromResult(DocumentCacheProjectionItemProcessResult.Continue);
+        }
+    }
+
+    private sealed class AdministrativeFailureItemProcessor : IDocumentCacheProjectionItemProcessor
+    {
+        public Task<DocumentCacheProjectionItemProcessResult> ProcessItemAsync(
+            DocumentCacheProjectionItemProcessRequest request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult(
+                DocumentCacheProjectionItemProcessResult.FromAdministrativeFailure(
+                    new DocumentCacheAdministrativeDrainFailure(
+                        DocumentCacheAdministrativeCommandStatus.FailedNoMutation,
+                        DocumentCacheAdministrativeCommandClassification.ProviderCommandTimeout,
+                        DocumentCacheAdministrativeDiagnosticCategory.ProviderCommandTimeout,
+                        "provider timeout",
+                        retryable: false,
+                        affectedDocumentIds: [request.WorkItem.DocumentId]
+                    )
+                )
+            );
         }
     }
 

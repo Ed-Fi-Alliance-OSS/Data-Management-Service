@@ -216,7 +216,7 @@ internal sealed class DocumentCacheProjectionDrainPageProcessor(
                 targetContext.FailureBackoffState.RecordSuppressedTraversal(
                     suppressedDocumentIds,
                     observedAt,
-                    PageCapacityExhaustedBySuppressedWork(page, suppressedDocumentIds)
+                    pageCapacityExhausted: false
                 );
                 ObserveTarget(targetContext, observedAt);
                 return DocumentCacheProjectionDrainPageResult.AdministrativeFailureResult(
@@ -236,7 +236,7 @@ internal sealed class DocumentCacheProjectionDrainPageProcessor(
             targetContext.FailureBackoffState.RecordSuppressedTraversal(
                 suppressedDocumentIds,
                 observedAt,
-                PageCapacityExhaustedBySuppressedWork(page, suppressedDocumentIds)
+                pageCapacityExhausted: false
             );
             ObserveTarget(targetContext, observedAt);
             return itemResult.Outcome switch
