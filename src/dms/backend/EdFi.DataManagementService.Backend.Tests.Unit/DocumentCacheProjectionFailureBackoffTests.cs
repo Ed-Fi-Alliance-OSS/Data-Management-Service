@@ -143,6 +143,87 @@ public class Given_DocumentCacheProjectionFailureBackoff
     }
 
     [Test]
+    public void It_records_suppressed_traversal_diagnostics_once_per_retry_episode()
+    {
+        DocumentCacheProjectionFailureBackoffState state = new(capacity: 3);
+        state.RecordFailure(
+            101,
+            DocumentCacheProjectionDocumentDiagnosticCategory.WorkAnomaly,
+            "work anomaly",
+            ObservedAt,
+            TimeSpan.FromSeconds(10)
+        );
+
+        state.RecordSuppressedTraversal([101], ObservedAt.AddSeconds(1), pageCapacityExhausted: true);
+        state.RecordSuppressedTraversal([101], ObservedAt.AddSeconds(2), pageCapacityExhausted: true);
+
+        DocumentCacheProjectionPoisonTraversalSnapshot snapshot = state.CreatePoisonTraversalSnapshot();
+
+        snapshot
+            .DiagnosticEvents.Select(diagnostic => diagnostic.Category)
+            .Should()
+            .Equal(
+                DocumentCacheProjectionPoisonTraversalDiagnosticCategory.RetryScheduled,
+                DocumentCacheProjectionPoisonTraversalDiagnosticCategory.SkippedUntilRetry,
+                DocumentCacheProjectionPoisonTraversalDiagnosticCategory.PageCapacityExhausted
+            );
+        snapshot
+            .DiagnosticEvents.Select(diagnostic => diagnostic.ObservedAt)
+            .Should()
+            .Equal(ObservedAt, ObservedAt.AddSeconds(1), ObservedAt.AddSeconds(1));
+        snapshot.DiagnosticEventEvictionCount.Should().Be(0);
+    }
+
+    [Test]
+    public void It_records_suppressed_traversal_diagnostics_again_when_a_new_retry_is_scheduled()
+    {
+        DocumentCacheProjectionFailureBackoffState state = new(capacity: 6);
+        state.RecordFailure(
+            101,
+            DocumentCacheProjectionDocumentDiagnosticCategory.WorkAnomaly,
+            "first work anomaly",
+            ObservedAt,
+            TimeSpan.FromSeconds(10)
+        );
+        state.RecordSuppressedTraversal([101], ObservedAt.AddSeconds(1), pageCapacityExhausted: true);
+
+        state.RecordFailure(
+            101,
+            DocumentCacheProjectionDocumentDiagnosticCategory.WorkAnomaly,
+            "second work anomaly",
+            ObservedAt.AddSeconds(10),
+            TimeSpan.FromSeconds(20)
+        );
+        state.RecordSuppressedTraversal([101], ObservedAt.AddSeconds(11), pageCapacityExhausted: true);
+
+        DocumentCacheProjectionPoisonTraversalSnapshot snapshot = state.CreatePoisonTraversalSnapshot();
+
+        snapshot
+            .DiagnosticEvents.Select(diagnostic => diagnostic.Category)
+            .Should()
+            .Equal(
+                DocumentCacheProjectionPoisonTraversalDiagnosticCategory.RetryScheduled,
+                DocumentCacheProjectionPoisonTraversalDiagnosticCategory.SkippedUntilRetry,
+                DocumentCacheProjectionPoisonTraversalDiagnosticCategory.PageCapacityExhausted,
+                DocumentCacheProjectionPoisonTraversalDiagnosticCategory.RetryScheduled,
+                DocumentCacheProjectionPoisonTraversalDiagnosticCategory.SkippedUntilRetry,
+                DocumentCacheProjectionPoisonTraversalDiagnosticCategory.PageCapacityExhausted
+            );
+        snapshot
+            .DiagnosticEvents.Select(diagnostic => diagnostic.NextRetryAt)
+            .Should()
+            .Equal(
+                ObservedAt.AddSeconds(10),
+                ObservedAt.AddSeconds(10),
+                ObservedAt.AddSeconds(10),
+                ObservedAt.AddSeconds(30),
+                ObservedAt.AddSeconds(30),
+                ObservedAt.AddSeconds(30)
+            );
+        snapshot.DiagnosticEventEvictionCount.Should().Be(0);
+    }
+
+    [Test]
     public void It_clears_failure_state_for_a_document_success()
     {
         DocumentCacheProjectionFailureBackoffState state = new(capacity: 3);

@@ -321,13 +321,23 @@ public sealed class DocumentCacheProjectionFailureBackoffState
                 )
                 {
                     activelySuppressedDocuments.Add((documentId, entry.NextRetryAt));
-                    AppendPoisonTraversalDiagnostic(
-                        documentId,
-                        DocumentCacheProjectionPoisonTraversalDiagnosticCategory.SkippedUntilRetry,
-                        SkippedUntilRetryMessage,
-                        observedAt,
-                        entry.NextRetryAt
-                    );
+                    if (!entry.SkippedUntilRetryDiagnosticRecorded)
+                    {
+                        AppendPoisonTraversalDiagnostic(
+                            documentId,
+                            DocumentCacheProjectionPoisonTraversalDiagnosticCategory.SkippedUntilRetry,
+                            SkippedUntilRetryMessage,
+                            observedAt,
+                            entry.NextRetryAt
+                        );
+                        _entries = _entries.SetItem(
+                            documentId,
+                            entry with
+                            {
+                                SkippedUntilRetryDiagnosticRecorded = true,
+                            }
+                        );
+                    }
                 }
             }
 
@@ -339,13 +349,24 @@ public sealed class DocumentCacheProjectionFailureBackoffState
             if (pageCapacityExhausted && activelySuppressedDocuments.Count > 0)
             {
                 (long documentId, DateTimeOffset nextRetryAt) = activelySuppressedDocuments[^1];
-                AppendPoisonTraversalDiagnostic(
-                    documentId,
-                    DocumentCacheProjectionPoisonTraversalDiagnosticCategory.PageCapacityExhausted,
-                    PageCapacityExhaustedMessage,
-                    observedAt,
-                    nextRetryAt
-                );
+                FailureEntry entry = _entries[documentId];
+                if (!entry.PageCapacityExhaustedDiagnosticRecorded)
+                {
+                    AppendPoisonTraversalDiagnostic(
+                        documentId,
+                        DocumentCacheProjectionPoisonTraversalDiagnosticCategory.PageCapacityExhausted,
+                        PageCapacityExhaustedMessage,
+                        observedAt,
+                        nextRetryAt
+                    );
+                    _entries = _entries.SetItem(
+                        documentId,
+                        entry with
+                        {
+                            PageCapacityExhaustedDiagnosticRecorded = true,
+                        }
+                    );
+                }
             }
         }
     }
@@ -462,7 +483,9 @@ public sealed class DocumentCacheProjectionFailureBackoffState
         DocumentCacheProjectionDocumentDiagnosticCategory Category,
         string Message,
         DateTimeOffset ObservedAt,
-        DateTimeOffset NextRetryAt
+        DateTimeOffset NextRetryAt,
+        bool SkippedUntilRetryDiagnosticRecorded = false,
+        bool PageCapacityExhaustedDiagnosticRecorded = false
     );
 
     private sealed record DiagnosticEntry(
