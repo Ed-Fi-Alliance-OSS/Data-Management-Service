@@ -57,6 +57,110 @@ public class Given_CdcConnectorTemplateLiveValidationTests
     }
 
     [Test]
+    public void It_accepts_exact_externalized_secret_references_during_registration_preflight()
+    {
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(
+            CdcProvider.SqlServer,
+            providerConnectionProperties: new Dictionary<string, string>(BuildSqlServerConnectionProperties())
+            {
+                ["driver.trustStorePassword"] = "${env:CDC_SQLSERVER_TRUSTSTORE_PASSWORD}",
+            },
+            kafkaSecurityProperties: new Dictionary<string, string>
+            {
+                ["security.protocol"] = "SASL_SSL",
+                ["sasl.jaas.config"] = "${env:CDC_KAFKA_JAAS_CONFIG}",
+            }
+        );
+        CdcConnectorTemplateResult rendered = service.Render(request);
+        IReadOnlyList<string> secretPropertyNames = SqlServerGeneratedSecretPropertyNames();
+
+        CdcConnectorTemplateResult result = service.ValidateRegistrationPreflight(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                new CdcConnectorProviderSetupEvidence(
+                    bindingGeneration: 7,
+                    BuildProviderSetupResult(CdcProvider.SqlServer)
+                )
+            )
+        );
+
+        using var _ = new AssertionScope();
+        rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        rendered.Config.Keys.Should().Contain(secretPropertyNames);
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        result.Diagnostics.Should().BeEmpty();
+    }
+
+    [TestCase("[hidden]")]
+    [TestCase("***")]
+    public void It_rejects_masked_secret_placeholders_during_registration_preflight(string maskedValue)
+    {
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(
+            CdcProvider.SqlServer,
+            providerConnectionProperties: new Dictionary<string, string>(BuildSqlServerConnectionProperties())
+            {
+                ["driver.trustStorePassword"] = "${env:CDC_SQLSERVER_TRUSTSTORE_PASSWORD}",
+            },
+            kafkaSecurityProperties: new Dictionary<string, string>
+            {
+                ["security.protocol"] = "SASL_SSL",
+                ["sasl.jaas.config"] = "${env:CDC_KAFKA_JAAS_CONFIG}",
+            }
+        );
+        CdcConnectorTemplateResult rendered = service.Render(request);
+        IReadOnlyList<string> secretPropertyNames = SqlServerGeneratedSecretPropertyNames();
+        Dictionary<string, string> effectiveConfig = CopyConfig(rendered.Config);
+        rendered.Config.Keys.Should().Contain(secretPropertyNames);
+        foreach (string propertyName in secretPropertyNames)
+        {
+            effectiveConfig[propertyName] = maskedValue;
+        }
+
+        CdcConnectorTemplateResult result = service.ValidateRegistrationPreflight(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                effectiveConfig,
+                new CdcConnectorProviderSetupEvidence(
+                    bindingGeneration: 7,
+                    BuildProviderSetupResult(CdcProvider.SqlServer)
+                )
+            )
+        );
+        var exception = new CdcConnectorTemplateValidationException(result.Diagnostics);
+
+        using var _ = new AssertionScope();
+        rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        result
+            .Diagnostics.Where(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackSecretMismatch
+            )
+            .Select(diagnostic => diagnostic.PropertyName)
+            .Should()
+            .BeEquivalentTo(secretPropertyNames);
+        result
+            .Diagnostics.Should()
+            .OnlyContain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackSecretMismatch
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.SecretRedactionViolation
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Preflight
+                && diagnostic.ExpectedValue == "[redacted]"
+                && diagnostic.ObservedValue == "[redacted]"
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.SecretValue
+            );
+        result.ToString().Should().NotContain(maskedValue);
+        exception.Message.Should().NotContain(maskedValue);
+    }
+
+    [Test]
     public void It_rejects_exact_live_read_back_config_without_source_partition_evidence()
     {
         using ServiceProvider serviceProvider = BuildServiceProvider();
@@ -1569,6 +1673,15 @@ public class Given_CdcConnectorTemplateLiveValidationTests
 
     private static Dictionary<string, string> CopyConfig(IReadOnlyDictionary<string, string> config) =>
         config.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+
+    private static IReadOnlyList<string> SqlServerGeneratedSecretPropertyNames() =>
+        [
+            "database.password",
+            "driver.trustStorePassword",
+            "producer.override.sasl.jaas.config",
+            "schema.history.internal.consumer.sasl.jaas.config",
+            "schema.history.internal.producer.sasl.jaas.config",
+        ];
 
     private static IEnumerable<string> DiagnosticText(CdcConnectorTemplateDiagnostic diagnostic) =>
         [diagnostic.ExpectedValue ?? string.Empty, diagnostic.ObservedValue ?? string.Empty];
