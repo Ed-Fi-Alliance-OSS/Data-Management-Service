@@ -1075,7 +1075,7 @@ function Get-InventoryObjectQuerySql {
             "SELECT s.name + '|' + o.name + '|' +",
             "  CASE o.type WHEN 'U' THEN 'table' WHEN 'V' THEN 'view' WHEN 'P' THEN 'procedure'",
             "    WHEN 'FN' THEN 'function' WHEN 'IF' THEN 'function' WHEN 'TF' THEN 'function' WHEN 'AF' THEN 'aggregate'",
-            "    WHEN 'TR' THEN 'trigger' WHEN 'SO' THEN 'sequence' ELSE LOWER(RTRIM(o.type)) END",
+            "    WHEN 'TR' THEN 'trigger' WHEN 'SO' THEN 'sequence' ELSE LOWER(RTRIM(o.type)) END COLLATE DATABASE_DEFAULT",
             "FROM sys.objects o JOIN sys.schemas s ON s.schema_id = o.schema_id",
             "WHERE o.is_ms_shipped = 0",
             "  AND o.type IN ('U','V','P','FN','IF','TF','AF','TR','SO')",
