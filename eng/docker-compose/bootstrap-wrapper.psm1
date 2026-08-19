@@ -40,7 +40,12 @@ function Get-EffectiveBootstrapEnvFile {
     #>
     param(
         [string]$BaseEnvironmentFile,
-        [switch]$LoadSeedDataRequested
+        [switch]$LoadSeedDataRequested,
+
+        # Override for flows that replace the active workspace mid-run (restore mode): the
+        # default target lives inside .bootstrap, which the restore whole-tree commit deletes,
+        # so the derived file must be materialized somewhere that survives the commit.
+        [string]$DerivedTargetPath = ""
     )
 
     $BaseEnvironmentFile = Resolve-WrapperEnvironmentFilePath -BaseEnvironmentFile $BaseEnvironmentFile
@@ -54,7 +59,12 @@ function Get-EffectiveBootstrapEnvFile {
     Import-Module $envUtilityPath -Force
     Import-Module $manifestPath -Force
 
-    $derivedPath = Join-Path (Get-BootstrapRoot) ".env.derived"
+    $derivedPath = if ([string]::IsNullOrWhiteSpace($DerivedTargetPath)) {
+        Join-Path (Get-BootstrapRoot) ".env.derived"
+    }
+    else {
+        $DerivedTargetPath
+    }
     if ($LoadSeedDataRequested) {
         $result = Resolve-BootstrapDerivedEnv `
             -BaseEnvironmentFile $BaseEnvironmentFile `
@@ -809,9 +819,18 @@ function Invoke-BootstrapWrapper {
 
         # Resolve the effective env file. When seed loading is requested, materialize a derived env
         # with the bootstrap profile so the circuit breaker tolerates the bulk-load failure ratio.
-        $effectiveEnvFile = Get-EffectiveBootstrapEnvFile `
-            -BaseEnvironmentFile $baseEnvFile `
-            -LoadSeedDataRequested:$LoadSeedData
+        # Restore mode redirects the derived file OUT of the active .bootstrap: the whole-tree
+        # commit replaces that tree mid-run, and the post-commit -InfraOnly/configure/-DmsOnly/
+        # seed phases must not be handed a deleted path. The restore workspace is git-ignored
+        # and outlives the commit; the outer finally removes the file at the end of the run.
+        $effectiveEnvArguments = @{
+            BaseEnvironmentFile   = $baseEnvFile
+            LoadSeedDataRequested = $LoadSeedData
+        }
+        if ($restoreTemplateSupplied) {
+            $effectiveEnvArguments.DerivedTargetPath = Join-Path $PSScriptRoot ".bootstrap-restore/derived/.env.restore-effective"
+        }
+        $effectiveEnvFile = Get-EffectiveBootstrapEnvFile @effectiveEnvArguments
 
         # Schema/claims staging phase. The standard happy path needs no manual pre-staging
         # (bootstrap-design.md Section 9.4.1): when no workspace is staged yet, stage standard mode from
@@ -875,6 +894,7 @@ function Invoke-BootstrapWrapper {
             $restoreStage = $null
             $restoreCandidateDirectory = $null
             $restorePreflightDatabaseName = ""
+            $restorePreflightEnvironmentPath = ""
             try {
                 # Acquisition -> exact-bytes authentication -> immutable private staging with
                 # manifest/artifact validation (D3/D4). No Docker activity yet.
@@ -914,6 +934,9 @@ function Invoke-BootstrapWrapper {
                     -DatabaseEngine $DatabaseEngine `
                     -TargetDatabaseName $restoreTargetDatabaseName
                 $restorePreflightDatabaseName = $restorePreflight.PreflightDatabaseName
+                if ($restorePreflight.IsDerived) {
+                    $restorePreflightEnvironmentPath = $restorePreflight.EnvironmentFile
+                }
 
                 $dbOnlyArgs = @{
                     DbOnly          = $true
@@ -989,6 +1012,11 @@ function Invoke-BootstrapWrapper {
                 }
                 if (-not [string]::IsNullOrWhiteSpace($restorePreflightDatabaseName)) {
                     Remove-RestorePreflightDatabase -DatabaseEngine $DatabaseEngine -PreflightDatabaseName $restorePreflightDatabaseName
+                }
+                # The derived preflight env file is a one-run transient consumed only by the two
+                # -DbOnly slices above; it is removed on success and on every failure path.
+                if (-not [string]::IsNullOrWhiteSpace($restorePreflightEnvironmentPath) -and (Test-Path -LiteralPath $restorePreflightEnvironmentPath)) {
+                    Remove-Item -LiteralPath $restorePreflightEnvironmentPath -Force
                 }
             }
         }
@@ -1308,6 +1336,12 @@ function Invoke-BootstrapWrapper {
         }
     }
     finally {
+        if ($restoreTemplateSupplied) {
+            $restoreEffectiveEnvPath = Join-Path $PSScriptRoot ".bootstrap-restore/derived/.env.restore-effective"
+            if (Test-Path -LiteralPath $restoreEffectiveEnvPath) {
+                Remove-Item -LiteralPath $restoreEffectiveEnvPath -Force
+            }
+        }
         Pop-Location
     }
 }

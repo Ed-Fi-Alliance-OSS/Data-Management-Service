@@ -412,11 +412,14 @@ $failureStatement
                 [Parameter(Mandatory)]
                 [string]$FixtureRoot,
 
+                [string]$DockerComposeRoot = "",
+
                 [string[]]$ThrowAt = @()
             )
 
             $log = $LogPath
             $root = $FixtureRoot
+            $activeBootstrapRoot = if ([string]::IsNullOrWhiteSpace($DockerComposeRoot)) { "" } else { Join-Path $DockerComposeRoot ".bootstrap" }
             $throwSet = $ThrowAt
             $stubThrow = { param($name) if ($throwSet -contains $name) { throw "injected $name failure" } }.GetNewClosure()
 
@@ -472,7 +475,9 @@ $failureStatement
                 param($EnvironmentFile, $DatabaseEngine, $TargetDatabaseName)
                 Add-Content -LiteralPath $log -Value "restore:preflight-env"
                 & $stubThrow "New-RestorePreflightEnvironment"
-                [pscustomobject]@{ EnvironmentFile = (Join-Path $root "preflight.env"); PreflightDatabaseName = "edfi_dms_restore_preflight_0123456789ab"; IsDerived = $true }
+                $preflightEnvironmentPath = Join-Path $root "preflight.env"
+                Set-Content -LiteralPath $preflightEnvironmentPath -Value "POSTGRES_DB_NAME=edfi_dms_restore_preflight_0123456789ab" -Encoding utf8
+                [pscustomobject]@{ EnvironmentFile = $preflightEnvironmentPath; PreflightDatabaseName = "edfi_dms_restore_preflight_0123456789ab"; IsDerived = $true }
             }.GetNewClosure()
             Set-Item function:global:Assert-RestoreTargetSafety {
                 param($DatabaseEngine, $TargetDatabaseName, $Manifest, $ContainerName, [switch]$SeparateConfigDatabase, $EffectiveConfigDatabaseName)
@@ -491,13 +496,24 @@ $failureStatement
                 & $stubThrow "Remove-RestorePreflightDatabase"
             }.GetNewClosure()
             Set-Item function:global:Publish-RestoreCandidateWorkspace {
-                param($CandidateDirectory, $ActiveBootstrapRoot)
+                param($CandidateDirectory)
                 Add-Content -LiteralPath $log -Value "restore:publish"
                 & $stubThrow "Publish-RestoreCandidateWorkspace"
-                if (Test-Path -LiteralPath $CandidateDirectory) {
+                # Model the REAL whole-tree commit: the entire active .bootstrap tree is removed
+                # and the candidate moves into place - so anything the wrapper left inside the
+                # active tree (e.g. a derived env file) is genuinely gone afterwards.
+                if (-not [string]::IsNullOrWhiteSpace($activeBootstrapRoot)) {
+                    if (Test-Path -LiteralPath $activeBootstrapRoot) {
+                        Remove-Item -LiteralPath $activeBootstrapRoot -Recurse -Force
+                    }
+                    if (Test-Path -LiteralPath $CandidateDirectory) {
+                        Move-Item -LiteralPath $CandidateDirectory -Destination $activeBootstrapRoot
+                    }
+                }
+                elseif (Test-Path -LiteralPath $CandidateDirectory) {
                     Remove-Item -LiteralPath $CandidateDirectory -Recurse -Force
                 }
-                [pscustomobject]@{ Replaced = $true; ActiveBootstrapRoot = "x" }
+                [pscustomobject]@{ Replaced = $true; ActiveBootstrapRoot = $activeBootstrapRoot }
             }.GetNewClosure()
             Set-Item function:global:Invoke-RestoreTargetReplacement {
                 param($Stage, $TargetDatabaseName, $PackageSourceIdentity, $DatabaseEngine, $ContainerName, [switch]$SeparateConfigDatabase, $EffectiveConfigDatabaseName)
@@ -563,6 +579,9 @@ param(
           elseif (`$InfraOnly) { "start-infra" }
           elseif (`$DmsOnly) { "start-dms" }
           else { "start-legacy" }
+if (-not [string]::IsNullOrWhiteSpace(`$EnvironmentFile) -and -not (Test-Path -LiteralPath `$EnvironmentFile)) {
+    throw "start stub: environment file does not exist: `$EnvironmentFile"
+}
 Add-Content -LiteralPath '$CallLogPath' -Value "`$label env=`$EnvironmentFile"
 "@ | Set-Content -LiteralPath $scriptPath -Encoding utf8
             return $scriptPath
@@ -1687,6 +1706,10 @@ $resultStatement
     Context "restore-mode sequencing" {
         BeforeEach {
             $script:restoreLog = Join-Path $script:repo.RepoRoot "call-log-restore-sequencing.txt"
+            # With bootstrap-manifest present, Get-EffectiveBootstrapEnvFile materializes REAL
+            # derived env files - the production behavior whose survival across the whole-tree
+            # commit these tests pin.
+            Copy-DockerComposeFile -FileName "bootstrap-manifest.psm1" -Destination $script:repo.DockerComposeRoot
             New-RecordingPrepareScripts -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreLog
             New-RestoreStartScriptStub -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreLog | Out-Null
             New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreLog | Out-Null
@@ -1701,7 +1724,7 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed args=[`$(`$args -join
         }
 
         It "runs the D12 order: no Docker before the cross-check, both -DbOnly slices on the preflight env, preflight drop before the real-env -InfraOnly, and NO provision" {
-            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
 
             & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Minimal
 
@@ -1744,7 +1767,11 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed args=[`$(`$args -join
             $dbOnlyLines = @($log | Where-Object { $_ -like "start-db-only*" })
             $dbOnlyLines.Count | Should -Be 2
             foreach ($dbOnlyLine in $dbOnlyLines) { $dbOnlyLine | Should -BeLike "*preflight.env" }
-            @($log | Where-Object { $_ -like "start-infra *" })[0] | Should -Not -BeLike "*preflight.env"
+            # The post-publish phases run on the restore-effective derived env, which lives in
+            # the restore workspace so the whole-tree commit (the publish stub really removes
+            # and replaces active .bootstrap, and the start stub throws on a missing env file)
+            # cannot delete it out from under them.
+            @($log | Where-Object { $_ -like "start-infra *" })[0] | Should -BeLike "*.env.restore-effective"
 
             # The second -DbOnly slice comes after the publish, the replacement after that, and
             # the SECOND preflight drop lands between the replacement and the real -InfraOnly.
@@ -1769,12 +1796,17 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed args=[`$(`$args -join
             $log | Should -Not -Contain "provision"
             @($log | Where-Object { $_ -like "prepare-*" }) | Should -BeNullOrEmpty
             $log | Should -Contain "restore:remove-stage"
+
+            # Both derived transients are one-run state: the preflight env is removed by the
+            # restore branch's finally, the restore-effective env at the end of the run.
+            Test-Path -LiteralPath (Join-Path $script:repo.RepoRoot "preflight.env") | Should -BeFalse
+            Test-Path -LiteralPath (Join-Path $script:repo.DockerComposeRoot ".bootstrap-restore/derived/.env.restore-effective") | Should -BeFalse
         }
 
         It "targets the dms-published compose project for the published wrapper" {
             Copy-DockerComposeFile -FileName "bootstrap-published-dms.ps1" -Destination $script:repo.DockerComposeRoot
             New-RestoreStartScriptStub -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreLog -StartScriptName "start-published-dms.ps1" | Out-Null
-            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
 
             & (Join-Path $script:repo.DockerComposeRoot "bootstrap-published-dms.ps1") -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Minimal
 
@@ -1783,7 +1815,7 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed args=[`$(`$args -join
         }
 
         It "forwards the explicit supplemental seed after the restored stack is up" {
-            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
 
             & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Populated -LoadSeedData -SeedTemplate Populated
 
@@ -1795,7 +1827,7 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed args=[`$(`$args -join
         }
 
         It "an injected failure at the target replacement still drops the preflight database (finally) and never reaches -InfraOnly" {
-            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -ThrowAt @("Invoke-RestoreTargetReplacement")
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot -ThrowAt @("Invoke-RestoreTargetReplacement")
 
             { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Minimal } |
                 Should -Throw "*injected Invoke-RestoreTargetReplacement failure*"
@@ -1806,10 +1838,12 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed args=[`$(`$args -join
             $finalPreflightDropIndex | Should -BeGreaterThan $replacementIndex -Because "the finally must still drop the preflight database"
             @($log | Where-Object { $_ -like "start-infra *" }) | Should -BeNullOrEmpty
             $log | Should -Contain "restore:remove-stage"
+            Test-Path -LiteralPath (Join-Path $script:repo.RepoRoot "preflight.env") | Should -BeFalse
+            Test-Path -LiteralPath (Join-Path $script:repo.DockerComposeRoot ".bootstrap-restore/derived/.env.restore-effective") | Should -BeFalse
         }
 
         It "a failure before any Docker activity cleans the stage and runs nothing docker-shaped" {
-            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -ThrowAt @("Invoke-RestoreCandidateCrossCheck")
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot -ThrowAt @("Invoke-RestoreCandidateCrossCheck")
 
             { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Minimal } |
                 Should -Throw "*injected Invoke-RestoreCandidateCrossCheck failure*"
@@ -1842,7 +1876,7 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed args=[`$(`$args -join
                 Should -Throw "*Automatic replacement is intentionally not performed outside restore mode*-RestoreTemplate*"
             $script:restoreLog | Should -Not -Exist
 
-            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
             & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Minimal
             @(Get-Content -LiteralPath $script:restoreLog) | Where-Object { $_ -like "restore:find*" } |
                 Should -Not -BeNullOrEmpty -Because "restore mode owns guarded replacement and must proceed past the stale workspace"
@@ -1852,7 +1886,7 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed args=[`$(`$args -join
             # The active workspace is ApiSchemaPath (expert) - about to be REPLACED by a
             # Standard-mode candidate, so its selectionMode must not reject -SeedTemplate.
             New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
-            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
 
             & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Populated -LoadSeedData -SeedTemplate Populated
 
