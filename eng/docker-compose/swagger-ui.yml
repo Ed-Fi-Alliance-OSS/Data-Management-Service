@@ -22,6 +22,11 @@ services:
              cp /tmp/nginx-template/*.js /usr/share/nginx/html/ &&
              if [ -f /tmp/nginx-template/favicon.ico ]; then cp /tmp/nginx-template/favicon.ico /usr/share/nginx/html/; fi &&
              nginx -g 'daemon off;'"
+    logging:
+      driver: json-file
+      options:
+        max-size: "${DOCKER_LOG_MAX_SIZE:-50m}"
+        max-file: "${DOCKER_LOG_MAX_FILE:-5}"
 
 networks:
   dms:

@@ -16,7 +16,7 @@ services:
       AppSettings__AuthenticationService: ${OAUTH_TOKEN_ENDPOINT:-http://host.docker.internal:8080/oauth/token}
       AppSettings__BypassTypeCoercion: ${BYPASS_TYPE_COERCION:-false}
       AppSettings__AllowIdentityUpdateOverrides: ${ALLOW_IDENTITY_UPDATE_OVERRIDES:-}
-      Serilog__MinimumLevel__Default: ${LOG_LEVEL:-DEBUG}
+      Serilog__MinimumLevel__Default: ${LOG_LEVEL:-Information}
       OtlpLogging__Enabled: ${OTLP_LOGGING_ENABLED:-false}
       OtlpLogging__Endpoint: ${OTLP_LOGGING_ENDPOINT:-}
       OtlpLogging__Protocol: ${OTLP_LOGGING_PROTOCOL:-HttpProtobuf}
@@ -89,6 +89,11 @@ services:
       timeout: 10s
       retries: 50
     hostname: ed-fi-api
+    logging:
+      driver: json-file
+      options:
+        max-size: "${DOCKER_LOG_MAX_SIZE:-50m}"
+        max-file: "${DOCKER_LOG_MAX_FILE:-5}"
 
 networks:
   dms:

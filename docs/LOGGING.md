@@ -376,6 +376,143 @@ Azure Container Apps or App Service log streaming), or configure
 `OtlpLogging` to export through a Collector to Azure Monitor or another
 backend.
 
+## Docker Compose Defaults and Container Log Retention
+
+The Docker Compose stacks under `eng/docker-compose` ship a set of defaults
+for log verbosity and container log retention. This section documents those
+defaults, how to override them, and the trade-offs involved in doing so.
+
+### Shipped Log Levels
+
+The Compose `.env` files (`.env.example` and the active `.env.template*`
+files) ship `LOG_LEVEL=Information` for DMS and `DMS_CONFIG_LOG_LEVEL=Information`
+for the Configuration Service. Neither service ships at `Debug` by default:
+`Debug` includes anonymized HTTP request payloads and additional
+service-call detail (see [Log Levels](#log-levels) above), which is more
+verbose and more expensive to store than most deployments need day to day.
+
+### Overriding Log Levels
+
+Both services read their log level from the Compose environment:
+
+* `LOG_LEVEL` controls the DMS application's minimum Serilog level.
+* `DMS_CONFIG_LOG_LEVEL` controls the Configuration Service's minimum
+  Serilog level.
+
+Set either variable to `Information`, `Warning`, or `Debug` (see
+[Log Levels](#log-levels)) in the `.env` file used to start the stack, or
+export it in the shell before running `docker compose up`. Raise a service to
+`Debug` temporarily when investigating an integration problem, then return it
+to `Information` — `Debug` logging is verbose and, per the container
+retention behavior below, shortens how long evidence survives on disk.
+
+### Docker Container Log Retention
+
+The Compose stacks configure the Docker `json-file` log driver with two
+variables:
+
+* `DOCKER_LOG_MAX_SIZE` (default `50m`) — the maximum size of a single log
+  file before Docker rotates it.
+* `DOCKER_LOG_MAX_FILE` (default `5`) — the maximum number of rotated log
+  files Docker keeps per container.
+
+These defaults cap retained container logs at 250 MB (`50m` × `5`) **per
+container**. The cap is per-container, not per-stack: each service (DMS,
+Configuration Service, Postgres, Kafka, Keycloak, and so on) gets its own
+independent 50 MB × 5-file allowance, so a multi-service stack retains up to
+250 MB per service on disk, not 250 MB in total.
+
+Retention is also a time window, not just a size, and that window can be
+short under load. At a measured logging rate of 25.6 MB/s under sustained
+high-throughput request traffic, a single 50 MB log file fills in roughly 2
+seconds, and the full 250 MB allowance (all 5 rotated files) is overwritten
+in roughly 10 seconds. In other words, at that rate the oldest evidence in
+the retained log files is no more than about 10 seconds old — once a new
+entry causes Docker to rotate out the oldest file, whatever was only in that
+file is gone. Quieter workloads fill the allowance much more slowly and
+retain evidence far longer; the 10-second figure is a worst-case bound at
+the measured peak rate, not a general expectation.
+
+### Unbounded Container Logs
+
+To disable size-based rotation entirely and retain all container logs
+without a cap, set:
+
+```dotenv
+DOCKER_LOG_MAX_SIZE=-1
+```
+
+> [!WARNING]
+> Setting `DOCKER_LOG_MAX_SIZE=-1` removes Docker's log rotation safety net.
+> An unbounded log file can grow until it exhausts the host's disk, which can
+> destabilize every container on that host, not only the one doing the
+> logging. Only disable rotation on hosts with monitored, ample free disk
+> space, and prefer the mitigations below for long-running investigations
+> instead of leaving rotation disabled indefinitely.
+
+### Long-Running Investigations
+
+For an investigation that needs more history than the default 250 MB /
+~10-second worst-case window allows, prefer one of these over leaving
+rotation disabled:
+
+* **Increase the cap temporarily.** Raise `DOCKER_LOG_MAX_SIZE` and/or
+  `DOCKER_LOG_MAX_FILE` for the duration of the investigation, then restore
+  the defaults afterward. This keeps a bound in place while extending the
+  retention window.
+* **Export logs via OTLP.** Point `OtlpLogging` at a collector (see
+  [OTLP Export](#otlp-export) above) so structured log events are shipped
+  out of the container as they are emitted. An external collector or
+  backend is not subject to the container's local rotation limits at all,
+  so it is the more durable option for logs that must survive longer than
+  any local retention window, or that must survive the container itself
+  being removed.
+
+### Evidence Loss Trade-Off
+
+The three options above trade off disk usage against how much log history
+survives:
+
+* **Bounded (the default, `50m` / `5` files).** Safe for unattended hosts —
+  disk usage per container is capped — but under sustained heavy load the
+  retained window can be as short as ~10 seconds, so evidence of a
+  transient problem may already be gone by the time someone goes looking
+  for it.
+* **Unbounded (`DOCKER_LOG_MAX_SIZE=-1`).** No evidence loss from rotation,
+  but no disk-usage safety net either; left in place indefinitely, it risks
+  disk exhaustion.
+* **OTLP export.** Avoids both problems for logs that reach the collector
+  before rotation would have discarded them, but adds an external
+  dependency (the collector must be reachable and correctly configured;
+  see [Security Considerations for OTLP Export](#security-considerations-for-otlp-export)
+  above) and does not itself change the local container's rotation
+  behavior — console/file logs on the host are still governed by
+  `DOCKER_LOG_MAX_SIZE` and `DOCKER_LOG_MAX_FILE`.
+
+Choose based on the deployment: bounded defaults for routine operation,
+a temporarily raised cap or OTLP export when a specific investigation
+needs a longer window.
+
+### Manual Container Log Truncation
+
+In an emergency — for example, a container's log file has already grown
+large enough to threaten disk space and rotation has not caught up — the
+underlying `json-file` log file on the host can be truncated manually (for
+example, with `truncate -s 0` on the file Docker reports via
+`docker inspect --format='{{.LogPath}}' <container>`).
+
+> [!WARNING]
+> Docker's own documentation warns that manually manipulating a container's
+> log file outside of Docker's log driver may interfere with the log
+> driver's internal state tracking (for example, its record of how much has
+> been read or rotated). Treat manual truncation strictly as an **emergency
+> recovery** action to relieve acute disk pressure, not as a routine
+> operating procedure. Prefer the configured rotation
+> (`DOCKER_LOG_MAX_SIZE` / `DOCKER_LOG_MAX_FILE`) or OTLP export for
+> ordinary retention management, and reserve manual truncation for
+> situations where those mechanisms have not kept disk usage under control
+> in time.
+
 ## Log Levels
 
 The DMS applications will utilize the following levels when logging messages.

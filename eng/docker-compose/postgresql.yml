@@ -29,6 +29,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 30
+    logging:
+      driver: json-file
+      options:
+        max-size: "${DOCKER_LOG_MAX_SIZE:-50m}"
+        max-file: "${DOCKER_LOG_MAX_FILE:-5}"
+
 networks:
   dms:
     external: true

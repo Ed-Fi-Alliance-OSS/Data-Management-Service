@@ -40,6 +40,11 @@ services:
       timeout: 10s
       retries: 30
       start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "${DOCKER_LOG_MAX_SIZE:-50m}"
+        max-file: "${DOCKER_LOG_MAX_FILE:-5}"
 
 networks:
   dms:

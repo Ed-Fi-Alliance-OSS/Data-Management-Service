@@ -35,6 +35,11 @@ services:
     networks:
       - dms
     hostname: dms-kafka1
+    logging:
+      driver: json-file
+      options:
+        max-size: "${DOCKER_LOG_MAX_SIZE:-50m}"
+        max-file: "${DOCKER_LOG_MAX_FILE:-5}"
 
   kafka-postgresql-source:
     image: edfialliance/ed-fi-kafka-connect:pre
@@ -56,6 +61,11 @@ services:
     networks:
       - dms
     hostname: kafka-postgresql-source
+    logging:
+      driver: json-file
+      options:
+        max-size: "${DOCKER_LOG_MAX_SIZE:-50m}"
+        max-file: "${DOCKER_LOG_MAX_FILE:-5}"
 
 networks:
   dms:
