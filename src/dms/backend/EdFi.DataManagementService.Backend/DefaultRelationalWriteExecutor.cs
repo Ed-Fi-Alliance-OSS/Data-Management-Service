@@ -552,11 +552,9 @@ internal sealed class DefaultRelationalWriteExecutor(
             // unmapped one surfaces unchanged, exactly as it does inside the attempt.
             if (_databaseFailureResultMapper.TryBuild(executionRequest!, ex, out var commitFailureResult))
             {
-                RecordEnqueueFailureIfClassified(executionRequest!, ex);
                 return commitFailureResult!;
             }
 
-            RecordEnqueueFailureIfClassified(executionRequest!, ex);
             throw;
         }
 

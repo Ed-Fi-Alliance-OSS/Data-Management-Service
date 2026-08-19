@@ -2993,9 +2993,16 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_does_not_roll_back_an_applied_write_whose_commit_failure_is_unmapped()
     {
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry()
+        );
         var request = CreateRequest(
             RelationalWriteOperationKind.Put,
-            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!
+            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
         );
         _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
             request.WritePlan.TablePlansInDependencyOrder[0],
@@ -3017,6 +3024,8 @@ public class Given_Default_Relational_Write_Executor
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+        telemetry.Successes.Should().BeEmpty();
+        telemetry.Failures.Should().BeEmpty();
     }
 
     /// <summary>
@@ -3033,9 +3042,20 @@ public class Given_Default_Relational_Write_Executor
         RelationalWriteOperationKind operationKind
     )
     {
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry(),
+            documentCacheProviderCommandTimeoutClassifier: new RecordingDocumentCacheProviderCommandTimeoutClassifier
+            {
+                IsProviderCommandTimeoutToReturn = true,
+            }
+        );
         var request = CreateRequest(
             operationKind,
-            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!
+            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
         );
         _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
             request.WritePlan.TablePlansInDependencyOrder[0],
@@ -3073,15 +3093,24 @@ public class Given_Default_Relational_Write_Executor
             }
 
             _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+            telemetry.Successes.Should().BeEmpty();
+            telemetry.Failures.Should().BeEmpty();
         }
     }
 
     [Test]
     public async Task It_does_not_roll_back_a_guarded_no_op_whose_commit_fails()
     {
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry()
+        );
         var request = CreateRequest(
             RelationalWriteOperationKind.Put,
-            selectedBody: JsonNode.Parse("""{"name":"Lincoln High"}""")!
+            selectedBody: JsonNode.Parse("""{"name":"Lincoln High"}""")!,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
         );
         _writeSessionFactory.Session.CommitExceptionToThrow = new StubDbException(
             "connection reset on commit"
@@ -3095,6 +3124,8 @@ public class Given_Default_Relational_Write_Executor
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+        telemetry.Successes.Should().BeEmpty();
+        telemetry.Failures.Should().BeEmpty();
     }
 
     [Test]

@@ -263,30 +263,14 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
             .Be(DocumentCacheEnqueueTelemetryResourceKind.Descriptor);
     }
 
-    [TestCase(
-        DescriptorWritePath.PostInsert,
-        nameof(DocumentCacheEnqueueTelemetryCanonicalOperation.Insert),
-        typeof(UpsertResult.UnknownFailure)
-    )]
-    [TestCase(
-        DescriptorWritePath.PostAsUpdate,
-        nameof(DocumentCacheEnqueueTelemetryCanonicalOperation.Update),
-        typeof(UpsertResult.UnknownFailure)
-    )]
-    [TestCase(
-        DescriptorWritePath.PutUpdate,
-        nameof(DocumentCacheEnqueueTelemetryCanonicalOperation.Update),
-        typeof(UpdateResult.UnknownFailure)
-    )]
-    public async Task It_records_descriptor_enqueue_failure_when_commit_throws_classified_exception(
+    [TestCase(DescriptorWritePath.PostInsert, typeof(UpsertResult.UnknownFailure))]
+    [TestCase(DescriptorWritePath.PostAsUpdate, typeof(UpsertResult.UnknownFailure))]
+    [TestCase(DescriptorWritePath.PutUpdate, typeof(UpdateResult.UnknownFailure))]
+    public async Task It_does_not_record_descriptor_enqueue_telemetry_when_commit_outcome_is_indeterminate(
         DescriptorWritePath writePath,
-        string expectedOperationName,
         Type expectedResultType
     )
     {
-        var expectedOperation = Enum.Parse<DocumentCacheEnqueueTelemetryCanonicalOperation>(
-            expectedOperationName
-        );
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var targetLookupService = new StubRelationalWriteTargetLookupService();
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
@@ -345,16 +329,7 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         sessionFactory.Session.CommitCallCount.Should().Be(1);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
         telemetry.Successes.Should().BeEmpty();
-        telemetry.Failures.Should().ContainSingle();
-        telemetry.Failures[0].RollbackCallCountAtRecord.Should().Be(0);
-        telemetry.Failures[0].Category.Should().Be(DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed);
-        telemetry.Failures[0].Context.TargetKey.Should().Be(TargetKey);
-        telemetry.Failures[0].Context.ProviderToken.Should().Be(RelationalProviderToken.Postgresql);
-        telemetry.Failures[0].Context.CanonicalOperation.Should().Be(expectedOperation);
-        telemetry
-            .Failures[0]
-            .Context.ResourceKind.Should()
-            .Be(DocumentCacheEnqueueTelemetryResourceKind.Descriptor);
+        telemetry.Failures.Should().BeEmpty();
     }
 
     [Test]
@@ -363,8 +338,9 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var targetLookupService = new StubRelationalWriteTargetLookupService();
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        sessionFactory.Session.CommitExceptionToThrow = new StubDbException(
-            "command timeout while inserting into dms.DocumentProjectionWork"
+        sessionFactory.Session.Executor.ExceptionsToThrow.Enqueue(null);
+        sessionFactory.Session.Executor.ExceptionsToThrow.Enqueue(
+            new StubDbException("command timeout while inserting into dms.DocumentProjectionWork")
         );
         var telemetry = new RecordingDocumentCacheEnqueueTelemetry(
             () => sessionFactory.Session.CommitCallCount,
@@ -396,6 +372,8 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         );
 
         result.Should().BeOfType<UpdateResult.UpdateFailureWriteConflict>();
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
         telemetry.Failures.Should().ContainSingle();
         telemetry.Failures[0].Category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderTimeout);
     }
@@ -406,8 +384,9 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var targetLookupService = new StubRelationalWriteTargetLookupService();
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        sessionFactory.Session.CommitExceptionToThrow = new StubDbException(
-            "deadlock detected while inserting into dms.DocumentProjectionWork"
+        sessionFactory.Session.Executor.ExceptionsToThrow.Enqueue(null);
+        sessionFactory.Session.Executor.ExceptionsToThrow.Enqueue(
+            new StubDbException("deadlock detected while inserting into dms.DocumentProjectionWork")
         );
         var telemetry = new RecordingDocumentCacheEnqueueTelemetry(
             () => sessionFactory.Session.CommitCallCount,
@@ -437,6 +416,8 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         );
 
         result.Should().BeOfType<UpdateResult.UpdateFailureWriteConflict>();
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
         telemetry.Failures.Should().ContainSingle();
         telemetry.Failures[0].Category.Should().Be(DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed);
     }
@@ -872,6 +853,8 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
 
         public Queue<IReadOnlyList<InMemoryRelationalResultSet>> ResultSets { get; } = [];
 
+        public Queue<DbException?> ExceptionsToThrow { get; } = [];
+
         public DbException? ExceptionToThrow { get; set; }
 
         public async Task<TResult> ExecuteReaderAsync<TResult>(
@@ -882,9 +865,11 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (ExceptionToThrow is not null)
+            DbException? exceptionToThrow =
+                ExceptionsToThrow.Count == 0 ? ExceptionToThrow : ExceptionsToThrow.Dequeue();
+            if (exceptionToThrow is not null)
             {
-                throw ExceptionToThrow;
+                throw exceptionToThrow;
             }
 
             IReadOnlyList<InMemoryRelationalResultSet> resultSets =
