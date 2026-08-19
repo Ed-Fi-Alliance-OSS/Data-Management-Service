@@ -154,6 +154,48 @@ public class Given_DocumentCacheStatusService
         observer.StartedKeys.Should().BeEmpty();
     }
 
+    [Test]
+    public void It_reports_a_missing_target_generation_separately_from_observer_availability()
+    {
+        DocumentCacheTargetObservation target = DocumentCacheTargetObservation.ResolvedIneligible(
+            DocumentCacheTargetKey.Create("", 1),
+            EffectiveSettings(),
+            generation: null,
+            RelationalProviderToken.Postgresql,
+            Fingerprint(1),
+            new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false),
+            new DocumentCacheInventoryValidationResult(
+                DocumentCacheInventoryStatus.Satisfied,
+                "Inventory satisfied."
+            ),
+            new DocumentCacheEnqueueTriggerValidationResult(
+                DocumentCacheEnqueueTriggerStatus.Satisfied,
+                "Enqueue trigger satisfied."
+            ),
+            DocumentCacheSqlServerPrerequisiteDetails.NotApplicable(),
+            retryState: null,
+            diagnostics: []
+        );
+        ScriptedStatusObserver configuredObserver = new(Success);
+        Dictionary<RelationalProviderToken, IDocumentCacheStatusCurrentSourceObserver> observers = new()
+        {
+            [RelationalProviderToken.Postgresql] = configuredObserver,
+        };
+
+        bool selected = DocumentCacheStatusService.TrySelectCurrentSourceObserver(
+            target,
+            observers,
+            out IDocumentCacheStatusCurrentSourceObserver? observer,
+            out string? failureMessage
+        );
+
+        selected.Should().BeFalse();
+        observer.Should().BeNull();
+        failureMessage
+            .Should()
+            .Be("DocumentCache current target generation is not available for status observation.");
+    }
+
     [TestCase(DocumentCacheTargetDiagnosticCategory.TargetNotConfigured)]
     [TestCase(DocumentCacheTargetDiagnosticCategory.TargetUnresolved)]
     public async Task It_maps_target_not_found_resolution_diagnostics_to_target_not_found(

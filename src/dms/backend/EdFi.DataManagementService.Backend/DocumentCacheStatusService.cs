@@ -6,6 +6,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 
@@ -238,16 +239,16 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
     )
     {
         if (
-            targetObservation.ProviderToken is null
-            || targetObservation.Generation is null
-            || !_currentSourceObservers.TryGetValue(
-                targetObservation.ProviderToken,
-                out IDocumentCacheStatusCurrentSourceObserver? observer
+            !TrySelectCurrentSourceObserver(
+                targetObservation,
+                _currentSourceObservers,
+                out IDocumentCacheStatusCurrentSourceObserver? observer,
+                out string? observerSelectionFailureMessage
             )
         )
         {
             return DocumentCacheStatusDurableObservation.ProviderObservationFailed(
-                "DocumentCache status current-source observer is not available for the target provider."
+                observerSelectionFailureMessage
             );
         }
 
@@ -256,10 +257,15 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             ?? throw new InvalidOperationException(
                 "DocumentCache status provider token is required after observer selection."
             );
+        DocumentCacheTargetContextGeneration generation =
+            targetObservation.Generation
+            ?? throw new InvalidOperationException(
+                "DocumentCache target generation is required after observer selection."
+            );
 
         DocumentCacheTargetExecutionContext? executionContext = runtimeSnapshot.GetExecutionContext(
             targetObservation.TargetKey,
-            targetObservation.Generation
+            generation
         );
 
         if (executionContext is null)
@@ -391,6 +397,39 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
                 "DocumentCache status current-source observer failed."
             );
         }
+    }
+
+    internal static bool TrySelectCurrentSourceObserver(
+        DocumentCacheTargetObservation targetObservation,
+        IReadOnlyDictionary<RelationalProviderToken, IDocumentCacheStatusCurrentSourceObserver> observers,
+        [NotNullWhen(true)] out IDocumentCacheStatusCurrentSourceObserver? observer,
+        [NotNullWhen(false)] out string? failureMessage
+    )
+    {
+        ArgumentNullException.ThrowIfNull(targetObservation);
+        ArgumentNullException.ThrowIfNull(observers);
+
+        if (targetObservation.Generation is null)
+        {
+            observer = null;
+            failureMessage =
+                "DocumentCache current target generation is not available for status observation.";
+            return false;
+        }
+
+        if (
+            targetObservation.ProviderToken is null
+            || !observers.TryGetValue(targetObservation.ProviderToken, out observer)
+        )
+        {
+            observer = null;
+            failureMessage =
+                "DocumentCache status current-source observer is not available for the target provider.";
+            return false;
+        }
+
+        failureMessage = null;
+        return true;
     }
 
     private static ProviderObservationCancellationSource SelectFirstCancellationSource(
