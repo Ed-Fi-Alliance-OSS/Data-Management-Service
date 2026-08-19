@@ -144,10 +144,11 @@ function Get-DmsAccessToken {
 }
 
 # Compares only the fields that were sent. The server legitimately adds id, _etag, and
-# _lastModifiedDate, so a whole-body equality check would fail for the wrong reason.
+# _lastModifiedDate, so a whole-body equality check would fail for the wrong reason. Reference
+# enrichment and numeric normalisation are handled inline below for the same reason.
 function Compare-SentField {
     [CmdletBinding()]
-    [OutputType([System.Collections.Generic.List[string]])]
+    [OutputType([System.Object[]])]
     param(
         [Parameter(Mandatory)] [object] $Sent,
         [Parameter(Mandatory)] [object] $Fetched
@@ -163,15 +164,44 @@ function Compare-SentField {
             continue
         }
 
-        $sentJson = $property.Value | ConvertTo-Json -Depth 32 -Compress
-        $fetchedJson = $Fetched.$name | ConvertTo-Json -Depth 32 -Compress
+        $sentValue = $property.Value
+        $fetchedValue = $Fetched.$name
+
+        # JSON numeric normalisation renders a sent 1.0 as 1, so numbers compare by value not text.
+        if ($sentValue -is [ValueType] -and $sentValue -isnot [bool] -and
+            $fetchedValue -is [ValueType] -and $fetchedValue -isnot [bool]) {
+            if ([double]$sentValue -ne [double]$fetchedValue) {
+                $mismatch.Add("$name sent=$sentValue fetched=$fetchedValue")
+            }
+            continue
+        }
+
+        # The server enriches every reference object with a hypermedia "link" member, so a reference
+        # is compared member by member over what was actually sent rather than as a whole object.
+        if ($sentValue -is [psobject] -and $fetchedValue -is [psobject] -and
+            @($sentValue.PSObject.Properties).Count -gt 0) {
+            foreach ($member in $sentValue.PSObject.Properties) {
+                $sentMember = ConvertTo-Json -InputObject $member.Value -Depth 32 -Compress
+                $fetchedMember = ConvertTo-Json -InputObject $fetchedValue.($member.Name) -Depth 32 -Compress
+                if ($sentMember -ne $fetchedMember) {
+                    $mismatch.Add("$name.$($member.Name) sent=$sentMember fetched=$fetchedMember")
+                }
+            }
+            continue
+        }
+
+        $sentJson = ConvertTo-Json -InputObject $sentValue -Depth 32 -Compress
+        $fetchedJson = ConvertTo-Json -InputObject $fetchedValue -Depth 32 -Compress
 
         if ($sentJson -ne $fetchedJson) {
             $mismatch.Add("$name sent=$sentJson fetched=$fetchedJson")
         }
     }
 
-    return $mismatch
+    # Comma operator so an empty result stays a collection rather than unrolling to $null, which would
+    # break .Count on the clean path -- the only path where there is nothing to report. Callers assign
+    # the result directly: wrapping it in @() re-wraps the list and always yields a count of 1.
+    return ,$mismatch
 }
 
 $document = Get-GapDocumentManifest -Path $ManifestPath
@@ -239,7 +269,11 @@ foreach ($item in $document) {
     $fieldMatch = $false
 
     if ($getStatus -ne 200) {
-        $failure.Add("$($item.label): GET-by-id returned $getStatus, expected 200")
+        # Deliberately not fatal here. A resource whose read authorization derives from a relationship
+        # is legitimately unreadable until the document carrying that relationship exists, and the
+        # manifest creates those later by design -- Staff is authorized through its education
+        # organization association. The pass after the whole manifest is posted decides.
+        Write-Output "  (deferred: re-checked once the whole manifest exists)"
     }
     else {
         $mismatch = Compare-SentField -Sent $item.body -Fetched ($fetched.Content | ConvertFrom-Json)
@@ -273,8 +307,49 @@ if (-not [string]::IsNullOrWhiteSpace($OutputPath)) {
     Write-Output "Result record written to $OutputPath"
 }
 
-$createdCount = ($result | Where-Object { $_.PostStatus -eq 201 }).Count
-$verifiedCount = ($result | Where-Object { $_.FieldMatch }).Count
+# Re-read every created document now that the whole manifest exists. The GET issued immediately after
+# a POST tests a moment the manifest ordering guarantees is incomplete, so a document that is entirely
+# correct can answer 403 there. This pass tests the finished state instead.
+Write-Output ""
+Write-Output "Re-verifying every created document now that the whole manifest exists..."
+
+foreach ($row in $result) {
+    if ($row.PostStatus -ne 201 -or [string]::IsNullOrWhiteSpace($row.Location)) {
+        continue
+    }
+
+    $recheckUri = if ($row.Location -match '^https?://') {
+        $row.Location
+    }
+    else {
+        "$($DmsBaseUrl.TrimEnd('/'))$($row.Location)"
+    }
+
+    $recheck = Invoke-WebRequest -Method Get -Uri $recheckUri -Headers $header -SkipHttpErrorCheck
+    $recheckStatus = [int]$recheck.StatusCode
+    Write-Output ("  {0,-52} GET -> {1}" -f $row.Label, $recheckStatus)
+
+    if ($recheckStatus -ne 200) {
+        $failure.Add("$($row.Label): final GET-by-id returned $recheckStatus, expected 200")
+        continue
+    }
+
+    if (-not $row.FieldMatch) {
+        $sentBody = ($document | Where-Object { $_.label -eq $row.Label }).body
+        $mismatch = Compare-SentField -Sent $sentBody -Fetched ($recheck.Content | ConvertFrom-Json)
+        if ($mismatch.Count -eq 0) {
+            $row.FieldMatch = $true
+            Write-Output "     fields: all sent fields match"
+        }
+        else {
+            foreach ($text in $mismatch) { Write-Output "     field mismatch: $text" }
+            $failure.Add("$($row.Label): $($mismatch.Count) field mismatch(es) on re-verification")
+        }
+    }
+}
+
+$createdCount = @($result | Where-Object { $_.PostStatus -eq 201 }).Count
+$verifiedCount = @($result | Where-Object { $_.FieldMatch }).Count
 
 Write-Output ""
 Write-Output "Requested: $($document.Count)   created (201): $createdCount   verified: $verifiedCount"
