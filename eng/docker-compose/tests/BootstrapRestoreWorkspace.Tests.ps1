@@ -658,3 +658,177 @@ Describe "package-to-candidate cross-check" {
         Test-Path -LiteralPath $script:stageDirectory | Should -BeFalse
     }
 }
+
+Describe "Assert-DmsComposeProjectStopped (stop proof)" {
+    BeforeAll {
+        # Pester's Mock needs a resolvable command; environments without docker (e.g. the pwsh
+        # validation container) get an inert global function the mocks then replace.
+        $script:createdDockerFallback = $false
+        if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+            Set-Item -Path function:global:docker -Value { throw "the docker fallback must always be mocked" }
+            $script:createdDockerFallback = $true
+        }
+    }
+
+    AfterAll {
+        if ($script:createdDockerFallback) {
+            Remove-Item function:global:docker -ErrorAction SilentlyContinue
+        }
+    }
+
+    It "passes when the project has no running containers, filtering docker ps by the compose project label" {
+        Mock docker { $global:LASTEXITCODE = 0 } -ModuleName bootstrap-restore
+
+        { Assert-DmsComposeProjectStopped -ProjectName "dms-local" } | Should -Not -Throw
+
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+            ($args -join " ") -eq "ps --filter label=com.docker.compose.project=dms-local --format {{.Names}}"
+        }
+    }
+
+    It "fails naming every running container of the project" {
+        Mock docker { $global:LASTEXITCODE = 0; "dms-local-postgres-1"; "dms-local-dms-1" } -ModuleName bootstrap-restore
+
+        { Assert-DmsComposeProjectStopped -ProjectName "dms-local" } |
+            Should -Throw "*still has running containers: dms-local-postgres-1, dms-local-dms-1*"
+    }
+
+    It "fails closed when docker itself errors: indeterminate is never treated as stopped" {
+        Mock docker { $global:LASTEXITCODE = 1; "Cannot connect to the Docker daemon" } -ModuleName bootstrap-restore
+
+        { Assert-DmsComposeProjectStopped -ProjectName "dms-published" } |
+            Should -Throw "*Stop proof is indeterminate*exited with code 1*Cannot connect to the Docker daemon*"
+    }
+}
+
+Describe "Publish-RestoreCandidateWorkspace (whole-tree commit)" {
+    BeforeAll {
+        $script:createdDockerFallback = $false
+        if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+            Set-Item -Path function:global:docker -Value { throw "the docker fallback must always be mocked" }
+            $script:createdDockerFallback = $true
+        }
+
+        function script:New-WorkspaceTree {
+            # Builds a bootstrap-workspace-shaped tree. Includes a dotfile so byte-identity
+            # comparison is proven to see hidden files (Linux hides them without -Force).
+            param(
+                [Parameter(Mandatory)]
+                [string]$Path,
+
+                [hashtable]$File = @{
+                    "bootstrap-manifest.json"      = '{"version":1}'
+                    "ApiSchema/core.json"          = '{"core":true}'
+                    ".hidden-marker"               = "dot"
+                }
+            )
+
+            foreach ($relativePath in $File.Keys) {
+                $fullPath = Join-Path $Path $relativePath
+                New-Item -ItemType Directory -Path (Split-Path -Parent $fullPath) -Force | Out-Null
+                Set-Content -LiteralPath $fullPath -Value $File[$relativePath] -Encoding utf8 -NoNewline
+            }
+            return $Path
+        }
+    }
+
+    AfterAll {
+        if ($script:createdDockerFallback) {
+            Remove-Item function:global:docker -ErrorAction SilentlyContinue
+        }
+    }
+
+    BeforeEach {
+        $script:publishRoot = Join-Path $TestDrive "publish-$([Guid]::NewGuid().ToString('n'))"
+        New-Item -ItemType Directory -Path $script:publishRoot -Force | Out-Null
+        $script:activeRootUnderTest = Join-Path $script:publishRoot ".bootstrap"
+        $script:candidateUnderTest = Join-Path $script:publishRoot "candidate-x"
+        # Default: both compose projects are stopped.
+        Mock docker { $global:LASTEXITCODE = 0 } -ModuleName bootstrap-restore
+    }
+
+    It "re-proves the stop precondition for BOTH known compose projects before touching anything" {
+        New-WorkspaceTree -Path $script:candidateUnderTest | Out-Null
+
+        Publish-RestoreCandidateWorkspace -CandidateDirectory $script:candidateUnderTest -ActiveBootstrapRoot $script:activeRootUnderTest | Out-Null
+
+        foreach ($projectName in @("dms-local", "dms-published")) {
+            Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+                ($args -join " ") -like "*label=com.docker.compose.project=$projectName*"
+            }
+        }
+    }
+
+    It "refuses to commit while a project is running, leaving active and candidate untouched" {
+        Mock docker { $global:LASTEXITCODE = 0; "dms-local-dms-1" } -ModuleName bootstrap-restore
+        New-WorkspaceTree -Path $script:activeRootUnderTest -File @{ "bootstrap-manifest.json" = "old" } | Out-Null
+        New-WorkspaceTree -Path $script:candidateUnderTest | Out-Null
+
+        { Publish-RestoreCandidateWorkspace -CandidateDirectory $script:candidateUnderTest -ActiveBootstrapRoot $script:activeRootUnderTest } |
+            Should -Throw "*still has running containers*"
+
+        Get-Content -LiteralPath (Join-Path $script:activeRootUnderTest "bootstrap-manifest.json") -Raw | Should -Be "old"
+        $script:candidateUnderTest | Should -Exist
+    }
+
+    It "discards a byte-identical candidate and reuses the active tree as-is" {
+        New-WorkspaceTree -Path $script:activeRootUnderTest | Out-Null
+        New-WorkspaceTree -Path $script:candidateUnderTest | Out-Null
+
+        $result = Publish-RestoreCandidateWorkspace -CandidateDirectory $script:candidateUnderTest -ActiveBootstrapRoot $script:activeRootUnderTest
+
+        $result.Replaced | Should -BeFalse
+        Test-Path -LiteralPath $script:candidateUnderTest | Should -BeFalse
+        Get-Content -LiteralPath (Join-Path $script:activeRootUnderTest ".hidden-marker") -Raw | Should -Be "dot"
+    }
+
+    It "replaces the ENTIRE active tree when any byte differs: no stale file survives" {
+        New-WorkspaceTree -Path $script:activeRootUnderTest -File @{
+            "bootstrap-manifest.json" = '{"version":1,"old":true}'
+            "stale-only-in-active.txt" = "stale"
+        } | Out-Null
+        New-WorkspaceTree -Path $script:candidateUnderTest | Out-Null
+
+        $result = Publish-RestoreCandidateWorkspace -CandidateDirectory $script:candidateUnderTest -ActiveBootstrapRoot $script:activeRootUnderTest
+
+        $result.Replaced | Should -BeTrue
+        Test-Path -LiteralPath $script:candidateUnderTest | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $script:activeRootUnderTest "stale-only-in-active.txt") | Should -BeFalse
+        Get-Content -LiteralPath (Join-Path $script:activeRootUnderTest "bootstrap-manifest.json") -Raw | Should -Be '{"version":1}'
+        Get-Content -LiteralPath (Join-Path $script:activeRootUnderTest ".hidden-marker") -Raw | Should -Be "dot"
+    }
+
+    It "moves the candidate in when no active workspace exists" {
+        New-WorkspaceTree -Path $script:candidateUnderTest | Out-Null
+
+        $result = Publish-RestoreCandidateWorkspace -CandidateDirectory $script:candidateUnderTest -ActiveBootstrapRoot $script:activeRootUnderTest
+
+        $result.Replaced | Should -BeTrue
+        Get-Content -LiteralPath (Join-Path $script:activeRootUnderTest "ApiSchema/core.json") -Raw | Should -Be '{"core":true}'
+    }
+
+    It "an injected failure between remove and move leaves no active workspace and an intact candidate" {
+        Mock Move-Item { throw "injected move failure" } -ModuleName bootstrap-restore
+        New-WorkspaceTree -Path $script:activeRootUnderTest -File @{ "bootstrap-manifest.json" = "old" } | Out-Null
+        New-WorkspaceTree -Path $script:candidateUnderTest | Out-Null
+
+        { Publish-RestoreCandidateWorkspace -CandidateDirectory $script:candidateUnderTest -ActiveBootstrapRoot $script:activeRootUnderTest } |
+            Should -Throw "*injected move failure*"
+
+        # The accepted failure shape: never a partial/mixed tree - the active workspace is gone
+        # entirely and the candidate remains intact for diagnosis; the next run re-stages.
+        Test-Path -LiteralPath $script:activeRootUnderTest | Should -BeFalse
+        Get-Content -LiteralPath (Join-Path $script:candidateUnderTest ".hidden-marker") -Raw | Should -Be "dot"
+    }
+
+    It "refuses a candidate without a bootstrap manifest before any stop proof or workspace read" {
+        New-Item -ItemType Directory -Path $script:candidateUnderTest -Force | Out-Null
+        New-WorkspaceTree -Path $script:activeRootUnderTest | Out-Null
+
+        { Publish-RestoreCandidateWorkspace -CandidateDirectory $script:candidateUnderTest -ActiveBootstrapRoot $script:activeRootUnderTest } |
+            Should -Throw "*no bootstrap-manifest.json*"
+
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly
+        $script:activeRootUnderTest | Should -Exist
+    }
+}
