@@ -11,7 +11,7 @@ Describe "Docker Compose logging defaults (DMS-1407)" {
         $script:composeLogBlockPattern = '(?ms)logging:\s*driver:\s*json-file\s*options:\s*max-size:\s*"\$\{DOCKER_LOG_MAX_SIZE:-50m\}"\s*max-file:\s*"\$\{DOCKER_LOG_MAX_FILE:-5\}"'
     }
 
-    function script:Get-ServiceBlocks {
+    function script:Get-ServiceBlock {
         param(
             [Parameter(Mandatory)]
             [string]
@@ -60,7 +60,7 @@ Describe "Docker Compose logging defaults (DMS-1407)" {
 
         foreach ($relativePath in $composeFiles) {
             $content = Get-Content -LiteralPath (Join-Path $script:repoRoot $relativePath) -Raw
-            $services = @(Get-ServiceBlocks -Content $content)
+            $services = @(Get-ServiceBlock -Content $content)
 
             $services.Count | Should -BeGreaterThan 0 -Because "$relativePath should contain concrete compose services"
             foreach ($service in $services) {
