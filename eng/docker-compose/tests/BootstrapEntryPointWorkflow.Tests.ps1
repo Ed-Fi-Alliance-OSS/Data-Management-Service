@@ -3129,7 +3129,7 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
                 Join-Path $script:sourceRepoRoot "build-dms.ps1"
             ) -Raw
 
-            $buildScript | Should -Match 'StartEnvironment \{ Invoke-Step \{ Start-BootstrapDockerEnvironment -UsePublishedImage:\$UsePublishedImage -SkipDockerBuild:\$SkipDockerBuild -LoadSeedData:\$LoadSeedData -DatabaseEngine \$DatabaseEngine -SeparateConfigDatabase:\$SeparateConfigDatabase -IdentityProvider \$IdentityProvider -DataStandardVersion \$DataStandardVersion -DataStandardVersionSupplied:\$dataStandardVersionSupplied \} \}'
+            $buildScript | Should -Match 'StartEnvironment \{ Invoke-Step \{ Start-BootstrapDockerEnvironment -UsePublishedImage:\$UsePublishedImage -SkipDockerBuild:\$SkipDockerBuild -LoadSeedData:\$LoadSeedData -DatabaseEngine \$DatabaseEngine -SeparateConfigDatabase:\$SeparateConfigDatabase -IdentityProvider \$IdentityProvider -DataStandardVersion \$DataStandardVersion -DataStandardVersionSupplied:\$dataStandardVersionSupplied -RestoreTemplate \$RestoreTemplate -PackageDirectory \$PackageDirectory \} \}'
         }
 
         It "Start-BootstrapDockerEnvironment forwards -SeparateConfigDatabase to the bootstrap wrapper only when requested" {
@@ -3166,6 +3166,39 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
             ) -Raw
 
             $buildScript | Should -Match '(?s)if \(\$DataStandardVersionSupplied\) \{\s*\$bootstrapArgs\.DataStandardVersion = \$DataStandardVersion\s*\}'
+        }
+
+        It "declares -RestoreTemplate validated to Minimal/Populated and a plain -PackageDirectory" {
+            $buildScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceRepoRoot "build-dms.ps1"
+            ) -Raw
+
+            $buildScript | Should -Match '\[ValidateSet\("Minimal",\s*"Populated"\)\]\s*\$RestoreTemplate,'
+            $buildScript | Should -Match '\[string\]\s*\$PackageDirectory,'
+        }
+
+        It "Start-BootstrapDockerEnvironment forwards -RestoreTemplate and -PackageDirectory to the bootstrap wrapper only when supplied" {
+            $buildScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceRepoRoot "build-dms.ps1"
+            ) -Raw
+
+            $buildScript | Should -Match '(?s)if \(-not \[string\]::IsNullOrWhiteSpace\(\$RestoreTemplate\)\) \{\s*\$bootstrapArgs\.RestoreTemplate = \$RestoreTemplate\s*\}'
+            $buildScript | Should -Match '(?s)if \(-not \[string\]::IsNullOrWhiteSpace\(\$PackageDirectory\)\) \{\s*\$bootstrapArgs\.PackageDirectory = \$PackageDirectory\s*\}'
+        }
+
+        It "normalizes -PackageDirectory against the caller's CWD before the eng/docker-compose Push-Location" {
+            $buildScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceRepoRoot "build-dms.ps1"
+            ) -Raw
+
+            $functionIndex = $buildScript.IndexOf("function Start-BootstrapDockerEnvironment")
+            $functionIndex | Should -BeGreaterThan -1
+            $functionBody = $buildScript.Substring($functionIndex)
+            $normalizationIndex = $functionBody.IndexOf('$PackageDirectory = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $PackageDirectory))')
+            $pushLocationIndex = $functionBody.IndexOf('Push-Location "$PSScriptRoot/eng/docker-compose"')
+
+            $normalizationIndex | Should -BeGreaterThan -1
+            $pushLocationIndex | Should -BeGreaterThan $normalizationIndex -Because "a relative package source must resolve against the operator's CWD, not eng/docker-compose"
         }
     }
 
