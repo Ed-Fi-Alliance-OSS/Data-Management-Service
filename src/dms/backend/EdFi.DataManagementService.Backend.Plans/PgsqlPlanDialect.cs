@@ -69,6 +69,41 @@ internal sealed class PgsqlPlanDialect : IPlanSqlDialect
     }
 
     /// <inheritdoc />
+    public string CandidateCountOverWindowSql => "COUNT(*) OVER ()";
+
+    /// <summary>
+    /// Appends the PostgreSQL partition-size expression.
+    /// </summary>
+    /// <remarks>
+    /// <c>numeric</c> is arbitrary-precision, so the division cannot truncate or overflow at any
+    /// candidate count a <c>bigint</c> identity can reach. The ceiling is converted to <c>bigint</c>
+    /// before <c>GREATEST</c> so both arguments, and therefore the result, are integers: casting a
+    /// <c>numeric</c> to <c>bigint</c> rounds rather than truncates, which is exact here only because
+    /// <c>CEIL</c> has already produced an integral value.
+    /// </remarks>
+    /// <param name="writer">The SQL writer to append to.</param>
+    /// <param name="candidateCountExpression">The already-qualified candidate count expression.</param>
+    /// <param name="partitionCountParameterName">The bare requested partition count parameter name.</param>
+    /// <param name="minimumPartitionSizeParameterName">The bare minimum partition size parameter name.</param>
+    public void AppendPartitionSizeExpression(
+        SqlWriter writer,
+        string candidateCountExpression,
+        string partitionCountParameterName,
+        string minimumPartitionSizeParameterName
+    )
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        ArgumentException.ThrowIfNullOrWhiteSpace(candidateCountExpression);
+
+        writer
+            .Append($"GREATEST(CAST(CEIL(CAST({candidateCountExpression} AS numeric) / CAST(")
+            .AppendParameter(partitionCountParameterName)
+            .Append(" AS numeric)) AS bigint), ")
+            .AppendParameter(minimumPartitionSizeParameterName)
+            .Append(")");
+    }
+
+    /// <inheritdoc />
     public void AppendCreateKeysetTempTable(SqlWriter writer, KeysetTableContract keyset)
     {
         ArgumentNullException.ThrowIfNull(writer);

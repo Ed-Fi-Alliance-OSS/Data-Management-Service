@@ -126,6 +126,15 @@ internal class RequestInfo(
     public QueryElement[] QueryElements { get; set; } = [];
 
     /// <summary>
+    /// The desired partition count for a partitions request: the client's validated value, or the
+    /// configured default when the request omitted it. Set by ValidatePartitionQueryMiddleware at a
+    /// single assignment site, and only once every one of that middleware's checks succeeds, so a
+    /// request it rejects never carries a count a handler could act on. Null on every other pipeline,
+    /// which have no partition count to describe.
+    /// </summary>
+    public int? RequestedPartitionCount { get; set; }
+
+    /// <summary>
     /// The parsed and validated change-version window from the minChangeVersion /
     /// maxChangeVersion query parameters. ChangeVersionRange.None when neither is
     /// supplied. Set by ValidateQueryMiddleware before query-field matching.

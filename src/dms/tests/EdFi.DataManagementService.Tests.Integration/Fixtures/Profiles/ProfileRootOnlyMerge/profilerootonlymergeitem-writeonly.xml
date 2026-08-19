@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    A profile that exposes the resource for writing but not for reading. The other two profiles in
+    this fixture both declare a ReadContentType, so neither can exercise the read side of the
+    profile method-usage rule: an explicitly requested profile whose resource has no readable
+    content type answers a GET with HTTP 405 urn:ed-fi:api:profile:method-usage.
+
+    Used by PartitionProfileScenario to prove that GET .../partitions answers that rule identically
+    to the collection GET it is a sibling of. The partitions pipeline composes the same
+    ProfileResolutionMiddleware, so the two must agree by construction rather than by coincidence.
+-->
+<Profile name="ProfileRootOnlyMergeItem-WriteOnly">
+    <Resource name="ProfileRootOnlyMergeItem">
+        <WriteContentType memberSelection="IncludeAll">
+            <Object name="profileScope" memberSelection="IncludeOnly">
+                <Property name="clearableText" />
+            </Object>
+        </WriteContentType>
+    </Resource>
+</Profile>

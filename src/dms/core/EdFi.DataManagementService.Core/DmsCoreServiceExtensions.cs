@@ -174,15 +174,7 @@ public static class DmsCoreServiceExtensions
                 BreakDuration = TimeSpan.FromSeconds(breakerSettings.BreakDurationSeconds),
                 ShouldHandle = new PredicateBuilder().HandleResult(result =>
                 {
-                    bool shouldHandle = result switch
-                    {
-                        DeleteResult.UnknownFailure => true,
-                        GetResult.UnknownFailure => true,
-                        QueryResult.UnknownFailure => true,
-                        UpdateResult.UnknownFailure => true,
-                        UpsertResult.UnknownFailure => true,
-                        _ => false,
-                    };
+                    bool shouldHandle = Utility.IsUnknownFailureResult(result);
 
                     if (shouldHandle)
                     {

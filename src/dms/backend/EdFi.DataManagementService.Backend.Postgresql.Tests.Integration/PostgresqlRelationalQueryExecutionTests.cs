@@ -850,6 +850,155 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         success.AllowsDocumentIdContinuation.Should().BeFalse();
     }
 
+    // The boundary set must be anchored on identifiers the caller can actually reach, and every range
+    // but the last must close one before the next begins, or a client walking the partitions in parallel
+    // would miss or repeat documents.
+    [Test]
+    public async Task It_partitions_the_school_candidate_set_into_contiguous_ranges_on_real_document_ids()
+    {
+        var currentSchools = await ReadPersistedSchoolsInDocumentOrderAsync();
+
+        var result = await ExecutePartitionsAsync(
+            _resourceInfo,
+            [],
+            requestedPartitionCount: 3,
+            minimumPartitionSize: 1,
+            traceId: "pg-partitions-all"
+        );
+
+        var success = result.Should().BeOfType<PartitionResult.PartitionSuccess>().Subject;
+
+        success
+            .Ranges.Select(range => range.InclusiveMinimum)
+            .Should()
+            .Equal(currentSchools.Select(school => school.DocumentId));
+        success.Ranges[^1].InclusiveMaximum.Should().Be(long.MaxValue);
+
+        for (var index = 0; index + 1 < success.Ranges.Count; index++)
+        {
+            success
+                .Ranges[index]
+                .InclusiveMaximum.Should()
+                .Be(success.Ranges[index + 1].InclusiveMinimum - 1);
+        }
+
+        _recorder.HydrationKeysets.Should().BeEmpty("a boundary calculation hydrates nothing");
+        _recorder.PageMaterializationCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_partitions_only_the_filtered_candidate_set()
+    {
+        var currentSchools = await ReadPersistedSchoolsInDocumentOrderAsync();
+        var targetSchool = currentSchools[1];
+
+        var result = await ExecutePartitionsAsync(
+            _resourceInfo,
+            [CreateQueryElement("nameOfInstitution", "$.nameOfInstitution", targetSchool.NameOfInstitution)],
+            requestedPartitionCount: 5,
+            minimumPartitionSize: 1,
+            traceId: "pg-partitions-filtered"
+        );
+
+        result
+            .Should()
+            .BeOfType<PartitionResult.PartitionSuccess>()
+            .Which.Ranges.Should()
+            .Equal(new CursorRange(targetSchool.DocumentId, long.MaxValue));
+    }
+
+    [Test]
+    public async Task It_returns_no_partitions_when_the_change_version_window_excludes_every_school()
+    {
+        var currentSchools = await ReadPersistedSchoolsInDocumentOrderAsync();
+        var maxContentVersion = currentSchools.Max(static school => school.ContentVersion);
+
+        var result = await ExecutePartitionsAsync(
+            _resourceInfo,
+            [],
+            requestedPartitionCount: 4,
+            minimumPartitionSize: 1,
+            traceId: "pg-partitions-empty-window",
+            changeVersionRange: new ChangeVersionRange(maxContentVersion + 1, null)
+        );
+
+        result.Should().BeOfType<PartitionResult.PartitionSuccess>().Which.Ranges.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_partitions_descriptors_over_the_shared_descriptor_table()
+    {
+        var (descriptorProjectSchema, descriptorResourceSchema) = GetResourceSchema(
+            _fixture.EffectiveSchemaSet,
+            "ed-fi",
+            "GradeLevelDescriptor"
+        );
+        var descriptorResourceInfo = CreateResourceInfo(descriptorProjectSchema, descriptorResourceSchema);
+        var expectedDocumentIds = await ReadDescriptorDocumentIdsAsync("GradeLevelDescriptor");
+
+        expectedDocumentIds
+            .Should()
+            .HaveCount(2, "the seeded grade levels are what the descriptor boundaries are calculated over");
+
+        var result = await ExecutePartitionsAsync(
+            descriptorResourceInfo,
+            [],
+            requestedPartitionCount: 2,
+            minimumPartitionSize: 1,
+            traceId: "pg-partitions-descriptor"
+        );
+
+        var success = result.Should().BeOfType<PartitionResult.PartitionSuccess>().Subject;
+
+        success.Ranges.Select(range => range.InclusiveMinimum).Should().Equal(expectedDocumentIds);
+        success.Ranges[^1].InclusiveMaximum.Should().Be(long.MaxValue);
+    }
+
+    private async Task<PartitionResult> ExecutePartitionsAsync(
+        ResourceInfo resourceInfo,
+        QueryElement[] queryElements,
+        int requestedPartitionCount,
+        long minimumPartitionSize,
+        string traceId,
+        ChangeVersionRange? changeVersionRange = null
+    )
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        SetSelectedInstance(scope.ServiceProvider);
+
+        var request = new RelationalPartitionRequest(
+            ResourceInfo: resourceInfo,
+            AuthorizationContext: new RelationalAuthorizationContext([]),
+            MappingSet: _mappingSet,
+            QueryElements: queryElements,
+            AuthorizationStrategyEvaluators: [],
+            RequestedPartitionCount: requestedPartitionCount,
+            MinimumPartitionSize: minimumPartitionSize,
+            TraceId: new TraceId(traceId),
+            ChangeVersionRange: changeVersionRange
+        );
+
+        return await scope
+            .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
+            .QueryPartitions(request);
+    }
+
+    private async Task<IReadOnlyList<long>> ReadDescriptorDocumentIdsAsync(string resourceName)
+    {
+        var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", resourceName);
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "DocumentId"
+            FROM "dms"."Descriptor"
+            WHERE "ResourceKeyId" = @resourceKeyId
+            ORDER BY "DocumentId";
+            """,
+            new NpgsqlParameter("resourceKeyId", resourceKeyId)
+        );
+
+        return [.. rows.Select(row => GetRequiredInt64(row, "DocumentId"))];
+    }
+
     private static ServiceProvider CreateServiceProvider(ChangeQueryPageOrderingPolicy? orderingPolicy = null)
     {
         ServiceCollection services = [];

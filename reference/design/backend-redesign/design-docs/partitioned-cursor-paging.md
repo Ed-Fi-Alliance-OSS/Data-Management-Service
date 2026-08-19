@@ -74,7 +74,12 @@ rule it governs.
 3. **No extra roundtrip.** A cursor page MUST use the existing single-command page-keyset
    hydration architecture and add no database command, transaction, or roundtrip.
 4. **One command for `/partitions`.** The partition endpoint MUST perform exactly one database
-   command, return identifiers only, and hydrate nothing.
+   command for its boundary selection, return identifiers only, and hydrate nothing. Where a
+   view-based authorization strategy is configured, the pre-existing custom-view validation probe
+   runs first, exactly as it does for GET-many. That probe is authorization validation rather than
+   boundary retrieval, and keeping it separate is what preserves the configured check ordering: a
+   view that may be validated only after an earlier check has passed cannot be co-batched behind
+   that check without letting a relation masquerading as the view answer the membership SQL.
 5. **Authorization parity.** Cursor pages and partition boundaries MUST be computed over the same
    filtered, authorized candidate set. A forged or hand-edited range MUST NOT expose an
    inaccessible identifier.
@@ -313,19 +318,47 @@ authorized candidate set. The five reserved paging parameters — `pageToken`, `
 client that confused the two endpoints gets a useful answer. Every other query field is rejected by
 the existing unknown-query-field rule.
 
-Partition validation uses its own ordered phases, and unlike cursor validation it may report
-several errors:
+Partition validation uses its own ordered phases, and unlike cursor validation the last of them may
+report several errors. The four phases run in this order, and the first one to find a fault answers:
 
-1. **`number` syntax and range.** A malformed or out-of-range `number` produces the exact error
+1. **Change-version window.** The same `minChangeVersion`/`maxChangeVersion` parsing GET-many
+   applies, in the same position relative to filters that GET-many puts it in.
+2. **Resource filters.** The same unknown-query-field and filter-value-type rules GET-many applies,
+   over the same candidate set. The five reserved paging names and `number` are excluded from filter
+   matching before this phase runs, so a supplied `limit` is not reported as an unknown query field.
+   Excluding `number` is also what makes a resource property of that name unfilterable here while it
+   stays filterable on the collection GET, which is the approved intentional ODS difference the epic
+   records.
+3. **`number` syntax and range.** A malformed or out-of-range `number` produces the exact error
    `Number of partitions must be between 1 and 200.` A present-but-blank `?number=` is a malformed
    value and produces that same error rather than being treated as absent and defaulted: a client
    that typed `number=` asked for a partition count, and the parameter it typed should not be
    silently ignored. This phase takes precedence over the unsupported-parameter phase.
-2. **Reserved parameters.** Reserved paging parameters are reported as unsupported *without* first
+4. **Reserved parameters.** Reserved paging parameters are reported as unsupported *without* first
    parsing their values, using the exact error
    `The '{parameter}' parameter is not supported by the partitions endpoint.` If several are
    present, report them in the canonical order `pageToken`, `pageSize`, `limit`, `offset`,
    `totalCount`.
+
+The change-version window and filters are placed ahead of the two partition phases, unlike GET-many,
+which validates paging first because a paging fault is the first thing wrong with a page request.
+This operation has no page. Within the two shared phases, the window is validated ahead of filters,
+which is the order GET-many uses: a query string that faults in both ways must be answered with the
+same problem type by both operations, because a client that discriminates on `type` should not have
+to know which of the two sibling endpoints it called. Filters must in turn run ahead of phase 4,
+because excluding the reserved names from filter matching is what lets phase 4 report `?limit=5` as a
+parameter that does not apply here rather than as an unknown query field, and that exclusion is only
+meaningful if filter matching happens before the reserved-parameter phase reports.
+
+Four consequences of the ordering, each a fixed part of the contract:
+
+- `?number=abc&notAField=1` answers with the unknown-query-field error alone. Both are client
+  mistakes, and answering the field first keeps this operation's unknown-field behavior identical to
+  GET-many's.
+- `?number=abc&minChangeVersion=bogus` answers with the change-version error alone.
+- `?notAField=1&limit=5` answers with the unknown-query-field error alone.
+- `?minChangeVersion=bogus&notAField=1` answers with the change-version error alone, in the
+  parameter-validation shell — the same problem type GET-many answers that query string with.
 
 The asymmetry with cursor validation is deliberate. Cursor parameters are interdependent — the
 meaning of `limit`, `pageSize`, and `totalCount` all depend on whether a valid `pageToken` is
@@ -598,8 +631,8 @@ The database returns starting ids only. Backend code converts each non-final sta
 range `start..nextStart-1` and the final start to `start..Int64.MaxValue`; Core token-encodes those
 typed ranges.
 
-The endpoint performs one database command and does not hydrate documents, project profiles,
-resolve descriptors, inject links, or return a total count.
+The endpoint performs one database command for its boundary selection and does not hydrate
+documents, project profiles, resolve descriptors, inject links, or return a total count.
 
 **The linear cost is deliberate.** The partition query is `O(n)` over accessible candidates. That
 cost is paid once, per client, to enable an arbitrary number of subsequent depth-insensitive range
@@ -769,7 +802,9 @@ violates one of these has not implemented this design.
   hydration batches are the explicit exceptions.
 - Cursor hydration performs one database command and adds no roundtrip over the existing
   single-command page-keyset architecture.
-- `/partitions` performs one database command and returns identifiers only.
+- `/partitions` performs one database command for its boundary selection and returns identifiers
+  only. The separate custom-view validation probe described in the requirement above is the explicit
+  exception, and it is present only where a view-based authorization strategy is configured.
 
 ### Latency invariants
 
@@ -840,3 +875,13 @@ identifiers. Decoded bounds are candidate identifiers by another name.
 7. **Edge conditions are not errors.** `pageSize=0`, inverted ranges, sparse identifiers, an empty
    candidate set, and `Int64.MaxValue` are valid conditions with defined behavior, not server
    errors.
+8. **Custom-view validation is a second command.** Where a view-based authorization strategy is
+   configured, a read issues the custom-view validation probe before its boundary or page command,
+   on `/partitions` and GET-many alike. Collapsing the two into one provider command is deferred,
+   not rejected: it would change shared authorization behavior for both endpoints, needs
+   provider-specific multi-result-set composition on PostgreSQL and SQL Server, and must preserve
+   the configured check ordering — a view validatable only after an earlier check has passed cannot
+   be co-batched behind that check without letting a relation masquerading as the view answer the
+   membership SQL. Until that work is scheduled, the boundary-selection qualification above is the
+   contract, and neither endpoint may be changed alone, because cursor pages and partition
+   boundaries must keep resolving authorization identically.

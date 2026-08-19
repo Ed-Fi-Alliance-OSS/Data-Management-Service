@@ -187,6 +187,100 @@ public sealed record DescriptorQueryRequest
 }
 
 /// <summary>
+/// Request context for descriptor partition-boundary operations served from the shared
+/// <c>dms.Descriptor</c> table.
+/// </summary>
+/// <remarks>
+/// Separate from <see cref="DescriptorQueryRequest" /> rather than a paging variant of it: a boundary
+/// calculation selects identifiers only, so it has no page, no readable-profile projection, and no
+/// response content coding to carry, and the count and minimum size it does carry have no meaning for a
+/// page.
+/// </remarks>
+public sealed record DescriptorPartitionRequest
+{
+    public DescriptorPartitionRequest(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        QueryElement[] queryElements,
+        AuthorizationStrategyEvaluator[] authorizationStrategyEvaluators,
+        int requestedPartitionCount,
+        long minimumPartitionSize,
+        TraceId traceId,
+        RelationalAuthorizationContext? relationalAuthorizationContext = null,
+        ChangeVersionRange? changeVersionRange = null,
+        string tenantKey = ""
+    )
+    {
+        MappingSet = mappingSet ?? throw new ArgumentNullException(nameof(mappingSet));
+        Resource = resource;
+        QueryElements = queryElements ?? throw new ArgumentNullException(nameof(queryElements));
+        AuthorizationStrategyEvaluators =
+            authorizationStrategyEvaluators
+            ?? throw new ArgumentNullException(nameof(authorizationStrategyEvaluators));
+        RequestedPartitionCount = requestedPartitionCount;
+        MinimumPartitionSize = minimumPartitionSize;
+        TraceId = traceId;
+        RelationalAuthorizationContext =
+            relationalAuthorizationContext ?? new RelationalAuthorizationContext([]);
+        ChangeVersionRange = changeVersionRange ?? ChangeVersionRange.None;
+        TenantKey = tenantKey;
+    }
+
+    /// <summary>
+    /// The resolved runtime mapping set for the active request.
+    /// </summary>
+    public MappingSet MappingSet { get; init; }
+
+    /// <summary>
+    /// The qualified descriptor resource whose partitions are being calculated.
+    /// </summary>
+    public QualifiedResourceName Resource { get; init; }
+
+    /// <summary>
+    /// The client query elements after Core validation and parsing. Boundaries are calculated over the
+    /// filtered candidate set, so these are the elements the equivalent GET-many would supply.
+    /// </summary>
+    public QueryElement[] QueryElements { get; init; }
+
+    /// <summary>
+    /// The effective GET-many authorization strategies already resolved by Core.
+    /// </summary>
+    public AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators { get; init; }
+
+    /// <summary>
+    /// The desired partition count, already defaulted from configuration when the request omitted it.
+    /// </summary>
+    public int RequestedPartitionCount { get; init; }
+
+    /// <summary>
+    /// The smallest partition, in candidate rows.
+    /// </summary>
+    public long MinimumPartitionSize { get; init; }
+
+    /// <summary>
+    /// The request trace id for diagnostics.
+    /// </summary>
+    public TraceId TraceId { get; init; }
+
+    /// <summary>
+    /// Request-scoped authorization inputs (namespace prefixes and claim education organization ids)
+    /// used by backend-planned namespace authorization. Carried alongside the evaluators because the
+    /// evaluators preserve raw strategy names with empty filter providers in relational mode and do not
+    /// carry the namespace prefixes the planner needs.
+    /// </summary>
+    public RelationalAuthorizationContext RelationalAuthorizationContext { get; init; }
+
+    /// <summary>
+    /// The validated minChangeVersion / maxChangeVersion window for this request.
+    /// <see cref="Core.External.Model.ChangeVersionRange.None"/> when neither parameter was supplied.
+    /// </summary>
+    public ChangeVersionRange ChangeVersionRange { get; init; }
+
+    /// <summary>The normalized request tenant key. Empty string identifies the default target.</summary>
+    public string TenantKey { get; init; }
+}
+
+/// <summary>
 /// Handles descriptor resource reads from the shared <c>dms.Descriptor</c> table,
 /// bypassing the generic project-schema read path.
 /// </summary>
@@ -205,6 +299,15 @@ public interface IDescriptorReadHandler
     /// </summary>
     Task<QueryResult> HandleQueryAsync(
         DescriptorQueryRequest request,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Calculates descriptor partition boundaries over the same authorized candidate relation
+    /// <see cref="HandleQueryAsync" /> pages.
+    /// </summary>
+    Task<PartitionResult> HandlePartitionsAsync(
+        DescriptorPartitionRequest request,
         CancellationToken cancellationToken = default
     );
 }

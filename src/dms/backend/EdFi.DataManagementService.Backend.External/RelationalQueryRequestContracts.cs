@@ -128,3 +128,67 @@ public interface IQueryRequest : IRequestWithMappingSet
     /// <summary>The content coding selected for the external response.</summary>
     ResponseContentCoding ResponseContentCoding { get; }
 }
+
+/// <summary>
+/// Relational partition boundary request.
+/// </summary>
+/// <remarks>
+/// Deliberately not an <see cref="IQueryRequest" />: the operation selects identifiers and hydrates
+/// nothing, so there is nowhere to carry a page, a readable-profile projection, or a response content
+/// coding. Every input is typed, and the requested count and minimum size arrive as numbers rather than
+/// as anything a provider could parse out of client text — a SQL compiler that could see token text
+/// would be one refactor away from making an authorization decision from it.
+/// </remarks>
+public interface IPartitionRequest : IRequestWithMappingSet
+{
+    /// <summary>
+    /// The ResourceInfo for the resource whose partitions are being calculated.
+    /// </summary>
+    ResourceInfo ResourceInfo { get; }
+
+    /// <summary>
+    /// The elements of the resource-property filter this request was validated with. Boundaries are
+    /// calculated over the filtered candidate set, so these are the same elements the equivalent
+    /// GET-many request would supply.
+    /// </summary>
+    QueryElement[] QueryElements { get; }
+
+    /// <summary>
+    /// Collection of authorization strategy filters, each specifying collection of filters and filter operator.
+    /// </summary>
+    AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators { get; }
+
+    /// <summary>
+    /// Typed request-scoped authorization inputs for relational authorization planning/execution.
+    /// </summary>
+    RelationalAuthorizationContext AuthorizationContext { get; }
+
+    /// <summary>
+    /// The validated minChangeVersion / maxChangeVersion window for this request.
+    /// <see cref="Model.ChangeVersionRange.None"/> when neither parameter was supplied.
+    /// </summary>
+    ChangeVersionRange ChangeVersionRange { get; }
+
+    /// <summary>
+    /// The desired partition count: the client's validated value, or the configured default when the
+    /// request omitted it. Core resolves the default, so the backend never has to know one.
+    /// </summary>
+    int RequestedPartitionCount { get; }
+
+    /// <summary>
+    /// The smallest partition, in candidate rows. Long-width because it is derived from the configured
+    /// maximum page size in checked 64-bit arithmetic, so a large configured page size cannot wrap it
+    /// negative and defeat the minimum-size guard.
+    /// </summary>
+    long MinimumPartitionSize { get; }
+
+    /// <summary>
+    /// The request TraceId.
+    /// </summary>
+    TraceId TraceId { get; }
+
+    /// <summary>
+    /// The normalized request tenant key. Empty string identifies the default/non-tenant target.
+    /// </summary>
+    string TenantKey { get; }
+}
