@@ -1067,9 +1067,16 @@ jobs:
     needs:
       - detect-fresh-build-changes
       - build-integration-test-assemblies
+    # Enable this qualification lane only after all pinned runtime images are published and
+    # configured as repository variables. Once enabled, the validation step below fails fast
+    # for malformed or unavailable prerequisites instead of silently skipping test evidence.
     if: >-
-      github.event_name != 'pull_request' ||
-      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
+      (github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true') &&
+      vars.CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE != '' &&
+      vars.CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE != '' &&
+      vars.CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE != '' &&
+      vars.CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE != ''
     runs-on: ubuntu-latest
     permissions:
       contents: read
