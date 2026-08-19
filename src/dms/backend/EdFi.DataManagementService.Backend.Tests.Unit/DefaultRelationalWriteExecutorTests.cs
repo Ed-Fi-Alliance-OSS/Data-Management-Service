@@ -468,7 +468,7 @@ public class Given_Default_Relational_Write_Executor
             mergedName: "Lincoln High Updated"
         );
         _noProfilePersister.ExceptionToThrow = new StubDbException(
-            "command timeout while inserting into dms.DocumentProjectionWork"
+            "command timeout while applying the canonical write"
         );
         _writeExceptionClassifier.IsTransientFailureToReturn = true;
 

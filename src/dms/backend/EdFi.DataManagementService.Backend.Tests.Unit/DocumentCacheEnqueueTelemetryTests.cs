@@ -283,6 +283,8 @@ public class Given_DocumentCacheEnqueueTelemetry
             .Should()
             .Contain(message => message.Contains("DocumentCacheEnqueueSucceeded", StringComparison.Ordinal))
             .And.Contain(message => message.Contains("DocumentCacheEnqueueFailed", StringComparison.Ordinal));
+        logger.Entries.Should().ContainSingle(entry => entry.Level == LogLevel.Debug);
+        logger.Entries.Should().ContainSingle(entry => entry.Level == LogLevel.Warning);
         logger.Entries.Should().OnlyContain(entry => entry.Properties["Target"]!.Equals(TargetLabel));
         logger
             .Entries.SelectMany(entry => entry.Properties.Values.OfType<string>())
@@ -440,6 +442,7 @@ public class Given_DocumentCacheEnqueueTelemetry
         success.Tags.Should().NotContainKey("target_key");
 
         CapturedLogEntry logEntry = logger.Entries.Should().ContainSingle().Which;
+        logEntry.Level.Should().Be(LogLevel.Debug);
         logEntry.Message.Should().Contain("DocumentCacheEnqueueSucceeded");
         logEntry.Properties["Target"].Should().Be("unknown");
         logEntry
@@ -479,6 +482,39 @@ public class Given_DocumentCacheEnqueueTelemetry
     }
 
     [Test]
+    public void It_uses_duplicate_tolerant_target_lookup_at_the_write_boundary()
+    {
+        using MetricCollector collector = new();
+        var registry = new StaticTargetRegistry([ResolvedTarget(TargetKey), ResolvedTarget(TargetKey)], []);
+        DocumentCacheEnqueueTelemetry telemetry = CreateTelemetry(
+            pageSize: 10,
+            targetRegistry: registry,
+            meter: collector.Meter
+        );
+
+        Action act = () =>
+            DocumentCacheEnqueueTelemetryWriteBoundary.RecordSuccessIfEnqueueSucceeded(
+                telemetry,
+                CreateSelectedDataStoreSelection(),
+                registry,
+                TargetKey.TenantKey,
+                SqlDialect.Pgsql,
+                DocumentCacheEnqueueOutcome.AlreadySatisfied,
+                DocumentCacheEnqueueTelemetryCanonicalOperation.Insert,
+                DocumentCacheEnqueueTelemetryResourceKind.Resource
+            );
+
+        act.Should().NotThrow();
+        collector
+            .MeasurementsFor(DocumentCacheEnqueueTelemetry.SuccessCounterName)
+            .Should()
+            .ContainSingle()
+            .Which.Tags["target"]
+            .Should()
+            .Be(TargetLabel);
+    }
+
+    [Test]
     public void It_does_not_record_unclassified_non_enqueue_failures_from_the_write_boundary()
     {
         using MetricCollector collector = new();
@@ -506,6 +542,45 @@ public class Given_DocumentCacheEnqueueTelemetry
         collector.MeasurementsFor(DocumentCacheEnqueueTelemetry.FailureCounterName).Should().BeEmpty();
     }
 
+    [Test]
+    public void It_records_provider_unavailable_write_boundary_failures_without_enqueue_artifacts()
+    {
+        using MetricCollector collector = new();
+        DocumentCacheTargetObservation target = ResolvedTarget(TargetKey);
+        var registry = new StaticTargetRegistry([target], [ExecutionContext(target)]);
+        DocumentCacheEnqueueTelemetry telemetry = CreateTelemetry(
+            pageSize: 10,
+            targetRegistry: registry,
+            meter: collector.Meter
+        );
+
+        DocumentCacheEnqueueTelemetryWriteBoundary.RecordFailureIfClassified(
+            telemetry,
+            NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance,
+            CreateSelectedDataStoreSelection(),
+            registry,
+            TargetKey.TenantKey,
+            SqlDialect.Pgsql,
+            DocumentCacheEnqueueTelemetryCanonicalOperation.Update,
+            DocumentCacheEnqueueTelemetryResourceKind.Resource,
+            new StubDbException("connection reset while opening the provider connection")
+        );
+
+        telemetry
+            .GetFailureSnapshot(TargetKey)
+            .RecentEvents.Should()
+            .ContainSingle()
+            .Which.Category.Should()
+            .Be(DocumentCacheEnqueueFailureCategory.ProviderUnavailable);
+        collector
+            .MeasurementsFor(DocumentCacheEnqueueTelemetry.FailureCounterName)
+            .Should()
+            .ContainSingle()
+            .Which.Tags["category"]
+            .Should()
+            .Be("providerUnavailable");
+    }
+
     [TestCase(
         "dms.DocumentCacheState singleton row is missing or unreadable for projection enqueue.",
         (int)DocumentCacheEnqueueFailureCategory.StateMissingOrInvalid
@@ -516,6 +591,22 @@ public class Given_DocumentCacheEnqueueTelemetry
     )]
     [TestCase(
         "permission denied for function TF_Document_EnqueueProjectionInsert",
+        (int)DocumentCacheEnqueueFailureCategory.EnqueueTriggerUnavailable
+    )]
+    [TestCase(
+        "permission denied for function TF_Document_EnqueueProjectionUpdate",
+        (int)DocumentCacheEnqueueFailureCategory.EnqueueTriggerUnavailable
+    )]
+    [TestCase(
+        "permission denied for trigger TR_Document_EnqueueProjectionInsert",
+        (int)DocumentCacheEnqueueFailureCategory.EnqueueTriggerUnavailable
+    )]
+    [TestCase(
+        "permission denied for trigger TR_Document_EnqueueProjectionUpdate",
+        (int)DocumentCacheEnqueueFailureCategory.EnqueueTriggerUnavailable
+    )]
+    [TestCase(
+        "permission denied for trigger TR_Document_EnqueueProjectionWork",
         (int)DocumentCacheEnqueueFailureCategory.EnqueueTriggerUnavailable
     )]
     [TestCase(
@@ -606,10 +697,10 @@ public class Given_DocumentCacheEnqueueTelemetry
     }
 
     [Test]
-    public void It_classifies_provider_command_timeouts_with_enqueue_artifacts_as_provider_timeouts()
+    public void It_classifies_provider_command_timeouts_from_the_timeout_classifier_without_enqueue_artifacts()
     {
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
-            new StubDbException("command timeout while inserting into dms.DocumentProjectionWork"),
+            new StubDbException("command timeout while applying the canonical write"),
             new StubProviderCommandTimeoutClassifier(isProviderCommandTimeout: true),
             out DocumentCacheEnqueueFailureCategory category
         );
@@ -619,16 +710,16 @@ public class Given_DocumentCacheEnqueueTelemetry
     }
 
     [Test]
-    public void It_classifies_provider_command_timeouts_with_enqueue_trigger_text_as_provider_timeouts()
+    public void It_does_not_classify_timeout_text_without_the_provider_timeout_classifier()
     {
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
-            new StubDbException("command timeout while executing TF_Document_EnqueueProjectionInsert"),
-            new StubProviderCommandTimeoutClassifier(isProviderCommandTimeout: true),
+            new StubDbException("command timeout while applying the canonical write"),
+            new StubProviderCommandTimeoutClassifier(isProviderCommandTimeout: false),
             out DocumentCacheEnqueueFailureCategory category
         );
 
-        classified.Should().BeTrue();
-        category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderTimeout);
+        classified.Should().BeFalse();
+        category.Should().Be(default(DocumentCacheEnqueueFailureCategory));
     }
 
     [Test]
@@ -658,7 +749,7 @@ public class Given_DocumentCacheEnqueueTelemetry
     }
 
     [Test]
-    public void It_does_not_classify_provider_unavailable_failures_without_enqueue_artifacts()
+    public void It_classifies_provider_unavailable_failures_without_enqueue_artifacts()
     {
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             new StubDbException("connection refused while opening the provider connection"),
@@ -666,8 +757,8 @@ public class Given_DocumentCacheEnqueueTelemetry
             out DocumentCacheEnqueueFailureCategory category
         );
 
-        classified.Should().BeFalse();
-        category.Should().Be(default(DocumentCacheEnqueueFailureCategory));
+        classified.Should().BeTrue();
+        category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderUnavailable);
     }
 
     [Test]

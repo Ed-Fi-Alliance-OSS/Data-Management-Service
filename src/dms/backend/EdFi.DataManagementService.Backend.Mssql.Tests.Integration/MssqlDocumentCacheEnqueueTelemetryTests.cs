@@ -51,7 +51,7 @@ public class Given_Mssql_DocumentCacheEnqueueTelemetry
     {
         SqlException exception = CreateSqlException(
             229,
-            "The EXECUTE permission was denied on the object 'TF_Document_EnqueueProjection', database 'edfi', schema 'dms'."
+            "The EXECUTE permission was denied on the object 'TR_Document_EnqueueProjectionWork', database 'edfi', schema 'dms'."
         );
 
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
@@ -66,7 +66,7 @@ public class Given_Mssql_DocumentCacheEnqueueTelemetry
             .MessageFor(category)
             .Should()
             .NotContain("229")
-            .And.NotContain("TF_Document_EnqueueProjection")
+            .And.NotContain("TR_Document_EnqueueProjectionWork")
             .And.NotContain("edfi")
             .And.NotContain("permission was denied");
     }
@@ -112,11 +112,11 @@ public class Given_Mssql_DocumentCacheEnqueueTelemetry
     }
 
     [Test]
-    public void It_classifies_provider_command_timeouts_with_enqueue_artifacts_as_provider_timeouts()
+    public void It_classifies_provider_command_timeouts_without_enqueue_artifacts()
     {
         SqlException exception = CreateSqlException(
             -2,
-            "Execution Timeout Expired while inserting into dms.DocumentProjectionWork."
+            "Execution Timeout Expired while applying the canonical write."
         );
 
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
@@ -127,6 +127,24 @@ public class Given_Mssql_DocumentCacheEnqueueTelemetry
 
         classified.Should().BeTrue();
         category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderTimeout);
+    }
+
+    [Test]
+    public void It_classifies_provider_unavailable_failures_without_enqueue_artifacts()
+    {
+        SqlException exception = CreateSqlException(
+            53,
+            "A network-related or instance-specific error occurred while establishing a connection to SQL Server."
+        );
+
+        bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
+            exception,
+            _providerCommandTimeoutClassifier,
+            out DocumentCacheEnqueueFailureCategory category
+        );
+
+        classified.Should().BeTrue();
+        category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderUnavailable);
     }
 
     private static SqlException CreateSqlException(int number, string message)

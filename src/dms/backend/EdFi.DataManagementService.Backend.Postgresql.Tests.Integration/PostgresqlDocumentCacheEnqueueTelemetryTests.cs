@@ -50,7 +50,7 @@ public class Given_Postgresql_DocumentCacheEnqueueTelemetry
     {
         var exception = CreateException(
             PostgresErrorCodes.InsufficientPrivilege,
-            "permission denied for function dms.\"TF_Document_EnqueueProjection\""
+            "permission denied for function dms.\"TF_Document_EnqueueProjectionInsert\""
         );
 
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
@@ -107,12 +107,9 @@ public class Given_Postgresql_DocumentCacheEnqueueTelemetry
     }
 
     [Test]
-    public void It_classifies_provider_command_timeouts_with_enqueue_artifacts_as_provider_timeouts()
+    public void It_classifies_provider_command_timeouts_without_enqueue_artifacts()
     {
-        var exception = CreateException(
-            "57014",
-            "canceling statement due to statement timeout while inserting into dms.DocumentProjectionWork"
-        );
+        var exception = CreateException("57014", "canceling statement due to statement timeout");
 
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             exception,
@@ -122,6 +119,21 @@ public class Given_Postgresql_DocumentCacheEnqueueTelemetry
 
         classified.Should().BeTrue();
         category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderTimeout);
+    }
+
+    [Test]
+    public void It_classifies_provider_unavailable_failures_without_enqueue_artifacts()
+    {
+        var exception = CreateException("08006", "connection reset while opening the provider connection");
+
+        bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
+            exception,
+            _providerCommandTimeoutClassifier,
+            out DocumentCacheEnqueueFailureCategory category
+        );
+
+        classified.Should().BeTrue();
+        category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderUnavailable);
     }
 
     private static PostgresException CreateException(

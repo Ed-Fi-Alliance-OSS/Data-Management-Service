@@ -325,8 +325,7 @@ internal static class DocumentCacheEnqueueTelemetryWriteBoundary
     private static DocumentCacheTargetObservation? TryGetCurrentTarget(
         IDocumentCacheTargetRegistry? targetRegistry,
         DocumentCacheTargetKey targetKey
-    ) =>
-        targetRegistry?.CurrentSnapshot.Targets.SingleOrDefault(target => target.TargetKey.Equals(targetKey));
+    ) => targetRegistry?.CurrentSnapshot.GetTarget(targetKey);
 
     private static bool IsSuccessfulOutcome(DocumentCacheEnqueueOutcome enqueueOutcome) =>
         enqueueOutcome is DocumentCacheEnqueueOutcome.AlreadySatisfied;
@@ -382,7 +381,7 @@ internal sealed class DocumentCacheEnqueueTelemetry(
 
         _successCounter.Add(1, ToTags(context, category: null));
 
-        _logger.LogInformation(
+        _logger.LogDebug(
             "DocumentCacheEnqueueSucceeded provider {Provider} target {Target} canonicalOperation {CanonicalOperation} resourceKind {ResourceKind} outcome {Outcome}",
             context.ProviderToken?.Value ?? DocumentCacheTelemetryLabel.Unknown,
             ToLogTarget(context.TargetKey),
@@ -542,8 +541,17 @@ internal static class DocumentCacheEnqueueFailureClassifier
     private const string UnsupportedLifecycleValueMessage =
         "dms.DocumentCacheState.ProjectionLifecycleState has unsupported value";
     private const string DocumentProjectionWorkName = "DocumentProjectionWork";
-    private const string EnqueueFunctionPrefix = "TF_Document_EnqueueProjection";
-    private const string EnqueueTriggerName = "TR_Document_EnqueueProjectionWork";
+    private static readonly string[] EnqueueFunctionNames =
+    [
+        DocumentCacheInventoryDefinition.DocumentEnqueueArtifacts.PgsqlInsertFunction,
+        DocumentCacheInventoryDefinition.DocumentEnqueueArtifacts.PgsqlUpdateFunction,
+    ];
+    private static readonly string[] EnqueueTriggerNames =
+    [
+        DocumentCacheInventoryDefinition.DocumentEnqueueArtifacts.PgsqlInsertTrigger,
+        DocumentCacheInventoryDefinition.DocumentEnqueueArtifacts.PgsqlUpdateTrigger,
+        DocumentCacheInventoryDefinition.DocumentEnqueueArtifacts.MssqlTrigger,
+    ];
     private static readonly string[] ProviderUnavailableMessageFragments =
     [
         "connection refused",
@@ -586,23 +594,21 @@ internal static class DocumentCacheEnqueueFailureClassifier
 
         bool hasEnqueueArtifactEvidence = HasEnqueueArtifactEvidence(classificationText);
 
-        if (
-            hasEnqueueArtifactEvidence && providerCommandTimeoutClassifier.IsProviderCommandTimeout(exception)
-        )
+        if (providerCommandTimeoutClassifier.IsProviderCommandTimeout(exception))
         {
             category = DocumentCacheEnqueueFailureCategory.ProviderTimeout;
             return true;
         }
 
-        if (IsProviderUnavailable(classificationText) && hasEnqueueArtifactEvidence)
+        if (IsProviderUnavailable(classificationText))
         {
             category = DocumentCacheEnqueueFailureCategory.ProviderUnavailable;
             return true;
         }
 
         if (
-            classificationText.Contains(EnqueueFunctionPrefix, StringComparison.OrdinalIgnoreCase)
-            || classificationText.Contains(EnqueueTriggerName, StringComparison.OrdinalIgnoreCase)
+            ContainsAny(classificationText, EnqueueFunctionNames)
+            || ContainsAny(classificationText, EnqueueTriggerNames)
         )
         {
             category = DocumentCacheEnqueueFailureCategory.EnqueueTriggerUnavailable;
@@ -653,15 +659,15 @@ internal static class DocumentCacheEnqueueFailureClassifier
 
     private static bool HasEnqueueArtifactEvidence(string message) =>
         message.Contains("DocumentCacheState", StringComparison.OrdinalIgnoreCase)
-        || message.Contains(EnqueueFunctionPrefix, StringComparison.OrdinalIgnoreCase)
-        || message.Contains(EnqueueTriggerName, StringComparison.OrdinalIgnoreCase)
+        || ContainsAny(message, EnqueueFunctionNames)
+        || ContainsAny(message, EnqueueTriggerNames)
         || message.Contains(DocumentProjectionWorkName, StringComparison.OrdinalIgnoreCase);
 
     private static bool IsProviderUnavailable(string message) =>
-        Array.Exists(
-            ProviderUnavailableMessageFragments,
-            fragment => message.Contains(fragment, StringComparison.OrdinalIgnoreCase)
-        );
+        ContainsAny(message, ProviderUnavailableMessageFragments);
+
+    private static bool ContainsAny(string message, string[] fragments) =>
+        Array.Exists(fragments, fragment => message.Contains(fragment, StringComparison.OrdinalIgnoreCase));
 }
 
 internal static class DocumentCacheEnqueueTelemetryText
