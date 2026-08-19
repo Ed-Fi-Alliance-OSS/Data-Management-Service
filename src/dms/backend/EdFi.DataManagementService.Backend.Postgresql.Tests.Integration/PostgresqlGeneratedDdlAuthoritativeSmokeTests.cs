@@ -853,6 +853,12 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
         var beforeStamps = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
         var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.SchoolDocumentId);
+        var schoolDocumentUuid = await GetDocumentUuidAsync(_seedData.SchoolDocumentId);
+        var beforeTrackedRows = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "School",
+            schoolDocumentUuid
+        );
         beforeRiRows.Should().Equal(expectedRiRows);
 
         await TruncateReferentialIdentityAuditAsync();
@@ -868,10 +874,16 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
         var afterStamps = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
         var afterRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.SchoolDocumentId);
+        var afterTrackedRows = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "School",
+            schoolDocumentUuid
+        );
         var auditOps = await CountReferentialIdentityAuditOpsForDocumentAsync(_seedData.SchoolDocumentId);
 
         afterStamps.Should().Be(beforeStamps);
         afterRiRows.Should().Equal(beforeRiRows);
+        afterTrackedRows.Should().Be(beforeTrackedRows);
         auditOps.Should().Be(0);
     }
 
@@ -911,6 +923,12 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
         var beforeStamps = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
         var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.SchoolDocumentId);
+        var schoolDocumentUuid = await GetDocumentUuidAsync(_seedData.SchoolDocumentId);
+        var beforeTrackedRows = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "School",
+            schoolDocumentUuid
+        );
         beforeRiRows.Should().Equal(expectedRiRows);
 
         await TruncateReferentialIdentityAuditAsync();
@@ -928,11 +946,17 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
         var afterStamps = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
         var afterRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.SchoolDocumentId);
+        var afterTrackedRows = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "School",
+            schoolDocumentUuid
+        );
         var auditOps = await CountReferentialIdentityAuditOpsForDocumentAsync(_seedData.SchoolDocumentId);
 
         afterStamps.ContentVersion.Should().BeGreaterThan(beforeStamps.ContentVersion);
         afterStamps.ContentLastModifiedAt.Should().BeAfter(beforeStamps.ContentLastModifiedAt);
         afterRiRows.Should().Equal(beforeRiRows);
+        afterTrackedRows.Should().Be(beforeTrackedRows);
         auditOps.Should().Be(0);
     }
 
@@ -1058,6 +1082,14 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(
             _seedData.StudentEducationOrganizationAssociationDocumentId
         );
+        var associationDocumentUuid = await GetDocumentUuidAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+        var beforeTrackedRows = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "StudentEducationOrganizationAssociation",
+            associationDocumentUuid
+        );
         beforeRiRows.Should().Equal(expectedRiRows);
 
         await TruncateReferentialIdentityAuditAsync();
@@ -1077,12 +1109,18 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         var afterRiRows = await GetReferentialIdentityRowsForDocumentAsync(
             _seedData.StudentEducationOrganizationAssociationDocumentId
         );
+        var afterTrackedRows = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "StudentEducationOrganizationAssociation",
+            associationDocumentUuid
+        );
         var auditOps = await CountReferentialIdentityAuditOpsForDocumentAsync(
             _seedData.StudentEducationOrganizationAssociationDocumentId
         );
 
         afterStamps.Should().Be(beforeStamps);
         afterRiRows.Should().Equal(beforeRiRows);
+        afterTrackedRows.Should().Be(beforeTrackedRows);
         auditOps.Should().Be(0);
     }
 
@@ -1120,6 +1158,14 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(
             _seedData.StudentEducationOrganizationAssociationDocumentId
         );
+        var associationDocumentUuid = await GetDocumentUuidAsync(
+            _seedData.StudentEducationOrganizationAssociationDocumentId
+        );
+        var beforeTrackedRows = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "StudentEducationOrganizationAssociation",
+            associationDocumentUuid
+        );
         beforeRiRows.Should().Equal(expectedRiRows);
 
         await TruncateReferentialIdentityAuditAsync();
@@ -1141,6 +1187,11 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         var afterRiRows = await GetReferentialIdentityRowsForDocumentAsync(
             _seedData.StudentEducationOrganizationAssociationDocumentId
         );
+        var afterTrackedRows = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "StudentEducationOrganizationAssociation",
+            associationDocumentUuid
+        );
         var auditOps = await CountReferentialIdentityAuditOpsForDocumentAsync(
             _seedData.StudentEducationOrganizationAssociationDocumentId
         );
@@ -1148,6 +1199,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         afterStamps.ContentVersion.Should().BeGreaterThan(beforeStamps.ContentVersion);
         afterStamps.ContentLastModifiedAt.Should().BeAfter(beforeStamps.ContentLastModifiedAt);
         afterRiRows.Should().Equal(beforeRiRows);
+        afterTrackedRows.Should().Be(beforeTrackedRows);
         auditOps.Should().Be(0);
     }
 
@@ -1678,8 +1730,8 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     {
         // The core statement-level-trigger risk: one UPDATE whose workset contains
         // multiple rows where only SOME change identity. The identity-changed gate
-        // must admit exactly the changed row — no key-change row and no stamps at
-        // all for the row whose values were self-assigned. PG triggers are row-level
+        // must admit exactly the changed row: no key-change row and no content stamps
+        // for the row whose values were self-assigned. PG triggers are row-level
         // today, so this pins the contract ahead of any statement-level migration.
         const int SchoolYear = 2026;
         const string GradingPeriodDescriptorNamespace = "uri://ed-fi.org/GradingPeriodDescriptor";

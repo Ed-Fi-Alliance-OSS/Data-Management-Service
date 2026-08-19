@@ -976,6 +976,12 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         var beforeStamps = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
         var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.ContactDocumentId);
+        var contactDocumentUuid = await GetDocumentUuidAsync(_seedData.ContactDocumentId);
+        var beforeTrackedRows = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "Contact",
+            contactDocumentUuid
+        );
         beforeRiRows.Should().Equal(expectedRiRows);
 
         await TruncateReferentialIdentityAuditAsync();
@@ -991,10 +997,16 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         var afterStamps = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
         var afterRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.ContactDocumentId);
+        var afterTrackedRows = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "Contact",
+            contactDocumentUuid
+        );
         var auditOps = await CountReferentialIdentityAuditOpsForDocumentAsync(_seedData.ContactDocumentId);
 
         afterStamps.Should().Be(beforeStamps);
         afterRiRows.Should().Equal(beforeRiRows);
+        afterTrackedRows.Should().Be(beforeTrackedRows);
         auditOps.Should().Be(0);
     }
 
@@ -1020,6 +1032,12 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         var beforeStamps = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
         var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.ContactDocumentId);
+        var contactDocumentUuid = await GetDocumentUuidAsync(_seedData.ContactDocumentId);
+        var beforeTrackedRows = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "Contact",
+            contactDocumentUuid
+        );
         beforeRiRows.Should().Equal(expectedRiRows);
 
         await TruncateReferentialIdentityAuditAsync();
@@ -1037,11 +1055,17 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         var afterStamps = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
         var afterRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.ContactDocumentId);
+        var afterTrackedRows = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "Contact",
+            contactDocumentUuid
+        );
         var auditOps = await CountReferentialIdentityAuditOpsForDocumentAsync(_seedData.ContactDocumentId);
 
         afterStamps.ContentVersion.Should().BeGreaterThan(beforeStamps.ContentVersion);
         afterStamps.ContentLastModifiedAt.Should().BeAfter(beforeStamps.ContentLastModifiedAt);
         afterRiRows.Should().Equal(beforeRiRows);
+        afterTrackedRows.Should().Be(beforeTrackedRows);
         auditOps.Should().Be(0);
     }
 
@@ -1367,6 +1391,12 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(
             _seedData.CourseOfferingDocumentId
         );
+        var courseOfferingDocumentUuid = await GetDocumentUuidAsync(_seedData.CourseOfferingDocumentId);
+        var beforeTrackedRows = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "CourseOffering",
+            courseOfferingDocumentUuid
+        );
         beforeRiRows.Should().Equal(expectedRiRows);
 
         await TruncateReferentialIdentityAuditAsync();
@@ -1389,6 +1419,11 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var afterRiRows = await GetReferentialIdentityRowsForDocumentAsync(
             _seedData.CourseOfferingDocumentId
         );
+        var afterTrackedRows = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "CourseOffering",
+            courseOfferingDocumentUuid
+        );
         var auditOps = await CountReferentialIdentityAuditOpsForDocumentAsync(
             _seedData.CourseOfferingDocumentId
         );
@@ -1397,6 +1432,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         afterMirror.Should().Be(beforeMirror);
         AssertMirrorContentMatchesDocument(afterMirror, afterStamps);
         afterRiRows.Should().Equal(beforeRiRows);
+        afterTrackedRows.Should().Be(beforeTrackedRows);
         auditOps.Should().Be(0);
     }
 
@@ -1432,6 +1468,12 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(
             _seedData.CourseOfferingDocumentId
         );
+        var courseOfferingDocumentUuid = await GetDocumentUuidAsync(_seedData.CourseOfferingDocumentId);
+        var beforeTrackedRows = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "CourseOffering",
+            courseOfferingDocumentUuid
+        );
         beforeRiRows.Should().Equal(expectedRiRows);
 
         await TruncateReferentialIdentityAuditAsync();
@@ -1451,6 +1493,11 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var afterRiRows = await GetReferentialIdentityRowsForDocumentAsync(
             _seedData.CourseOfferingDocumentId
         );
+        var afterTrackedRows = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "CourseOffering",
+            courseOfferingDocumentUuid
+        );
         var auditOps = await CountReferentialIdentityAuditOpsForDocumentAsync(
             _seedData.CourseOfferingDocumentId
         );
@@ -1458,6 +1505,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         afterStamps.ContentVersion.Should().BeGreaterThan(beforeStamps.ContentVersion);
         afterStamps.ContentLastModifiedAt.Should().BeAfter(beforeStamps.ContentLastModifiedAt);
         afterRiRows.Should().Equal(beforeRiRows);
+        afterTrackedRows.Should().Be(beforeTrackedRows);
         auditOps.Should().Be(0);
     }
 
@@ -1882,9 +1930,9 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     public async Task It_should_insert_key_change_rows_only_for_identity_changed_rows_in_a_mixed_workset_update()
     {
         // The core statement-level-trigger risk: one UPDATE whose workset contains
-        // multiple rows where only SOME change identity. @identityChangedDocs must
-        // admit exactly the changed row — no key-change row and no stamps at all
-        // for the row whose values were self-assigned.
+        // multiple rows where only SOME change identity. The null-safe changed-docs
+        // workset must admit exactly the changed row: no key-change row and no
+        // content stamps for the row whose values were self-assigned.
         const int SchoolYear = 2025;
         const string GradingPeriodDescriptorNamespace = "uri://ed-fi.org/GradingPeriodDescriptor";
         const string GradingPeriodDescriptorCodeValue = "SecondSixWeeks";
@@ -3183,6 +3231,14 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             """,
             new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@resourceKeyId", resourceKeyId)
+        );
+    }
+
+    private async Task<Guid> GetDocumentUuidAsync(long documentId)
+    {
+        return await _database.ExecuteScalarAsync<Guid>(
+            """SELECT [DocumentUuid] FROM [dms].[Document] WHERE [DocumentId] = @documentId;""",
+            new SqlParameter("@documentId", documentId)
         );
     }
 

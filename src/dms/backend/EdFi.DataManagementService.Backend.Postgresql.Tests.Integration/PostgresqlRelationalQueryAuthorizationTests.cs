@@ -2934,10 +2934,9 @@ public class Given_A_Postgresql_Relational_Query_Authorization_With_The_Authorit
     public async Task It_composes_the_change_version_window_with_relationship_authorization_filtering()
     {
         // The stamping triggers assign strictly increasing ContentVersion values in insert order, and
-        // minChangeVersion is inclusive. A window from Alpha through Gamma holds authorized Alpha and
-        // Beta (SchoolIds 100 and 200) plus unauthorized Gamma (SchoolId 300). Authorization excludes
-        // in-window Gamma, so the authorized lower-bound intersection survives.
-        var alphaSchool = _persistedSchoolsInDocumentOrder[0];
+        // minChangeVersion is inclusive. A window from Beta through Gamma holds authorized Beta
+        // (SchoolId 200) plus unauthorized Gamma (SchoolId 300). Authorization excludes in-window
+        // Gamma, so the lower-bound row proves the change-version predicate composes with auth.
         var betaSchool = _persistedSchoolsInDocumentOrder[1];
         var gammaSchool = _persistedSchoolsInDocumentOrder[2];
 
@@ -2947,16 +2946,16 @@ public class Given_A_Postgresql_Relational_Query_Authorization_With_The_Authorit
             [ClaimEducationOrganizationId],
             _normalStrategy,
             totalCount: true,
-            changeVersionRange: new ChangeVersionRange(alphaSchool.ContentVersion, gammaSchool.ContentVersion)
+            changeVersionRange: new ChangeVersionRange(betaSchool.ContentVersion, gammaSchool.ContentVersion)
         );
 
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
 
-        success.TotalCount.Should().Be(2);
+        success.TotalCount.Should().Be(1);
         success
             .EdfiDocs.Select(static document => document!["id"]!.GetValue<string>())
             .Should()
-            .Equal(alphaSchool.DocumentUuid.ToString(), betaSchool.DocumentUuid.ToString());
+            .Equal(betaSchool.DocumentUuid.ToString());
 
         var keyset = _context.AssertSingleQueryHydration();
         keyset

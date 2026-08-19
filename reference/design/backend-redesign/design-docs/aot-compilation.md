@@ -66,7 +66,8 @@ At runtime, after a request is routed to a database instance and DMS reads that 
 - **`EffectiveSchemaHash`**: deterministic SHA-256 fingerprint of the effective schema set and mapping-version constants (see `data-model.md`).
 - **Dialect**: the target SQL engine (e.g., PostgreSQL vs SQL Server).
   - Target platforms: the latest generally-available (GA) non-cloud releases of PostgreSQL and SQL Server.
-- **Relational mapping version**: a DMS-controlled constant that forces a mismatch when mapping rules change even if `ApiSchema.json` content is unchanged.
+- **Relational mapping version**: a DMS-controlled, release-scoped constant that forces a mismatch when relational
+  mapping rules or physical `dms.*` DDL change even if `ApiSchema.json` content is unchanged.
 - **Mapping pack**: a redistributable artifact containing precompiled mapping objects for a single effective schema hash (and dialect).
 - **Pack format version**: a binary format/protocol version for the mapping pack serialization itself.
   - Purpose: allow the DMS consumer to detect “I do/do not know how to decode this pack” independent of `EffectiveSchemaHash`.

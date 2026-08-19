@@ -85,10 +85,10 @@ Feature: Live resource endpoints filter by change version.
         @e2e-ci-shard-3
         @reset-data-before-scenario
         Scenario: 03 Live programs collection filters by a change version window
-             # The window relies on one ContentVersion allocation per write. liveWindowAfterA is captured
-             # after Program A and equals A's ContentVersion; liveWindowAfterB is captured after Program B
-             # and equals B's ContentVersion. Both bounds are inclusive, so afterA <= A's version <= afterB
-             # because one sequence value per insert makes this window contain exactly A and B.
+             # The window relies on one ContentVersion allocation per write. Guard programs before and
+             # after the captured bounds prove the range is exact: liveWindowAfterA includes Program A
+             # at the inclusive lower bound, and liveWindowAfterB includes Program B at the inclusive
+             # upper bound, while the guard writes fall outside the range.
              When a POST request is made to "/ed-fi/programs" with
                   """
                   {
