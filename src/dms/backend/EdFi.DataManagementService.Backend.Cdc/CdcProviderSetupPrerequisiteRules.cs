@@ -40,8 +40,44 @@ internal static class CdcProviderSetupPrerequisiteRules
             sourcePhase,
             diagnostics
         );
+        AddBlankHeartbeatActionQueryDiagnosticIfNeeded(
+            providerSetupResult,
+            safeArtifactOrObjectName,
+            sourcePhase,
+            diagnostics
+        );
 
         return diagnostics;
+    }
+
+    private static void AddBlankHeartbeatActionQueryDiagnosticIfNeeded(
+        CdcProviderSetupResult providerSetupResult,
+        CdcSafeName? safeArtifactOrObjectName,
+        CdcConnectorTemplateSourcePhase sourcePhase,
+        List<CdcConnectorTemplateDiagnostic> diagnostics
+    )
+    {
+        if (
+            providerSetupResult.HeartbeatActionQuery is null
+            || !string.IsNullOrWhiteSpace(providerSetupResult.HeartbeatActionQuery.Sql)
+        )
+        {
+            return;
+        }
+
+        diagnostics.Add(
+            BuildDiagnostic(
+                CdcConnectorTemplateDiagnosticCodes.HeartbeatActionQueryRequired,
+                CdcConnectorTemplateDiagnosticCategory.HeartbeatConfigurationViolation,
+                "providerSetup.heartbeatActionQuery",
+                "fresh provider heartbeat action query",
+                RedactedValue,
+                providerSetupResult.Provider,
+                safeArtifactOrObjectName,
+                sourcePhase,
+                CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            )
+        );
     }
 
     private static void AddSourceTableInventoryDiagnostics(
