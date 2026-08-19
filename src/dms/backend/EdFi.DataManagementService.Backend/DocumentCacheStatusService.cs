@@ -1138,6 +1138,10 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
     ) =>
         category switch
         {
+            null => DocumentCacheStatusResolutionReason.None,
+            DocumentCacheTargetDiagnosticCategory.TargetNotConfigured
+            or DocumentCacheTargetDiagnosticCategory.TargetUnresolved =>
+                DocumentCacheStatusResolutionReason.TargetNotFound,
             DocumentCacheTargetDiagnosticCategory.ProviderMetadataMissing =>
                 DocumentCacheStatusResolutionReason.ProviderMetadataMissing,
             DocumentCacheTargetDiagnosticCategory.ProviderMetadataUnknown =>

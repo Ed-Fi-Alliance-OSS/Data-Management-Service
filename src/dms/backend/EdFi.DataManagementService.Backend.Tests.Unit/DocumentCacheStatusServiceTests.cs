@@ -133,6 +133,51 @@ public class Given_DocumentCacheStatusService
     }
 
     [Test]
+    public async Task It_reports_configured_boot_state_resolution_unknown_without_target_not_found()
+    {
+        DocumentCacheTargetObservation target = DocumentCacheTargetObservation.Configured(
+            DocumentCacheTargetKey.Create("", 1),
+            EffectiveSettings()
+        );
+        ScriptedStatusObserver observer = new(Success);
+        DocumentCacheStatusService service = CreateService(
+            new StaticTargetRegistry([target], []),
+            observer: observer
+        );
+
+        DocumentCacheStatusTarget statusTarget = (await service.GetStatusAsync()).Targets.Single();
+
+        statusTarget.Resolution.Status.Should().Be(DocumentCacheStatusResolutionStatus.Unknown);
+        statusTarget.Resolution.Reason.Should().Be(DocumentCacheStatusResolutionReason.None);
+        statusTarget.TargetGeneration.Should().BeNull();
+        statusTarget.DurableObservedAt.Should().BeNull();
+        observer.StartedKeys.Should().BeEmpty();
+    }
+
+    [TestCase(DocumentCacheTargetDiagnosticCategory.TargetNotConfigured)]
+    [TestCase(DocumentCacheTargetDiagnosticCategory.TargetUnresolved)]
+    public async Task It_maps_target_not_found_resolution_diagnostics_to_target_not_found(
+        DocumentCacheTargetDiagnosticCategory category
+    )
+    {
+        DocumentCacheTargetObservation target = UnresolvedTargetWithDiagnostic(
+            DocumentCacheTargetKey.Create("", 1),
+            category
+        );
+        ScriptedStatusObserver observer = new(Success);
+        DocumentCacheStatusService service = CreateService(
+            new StaticTargetRegistry([target], []),
+            observer: observer
+        );
+
+        DocumentCacheStatusTarget statusTarget = (await service.GetStatusAsync()).Targets.Single();
+
+        statusTarget.Resolution.Status.Should().Be(DocumentCacheStatusResolutionStatus.Unresolved);
+        statusTarget.Resolution.Reason.Should().Be(DocumentCacheStatusResolutionReason.TargetNotFound);
+        observer.StartedKeys.Should().BeEmpty();
+    }
+
+    [Test]
     public async Task It_filters_command_diagnostics_by_the_serialized_target_generation()
     {
         DocumentCacheTargetContextGeneration commandGeneration = new(3);
@@ -1057,6 +1102,33 @@ public class Given_DocumentCacheStatusService
             DocumentCacheSqlServerPrerequisiteDetails.NotApplicable()
         );
     }
+
+    private static DocumentCacheTargetObservation UnresolvedTargetWithDiagnostic(
+        DocumentCacheTargetKey targetKey,
+        DocumentCacheTargetDiagnosticCategory category
+    ) =>
+        DocumentCacheTargetObservation.Unresolved(
+            targetKey,
+            EffectiveSettings(),
+            retryState: null,
+            diagnostics:
+            [
+                new DocumentCacheTargetDiagnostic(
+                    targetKey,
+                    DocumentCacheTargetResolutionState.Unresolved,
+                    providerToken: null,
+                    generation: null,
+                    physicalSourceFingerprint: null,
+                    lifecycle: null,
+                    inventory: null,
+                    enqueueTrigger: null,
+                    sqlServerPrerequisites: null,
+                    retryState: null,
+                    category,
+                    $"Diagnostic {category}"
+                ),
+            ]
+        );
 
     private static DocumentCacheTargetObservation ResolvedInventoryInvalidTarget(
         DocumentCacheTargetKey targetKey,
