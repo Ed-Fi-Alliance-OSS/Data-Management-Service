@@ -617,6 +617,22 @@ Describe "New-MssqlRestoreMoveClause" {
     }
 }
 
+Describe "Get-PostgresqlRestoreGlobalRoleSql" {
+    It "ensures the locked-down enqueue-owner role idempotently and refuses a compromised pre-existing role" {
+        $roleSql = Get-PostgresqlRestoreGlobalRoleSql
+
+        # Idempotency guard: existence is probed before creation.
+        $roleSql.Contains("pg_catalog.to_regrole('edfi_dms_enqueue_owner')") | Should -BeTrue
+        # Creation is fully locked down.
+        $roleSql.Contains('CREATE ROLE "edfi_dms_enqueue_owner" WITH NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS') | Should -BeTrue
+        # A pre-existing role that is not locked down, or that holds privilege-bearing
+        # memberships, raises instead of being silently reused.
+        ([regex]::Matches($roleSql, "RAISE EXCEPTION")).Count | Should -Be 2
+        $roleSql.Contains("rolcanlogin OR roles.rolinherit OR roles.rolsuper") | Should -BeTrue
+        $roleSql.Contains("admin_option OR memberships.inherit_option OR memberships.set_option") | Should -BeTrue
+    }
+}
+
 Describe "Get-SourceIdentityReseedSql" {
     It "builds the MSSQL reseed that requires exactly the singleton row, joined with LF" {
         $sql = Get-SourceIdentityReseedSql -DatabaseEngine mssql

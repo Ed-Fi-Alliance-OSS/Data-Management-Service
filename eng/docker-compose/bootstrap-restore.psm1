@@ -1440,6 +1440,365 @@ function Assert-RestoreTargetSafety {
     }
 }
 
+
+function Invoke-RestoreDockerCommand {
+    <#
+    .SYNOPSIS
+    Runs one docker command with the restore flow's fail-closed contract: unresolvable docker,
+    invocation failure, and a nonzero exit each throw the caller's failure message - a silent
+    empty answer never reads as success. Returns the raw output rows.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [string[]]$ArgumentList,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FailureMessage
+    )
+
+    try {
+        $null = Get-Command docker -ErrorAction Stop
+    }
+    catch {
+        throw "$FailureMessage The 'docker' command is not available in this session."
+    }
+
+    $global:LASTEXITCODE = 0
+    try {
+        $output = docker @ArgumentList 2>&1
+    }
+    catch {
+        throw "$FailureMessage Invoking docker failed: $(($_.Exception.Message | Out-String).Trim())"
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw "$FailureMessage ($(($output | Out-String).Trim()))"
+    }
+
+    return @($output)
+}
+
+function Get-RestoreDatabaseCatalogFact {
+    <#
+    .SYNOPSIS
+    Reads the restore-manifest facts from a database through the consumer's fail-closed
+    transport: the dms.EffectiveSchema singleton, engine version, SQL Server compatibility
+    level, physical DocumentJson storage type, and the canonical inventory. Mirrors the
+    producer's Get-TemplateSourceCatalogFacts field-for-field (both build on the same
+    Template-RestoreCore queries and parsers) so Assert-RestoreManifestMatchesDatabase consumes
+    either side's record. For PostgreSQL the artifact scope is derived from the database's own
+    enumerated schemas minus the always-present 'public' - a replayed scratch database contains
+    exactly the artifact's content, so the same Select-InventorySchemaScope transformation the
+    producer applied reproduces the manifest's inventory shape.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to Invoke-RestoreCatalogQuery, whose sqlcmd transport carries the password via SQLCMDPASSWORD on docker exec; the account is always "sa" and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Forwarded to Invoke-RestoreCatalogQuery; SecureString adds no protection across the docker exec boundary.')]
+    param (
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ContainerName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DatabaseName,
+
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!"
+    )
+
+    $queryParameters = @{
+        DatabaseEngine = $DatabaseEngine
+        ContainerName  = $ContainerName
+        DatabaseName   = $DatabaseName
+        MssqlPassword  = $MssqlPassword
+    }
+
+    $effectiveSchemaRow = Invoke-RestoreCatalogQuery @queryParameters `
+        -Query (Get-EffectiveSchemaRowQuerySql -DatabaseEngine $DatabaseEngine) `
+        -FailureMessage "Failed to read dms.EffectiveSchema from '$DatabaseName'; the restored database is not a provisioned DMS datastore."
+    $effectiveSchema = ConvertFrom-EffectiveSchemaRow -Row $effectiveSchemaRow
+
+    $engineVersionRows = Invoke-RestoreCatalogQuery @queryParameters `
+        -Query (Get-EngineVersionQuerySql -DatabaseEngine $DatabaseEngine) `
+        -FailureMessage "Failed to read the engine version from '$ContainerName'."
+    $engineVersion = ([string]@($engineVersionRows | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1)).Trim()
+    if ([string]::IsNullOrWhiteSpace($engineVersion)) {
+        throw "The engine version query returned no value from '$ContainerName'."
+    }
+
+    $databaseCompatibilityLevel = $null
+    if ($DatabaseEngine -eq "mssql") {
+        $compatibilityRows = Invoke-RestoreCatalogQuery @queryParameters `
+            -Query (Get-DatabaseCompatibilityLevelQuerySql -DatabaseName $DatabaseName) `
+            -FailureMessage "Failed to read the compatibility level of '$DatabaseName'."
+        $compatibilityText = ([string]@($compatibilityRows | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1)).Trim()
+        $parsedCompatibilityLevel = 0
+        if (-not [int]::TryParse($compatibilityText, [ref]$parsedCompatibilityLevel)) {
+            throw "The compatibility level of '$DatabaseName' is not an integer: '$compatibilityText'."
+        }
+        $databaseCompatibilityLevel = $parsedCompatibilityLevel
+    }
+
+    $documentJsonRows = Invoke-RestoreCatalogQuery @queryParameters `
+        -Query (Get-DocumentJsonColumnTypeQuerySql -DatabaseEngine $DatabaseEngine) `
+        -FailureMessage "Failed to read the DocumentJson column type from '$DatabaseName'."
+    $documentJsonColumnType = ConvertFrom-DocumentJsonColumnTypeRow -Row $documentJsonRows
+
+    $schemaRows = Invoke-RestoreCatalogQuery @queryParameters `
+        -Query (Get-InventorySchemaQuerySql -DatabaseEngine $DatabaseEngine -Purpose InventoryEnumeration) `
+        -FailureMessage "Failed to enumerate the schemas of '$DatabaseName'."
+    $objectRows = Invoke-RestoreCatalogQuery @queryParameters `
+        -Query (Get-InventoryObjectQuerySql -DatabaseEngine $DatabaseEngine) `
+        -FailureMessage "Failed to enumerate the objects of '$DatabaseName'."
+    $principalRows = @()
+    if ($DatabaseEngine -eq "mssql") {
+        $principalRows = Invoke-RestoreCatalogQuery @queryParameters `
+            -Query (Get-InventoryPrincipalQuerySql -DatabaseEngine $DatabaseEngine) `
+            -FailureMessage "Failed to enumerate the database principals of '$DatabaseName'."
+    }
+
+    $fullInventory = ConvertFrom-InventoryQueryRow -SchemaRow $schemaRows -ObjectRow $objectRows -PrincipalRow $principalRows
+
+    $artifactInventory = $fullInventory
+    if ($DatabaseEngine -eq "postgresql") {
+        $artifactSchemaNames = @($fullInventory.schemas |
+                ForEach-Object { [string]$_.schemaName } |
+                Where-Object { $_ -cne "public" })
+        $artifactInventory = Select-InventorySchemaScope `
+            -Inventory $fullInventory `
+            -SchemaName ([string[]](@($artifactSchemaNames) + @("public"))) `
+            -ExcludePrincipals
+    }
+
+    return [pscustomobject]@{
+        ApiSchemaFormatVersion     = $effectiveSchema.ApiSchemaFormatVersion
+        EffectiveSchemaHash        = $effectiveSchema.EffectiveSchemaHash
+        ResourceKeyCount           = $effectiveSchema.ResourceKeyCount
+        ResourceKeySeedHashB64     = $effectiveSchema.ResourceKeySeedHashB64
+        EngineVersion              = $engineVersion
+        DatabaseCompatibilityLevel = $databaseCompatibilityLevel
+        DocumentJsonColumnType     = $documentJsonColumnType
+        FullInventory              = $fullInventory
+        ArtifactInventory          = $artifactInventory
+    }
+}
+
+function Invoke-RestoreScratchValidation {
+    <#
+    .SYNOPSIS
+    Replays the staged artifact into a throwaway scratch database and proves the package's
+    claims against reality before anything destructive happens near the target.
+
+    .DESCRIPTION
+    The staged artifact bytes are re-hashed against the manifest BEFORE any docker activity
+    (the immutability contract), replayed into a freshly generated scratch database (never the
+    target), and then validated: the DMS-only gate over the full scratch inventory, the shared
+    manifest-vs-database comparator (effective-schema fields, physical baseline including
+    compatibility level and DocumentJson storage type, engine major, canonical inventory hash),
+    the manifest<->candidate schema agreement, the project set against the validated partition,
+    the Populated-kind non-descriptor data predicate, and the capture of the package's
+    dms.DataStoreIdentity.SourceIdentity for the post-restore reseed verification. The scratch
+    database and the transient in-container artifact copy are dropped in finally on every path,
+    best-effort with a loud warning when cleanup itself fails.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Restore-internal validation step against a generated throwaway database; the restore flow does not expose -WhatIf end to end.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to the sqlcmd transport, which carries the password via SQLCMDPASSWORD on docker exec; the account is always "sa" and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Forwarded to the sqlcmd transport; SecureString adds no protection across the docker exec boundary.')]
+    param (
+        [Parameter(Mandatory = $true)]
+        $Stage,
+
+        [Parameter(Mandatory = $true)]
+        $CandidateFact,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("Minimal", "Populated")]
+        [string]$RestoreTemplate,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [string]$ContainerName = "",
+
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!"
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ContainerName)) {
+        $ContainerName = Get-RestoreDatabaseContainerName -DatabaseEngine $DatabaseEngine
+    }
+    $manifest = $Stage.Manifest
+    $adminDatabaseName = if ($DatabaseEngine -eq "mssql") { "master" } else { "postgres" }
+
+    $scratchDatabaseName = New-RestoreScratchDatabaseName
+    Assert-SafeRestoreDatabaseName -DatabaseEngine $DatabaseEngine -DatabaseName $scratchDatabaseName -Purpose "restore scratch database"
+
+    # Immutability re-proof BEFORE any docker activity: the bytes about to be replayed must be
+    # exactly the bytes that were authenticated and staged.
+    $artifactSha256 = Get-FileSha256Hex -Path $Stage.ArtifactPath
+    if ($artifactSha256 -cne [string]$manifest.artifactSha256) {
+        throw "The staged artifact's SHA-256 '$artifactSha256' no longer matches the manifest's artifactSha256 '$($manifest.artifactSha256)'; the artifact changed since staging. Aborting before any database activity."
+    }
+
+    $adminQueryArguments = @{
+        DatabaseEngine = $DatabaseEngine
+        ContainerName  = $ContainerName
+        DatabaseName   = $adminDatabaseName
+        MssqlPassword  = $MssqlPassword
+    }
+    $containerArtifactPath = $null
+
+    try {
+        if ($DatabaseEngine -eq "postgresql") {
+            $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
+                -Query (Get-PostgresqlRestoreGlobalRoleSql) `
+                -FailureMessage "Failed to ensure the PostgreSQL restore-global role before the scratch replay."
+            $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
+                -Query "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$scratchDatabaseName' AND pid <> pg_backend_pid();" `
+                -FailureMessage "Failed to terminate connections to scratch database '$scratchDatabaseName'."
+            $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
+                -Query "DROP DATABASE IF EXISTS $scratchDatabaseName;" `
+                -FailureMessage "Failed to drop a pre-existing scratch database '$scratchDatabaseName'."
+            $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
+                -Query "CREATE DATABASE $scratchDatabaseName;" `
+                -FailureMessage "Failed to create scratch database '$scratchDatabaseName'."
+
+            $containerArtifactPath = "/tmp/restore-scratch-$([Guid]::NewGuid().ToString('N')).sql"
+            $null = Invoke-RestoreDockerCommand `
+                -ArgumentList @("cp", $Stage.ArtifactPath, "$($ContainerName):$containerArtifactPath") `
+                -FailureMessage "Failed to copy the staged artifact into container '$ContainerName'."
+            $null = Invoke-RestoreDockerCommand `
+                -ArgumentList @("exec", $ContainerName, "psql", "-U", "postgres", "-d", $scratchDatabaseName, "-v", "ON_ERROR_STOP=1", "-f", $containerArtifactPath) `
+                -FailureMessage "Replay of the artifact into scratch database '$scratchDatabaseName' failed."
+        }
+        else {
+            $containerArtifactPath = "/var/opt/mssql/data/restore-scratch-$([Guid]::NewGuid().ToString('N')).bak"
+            $null = Invoke-RestoreDockerCommand `
+                -ArgumentList @("cp", $Stage.ArtifactPath, "$($ContainerName):$containerArtifactPath") `
+                -FailureMessage "Failed to copy the staged artifact into container '$ContainerName'."
+
+            $fileListRows = Invoke-RestoreDockerCommand `
+                -ArgumentList @("exec", "-e", "SQLCMDPASSWORD=$MssqlPassword", $ContainerName, "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-d", "master", "-C", "-b", "-h", "-1", "-W", "-s", "|", "-Q", "SET NOCOUNT ON; RESTORE FILELISTONLY FROM DISK = N'$containerArtifactPath';") `
+                -FailureMessage "Failed to read the file list from the staged artifact."
+            $backupFileList = ConvertFrom-MssqlBackupFileList -FileListOutput ([string[]]$fileListRows) -BackupFileName ([string]$manifest.artifactFileName)
+            $moveClauses = New-MssqlRestoreMoveClause `
+                -DatabaseName $scratchDatabaseName `
+                -DataLogicalNames $backupFileList.DataLogicalNames `
+                -LogLogicalNames $backupFileList.LogLogicalNames `
+                -BackupFileName ([string]$manifest.artifactFileName)
+
+            $null = Invoke-RestoreDockerCommand `
+                -ArgumentList @("exec", "-e", "SQLCMDPASSWORD=$MssqlPassword", $ContainerName, "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-d", "master", "-C", "-b", "-Q", "RESTORE DATABASE [$scratchDatabaseName] FROM DISK = N'$containerArtifactPath' WITH $($moveClauses -join ', '), REPLACE;") `
+                -FailureMessage "Restore of the staged artifact into scratch database '$scratchDatabaseName' failed."
+        }
+
+        $scratchFacts = Get-RestoreDatabaseCatalogFact `
+            -DatabaseEngine $DatabaseEngine `
+            -ContainerName $ContainerName `
+            -DatabaseName $scratchDatabaseName `
+            -MssqlPassword $MssqlPassword
+
+        $scratchPartition = Assert-DmsOnlyInventory `
+            -DatabaseEngine $DatabaseEngine `
+            -Inventory $scratchFacts.FullInventory `
+            -SourceDescription "Restore scratch database '$scratchDatabaseName'"
+
+        Assert-RestoreManifestMatchesDatabase `
+            -Manifest $manifest `
+            -Facts $scratchFacts `
+            -DatabaseEngine $DatabaseEngine `
+            -DatabaseDescription "Restore scratch database '$scratchDatabaseName'"
+
+        # Manifest<->candidate agreement (the cross-check proved it once; scratch validation
+        # re-asserts it so the three-way equality scratch == manifest == candidate is explicit).
+        if ([string]$manifest.effectiveSchemaHash -cne [string]$CandidateFact.EffectiveSchemaHash) {
+            throw "The restore manifest's effectiveSchemaHash '$($manifest.effectiveSchemaHash)' does not match the candidate workspace's '$($CandidateFact.EffectiveSchemaHash)'."
+        }
+        if (-not ([string]$manifest.apiSchemaFormatVersion).Equals([string]$CandidateFact.ApiSchemaFormatVersion, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "The restore manifest's apiSchemaFormatVersion '$($manifest.apiSchemaFormatVersion)' does not match the candidate workspace's '$($CandidateFact.ApiSchemaFormatVersion)'."
+        }
+
+        $manifestProjects = @($manifest.projects)
+        $scratchProjects = @($scratchPartition.ProjectSchemaNames)
+        if (($manifestProjects -join "|") -cne ($scratchProjects -join "|")) {
+            throw "The restore manifest declares projects [$($manifestProjects -join ', ')] but scratch database '$scratchDatabaseName' contains [$($scratchProjects -join ', ')]."
+        }
+
+        if ($RestoreTemplate -eq "Populated") {
+            # Same predicate shape as verify-template-restore.ps1's populated assertion: at
+            # least one non-descriptor, non-school-year document must survive the replay. No
+            # hard-coded counts, so data-standard sample changes cannot break it.
+            $populatedCountQuery = if ($DatabaseEngine -eq "mssql") {
+                "SET NOCOUNT ON; SELECT COUNT(*) FROM [dms].[Document] d JOIN [dms].[ResourceKey] rk ON rk.[ResourceKeyId] = d.[ResourceKeyId] WHERE rk.[ResourceName] NOT LIKE '%Descriptor' AND rk.[ResourceName] NOT LIKE '%SchoolYear%';"
+            }
+            else {
+                'SELECT COUNT(*) FROM dms."Document" d JOIN dms."ResourceKey" rk ON rk."ResourceKeyId" = d."ResourceKeyId" WHERE rk."ResourceName" NOT LIKE ' + "'%Descriptor' AND rk.`"ResourceName`" NOT ILIKE '%SchoolYear%';"
+            }
+            $populatedRows = Invoke-RestoreCatalogQuery `
+                -DatabaseEngine $DatabaseEngine `
+                -ContainerName $ContainerName `
+                -DatabaseName $scratchDatabaseName `
+                -MssqlPassword $MssqlPassword `
+                -Query $populatedCountQuery `
+                -FailureMessage "Failed to count populated documents in scratch database '$scratchDatabaseName'."
+            $populatedCountText = ([string]@($populatedRows | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1)).Trim()
+            $populatedCount = 0
+            if (-not [int]::TryParse($populatedCountText, [ref]$populatedCount)) {
+                throw "The populated-document count from scratch database '$scratchDatabaseName' is not an integer: '$populatedCountText'."
+            }
+            if ($populatedCount -lt 1) {
+                throw "The package declares templateKind 'Populated' but scratch database '$scratchDatabaseName' contains no non-descriptor, non-school-year documents."
+            }
+        }
+
+        # Capture the PACKAGE's SourceIdentity (no reseed here - the target replacement reseeds
+        # and then verifies the new value differs from this one).
+        $identityRows = @(Invoke-RestoreCatalogQuery `
+                -DatabaseEngine $DatabaseEngine `
+                -ContainerName $ContainerName `
+                -DatabaseName $scratchDatabaseName `
+                -MssqlPassword $MssqlPassword `
+                -Query (Get-SourceIdentitySelectSql -DatabaseEngine $DatabaseEngine) `
+                -FailureMessage "Failed to read dms.DataStoreIdentity.SourceIdentity from scratch database '$scratchDatabaseName'." |
+                Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+        if ($identityRows.Count -ne 1) {
+            throw "Scratch database '$scratchDatabaseName' must contain exactly one dms.DataStoreIdentity row, found $($identityRows.Count). The package is not a valid DMS datastore template."
+        }
+        $packageSourceIdentity = ([string]$identityRows[0]).Trim()
+
+        return [pscustomobject]@{
+            PackageSourceIdentity = $packageSourceIdentity
+            ScratchFacts          = $scratchFacts
+            ProjectSchemaNames    = [string[]]$scratchProjects
+        }
+    }
+    finally {
+        try {
+            if ($DatabaseEngine -eq "postgresql") {
+                $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
+                    -Query "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$scratchDatabaseName' AND pid <> pg_backend_pid();" `
+                    -FailureMessage "Failed to terminate connections to scratch database '$scratchDatabaseName' during cleanup."
+                $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
+                    -Query "DROP DATABASE IF EXISTS $scratchDatabaseName;" `
+                    -FailureMessage "Failed to drop scratch database '$scratchDatabaseName'."
+            }
+            else {
+                $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
+                    -Query "IF DB_ID(N'$scratchDatabaseName') IS NOT NULL BEGIN ALTER DATABASE [$scratchDatabaseName] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [$scratchDatabaseName]; END" `
+                    -FailureMessage "Failed to drop scratch database '$scratchDatabaseName'."
+            }
+            if ($null -ne $containerArtifactPath) {
+                $null = Invoke-RestoreDockerCommand `
+                    -ArgumentList @("exec", $ContainerName, "rm", "-f", $containerArtifactPath) `
+                    -FailureMessage "Failed to remove the transient in-container artifact '$containerArtifactPath'."
+            }
+        }
+        catch {
+            Write-Warning "Scratch cleanup did not complete: $(($_.Exception.Message | Out-String).Trim()) Remove scratch database '$scratchDatabaseName' and '$containerArtifactPath' in container '$ContainerName' manually if they remain."
+        }
+    }
+}
+
 Export-ModuleMember -Function `
     Get-RestoreWorkspaceRoot, `
     Resolve-RestoreTemplatePackageIdentity, `
@@ -1463,5 +1822,7 @@ Export-ModuleMember -Function `
     Invoke-RestoreCatalogQuery, `
     Get-RestoreEngineMajorVersion, `
     Assert-RestoreTargetSafety, `
+    Get-RestoreDatabaseCatalogFact, `
+    Invoke-RestoreScratchValidation, `
     Resolve-RestoreTargetDatabaseName, `
     Assert-RestoreTargetDatabaseNameSafe
