@@ -32,8 +32,11 @@
     Provisioning-owned rows. dms.ResourceKey, dms.SchemaComponent, dms.EffectiveSchema,
     dms.DataStoreIdentity, dms.DocumentCacheState, dms.DocumentProjectionWork, and dms.DocumentCache
     are owned by provisioning. Copying any of them would produce a hand-edited fingerprint or a stale
-    source identity, so the copy is driven by an explicit allow-list and an unexpected table in the
-    dump is a failure rather than a silent inclusion.
+    source identity, so the copy selects individual TABLE DATA entries from the archive table of
+    contents. Schema and table name filters cannot express that: pg_restore ORs -n against -n and -t
+    against -t, then ANDs the two groups, so naming a table that exists in more than one selected
+    schema pulls in every copy of it. tracked_changes_edfi.Descriptor and dms.Descriptor share a name,
+    which is exactly how dms.Descriptor reached a load that was supposed to exclude it.
 
     After the load, four things are asserted that a row-count reconciliation cannot see. Sequence
     positions, because a sequence left at its fresh-database value only surfaces as a collision on the
@@ -191,6 +194,14 @@ $script:DmsDataTable = @("Document", "ReferentialIdentity")
 $script:DmsDerivedTable = "Descriptor"
 $script:BulkSchema = @("edfi", "tracked_changes_edfi", "auth")
 $script:StagingSchema = "northridge_staging"
+
+# The dms sequences whose positions the copied data depends on. Restored from the archive's own
+# SEQUENCE SET entries so the target inherits the producer positions rather than fresh-database ones.
+$script:DmsSequence = @(
+    "dms.ChangeVersionSequence",
+    "dms.CollectionItemIdSequence",
+    "dms.Document_DocumentId_seq"
+)
 
 # Intentionally duplicated across the scripts in this directory rather than extracted into a shared
 # module, to keep this directory to its reviewed file set.
@@ -567,6 +578,131 @@ function Get-StampDistribution {
     return $map
 }
 
+# pg_restore's -n and -t filters are OR-ed within each kind and AND-ed across kinds, so together they
+# cannot express a schema-qualified allow-list: passing '-t Descriptor' for
+# tracked_changes_edfi.Descriptor while '-n dms' is also in effect selects dms.Descriptor as well --
+# the one table this copy must never restore, because its ResourceKeyId has to be derived. Selecting
+# individual archive entries from the dump's own table of contents is what an allow-list actually is.
+function Select-ArchiveEntry {
+    [CmdletBinding()]
+    [OutputType([System.Collections.Specialized.OrderedDictionary])]
+    param(
+        [Parameter(Mandatory)] [string] $ContainerName,
+        [Parameter(Mandatory)] [string] $ArchivePath,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $QualifiedTable,
+        [AllowEmptyCollection()] [string[]] $QualifiedSequence = @(),
+        # The bulk load must never see dms.Descriptor; the staging load exists precisely to fetch it.
+        # One helper serving both needs the distinction passed in, not assumed.
+        [switch] $AllowDerivedTable
+    )
+
+    $requestedTable = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($table in $QualifiedTable) { [void]$requestedTable.Add($table) }
+
+    $requestedSequence = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($sequence in $QualifiedSequence) { [void]$requestedSequence.Add($sequence) }
+
+    $tocLine = docker exec $ContainerName pg_restore -l $ArchivePath
+    if ($LASTEXITCODE -ne 0) {
+        throw "pg_restore -l failed against '$ArchivePath' (exit $LASTEXITCODE)."
+    }
+
+    $selectedLine = [System.Collections.Generic.List[string]]::new()
+    $selectedTable = [System.Collections.Generic.List[string]]::new()
+    $selectedSequence = [System.Collections.Generic.List[string]]::new()
+    $seenTable = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    $seenSequence = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+
+    foreach ($line in $tocLine) {
+        $text = [string]$line
+
+        # Archive TOC rows look like:
+        #   "14346; 0 16795 TABLE DATA dms Document postgres"
+        #   "15158; 0 0 SEQUENCE SET dms ChangeVersionSequence postgres"
+        if ($text -match '^\s*\d+;\s+\d+\s+\d+\s+TABLE DATA\s+(?<schema>\S+)\s+(?<name>\S+)\s') {
+            $qualified = "$($Matches['schema']).$($Matches['name'])"
+            if (-not $requestedTable.Contains($qualified)) { continue }
+            if (-not $seenTable.Add($qualified)) {
+                throw "The archive holds more than one TABLE DATA entry for '$qualified'; refusing to guess which to restore."
+            }
+            $selectedLine.Add($text)
+            $selectedTable.Add($qualified)
+            continue
+        }
+
+        if ($text -match '^\s*\d+;\s+\d+\s+\d+\s+SEQUENCE SET\s+(?<schema>\S+)\s+(?<name>\S+)\s') {
+            $qualified = "$($Matches['schema']).$($Matches['name'])"
+            if (-not $requestedSequence.Contains($qualified)) { continue }
+            if (-not $seenSequence.Add($qualified)) {
+                throw "The archive holds more than one SEQUENCE SET entry for '$qualified'; refusing to guess which to restore."
+            }
+            $selectedLine.Add($text)
+            $selectedSequence.Add($qualified)
+        }
+    }
+
+    # A requested entry with no archive counterpart means the dump is not the one this copy was
+    # written for. Restoring the remainder would produce a target that reconciles against nothing.
+    $missingTable = @($requestedTable | Where-Object { -not $seenTable.Contains($_) } | Sort-Object)
+    if ($missingTable.Count -gt 0) {
+        throw "The archive has no TABLE DATA entry for $($missingTable.Count) requested table(s): $(($missingTable | Select-Object -First 10) -join ', ')."
+    }
+
+    $missingSequence = @($requestedSequence | Where-Object { -not $seenSequence.Contains($_) } | Sort-Object)
+    if ($missingSequence.Count -gt 0) {
+        throw "The archive has no SEQUENCE SET entry for $($missingSequence.Count) requested sequence(s): $($missingSequence -join ', ')."
+    }
+
+    # Belt and braces: nothing provisioning-owned may reach the list even if the caller asked for it.
+    # dms.Descriptor is forbidden unless the caller is the staging load that exists to fetch it.
+    $forbiddenName = @($script:ProvisioningOwnedTable | ForEach-Object { "dms.$_" })
+    if (-not $AllowDerivedTable) {
+        $forbiddenName += "dms.$script:DmsDerivedTable"
+    }
+
+    $forbidden = @($selectedTable | Where-Object { $forbiddenName -contains $_ })
+    if ($forbidden.Count -gt 0) {
+        throw "The filtered restore list contains provisioning-owned or derived object(s): $($forbidden -join ', ')."
+    }
+
+    return [ordered]@{
+        Line     = $selectedLine
+        Table    = $selectedTable
+        Sequence = $selectedSequence
+    }
+}
+
+# pg_restore continues past a failed COPY and still exits 0, reporting the count only as a warning.
+# The bulk load hit exactly that: "errors ignored on restore: 1" alongside exit code 0. Trusting the
+# exit code is how a load silently drops data, which is the failure this whole ticket exists to avoid.
+function Assert-RestoreOutputClean {
+    [CmdletBinding()]
+    param(
+        # AllowNull matters more than it looks: a pg_restore that succeeds quietly emits nothing at
+        # all, so the captured output is $null rather than an empty array. Without this the check
+        # fails to bind precisely when the restore went well, and never runs on the happy path.
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyCollection()] [object[]] $Output,
+        [Parameter(Mandatory)] [int] $ExitCode,
+        [Parameter(Mandatory)] [string] $Description
+    )
+
+    $text = @($Output | ForEach-Object { [string]$_ })
+    $problem = @($text | Where-Object {
+            $_ -match 'errors ignored on restore' -or
+            $_ -match 'warning: errors ignored' -or
+            $_ -match 'ERROR:' -or
+            $_ -match 'pg_restore: error'
+        })
+
+    if ($ExitCode -ne 0) {
+        throw "$Description reported exit $ExitCode.$(if ($problem.Count -gt 0) { ' ' + ($problem -join ' | ') })"
+    }
+
+    if ($problem.Count -gt 0) {
+        throw "$Description exited 0 but reported errors, which pg_restore does when it skips a failed COPY: $($problem -join ' | ')"
+    }
+}
+
 function Save-Record {
     [CmdletBinding()]
     param(
@@ -673,31 +809,60 @@ Write-Output "Resource-key seed matches source and target: $targetSeed"
 $bulkTable = Get-DataTableList -DatabaseName $SourceDatabase
 Write-Output "Bulk data tables discovered in source: $($bulkTable.Count)"
 
-$restoreArgument = @(
-    "--data-only", "--disable-triggers", "--no-owner", "--no-privileges",
-    "-U", $PostgresUser, "-d", $TargetDatabase
-)
-
-foreach ($table in $script:DmsDataTable) {
-    $restoreArgument += @("-n", "dms", "-t", $table)
-}
-foreach ($table in $bulkTable) {
-    $schemaName, $tableName = $table.Split(".", 2)
-    $restoreArgument += @("-n", $schemaName, "-t", $tableName)
-}
-
-Write-Output "Restoring $($script:DmsDataTable.Count + $bulkTable.Count) table(s) with triggers disabled..."
+$requestedTable = @($script:DmsDataTable | ForEach-Object { "dms.$_" }) + $bulkTable
 
 $containerDumpPath = "/tmp/northridge-dataforward.dump"
+$containerListPath = "/tmp/northridge-dataforward.list"
+
 docker cp $DumpPath "${Container}:${containerDumpPath}"
 if ($LASTEXITCODE -ne 0) { throw "docker cp of the dump into '$Container' failed." }
 
 try {
-    docker exec $Container pg_restore @restoreArgument $containerDumpPath
-    if ($LASTEXITCODE -ne 0) { throw "pg_restore reported exit $LASTEXITCODE." }
+    # A TOC filtered to TABLE DATA alone drops the archive's SEQUENCE SET entries, which is how the
+    # sequences stay at their fresh-database position while the copied data runs to millions. The row
+    # counts would still reconcile and the first write after restore would collide, so the sequence
+    # entries are selected explicitly alongside the tables.
+    $selection = Select-ArchiveEntry -ContainerName $Container -ArchivePath $containerDumpPath `
+        -QualifiedTable $requestedTable -QualifiedSequence $script:DmsSequence
+
+    Write-Output "Requested $($requestedTable.Count) table(s); selected $($selection.Table.Count) TABLE DATA entr(ies)."
+    Write-Output "Requested $($script:DmsSequence.Count) sequence(s); selected $($selection.Sequence.Count) SEQUENCE SET entr(ies): $($selection.Sequence -join ', ')."
+    Write-Output "  dms.Descriptor excluded from the bulk list (derived column, loaded separately)."
+
+    if ($selection.Table.Count -ne $requestedTable.Count) {
+        throw "Selected $($selection.Table.Count) archive entries for $($requestedTable.Count) requested tables."
+    }
+    if ($selection.Sequence.Count -ne $script:DmsSequence.Count) {
+        throw "Selected $($selection.Sequence.Count) sequence entries for $($script:DmsSequence.Count) requested sequences."
+    }
+
+    # The filtered list is audit evidence: it records exactly which archive entries were restored.
+    $listContent = (($selection.Line) -join "`n") + "`n"
+    Save-Record -Path (Join-Path $OutputDirectory "restore-list.$TargetDatabase.txt") -Content $listContent
+    $listContent | docker exec -i $Container sh -c "cat > $containerListPath"
+    if ($LASTEXITCODE -ne 0) { throw "writing the filtered restore list into '$Container' failed." }
+
+    Write-Output "Restoring $($selection.Table.Count) table(s) with triggers disabled..."
+
+    # --exit-on-error stops at the first failure instead of skipping the table and continuing; the
+    # output scan below then catches anything that still slips through with a zero exit code.
+    $restoreOutput = docker exec $Container pg_restore `
+        --data-only --disable-triggers --no-owner --no-privileges --exit-on-error `
+        -U $PostgresUser -d $TargetDatabase -L $containerListPath $containerDumpPath 2>&1
+    $restoreExit = $LASTEXITCODE
+
+    Save-Record -Path (Join-Path $OutputDirectory "restore-output.$TargetDatabase.txt") `
+        -Content ((@($restoreOutput | ForEach-Object { [string]$_ }) -join "`n") + "`n")
+
+    foreach ($line in $restoreOutput) {
+        $text = [string]$line
+        if (-not [string]::IsNullOrWhiteSpace($text)) { Write-Output "  pg_restore: $text" }
+    }
+
+    Assert-RestoreOutputClean -Output $restoreOutput -ExitCode $restoreExit -Description "Bulk pg_restore"
 }
 finally {
-    docker exec -u 0 $Container rm -f $containerDumpPath | Out-Null
+    docker exec -u 0 $Container rm -f $containerDumpPath $containerListPath | Out-Null
 }
 
 Write-Output "Deriving dms.Descriptor.ResourceKeyId via staging schema '$script:StagingSchema'..."
@@ -719,18 +884,37 @@ docker cp $DumpPath "${Container}:${containerDumpPath}"
 if ($LASTEXITCODE -ne 0) { throw "docker cp of the dump for the Descriptor load failed." }
 
 try {
-    # Restored into the staging schema by rewriting the search_path, so the dump's unqualified COPY
-    # lands on the staging copy rather than the real table.
+    # Exact TOC selection here too. '-n dms -t Descriptor' is unambiguous because a single schema is
+    # selected, but selecting the archive entry keeps one mechanism for both restores rather than two
+    # with different failure modes.
+    $descriptorSelection = Select-ArchiveEntry -ContainerName $Container `
+        -ArchivePath $containerDumpPath -QualifiedTable @("dms.$script:DmsDerivedTable") -AllowDerivedTable
+
+    $descriptorListContent = (($descriptorSelection.Line) -join "`n") + "`n"
+    Save-Record -Path (Join-Path $OutputDirectory "restore-list.descriptor.txt") -Content $descriptorListContent
+    $descriptorListContent | docker exec -i $Container sh -c "cat > $containerListPath"
+    if ($LASTEXITCODE -ne 0) { throw "writing the Descriptor restore list into '$Container' failed." }
+
+    # Emitted as text and re-pointed at the staging table, so the dump's COPY lands on the staging
+    # copy rather than the real table, which cannot accept the artifact's column list.
     $descriptorSql = docker exec $Container pg_restore --data-only --no-owner --no-privileges `
-        -n dms -t $script:DmsDerivedTable -f - $containerDumpPath
-    if ($LASTEXITCODE -ne 0) { throw "pg_restore of dms.Descriptor to text reported exit $LASTEXITCODE." }
+        --exit-on-error -L $containerListPath -f - $containerDumpPath 2>&1
+    $descriptorExit = $LASTEXITCODE
+    Assert-RestoreOutputClean -Output $descriptorSql -ExitCode $descriptorExit `
+        -Description "pg_restore of dms.Descriptor to text"
 
     $redirected = ($descriptorSql -join "`n").Replace('dms."Descriptor"', """$script:StagingSchema"".""Descriptor""")
-    $redirected | docker exec -i $Container psql -U $PostgresUser -d $TargetDatabase -v ON_ERROR_STOP=1 --quiet
-    if ($LASTEXITCODE -ne 0) { throw "loading dms.Descriptor into staging reported exit $LASTEXITCODE." }
+    if ($redirected -notmatch [regex]::Escape("""$script:StagingSchema"".""Descriptor""")) {
+        throw "The Descriptor COPY statement was not re-pointed at the staging table; refusing to run SQL that would target dms.Descriptor directly."
+    }
+
+    $stagingLoadOutput = $redirected | docker exec -i $Container psql -U $PostgresUser `
+        -d $TargetDatabase -v ON_ERROR_STOP=1 --quiet 2>&1
+    Assert-RestoreOutputClean -Output $stagingLoadOutput -ExitCode $LASTEXITCODE `
+        -Description "Loading dms.Descriptor into staging"
 }
 finally {
-    docker exec -u 0 $Container rm -f $containerDumpPath | Out-Null
+    docker exec -u 0 $Container rm -f $containerDumpPath $containerListPath | Out-Null
 }
 
 $deriveSql = @"
@@ -800,15 +984,40 @@ $integrityFailure = Test-ReferentialIntegrity -DatabaseName $TargetDatabase
 Write-Output ""
 Write-Output "Comparing stamp distributions..."
 
-# The ten largest projection tables. A stamping trigger that fired during the load would have rewritten
-# ContentVersion and ContentLastModifiedAt in place, which no row count can see.
+# The largest stamp-bearing projection tables. A stamping trigger that fired during the load would
+# have rewritten ContentVersion and ContentLastModifiedAt in place, which no row count can see.
+#
+# Only root tables carry those columns. A collection table's stamp trigger bumps its PARENT's
+# ContentVersion rather than its own, so a child table has nothing to compare and querying it for
+# ContentVersion is an error, not a finding.
+$stampBearing = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+foreach ($row in (Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser -DatabaseName $TargetDatabase -Sql @'
+SELECT 'edfi.' || c.table_name
+FROM information_schema.columns c
+WHERE c.table_schema = 'edfi' AND c.column_name = 'ContentVersion'
+  AND EXISTS (SELECT 1 FROM information_schema.columns c2
+              WHERE c2.table_schema = 'edfi' AND c2.table_name = c.table_name
+                AND c2.column_name = 'ContentLastModifiedAt')
+ORDER BY 1;
+'@)) {
+    $text = ([string]$row).Trim()
+    if ($text) { [void]$stampBearing.Add($text) }
+}
+
 $sampleTable = @(
     $targetCount.GetEnumerator() |
-    Where-Object { $_.Key.StartsWith("edfi.", [System.StringComparison]::Ordinal) -and $_.Value -gt 0 } |
+    Where-Object {
+        $_.Key.StartsWith("edfi.", [System.StringComparison]::Ordinal) -and
+        $_.Value -gt 0 -and
+        $stampBearing.Contains($_.Key)
+    } |
     Sort-Object -Property Value -Descending |
     Select-Object -First 10 -ExpandProperty Key
 )
-Write-Output "  sampled projection tables: $($sampleTable.Count)"
+Write-Output "  stamp-bearing projection tables: $($stampBearing.Count); sampled: $($sampleTable.Count)"
+if ($sampleTable.Count -eq 0) {
+    throw "No stamp-bearing projection table carried rows, so the stamp comparison would prove nothing."
+}
 
 $sourceStamp = Get-StampDistribution -DatabaseName $SourceDatabase -SampleTable $sampleTable
 $targetStamp = Get-StampDistribution -DatabaseName $TargetDatabase -SampleTable $sampleTable
