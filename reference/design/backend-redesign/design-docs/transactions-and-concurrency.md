@@ -73,35 +73,40 @@ It is used for:
 3. Group by target resource and resolve in one batched command:
    - concrete targets probe the target root's `UX_<R>_RefKey`;
    - abstract targets probe `{AbstractResource}Identity` by its `RefKey` shape and project concrete `ResourceKeyId`;
-   - descriptor targets probe `dms.Descriptor` by validated, lowered ASCII-without-NUL URI +
-     `ResourceKeyId`.
+   - descriptor targets probe `dms.Descriptor` by the raw validated URI + `ResourceKeyId`; the
+     probe folds the URI in SQL under the engine's descriptor identity collation contract.
 4. Map results back by explicit request ordinal so not-found failures preserve request JSON locations.
 
-##### Descriptor URI ASCII validation boundary
+##### Descriptor URI validation boundary
 
 Descriptor URI validation is request validation, not lookup miss handling. After ordinary request
-canonicalization but before descriptor-specific lowercasing, every client-supplied descriptor URI
-must contain only characters in U+0001 through U+007F; U+0000 NUL is invalid. The validation
-boundary depends on the entry point:
+canonicalization, every client-supplied descriptor URI must be well-formed: U+0000 NUL is invalid
+(PostgreSQL `text`/`varchar` cannot store it) and is rejected by the shared descriptor validator;
+malformed UTF-16 (an unpaired surrogate from a JSON `\uD800`-class escape, which PostgreSQL would
+reject as invalid UTF-8) never reaches a C# string — STJ throws on first read — and is rejected
+body-wide at parse by `ParseBodyMiddleware`, not by descriptor validation. Non-ASCII
+values are accepted; the application never lowercases a descriptor value — case folding is
+engine-owned and happens only in descriptor probe SQL (see `natural-key-resolution.md`). The
+validation boundary depends on the entry point:
 
 - During write identity/reference extraction, Core validates each descriptor reference at its
-  concrete request JSON path before constructing its normalized `DocumentIdentity`. For a descriptor
+  concrete request JSON path before constructing its `DocumentIdentity`. For a descriptor
   resource POST/PUT, Core first derives the identity URI from the canonicalized `$.namespace` + `#` +
   `$.codeValue`; it validates the two client-supplied components and attributes failures to
-  `$.namespace` and/or `$.codeValue` before lowercasing the derived URI.
+  `$.namespace` and/or `$.codeValue`. It does not lowercase the derived URI.
 - During relational query preprocessing, `RelationalQueryRequestPreprocessor` uses the selected
   `RelationalQueryCapability` to identify query elements whose backend-compiled target is
-  `RelationalQueryFieldTarget.DescriptorIdColumn`, validates those values, and rejects non-ASCII or
-  NUL input before it creates a descriptor reference or calls `IReferenceResolver.ResolveAsync`.
+  `RelationalQueryFieldTarget.DescriptorIdColumn`, validates those values, and rejects NUL or
+  malformed input before it creates a descriptor reference or calls `IReferenceResolver.ResolveAsync`.
   Core query validation remains responsible for generic field/type validation and does not own
   backend compiled target metadata. Invalid descriptor query input produces the existing
   path-attributed query-validation 400, not an empty result page.
 
 Any validation failure terminates the operation before a descriptor natural-key resolver or
 descriptor target lookup is issued. Resolver batching, request-local memoization, the write
-flattener, and key-unification logic therefore consume validated ASCII-without-NUL descriptor keys.
-Their normalization helpers must still assert the ASCII-without-NUL precondition rather than
-silently accepting arbitrary Unicode.
+flattener, and key-unification logic therefore consume validated well-formed-without-NUL raw
+descriptor keys, compared ordinally. Their helpers must assert the well-formed-without-NUL
+precondition and must never lowercase the value.
 
 ##### Caching
 
@@ -236,11 +241,11 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
 1. Core validates JSON and extracts:
    - `DocumentIdentity`
    - document references with target resource, fully-flattened identity values, and request paths
-   - descriptor references with target resource, concrete request paths, and URI values validated as
-     ASCII without NUL before normalization
+   - descriptor references with target resource, concrete request paths, and URI values validated
+     as well-formed without NUL (never lowercased by the application)
    - for descriptor resource writes, the URI derived from canonicalized `namespace` + `#` +
-     `codeValue`, validated as ASCII without NUL before normalization with any failures attributed to
-     the source fields
+     `codeValue`, validated as well-formed without NUL with any failures attributed to the source
+     fields
 2. Backend resolves references in bulk:
    - Use an ApiSchema-derived resolver to turn references into `DocumentId`s via generated natural-key probes, including:
      - self-contained identities
@@ -527,10 +532,11 @@ Ordering/paging contract:
 
 Query compilation patterns:
 - **Scalar query fields**: `queryFieldMapping` JSON path → derived root-table column → `r.Column = @value`
-- **Descriptor query fields**: validate the URI as ASCII without NUL → on failure return a
-  path-attributed 400 before lookup → lowercase the validated URI → resolve `DescriptorId` via the
-  descriptor lowered-URI + `ResourceKeyId` index → `r.DescriptorIdColumn = @descriptorId`. A valid
-  URI that does not resolve still has the existing empty-match behavior.
+- **Descriptor query fields**: validate the URI as well-formed without NUL → on failure return a
+  path-attributed 400 before lookup → resolve `DescriptorId` by probing the descriptor
+  lowered-URI + `ResourceKeyId` index with the raw validated URI (the probe folds it in SQL) →
+  `r.DescriptorIdColumn = @descriptorId`. A valid URI that does not resolve still has the existing
+  empty-match behavior.
 - **Document reference identity query fields**: compile to predicates on local per-site identity binding columns (stored
   or alias), e.g.:
   - `r.Student_StudentUniqueId = @StudentUniqueId`

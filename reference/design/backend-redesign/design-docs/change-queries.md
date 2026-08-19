@@ -1750,14 +1750,14 @@ FROM
     AND OldGradeTypeDescriptor.UriLowered = LOWER(CONCAT(
       c.OldGradeTypeDescriptor_Namespace,
       '#',
-      c.OldGradeTypeDescriptor_CodeValue))
+      c.OldGradeTypeDescriptor_CodeValue) COLLATE SQL_Latin1_General_CP1_CI_AS)
 
   LEFT JOIN dms.Descriptor AS OldGradingPeriodDescriptor
     ON OldGradingPeriodDescriptor.ResourceKeyId = @GradingPeriodDescriptorResourceKeyId
     AND OldGradingPeriodDescriptor.UriLowered = LOWER(CONCAT(
       c.OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace,
       '#',
-      c.OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue))
+      c.OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue) COLLATE SQL_Latin1_General_CP1_CI_AS)
 
   LEFT JOIN edfi.Grade AS src 
     ON OldGradeTypeDescriptor.DocumentId                    = src.GradeTypeDescriptor_DescriptorId 
@@ -1787,7 +1787,7 @@ ORDER BY
   c.ChangeVersion OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
 ```
 
-In the SQL Server example above, we join with the live table using identifying values instead of surrogate keys so that we can hide entries that were recreated. Descriptor-valued identity parts use the same descriptor identity as write-time resolution: the computed `UriLowered` plus the descriptor resource's compile-time `ResourceKeyId`. The PostgreSQL renderer emits the equivalent `lower(descriptor."Uri" COLLATE "C") = lower((old_namespace || '#' || old_code_value) COLLATE "C")` expression so `UX_Descriptor_UriLowered_ResourceKeyId` serves the join on both engines without inheriting the database default collation. The `ResourceKeyId` parameters come from `MappingSet.ResourceKeyIdByResource` through each `TrackedChangeDescriptorJoinInfo.DescriptorResource`.
+In the SQL Server example above, we join with the live table using identifying values instead of surrogate keys so that we can hide entries that were recreated. Descriptor-valued identity parts use the same descriptor identity as write-time resolution: the computed `UriLowered` plus the descriptor resource's compile-time `ResourceKeyId`. The PostgreSQL renderer emits the equivalent `lower(descriptor."Uri" COLLATE "pg_c_utf8") = lower((old_namespace || '#' || old_code_value) COLLATE "pg_c_utf8")` expression so `UX_Descriptor_UriLowered_ResourceKeyId` serves the join on both engines without inheriting the database default collation. The `ResourceKeyId` parameters come from `MappingSet.ResourceKeyIdByResource` through each `TrackedChangeDescriptorJoinInfo.DescriptorResource`.
 
 #### `*_RefKey` index ordering for `/deletes`
 
@@ -1797,7 +1797,9 @@ This makes the physical order of the `UX_<Table>_RefKey` key columns important. 
 
 For DMS, emit `*_RefKey` with `DocumentId` last: `(<identity storage columns...>, DocumentId)`. The composite reference FKs that target `*_RefKey` must use the same target-column ordering. This preserves the uniqueness contract while giving `/deletes` a useful seek path for the anti-join against the live table.
 
-Descriptor `/deletes` uses the same conceptual anti-join and the same identity contract as descriptor writes, references, and filters: `(UriLowered, ResourceKeyId)`. The planner resolves the requested descriptor endpoint to its compile-time `ResourceKeyId` and compares the live descriptor URI with the lowered tombstoned `<namespace>#<codeValue>` value. The existing `UX_Descriptor_UriLowered_ResourceKeyId` serves this probe, so no separate descriptor identity index is needed. Because both sides use the ASCII-without-NUL lowered URI contract, a case-only descriptor recreation suppresses the old tombstone on both engines.
+`*_RefKey` is emitted only for resources that some other resource references (`EnsureTargetUnique`). Never-referenced resources have no RefKey; their recreated-row anti-join keeps the plan available from `UX_<Table>_NK` (a partial seek on leading scalar identity parts plus a residual filter). That is the pre-existing behavior and is not changed by the natural-key design. If measurement shows it is too slow on high-volume never-referenced tables, the agreed remedy is to re-shape the anti-join onto the resource's own natural key using the compiled `OwnNaturalKeyProbe` (reference-sourced parts resolved by scalar subselects over the referenced targets' `RefKey`s, bound from the tombstone `Old*` scalars; descriptor parts via the lowered-URI + `ResourceKeyId` subselect), so the outer join seeks `UX_<Table>_NK`. See `natural-key-resolution.md` § "`/deletes` recreated-row detection on never-referenced resources".
+
+Descriptor `/deletes` uses the same conceptual anti-join and the same identity contract as descriptor writes, references, and filters: `(UriLowered, ResourceKeyId)`. The planner resolves the requested descriptor endpoint to its compile-time `ResourceKeyId` and compares the live descriptor URI with the lowered tombstoned `<namespace>#<codeValue>` value. The existing `UX_Descriptor_UriLowered_ResourceKeyId` serves this probe, so no separate descriptor identity index is needed. Because both sides use the engine-lowered URI contract, a descriptor recreation differing only in casing (as folded by the engine's descriptor identity contract) suppresses the old tombstone on both engines.
 
 The shared `tracked_changes_edfi.Descriptor.Discriminator` remains only as a routing value for selecting historical rows belonging to the requested endpoint. The planner obtains that value from the resolved endpoint metadata independently of `ResourceKeyId`; it must not parse the discriminator or use it to probe or type-check `dms.Descriptor`.
 
@@ -1813,7 +1815,7 @@ FROM
   tracked_changes_edfi.Descriptor AS c 
   LEFT JOIN dms.Descriptor AS src 
     ON src.ResourceKeyId = @CrisisTypeDescriptorResourceKeyId
-    AND src.UriLowered = LOWER(CONCAT(c.OldNamespace, '#', c.OldCodeValue))
+    AND src.UriLowered = LOWER(CONCAT(c.OldNamespace, '#', c.OldCodeValue) COLLATE SQL_Latin1_General_CP1_CI_AS)
 WHERE 
   c.Discriminator = @CrisisTypeDescriptorDiscriminator -- Route rows in the shared tombstone table only
   AND src.DocumentId IS NULL             -- Exclude entries that were recreated
@@ -1829,10 +1831,10 @@ ORDER BY
 ```
 
 PostgreSQL emits
-`lower(src."Uri" COLLATE "C") = lower((c."OldNamespace" || '#' || c."OldCodeValue") COLLATE "C")`
-for the URI predicate and uses the same compile-time `ResourceKeyId` predicate. The explicit `"C"`
-collation is required; an unqualified `lower(...)` would inherit the database default and is not part
-of the Change Query SQL contract.
+`lower(src."Uri" COLLATE "pg_c_utf8") = lower((c."OldNamespace" || '#' || c."OldCodeValue") COLLATE "pg_c_utf8")`
+for the URI predicate and uses the same compile-time `ResourceKeyId` predicate. The explicit
+`"pg_c_utf8"` collation is required; an unqualified `lower(...)` would inherit the database default
+and is not part of the Change Query SQL contract.
 
 ### /keyChanges endpoints
 
@@ -2090,7 +2092,8 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
   `dms.Descriptor`; `Discriminator` appears only in the predicate that routes shared historical
   descriptor rows.
 - DB-behavior on PostgreSQL and SQL Server: deleting a descriptor and recreating it with the same
-  URI under ASCII-without-NUL casing differences suppresses the old descriptor tombstone, and also allows
+  URI under casing differences (as folded by the engine's descriptor identity contract) suppresses
+  the old descriptor tombstone, and also allows
   resource `/deletes` recreation detection to resolve descriptor-valued identity parts to the
   recreated descriptor. Reusing the same URI for a different descriptor `ResourceKeyId` does not
   suppress the tombstone.

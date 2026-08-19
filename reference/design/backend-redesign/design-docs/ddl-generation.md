@@ -52,7 +52,7 @@ The DDL generation utility is responsible for database objects derived from the 
   - ReadChanges authorization views
 - Optional CDC objects:
   - the opt-in physical `dms.CdcHeartbeat` object defined by
-    [data-model.md](data-model.md#8-dmscdcheartbeat-opt-in-cdc-integration-object)
+    [data-model.md](data-model.md#7-dmscdcheartbeat-opt-in-cdc-integration-object)
   - provider-specific enablement and validation defined by
     [Relational CDC and Document Projection](cdc/cdc-streaming.md#schema-and-query-integration)
 - Authorization companion objects required for API authorization (see [auth.md](auth.md)):
@@ -210,6 +210,24 @@ This inventory is the explicit “what exists in the database” contract that t
 - `IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId`; no source content-version
   projector-discovery index is emitted
 - Supporting indexes for all FKs (see “FK index policy” below)
+
+**Identity collation and descriptor folding** (normative detail in
+[natural-key-resolution.md](natural-key-resolution.md#sql-server-column-level-identity-collation)):
+
+- SQL Server: every generated string column that stores or copies an identity value (canonical
+  natural-key columns, flattened `RefKey` copies, abstract-identity columns, descriptor `Uri`/
+  `Namespace`/`CodeValue`, tracked-change old/new identity copies, local string members of collection
+  identity constraints) is emitted with an explicit `COLLATE SQL_Latin1_General_CP1_CI_AS`; the
+  database default collation is never the identity contract. Purpose-specific explicit collations
+  (e.g. the `Latin1_General_100_BIN2` lifecycle token) are preserved.
+- Descriptor identity index: PostgreSQL emits the unique expression index
+  `UX_Descriptor_UriLowered_ResourceKeyId ON dms."Descriptor" (lower("Uri" COLLATE "pg_c_utf8"), "ResourceKeyId")`
+  (requires PostgreSQL 17+ and a UTF-8 database; SchemaTools guards both); SQL Server emits the
+  non-persisted computed column `[UriLowered] AS LOWER([Uri])` and a unique index on
+  `([UriLowered], [ResourceKeyId])`. No emitted `lower(...)`/`LOWER(...)` over a descriptor value
+  may rely on the database default collation.
+- No `dms.ReferentialIdentity`, `TR_<R>_ReferentialIdentity`, `dms.uuidv5()`, or DMS-owned
+  `CREATE EXTENSION pgcrypto` object is emitted.
 
 ### 2b) Authorization objects (`auth` schema)
 

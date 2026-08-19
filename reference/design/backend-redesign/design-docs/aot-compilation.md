@@ -24,17 +24,14 @@ In the baseline redesign, DMS:
 1. Loads `ApiSchema.json` (core + extensions) and builds an in-memory schema model.
 2. Derives a **RelationalResourceModel** per resource type from that schema.
 3. Compiles **dialect-specific SQL plans** (read/write) from the model.
-4. Compiles storage-resolved natural-key target, own-key, and descriptor probe metadata from the
-   derived model.
-5. Caches the derived models, plans, and probes so requests do not repeat compilation work.
+4. Caches derived models/plans so requests do not repeat compilation work.
 
 ### 1.2 Optional AOT mode (mapping packs)
 
 In AOT mode, a separate build/CLI step produces a **Mapping Pack**:
 
 - a single binary blob (protobuf payload compressed with zstd),
-- containing the compiled relational mapping artifacts, including typed natural-key probe metadata,
-  for a specific `(EffectiveSchemaHash, Dialect, RelationalMappingVersion)`,
+- containing the compiled relational mapping artifacts for a specific `(EffectiveSchemaHash, Dialect, RelationalMappingVersion)`,
 - distributed as a file (primary option) and loaded by DMS on demand.
 
 At runtime, after a request is routed to a database instance and DMS reads that database’s recorded `EffectiveSchemaHash`, DMS:
@@ -201,7 +198,7 @@ Recommended layout (one file per hash + dialect):
 
 Notes:
 - `effectiveSchemaHash` is lowercase hex (64 chars).
-- `relMappingVersion` is a short constant string (e.g., `v2`).
+- `relMappingVersion` is a short constant string (e.g., `v1`).
 - The file contains an embedded header with the same values; file naming is not trusted as the source of truth.
 
 ### 7.2 DMS configuration
@@ -248,8 +245,8 @@ Why:
 - zstd decompression is extremely fast, compression is very small
 
 Implementation approach:
-- The pack envelope records `compression_algorithm` (must be ZSTD for PackFormatVersion=1), `zstd_uncompressed_payload_length`, and `payload_sha256`.
-- The consumer validates the envelope, decompresses `payload_zstd` with zstd into exactly the declared uncompressed length, and rejects any hash mismatch.
+- The pack header records the **uncompressed payload length**.
+- The consumer always **decompresses with zstd**
 
 ---
 
@@ -270,17 +267,69 @@ The pack must embed at least:
 
 `pack_format_version` exists so the consumer can reject packs it cannot decode even if the `EffectiveSchemaHash` matches; it should be treated as a strict protocol/version gate and only bumped for breaking serialization/envelope changes.
 
-### 9.2 Contract source of truth
+### 9.2 Suggested protobuf schema (high level)
 
-The contracts package MUST define and generate C# types from the normative `.proto` in `reference/design/backend-redesign/design-docs/mpack-format-v1.md`. This document intentionally does not repeat protobuf field numbers.
+The contracts package would define a schema like (high level only; see the normative `.proto` in `reference/design/backend-redesign/design-docs/mpack-format-v1.md`):
 
-Conceptually:
-- The **envelope** is uncompressed protobuf and contains the selection key fields, compression metadata, payload integrity hash, optional producer metadata, and `payload_zstd`.
-- `payload_zstd` is a second protobuf message (`MappingPackPayload`) encoded as protobuf and then zstd-compressed.
-- `MappingPackPayload` contains the deterministic `dms.ResourceKey` seed mapping, per-resource mapping artifacts, natural-key probe metadata, and the shared descriptor probe target.
-- This allows reading and validating the keying fields without decompressing the payload.
+```proto
+syntax = "proto3";
 
-Any PackFormatVersion=1 field additions, removals, or tag changes must be made in `mpack-format-v1.md` first, then regenerated into the shared contracts package.
+package edfi.dms.mappingpacks.v1;
+
+enum SqlDialect {
+  SQL_DIALECT_UNSPECIFIED = 0;
+  SQL_DIALECT_PGSQL = 1;
+  SQL_DIALECT_MSSQL = 2;
+}
+
+message MappingPackEnvelope {
+  // Self-identifying header
+  string effective_schema_hash = 1;
+  SqlDialect dialect = 2;
+  string relational_mapping_version = 3;
+  uint32 pack_format_version = 4;
+
+  // Payload is always MappingPackPayload encoded as protobuf, then zstd-compressed.
+  uint64 zstd_uncompressed_payload_length = 5;
+
+  // Zstd-compressed bytes of MappingPackPayload
+  bytes payload_zstd = 10;
+}
+
+message MappingPackPayload {
+  // The payload schema can evolve independently, but should remain compatible.
+  repeated ResourcePack resources = 1;
+  repeated ResourceKeyEntry resource_keys = 2;
+}
+
+message ResourceKeyEntry {
+  // Deterministic id (seeded by DDL generator) used in core tables.
+  uint32 resource_key_id = 1; // must fit in SQL smallint
+  string project_name = 2;
+  string resource_name = 3;
+  string resource_version = 4; // SemVer from ApiSchema projectSchema.projectVersion
+}
+
+message ResourcePack {
+  string project_name = 1;
+  string resource_name = 2;
+
+  // Plan packs always include dialect-specific compiled plans.
+  ResourceWritePlan write_plan = 21;
+  ResourceReadPlan read_plan = 22;
+}
+
+message ResourceReadPlan {
+  repeated TableReadPlan table_plans = 1;
+  repeated ReferenceIdentityProjectionTablePlan reference_identity_projection_table_plans = 2;
+  repeated DescriptorProjectionPlan descriptor_projection_plans = 3;
+}
+```
+
+Notes:
+- The **envelope** is uncompressed protobuf.
+- The envelope’s `payload_zstd` is a second protobuf message (`MappingPackPayload`) encoded as protobuf and then zstd-compressed.
+- This allows reading the keying fields without decompressing the payload.
 
 ---
 
@@ -293,7 +342,7 @@ A CLI utility (can be a new executable or a mode of the DDL generator) that:
 - loads the effective `ApiSchema.json` set,
 - computes `EffectiveSchemaHash` (same algorithm as `data-model.md`),
 - derives `RelationalResourceModel` per resource,
-- compiles dialect-specific plans and storage-resolved, typed natural-key probes into a `MappingSet`,
+- compiles dialect-specific plans,
 - serializes to protobuf payload,
 - zstd-compresses it,
 - writes the `.mpack` file.
@@ -305,7 +354,7 @@ api-schema-tools pack build \
   --dialect pgsql \
   --apiSchemaPath ./ApiSchema \
   --out ./mapping-packs/pgsql \
-  --relMappingVersion v2
+  --relMappingVersion v1
 ```
 
 Notes:
@@ -321,13 +370,21 @@ public sealed class MappingPackBuilder
     {
         ApiSchemaDocuments docs = LoadAndMergeApiSchema(options.ApiSchemaPath);
         string effectiveSchemaHash = EffectiveSchemaHashCalculator.Compute(docs, options.RelMappingVersion);
-        DerivedRelationalModelSet model = RelationalModelSetBuilder.Build(docs, options.Dialect);
-        MappingSet mappingSet = MappingSetCompiler.Compile(
-            effectiveSchemaHash,
-            options.RelMappingVersion,
-            model
-        );
-        MappingPackPayload payload = MappingPackPayloadSerializer.Serialize(mappingSet);
+
+        MappingPackPayload payload = new();
+
+        foreach (var resource in docs.GetAllResources())
+        {
+            RelationalResourceModel model = RelationalResourceModelBuilder.Build(resource.Schema);
+            ResourcePlans plans = RelationalPlanCompiler.CompileAllPlans(model, options.Dialect, docs);
+
+            payload.Resources.Add(new ResourcePack
+            {
+                ProjectName = resource.ProjectName,
+                ResourceName = resource.ResourceName,
+                Plans = SerializePlans(plans),
+            });
+        }
 
         byte[] payloadBytes = payload.ToByteArray(); // generated by contracts package
         byte[] compressed = CompressZstd(payloadBytes);
@@ -340,7 +397,6 @@ public sealed class MappingPackBuilder
             Dialect = options.Dialect,
             RelationalMappingVersion = options.RelMappingVersion,
             PackFormatVersion = MappingPackFormat.V1,
-            CompressionAlgorithm = CompressionAlgorithm.CompressionAlgorithmZstd,
             ZstdUncompressedPayloadLength = (ulong)payloadBytes.Length,
             PayloadSha256 = ByteString.CopyFrom(sha),
             Producer = "dms-mappingpack",
@@ -438,8 +494,6 @@ public sealed class FileMappingPackStore : IMappingPackStore
 ```csharp
 public static class MappingPackLoader
 {
-    private const ulong MaxUncompressedPayloadLength = 256UL * 1024UL * 1024UL; // deployment-configurable
-
     public static MappingPackPayload LoadPayload(MappingPackEnvelope env, MappingPackKey expectedKey)
     {
         if (!string.Equals(env.EffectiveSchemaHash, expectedKey.EffectiveSchemaHash, StringComparison.Ordinal))
@@ -453,12 +507,6 @@ public static class MappingPackLoader
 
         if (env.PackFormatVersion != expectedKey.PackFormatVersion)
             throw new InvalidOperationException("Pack format version mismatch");
-
-        if (env.CompressionAlgorithm != CompressionAlgorithm.CompressionAlgorithmZstd)
-            throw new InvalidOperationException("Pack compression algorithm mismatch");
-
-        if (env.ZstdUncompressedPayloadLength is 0 || env.ZstdUncompressedPayloadLength > MaxUncompressedPayloadLength)
-            throw new InvalidOperationException("Pack uncompressed payload length invalid");
 
         byte[] compressed = env.PayloadZstd.ToByteArray();
         byte[] payloadBytes = DecompressZstd(compressed, (long)env.ZstdUncompressedPayloadLength);

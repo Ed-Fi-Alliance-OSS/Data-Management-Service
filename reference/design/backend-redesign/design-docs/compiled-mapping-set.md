@@ -380,7 +380,7 @@ Notes:
   - Scope: schema-derived project objects only (resource/extension/abstract-identity tables). This includes authorization-required indexes on resource tables derived from `securableElements` (see `auth.md`) and tracked-change tables/views derived from Change Query metadata (see `change-queries.md`). Core `dms.*` / `auth.*` objects (and their indexes/triggers) are owned by core DDL emission, with the following carve-outs:
     - authorization indexes for descriptor `Namespace` securable elements land on `dms.Descriptor` (e.g. `IX_Descriptor_Namespace_Auth`) because all descriptor resources share that base table; these are emitted by `DeriveAuthorizationIndexInventoryPass` alongside resource-table auth indexes rather than by core DDL, since their existence is driven by per-resource `securableElements` metadata.
     - the shared descriptor tracked-change table (`tracked_changes_edfi.Descriptor`) and its `TriggerKindParameters.DocumentStamping`/`DocumentStamping.ChangeTracking` trigger are represented in tracked-change inventory because their columns and discriminator coverage are driven by descriptor resources in the effective schema.
-    - the descriptor change-version indexes `IX_Descriptor_Discriminator_ContentVersion` and `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId` land on the core-owned `dms.Descriptor` table but are derived by `DeriveIndexInventoryPass`; their existence and consumers are driven by the effective schema and Change Query planning. The core DDL emitter continues to own `IX_Descriptor_ResourceKeyId_DocumentId`. The derived key orders are `[Discriminator, ContentVersion]` and `[ResourceKeyId, ContentVersion, DocumentId]`, respectively.
+    - the descriptor change-version index `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId` lands on the core-owned `dms.Descriptor` table but is derived by `DeriveIndexInventoryPass`; its existence and consumers are driven by the effective schema and Change Query planning. The core DDL emitter continues to own `IX_Descriptor_ResourceKeyId_DocumentId`. The derived key order is `[ResourceKeyId, ContentVersion, DocumentId]`.
 - `IndexesInCreateOrder` / `TriggersInCreateOrder` are stored in canonical deterministic order (schema, table, name), not a dependency-aware DDL execution order; DDL emission chooses any required creation sequence.
 - `TrackedChangeTablesInNameOrder` is stored in canonical deterministic order by physical object name. Dialect emitters, runtime Change Query SQL planning, manifests, and tests must consume this inventory rather than re-deriving table columns, descriptor joins, or person joins from emitted SQL strings.
 - The ReadChanges authorization view inventory is not part of `DerivedRelationalModelSet`: it is the static `AuthObjectDefinitions.ReadChangesAuthorizationViewDefinitions` list in `Backend.External` (see the `ReadChangesAuthViewKind` note above). Emission of these views is gated per model set by people-auth availability plus the presence of the five required `tracked_changes_edfi` association tables in `TrackedChangeTablesInNameOrder`; the DDL emitter and the manifest emitter apply the same guard so the manifest never advertises views the DDL does not create.
@@ -409,6 +409,14 @@ Notes:
 ### 2.3 Mapping set (dialect-specific)
 
 The mapping set is what runtime code uses after selection. It is also the semantic target of mapping pack decode.
+
+> **Mapping-pack alignment pending.** The natural-key probe metadata (`NaturalKeyProbeTargets`,
+> `OwnNaturalKeyProbesByResource`, `DescriptorProbeTarget`, `NaturalKeyProbeKeyBinding`) and
+> `DbColumnModel.UsesSqlServerIdentityCollation` below are required by the runtime from E21 onward
+> but are not yet reflected in [`mpack-format-v1.md`](mpack-format-v1.md) or
+> [`aot-compilation.md`](aot-compilation.md). Mapping packs are out of scope for E21 (see
+> [natural-key-resolution.md § Out of scope](natural-key-resolution.md#out-of-scope)); E05 owns the
+> payload/loader alignment before any pack is built.
 
 ```csharp
 public enum NaturalKeyProbeTargetKind
@@ -445,7 +453,7 @@ public sealed record NaturalKeyProbeTarget(
     NaturalKeyProbeTargetKind Kind,
     DbTableName Table,
     // Storage-resolved semantic identity order. Entries are self-contained for command builders,
-    // including abstract probes whose identity-table model is not serialized into mapping packs.
+    // including abstract probes.
     IReadOnlyList<NaturalKeyProbeKeyColumn> KeyColumns,
     DbColumnName DocumentIdColumn,
     // Present for abstract probes so the resolver can return the concrete member key for compatibility checks.
@@ -464,7 +472,7 @@ public sealed record OwnNaturalKeyProbe(
 public sealed record DescriptorProbeTarget(
     DbTableName DescriptorTable,
     DbColumnName UriColumn,
-    // SQL Server binds the computed column; PostgreSQL emits lower(UriColumn COLLATE "C") against the expression index.
+    // SQL Server binds the computed column; PostgreSQL emits lower(UriColumn COLLATE "pg_c_utf8") against the expression index.
     DbColumnName? UriLoweredColumn,
     DbColumnName ResourceKeyIdColumn,
     DbColumnName DocumentIdColumn
@@ -477,6 +485,10 @@ public sealed record MappingSet(
     IReadOnlyDictionary<QualifiedResourceName, ResourceReadPlan> ReadPlansByResource,
     IReadOnlyDictionary<QualifiedResourceName, short> ResourceKeyIdByResource,
     IReadOnlyDictionary<short, ResourceKeyEntry> ResourceKeyById,
+    // Entries exist for every abstract resource and for every concrete relational resource that
+    // carries UX_<R>_RefKey (i.e., is referenced by some resource in the effective schema).
+    // Never-referenced resources have no entry: no reference can target them, and their RefKey is
+    // not emitted. MappingSet validation rejects an entry for a resource without RefKey inventory.
     IReadOnlyDictionary<QualifiedResourceName, NaturalKeyProbeTarget> NaturalKeyProbeTargets,
     // Entries exist only for concrete resources with StorageKind=RelationalTables. Concrete
     // resources stored in SharedDescriptorTable use DescriptorProbeTarget for identity lookup.
@@ -484,8 +496,7 @@ public sealed record MappingSet(
     DescriptorProbeTarget DescriptorProbeTarget
 )
 {
-    // Required for AOT mode. Must validate payload invariants, including serialized natural-key
-    // probe metadata, before returning.
+    // Required for AOT mode. Must validate payload invariants before returning.
     public static MappingSet FromPayload(MappingPackPayload payload) => throw new NotImplementedException();
 }
 ```
@@ -502,8 +513,8 @@ Design invariants:
 - **Model derivation** (E01) produces `DerivedRelationalModelSet` from the effective schema set.
 - **DDL emission** (E02/E03) consumes `DerivedRelationalModelSet` and a dialect to emit deterministic SQL and manifests.
 - **Plan compilation** (E15) consumes `DerivedRelationalModelSet` and a dialect to produce the `WritePlansByResource`/`ReadPlansByResource` dictionaries used by `MappingSet`.
-- **Pack build** (E05) serializes the `MappingSet` *semantics* into `.mpack` (payload is a subset required for runtime execution), including storage-resolved target probes, own-key probes for `RelationalTables` resources, and shared descriptor probe metadata.
-- **Pack load** (E05-S05) reconstructs the probe dictionaries and shared descriptor probe from those authoritative payload records without rerunning the probe compiler. Pack load and **runtime mapping selection** (E06-S02) must return the same `MappingSet` shape regardless of whether it came from packs or runtime compilation.
+- **Pack build** (E05) serializes the `MappingSet` *semantics* into `.mpack` (payload is a subset required for runtime execution).
+- **Pack load** (E05-S05) and **runtime mapping selection** (E06-S02) must return the same `MappingSet` shape regardless of whether it came from packs or runtime compilation.
 
 ---
 
@@ -535,7 +546,7 @@ For a write request targeting resource `R`:
    - Abstract resources are not direct write targets.
    - For `StorageKind = SharedDescriptorTable`, route to the descriptor write handler. It uses
      `MappingSet.DescriptorProbeTarget` plus `MappingSet.ResourceKeyIdByResource[R]` to resolve
-     insert vs update by validated lowered URI + `ResourceKeyId`; it MUST NOT require or look up
+     insert vs update by the engine-lowered validated URI + `ResourceKeyId`; it MUST NOT require or look up
      `MappingSet.OwnNaturalKeyProbesByResource[R]`.
    - For `StorageKind = RelationalTables`, lookup `ResourceWritePlan` via `MappingSet.WritePlansByResource[R]`.
    - Use `MappingSet.ResourceKeyIdByResource[R]` when writing to shared tables like `dms.Document` / `dms.Descriptor` and when binding descriptor/abstract probe literals.
@@ -551,19 +562,23 @@ For a write request targeting resource `R`:
      `natural-key-resolution.md`.
 
 3. **Bulk reference + descriptor resolution**
-   - Before constructing lookup entries, Core descriptor extraction rejects every non-ASCII or NUL
-     descriptor URI at its concrete request JSON path. The write returns a path-attributed 400 and
-     does not invoke the resolver. This validation happens before descriptor-specific lowercase
-     normalization.
+   - Before constructing lookup entries, Core descriptor extraction rejects every NUL-bearing
+     descriptor URI at its concrete request JSON path (unpaired-surrogate JSON escapes never reach
+     extraction; `ParseBodyMiddleware` rejects them body-wide at parse). The write returns a
+     path-attributed 400 and does not invoke the resolver. The application does not lowercase
+     descriptor values; case folding happens only in the probe SQL.
    - Compute the full set of natural-key lookup entries needed for this request:
      - document references (target resource + extracted `DocumentIdentity` values), and
-     - descriptor references (descriptor resource key + validated, lowered ASCII-without-NUL URI).
+     - descriptor references (descriptor resource key + raw validated well-formed URI; the probe
+       folds it in SQL).
    - Perform one batched natural-key resolver command using:
      - `MappingSet.NaturalKeyProbeTargets` for concrete and abstract document references, and
      - `MappingSet.DescriptorProbeTarget` for descriptor references.
    - Split the resolved rows into the request-scoped maps needed by the flattener:
      - `ResolvedReferenceSet.DocumentReferences`, a dedicated document-reference map whose construction installs the structural natural-key comparer, and
-     - `ResolvedReferenceSet.DescriptorIdByKey` for descriptor references (keyed by `(loweredUri, descriptorResource)`).
+     - `ResolvedReferenceSet.DescriptorIdByKey` for descriptor references (keyed ordinally by
+       `(rawUri, descriptorResource)`; case-variant spellings remain separate entries that resolve
+       to the same `DescriptorId`, per the memo contract in `natural-key-resolution.md`).
    - Materialize `ResolvedReferenceSet` for this request.
    - Note: under key unification, this same `ResolvedReferenceSet.DescriptorIdByKey` map is also consumed by `KeyUnificationWritePlan`
      when coalescing unified descriptor endpoints into canonical storage columns (see `key-unification.md`).

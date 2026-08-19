@@ -13,6 +13,15 @@ Implement the optional ahead-of-time (AOT) compilation workflow described in:
 - `reference/design/backend-redesign/design-docs/compiled-mapping-set.md` (unified `MappingSet` shape)
 - `reference/design/backend-redesign/design-docs/mpack-format-v1.md` (normative PackFormatVersion=1)
 
+> **Alignment prerequisite.** E21 (natural-key resolution, DMS-1402) added natural-key probe
+> metadata (`NaturalKeyProbeTargets`, `OwnNaturalKeyProbesByResource`, `DescriptorProbeTarget`)
+> and `DbColumnModel.UsesSqlServerIdentityCollation` to the compiled `MappingSet`, and made the
+> runtime depend on them. `mpack-format-v1.md` and `aot-compilation.md` were deliberately not
+> updated by E21. Before implementing any story below, align the pack payload shape and loader
+> validation with `compiled-mapping-set.md` § 2.3 (carry the metadata or recompile it from the
+> derived model on load; run the compile-time probe validation on pack load). `PackFormatVersion=1`
+> is unreleased, so this is a draft revision, not a bump.
+
 Deliverables include:
 
 - A shared protobuf “contracts” package for producer/consumer.

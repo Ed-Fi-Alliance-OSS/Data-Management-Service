@@ -213,7 +213,7 @@ CREATE TABLE dms.Descriptor (
 );
 
 CREATE UNIQUE INDEX UX_Descriptor_UriLowered_ResourceKeyId
-    ON dms.Descriptor (lower(Uri COLLATE "C"), ResourceKeyId);
+    ON dms.Descriptor (lower(Uri COLLATE "pg_c_utf8"), ResourceKeyId);
 
 CREATE INDEX IX_Descriptor_ResourceKeyId_DocumentId
     ON dms.Descriptor (ResourceKeyId, DocumentId);
@@ -223,7 +223,7 @@ CREATE INDEX IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId
     ON dms.Descriptor (ResourceKeyId, ContentVersion, DocumentId);
 ```
 
-Descriptor identity lookups are served by `UX_Descriptor_UriLowered_ResourceKeyId`. PostgreSQL emits the expression index shown above and uses the same `lower(<uri> COLLATE "C")` expression in descriptor probes so lowering is deterministic rather than inherited from the database default collation. SQL Server emits the same logical unique index over a non-persisted computed column, `UriLowered AS LOWER([Uri])`, plus `ResourceKeyId`.
+Descriptor identity lookups are served by `UX_Descriptor_UriLowered_ResourceKeyId`. PostgreSQL emits the expression index shown above and uses the same `lower(<uri> COLLATE "pg_c_utf8")` expression in descriptor probes so folding is pinned to the builtin collation (PostgreSQL 17+) rather than inherited from the database default. SQL Server emits the same logical unique index over a non-persisted computed column, `UriLowered AS LOWER([Uri])`, plus `ResourceKeyId`, under the explicitly emitted CI identity collation. Case folding is engine-owned: the application never lowercases descriptor values (see `natural-key-resolution.md`).
 
 `ResourceKeyId` is denormalized from `dms.Document` at insert time (same transaction, same value) and is immutable thereafter, mirroring the immutability of a document's resource type. `FK_Descriptor_DocumentResourceKey` enforces that the descriptor row's authoritative descriptor-type key matches the owning `dms.Document.ResourceKeyId`; `dms.Document.ResourceKeyId` remains the FK-constrained path to `dms.ResourceKey`. The denormalized column exists so descriptor GET-all/GET-by-query paging and totalCount can root entirely on `dms.Descriptor` through `IX_Descriptor_ResourceKeyId_DocumentId` — an index over only the descriptor rows — instead of maintaining a `(ResourceKeyId, DocumentId)` index across every row of `dms.Document`. The stamping trigger's no-op diff deliberately excludes it, so a migration backfill of the column does not bump change versions.
 
@@ -232,20 +232,21 @@ The effective date columns are part of the descriptor field contract. This match
 Descriptor references (recommended base design):
 
 - Use an FK directly to `dms.Descriptor(DocumentId)` to guarantee “this is a descriptor” at the DB level.
-- Resolve descriptor URI strings only after request validation has rejected non-ASCII or NUL input at
-  its source path. Lowercase the validated ASCII-without-NUL URI and probe `dms.Descriptor` by
-  `(UriLowered, ResourceKeyId)`; `ResourceKeyId`, not `Discriminator`, is the descriptor-type
-  authority for lookup and uniqueness. A non-ASCII or NUL value is a 400 validation failure before
-  the descriptor probe, not a lookup miss.
+- Resolve descriptor URI strings only after request validation has rejected NUL input at its
+  source path (unpaired-surrogate JSON escapes are rejected earlier, body-wide, at parse). Probe `dms.Descriptor` by
+  `(UriLowered, ResourceKeyId)` with the raw validated URI — the probe folds it in SQL;
+  `ResourceKeyId`, not `Discriminator`, is the descriptor-type authority for lookup and
+  uniqueness. A NUL or malformed value is a 400 validation failure before the descriptor probe,
+  not a lookup miss.
 
 If DB-level enforcement of “descriptor must be of type X” becomes necessary later, it must compare the referenced `dms.Descriptor.ResourceKeyId` with the expected compile-time resource key derived from `ApiSchema`. `Discriminator` must not become a second descriptor-type authority.
 
 Descriptor update semantics:
 
 - For descriptor POST/PUT, derive `Uri` from the canonicalized `Namespace` + `#` + `CodeValue`.
-  Validate the two client-supplied components as ASCII without NUL before lowercasing, upsert
-  detection, or persistence; attribute a validation failure to `$.namespace` and/or `$.codeValue` as
-  applicable.
+  Validate the two client-supplied components as well-formed without NUL before upsert detection
+  or persistence — the application does not lowercase; attribute a validation failure to
+  `$.namespace` and/or `$.codeValue` as applicable.
 - Descriptor identity is immutable after creation: a PUT whose derived `Uri` is not equal to the
   persisted descriptor `Uri` under the descriptor identity contract is rejected as a real identity
   change. Case-only differences in `Namespace`, `CodeValue`, or the derived `Uri` are not real
@@ -808,7 +809,7 @@ Typical structure:
   - Identity elements that come from document reference objects map to the corresponding resolved `..._DocumentId` FK columns only; propagated per-site identity-part binding columns do not participate in `UX_<R>_NK`.
   - Under key unification, per-site identity-part binding columns may be generated/persisted aliases of canonical storage columns. Those columns preserve path semantics for FK/cascade consistency, query binding, and reconstitution, but root natural-key uniqueness for a reference-sourced part is by resolved `..._DocumentId`.
 - Reference key columns → **FK- and probe-supporting** unique constraint over `(<StorageIdentityParts...>, DocumentId)` (the referenced key used by composite reference FKs and natural-key probes).
-  - Emit `UX_<R>_RefKey` for every concrete resource root stored in relational tables, even when no current reference targets that resource. The uniform identity-first probe shape is required by generated natural-key probe metadata and by Change Query `/deletes` recreated-row detection.
+  - Emit `UX_<R>_RefKey` for every concrete resource root that some other resource in the effective schema references (the existing `EnsureTargetUnique` rule). Emission stays conditional: reference resolution can only target referenced resources, and never-referenced roots (dominated by high-volume leaf tables) do not carry a wide identity index they cannot be probed through. Change Query `/deletes` recreated-row detection uses the RefKey where present and otherwise keeps its `UX_<R>_NK`-based plan; see `natural-key-resolution.md` § "`/deletes` recreated-row detection on never-referenced resources".
   - Under key unification, `<StorageIdentityParts...>` uses canonical storage columns (never per-site `UnifiedAlias` binding columns); see `key-unification.md`.
 - Scalar columns for top-level non-collection properties
 - Reference columns (document references):
@@ -1234,7 +1235,9 @@ Object names are deterministic and derived from the owning table plus purpose to
   - Array uniqueness: `UX_{TableName}_{Tokens}` where tokens are the constrained column names with shared
     prefixes collapsed (e.g., `Assessment_DocumentId_AssessmentIdentifier_Namespace`)
 - Foreign keys: `FK_{TableName}_{Token}`, where `Token` is:
-  - `Document` for FKs to `dms.Document`
+  - `Document` for single-column `(DocumentId)` FKs to `dms.Document`
+  - `DocumentResourceKey` for composite `(DocumentId, ResourceKeyId)` FKs to
+    `dms.Document(DocumentId, ResourceKeyId)` (descriptor and abstract identity tables)
   - `{DescriptorBaseName}` for descriptor FKs (no `_DescriptorId` suffix)
   - `{ReferenceBaseName}` for single-column reference FKs
   - `{ReferenceBaseName}_RefKey` for composite reference FKs (storage identity columns + document id; canonicalized under key unification)

@@ -350,7 +350,8 @@ For a given request, backend already has:
 - `DocumentInfo`:
   - resource `DocumentIdentity`
   - descriptor references (with concrete JSON paths, including indices); Core has rejected any
-    non-ASCII or NUL URI at that path before descriptor-specific lowercase normalization
+    NUL-bearing URI at that path (an unpaired-surrogate escape never reaches extraction — it is
+    rejected at body parse) — Core does not lowercase descriptor values
   - document references (target identities + concrete reference-object JSON paths, including indices; grouped by wildcard path; requires addition of `DocumentReference.Path` as described below)
 - optional `ProfileAppliedWriteRequest` for profile-constrained writes:
   - `WritableRequestBody`: the request body after Core applies writable profile semantics and normal canonicalization
@@ -371,17 +372,17 @@ Before writing resource tables:
   - abstract references probe `{AbstractResource}Identity` and project both `DocumentId` and the concrete `ResourceKeyId`
 - Resolve all **descriptor references**:
   - before building any lookup entry, Core descriptor extraction validates the raw URI at its
-    concrete request JSON path; a non-ASCII or NUL value produces a path-attributed 400 and the
-    resolver is not invoked
-  - after validation, descriptors probe the lowered ASCII-without-NUL URI + `ResourceKeyId`
-    descriptor index
+    concrete request JSON path; a NUL-bearing value produces a path-attributed 400 and the resolver
+    is not invoked (an unpaired-surrogate escape is rejected earlier, at body parse)
+  - after validation, descriptors probe the lowered-URI + `ResourceKeyId` descriptor index with
+    the raw validated value — the probe folds it in SQL; the application never lowercases
 
-This ordering is normative: validation is not deferred to lookup and a non-ASCII or NUL URI must not
+This ordering is normative: validation is not deferred to lookup and a NUL or malformed URI must not
 be reported as a missing descriptor reference. For descriptor resource POST/PUT, the parallel direct
 write rule is owned by the descriptor identity/write flow: derive the URI from the canonicalized
-`$.namespace` + `#` + `$.codeValue`, validate the two client-supplied components as ASCII without NUL
-with failures attributed to their source paths, and only then lowercase or probe the URI. See
-[transactions-and-concurrency.md](transactions-and-concurrency.md#descriptor-uri-ascii-validation-boundary).
+`$.namespace` + `#` + `$.codeValue`, validate the two client-supplied components as well-formed
+without NUL with failures attributed to their source paths, and only then probe the URI. See
+[transactions-and-concurrency.md](transactions-and-concurrency.md#descriptor-uri-validation-boundary).
 
 Memoize resolved references within the request using the structural natural-key comparer. Cross-request L1/L2 caches remain optional and should stay disabled or short-TTL unless identity-update invalidation is proven.
 
@@ -553,8 +554,8 @@ Materialization is a two-phase process:
    - each candidate records its `JsonScope`, `OrdinalPath`, requested sibling order, scalar values, resolved FK values, and any extension subtrees
    - for each persisted multi-item collection scope, compute the candidate’s semantic key from the compiled paths
    - candidates for the same stable parent scope instance MUST first be unique by Core's request-local semantic key; ordinary duplicate submitted candidates remain request-validation failures
-   - after reference and descriptor ids have been populated, backend MUST run the storage-resolved duplicate validator from `natural-key-resolution.md` before storage binding, no-op synthesis, or collection-table DML
-   - that validator compares semantic-key members by resolved `DocumentId`/`DescriptorId` where present and by the backend schema comparer for local string identity members
+   - after reference and descriptor ids have been populated, backend runs the storage-resolved duplicate check from `natural-key-resolution.md` before storage binding, no-op synthesis, or collection-table DML; this is the existing `RelationalWriteFlattener` semantic-identity dedupe, not a separate validator
+   - that check compares semantic-key members by resolved `DocumentId`/`DescriptorId` where present and by the backend schema comparer for local string identity members
    - duplicates found by either layer are request-validation failures, not merge tie-breakers, and must not be left to collection-table unique constraints for routine client-visible behavior
 2. After loading the current document graph for update flows, bind each candidate to storage:
    - determine the visible persisted rows for each collection scope from `ProfileAppliedWriteContext.VisibleStoredCollectionRows` when present, keyed by compiled `JsonScope` plus stable parent address; otherwise treat all current rows in that scope as visible
@@ -570,7 +571,7 @@ The resulting write set is keyed by stable `CollectionItemId`s plus parent-scope
 This generic flatten-and-write algorithm applies to concrete resources with
 `StorageKind = RelationalTables`. Descriptor resources stored in the shared
 `dms.Descriptor` table use the descriptor write handler described in
-`natural-key-resolution.md`: upsert detection probes validated lowered URI +
+`natural-key-resolution.md`: upsert detection probes the engine-lowered validated URI +
 `ResourceKeyId` through the shared descriptor target and does not require an
 `OwnNaturalKeyProbe`.
 
@@ -613,14 +614,14 @@ Bulk insert options (non-codegen):
 
 Collection writes use merge semantics, not blanket delete-and-reinsert:
 
-- Every persisted multi-item collection scope MUST have a compiled semantic key; match by `(ParentScope, SemanticKey)`.
+- Every persisted multi-item collection scope MUST have a compiled semantic key; match by `(ParentScope, SemanticKey)`. Reference and descriptor members match by resolved `DocumentId`/`DescriptorId`; local string members match with the backend schema comparer (`OrdinalIgnoreCase` under the SQL Server identity collation, `Ordinal` on PostgreSQL), and a comparer-equal but byte-different member is rebound to the stored row's value before no-op comparison and DML (stored casing wins; see `natural-key-resolution.md` § "How the write path will preserve stored casing").
 - Submitted request siblings that collide on `(ParentScope, SemanticKey)` under Core's request-local comparison are invalid input and MUST fail request validation before merge/no-op/DML.
-- Backend MUST also reject siblings that collide only after storage resolution, using resolved `DocumentId`/`DescriptorId` values for reference/descriptor semantic-key members and the backend schema comparer for local string identity members. Relational unique constraints on collection tables remain defense in depth for races/corruption, not the primary client-visible behavior for duplicate submitted items.
+- Backend also rejects siblings that collide only after storage resolution. `RelationalWriteFlattener` already dedupes each scope's siblings on their materialized semantic identity (resolved `DocumentId`/`DescriptorId` values plus local scalars) with a path-attributed 400; under `natural-key-resolution.md` its comparison of local string identity members uses the backend schema comparer (`OrdinalIgnoreCase` under the SQL Server identity collation, `Ordinal` on PostgreSQL) instead of ordinal equality, and its message follows Core's duplicate-item wording. Relational unique constraints on collection tables remain defense in depth for races/corruption, not the primary client-visible behavior for duplicate submitted items.
 - For profile-constrained writes, visible stored rows are the rows enumerated in `ProfileAppliedWriteContext.VisibleStoredCollectionRows` for that collection scope and parent scope instance, in caller-visible order.
 - Core MUST reject any writable profile definition that excludes a field required to compute the semantic key of a persisted multi-item collection scope.
 - Hidden profile-scoped rows are current persisted rows for that collection scope instance that are not enumerated in `ProfileAppliedWriteContext.VisibleStoredCollectionRows`; they are never deleted or updated.
 - Hidden columns on matched rows are preserved by overlaying visible request-derived values onto the stored row while matched rows keep their existing `CollectionItemId`.
-- A change to a semantic-key value is treated as `delete old row + insert new row`, not as an in-place rename.
+- A change to a semantic-key value (one the schema comparer does not consider equal) is treated as `delete old row + insert new row`, not as an in-place rename; a comparer-equal casing variant is a match, not a change.
 
 Order rules:
 
@@ -1803,8 +1804,9 @@ public interface IResourceFlattener
 /// by ReferenceLookupKey.
 /// </param>
 /// <param name="DescriptorIdByKey">
-/// Maps (validated, lowered ASCII-without-NUL URI, descriptor resource type) to a descriptor DocumentId.
+/// Maps (raw validated well-formed URI, descriptor resource type) to a descriptor DocumentId, compared ordinally.
 /// This is a convenience map derived from Core-extracted descriptor references after descriptor-probe resolution.
+/// Case-variant spellings remain separate keys that resolve to the same DocumentId (the probe folds in SQL).
 /// Used to populate descriptor FK columns without per-row database work.
 /// </param>
 public sealed record ResolvedReferenceSet(
@@ -1847,9 +1849,10 @@ internal readonly record struct ReferenceLookupKey(
 
 /// <summary>
 /// Key used for resolving descriptor URI strings to descriptor DocumentIds without per-row database work.
-/// The URI must have passed request validation and then been ASCII-lowered to match the descriptor probe contract.
+/// The URI must have passed request validation (well-formed, no NUL) and is carried raw — never lowercased
+/// in the application; the descriptor probe folds it in SQL. Keys compare ordinally.
 /// </summary>
-public readonly record struct DescriptorKey(string LoweredUri, QualifiedResourceName DescriptorResource);
+public readonly record struct DescriptorKey(string RawUri, QualifiedResourceName DescriptorResource);
 
 /// <summary>
 /// Resolves extracted document-reference instances to referenced DocumentIds for a single write request.
@@ -2324,10 +2327,12 @@ private static long? ResolveDescriptorId(
         return null;
     }
 
-    // Core validation has already rejected non-ASCII or NUL input before relational resolution. Use
-    // the shared invariant-preserving helper here as defense in depth; never lowercase unchecked input.
-    var loweredUri = DescriptorUri.LowerValidatedAsciiWithoutNul(uri);
-    return resolved.DescriptorIdByKey[new DescriptorKey(loweredUri, descriptorResource)];
+    // Core validation has already rejected NUL input before relational resolution (an unpaired
+    // surrogate cannot exist in a C# string; STJ rejects it at body parse). Assert the invariant
+    // as defense in depth; never lowercase — case
+    // folding is engine-owned and happens only in the descriptor probe SQL.
+    DescriptorUri.AssertValidatedWellFormedWithoutNul(uri);
+    return resolved.DescriptorIdByKey[new DescriptorKey(uri, descriptorResource)];
 }
 
 private static void ApplyKeyUnificationPlans(

@@ -35,7 +35,10 @@ Source documents:
 - DMS remains schema/behavior-driven by `ApiSchema.json` (no handwritten per-resource code; no checked-in per-resource SQL artifacts).
 - Relationships are stored as stable `DocumentId` foreign keys, with referenced identity natural-key fields available locally for query/reconstitution and kept consistent via dialect-specific propagation rules (no FK rewrites): PostgreSQL uses `ON UPDATE CASCADE` for abstract targets and transitively mutable concrete targets (`ON UPDATE NO ACTION` otherwise); SQL Server retains native cascades where legal and uses safe full-composite `NO ACTION` cuts selected by `sql-server-pruning.md`. That document supersedes the blanket SQL Server `ON UPDATE NO ACTION` plus `MssqlIdentityPropagationTrigger` design. Under key unification, equality-constrained per-site/per-path bindings may be generated/persisted, presence-gated aliases of canonical stored columns (see `key-unification.md`).
 - Resolve references and POST upserts through generated natural-key probes over `RefKey`, abstract-identity, descriptor, and root natural-key indexes.
-- SQL Server + PostgreSQL parity is required.
+- SQL Server + PostgreSQL API and behavioral parity is required except where the design explicitly
+  defines engine-specific identity equality: regular string natural keys follow the declared SQL
+  Server CI versus PostgreSQL ordinal contracts, and non-ASCII descriptor folding follows each
+  engine's pinned collation semantics (see `natural-key-resolution.md`).
 - `DocumentCache`, `DocumentProjectionWork`, and the constrained lifecycle singleton are
   always provisioned. Canonical transactions record coalesced work in every
   enqueue-enabled lifecycle state; optional projection/read behavior and relational CDC

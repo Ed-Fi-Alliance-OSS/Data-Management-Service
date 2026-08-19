@@ -289,7 +289,7 @@ Change Query candidate selection is defined in [change-queries.md](change-querie
 `update-tracking.md` owns the stamping contract on `dms.Document` and how `_etag` / `_lastModifiedDate` are derived. It does not own the SQL or storage shape of candidate selection.
 The projection enqueue consequence of a stamp is described above; its table, trigger, and
 acknowledgement contracts are owned by
-[`data-model.md`](data-model.md#6a-dmsdocumentprojectionwork-always-provisioned-durable-projection-work)
+[`data-model.md`](data-model.md#5a-dmsdocumentprojectionwork-always-provisioned-durable-projection-work)
 and the
 [projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#transactional-enqueue).
 
