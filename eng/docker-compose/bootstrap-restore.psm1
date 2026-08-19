@@ -28,6 +28,7 @@ Set-StrictMode -Version Latest
 Import-Module (Join-Path $PSScriptRoot "../DatabaseTemplates/Template-RestoreCore.psm1")
 Import-Module (Join-Path $PSScriptRoot "../DatabaseTemplates/Template-RestoreTrust.psm1")
 Import-Module (Join-Path $PSScriptRoot "bootstrap-package-resolver.psm1")
+Import-Module (Join-Path $PSScriptRoot "bootstrap-schema-tool.psm1")
 Import-Module (Join-Path $PSScriptRoot "env-utility.psm1")
 
 $script:RestoreWorkspaceRoot = Join-Path $PSScriptRoot ".bootstrap-restore"
@@ -620,6 +621,348 @@ function Assert-RestoreTargetDatabaseNameSafe {
     }
 }
 
+
+function New-RestoreCandidateWorkspace {
+    <#
+    .SYNOPSIS
+    Builds a restore candidate workspace by running the UNCHANGED prepare phases redirected into
+    a private candidate directory via DMS_BOOTSTRAP_ROOT_OVERRIDE.
+
+    .DESCRIPTION
+    The override is set strictly around the two prepare invocations and cleared in a finally
+    block with Remove-Item (a $null assignment can leave a present-but-blank value on some
+    hosts), so no later phase command can ever observe it. A prepare failure removes the partial
+    candidate and rethrows. The active .bootstrap workspace is never read or written here; only
+    the prepare phases honor the override, and every consuming phase command refuses to run
+    while it is set.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Restore-internal staging helper; the restore flow does not expose -WhatIf end to end, and a silent no-op would produce no candidate for the cross-check to validate.')]
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$EnvironmentFile,
+
+        [string]$WorkspaceRoot = "",
+
+        # Test seams: the production prepare scripts stage real packages and need the schema
+        # tool; tests substitute recording stubs that honor the same override contract.
+        [string]$PrepareSchemaScriptPath = "",
+
+        [string]$PrepareClaimsScriptPath = ""
+    )
+
+    if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
+        $WorkspaceRoot = $script:RestoreWorkspaceRoot
+    }
+    if ([string]::IsNullOrWhiteSpace($PrepareSchemaScriptPath)) {
+        $PrepareSchemaScriptPath = Join-Path $PSScriptRoot "prepare-dms-schema.ps1"
+    }
+    if ([string]::IsNullOrWhiteSpace($PrepareClaimsScriptPath)) {
+        $PrepareClaimsScriptPath = Join-Path $PSScriptRoot "prepare-dms-claims.ps1"
+    }
+
+    $candidateDirectory = Join-Path $WorkspaceRoot "candidate-$([Guid]::NewGuid().ToString('N'))"
+    New-Item -ItemType Directory -Path $candidateDirectory -Force | Out-Null
+
+    $env:DMS_BOOTSTRAP_ROOT_OVERRIDE = $candidateDirectory
+    try {
+        foreach ($preparePhase in @(
+            [pscustomobject]@{ ScriptPath = $PrepareSchemaScriptPath; Arguments = @{ EnvironmentFile = $EnvironmentFile } },
+            [pscustomobject]@{ ScriptPath = $PrepareClaimsScriptPath; Arguments = @{} }
+        )) {
+            # Prepare scripts signal failure by throwing and run no trailing native command;
+            # reset the native-exit sentinel so a stale nonzero value from an earlier command in
+            # the session is never misread as a phase failure.
+            $global:LASTEXITCODE = 0
+            $prepareArguments = $preparePhase.Arguments
+            & $preparePhase.ScriptPath @prepareArguments | Out-Host
+            if ($LASTEXITCODE -ne 0) {
+                throw "Candidate prepare phase '$([System.IO.Path]::GetFileName($preparePhase.ScriptPath))' exited with code $LASTEXITCODE."
+            }
+        }
+
+        $candidateManifestPath = Join-Path $candidateDirectory "bootstrap-manifest.json"
+        if (-not (Test-Path -LiteralPath $candidateManifestPath -PathType Leaf)) {
+            throw "The prepare phases completed but produced no candidate bootstrap manifest at '$candidateManifestPath'."
+        }
+
+        return [pscustomobject]@{
+            CandidateDirectory    = $candidateDirectory
+            CandidateManifestPath = $candidateManifestPath
+        }
+    }
+    catch {
+        if (Test-Path -LiteralPath $candidateDirectory) {
+            Remove-Item -LiteralPath $candidateDirectory -Recurse -Force
+        }
+        throw
+    }
+    finally {
+        Remove-Item Env:\DMS_BOOTSTRAP_ROOT_OVERRIDE -ErrorAction SilentlyContinue
+    }
+}
+
+function ConvertTo-RestoreProjectSchemaName {
+    <#
+    .SYNOPSIS
+    Normalizes a project endpoint name to the resource schema name the database uses: lowercase
+    with hyphens removed (endpoint 'ed-fi' -> schema 'edfi'), the same rule the template
+    producer's database-side schema names follow. An endpoint that normalizes to an empty name
+    is an input defect.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectEndpointName
+    )
+
+    $schemaName = $ProjectEndpointName.ToLowerInvariant().Replace("-", "")
+    if ([string]::IsNullOrWhiteSpace($schemaName)) {
+        throw "Project endpoint name '$ProjectEndpointName' normalizes to an empty schema name."
+    }
+    return $schemaName
+}
+
+function Get-RestoreCandidateSchemaFact {
+    <#
+    .SYNOPSIS
+    Reads the facts the package<->candidate cross-check needs from a candidate workspace: the
+    schema section's dataStandardVersion, apiSchemaFormatVersion, effectiveSchemaHash, and
+    selectedExtensions, plus the core project endpoint and the staged schema file paths (core
+    first) from the candidate's ApiSchema manifest. Every fact is required - a candidate the
+    prepare phases produced without one is not comparable and fails here rather than passing a
+    weaker cross-check.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$CandidateDirectory
+    )
+
+    $manifestPath = Join-Path $CandidateDirectory "bootstrap-manifest.json"
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+        throw "Candidate workspace '$CandidateDirectory' has no bootstrap-manifest.json."
+    }
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -AsHashtable
+    if ($manifest -isnot [System.Collections.IDictionary] -or
+        -not $manifest.Contains("schema") -or
+        $manifest["schema"] -isnot [System.Collections.IDictionary]) {
+        throw "Candidate manifest '$manifestPath' has no schema section."
+    }
+    $schemaSection = $manifest["schema"]
+
+    foreach ($requiredField in @("dataStandardVersion", "apiSchemaFormatVersion", "effectiveSchemaHash", "apiSchemaManifestPath")) {
+        if (-not $schemaSection.Contains($requiredField) -or [string]::IsNullOrWhiteSpace([string]$schemaSection[$requiredField])) {
+            throw "Candidate manifest '$manifestPath' schema section is missing '$requiredField'."
+        }
+    }
+
+    $selectedExtensions = @()
+    if ($schemaSection.Contains("selectedExtensions") -and $null -ne $schemaSection["selectedExtensions"]) {
+        if ($schemaSection["selectedExtensions"] -isnot [System.Collections.IList]) {
+            throw "Candidate manifest '$manifestPath' schema.selectedExtensions must be a JSON array."
+        }
+        $selectedExtensions = @($schemaSection["selectedExtensions"] | ForEach-Object { [string]$_ })
+    }
+
+    $apiSchemaManifestPath = Join-Path $CandidateDirectory ([string]$schemaSection["apiSchemaManifestPath"])
+    if (-not (Test-Path -LiteralPath $apiSchemaManifestPath -PathType Leaf)) {
+        throw "Candidate ApiSchema manifest is missing: '$apiSchemaManifestPath'."
+    }
+    $apiSchemaManifest = Get-Content -LiteralPath $apiSchemaManifestPath -Raw | ConvertFrom-Json -AsHashtable
+    if ($apiSchemaManifest -isnot [System.Collections.IDictionary] -or
+        -not $apiSchemaManifest.Contains("projects") -or
+        $apiSchemaManifest["projects"] -isnot [System.Collections.IList] -or
+        @($apiSchemaManifest["projects"]).Count -lt 1) {
+        throw "Candidate ApiSchema manifest '$apiSchemaManifestPath' declares no projects."
+    }
+
+    $apiSchemaWorkspaceRoot = Split-Path -Parent $apiSchemaManifestPath
+    $coreEndpointNames = [System.Collections.Generic.List[string]]::new()
+    $schemaFilePaths = [System.Collections.Generic.List[string]]::new()
+    foreach ($project in @($apiSchemaManifest["projects"])) {
+        if ($project -isnot [System.Collections.IDictionary]) {
+            throw "Candidate ApiSchema manifest '$apiSchemaManifestPath' has a malformed project entry."
+        }
+        $schemaFilePaths.Add((Join-Path $apiSchemaWorkspaceRoot ([string]$project["schemaPath"])))
+        if (-not [bool]$project["isExtensionProject"]) {
+            $coreEndpointNames.Add([string]$project["projectEndpointName"])
+        }
+    }
+    if ($coreEndpointNames.Count -ne 1) {
+        throw "Candidate ApiSchema manifest '$apiSchemaManifestPath' must declare exactly one core project, found $($coreEndpointNames.Count)."
+    }
+
+    return [pscustomobject]@{
+        DataStandardVersion     = [string]$schemaSection["dataStandardVersion"]
+        ApiSchemaFormatVersion  = [string]$schemaSection["apiSchemaFormatVersion"]
+        EffectiveSchemaHash     = [string]$schemaSection["effectiveSchemaHash"]
+        SelectedExtensions      = [string[]]$selectedExtensions
+        CoreProjectEndpointName = $coreEndpointNames[0]
+        SchemaFilePaths         = [string[]]@($schemaFilePaths)
+    }
+}
+
+function Get-RestoreCandidateRelationalMappingVersion {
+    <#
+    .SYNOPSIS
+    Runs 'api-schema-tools ddl emit --ddl-manifest' over the candidate's staged schema files
+    (core first) and returns the emitted relational_mapping_version. Output goes into a fresh
+    subdirectory of the private package stage - never into the candidate tree - because the tool
+    requires an empty output directory and the candidate must stay byte-identical to what the
+    prepare phases produced.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [string[]]$SchemaFilePath,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [Parameter(Mandatory = $true)]
+        [string]$OutputRoot,
+
+        [string]$SchemaToolPath = ""
+    )
+
+    $toolPath = Resolve-DmsSchemaTool -RequestedPath $SchemaToolPath
+    $dialect = if ($DatabaseEngine -eq "mssql") { "mssql" } else { "pgsql" }
+    $outputDirectory = Join-Path $OutputRoot "ddl-validation-$([Guid]::NewGuid().ToString('N'))"
+
+    $arguments = @("ddl", "emit", "--schema") + $SchemaFilePath + @("--output", $outputDirectory, "--dialect", $dialect, "--ddl-manifest")
+    $global:LASTEXITCODE = 0
+    $output = if ($toolPath.EndsWith(".ps1", [System.StringComparison]::OrdinalIgnoreCase)) {
+        & pwsh -NoLogo -NoProfile -File $toolPath @arguments 2>&1
+    } else {
+        & $toolPath @arguments 2>&1
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw "api-schema-tools ddl emit failed with exit code $LASTEXITCODE during the candidate cross-check. Output: $(($output | Out-String).Trim())"
+    }
+
+    $ddlManifestPath = Join-Path $outputDirectory "ddl.manifest.json"
+    if (-not (Test-Path -LiteralPath $ddlManifestPath -PathType Leaf)) {
+        throw "api-schema-tools ddl emit reported success but produced no ddl.manifest.json at '$ddlManifestPath'."
+    }
+    $ddlManifest = Get-Content -LiteralPath $ddlManifestPath -Raw | ConvertFrom-Json
+    $mappingProperty = $ddlManifest.PSObject.Properties['relational_mapping_version']
+    if ($null -eq $mappingProperty -or [string]::IsNullOrWhiteSpace([string]$mappingProperty.Value)) {
+        throw "ddl.manifest.json at '$ddlManifestPath' carries no relational_mapping_version."
+    }
+
+    return [string]$mappingProperty.Value
+}
+
+function Assert-RestoreManifestMatchesCandidate {
+    <#
+    .SYNOPSIS
+    Proves a staged template package's restore manifest describes exactly the schema state the
+    candidate workspace would run: engine, DocumentJson physical baseline, Data Standard
+    version, ApiSchema format version, effective schema hash, relational mapping version, and
+    the full project-schema set (candidate endpoint names normalized to schema names, e.g.
+    'ed-fi' -> 'edfi'). Pure comparison - callers own candidate/stage removal on mismatch.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        $Manifest,
+
+        [Parameter(Mandatory = $true)]
+        $CandidateFact,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [Parameter(Mandatory = $true)]
+        [string]$CandidateRelationalMappingVersion
+    )
+
+    if ([string]$Manifest.databaseEngine -cne $DatabaseEngine) {
+        throw "The restore manifest declares databaseEngine '$($Manifest.databaseEngine)' but this restore selected '$DatabaseEngine'."
+    }
+
+    $baselineDocumentJsonType = Get-RestoreDocumentJsonBaselineType -DatabaseEngine $DatabaseEngine
+    if ([string]$Manifest.documentJsonColumnType -cne $baselineDocumentJsonType) {
+        throw "DocumentJson physical baseline mismatch: the restore manifest declares documentJsonColumnType '$($Manifest.documentJsonColumnType)' but this checkout's $DatabaseEngine baseline is '$baselineDocumentJsonType'."
+    }
+
+    if (-not ([string]$Manifest.dataStandardVersion).Equals($CandidateFact.DataStandardVersion, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Data Standard mismatch: the restore manifest declares dataStandardVersion '$($Manifest.dataStandardVersion)' but the candidate workspace staged Data Standard '$($CandidateFact.DataStandardVersion)'."
+    }
+
+    if (-not ([string]$Manifest.apiSchemaFormatVersion).Equals($CandidateFact.ApiSchemaFormatVersion, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "ApiSchema format version mismatch: the restore manifest declares apiSchemaFormatVersion '$($Manifest.apiSchemaFormatVersion)' but the candidate workspace staged '$($CandidateFact.ApiSchemaFormatVersion)'."
+    }
+
+    # Both sides are lowercase hex by contract (manifest shape + Invoke-DmsSchemaHash), so the
+    # comparison is deliberately case-sensitive - a casing difference means a contract breach,
+    # not an equality.
+    if ([string]$Manifest.effectiveSchemaHash -cne $CandidateFact.EffectiveSchemaHash) {
+        throw "Effective schema hash mismatch: the restore manifest declares '$($Manifest.effectiveSchemaHash)' but the candidate workspace staged '$($CandidateFact.EffectiveSchemaHash)'."
+    }
+
+    if ([string]$Manifest.relationalMappingVersion -cne $CandidateRelationalMappingVersion) {
+        throw "Relational mapping version mismatch: the restore manifest declares '$($Manifest.relationalMappingVersion)' but the candidate schema set emits '$CandidateRelationalMappingVersion'."
+    }
+
+    $candidateProjectSchemaNames = @(ConvertTo-RestoreProjectSchemaName -ProjectEndpointName $CandidateFact.CoreProjectEndpointName) +
+        @($CandidateFact.SelectedExtensions | ForEach-Object { ConvertTo-RestoreProjectSchemaName -ProjectEndpointName $_ })
+    $manifestProjectList = @(@($Manifest.projects) | Sort-Object) -join ", "
+    $candidateProjectList = @($candidateProjectSchemaNames | Sort-Object) -join ", "
+    if ($manifestProjectList -cne $candidateProjectList) {
+        throw "Project set mismatch: the restore manifest declares projects [$manifestProjectList] but the candidate workspace stages [$candidateProjectList]."
+    }
+}
+
+function Invoke-RestoreCandidateCrossCheck {
+    <#
+    .SYNOPSIS
+    Runs the full package<->candidate cross-check before any Docker activity: reads the
+    candidate facts, emits the candidate schema set's relational mapping version into the
+    private package stage, and asserts every comparable field. On ANY failure both transient
+    inputs are discarded - the candidate workspace and the staged package - and the failure
+    rethrows; the active .bootstrap workspace and the target database are never touched here.
+    Returns the candidate facts on success.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Restore-internal validation step; the restore flow does not expose -WhatIf end to end, and a silent no-op would skip the cross-check gate.')]
+    param (
+        [Parameter(Mandatory = $true)]
+        $Manifest,
+
+        [Parameter(Mandatory = $true)]
+        [string]$CandidateDirectory,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [Parameter(Mandatory = $true)]
+        [string]$StageDirectory,
+
+        [string]$SchemaToolPath = ""
+    )
+
+    try {
+        $candidateFact = Get-RestoreCandidateSchemaFact -CandidateDirectory $CandidateDirectory
+        $candidateMappingVersion = Get-RestoreCandidateRelationalMappingVersion `
+            -SchemaFilePath $candidateFact.SchemaFilePaths `
+            -DatabaseEngine $DatabaseEngine `
+            -OutputRoot $StageDirectory `
+            -SchemaToolPath $SchemaToolPath
+        Assert-RestoreManifestMatchesCandidate `
+            -Manifest $Manifest `
+            -CandidateFact $candidateFact `
+            -DatabaseEngine $DatabaseEngine `
+            -CandidateRelationalMappingVersion $candidateMappingVersion
+        return $candidateFact
+    }
+    catch {
+        if (Test-Path -LiteralPath $CandidateDirectory) {
+            Remove-Item -LiteralPath $CandidateDirectory -Recurse -Force
+        }
+        Remove-RestorePackageStage -StageDirectory $StageDirectory
+        throw
+    }
+}
+
 Export-ModuleMember -Function `
     Get-RestoreWorkspaceRoot, `
     Resolve-RestoreTemplatePackageIdentity, `
@@ -629,5 +972,11 @@ Export-ModuleMember -Function `
     Assert-RestoreManifestMatchesRequest, `
     Initialize-RestorePackageStage, `
     Remove-RestorePackageStage, `
+    New-RestoreCandidateWorkspace, `
+    ConvertTo-RestoreProjectSchemaName, `
+    Get-RestoreCandidateSchemaFact, `
+    Get-RestoreCandidateRelationalMappingVersion, `
+    Assert-RestoreManifestMatchesCandidate, `
+    Invoke-RestoreCandidateCrossCheck, `
     Resolve-RestoreTargetDatabaseName, `
     Assert-RestoreTargetDatabaseNameSafe
