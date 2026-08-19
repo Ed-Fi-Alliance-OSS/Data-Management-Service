@@ -325,12 +325,22 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         long providerObservationStartedAt = Stopwatch.GetTimestamp();
         try
         {
-            DocumentCacheStatusCurrentSourceObservationResult result = await observer
-                .ObserveAsync(
-                    new DocumentCacheStatusCurrentSourceObservationRequest(executionContext),
-                    providerObservationCancellationToken
-                )
-                .ConfigureAwait(false);
+            Task<DocumentCacheStatusCurrentSourceObservationResult> observationTask = observer.ObserveAsync(
+                new DocumentCacheStatusCurrentSourceObservationRequest(executionContext),
+                providerObservationCancellationToken
+            );
+            DocumentCacheStatusCurrentSourceObservationResult result;
+
+            try
+            {
+                result = await observationTask
+                    .WaitAsync(providerObservationCancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (observationTask.IsCompletedSuccessfully)
+            {
+                result = observationTask.Result;
+            }
 
             if (result.Outcome == DocumentCacheStatusCurrentSourceObservationOutcome.Cancelled)
             {

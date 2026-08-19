@@ -824,6 +824,52 @@ public class Given_DocumentCacheStatusService
     }
 
     [Test]
+    public async Task It_returns_endpoint_timeout_when_provider_ignores_cancellation()
+    {
+        DocumentCacheTargetEffectiveSettings effectiveSettings = EffectiveSettings(
+            statusObservationTimeout: TimeSpan.FromSeconds(5),
+            endpointTimeout: TimeSpan.FromMilliseconds(30)
+        );
+        DocumentCacheTargetObservation target = ResolvedTarget(
+            DocumentCacheTargetKey.Create("", 1),
+            effectiveSettings
+        );
+        StaticTargetRegistry registry = new([target], [ExecutionContext(target)]);
+        ScriptedStatusObserver observer = new(
+            (_, _) =>
+                new TaskCompletionSource<DocumentCacheStatusCurrentSourceObservationResult>(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                ).Task
+        );
+        CapturingStatusTelemetry telemetry = new();
+        DocumentCacheStatusService service = CreateService(
+            registry,
+            ObservationStore(target),
+            observer,
+            telemetry
+        );
+
+        DocumentCacheStatusResponse response = await service
+            .GetStatusAsync()
+            .WaitAsync(TimeSpan.FromSeconds(2));
+
+        DocumentCacheStatusTarget statusTarget = response.Targets.Should().ContainSingle().Which;
+        statusTarget.OperationalHealth.Status.Should().Be(DocumentCacheOperationalHealthStatus.Unknown);
+        statusTarget.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.StatusEndpointTimeout);
+        statusTarget.CaughtUp.Status.Should().Be(DocumentCacheCaughtUpStatus.Unknown);
+        statusTarget.CaughtUp.Reason.Should().Be(DocumentCacheStatusReason.StatusEndpointTimeout);
+
+        CapturedProviderObservation providerObservation = telemetry
+            .ProviderObservations.Should()
+            .ContainSingle()
+            .Which;
+        providerObservation
+            .Outcome.Should()
+            .Be(DocumentCacheStatusProviderObservationTelemetryOutcome.TimedOut);
+        providerObservation.Reason.Should().Be(DocumentCacheStatusReason.StatusEndpointTimeout);
+    }
+
+    [Test]
     public async Task It_preserves_process_failure_for_unstarted_targets_when_endpoint_budget_expires()
     {
         DocumentCacheTargetEffectiveSettings effectiveSettings = EffectiveSettings(
@@ -1340,16 +1386,21 @@ public class Given_DocumentCacheStatusService
         StaticTargetRegistry registry = new([target], [ExecutionContext(target)]);
         CapturingStatusTelemetry telemetry = new();
         ScriptedStatusObserver observer = new(
-            async (_, cancellationToken) =>
+            (_, cancellationToken) =>
             {
-                await WaitForCancellationAsync(cancellationToken);
-                return DocumentCacheStatusCurrentSourceObservationResult.Success(
-                    DocumentCacheLifecycleState.Tracking,
-                    cacheAheadRecoveryRequired: false,
-                    DocumentCacheStatusDurableQueuePresence.Empty,
-                    oldestWorkFirstEnqueuedAt: null,
-                    oldestWorkAgeSeconds: null,
-                    DurableObservedAt
+                cancellationToken
+                    .WaitHandle.WaitOne(TimeSpan.FromSeconds(2))
+                    .Should()
+                    .BeTrue("the configured status timeout should cancel the provider token");
+                return Task.FromResult(
+                    DocumentCacheStatusCurrentSourceObservationResult.Success(
+                        DocumentCacheLifecycleState.Tracking,
+                        cacheAheadRecoveryRequired: false,
+                        DocumentCacheStatusDurableQueuePresence.Empty,
+                        oldestWorkFirstEnqueuedAt: null,
+                        oldestWorkAgeSeconds: null,
+                        DurableObservedAt
+                    )
                 );
             }
         );
