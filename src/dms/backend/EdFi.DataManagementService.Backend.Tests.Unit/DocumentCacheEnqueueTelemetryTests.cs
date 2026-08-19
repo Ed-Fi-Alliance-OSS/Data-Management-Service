@@ -452,6 +452,28 @@ public class Given_DocumentCacheEnqueueTelemetry
     }
 
     [Test]
+    public void It_contains_enqueue_success_telemetry_and_warning_logger_failures_after_commit()
+    {
+        var telemetry = new ThrowingSuccessDocumentCacheEnqueueTelemetry();
+
+        Action act = () =>
+            DocumentCacheEnqueueTelemetryWriteBoundary.RecordSuccessIfEnqueueSucceededBestEffort(
+                telemetry,
+                dataStoreSelection: null,
+                targetRegistry: null,
+                tenantKey: string.Empty,
+                SqlDialect.Pgsql,
+                DocumentCacheEnqueueOutcome.AlreadySatisfied,
+                DocumentCacheEnqueueTelemetryCanonicalOperation.Insert,
+                DocumentCacheEnqueueTelemetryResourceKind.Resource,
+                new ThrowingLogger()
+            );
+
+        act.Should().NotThrow();
+        telemetry.RecordSuccessCallCount.Should().Be(1);
+    }
+
+    [Test]
     public void It_does_not_record_no_work_write_boundary_outcomes_with_unknown_target()
     {
         using MetricCollector collector = new();
@@ -957,6 +979,38 @@ public class Given_DocumentCacheEnqueueTelemetry
         : IDocumentCacheProviderCommandTimeoutClassifier
     {
         public bool IsProviderCommandTimeout(Exception exception) => isProviderCommandTimeout;
+    }
+
+    private sealed class ThrowingSuccessDocumentCacheEnqueueTelemetry : IDocumentCacheEnqueueTelemetry
+    {
+        public int RecordSuccessCallCount { get; private set; }
+
+        public void RecordSuccess(DocumentCacheEnqueueTelemetryContext context)
+        {
+            RecordSuccessCallCount++;
+            throw new InvalidOperationException("telemetry sink failed");
+        }
+
+        public void RecordFailure(
+            DocumentCacheEnqueueTelemetryContext context,
+            DocumentCacheEnqueueFailureCategory category
+        ) => throw new InvalidOperationException("unexpected failure telemetry call");
+    }
+
+    private sealed class ThrowingLogger : ILogger
+    {
+        public IDisposable BeginScope<TState>(TState state)
+            where TState : notnull => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        ) => throw new InvalidOperationException("warning logger failed");
     }
 
     private sealed class MetricCollector : IDisposable

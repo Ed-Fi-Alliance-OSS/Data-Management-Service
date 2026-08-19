@@ -3363,7 +3363,7 @@ internal sealed class DescriptorWriteHandler(
         DocumentCacheEnqueueOutcome enqueueOutcome
     )
     {
-        DocumentCacheEnqueueTelemetryWriteBoundary.RecordSuccessIfEnqueueSucceeded(
+        DocumentCacheEnqueueTelemetryWriteBoundary.RecordSuccessIfEnqueueSucceededBestEffort(
             _documentCacheEnqueueTelemetry,
             _dataStoreSelection,
             _documentCacheTargetRegistry,
@@ -3371,7 +3371,8 @@ internal sealed class DescriptorWriteHandler(
             request.MappingSet.Key.Dialect,
             enqueueOutcome,
             canonicalOperation,
-            DocumentCacheEnqueueTelemetryResourceKind.Descriptor
+            DocumentCacheEnqueueTelemetryResourceKind.Descriptor,
+            _logger
         );
     }
 

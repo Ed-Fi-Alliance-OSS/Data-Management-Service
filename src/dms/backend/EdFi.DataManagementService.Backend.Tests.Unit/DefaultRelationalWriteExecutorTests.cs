@@ -329,6 +329,32 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_preserves_the_committed_resource_result_when_enqueue_success_telemetry_throws()
+    {
+        IDocumentCacheEnqueueTelemetry telemetry = A.Fake<IDocumentCacheEnqueueTelemetry>();
+        A.CallTo(() => telemetry.RecordSuccess(A<DocumentCacheEnqueueTelemetryContext>._))
+            .Throws(new InvalidOperationException("telemetry sink failed"));
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry()
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
+        );
+
+        RelationalWriteExecutorResult result = await _sut.ExecuteAsync(request);
+
+        result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>();
+        ((RelationalWriteExecutorResult.Upsert)result).Result.Should().BeOfType<UpsertResult.InsertSuccess>();
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+        A.CallTo(() => telemetry.RecordSuccess(A<DocumentCacheEnqueueTelemetryContext>._))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
     public async Task It_records_DocumentCacheEnqueueTelemetry_success_for_committed_already_satisfied_enqueue_outcome()
     {
         var telemetry = new RecordingDocumentCacheEnqueueTelemetry();

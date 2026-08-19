@@ -182,6 +182,71 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         telemetry.Failures.Should().BeEmpty();
     }
 
+    [TestCase(DescriptorWritePath.PostInsert, typeof(UpsertResult.InsertSuccess))]
+    [TestCase(DescriptorWritePath.PostAsUpdate, typeof(UpsertResult.UpdateSuccess))]
+    [TestCase(DescriptorWritePath.PutUpdate, typeof(UpdateResult.UpdateSuccess))]
+    public async Task It_preserves_the_committed_descriptor_result_when_enqueue_success_telemetry_throws(
+        DescriptorWritePath writePath,
+        Type expectedResultType
+    )
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService();
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        IDocumentCacheEnqueueTelemetry telemetry = A.Fake<IDocumentCacheEnqueueTelemetry>();
+        A.CallTo(() => telemetry.RecordSuccess(A<DocumentCacheEnqueueTelemetryContext>._))
+            .Throws(new InvalidOperationException("telemetry sink failed"));
+        var sut = CreateSut(targetLookupService, sessionFactory, telemetry);
+        var mappingSet = CreateMappingSet(SqlDialect.Pgsql);
+
+        object result;
+        if (writePath == DescriptorWritePath.PostInsert)
+        {
+            targetLookupService.PostResult = new RelationalWriteTargetLookupResult.CreateNew(documentUuid);
+            sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(46L)]);
+
+            result = await sut.HandlePostAsync(CreatePostRequest(mappingSet, documentUuid));
+        }
+        else if (writePath == DescriptorWritePath.PostAsUpdate)
+        {
+            targetLookupService.PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(
+                345L,
+                documentUuid,
+                44L
+            );
+            sessionFactory.Session.ScalarResults.Enqueue(44L);
+            sessionFactory.Session.Executor.ResultSets.Enqueue([
+                CreatePersistedDescriptorResultSet(description: "Previous Description"),
+            ]);
+            sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(45L)]);
+
+            result = await sut.HandlePostAsync(CreatePostRequest(mappingSet, documentUuid));
+        }
+        else
+        {
+            targetLookupService.PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(
+                345L,
+                documentUuid,
+                44L
+            );
+            sessionFactory.Session.ScalarResults.Enqueue(44L);
+            sessionFactory.Session.Executor.ResultSets.Enqueue([
+                CreatePersistedDescriptorResultSet(description: "Previous Description"),
+            ]);
+            sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(45L)]);
+
+            result = await sut.HandlePutAsync(
+                CreatePutRequest(mappingSet, documentUuid, description: "Updated Description")
+            );
+        }
+
+        result.Should().BeOfType(expectedResultType);
+        sessionFactory.Session.CommitCallCount.Should().Be(1);
+        sessionFactory.Session.RollbackCallCount.Should().Be(0);
+        A.CallTo(() => telemetry.RecordSuccess(A<DocumentCacheEnqueueTelemetryContext>._))
+            .MustHaveHappenedOnceExactly();
+    }
+
     [Test]
     public async Task It_does_not_record_descriptor_enqueue_success_for_no_op_put_rollbacks()
     {

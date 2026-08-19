@@ -199,6 +199,52 @@ internal sealed class NoOpDocumentCacheEnqueueTelemetry : IDocumentCacheEnqueueT
 
 internal static class DocumentCacheEnqueueTelemetryWriteBoundary
 {
+    public static void RecordSuccessIfEnqueueSucceededBestEffort(
+        IDocumentCacheEnqueueTelemetry telemetry,
+        IDataStoreSelection? dataStoreSelection,
+        IDocumentCacheTargetRegistry? targetRegistry,
+        string tenantKey,
+        SqlDialect dialect,
+        DocumentCacheEnqueueOutcome enqueueOutcome,
+        DocumentCacheEnqueueTelemetryCanonicalOperation canonicalOperation,
+        DocumentCacheEnqueueTelemetryResourceKind resourceKind,
+        ILogger logger
+    )
+    {
+        ArgumentNullException.ThrowIfNull(logger);
+
+        try
+        {
+            RecordSuccessIfEnqueueSucceeded(
+                telemetry,
+                dataStoreSelection,
+                targetRegistry,
+                tenantKey,
+                dialect,
+                enqueueOutcome,
+                canonicalOperation,
+                resourceKind
+            );
+        }
+        catch (Exception exception)
+        {
+            // Enqueue-success telemetry runs only after the canonical transaction commits. Neither
+            // telemetry nor the warning about its failure may replace the committed write result.
+            try
+            {
+                logger.LogWarning(
+                    exception,
+                    "DocumentCache enqueue success telemetry failed after the canonical transaction committed. CommittedResultPreserved: true."
+                );
+            }
+            catch
+            {
+                // A failing logging provider is itself an observability failure and must not escape
+                // this post-commit best-effort boundary.
+            }
+        }
+    }
+
     public static void RecordSuccessIfEnqueueSucceeded(
         IDocumentCacheEnqueueTelemetry telemetry,
         IDataStoreSelection? dataStoreSelection,

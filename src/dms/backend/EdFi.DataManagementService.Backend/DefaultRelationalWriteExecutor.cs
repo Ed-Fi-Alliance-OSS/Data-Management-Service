@@ -66,6 +66,9 @@ internal sealed class DefaultRelationalWriteExecutor(
         documentCacheProviderCommandTimeoutClassifier
         ?? NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance;
 
+    private readonly ILogger<DefaultRelationalWriteExecutor> _logger =
+        logger ?? NullLogger<DefaultRelationalWriteExecutor>.Instance;
+
     /// <summary>
     /// The composite first phase: target capture and lock, stored authorization, reference
     /// resolution, and current-state hydration in one command. Test seams may substitute a fake.
@@ -649,7 +652,7 @@ internal sealed class DefaultRelationalWriteExecutor(
             return;
         }
 
-        DocumentCacheEnqueueTelemetryWriteBoundary.RecordSuccessIfEnqueueSucceeded(
+        DocumentCacheEnqueueTelemetryWriteBoundary.RecordSuccessIfEnqueueSucceededBestEffort(
             _documentCacheEnqueueTelemetry,
             _dataStoreSelection,
             _documentCacheTargetRegistry,
@@ -657,7 +660,8 @@ internal sealed class DefaultRelationalWriteExecutor(
             request.MappingSet.Key.Dialect,
             persistedTarget.DocumentCacheEnqueueOutcome,
             ToCanonicalOperation(request),
-            DocumentCacheEnqueueTelemetryResourceKind.Resource
+            DocumentCacheEnqueueTelemetryResourceKind.Resource,
+            _logger
         );
     }
 
