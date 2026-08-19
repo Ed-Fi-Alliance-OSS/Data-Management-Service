@@ -69,6 +69,17 @@ public abstract class DdlEmissionGoldenTestBase
         if (dialect == SqlDialect.Mssql)
         {
             AssertMssqlBatchBoundaries(ddl);
+
+            // change-queries.md invariant 7. Asserted here and not only in
+            // DdlGoldenFixtureTestBase because these fixtures are hand-authored
+            // DerivedRelationalModelSet builders: they construct DbTableModel.Key directly instead
+            // of deriving it from an ApiSchema, so this is the emission path that can actually
+            // produce a mirror target whose key has moved off the joined column. An unsatisfiable
+            // hint regenerates its golden cleanly and only fails at write time, with error 8622.
+            MssqlForceSeekInvariant.AssertHintedMirrorTargetsAreSeekable(
+                ddl,
+                $"ddl-emission fixture '{fixtureName}' (mssql)"
+            );
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(actualPath)!);

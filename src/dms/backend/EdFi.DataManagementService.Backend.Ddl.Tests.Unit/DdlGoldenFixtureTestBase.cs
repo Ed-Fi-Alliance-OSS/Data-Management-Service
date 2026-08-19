@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.RegularExpressions;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -121,14 +120,10 @@ public abstract class DdlGoldenFixtureTestBase
     }
 
     /// <summary>
-    /// Every SQL Server mirror-stamp UPDATE is hinted <c>WITH (FORCESEEK)</c>, and SQL Server can
-    /// only honor that hint while the hinted table exposes an index whose leading key column is the
-    /// joined column. When it cannot, the engine does not fall back to a scan — it fails the
-    /// statement with error 8622, so a model change that moves a mirror target's key off the joined
-    /// column turns every write to that resource into a runtime failure that applies cleanly and
-    /// regenerates goldens cleanly. The emitter's own tests pin the hint's text, not its
-    /// satisfiability; this reads the emitted <c>CREATE TABLE</c> for each hinted target and checks
-    /// the key it actually declares, for every fixture that emits SQL Server DDL.
+    /// change-queries.md invariant 7, over the full SQL Server DDL this fixture emits. The check
+    /// itself lives in <see cref="MssqlForceSeekInvariant"/> because the other SQL Server golden path
+    /// needs it too; see that type for why the hint's satisfiability has to be asserted rather than
+    /// assumed.
     /// </summary>
     [Test]
     public void It_should_only_force_seek_mirror_targets_keyed_on_the_joined_column()
@@ -140,79 +135,10 @@ public abstract class DdlGoldenFixtureTestBase
             return;
         }
 
-        var generatedSql = File.ReadAllText(mssqlPath);
-        var primaryKeyLeadColumns = ReadMssqlPrimaryKeyLeadColumns(generatedSql);
-
-        foreach (Match hint in _mssqlForceSeekMirrorUpdate.Matches(generatedSql))
-        {
-            var qualifiedTable = $"[{hint.Groups["schema"].Value}].[{hint.Groups["table"].Value}]";
-            var joinedColumn = hint.Groups["targetColumn"].Value;
-
-            primaryKeyLeadColumns
-                .TryGetValue(qualifiedTable, out var leadColumn)
-                .Should()
-                .BeTrue(
-                    $"the FORCESEEK mirror target {qualifiedTable} must declare a primary key in the "
-                        + "emitted DDL; without one the hint cannot be honored and the statement fails with error 8622"
-                );
-
-            leadColumn
-                .Should()
-                .Be(
-                    joinedColumn,
-                    $"the mirror stamp joins {qualifiedTable} on [{joinedColumn}] under FORCESEEK, so "
-                        + $"[{joinedColumn}] must lead that table's primary key. Drop the hint in the "
-                        + "emitter if the key ever moves off the joined column."
-                );
-        }
-    }
-
-    /// <summary>
-    /// Matches an emitted SQL Server mirror-stamp UPDATE, capturing the hinted table and the column
-    /// the <c>@stamped</c> table variable is joined on.
-    /// </summary>
-    private static readonly Regex _mssqlForceSeekMirrorUpdate = new(
-        @"FROM \[(?<schema>[^\]]+)\]\.\[(?<table>[^\]]+)\] r WITH \(FORCESEEK\)\r?\n\s*INNER JOIN @stamped s ON s\.\[[^\]]+\] = r\.\[(?<targetColumn>[^\]]+)\]",
-        RegexOptions.Compiled
-    );
-
-    private static readonly Regex _mssqlCreateTable = new(
-        @"CREATE TABLE \[(?<schema>[^\]]+)\]\.\[(?<table>[^\]]+)\]\r?\n\((?<body>.*?)\r?\n\);",
-        RegexOptions.Compiled | RegexOptions.Singleline
-    );
-
-    private static readonly Regex _mssqlPrimaryKeyColumns = new(
-        @"PRIMARY KEY(?:\s+(?:NON)?CLUSTERED)?\s*\((?<columns>[^)]*)\)",
-        RegexOptions.Compiled
-    );
-
-    /// <summary>
-    /// Maps each emitted SQL Server table to the first column of its declared primary key, which is
-    /// the only key position an equality seek on that column can use.
-    /// </summary>
-    private static Dictionary<string, string> ReadMssqlPrimaryKeyLeadColumns(string generatedSql)
-    {
-        Dictionary<string, string> leadColumns = new(StringComparer.Ordinal);
-
-        foreach (Match table in _mssqlCreateTable.Matches(generatedSql))
-        {
-            var primaryKey = _mssqlPrimaryKeyColumns.Match(table.Groups["body"].Value);
-            if (!primaryKey.Success)
-            {
-                continue;
-            }
-
-            var leadColumn = primaryKey
-                .Groups["columns"]
-                .Value.Split(',')[0]
-                .Trim()
-                .TrimStart('[')
-                .Split(']')[0];
-
-            leadColumns[$"[{table.Groups["schema"].Value}].[{table.Groups["table"].Value}]"] = leadColumn;
-        }
-
-        return leadColumns;
+        MssqlForceSeekInvariant.AssertHintedMirrorTargetsAreSeekable(
+            File.ReadAllText(mssqlPath),
+            $"fixture '{Path.GetFileName(_fixtureDirectory)}' (mssql.sql)"
+        );
     }
 }
 

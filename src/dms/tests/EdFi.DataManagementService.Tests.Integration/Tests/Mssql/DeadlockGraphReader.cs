@@ -61,7 +61,9 @@ public static class DeadlockGraphReader
     /// <para>An incomplete payload is inconclusive rather than short. The target reports rendering
     /// truncation through <c>truncated</c>, and eviction shows up as <c>totalEventsProcessed</c>
     /// exceeding <c>eventCount</c> or as a non-zero <c>droppedCount</c>; all three mean graphs are
-    /// missing from the payload, which is exactly what a differential comparison must not absorb.</para>
+    /// missing from the payload, which is exactly what a differential comparison must not absorb. A
+    /// payload with no <c>RingBufferTarget</c> element is inconclusive for the same reason: those
+    /// counters live on it, so without it the payload cannot be shown to be complete.</para>
     /// </summary>
     public static DeadlockCapture CaptureFromRingBufferTarget(string ringBufferTargetXml, string databaseName)
     {
@@ -83,16 +85,23 @@ public static class DeadlockGraphReader
             );
         }
 
-        XElement ringBuffer =
+        // Every completeness counter is an attribute of RingBufferTarget, and ReadCounter reports a
+        // missing attribute as zero - so reading them off some other element would report a complete
+        // payload no matter what was missing from it, which is the one answer this type must never
+        // give. Absence of that element is therefore inconclusive, not a reason to fall back to the
+        // payload root. The graph walk still runs, because an unreadable header does not make the
+        // graphs the payload does carry any less useful as evidence.
+        XElement? ringBuffer =
             payload.Name.LocalName == "RingBufferTarget"
                 ? payload
-                : payload.Descendants("RingBufferTarget").FirstOrDefault() ?? payload;
+                : payload.Descendants("RingBufferTarget").FirstOrDefault();
+        XElement graphSource = ringBuffer ?? payload;
 
         List<string> graphs = [];
         List<string> signatures = [];
         int attributedGraphCount = 0;
 
-        foreach (XElement graph in DeadlockGraphsIn(ringBuffer))
+        foreach (XElement graph in DeadlockGraphsIn(graphSource))
         {
             graphs.Add(graph.ToString());
             if (!TargetsDatabase(graph, databaseName))
@@ -104,14 +113,16 @@ public static class DeadlockGraphReader
             signatures.AddRange(SignaturesOf(graph.ToString()));
         }
 
-        foreach (string unparsed in UnparsedGraphsIn(ringBuffer))
+        foreach (string unparsed in UnparsedGraphsIn(graphSource))
         {
             graphs.Add(unparsed);
             attributedGraphCount++;
             signatures.AddRange(SignaturesOf(unparsed));
         }
 
-        string? inconclusiveReason = IncompletePayloadReason(ringBuffer);
+        string? inconclusiveReason = ringBuffer is null
+            ? "the payload carried no RingBufferTarget element, so its completeness counters could not be read"
+            : IncompletePayloadReason(ringBuffer);
 
         return new DeadlockCapture(
             inconclusiveReason is null ? signatures : [],

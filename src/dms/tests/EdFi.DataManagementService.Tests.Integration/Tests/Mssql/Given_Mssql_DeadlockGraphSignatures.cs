@@ -183,6 +183,37 @@ public sealed class Given_Mssql_DeadlockGraphSignatures
         }
     }
 
+    /// <summary>
+    /// The completeness counters are attributes of <c>RingBufferTarget</c>, and a missing attribute
+    /// reads as zero, so a payload that does not carry that element cannot be shown to be complete.
+    /// It has to be inconclusive even though the descendant walk still finds graphs inside it -
+    /// reporting those as a complete capture is the false pass this type exists to refuse, and it
+    /// would look identical to a healthy zero-deadlock run on the candidate side of Gate B.
+    /// </summary>
+    [Test]
+    public void It_reports_a_payload_without_a_ring_buffer_target_element_as_inconclusive()
+    {
+        DeadlockCapture capture = DeadlockGraphReader.CaptureFromRingBufferTarget(
+            $"""
+            <SomeOtherTarget>
+            {DeadlockEvent(TwoProcessCycle(LeasedDatabase))}
+            </SomeOtherTarget>
+            """,
+            LeasedDatabase
+        );
+
+        using (new AssertionScope())
+        {
+            capture.IsInconclusive.Should().BeTrue();
+            capture.InconclusiveReason.Should().Contain("no RingBufferTarget element");
+            capture.Signatures.Should().BeEmpty();
+
+            // Whatever the payload did carry is still evidence, exactly as for a truncated or
+            // evicted one - only the signatures are withheld.
+            capture.Graphs.Should().HaveCount(1);
+        }
+    }
+
     [Test]
     public void It_reports_a_ring_buffer_payload_that_does_not_parse_as_inconclusive()
     {

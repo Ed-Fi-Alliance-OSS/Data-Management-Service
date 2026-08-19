@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Text.Json.Nodes;
 using FluentAssertions;
+using FluentAssertions.Execution;
 
 namespace EdFi.DataManagementService.Tests.Integration.Tests.Mssql;
 
@@ -242,6 +243,7 @@ public sealed class Given_Mssql_StampTriggerContention : MssqlConcurrentWriteLoa
     private async Task ReportLeasedDatabaseConfigurationAsync()
     {
         bool readCommittedSnapshotOn;
+        string snapshotIsolationState;
 
         await using (var command = Harness.DbConnection.CreateCommand())
         {
@@ -265,6 +267,7 @@ public sealed class Given_Mssql_StampTriggerContention : MssqlConcurrentWriteLoa
             );
 
             readCommittedSnapshotOn = Convert.ToBoolean(reader.GetValue(2));
+            snapshotIsolationState = Convert.ToString(reader.GetValue(3)) ?? "";
         }
 
         // Asserted for the same reason the empty-dms.Descriptor precondition above is: a leased
@@ -272,12 +275,29 @@ public sealed class Given_Mssql_StampTriggerContention : MssqlConcurrentWriteLoa
         // configuration production never uses, and every number this fixture reports would then
         // describe a workload that is not the one under test - silently, and identically to a
         // healthy run.
-        readCommittedSnapshotOn
-            .Should()
-            .BeTrue(
-                "production provisioning enables READ_COMMITTED_SNAPSHOT, so a load measured "
-                    + "without it is not comparable to the field workload this fixture exists to model"
-            );
+        //
+        // Both settings, because MatchProductionWriteIsolation applies them on two separate branches
+        // and RCSI is also enabled on its own by EnableDocumentCacheReadAcceleration. Asserting only
+        // RCSI would therefore pass on a lease that received it for the other reason and never
+        // received the snapshot-isolation half - leaving exactly the reported-but-unverified gap
+        // this method exists to close.
+        using (new AssertionScope())
+        {
+            readCommittedSnapshotOn
+                .Should()
+                .BeTrue(
+                    "production provisioning enables READ_COMMITTED_SNAPSHOT, so a load measured "
+                        + "without it is not comparable to the field workload this fixture exists to model"
+                );
+
+            snapshotIsolationState
+                .Should()
+                .Be(
+                    "ON",
+                    "production provisioning also enables ALLOW_SNAPSHOT_ISOLATION, and a lease "
+                        + "missing it did not receive MatchProductionWriteIsolation"
+                );
+        }
     }
 
     /// <summary>
