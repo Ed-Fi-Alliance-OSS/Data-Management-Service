@@ -804,7 +804,8 @@ SELECT
   d.ContentVersion,
   d.IdentityVersion,
   d.ContentLastModifiedAt,
-  d.IdentityLastModifiedAt
+  d.IdentityLastModifiedAt,
+  d.ResourceKeyId
 FROM dms.Document d
 JOIN page p ON p.DocumentId = d.DocumentId;
 
