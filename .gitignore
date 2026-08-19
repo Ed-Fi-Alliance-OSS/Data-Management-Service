@@ -73,6 +73,7 @@ eng/DatabaseTemplates/.dev-trust/
 eng/docker-compose/.bootstrap-restore/
 eng/docker-compose/template-trust-policy.local.json
 *.nupkg.attestation.json
+eng/DatabaseTemplates/restore-manifest.json
 .attestation-package/
 .dms-dotnet-diagnostics/
 
