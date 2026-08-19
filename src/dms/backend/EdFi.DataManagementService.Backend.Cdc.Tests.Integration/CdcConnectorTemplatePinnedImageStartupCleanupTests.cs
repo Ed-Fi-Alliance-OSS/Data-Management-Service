@@ -12,6 +12,87 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 
 [TestFixture]
 [Parallelizable]
+public sealed class Given_PinnedImageFixtureMappedPortParsing
+{
+    private const string ConnectContainerName = "dms-cdc-template-connect";
+
+    [Test]
+    public void It_parses_a_valid_docker_mapped_port()
+    {
+        Uri uri = CdcConnectorTemplatePinnedImageFixture.ParseMappedConnectBaseUri(
+            ConnectContainerName,
+            "0.0.0.0:32768\n"
+        );
+
+        uri.Should().Be(new Uri("http://127.0.0.1:32768"));
+    }
+
+    [TestCase("")]
+    [TestCase("\n")]
+    public void It_reports_empty_mapped_port_output(string dockerPortOutput)
+    {
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            CdcConnectorTemplatePinnedImageFixture.ParseMappedConnectBaseUri(
+                ConnectContainerName,
+                dockerPortOutput
+            )
+        )!;
+
+        using var _ = new AssertionScope();
+        exception.Message.Should().Contain(ConnectContainerName);
+        exception.Message.Should().Contain("no output");
+        exception.Message.Should().Contain("<empty>");
+    }
+
+    [Test]
+    public void It_reports_mapped_port_output_without_a_delimiter()
+    {
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            CdcConnectorTemplatePinnedImageFixture.ParseMappedConnectBaseUri(
+                ConnectContainerName,
+                "0.0.0.0 32768"
+            )
+        )!;
+
+        using var _ = new AssertionScope();
+        exception.Message.Should().Contain(ConnectContainerName);
+        exception.Message.Should().Contain("':' delimiter");
+        exception.Message.Should().Contain("0.0.0.0 32768");
+    }
+
+    [Test]
+    public void It_reports_mapped_port_output_with_an_empty_port()
+    {
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            CdcConnectorTemplatePinnedImageFixture.ParseMappedConnectBaseUri(ConnectContainerName, "0.0.0.0:")
+        )!;
+
+        using var _ = new AssertionScope();
+        exception.Message.Should().Contain(ConnectContainerName);
+        exception.Message.Should().Contain("numeric TCP port");
+        exception.Message.Should().Contain("0.0.0.0:");
+    }
+
+    [Test]
+    public void It_sanitizes_invalid_mapped_port_output()
+    {
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            CdcConnectorTemplatePinnedImageFixture.ParseMappedConnectBaseUri(
+                ConnectContainerName,
+                $"0.0.0.0:{CdcConnectorTemplatePinnedImageFixture.ConnectorDatabasePassword}"
+            )
+        )!;
+
+        using var _ = new AssertionScope();
+        exception.Message.Should().Contain("[redacted]");
+        exception
+            .Message.Should()
+            .NotContain(CdcConnectorTemplatePinnedImageFixture.ConnectorDatabasePassword);
+    }
+}
+
+[TestFixture]
+[Parallelizable]
 public sealed class Given_PinnedImageFixtureStartupFailureCleanup
 {
     private const string ResourcePrefix = "dms-cdc-startup-test";
@@ -95,6 +176,34 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
         docker.Commands.Intersect(ExpectedCleanupCommands(), StringComparer.Ordinal).Should().BeEmpty();
     }
 
+    [Test]
+    public void It_disposes_started_resources_when_mapped_port_output_is_invalid()
+    {
+        var docker = new RecordingDockerCli(
+            arguments => null,
+            mappedPortOutput: $"malformed {CdcConnectorTemplatePinnedImageFixture.ConnectorDatabasePassword}"
+        );
+
+        InvalidOperationException exception = Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await CdcConnectorTemplatePinnedImageFixture.StartAsync(
+                CdcProvider.Postgresql,
+                BuildSettings(),
+                docker,
+                ResourcePrefix,
+                CancellationToken.None,
+                applyPrerequisitePolicy: false
+            )
+        )!;
+
+        using var _ = new AssertionScope();
+        exception.Message.Should().Contain($"{ResourcePrefix}-connect");
+        exception.Message.Should().Contain("[redacted]");
+        exception
+            .Message.Should()
+            .NotContain(CdcConnectorTemplatePinnedImageFixture.ConnectorDatabasePassword);
+        AssertCleanupCommandsWereRun(docker);
+    }
+
     private static void AssertCancellationCleanup<TException>(TException startupException)
         where TException : OperationCanceledException
     {
@@ -148,8 +257,10 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
         && string.Equals(arguments[1], $"{ResourcePrefix}-connect", StringComparison.Ordinal)
         && string.Equals(arguments[2], "8083/tcp", StringComparison.Ordinal);
 
-    private sealed class RecordingDockerCli(Func<IReadOnlyList<string>, Exception?> failureForCommand)
-        : IDockerCli
+    private sealed class RecordingDockerCli(
+        Func<IReadOnlyList<string>, Exception?> failureForCommand,
+        string mappedPortOutput = "127.0.0.1:32768\n"
+    ) : IDockerCli
     {
         private readonly List<string> _commands = [];
 
@@ -183,9 +294,9 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
             return Task.FromResult(ResultFor(arguments));
         }
 
-        private static DockerCommandResult ResultFor(IReadOnlyList<string> arguments) =>
+        private DockerCommandResult ResultFor(IReadOnlyList<string> arguments) =>
             IsPortCommand(arguments)
-                ? new DockerCommandResult(0, "127.0.0.1:32768\n", string.Empty)
+                ? new DockerCommandResult(0, mappedPortOutput, string.Empty)
                 : new DockerCommandResult(0, string.Empty, string.Empty);
 
         private static string CommandText(IReadOnlyList<string> arguments) => string.Join(" ", arguments);
