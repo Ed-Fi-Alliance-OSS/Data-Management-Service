@@ -16,7 +16,7 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 [TestFixture]
 [Parallelizable]
 [Category("CdcConnectorTemplateLiveValidation")]
-public class Given_CdcConnectorTemplateLiveValidation
+public class Given_CdcConnectorTemplateLiveValidationTests
 {
     [Test]
     public void It_accepts_exact_registration_preflight_config_and_empty_heartbeat_name()
@@ -1106,6 +1106,236 @@ public class Given_CdcConnectorTemplateLiveValidation
             .NotContain("DROP_TABLE", because: "raw source column names are redacted");
     }
 
+    [TestCase(CdcProvider.Postgresql, FreshSourceInventoryDrift.AddedNonKeyColumn)]
+    [TestCase(CdcProvider.Postgresql, FreshSourceInventoryDrift.RemovedNonKeyColumn)]
+    [TestCase(CdcProvider.Postgresql, FreshSourceInventoryDrift.ReorderedNonKeyColumns)]
+    [TestCase(CdcProvider.SqlServer, FreshSourceInventoryDrift.AddedNonKeyColumn)]
+    [TestCase(CdcProvider.SqlServer, FreshSourceInventoryDrift.RemovedNonKeyColumn)]
+    [TestCase(CdcProvider.SqlServer, FreshSourceInventoryDrift.ReorderedNonKeyColumns)]
+    public void It_rejects_fresh_provider_source_inventory_drift_for_preflight_and_live_read_back(
+        CdcProvider provider,
+        FreshSourceInventoryDrift drift
+    )
+    {
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(
+            provider,
+            sourceTableInventory: BuildDocumentSourceInventory(
+                provider,
+                [
+                    BuildColumn(provider, "DocumentUuid"),
+                    BuildColumn(provider, "DocumentPayload", 2),
+                    BuildColumn(provider, "DocumentVersion", 3),
+                ]
+            )
+        );
+        CdcConnectorTemplateResult rendered = service.Render(request);
+        CdcConnectorProviderSetupEvidence driftedProviderSetupEvidence = new(
+            BindingGeneration,
+            BuildProviderSetupResult(
+                provider,
+                sourceTableInventory: BuildDriftedDocumentSourceInventory(provider, drift)
+            )
+        );
+
+        CdcConnectorTemplateResult preflightResult = service.ValidateRegistrationPreflight(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                driftedProviderSetupEvidence
+            )
+        );
+        CdcConnectorTemplateResult liveReadBackResult = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                driftedProviderSetupEvidence,
+                BuildSourcePartitionEvidence(request)
+            )
+        );
+
+        using var _ = new AssertionScope();
+        rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        preflightResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        liveReadBackResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        preflightResult.Config.Should().BeEmpty();
+        liveReadBackResult.Config.Should().BeEmpty();
+        preflightResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure
+                && diagnostic.PropertyName == "providerSetup.sourceTableInventory"
+                && diagnostic.ExpectedValue == "rendered request source-table inventory"
+                && diagnostic.ObservedValue == "[redacted]"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Preflight
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            );
+        liveReadBackResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure
+                && diagnostic.PropertyName == "providerSetup.sourceTableInventory"
+                && diagnostic.ExpectedValue == "rendered request source-table inventory"
+                && diagnostic.ObservedValue == "[redacted]"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            );
+        string.Join(
+                "|",
+                preflightResult.Diagnostics.Concat(liveReadBackResult.Diagnostics).SelectMany(DiagnosticText)
+            )
+            .Should()
+            .NotContainAny(
+                ["DocumentPayload", "DocumentVersion", "DocumentFutureColumn"],
+                "raw source column names are redacted"
+            );
+    }
+
+    [TestCase(CdcProvider.Postgresql)]
+    [TestCase(CdcProvider.SqlServer)]
+    public void It_rejects_fresh_provider_message_key_inventory_that_no_longer_matches_rendered_request(
+        CdcProvider provider
+    )
+    {
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(provider);
+        CdcConnectorTemplateResult rendered = service.Render(request);
+        CdcConnectorProviderSetupEvidence driftedProviderSetupEvidence = new(
+            BindingGeneration,
+            BuildProviderSetupResult(
+                provider,
+                expectedMessageKeyColumns:
+                [
+                    new(CdcSourceTableKind.Document, [new DbColumnName("DocumentUuid")]),
+                    new(CdcSourceTableKind.DocumentCache, [new DbColumnName("DocumentUuid")]),
+                ]
+            )
+        );
+
+        CdcConnectorTemplateResult preflightResult = service.ValidateRegistrationPreflight(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                driftedProviderSetupEvidence
+            )
+        );
+        CdcConnectorTemplateResult liveReadBackResult = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                driftedProviderSetupEvidence,
+                BuildSourcePartitionEvidence(request)
+            )
+        );
+
+        using var _ = new AssertionScope();
+        preflightResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        liveReadBackResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        preflightResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch
+                && diagnostic.PropertyName == "providerSetup.expectedMessageKeyColumns"
+                && diagnostic.ExpectedValue == "rendered request message-key inventory"
+                && diagnostic.ObservedValue == "[redacted]"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Preflight
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            );
+        liveReadBackResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch
+                && diagnostic.PropertyName == "providerSetup.expectedMessageKeyColumns"
+                && diagnostic.ExpectedValue == "rendered request message-key inventory"
+                && diagnostic.ObservedValue == "[redacted]"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            );
+    }
+
+    [TestCase(CdcProvider.Postgresql)]
+    [TestCase(CdcProvider.SqlServer)]
+    public void It_rejects_fresh_provider_heartbeat_action_query_that_no_longer_matches_rendered_request(
+        CdcProvider provider
+    )
+    {
+        const string renderedHeartbeatSql =
+            "update dms.CdcHeartbeat set HeartbeatSequence = HeartbeatSequence + 1";
+        const string freshHeartbeatSql =
+            "update unsafe.TenantAlphaHeartbeat set SecretTenant = 'TenantAlpha'";
+
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(provider, heartbeatSql: renderedHeartbeatSql);
+        CdcConnectorTemplateResult rendered = service.Render(request);
+        CdcConnectorProviderSetupEvidence driftedProviderSetupEvidence = new(
+            BindingGeneration,
+            BuildProviderSetupResult(
+                provider,
+                heartbeatActionQuery: new CdcHeartbeatActionQuery(freshHeartbeatSql, "sha256-drifted")
+            )
+        );
+
+        CdcConnectorTemplateResult preflightResult = service.ValidateRegistrationPreflight(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                driftedProviderSetupEvidence
+            )
+        );
+        CdcConnectorTemplateResult liveReadBackResult = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                driftedProviderSetupEvidence,
+                BuildSourcePartitionEvidence(request)
+            )
+        );
+
+        using var _ = new AssertionScope();
+        preflightResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        liveReadBackResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        preflightResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch
+                && diagnostic.PropertyName == "providerSetup.heartbeatActionQuery"
+                && diagnostic.ExpectedValue == "rendered request heartbeat action query"
+                && diagnostic.ObservedValue == "[redacted]"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Preflight
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            );
+        liveReadBackResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch
+                && diagnostic.PropertyName == "providerSetup.heartbeatActionQuery"
+                && diagnostic.ExpectedValue == "rendered request heartbeat action query"
+                && diagnostic.ObservedValue == "[redacted]"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            );
+        string.Join(
+                "|",
+                preflightResult.Diagnostics.Concat(liveReadBackResult.Diagnostics).SelectMany(DiagnosticText)
+            )
+            .Should()
+            .NotContainAny(["TenantAlpha", "SecretTenant", "HeartbeatSequence"], "heartbeat SQL is redacted");
+    }
+
     [Test]
     public void It_rejects_null_fresh_provider_setup_inventories_for_preflight_and_live_read_back()
     {
@@ -1342,4 +1572,50 @@ public class Given_CdcConnectorTemplateLiveValidation
 
     private static IEnumerable<string> DiagnosticText(CdcConnectorTemplateDiagnostic diagnostic) =>
         [diagnostic.ExpectedValue ?? string.Empty, diagnostic.ObservedValue ?? string.Empty];
+
+    private static IReadOnlyList<CdcSourceTableInventory> BuildDocumentSourceInventory(
+        CdcProvider provider,
+        IReadOnlyList<CdcSourceColumnInventory> documentColumns
+    ) =>
+        BuildSourceInventoryReplacing(
+            provider,
+            BuildSourceTable(provider, CdcSourceTableKind.Document, "Document", documentColumns)
+        );
+
+    private static IReadOnlyList<CdcSourceTableInventory> BuildDriftedDocumentSourceInventory(
+        CdcProvider provider,
+        FreshSourceInventoryDrift drift
+    ) =>
+        drift switch
+        {
+            FreshSourceInventoryDrift.AddedNonKeyColumn => BuildDocumentSourceInventory(
+                provider,
+                [
+                    BuildColumn(provider, "DocumentUuid"),
+                    BuildColumn(provider, "DocumentPayload", 2),
+                    BuildColumn(provider, "DocumentVersion", 3),
+                    BuildColumn(provider, "DocumentFutureColumn", 4),
+                ]
+            ),
+            FreshSourceInventoryDrift.RemovedNonKeyColumn => BuildDocumentSourceInventory(
+                provider,
+                [BuildColumn(provider, "DocumentUuid"), BuildColumn(provider, "DocumentVersion", 3)]
+            ),
+            FreshSourceInventoryDrift.ReorderedNonKeyColumns => BuildDocumentSourceInventory(
+                provider,
+                [
+                    BuildColumn(provider, "DocumentUuid"),
+                    BuildColumn(provider, "DocumentVersion", 3),
+                    BuildColumn(provider, "DocumentPayload", 2),
+                ]
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(drift), drift, "Unsupported inventory drift."),
+        };
+
+    public enum FreshSourceInventoryDrift
+    {
+        AddedNonKeyColumn,
+        RemovedNonKeyColumn,
+        ReorderedNonKeyColumns,
+    }
 }
