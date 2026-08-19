@@ -2073,24 +2073,16 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().Contain("SET r.[ContentVersion] = s.[ContentVersion],");
         _ddl.Should().Contain("r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]");
         _ddl.Should().Contain("FROM [dms].[Descriptor] r");
-        // Unterminated: the recompile hint terminates the mirror UPDATE, so the join no longer
-        // carries the semicolon. The hint's position is asserted by index rather than by embedding a
-        // newline and indentation in the literal.
-        _ddl.Should().Contain("INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]");
+        // FORCESEEK is a table hint on the mirror target, so the join still terminates the statement.
+        _ddl.Should().Contain("FROM [dms].[Descriptor] r WITH (FORCESEEK)");
+        _ddl.Should().Contain("INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];");
 
+        // A scanning plan for this statement takes update locks across descriptor rows the
+        // transaction never touched, which is the measured deadlock cycle. FORCESEEK forbids the
+        // scan; RECOMPILE was measured to cost a compile on every descriptor write, and
+        // OPTION (LOOP JOIN) was measured not to prevent the contention at all.
         var triggerBody = ExtractMssqlTriggerBody(_ddl, "TR_Descriptor_Stamp_Document");
-        var mirrorJoinStart = triggerBody.IndexOf(
-            "INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]",
-            StringComparison.Ordinal
-        );
-        mirrorJoinStart.Should().BeGreaterOrEqualTo(0);
-        triggerBody
-            .IndexOf("OPTION (RECOMPILE);", StringComparison.Ordinal)
-            .Should()
-            .BeGreaterThan(
-                mirrorJoinStart,
-                "the recompile hint must terminate the descriptor mirror UPDATE, after its join"
-            );
+        triggerBody.Should().NotContain("OPTION (");
     }
 
     /// <summary>

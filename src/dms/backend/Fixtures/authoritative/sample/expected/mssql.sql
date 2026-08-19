@@ -571,9 +571,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [dms].[Descriptor] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [dms].[Descriptor] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -39134,9 +39133,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[AcademicWeek] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[AcademicWeek] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -39258,9 +39256,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[AccountabilityRating] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[AccountabilityRating] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -39388,9 +39385,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Assessment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Assessment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -39474,9 +39470,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Assessment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Assessment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -39552,9 +39547,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[AssessmentAdministration] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[AssessmentAdministration] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -39650,9 +39644,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[AssessmentAdministration] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[AssessmentAdministration] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -39728,9 +39721,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[AssessmentAdministrationParticipation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[AssessmentAdministrationParticipation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -39832,9 +39824,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[AssessmentAdministrationParticipation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[AssessmentAdministrationParticipation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -39872,9 +39863,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[AssessmentAdministration] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[AssessmentAdministration] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -39912,9 +39902,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Assessment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Assessment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -39952,9 +39941,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Assessment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Assessment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -40030,9 +40018,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[AssessmentBatteryPart] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[AssessmentBatteryPart] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -40122,9 +40109,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[AssessmentBatteryPart] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[AssessmentBatteryPart] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -40162,9 +40148,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Assessment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Assessment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -40240,9 +40225,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[AssessmentItem] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[AssessmentItem] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -40332,9 +40316,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[AssessmentItem] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[AssessmentItem] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -40372,9 +40355,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[AssessmentItem] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[AssessmentItem] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -40412,9 +40394,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Assessment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Assessment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -40452,9 +40433,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Assessment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Assessment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -40492,9 +40472,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Assessment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Assessment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -40532,9 +40511,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Assessment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Assessment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -40572,9 +40550,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Assessment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Assessment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -40612,9 +40589,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Assessment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Assessment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -40690,9 +40666,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[AssessmentScoreRangeLearningStandard] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[AssessmentScoreRangeLearningStandard] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -40782,9 +40757,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[AssessmentScoreRangeLearningStandard] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[AssessmentScoreRangeLearningStandard] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -40822,9 +40796,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Assessment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Assessment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -40900,9 +40873,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[BalanceSheetDimension] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[BalanceSheetDimension] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -40986,9 +40958,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[BalanceSheetDimension] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[BalanceSheetDimension] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -41064,9 +41035,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[BellSchedule] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[BellSchedule] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -41150,9 +41120,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[BellSchedule] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[BellSchedule] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -41190,9 +41159,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[BellSchedule] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[BellSchedule] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -41230,9 +41198,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[BellSchedule] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[BellSchedule] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -41308,9 +41275,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Calendar] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Calendar] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -41438,9 +41404,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CalendarDate] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CalendarDate] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -41536,9 +41501,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CalendarDate] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CalendarDate] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -41576,9 +41540,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Calendar] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Calendar] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -41654,9 +41617,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ChartOfAccount] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ChartOfAccount] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -41746,9 +41708,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ChartOfAccount] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ChartOfAccount] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -41824,9 +41785,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ClassPeriod] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ClassPeriod] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -41910,9 +41870,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ClassPeriod] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ClassPeriod] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -41988,9 +41947,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Cohort] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Cohort] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -42074,9 +42032,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Cohort] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Cohort] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -42226,9 +42183,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CommunityOrganization] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CommunityOrganization] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -42289,9 +42245,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CommunityOrganization] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CommunityOrganization] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -42329,9 +42284,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CommunityOrganization] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CommunityOrganization] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -42369,9 +42323,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CommunityOrganization] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CommunityOrganization] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -42409,9 +42362,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CommunityOrganization] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CommunityOrganization] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -42449,9 +42401,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CommunityOrganization] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CommunityOrganization] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -42489,9 +42440,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CommunityOrganization] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CommunityOrganization] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -42529,9 +42479,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CommunityOrganization] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CommunityOrganization] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -42569,9 +42518,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CommunityOrganization] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CommunityOrganization] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -42831,9 +42779,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CommunityProvider] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CommunityProvider] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -42894,9 +42841,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CommunityProvider] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CommunityProvider] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -42934,9 +42880,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CommunityProvider] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CommunityProvider] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -42974,9 +42919,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CommunityProvider] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CommunityProvider] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -43014,9 +42958,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CommunityProvider] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CommunityProvider] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -43054,9 +42997,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CommunityProvider] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CommunityProvider] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -43094,9 +43036,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CommunityProvider] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CommunityProvider] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -43134,9 +43075,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CommunityProvider] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CommunityProvider] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -43174,9 +43114,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CommunityProvider] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CommunityProvider] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -43252,9 +43191,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CommunityProviderLicense] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CommunityProviderLicense] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -43382,9 +43320,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CompetencyObjective] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CompetencyObjective] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -43521,9 +43458,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Contact] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Contact] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -43607,9 +43543,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Contact] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Contact] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -43647,9 +43582,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Contact] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Contact] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -43687,9 +43621,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Contact] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Contact] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -43727,9 +43660,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Contact] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Contact] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -43767,9 +43699,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Contact] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Contact] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -43807,9 +43738,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Contact] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Contact] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -43847,9 +43777,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Contact] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Contact] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -43887,9 +43816,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Contact] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Contact] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -43927,9 +43855,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Contact] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Contact] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -44005,9 +43932,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Course] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Course] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -44091,9 +44017,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Course] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Course] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -44131,9 +44056,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Course] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Course] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -44171,9 +44095,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Course] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Course] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -44211,9 +44134,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Course] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Course] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -44251,9 +44173,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Course] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Course] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -44291,9 +44212,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Course] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Course] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -44369,9 +44289,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CourseOffering] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CourseOffering] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -44467,9 +44386,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CourseOffering] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CourseOffering] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -44507,9 +44425,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CourseOffering] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CourseOffering] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -44547,9 +44464,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CourseOffering] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CourseOffering] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -44625,9 +44541,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CourseTranscript] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CourseTranscript] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -44771,9 +44686,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CourseTranscript] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CourseTranscript] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -44811,9 +44725,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CourseTranscript] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CourseTranscript] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -44851,9 +44764,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CourseTranscript] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CourseTranscript] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -44891,9 +44803,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CourseTranscript] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CourseTranscript] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -44931,9 +44842,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CourseTranscript] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CourseTranscript] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -44971,9 +44881,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CourseTranscript] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CourseTranscript] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -45011,9 +44920,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CourseTranscript] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CourseTranscript] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -45089,9 +44997,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Credential] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Credential] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -45190,9 +45097,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Credential] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Credential] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -45230,9 +45136,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Credential] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Credential] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -45270,9 +45175,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Credential] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Credential] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -45348,9 +45252,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[CrisisEvent] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[CrisisEvent] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -45466,9 +45369,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[DescriptorMapping] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[DescriptorMapping] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -45564,9 +45466,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[DescriptorMapping] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[DescriptorMapping] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -45642,9 +45543,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[DisciplineAction] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[DisciplineAction] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -45749,9 +45649,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[DisciplineAction] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[DisciplineAction] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -45789,9 +45688,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[DisciplineAction] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[DisciplineAction] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -45829,9 +45727,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[DisciplineAction] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[DisciplineAction] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -45907,9 +45804,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[DisciplineIncident] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[DisciplineIncident] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -45993,9 +45889,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[DisciplineIncident] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[DisciplineIncident] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -46033,9 +45928,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[DisciplineIncident] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[DisciplineIncident] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -46073,9 +45967,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[DisciplineIncident] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[DisciplineIncident] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -46151,9 +46044,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationContent] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationContent] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -46237,9 +46129,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationContent] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationContent] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -46277,9 +46168,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationContent] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationContent] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -46317,9 +46207,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationContent] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationContent] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -46357,9 +46246,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationContent] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationContent] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -46397,9 +46285,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationContent] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationContent] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -46437,9 +46324,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationContent] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationContent] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -46477,9 +46363,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationContent] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationContent] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -46555,9 +46440,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationOrganizationInterventionPrescriptionAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationOrganizationInterventionPrescriptionAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -46759,9 +46643,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationOrganizationNetwork] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationOrganizationNetwork] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -46822,9 +46705,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationOrganizationNetwork] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationOrganizationNetwork] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -46862,9 +46744,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationOrganizationNetwork] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationOrganizationNetwork] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -46940,9 +46821,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationOrganizationNetworkAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationOrganizationNetworkAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -47026,9 +46906,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationOrganizationNetwork] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationOrganizationNetwork] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -47066,9 +46945,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationOrganizationNetwork] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationOrganizationNetwork] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -47106,9 +46984,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationOrganizationNetwork] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationOrganizationNetwork] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -47146,9 +47023,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationOrganizationNetwork] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationOrganizationNetwork] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -47186,9 +47062,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationOrganizationNetwork] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationOrganizationNetwork] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -47226,9 +47101,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationOrganizationNetwork] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationOrganizationNetwork] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -47304,9 +47178,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationOrganizationPeerAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationOrganizationPeerAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -47612,9 +47485,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationServiceCenter] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationServiceCenter] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -47675,9 +47547,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationServiceCenter] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationServiceCenter] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -47715,9 +47586,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationServiceCenter] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationServiceCenter] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -47755,9 +47625,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationServiceCenter] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationServiceCenter] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -47795,9 +47664,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationServiceCenter] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationServiceCenter] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -47835,9 +47703,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationServiceCenter] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationServiceCenter] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -47875,9 +47742,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationServiceCenter] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationServiceCenter] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -47915,9 +47781,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationServiceCenter] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationServiceCenter] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -47955,9 +47820,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EducationServiceCenter] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EducationServiceCenter] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -48033,9 +47897,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EvaluationRubricDimension] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EvaluationRubricDimension] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -48220,9 +48083,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[FeederSchoolAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[FeederSchoolAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -48350,9 +48212,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[FunctionDimension] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[FunctionDimension] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -48436,9 +48297,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[FunctionDimension] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[FunctionDimension] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -48514,9 +48374,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[FundDimension] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[FundDimension] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -48600,9 +48459,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[FundDimension] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[FundDimension] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -48678,9 +48536,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Grade] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Grade] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -48842,9 +48699,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Grade] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Grade] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -48920,9 +48776,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[GradebookEntry] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[GradebookEntry] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -49006,9 +48861,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[GradebookEntry] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[GradebookEntry] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -49084,9 +48938,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[GradingPeriod] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[GradingPeriod] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -49229,9 +49082,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[GraduationPlan] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[GraduationPlan] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -49330,9 +49182,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[GraduationPlan] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[GraduationPlan] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -49370,9 +49221,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[GraduationPlan] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[GraduationPlan] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -49410,9 +49260,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[GraduationPlan] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[GraduationPlan] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -49450,9 +49299,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[GraduationPlan] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[GraduationPlan] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -49490,9 +49338,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[GraduationPlan] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[GraduationPlan] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -49530,9 +49377,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[GraduationPlan] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[GraduationPlan] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -49608,9 +49454,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Intervention] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Intervention] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -49694,9 +49539,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Intervention] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Intervention] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -49734,9 +49578,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Intervention] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Intervention] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -49774,9 +49617,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Intervention] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Intervention] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -49814,9 +49656,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Intervention] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Intervention] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -49854,9 +49695,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Intervention] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Intervention] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -49894,9 +49734,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Intervention] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Intervention] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -49934,9 +49773,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Intervention] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Intervention] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -49974,9 +49812,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Intervention] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Intervention] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -50052,9 +49889,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[InterventionPrescription] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[InterventionPrescription] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -50138,9 +49974,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[InterventionPrescription] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[InterventionPrescription] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -50178,9 +50013,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[InterventionPrescription] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[InterventionPrescription] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -50218,9 +50052,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[InterventionPrescription] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[InterventionPrescription] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -50258,9 +50091,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[InterventionPrescription] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[InterventionPrescription] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -50298,9 +50130,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[InterventionPrescription] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[InterventionPrescription] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -50338,9 +50169,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[InterventionPrescription] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[InterventionPrescription] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -50378,9 +50208,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[InterventionPrescription] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[InterventionPrescription] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -50418,9 +50247,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Intervention] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Intervention] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -50496,9 +50324,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[InterventionStudy] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[InterventionStudy] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -50582,9 +50409,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[InterventionStudy] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[InterventionStudy] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -50622,9 +50448,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[InterventionStudy] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[InterventionStudy] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -50662,9 +50487,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[InterventionStudy] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[InterventionStudy] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -50702,9 +50526,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[InterventionStudy] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[InterventionStudy] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -50742,9 +50565,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[InterventionStudy] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[InterventionStudy] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -50782,9 +50604,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[InterventionStudy] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[InterventionStudy] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -50822,9 +50643,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[InterventionStudy] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[InterventionStudy] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -50862,9 +50682,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[InterventionStudy] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[InterventionStudy] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -50902,9 +50721,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Intervention] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Intervention] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -50980,9 +50798,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[LearningStandard] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[LearningStandard] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -51066,9 +50883,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[LearningStandard] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[LearningStandard] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -51106,9 +50922,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[LearningStandard] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[LearningStandard] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -51184,9 +50999,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[LearningStandardEquivalenceAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[LearningStandardEquivalenceAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -51276,9 +51090,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[LearningStandard] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[LearningStandard] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -51316,9 +51129,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[LearningStandard] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[LearningStandard] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -51394,9 +51206,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[LocalAccount] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[LocalAccount] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -51486,9 +51297,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[LocalAccount] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[LocalAccount] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -51564,9 +51374,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[LocalActual] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[LocalActual] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -51700,9 +51509,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[LocalBudget] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[LocalBudget] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -51836,9 +51644,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[LocalContractedStaff] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[LocalContractedStaff] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -52261,9 +52068,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[LocalEducationAgency] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -52324,9 +52130,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[LocalEducationAgency] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -52364,9 +52169,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[LocalEducationAgency] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -52404,9 +52208,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[LocalEducationAgency] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -52444,9 +52247,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[LocalEducationAgency] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -52484,9 +52286,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[LocalEducationAgency] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -52524,9 +52325,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[LocalEducationAgency] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -52564,9 +52364,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[LocalEducationAgency] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -52604,9 +52403,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[LocalEducationAgency] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -52644,9 +52442,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[LocalEducationAgency] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -52684,9 +52481,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[LocalEducationAgency] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -52762,9 +52558,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[LocalEncumbrance] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[LocalEncumbrance] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -52898,9 +52693,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[LocalPayroll] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[LocalPayroll] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -53049,9 +52843,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Location] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Location] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -53173,9 +52966,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ObjectDimension] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ObjectDimension] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -53259,9 +53051,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ObjectDimension] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ObjectDimension] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -53337,9 +53128,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ObjectiveAssessment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ObjectiveAssessment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -53429,9 +53219,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ObjectiveAssessment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ObjectiveAssessment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -53469,9 +53258,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ObjectiveAssessment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ObjectiveAssessment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -53509,9 +53297,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ObjectiveAssessment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ObjectiveAssessment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -53549,9 +53336,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ObjectiveAssessment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ObjectiveAssessment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -53627,9 +53413,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[OpenStaffPosition] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[OpenStaffPosition] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -53713,9 +53498,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[OpenStaffPosition] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[OpenStaffPosition] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -53753,9 +53537,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[OpenStaffPosition] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[OpenStaffPosition] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -53831,9 +53614,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[OperationalUnitDimension] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[OperationalUnitDimension] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -53917,9 +53699,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[OperationalUnitDimension] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[OperationalUnitDimension] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -54179,9 +53960,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[OrganizationDepartment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[OrganizationDepartment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -54244,9 +54024,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[OrganizationDepartment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[OrganizationDepartment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -54284,9 +54063,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[OrganizationDepartment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[OrganizationDepartment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -54324,9 +54102,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[OrganizationDepartment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[OrganizationDepartment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -54364,9 +54141,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[OrganizationDepartment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[OrganizationDepartment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -54404,9 +54180,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[OrganizationDepartment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[OrganizationDepartment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -54444,9 +54219,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[OrganizationDepartment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[OrganizationDepartment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -54484,9 +54258,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[OrganizationDepartment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[OrganizationDepartment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -54524,9 +54297,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[OrganizationDepartment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[OrganizationDepartment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -54602,9 +54374,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Person] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Person] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -54735,9 +54506,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[PostSecondaryEvent] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[PostSecondaryEvent] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -54957,9 +54727,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[PostSecondaryInstitution] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[PostSecondaryInstitution] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -55020,9 +54789,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[PostSecondaryInstitution] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[PostSecondaryInstitution] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -55060,9 +54828,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[PostSecondaryInstitution] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[PostSecondaryInstitution] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -55100,9 +54867,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[PostSecondaryInstitution] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[PostSecondaryInstitution] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -55140,9 +54906,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[PostSecondaryInstitution] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[PostSecondaryInstitution] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -55180,9 +54945,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[PostSecondaryInstitution] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[PostSecondaryInstitution] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -55220,9 +54984,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[PostSecondaryInstitution] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[PostSecondaryInstitution] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -55260,9 +55023,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[PostSecondaryInstitution] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[PostSecondaryInstitution] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -55300,9 +55062,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[PostSecondaryInstitution] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[PostSecondaryInstitution] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -55340,9 +55101,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[PostSecondaryInstitution] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[PostSecondaryInstitution] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -55418,9 +55178,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Program] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Program] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -55519,9 +55278,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Program] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Program] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -55597,9 +55355,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ProgramDimension] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ProgramDimension] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -55683,9 +55440,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ProgramDimension] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ProgramDimension] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -55761,9 +55517,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ProgramEvaluation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ProgramEvaluation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -55936,9 +55691,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ProgramEvaluationElement] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ProgramEvaluationElement] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -56079,9 +55833,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ProgramEvaluationElement] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ProgramEvaluationElement] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -56119,9 +55872,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ProgramEvaluation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ProgramEvaluation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -56197,9 +55949,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ProgramEvaluationObjective] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ProgramEvaluationObjective] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -56340,9 +56091,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ProgramEvaluationObjective] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ProgramEvaluationObjective] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -56380,9 +56130,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Program] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Program] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -56420,9 +56169,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Program] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Program] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -56498,9 +56246,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ProjectDimension] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ProjectDimension] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -56584,9 +56331,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ProjectDimension] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ProjectDimension] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -56662,9 +56408,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ReportCard] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ReportCard] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -56790,9 +56535,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ReportCard] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ReportCard] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -56830,9 +56574,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ReportCard] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ReportCard] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -56870,9 +56613,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ReportCard] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ReportCard] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -56948,9 +56690,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[RestraintEvent] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[RestraintEvent] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -57049,9 +56790,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[RestraintEvent] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[RestraintEvent] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -57089,9 +56829,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[RestraintEvent] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[RestraintEvent] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -57351,9 +57090,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[School] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[School] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -57414,9 +57152,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[School] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[School] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -57454,9 +57191,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[School] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[School] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -57494,9 +57230,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[School] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[School] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -57534,9 +57269,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[School] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[School] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -57574,9 +57308,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[School] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[School] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -57614,9 +57347,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[School] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[School] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -57654,9 +57386,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[School] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[School] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -57694,9 +57425,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[School] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[School] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -57734,9 +57464,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[School] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[School] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -57774,9 +57503,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[School] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[School] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -57852,9 +57580,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[SchoolYearType] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[SchoolYearType] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -57970,9 +57697,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Section] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Section] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -58112,9 +57838,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[SectionAttendanceTakenEvent] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[SectionAttendanceTakenEvent] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -58228,9 +57953,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Section] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Section] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -58268,9 +57992,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Section] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Section] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -58308,9 +58031,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Section] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Section] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -58348,9 +58070,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Section] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Section] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -58388,9 +58109,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Section] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Section] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -58466,9 +58186,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Session] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Session] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -58558,9 +58277,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Session] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Session] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -58598,9 +58316,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Session] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Session] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -58676,9 +58393,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[SourceDimension] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[SourceDimension] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -58762,9 +58478,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[SourceDimension] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[SourceDimension] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -58840,9 +58555,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Staff] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Staff] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -58964,9 +58678,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StaffAbsenceEvent] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StaffAbsenceEvent] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -59074,9 +58787,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Staff] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Staff] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -59114,9 +58826,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Staff] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Staff] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -59154,9 +58865,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Staff] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Staff] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -59232,9 +58942,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StaffCohortAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StaffCohortAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -59339,9 +59048,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Staff] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Staff] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -59417,9 +59125,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StaffDisciplineIncidentAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StaffDisciplineIncidentAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -59518,9 +59225,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StaffDisciplineIncidentAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StaffDisciplineIncidentAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -59596,9 +59302,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StaffEducationOrganizationAssignmentAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StaffEducationOrganizationAssignmentAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -59750,9 +59455,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StaffEducationOrganizationContactAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StaffEducationOrganizationContactAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -59851,9 +59555,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StaffEducationOrganizationContactAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StaffEducationOrganizationContactAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -59891,9 +59594,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StaffEducationOrganizationContactAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StaffEducationOrganizationContactAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -59969,9 +59671,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StaffEducationOrganizationEmploymentAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StaffEducationOrganizationEmploymentAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -60085,9 +59786,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Staff] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Staff] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -60125,9 +59825,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Staff] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Staff] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -60165,9 +59864,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Staff] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Staff] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -60205,9 +59903,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Staff] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Staff] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -60245,9 +59942,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Staff] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Staff] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -60285,9 +59981,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Staff] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Staff] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -60363,9 +60058,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StaffLeave] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StaffLeave] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -60473,9 +60167,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Staff] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Staff] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -60513,9 +60206,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Staff] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Staff] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -60591,9 +60283,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StaffProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StaffProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -60713,9 +60404,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Staff] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Staff] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -60753,9 +60443,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Staff] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Staff] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -60831,9 +60520,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StaffSchoolAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StaffSchoolAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -60941,9 +60629,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StaffSchoolAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StaffSchoolAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -60981,9 +60668,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StaffSchoolAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StaffSchoolAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -61059,9 +60745,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StaffSectionAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StaffSectionAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -61184,9 +60869,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Staff] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Staff] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -61224,9 +60908,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Staff] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Staff] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -61264,9 +60947,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Staff] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Staff] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -61416,9 +61098,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StateEducationAgency] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -61479,9 +61160,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StateEducationAgency] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -61519,9 +61199,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StateEducationAgency] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -61559,9 +61238,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StateEducationAgency] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -61599,9 +61277,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StateEducationAgency] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -61639,9 +61316,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StateEducationAgency] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -61679,9 +61355,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StateEducationAgency] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -61719,9 +61394,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StateEducationAgency] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -61759,9 +61433,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StateEducationAgency] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -61799,9 +61472,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StateEducationAgency] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -61839,9 +61511,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StateEducationAgency] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -61917,9 +61588,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Student] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Student] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -62041,9 +61711,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentAcademicRecord] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentAcademicRecord] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -62157,9 +61826,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentAcademicRecord] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentAcademicRecord] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -62197,9 +61865,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentAcademicRecord] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentAcademicRecord] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -62237,9 +61904,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentAcademicRecord] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentAcademicRecord] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -62277,9 +61943,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentAcademicRecord] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentAcademicRecord] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -62317,9 +61982,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentAcademicRecord] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentAcademicRecord] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -62395,9 +62059,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentAssessment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentAssessment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -62508,9 +62171,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentAssessment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentAssessment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -62586,9 +62248,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentAssessmentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentAssessmentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -62717,9 +62378,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentAssessment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentAssessment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -62757,9 +62417,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentAssessment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentAssessment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -62835,9 +62494,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentAssessmentRegistration] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentAssessmentRegistration] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -62957,9 +62615,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentAssessmentRegistration] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentAssessmentRegistration] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -62997,9 +62654,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentAssessmentRegistration] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentAssessmentRegistration] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -63075,9 +62731,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentAssessmentRegistrationBatteryPartAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentAssessmentRegistrationBatteryPartAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -63206,9 +62861,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentAssessmentRegistrationBatteryPartAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentAssessmentRegistrationBatteryPartAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -63246,9 +62900,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentAssessment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentAssessment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -63286,9 +62939,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentAssessment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentAssessment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -63326,9 +62978,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentAssessment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentAssessment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -63366,9 +63017,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentAssessment] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentAssessment] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -63492,9 +63142,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentCTEProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentCTEProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -63571,9 +63220,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentCTEProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentCTEProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -63611,9 +63259,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentCTEProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentCTEProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -63689,9 +63336,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentCohortAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentCohortAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -63796,9 +63442,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentCohortAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentCohortAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -63874,9 +63519,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentCompetencyObjective] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentCompetencyObjective] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -64023,9 +63667,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentCompetencyObjective] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentCompetencyObjective] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -64063,9 +63706,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentCompetencyObjective] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentCompetencyObjective] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -64141,9 +63783,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentContactAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentContactAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -64283,9 +63924,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentDisciplineIncidentBehaviorAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentDisciplineIncidentBehaviorAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -64399,9 +64039,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentDisciplineIncidentBehaviorAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentDisciplineIncidentBehaviorAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -64439,9 +64078,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentDisciplineIncidentBehaviorAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentDisciplineIncidentBehaviorAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -64517,9 +64155,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentDisciplineIncidentNonOffenderAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentDisciplineIncidentNonOffenderAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -64618,9 +64255,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentDisciplineIncidentNonOffenderAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentDisciplineIncidentNonOffenderAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -64696,9 +64332,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssessmentAccommodation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssessmentAccommodation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -64791,9 +64426,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssessmentAccommodation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssessmentAccommodation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -64869,9 +64503,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -64964,9 +64597,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -65004,9 +64636,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -65044,9 +64675,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -65084,9 +64714,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -65124,9 +64753,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -65164,9 +64792,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -65204,9 +64831,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -65244,9 +64870,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -65284,9 +64909,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -65324,9 +64948,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -65364,9 +64987,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -65404,9 +65026,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -65444,9 +65065,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -65484,9 +65104,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -65524,9 +65143,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -65564,9 +65182,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -65604,9 +65221,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -65644,9 +65260,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -65684,9 +65299,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -65762,9 +65376,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationResponsibilityAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationResponsibilityAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -65916,9 +65529,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentGradebookEntry] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentGradebookEntry] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -66055,9 +65667,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentHealth] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentHealth] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -66150,9 +65761,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentHealth] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentHealth] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -66190,9 +65800,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentHealth] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentHealth] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -66230,9 +65839,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentHealth] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentHealth] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -66270,9 +65878,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentHealth] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentHealth] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -66396,9 +66003,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentHomelessProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentHomelessProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -66475,9 +66081,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentHomelessProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentHomelessProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -66515,9 +66120,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentHomelessProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentHomelessProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -66555,9 +66159,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Student] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Student] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -66633,9 +66236,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentInterventionAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentInterventionAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -66734,9 +66336,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentInterventionAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentInterventionAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -66812,9 +66413,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentInterventionAttendanceEvent] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentInterventionAttendanceEvent] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -67020,9 +66620,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentLanguageInstructionProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentLanguageInstructionProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -67099,9 +66698,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentLanguageInstructionProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentLanguageInstructionProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -67139,9 +66737,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentLanguageInstructionProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentLanguageInstructionProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -67179,9 +66776,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentLanguageInstructionProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentLanguageInstructionProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -67305,9 +66901,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentMigrantEducationProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentMigrantEducationProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -67384,9 +66979,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentMigrantEducationProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentMigrantEducationProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -67424,9 +67018,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentMigrantEducationProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentMigrantEducationProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -67550,9 +67143,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentNeglectedOrDelinquentProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentNeglectedOrDelinquentProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -67629,9 +67221,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentNeglectedOrDelinquentProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentNeglectedOrDelinquentProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -67669,9 +67260,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentNeglectedOrDelinquentProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentNeglectedOrDelinquentProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -67709,9 +67299,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Student] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Student] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -67749,9 +67338,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Student] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Student] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -67875,9 +67463,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -67954,9 +67541,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -67994,9 +67580,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -68072,9 +67657,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentProgramAttendanceEvent] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentProgramAttendanceEvent] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -68253,9 +67837,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentProgramEvaluation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentProgramEvaluation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -68411,9 +67994,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentProgramEvaluation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentProgramEvaluation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -68451,9 +68033,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentProgramEvaluation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentProgramEvaluation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -68491,9 +68072,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentProgramEvaluation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentProgramEvaluation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -68569,9 +68149,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentSchoolAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentSchoolAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -68670,9 +68249,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentSchoolAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentSchoolAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -68710,9 +68288,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentSchoolAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentSchoolAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -68788,9 +68365,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentSchoolAttendanceEvent] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentSchoolAttendanceEvent] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -69002,9 +68578,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentSchoolFoodServiceProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentSchoolFoodServiceProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -69081,9 +68656,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentSchoolFoodServiceProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentSchoolFoodServiceProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -69121,9 +68695,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentSchoolFoodServiceProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentSchoolFoodServiceProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -69247,9 +68820,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentSection504ProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentSection504ProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -69326,9 +68898,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentSection504ProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentSection504ProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -69404,9 +68975,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentSectionAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentSectionAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -69529,9 +69099,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentSectionAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentSectionAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -69607,9 +69176,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentSectionAttendanceEvent] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentSectionAttendanceEvent] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -69747,9 +69315,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentSectionAttendanceEvent] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentSectionAttendanceEvent] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -69873,9 +69440,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentSpecialEducationProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentSpecialEducationProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -69952,9 +69518,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentSpecialEducationProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentSpecialEducationProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -69992,9 +69557,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentSpecialEducationProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentSpecialEducationProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -70032,9 +69596,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentSpecialEducationProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentSpecialEducationProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -70072,9 +69635,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentSpecialEducationProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentSpecialEducationProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -70112,9 +69674,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentSpecialEducationProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentSpecialEducationProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -70152,9 +69713,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentSpecialEducationProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentSpecialEducationProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -70230,9 +69790,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentSpecialEducationProgramEligibilityAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentSpecialEducationProgramEligibilityAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -70444,9 +70003,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentTitleIPartAProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentTitleIPartAProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -70523,9 +70081,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentTitleIPartAProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentTitleIPartAProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -70563,9 +70120,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentTitleIPartAProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentTitleIPartAProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -70641,9 +70197,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentTransportation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentTransportation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -70736,9 +70291,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentTransportation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentTransportation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -70776,9 +70330,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentTransportation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentTransportation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -70816,9 +70369,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Student] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Student] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -70894,9 +70446,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Survey] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Survey] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -71018,9 +70569,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[SurveyCourseAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[SurveyCourseAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -71154,9 +70704,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[SurveyProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[SurveyProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -71305,9 +70854,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[SurveyQuestion] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[SurveyQuestion] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -71397,9 +70945,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[SurveyQuestion] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[SurveyQuestion] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -71475,9 +71022,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[SurveyQuestionResponse] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[SurveyQuestionResponse] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -71573,9 +71119,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[SurveyQuestion] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[SurveyQuestion] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -71613,9 +71158,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[SurveyQuestionResponse] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[SurveyQuestionResponse] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -71653,9 +71197,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[SurveyQuestionResponse] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[SurveyQuestionResponse] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -71731,9 +71274,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[SurveyResponse] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[SurveyResponse] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -71861,9 +71403,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[SurveyResponseEducationOrganizationTargetAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[SurveyResponseEducationOrganizationTargetAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -71997,9 +71538,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[SurveyResponseStaffTargetAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[SurveyResponseStaffTargetAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -72104,9 +71644,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[SurveyResponse] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[SurveyResponse] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -72182,9 +71721,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[SurveySection] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[SurveySection] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -72312,9 +71850,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[SurveySectionAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[SurveySectionAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -72466,9 +72003,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[SurveySectionResponse] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[SurveySectionResponse] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -72602,9 +72138,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[SurveySectionResponseEducationOrganizationTargetAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[SurveySectionResponseEducationOrganizationTargetAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -72744,9 +72279,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[SurveySectionResponseStaffTargetAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[SurveySectionResponseStaffTargetAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -72895,9 +72429,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [sample].[Bus] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [sample].[Bus] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -73013,9 +72546,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [sample].[BusRoute] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [sample].[BusRoute] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -73099,9 +72631,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [sample].[BusRoute] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [sample].[BusRoute] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -73139,9 +72670,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [sample].[BusRoute] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [sample].[BusRoute] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -73179,9 +72709,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [sample].[BusRoute] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [sample].[BusRoute] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -73219,9 +72748,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [sample].[BusRoute] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [sample].[BusRoute] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -73259,9 +72787,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [sample].[BusRoute] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [sample].[BusRoute] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -73299,9 +72826,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Contact] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Contact] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -73339,9 +72865,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Contact] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Contact] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -73379,9 +72904,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Contact] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Contact] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -73419,9 +72943,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Contact] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Contact] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -73459,9 +72982,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Contact] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Contact] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -73499,9 +73021,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Contact] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Contact] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -73539,9 +73060,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Contact] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Contact] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -73579,9 +73099,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Contact] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Contact] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -73619,9 +73138,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Contact] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Contact] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -73659,9 +73177,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[School] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[School] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -73699,9 +73216,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[School] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[School] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -73739,9 +73255,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Staff] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Staff] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -73779,9 +73294,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Staff] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Staff] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -73819,9 +73333,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentAcademicRecord] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentAcademicRecord] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -73945,9 +73458,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [sample].[StudentArtProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [sample].[StudentArtProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -74024,9 +73536,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [sample].[StudentArtProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [sample].[StudentArtProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -74064,9 +73575,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [sample].[StudentArtProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [sample].[StudentArtProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -74104,9 +73614,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [sample].[StudentArtProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [sample].[StudentArtProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -74144,9 +73653,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [sample].[StudentArtProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [sample].[StudentArtProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -74184,9 +73692,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [sample].[StudentArtProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [sample].[StudentArtProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -74224,9 +73731,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [sample].[StudentArtProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [sample].[StudentArtProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -74264,9 +73770,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentCTEProgramAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentCTEProgramAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -74304,9 +73809,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentContactAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentContactAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -74344,9 +73848,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentContactAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentContactAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -74384,9 +73887,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentContactAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentContactAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -74424,9 +73926,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentContactAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentContactAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -74464,9 +73965,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentContactAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentContactAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -74504,9 +74004,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentContactAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentContactAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -74544,9 +74043,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -74584,9 +74082,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -74624,9 +74121,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -74664,9 +74160,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -74704,9 +74199,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -74744,9 +74238,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentEducationOrganizationAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -74784,9 +74277,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Student] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Student] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -74824,9 +74316,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Student] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Student] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -74864,9 +74355,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Student] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Student] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -74904,9 +74394,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Student] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Student] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -74944,9 +74433,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Student] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Student] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -75022,9 +74510,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [sample].[StudentGraduationPlanAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [sample].[StudentGraduationPlanAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -75138,9 +74625,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [sample].[StudentGraduationPlanAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [sample].[StudentGraduationPlanAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -75178,9 +74664,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [sample].[StudentGraduationPlanAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [sample].[StudentGraduationPlanAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -75218,9 +74703,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [sample].[StudentGraduationPlanAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [sample].[StudentGraduationPlanAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -75258,9 +74742,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [sample].[StudentGraduationPlanAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [sample].[StudentGraduationPlanAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -75298,9 +74781,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [sample].[StudentGraduationPlanAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [sample].[StudentGraduationPlanAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -75338,9 +74820,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [sample].[StudentGraduationPlanAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [sample].[StudentGraduationPlanAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -75378,9 +74859,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [sample].[StudentGraduationPlanAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [sample].[StudentGraduationPlanAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -75418,9 +74898,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentSchoolAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentSchoolAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -75458,9 +74937,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentSectionAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentSectionAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -75498,9 +74976,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentSectionAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentSectionAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO

@@ -1932,6 +1932,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             // The null-safe value diff inside affectedDocs stays authoritative, so the guard can
             // only skip statements whose workset would have been empty. The disjunction covers
             // exactly the stored columns that diff already uses, so the two cannot disagree.
+            //
+            // The case this has to survive is a stored column written by an FK cascade rather than by
+            // a client statement, because UPDATE(col) is documented to report an INSERT or UPDATE
+            // attempt and not every cascade case. That is covered by
+            // MssqlGeneratedDdlAuthoritativeSmokeTests.It_should_stamp_indirect_Identity_propagation_changes_via_native_fk_cascades_without_disabling_constraints,
+            // which cascades edfi.Session.SessionName into root edfi.CourseOffering and asserts its
+            // ContentVersion advances. If that test ever goes red, this guard is the cause.
             writer.Append("IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR ");
             EmitMssqlUpdateColumnDisjunction(writer, storedColumns);
             writer.AppendLine(")");
@@ -1970,20 +1977,21 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.AppendLine();
             writer.Append("FROM ");
             writer.Append(mirrorStampTarget);
-            writer.AppendLine(" r");
+            // @stamped is a table variable, so the cached plan reflects the cardinality of whichever
+            // firing compiled it, and a plan that scans this table takes update locks across rows the
+            // transaction never touched. Measured: leave this statement unhinted and that contention
+            // is the sole cycle in every deadlock graph a concurrent child-collection load produces.
+            //
+            // FORCESEEK is the hint that forbids the scan itself. OPTION (LOOP JOIN) was measured and
+            // is not sufficient: it constrains the join algorithm but still permits a scan of the
+            // inner input, and the load deadlocked identically with it. The join predicate is an
+            // equality on this table's primary key, so a seek is always available.
+            writer.AppendLine(" r WITH (FORCESEEK)");
             writer.Append("INNER JOIN @stamped s ON s.");
             writer.Append(Quote(DocumentIdColumn));
             writer.Append(" = r.");
             writer.Append(Quote(DocumentIdColumn));
-            writer.AppendLine();
-            // @stamped is a table variable, so with deferred compilation the plan for this join is
-            // built from whichever cardinality the statement first executed with and then cached.
-            // Sampled at compatibility level 170 with DEFERRED_COMPILATION_TV ON: a one-row @stamped
-            // seeks the mirror table's primary key, but a firing that carries many rows compiles a
-            // merge or hash join over a full scan of the mirror table - which then takes update locks
-            // across rows the transaction never touched. RECOMPILE keeps each firing on a plan built
-            // for its own cardinality.
-            writer.AppendLine("OPTION (RECOMPILE);");
+            writer.AppendLine(";");
         }
         writer.AppendLine("END");
 

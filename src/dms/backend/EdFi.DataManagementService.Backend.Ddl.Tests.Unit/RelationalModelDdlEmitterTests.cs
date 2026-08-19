@@ -1409,13 +1409,11 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
             StringComparison.Ordinal
         );
         var mirrorFromStart = triggerBody.IndexOf("FROM [edfi].[School] r", StringComparison.Ordinal);
-        // Unterminated: the mirror UPDATE now ends with the recompile hint, which is asserted as the
-        // next link in the ordering chain below rather than being baked into this literal.
+        // FORCESEEK is a table hint on the mirror target, so the join still terminates the statement.
         var mirrorJoinStart = triggerBody.IndexOf(
-            "INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]",
+            "INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];",
             StringComparison.Ordinal
         );
-        var mirrorRecompileHintStart = triggerBody.IndexOf("OPTION (RECOMPILE);", StringComparison.Ordinal);
 
         declareStart
             .Should()
@@ -1432,12 +1430,13 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
         mirrorSetLastModifiedStart.Should().BeGreaterThan(mirrorSetVersionStart);
         mirrorFromStart.Should().BeGreaterThan(mirrorSetLastModifiedStart);
         mirrorJoinStart.Should().BeGreaterThan(mirrorFromStart);
-        mirrorRecompileHintStart
-            .Should()
-            .BeGreaterThan(
-                mirrorJoinStart,
-                "the recompile hint must terminate the mirror UPDATE, after its join"
-            );
+
+        // A scanning plan for this statement takes update locks across mirror rows the transaction
+        // never touched, which is the measured deadlock cycle. FORCESEEK forbids the scan; RECOMPILE
+        // was measured to cost a compile on every root write, and OPTION (LOOP JOIN) was measured not
+        // to prevent the contention at all.
+        triggerBody.Should().Contain("FROM [edfi].[School] r WITH (FORCESEEK)");
+        triggerBody.Should().NotContain("OPTION (");
     }
 
     [Test]
@@ -1792,10 +1791,11 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
                 "the School stamp trigger must mirror captured stamps to the target table"
             );
 
-        // The mirror UPDATE terminates with the recompile hint rather than with its join, so the
-        // slice has to run to the end of the hint. Slicing at the join would stop one line short
-        // and silently hide whatever the caller asserts about the tail of the statement.
-        const string statementEnd = "OPTION (RECOMPILE);";
+        // The mirror join terminates the statement, so the slice runs to the end of that line. If a
+        // query hint were ever appended after it, this slice would stop short of the statement's tail
+        // and silently hide whatever the caller asserts about it - which is why the emission test
+        // above pins the absence of "OPTION (".
+        const string statementEnd = "INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];";
         var statementEndStart = triggerBody.IndexOf(
             statementEnd,
             mirrorUpdateStart,

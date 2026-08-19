@@ -571,9 +571,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [dms].[Descriptor] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [dms].[Descriptor] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -1445,9 +1444,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[DateTimeKeyResource] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[DateTimeKeyResource] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -1563,9 +1561,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[DecimalKeyResource] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[DecimalKeyResource] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -1681,9 +1678,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[DecimalRefResource] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[DecimalRefResource] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -1805,9 +1801,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EdOrgDependentChildResource] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EdOrgDependentChildResource] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -1935,9 +1930,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[EdOrgDependentResource] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[EdOrgDependentResource] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -2059,9 +2053,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[KeyUnifiedResource] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[KeyUnifiedResource] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -2195,9 +2188,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ResourceA] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ResourceA] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -2319,9 +2311,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ResourceB] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ResourceB] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -2517,9 +2508,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[School] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[School] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -2618,9 +2608,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Student] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Student] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -2736,9 +2725,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StudentSchoolAssociation] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[StudentSchoolAssociation] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN

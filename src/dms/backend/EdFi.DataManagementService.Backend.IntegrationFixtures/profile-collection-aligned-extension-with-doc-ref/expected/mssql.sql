@@ -571,9 +571,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [dms].[Descriptor] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [dms].[Descriptor] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -860,9 +859,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ParentResource] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ParentResource] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -938,9 +936,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ParentResource] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ParentResource] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -1018,9 +1015,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ParentResource] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[ParentResource] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
 END;
 GO
@@ -1096,9 +1092,8 @@ BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Sponsor] r
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]
-        OPTION (RECOMPILE);
+        FROM [edfi].[Sponsor] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
