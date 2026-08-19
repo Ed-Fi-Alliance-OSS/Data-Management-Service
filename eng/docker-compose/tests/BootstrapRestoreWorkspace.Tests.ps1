@@ -16,6 +16,9 @@ BeforeAll {
     $script:activeBootstrapRoot = Join-Path $script:dockerComposeDir ".bootstrap"
     $script:restoreWorkspaceRoot = Join-Path $script:dockerComposeDir ".bootstrap-restore"
     Import-Module (Join-Path $script:dockerComposeDir "bootstrap-restore.psm1") -Force
+    # Without -Force: bootstrap-restore's nested import already bound an instance, and a forced
+    # re-import here would strip that binding (the documented nested-Force gotcha in reverse).
+    Import-Module (Join-Path $script:dockerComposeDir "../DatabaseTemplates/Template-RestoreCore.psm1")
 
     function script:Import-ManifestModule {
         Import-Module $script:manifestModulePath -Force -Global
@@ -854,5 +857,251 @@ Describe "Publish-RestoreCandidateWorkspace (whole-tree commit)" {
 
         Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly
         $script:activeRootUnderTest | Should -Exist
+    }
+}
+
+Describe "New-RestorePreflightEnvironment" {
+    BeforeEach {
+        $script:preflightRoot = Join-Path $TestDrive "preflight-$([Guid]::NewGuid().ToString('n'))"
+        New-Item -ItemType Directory -Path $script:preflightRoot -Force | Out-Null
+        $script:baseEnvironmentFile = Join-Path $script:preflightRoot "effective.env"
+        @(
+            "POSTGRES_DB_NAME=edfi_datamanagementservice"
+            "POSTGRES_PASSWORD=secret-pass"
+            "POSTGRES_PORT=5544"
+            "DMS_DATASTORE=postgresql"
+        ) -join "`n" | Set-Content -LiteralPath $script:baseEnvironmentFile -Encoding utf8
+        $script:derivedDirectory = Join-Path $script:preflightRoot "derived"
+    }
+
+    It "PostgreSQL: derives an env whose only change is a generated, reserved-safe, non-target POSTGRES_DB_NAME" {
+        $preflight = New-RestorePreflightEnvironment `
+            -EnvironmentFile $script:baseEnvironmentFile `
+            -DatabaseEngine postgresql `
+            -TargetDatabaseName "edfi_datamanagementservice" `
+            -DerivedDirectory $script:derivedDirectory
+
+        $preflight.IsDerived | Should -BeTrue
+        $preflight.PreflightDatabaseName | Should -Match "^edfi_dms_restore_preflight_[0-9a-f]{12}$"
+        $preflight.PreflightDatabaseName | Should -Not -Be "edfi_datamanagementservice"
+        Test-ReservedDatabaseName -DatabaseEngine postgresql -DatabaseName $preflight.PreflightDatabaseName |
+            Should -BeFalse
+
+        # Only POSTGRES_DB_NAME changed; every other line of the effective env is carried
+        # verbatim so the -DbOnly run behaves identically apart from the initialized database.
+        $derivedLines = @(Get-Content -LiteralPath $preflight.EnvironmentFile) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+        $derivedLines | Should -Contain "POSTGRES_DB_NAME=$($preflight.PreflightDatabaseName)"
+        $baselineOtherLines = @(Get-Content -LiteralPath $script:baseEnvironmentFile) |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and $_ -notlike "POSTGRES_DB_NAME=*" }
+        $derivedOtherLines = @($derivedLines | Where-Object { $_ -notlike "POSTGRES_DB_NAME=*" })
+        $derivedOtherLines | Should -Be $baselineOtherLines
+    }
+
+    It "SQL Server: passes the effective env through unchanged and writes no derived file" {
+        $preflight = New-RestorePreflightEnvironment `
+            -EnvironmentFile $script:baseEnvironmentFile `
+            -DatabaseEngine mssql `
+            -TargetDatabaseName "edfi_datamanagementservice" `
+            -DerivedDirectory $script:derivedDirectory
+
+        $preflight.IsDerived | Should -BeFalse
+        $preflight.EnvironmentFile | Should -Be $script:baseEnvironmentFile
+        $preflight.PreflightDatabaseName | Should -Be ""
+        Test-Path -LiteralPath $script:derivedDirectory | Should -BeFalse
+    }
+}
+
+Describe "Invoke-RestoreCatalogQuery" {
+    BeforeAll {
+        $script:createdDockerFallback = $false
+        if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+            Set-Item -Path function:global:docker -Value { throw "the docker fallback must always be mocked" }
+            $script:createdDockerFallback = $true
+        }
+    }
+
+    AfterAll {
+        if ($script:createdDockerFallback) {
+            Remove-Item function:global:docker -ErrorAction SilentlyContinue
+        }
+    }
+
+    It "runs psql through docker exec with the admin transport for PostgreSQL" {
+        Mock docker { $global:LASTEXITCODE = 0; "row1" } -ModuleName bootstrap-restore
+
+        $rows = Invoke-RestoreCatalogQuery `
+            -DatabaseEngine postgresql `
+            -ContainerName "dms-postgresql" `
+            -DatabaseName "postgres" `
+            -Query "SELECT 1;" `
+            -FailureMessage "query failed."
+
+        @($rows) | Should -Be @("row1")
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+            ($args -join " ") -eq "exec dms-postgresql psql -U postgres -d postgres -tA -c SELECT 1;"
+        }
+    }
+
+    It "runs sqlcmd through docker exec with the sa transport for SQL Server" {
+        Mock docker { $global:LASTEXITCODE = 0 } -ModuleName bootstrap-restore
+
+        Invoke-RestoreCatalogQuery `
+            -DatabaseEngine mssql `
+            -ContainerName "dms-mssql" `
+            -DatabaseName "master" `
+            -MssqlPassword "pw!" `
+            -Query "SELECT 1;" `
+            -FailureMessage "query failed." | Out-Null
+
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+            $joined = $args -join " "
+            $joined -like "exec -e SQLCMDPASSWORD=pw! dms-mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -d master -C -b -h -1 -W -Q SELECT 1;"
+        }
+    }
+
+    It "throws the caller's failure message on a nonzero exit" {
+        Mock docker { $global:LASTEXITCODE = 1; "connection refused" } -ModuleName bootstrap-restore
+
+        { Invoke-RestoreCatalogQuery `
+                -DatabaseEngine postgresql `
+                -ContainerName "dms-postgresql" `
+                -DatabaseName "postgres" `
+                -Query "SELECT 1;" `
+                -FailureMessage "Live check failed." } |
+            Should -Throw "Live check failed.*connection refused*"
+    }
+}
+
+Describe "Assert-RestoreTargetSafety" {
+    BeforeAll {
+        $script:createdDockerFallback = $false
+        if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+            Set-Item -Path function:global:docker -Value { throw "the docker fallback must always be mocked" }
+            $script:createdDockerFallback = $true
+        }
+    }
+
+    AfterAll {
+        if ($script:createdDockerFallback) {
+            Remove-Item function:global:docker -ErrorAction SilentlyContinue
+        }
+    }
+
+    BeforeEach {
+        # Safe defaults: only the db service is running, every catalog answer is benign, and
+        # the live version satisfies the manifest below. Tests override per scenario.
+        Mock docker { $global:LASTEXITCODE = 0; "dms-local-db-1|db" } -ModuleName bootstrap-restore
+        Mock Invoke-RestoreCatalogQuery {
+            if ($Query -like "*server_version*") { return "16.8" }
+            if ($Query -like "*ProductVersion*") { return "17.0.900.7" }
+            return @()
+        } -ModuleName bootstrap-restore
+        $script:pgManifest = [pscustomobject]@{ engineVersion = "16.8" }
+        $script:mssqlManifest = [pscustomobject]@{ engineVersion = "17.0.900.7" }
+    }
+
+    It "passes for a safe PostgreSQL target, skipping the publication query when the target is absent" {
+        { Assert-RestoreTargetSafety -DatabaseEngine postgresql -TargetDatabaseName "edfi_datamanagementservice" -Manifest $script:pgManifest } |
+            Should -Not -Throw
+
+        # reserved-catalog + engine-version + replication-slots + target-existence; the
+        # in-target publication query must not run against an absent database.
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 4 -Exactly
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "*pg_publication*" }
+    }
+
+    It "passes for a safe SQL Server target" {
+        { Assert-RestoreTargetSafety -DatabaseEngine mssql -TargetDatabaseName "edfi_datamanagementservice" -Manifest $script:mssqlManifest } |
+            Should -Not -Throw
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 3 -Exactly
+    }
+
+    It "refuses a denylisted target name before any docker or catalog activity" {
+        { Assert-RestoreTargetSafety -DatabaseEngine postgresql -TargetDatabaseName "postgres" -Manifest $script:pgManifest } |
+            Should -Throw "*reserved postgresql system database name*"
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly
+    }
+
+    It "refuses the separate-topology Configuration Service database before any docker or catalog activity" {
+        { Assert-RestoreTargetSafety -DatabaseEngine postgresql -TargetDatabaseName "edfi_configurationservice" -Manifest $script:pgManifest -SeparateConfigDatabase -EffectiveConfigDatabaseName "edfi_configurationservice" } |
+            Should -Throw "*Configuration Service database*"
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly
+    }
+
+    It "refuses a target the live catalog marks as template/system, whatever its name (<Engine>)" -ForEach @(
+        @{ Engine = "postgresql"; QueryPattern = "*datistemplate*" }
+        @{ Engine = "mssql"; QueryPattern = "*database_id <= 4*" }
+    ) {
+        Mock Invoke-RestoreCatalogQuery { "sneaky_system_db" } -ModuleName bootstrap-restore -ParameterFilter { $Query -like $QueryPattern }
+        $manifest = if ($Engine -eq "mssql") { $script:mssqlManifest } else { $script:pgManifest }
+
+        { Assert-RestoreTargetSafety -DatabaseEngine $Engine -TargetDatabaseName "sneaky_system_db" -Manifest $manifest } |
+            Should -Throw "*live catalog marks restore target*reserved/system*"
+    }
+
+    It "refuses when a non-database container of either compose project is running" {
+        Mock docker { $global:LASTEXITCODE = 0; "dms-local-db-1|db"; "dms-local-dms-1|dms" } -ModuleName bootstrap-restore
+
+        { Assert-RestoreTargetSafety -DatabaseEngine postgresql -TargetDatabaseName "edfi_datamanagementservice" -Manifest $script:pgManifest } |
+            Should -Throw "*running non-database containers*dms-local-dms-1|dms*"
+    }
+
+    It "refuses a running container without a readable service label (fail-closed)" {
+        Mock docker { $global:LASTEXITCODE = 0; "dms-local-mystery-1|" } -ModuleName bootstrap-restore
+
+        { Assert-RestoreTargetSafety -DatabaseEngine postgresql -TargetDatabaseName "edfi_datamanagementservice" -Manifest $script:pgManifest } |
+            Should -Throw "*running non-database containers*dms-local-mystery-1*"
+    }
+
+    It "treats a docker failure during the running-service check as indeterminate" {
+        Mock docker { $global:LASTEXITCODE = 1; "daemon unreachable" } -ModuleName bootstrap-restore
+
+        { Assert-RestoreTargetSafety -DatabaseEngine postgresql -TargetDatabaseName "edfi_datamanagementservice" -Manifest $script:pgManifest } |
+            Should -Throw "*Target safety is indeterminate*daemon unreachable*"
+    }
+
+    It "refuses when the live server major is older than the manifest's engine major" {
+        $newerManifest = [pscustomobject]@{ engineVersion = "17.2" }
+
+        { Assert-RestoreTargetSafety -DatabaseEngine postgresql -TargetDatabaseName "edfi_datamanagementservice" -Manifest $newerManifest } |
+            Should -Throw "*live server major version 16 is older than the restore manifest's engine major version 17*"
+    }
+
+    It "fails closed on an unparsable or missing live engine version" {
+        Mock Invoke-RestoreCatalogQuery { "beta-release" } -ModuleName bootstrap-restore -ParameterFilter { $Query -like "*server_version*" }
+        { Assert-RestoreTargetSafety -DatabaseEngine postgresql -TargetDatabaseName "edfi_datamanagementservice" -Manifest $script:pgManifest } |
+            Should -Throw "*Cannot parse a major version*live server*"
+
+        Mock Invoke-RestoreCatalogQuery { @() } -ModuleName bootstrap-restore -ParameterFilter { $Query -like "*server_version*" }
+        { Assert-RestoreTargetSafety -DatabaseEngine postgresql -TargetDatabaseName "edfi_datamanagementservice" -Manifest $script:pgManifest } |
+            Should -Throw "*returned no version*"
+    }
+
+    It "refuses a PostgreSQL target bound by a replication slot" {
+        Mock Invoke-RestoreCatalogQuery { "dms_cdc_slot" } -ModuleName bootstrap-restore -ParameterFilter { $Query -like "*pg_replication_slots*" }
+
+        { Assert-RestoreTargetSafety -DatabaseEngine postgresql -TargetDatabaseName "edfi_datamanagementservice" -Manifest $script:pgManifest } |
+            Should -Throw "*bound by replication slot(s): dms_cdc_slot*"
+    }
+
+    It "refuses an existing PostgreSQL target that contains a publication" {
+        Mock Invoke-RestoreCatalogQuery { "1" } -ModuleName bootstrap-restore -ParameterFilter { $Query -like "SELECT 1 FROM pg_database*" }
+        Mock Invoke-RestoreCatalogQuery { "dms_publication" } -ModuleName bootstrap-restore -ParameterFilter { $Query -like "*pg_publication*" }
+
+        { Assert-RestoreTargetSafety -DatabaseEngine postgresql -TargetDatabaseName "edfi_datamanagementservice" -Manifest $script:pgManifest } |
+            Should -Throw "*contains publication(s): dms_publication*"
+
+        # The publication query connects INSIDE the target database, never the admin database.
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+            $Query -like "*pg_publication*" -and $DatabaseName -eq "edfi_datamanagementservice"
+        }
+    }
+
+    It "refuses a CDC-enabled SQL Server target" {
+        Mock Invoke-RestoreCatalogQuery { "edfi_datamanagementservice" } -ModuleName bootstrap-restore -ParameterFilter { $Query -like "*is_cdc_enabled*" }
+
+        { Assert-RestoreTargetSafety -DatabaseEngine mssql -TargetDatabaseName "edfi_datamanagementservice" -Manifest $script:mssqlManifest } |
+            Should -Throw "*has CDC enabled*governed new-generation recovery workflow*"
     }
 }
