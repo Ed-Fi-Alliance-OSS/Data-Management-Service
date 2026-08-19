@@ -1055,6 +1055,98 @@ public class Given_CdcConnectorTemplateValidationTests
         diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.Render);
     }
 
+    [Test]
+    public void It_reports_null_heartbeat_action_query_as_missing_provider_setup_readiness()
+    {
+        CdcProviderSetupReadiness readiness = GetProviderSetupReadiness(
+            BuildProviderSetupResult(CdcProvider.Postgresql, omitHeartbeatActionQuery: true)
+        );
+
+        CdcConnectorTemplateDiagnostic diagnostic = readiness
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.HeartbeatActionQueryRequired
+            )
+            .Subject;
+
+        using var _ = new AssertionScope();
+        readiness.CanRenderTemplate.Should().BeFalse();
+        diagnostic
+            .Category.Should()
+            .Be(CdcConnectorTemplateDiagnosticCategory.HeartbeatConfigurationViolation);
+        diagnostic.PropertyName.Should().Be("providerSetup.heartbeatActionQuery");
+        diagnostic.ExpectedValue.Should().Be("fresh provider heartbeat action query");
+        diagnostic.ObservedValue.Should().Be("missing");
+        diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.Render);
+    }
+
+    [TestCase("")]
+    [TestCase("   ")]
+    [TestCase("\t\r\n")]
+    public void It_rejects_blank_heartbeat_action_sql_during_public_request_validation(string heartbeatSql)
+    {
+        CdcConnectorTemplateValidationResult result = Validate(
+            BuildRequest(CdcProvider.Postgresql, heartbeatSql: heartbeatSql)
+        );
+
+        CdcConnectorTemplateDiagnostic diagnostic = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.HeartbeatActionQueryRequired
+            )
+            .Subject;
+
+        using var _ = new AssertionScope();
+        result.IsValid.Should().BeFalse();
+        diagnostic
+            .Category.Should()
+            .Be(CdcConnectorTemplateDiagnosticCategory.HeartbeatConfigurationViolation);
+        diagnostic.PropertyName.Should().Be("providerSetup.heartbeatActionQuery");
+        diagnostic.ExpectedValue.Should().Be("fresh provider heartbeat action query");
+        diagnostic.ObservedValue.Should().Be("[redacted]");
+        diagnostic
+            .RedactionClassification.Should()
+            .Be(CdcConnectorTemplateRedactionClassification.PhysicalIdentifier);
+        diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.Render);
+    }
+
+    [Test]
+    public void It_returns_validation_failed_instead_of_throwing_when_rendering_blank_heartbeat_action_sql()
+    {
+        CdcConnectorTemplateResult result = Render(
+            BuildRequest(CdcProvider.Postgresql, heartbeatSql: " \t ")
+        );
+
+        CdcConnectorTemplateDiagnostic diagnostic = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.HeartbeatActionQueryRequired
+            )
+            .Subject;
+
+        using var _ = new AssertionScope();
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        result.Config.Should().BeEmpty();
+        result.RegistrationPayload.Should().BeNull();
+        diagnostic.ObservedValue.Should().Be("[redacted]");
+    }
+
+    [TestCase(CdcProvider.Postgresql, "select 1")]
+    [TestCase(CdcProvider.SqlServer, "UPDATE [dms].[CdcHeartbeat] SET [LastSeenAt] = SYSUTCDATETIME()")]
+    public void It_renders_valid_non_blank_heartbeat_action_sql(CdcProvider provider, string heartbeatSql)
+    {
+        CdcConnectorTemplateResult result = Render(BuildRequest(provider, heartbeatSql: heartbeatSql));
+
+        using var _ = new AssertionScope();
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        result.Config["heartbeat.action.query"].Should().Be(heartbeatSql);
+        result
+            .Diagnostics.Should()
+            .NotContain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.HeartbeatActionQueryRequired
+            );
+    }
+
     private static CdcConnectorTemplateValidationResult Validate(
         CdcProvider provider,
         IReadOnlyDictionary<string, string>? providerConnectionProperties = null,
@@ -1092,6 +1184,32 @@ public class Given_CdcConnectorTemplateValidationTests
             serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
 
         return service.ValidateRequest(request, sourcePhase);
+    }
+
+    private static CdcConnectorTemplateResult Render(CdcConnectorTemplateRequest request)
+    {
+        using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddCdcConnectorTemplates()
+            .BuildServiceProvider();
+
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+
+        return service.Render(request);
+    }
+
+    private static CdcProviderSetupReadiness GetProviderSetupReadiness(
+        CdcProviderSetupResult providerSetupResult
+    )
+    {
+        using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddCdcConnectorTemplates()
+            .BuildServiceProvider();
+
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+
+        return service.GetProviderSetupReadiness(providerSetupResult);
     }
 
     private static IEnumerable<string> DiagnosticText(CdcConnectorTemplateDiagnostic diagnostic) =>
