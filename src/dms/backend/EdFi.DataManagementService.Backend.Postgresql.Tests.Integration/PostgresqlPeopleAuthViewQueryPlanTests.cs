@@ -320,7 +320,7 @@ public class Given_A_Postgresql_People_Auth_View_Query_Plan
         // equivalent of the "no HashAggregate over the closure per probe" criterion.
         AssertNoDedupNodeAnywhere(plan);
 
-        var conditions = CollectConditionText(plan);
+        var conditions = PostgresqlQueryPlanNavigator.CollectConditionText(plan);
         conditions.Should().Contain(text => text.Contains("SourceEducationOrganizationId"));
         conditions.Should().Contain(text => text.Contains("Staff_DocumentId"));
     }
@@ -351,11 +351,16 @@ public class Given_A_Postgresql_People_Auth_View_Query_Plan
 
         // Asserted unconditionally, because AssertClaimFilterAppliedBeneathAnyDedup returns early on
         // a fully dedup-free plan and would otherwise leave pushdown unverified for this shape.
-        var conditions = CollectConditionText(plan);
+        var conditions = PostgresqlQueryPlanNavigator.CollectConditionText(plan);
         conditions.Should().Contain(text => text.Contains("SourceEducationOrganizationId"));
         conditions.Should().Contain(text => text.Contains("Staff_DocumentId"));
 
-        foreach (var closurePath in FindAllRelationScanPaths(plan, EdOrgClosureRelationName))
+        foreach (
+            var closurePath in PostgresqlQueryPlanNavigator.FindAllRelationScanPaths(
+                plan,
+                EdOrgClosureRelationName
+            )
+        )
         {
             AssertClaimFilterAppliedBeneathAnyDedup(closurePath);
         }
@@ -372,22 +377,30 @@ public class Given_A_Postgresql_People_Auth_View_Query_Plan
     /// </summary>
     private static void AssertStaffViewArmsInlined(JsonElement plan)
     {
-        FindAllRelationScanPaths(plan, AssignmentAssociationRelationName)
+        PostgresqlQueryPlanNavigator
+            .FindAllRelationScanPaths(plan, AssignmentAssociationRelationName)
             .Should()
             .ContainSingle("the assignment arm should scan its association table directly");
-        FindAllRelationScanPaths(plan, EmploymentAssociationRelationName)
+        PostgresqlQueryPlanNavigator
+            .FindAllRelationScanPaths(plan, EmploymentAssociationRelationName)
             .Should()
             .ContainSingle("the employment arm should scan its association table directly");
-        FindAllRelationScanPaths(plan, EdOrgClosureRelationName)
+        PostgresqlQueryPlanNavigator
+            .FindAllRelationScanPaths(plan, EdOrgClosureRelationName)
             .Should()
             .HaveCount(2, "each staff view arm should scan the EdOrg closure directly");
 
         // Per-arm Subquery Scans reach one closure scan each; an unflattened set-operation subquery
         // reaches both. Scoping the check this way also survives the planner choosing to unique-ify
         // the whole membership subquery once per query, which AssertNoDedupNodeAnywhere would not.
-        foreach (var subqueryScan in CollectNodes(plan).Where(node => GetNodeType(node) == "Subquery Scan"))
+        foreach (
+            var subqueryScan in PostgresqlQueryPlanNavigator
+                .CollectNodes(plan)
+                .Where(node => PostgresqlQueryPlanNavigator.GetNodeType(node) == "Subquery Scan")
+        )
         {
-            FindAllRelationScanPaths(subqueryScan, EdOrgClosureRelationName)
+            PostgresqlQueryPlanNavigator
+                .FindAllRelationScanPaths(subqueryScan, EdOrgClosureRelationName)
                 .Should()
                 .HaveCountLessThanOrEqualTo(
                     1,
@@ -423,15 +436,15 @@ public class Given_A_Postgresql_People_Auth_View_Query_Plan
     {
         // Inlined: the view's base relations are scanned directly, with no Subquery Scan
         // anywhere (the unflattenable DISTINCT view forced one per probe before DMS-1329).
-        var closurePath = FindRelationScanPath(plan, EdOrgClosureRelationName);
-        FindRelationScanPath(plan, StudentSchoolAssociationRelationName);
-        CollectNodeTypes(plan).Should().NotContain("Subquery Scan");
+        var closurePath = PostgresqlQueryPlanNavigator.FindRelationScanPath(plan, EdOrgClosureRelationName);
+        PostgresqlQueryPlanNavigator.FindRelationScanPath(plan, StudentSchoolAssociationRelationName);
+        PostgresqlQueryPlanNavigator.CollectNodeTypes(plan).Should().NotContain("Subquery Scan");
 
         // Predicate pushdown: the claim filter and the person correlation both survived into
         // plan conditions instead of being applied above a materialized view output. In the
         // GET-many shape the person correlation is the semi-join condition rather than a
         // literal filter, so it appears among the plan conditions either way.
-        var conditions = CollectConditionText(plan);
+        var conditions = PostgresqlQueryPlanNavigator.CollectConditionText(plan);
         conditions.Should().Contain(text => text.Contains("SourceEducationOrganizationId"));
         conditions.Should().Contain(text => text.Contains("Student_DocumentId"));
 
@@ -447,7 +460,8 @@ public class Given_A_Postgresql_People_Auth_View_Query_Plan
     /// </summary>
     private static void AssertNoDedupNodeAnywhere(JsonElement plan)
     {
-        CollectNodeTypes(plan)
+        PostgresqlQueryPlanNavigator
+            .CollectNodeTypes(plan)
             .Should()
             .NotContain(
                 nodeType => _dedupNodeTypes.Contains(nodeType),
@@ -467,7 +481,7 @@ public class Given_A_Postgresql_People_Auth_View_Query_Plan
         var deepestDedupIndex = -1;
         for (var index = 0; index < closurePath.Count; index++)
         {
-            if (_dedupNodeTypes.Contains(GetNodeType(closurePath[index])))
+            if (_dedupNodeTypes.Contains(PostgresqlQueryPlanNavigator.GetNodeType(closurePath[index])))
             {
                 deepestDedupIndex = index;
             }
@@ -481,133 +495,12 @@ public class Given_A_Postgresql_People_Auth_View_Query_Plan
 
         closurePath
             .Skip(deepestDedupIndex + 1)
-            .SelectMany(CollectOwnConditionText)
+            .SelectMany(PostgresqlQueryPlanNavigator.CollectOwnConditionText)
             .Should()
             .Contain(
                 text => text.Contains("SourceEducationOrganizationId"),
                 "the claim filter must be applied beneath any dedup node — a dedup over the "
                     + "unfiltered closure is the DMS-1329 regression"
             );
-    }
-
-    /// <summary>
-    /// Returns the root→scan node path for the one and only scan of <paramref name="relationName"/>,
-    /// failing the test when the relation is not scanned directly (i.e. the view was not inlined) or
-    /// is scanned more than once. Callers are the single-arm views, where exactly one scan per base
-    /// relation is the invariant; multi-arm plans use <see cref="FindAllRelationScanPaths"/>.
-    /// </summary>
-    private static IReadOnlyList<JsonElement> FindRelationScanPath(JsonElement plan, string relationName) =>
-        FindAllRelationScanPaths(plan, relationName)
-            .Should()
-            .ContainSingle($"relation '{relationName}' should be scanned exactly once in the flattened plan")
-            .Subject;
-
-    /// <summary>
-    /// Returns the root→scan node path for every direct scan of <paramref name="relationName"/>.
-    /// Multi-arm (appendrel) plans scan the same relation once per arm, so callers assert on the
-    /// full path set instead of the single path <see cref="FindRelationScanPath"/> returns.
-    /// </summary>
-    private static IReadOnlyList<IReadOnlyList<JsonElement>> FindAllRelationScanPaths(
-        JsonElement plan,
-        string relationName
-    )
-    {
-        var paths = new List<IReadOnlyList<JsonElement>>();
-        CollectRelationScanPaths(plan, relationName, [], paths);
-        return paths;
-    }
-
-    private static void CollectRelationScanPaths(
-        JsonElement node,
-        string relationName,
-        List<JsonElement> currentPath,
-        List<IReadOnlyList<JsonElement>> paths
-    )
-    {
-        currentPath.Add(node);
-
-        if (node.TryGetProperty("Relation Name", out var relation) && relation.GetString() == relationName)
-        {
-            paths.Add([.. currentPath]);
-        }
-
-        if (node.TryGetProperty("Plans", out var children))
-        {
-            foreach (var child in children.EnumerateArray())
-            {
-                CollectRelationScanPaths(child, relationName, currentPath, paths);
-            }
-        }
-
-        currentPath.RemoveAt(currentPath.Count - 1);
-    }
-
-    private static List<string> CollectNodeTypes(JsonElement plan)
-    {
-        var nodeTypes = new List<string>();
-        Visit(plan, node => nodeTypes.Add(GetNodeType(node)));
-        return nodeTypes;
-    }
-
-    private static List<JsonElement> CollectNodes(JsonElement plan)
-    {
-        var nodes = new List<JsonElement>();
-        Visit(plan, nodes.Add);
-        return nodes;
-    }
-
-    private static readonly string[] _conditionProperties =
-    [
-        "Filter",
-        "Index Cond",
-        "Hash Cond",
-        "Join Filter",
-        "Recheck Cond",
-        "Merge Cond",
-    ];
-
-    /// <summary>
-    /// Collects the text of every predicate-bearing plan property (Filter, Index Cond, Hash Cond,
-    /// Join Filter, Recheck Cond, Merge Cond) attached to a single plan node.
-    /// </summary>
-    private static List<string> CollectOwnConditionText(JsonElement node)
-    {
-        var conditions = new List<string>();
-        foreach (var propertyName in _conditionProperties)
-        {
-            if (node.TryGetProperty(propertyName, out var condition))
-            {
-                conditions.Add(condition.GetString() ?? string.Empty);
-            }
-        }
-
-        return conditions;
-    }
-
-    /// <summary>
-    /// Collects the predicate-bearing property text across the whole plan tree.
-    /// </summary>
-    private static List<string> CollectConditionText(JsonElement plan)
-    {
-        var conditions = new List<string>();
-        Visit(plan, node => conditions.AddRange(CollectOwnConditionText(node)));
-        return conditions;
-    }
-
-    private static string GetNodeType(JsonElement node) =>
-        node.TryGetProperty("Node Type", out var nodeType)
-            ? nodeType.GetString() ?? string.Empty
-            : string.Empty;
-
-    private static void Visit(JsonElement node, Action<JsonElement> visit)
-    {
-        visit(node);
-        if (node.TryGetProperty("Plans", out var children))
-        {
-            foreach (var child in children.EnumerateArray())
-            {
-                Visit(child, visit);
-            }
-        }
     }
 }

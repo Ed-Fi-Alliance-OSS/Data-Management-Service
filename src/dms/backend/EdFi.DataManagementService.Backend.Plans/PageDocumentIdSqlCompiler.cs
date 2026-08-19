@@ -1096,6 +1096,9 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     {
         var personMetadata = subject.PersonMetadata;
 
+        // Load-bearing for anchor correctness, not merely a diagnostic: the emitters below qualify the
+        // anchor column with the root alias, so a stored anchor describing a different table would emit a
+        // predicate against a column that does not exist on the root row.
         RelationshipAuthorizationPeoplePathValidation.ValidateStoredAnchorRootTable(
             rootTable,
             personMetadata,
@@ -1105,22 +1108,27 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         switch (personMetadata.Path.Kind)
         {
             case RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId:
+                // Load-bearing for the same reason as the Direct and Transitive checks below: the Self arm
+                // anchors on the stored anchor's column, so a subject bound to any other column would emit a
+                // predicate that authorizes on something other than the person the planner selected.
+                RelationshipAuthorizationPeoplePathValidation.ValidateSelfRootDocumentIdPath(
+                    subject.Table,
+                    subject.Column,
+                    personMetadata
+                );
                 AppendRootDocumentIdInPersonAuthViewSql(
                     writer,
-                    rootTable,
-                    personMetadata.StoredAnchor.RootDocumentIdColumn,
                     personMetadata.StoredAnchor.RootDocumentIdColumn,
                     subject.AuthObject,
                     authorizationClaimParameterization,
-                    aliasAllocator.AllocateNext(),
                     aliasAllocator.AllocateNext()
                 );
                 return;
             case RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn:
                 AppendRootDocumentIdInPersonAuthViewSql(
                     writer,
-                    rootTable,
-                    personMetadata.StoredAnchor.RootDocumentIdColumn,
+                    // Its step.SourceTable check is likewise load-bearing here: it is what guarantees the
+                    // returned column lives on the root row and can be anchored on the root alias.
                     RelationshipAuthorizationPeoplePathValidation.GetDirectRootPersonDocumentIdColumn(
                         rootTable,
                         subject.Table,
@@ -1130,7 +1138,6 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                     ),
                     subject.AuthObject,
                     authorizationClaimParameterization,
-                    aliasAllocator.AllocateNext(),
                     aliasAllocator.AllocateNext()
                 );
                 return;
@@ -1162,6 +1169,10 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     {
         var personMetadata = subject.PersonMetadata;
         var pathSteps = personMetadata.Path.Steps;
+
+        // Load-bearing for anchor correctness, not merely a diagnostic: this is what guarantees
+        // pathSteps[0].SourceTable is the query root, so the first step's source column is a column the root
+        // row itself carries and can be qualified with the root alias.
         RelationshipAuthorizationPeoplePathValidation.ValidateTransitivePersonPath(
             rootTable,
             subject.Table,
@@ -1169,25 +1180,43 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             pathSteps
         );
 
-        var rootSubqueryAlias = aliasAllocator.AllocateNext();
+        // The anchored shape needs a first hop to open the subquery on plus a separate terminal step carrying
+        // the person column. RelationshipAuthorizationPersonSubjectPath enforces that at construction, so a
+        // one-step transitive path cannot reach here.
+        var firstStep = pathSteps[0];
+        var firstHopTable =
+            firstStep.TargetTable
+            ?? throw new InvalidOperationException(
+                "Transitive People authorization path steps must include a target table for first-hop joins."
+            );
+        var firstHopColumn =
+            firstStep.TargetColumnName
+            ?? throw new InvalidOperationException(
+                "Transitive People authorization path steps must include a target column for first-hop joins."
+            );
+
+        var firstHopAlias = aliasAllocator.AllocateNext();
         var pathJoinAliases = Enumerable
-            .Range(0, pathSteps.Count - 1)
+            .Range(0, pathSteps.Count - 2)
             .Select(_ => aliasAllocator.AllocateNext())
             .ToArray();
         var authAlias = aliasAllocator.AllocateNext();
 
+        // Anchor on the root row's own reference FK and open the subquery at the first hop's target table.
+        // Anchoring on a primary-key self-join of the root table would be semantically identical but makes
+        // PostgreSQL scan the root table twice and hash every authorized DocumentId on every page.
         writer.Append($"{_rootAlias}.");
-        writer.AppendQuoted(personMetadata.StoredAnchor.RootDocumentIdColumn.Value);
+        writer.AppendQuoted(firstStep.SourceColumnName.Value);
         writer.Append(" IN (SELECT ");
-        writer.Append($"{rootSubqueryAlias}.");
-        writer.AppendQuoted(personMetadata.StoredAnchor.RootDocumentIdColumn.Value);
+        writer.Append($"{firstHopAlias}.");
+        writer.AppendQuoted(firstHopColumn.Value);
         writer.Append(" FROM ");
-        writer.AppendRelation(new SqlRelationRef.PhysicalTable(rootTable));
-        writer.Append($" {rootSubqueryAlias}");
+        writer.AppendRelation(new SqlRelationRef.PhysicalTable(firstHopTable));
+        writer.Append($" {firstHopAlias}");
 
-        var currentSourceAlias = rootSubqueryAlias;
+        var currentSourceAlias = firstHopAlias;
 
-        for (var stepIndex = 0; stepIndex < pathSteps.Count - 1; stepIndex++)
+        for (var stepIndex = 1; stepIndex < pathSteps.Count - 1; stepIndex++)
         {
             var step = pathSteps[stepIndex];
             var targetTable =
@@ -1200,7 +1229,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                 ?? throw new InvalidOperationException(
                     "Transitive People authorization path steps must include a target column for intermediate joins."
                 );
-            var joinAlias = pathJoinAliases[stepIndex];
+            var joinAlias = pathJoinAliases[stepIndex - 1];
 
             writer.Append(" JOIN ");
             writer.AppendRelation(new SqlRelationRef.PhysicalTable(targetTable));
@@ -1225,33 +1254,28 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         writer.Append(")");
     }
 
+    /// <summary>
+    /// Emits the Self and Direct person predicates anchored on the root row's own column — the person twin
+    /// of <see cref="AppendRootSubjectHierarchyMatchSql"/>. Anchoring on a primary-key self-join of the root
+    /// table instead would be semantically identical but makes PostgreSQL scan the root table twice and hash
+    /// every authorized DocumentId on every page, so the anchor column is always one the root row carries.
+    /// </summary>
     private static void AppendRootDocumentIdInPersonAuthViewSql(
         SqlWriter writer,
-        DbTableName rootTable,
-        DbColumnName rootDocumentIdColumn,
-        DbColumnName rootPersonDocumentIdColumn,
+        DbColumnName anchorColumn,
         RelationshipAuthorizationAuthObject authObject,
         AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
-        string rootSubqueryAlias,
         string authAlias
     )
     {
         writer.Append($"{_rootAlias}.");
-        writer.AppendQuoted(rootDocumentIdColumn.Value);
-        writer.Append(" IN (SELECT ");
-        writer.Append($"{rootSubqueryAlias}.");
-        writer.AppendQuoted(rootDocumentIdColumn.Value);
-        writer.Append(" FROM ");
-        writer.AppendRelation(new SqlRelationRef.PhysicalTable(rootTable));
-        writer.Append($" {rootSubqueryAlias} WHERE {rootSubqueryAlias}.");
-        writer.AppendQuoted(rootPersonDocumentIdColumn.Value);
+        writer.AppendQuoted(anchorColumn.Value);
         AppendPersonAuthViewMembershipSubquerySql(
             writer,
             authObject,
             authorizationClaimParameterization,
             authAlias
         );
-        writer.Append(")");
     }
 
     private static void AppendPersonAuthViewMembershipSubquerySql(
