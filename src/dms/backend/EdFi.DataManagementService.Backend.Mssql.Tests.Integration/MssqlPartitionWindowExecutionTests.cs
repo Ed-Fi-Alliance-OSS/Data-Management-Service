@@ -33,6 +33,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [NonParallelizable]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard1)]
 public class Given_A_Mssql_Compiled_Partition_Boundary_Statement
 {
     private string _connectionString = null!;
