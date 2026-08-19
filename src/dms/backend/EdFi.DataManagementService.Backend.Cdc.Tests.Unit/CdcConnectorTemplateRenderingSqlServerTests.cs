@@ -61,6 +61,7 @@ public class Given_CdcConnectorTemplateSqlServerRendering
         result.Config.Should().Contain("time.precision.mode", "isostring");
         result.Config.Should().Contain("unavailable.value.placeholder", "__debezium_unavailable_value");
         result.Config.Should().Contain("poll.interval.ms", "2000");
+        result.Config.Should().Contain("snapshot.isolation.mode", "snapshot");
         result.Config.Should().Contain("database.names", "edfi_datastore");
         result.Config.Should().Contain("driver.encrypt", "true");
         result.Config.Should().Contain("driver.trustServerCertificate", "true");

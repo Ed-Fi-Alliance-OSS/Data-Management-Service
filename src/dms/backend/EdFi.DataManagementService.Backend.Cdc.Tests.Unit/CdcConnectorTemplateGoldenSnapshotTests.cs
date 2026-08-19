@@ -157,6 +157,7 @@ public class Given_CdcConnectorTemplateGoldenSnapshots
                 schema.history.internal.producer.retries=2147483647
                 schema.history.internal.producer.sasl.jaas.config=${env:CDC_KAFKA_JAAS_CONFIG}
                 schema.history.internal.producer.security.protocol=SASL_SSL
+                snapshot.isolation.mode=snapshot
                 snapshot.mode=initial
                 statistics.metrics.enabled=true
                 table.include.list=dms\.DocumentCache,dms\.Document,dms\.CdcHeartbeat

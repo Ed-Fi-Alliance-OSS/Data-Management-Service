@@ -1464,6 +1464,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         string sql = $$"""
             IF DB_ID(N'{{SqlServerDatabaseName}}') IS NULL
                 CREATE DATABASE [{{SqlServerDatabaseName}}];
+            ALTER DATABASE [{{SqlServerDatabaseName}}] SET ALLOW_SNAPSHOT_ISOLATION ON;
             GO
             USE [{{SqlServerDatabaseName}}];
             IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'dms')
