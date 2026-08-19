@@ -1068,12 +1068,8 @@ jobs:
       - detect-fresh-build-changes
       - build-integration-test-assemblies
     if: >-
-      (github.event_name != 'pull_request' ||
-      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true') &&
-      vars.CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE != '' &&
-      vars.CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE != '' &&
-      vars.CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE != '' &&
-      vars.CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE != ''
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1105,6 +1101,19 @@ jobs:
 
       - name: Validate CDC Connector Template Smoke Settings
         run: |
+          $requiredImageVariables = @(
+            "CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE",
+            "CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE",
+            "CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE",
+            "CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE"
+          )
+
+          foreach ($variableName in $requiredImageVariables) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($variableName))) {
+              throw "$variableName must be set for the required CDC connector template smoke lane."
+            }
+          }
+
           if (-not $env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE.Contains("@sha256:")) {
             throw "CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE must be an immutable digest reference containing '@sha256:'."
           }
