@@ -28,6 +28,7 @@ Set-StrictMode -Version Latest
 Import-Module (Join-Path $PSScriptRoot "../DatabaseTemplates/Template-RestoreCore.psm1")
 Import-Module (Join-Path $PSScriptRoot "../DatabaseTemplates/Template-RestoreTrust.psm1")
 Import-Module (Join-Path $PSScriptRoot "bootstrap-package-resolver.psm1")
+Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1")
 Import-Module (Join-Path $PSScriptRoot "bootstrap-schema-tool.psm1")
 Import-Module (Join-Path $PSScriptRoot "env-utility.psm1")
 
@@ -729,7 +730,9 @@ function Get-RestoreCandidateSchemaFact {
     selectedExtensions, plus the core project endpoint and the staged schema file paths (core
     first) from the candidate's ApiSchema manifest. Every fact is required - a candidate the
     prepare phases produced without one is not comparable and fails here rather than passing a
-    weaker cross-check.
+    weaker cross-check. Candidate-supplied paths are containment-validated before use: parent
+    traversal or absolute paths in schema.apiSchemaManifestPath or projects[].schemaPath fail
+    closed, so every path handed to the schema tool stays inside the candidate.
     #>
     param (
         [Parameter(Mandatory = $true)]
@@ -762,7 +765,14 @@ function Get-RestoreCandidateSchemaFact {
         $selectedExtensions = @($schemaSection["selectedExtensions"] | ForEach-Object { [string]$_ })
     }
 
-    $apiSchemaManifestPath = Join-Path $CandidateDirectory ([string]$schemaSection["apiSchemaManifestPath"])
+    # Candidate-supplied paths are validated with the same rules the runtime workspace resolver
+    # enforces (relative only, no empty/./.. segments) BEFORE any join, so a malformed candidate
+    # can never point the cross-check - and through it the schema tool - at files outside the
+    # candidate, including the active .bootstrap workspace.
+    $apiSchemaManifestRelativePath = Resolve-BootstrapWorkspaceRelativePath `
+        -RelativePath ([string]$schemaSection["apiSchemaManifestPath"]) `
+        -ManifestField "schema.apiSchemaManifestPath"
+    $apiSchemaManifestPath = Join-Path $CandidateDirectory $apiSchemaManifestRelativePath
     if (-not (Test-Path -LiteralPath $apiSchemaManifestPath -PathType Leaf)) {
         throw "Candidate ApiSchema manifest is missing: '$apiSchemaManifestPath'."
     }
@@ -781,7 +791,10 @@ function Get-RestoreCandidateSchemaFact {
         if ($project -isnot [System.Collections.IDictionary]) {
             throw "Candidate ApiSchema manifest '$apiSchemaManifestPath' has a malformed project entry."
         }
-        $schemaFilePaths.Add((Join-Path $apiSchemaWorkspaceRoot ([string]$project["schemaPath"])))
+        $schemaRelativePath = Resolve-BootstrapWorkspaceRelativePath `
+            -RelativePath ([string]$project["schemaPath"]) `
+            -ManifestField "projects[].schemaPath"
+        $schemaFilePaths.Add((Join-Path $apiSchemaWorkspaceRoot $schemaRelativePath))
         if (-not [bool]$project["isExtensionProject"]) {
             $coreEndpointNames.Add([string]$project["projectEndpointName"])
         }

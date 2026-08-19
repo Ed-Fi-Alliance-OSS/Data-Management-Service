@@ -114,6 +114,37 @@ Add-Content -LiteralPath '$LogPath' -Value "claims override=[`$env:DMS_BOOTSTRAP
         return $candidateDirectory
     }
 
+    function script:Set-CandidatePathField {
+        # Rewrites one candidate-supplied path field in place, modeling a malformed candidate
+        # that tries to point the cross-check outside its own tree: 'apiSchemaManifestPath'
+        # edits the root manifest's schema section; 'schemaPath' edits the core project entry in
+        # the ApiSchema manifest.
+        param(
+            [Parameter(Mandatory)]
+            [string]$CandidateDirectory,
+
+            [Parameter(Mandatory)]
+            [ValidateSet("apiSchemaManifestPath", "schemaPath")]
+            [string]$Field,
+
+            [Parameter(Mandatory)]
+            [string]$Value
+        )
+
+        if ($Field -eq "apiSchemaManifestPath") {
+            $manifestPath = Join-Path $CandidateDirectory "bootstrap-manifest.json"
+            $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -AsHashtable
+            $manifest["schema"]["apiSchemaManifestPath"] = $Value
+            $manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $manifestPath -Encoding utf8
+        }
+        else {
+            $apiSchemaManifestPath = Join-Path $CandidateDirectory "ApiSchema/bootstrap-api-schema-manifest.json"
+            $apiSchemaManifest = Get-Content -LiteralPath $apiSchemaManifestPath -Raw | ConvertFrom-Json -AsHashtable
+            $apiSchemaManifest["projects"][0]["schemaPath"] = $Value
+            $apiSchemaManifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $apiSchemaManifestPath -Encoding utf8
+        }
+    }
+
     function script:New-StubSchemaTool {
         # A .ps1 api-schema-tools stand-in (Get-RestoreCandidateRelationalMappingVersion runs
         # .ps1 tools via a child pwsh): records its full argv and writes ddl.manifest.json with
@@ -557,6 +588,52 @@ Describe "package-to-candidate cross-check" {
 
         # Mismatch discards both transient inputs; the active workspace and the target database
         # are never referenced by the cross-check at all (it takes only explicit private paths).
+        Test-Path -LiteralPath $candidateDirectory | Should -BeFalse
+        Test-Path -LiteralPath $script:stageDirectory | Should -BeFalse
+    }
+
+    It "rejects a candidate whose <Name> escapes via parent traversal, without invoking the schema tool" -ForEach @(
+        @{ Name = "apiSchemaManifestPath"; Field = "apiSchemaManifestPath"; Value = "../outside/bootstrap-api-schema-manifest.json" }
+        @{ Name = "projects schemaPath"; Field = "schemaPath"; Value = "../../outside/ApiSchema.json" }
+    ) {
+        $candidateDirectory = New-CandidateFixture -Directory $script:crossCheckRoot
+        Set-CandidatePathField -CandidateDirectory $candidateDirectory -Field $Field -Value $Value
+        $tool = New-StubSchemaTool -Directory $script:crossCheckRoot
+
+        { Invoke-RestoreCandidateCrossCheck `
+                -Manifest (New-CrossCheckManifest) `
+                -CandidateDirectory $candidateDirectory `
+                -DatabaseEngine postgresql `
+                -StageDirectory $script:stageDirectory `
+                -SchemaToolPath $tool.ToolPath } |
+            Should -Throw "*must not contain empty, current, or parent path segments*"
+
+        $tool.LogPath | Should -Not -Exist -Because "no path outside the candidate may ever reach the schema tool"
+        Test-Path -LiteralPath $candidateDirectory | Should -BeFalse
+        Test-Path -LiteralPath $script:stageDirectory | Should -BeFalse
+    }
+
+    It "rejects a candidate whose <Name> is an absolute path, without invoking the schema tool" -ForEach @(
+        @{ Name = "apiSchemaManifestPath"; Field = "apiSchemaManifestPath" }
+        @{ Name = "projects schemaPath"; Field = "schemaPath" }
+    ) {
+        $candidateDirectory = New-CandidateFixture -Directory $script:crossCheckRoot
+        # An absolute path pointing OUTSIDE the candidate - the shape a candidate would need to
+        # reach the active .bootstrap workspace.
+        $absoluteEscapePath = Join-Path $script:crossCheckRoot "outside-target.json"
+        Set-Content -LiteralPath $absoluteEscapePath -Value "{}" -Encoding utf8
+        Set-CandidatePathField -CandidateDirectory $candidateDirectory -Field $Field -Value $absoluteEscapePath
+        $tool = New-StubSchemaTool -Directory $script:crossCheckRoot
+
+        { Invoke-RestoreCandidateCrossCheck `
+                -Manifest (New-CrossCheckManifest) `
+                -CandidateDirectory $candidateDirectory `
+                -DatabaseEngine postgresql `
+                -StageDirectory $script:stageDirectory `
+                -SchemaToolPath $tool.ToolPath } |
+            Should -Throw "*must be relative to the bootstrap workspace*"
+
+        $tool.LogPath | Should -Not -Exist -Because "no path outside the candidate may ever reach the schema tool"
         Test-Path -LiteralPath $candidateDirectory | Should -BeFalse
         Test-Path -LiteralPath $script:stageDirectory | Should -BeFalse
     }
