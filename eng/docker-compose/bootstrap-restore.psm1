@@ -991,8 +991,24 @@ function Assert-DmsComposeProjectStopped {
         [string]$ProjectName
     )
 
+    # A missing or unresolvable docker must read as indeterminate, never as stopped: a
+    # CommandNotFound failure neither sets $LASTEXITCODE nor flows through stream redirection,
+    # and under a Continue error preference it would silently fall through to the empty-output
+    # "stopped" verdict. Resolve explicitly and invoke inside a fail-closed try.
+    try {
+        $null = Get-Command docker -ErrorAction Stop
+    }
+    catch {
+        throw "Stop proof is indeterminate: the 'docker' command is not available in this session, so it cannot be proven that compose project '$ProjectName' is stopped. Refusing to continue."
+    }
+
     $global:LASTEXITCODE = 0
-    $output = docker ps --filter "label=com.docker.compose.project=$ProjectName" --format '{{.Names}}' 2>&1
+    try {
+        $output = docker ps --filter "label=com.docker.compose.project=$ProjectName" --format '{{.Names}}' 2>&1
+    }
+    catch {
+        throw "Stop proof is indeterminate: invoking 'docker ps' failed while checking compose project '$ProjectName' ($(($_.Exception.Message | Out-String).Trim())). Refusing to continue without proof that the project is stopped."
+    }
     if ($LASTEXITCODE -ne 0) {
         throw "Stop proof is indeterminate: 'docker ps' exited with code $LASTEXITCODE while checking compose project '$ProjectName' ($(($output | Out-String).Trim())). Refusing to continue without proof that the project is stopped."
     }

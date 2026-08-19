@@ -699,6 +699,30 @@ Describe "Assert-DmsComposeProjectStopped (stop proof)" {
         { Assert-DmsComposeProjectStopped -ProjectName "dms-published" } |
             Should -Throw "*Stop proof is indeterminate*exited with code 1*Cannot connect to the Docker daemon*"
     }
+
+    It "fails closed when docker is missing entirely: the PRODUCTION resolution path, no mocks" {
+        # A CommandNotFound failure neither sets LASTEXITCODE nor flows through 2>&1, so without
+        # explicit resolution an unresolvable docker would read as "stopped". Prove the real
+        # code path in a child pwsh whose PATH is emptied AFTER startup, with the default
+        # Continue error preference - the exact environment where the silent fall-through lived.
+        $modulePath = Join-Path $script:dockerComposeDir "bootstrap-restore.psm1"
+        $probePath = Join-Path $TestDrive "docker-missing-probe.ps1"
+        @(
+            "`$ErrorActionPreference = 'Continue'"
+            "Import-Module '$($modulePath.Replace("'", "''"))'"
+            "`$env:PATH = ''"
+            "try {"
+            "    Assert-DmsComposeProjectStopped -ProjectName dms-local"
+            "    Write-Output 'VERDICT: no-throw'"
+            "}"
+            "catch {"
+            "    Write-Output ('VERDICT: threw ' + `$_.Exception.Message)"
+            "}"
+        ) -join "`n" | Set-Content -LiteralPath $probePath -Encoding utf8
+
+        $verdict = @(& pwsh -NoProfile -NonInteractive -File $probePath) | Where-Object { $_ -like "VERDICT:*" }
+        $verdict | Should -BeLike "VERDICT: threw*Stop proof is indeterminate*'docker' command is not available*"
+    }
 }
 
 Describe "Publish-RestoreCandidateWorkspace (whole-tree commit)" {
