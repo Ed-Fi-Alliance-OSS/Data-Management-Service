@@ -196,6 +196,7 @@ jobs:
             "eng/docker-compose/tests/BootstrapPackageResolver.Tests.ps1",
             "eng/docker-compose/tests/BootstrapTemplateRestore.Tests.ps1",
             "eng/docker-compose/tests/BootstrapRestoreWorkspace.Tests.ps1",
+            "eng/docker-compose/tests/BootstrapRestoreSmoke.Tests.ps1",
             "eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1",
             "eng/docker-compose/tests/BootstrapSeedDelivery.Tests.ps1",
             "eng/docker-compose/tests/BootstrapStandardSchemaSelection.Tests.ps1",
