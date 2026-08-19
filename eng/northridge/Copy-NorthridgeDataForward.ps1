@@ -97,7 +97,17 @@
 
 .EXAMPLE
     ./Copy-NorthridgeDataForward.ps1 -Mode Checkpoint -TargetDatabase northridge_target `
-        -CheckpointName C2 -OutputDirectory /tmp/nr
+        -CheckpointName C2 -OutputDirectory /tmp/nr -ReferenceDatabase northridge_reference
+
+    Takes the expected fingerprint and cache state from the freshly provisioned reference database.
+
+.EXAMPLE
+    ./Copy-NorthridgeDataForward.ps1 -Mode Checkpoint -TargetDatabase northridge_restoretest `
+        -CheckpointName C5 -OutputDirectory /tmp/nr `
+        -ExpectedEffectiveSchemaHash <hash> -ExpectedResourceKeyCount 351 -ExpectedResourceKeySeedHash <hash>
+
+    For a checkpoint taken after the reference database has been dropped. One of these two forms is
+    required: a checkpoint with no expected values is refused rather than run unasserted.
 #>
 
 [CmdletBinding(SupportsShouldProcess, DefaultParameterSetName = "Copy")]

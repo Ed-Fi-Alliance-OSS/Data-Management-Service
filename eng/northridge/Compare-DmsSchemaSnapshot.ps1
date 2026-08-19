@@ -120,7 +120,7 @@ ORDER BY nspname;
 "@
 
         "02-table"      = @"
-SELECT 'table|' || n.nspname || '.' || c.relname || '|' || c.relkind || '|persistence=' || c.relpersistence
+SELECT 'table|' || n.nspname || '.' || c.relname || '|' || c.relkind::text || '|persistence=' || c.relpersistence::text
 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE n.nspname IN ($SchemaList) AND c.relkind IN ('r','p','v','m','f')
 ORDER BY n.nspname, c.relname;
@@ -140,7 +140,7 @@ ORDER BY table_schema, table_name, ordinal_position;
 "@
 
         "04-constraint" = @"
-SELECT 'constraint|' || n.nspname || '.' || rel.relname || '|' || con.conname || '|' || con.contype
+SELECT 'constraint|' || n.nspname || '.' || rel.relname || '|' || con.conname || '|' || con.contype::text
     || '|' || pg_get_constraintdef(con.oid)
 FROM pg_constraint con
 JOIN pg_class rel ON rel.oid = con.conrelid
