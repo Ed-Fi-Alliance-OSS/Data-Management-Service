@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Security.Claims;
 using System.Text.Json;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
@@ -89,7 +90,11 @@ internal class JwtRoleAuthenticationMiddleware(
         // Check for required role if configured
         if (!string.IsNullOrEmpty(_options.ClientRole))
         {
-            var hasRequiredRole = principal.IsInRole(_options.ClientRole);
+            bool hasRequiredRole = HasRequiredClientRoleClaim(
+                principal,
+                _options.RoleClaimType,
+                _options.ClientRole
+            );
             if (!hasRequiredRole)
             {
                 logger.LogWarning(
@@ -113,6 +118,25 @@ internal class JwtRoleAuthenticationMiddleware(
 
         await next();
     }
+
+    private static bool HasRequiredClientRoleClaim(
+        ClaimsPrincipal principal,
+        string configuredRoleClaimType,
+        string requiredRole
+    ) =>
+        principal.Claims.Any(claim =>
+            string.Equals(claim.Value, requiredRole, StringComparison.Ordinal)
+            && (
+                (
+                    !string.IsNullOrEmpty(configuredRoleClaimType)
+                    && string.Equals(claim.Type, configuredRoleClaimType, StringComparison.Ordinal)
+                )
+                || (
+                    !string.Equals(configuredRoleClaimType, ClaimTypes.Role, StringComparison.Ordinal)
+                    && string.Equals(claim.Type, ClaimTypes.Role, StringComparison.Ordinal)
+                )
+            )
+        );
 
     /// <summary>
     /// Creates a standardized 401 Unauthorized response with problem details format.
