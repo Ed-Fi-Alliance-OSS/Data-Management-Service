@@ -699,6 +699,13 @@ function New-RestoreCandidateWorkspace {
     }
     finally {
         Remove-Item Env:\DMS_BOOTSTRAP_ROOT_OVERRIDE -ErrorAction SilentlyContinue
+        # The prepare scripts re-import bootstrap-manifest -Force -Global while the override is
+        # in effect, baking the CANDIDATE root into the session's module instance - which
+        # outlives the override and would poison any later no-Force nested bind (the schema
+        # workspace validation resolves the moved candidate path; proven by the live restore
+        # smoke). Re-evaluate the module now that the override is cleared so every later
+        # consumer resolves the ACTIVE root again.
+        Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force -Global
     }
 }
 
