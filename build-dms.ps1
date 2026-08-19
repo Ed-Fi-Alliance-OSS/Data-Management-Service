@@ -1000,10 +1000,18 @@ function Start-BootstrapDockerEnvironment {
         Invoke-Step { DockerBuild }
     }
 
-    Stop-DockerEnvironment `
-        -EnvironmentFilePath $environmentFilePath `
-        -IdentityProvider $IdentityProvider `
-        -DatabaseEngine $effectiveDatabaseEngine
+    # Restore mode must NOT be preceded by this teardown: Stop-DockerEnvironment delegates to
+    # start-*-dms.ps1 -d -v, which deletes the database volumes before the restore package has
+    # been resolved, authenticated, staged, or cross-checked. Destroying data on the strength of
+    # an unproven package is exactly what the restore branch's fail-closed ordering exists to
+    # prevent, so the wrapper's own stop-proof sequence owns that decision instead: it refuses a
+    # running stack without deleting volumes or workspaces.
+    if ([string]::IsNullOrWhiteSpace($RestoreTemplate)) {
+        Stop-DockerEnvironment `
+            -EnvironmentFilePath $environmentFilePath `
+            -IdentityProvider $IdentityProvider `
+            -DatabaseEngine $effectiveDatabaseEngine
+    }
 
     Invoke-Execute {
         try {

@@ -3186,6 +3186,73 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
             $buildScript | Should -Match '(?s)if \(-not \[string\]::IsNullOrWhiteSpace\(\$PackageDirectory\)\) \{\s*\$bootstrapArgs\.PackageDirectory = \$PackageDirectory\s*\}'
         }
 
+        It "skips the pre-wrapper Stop-DockerEnvironment in restore mode, so no volume is deleted before the package is proven" {
+            $buildScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceRepoRoot "build-dms.ps1"
+            ) -Raw
+
+            $functionIndex = $buildScript.IndexOf("function Start-BootstrapDockerEnvironment")
+            $functionIndex | Should -BeGreaterThan -1
+            $functionBody = $buildScript.Substring($functionIndex)
+
+            # The teardown call must be guarded by the restore-mode predicate, not unconditional:
+            # Stop-DockerEnvironment delegates to start-*-dms.ps1 -d -v, which deletes the database
+            # volumes - unacceptable before the restore package is resolved, authenticated, staged,
+            # and cross-checked.
+            $functionBody | Should -Match '(?s)if \(\[string\]::IsNullOrWhiteSpace\(\$RestoreTemplate\)\) \{\s*Stop-DockerEnvironment\s'
+
+            # Non-restore StartEnvironment keeps the teardown: the guarded call is the ONLY
+            # Stop-DockerEnvironment invocation in this function, and it still forwards the same
+            # environment file, identity provider, and effective engine.
+            ([regex]::Matches($functionBody.Substring(0, $functionBody.IndexOf("function Initialize-E2EDatabase")), "Stop-DockerEnvironment ``")).Count |
+                Should -Be 1
+            $functionBody | Should -Match '(?s)Stop-DockerEnvironment\s+`\s*-EnvironmentFilePath \$environmentFilePath\s+`\s*-IdentityProvider \$IdentityProvider\s+`\s*-DatabaseEngine \$effectiveDatabaseEngine'
+        }
+
+        It "restore mode does not invoke Stop-DockerEnvironment, non-restore does (behavioral, AST-extracted)" {
+            # Stronger than a text assertion: extract the real function from build-dms.ps1, define
+            # it in this session with recording stubs for its collaborators, and call it both ways.
+            # Invoke-Execute is stubbed to a no-op so the wrapper invocation itself is skipped -
+            # the only decision under test is whether the volume-deleting teardown runs.
+            $buildScriptPath = Join-Path $script:sourceRepoRoot "build-dms.ps1"
+            $tokens = $null
+            $parseErrors = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($buildScriptPath, [ref]$tokens, [ref]$parseErrors)
+            $parseErrors | Should -BeNullOrEmpty
+            $functionAst = $ast.Find({
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                    $node.Name -eq "Start-BootstrapDockerEnvironment"
+            }, $true)
+            $functionAst | Should -Not -BeNullOrEmpty
+
+            $probePath = Join-Path $script:repo.RepoRoot "start-bootstrap-teardown-probe.ps1"
+            @(
+                "param([string]`$Mode)"
+                "`$EnvironmentFile = 'probe.env'"
+                "function Resolve-E2EEnvironmentFilePath { param([string]`$Path) 'resolved.env' }"
+                "function Stop-DockerEnvironment { param(`$EnvironmentFilePath, `$IdentityProvider, `$DatabaseEngine) Write-Output 'STOP-DOCKER-ENVIRONMENT-CALLED' }"
+                "function Invoke-Step { param(`$Block) Write-Output 'INVOKE-STEP-CALLED' }"
+                "function Invoke-Execute { param(`$Block) Write-Output 'INVOKE-EXECUTE-CALLED' }"
+                $functionAst.Extent.Text
+                "if (`$Mode -eq 'restore') {"
+                "    Start-BootstrapDockerEnvironment -SkipDockerBuild -DatabaseEngine postgresql -RestoreTemplate Minimal"
+                "} else {"
+                "    Start-BootstrapDockerEnvironment -SkipDockerBuild -DatabaseEngine postgresql"
+                "}"
+            ) -join "`n" | Set-Content -LiteralPath $probePath -Encoding utf8
+
+            $restoreOutput = @(& pwsh -NoProfile -NonInteractive -File $probePath -Mode restore 2>&1)
+            $LASTEXITCODE | Should -Be 0
+            $restoreOutput | Should -Not -Contain "STOP-DOCKER-ENVIRONMENT-CALLED" -Because "restore mode must not delete volumes before the package is proven"
+            $restoreOutput | Should -Contain "INVOKE-EXECUTE-CALLED" -Because "restore mode must still reach the wrapper invocation"
+
+            $plainOutput = @(& pwsh -NoProfile -NonInteractive -File $probePath -Mode plain 2>&1)
+            $LASTEXITCODE | Should -Be 0
+            $plainOutput | Should -Contain "STOP-DOCKER-ENVIRONMENT-CALLED" -Because "non-restore StartEnvironment keeps its pre-start teardown"
+            $plainOutput | Should -Contain "INVOKE-EXECUTE-CALLED"
+        }
+
         It "normalizes -PackageDirectory against the caller's CWD before the eng/docker-compose Push-Location" {
             $buildScript = Get-Content -LiteralPath (
                 Join-Path $script:sourceRepoRoot "build-dms.ps1"
