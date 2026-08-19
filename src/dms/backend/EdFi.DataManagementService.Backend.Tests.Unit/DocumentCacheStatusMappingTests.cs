@@ -64,8 +64,27 @@ public class Given_DocumentCacheStatusMapping
                 ],
                 suppressedDocumentCount: 3,
                 suppressedDocumentIds: [201, 202],
+                poisonTraversalDiagnostics:
+                [
+                    PoisonTraversalDiagnostic(
+                        301,
+                        DocumentCacheProjectionPoisonTraversalDiagnosticCategory.RetryScheduled,
+                        RuntimeObservedAt.AddSeconds(10)
+                    ),
+                    PoisonTraversalDiagnostic(
+                        302,
+                        DocumentCacheProjectionPoisonTraversalDiagnosticCategory.PageCapacityExhausted,
+                        RuntimeObservedAt.AddSeconds(20)
+                    ),
+                    PoisonTraversalDiagnostic(
+                        303,
+                        DocumentCacheProjectionPoisonTraversalDiagnosticCategory.SkippedUntilRetry,
+                        RuntimeObservedAt.AddSeconds(30)
+                    ),
+                ],
                 targetDiagnosticEvictionCount: 2,
-                documentDiagnosticEvictionCount: 3
+                documentDiagnosticEvictionCount: 3,
+                poisonTraversalDiagnosticEvictionCount: 4
             )
         );
         DocumentCacheStatusService service = CreateService(
@@ -100,13 +119,24 @@ public class Given_DocumentCacheStatusMapping
         statusTarget
             .PoisonTraversalDiagnostics.RecentEvents.Select(diagnostic => diagnostic.DocumentId)
             .Should()
-            .Equal(201, 202);
+            .Equal(301, 302, 303);
         statusTarget
-            .PoisonTraversalDiagnostics.RecentEvents.Should()
-            .OnlyContain(diagnostic =>
-                diagnostic.Category == DocumentCacheStatusPoisonTraversalDiagnosticCategory.SkippedUntilRetry
+            .PoisonTraversalDiagnostics.RecentEvents.Select(diagnostic => diagnostic.Category)
+            .Should()
+            .Equal(
+                DocumentCacheStatusPoisonTraversalDiagnosticCategory.RetryScheduled,
+                DocumentCacheStatusPoisonTraversalDiagnosticCategory.PageCapacityExhausted,
+                DocumentCacheStatusPoisonTraversalDiagnosticCategory.SkippedUntilRetry
             );
-        statusTarget.PoisonTraversalDiagnostics.EvictedCount.Should().Be(1);
+        statusTarget
+            .PoisonTraversalDiagnostics.RecentEvents.Select(diagnostic => diagnostic.ObservedAt)
+            .Should()
+            .Equal(
+                RuntimeObservedAt.AddSeconds(10),
+                RuntimeObservedAt.AddSeconds(20),
+                RuntimeObservedAt.AddSeconds(30)
+            );
+        statusTarget.PoisonTraversalDiagnostics.EvictedCount.Should().Be(4);
         statusTarget.EnqueueFailures.RecentEvents.Should().BeEmpty();
     }
 
@@ -471,8 +501,10 @@ public class Given_DocumentCacheStatusMapping
         ImmutableArray<DocumentCacheProjectionDocumentDiagnostic> documentDiagnostics = default,
         int suppressedDocumentCount = 0,
         ImmutableArray<long> suppressedDocumentIds = default,
+        ImmutableArray<DocumentCacheProjectionPoisonTraversalDiagnostic> poisonTraversalDiagnostics = default,
         long targetDiagnosticEvictionCount = 0,
         long documentDiagnosticEvictionCount = 0,
+        long poisonTraversalDiagnosticEvictionCount = 0,
         DocumentCacheProjectionExecutionStateSnapshot? executionState = null
     ) =>
         new(
@@ -501,7 +533,9 @@ public class Given_DocumentCacheStatusMapping
                 target.EffectiveSettings.ProjectorPageSize,
                 suppressedDocumentCount,
                 RuntimeObservedAt.AddSeconds(30),
-                suppressedDocumentIds.IsDefault ? [] : suppressedDocumentIds
+                suppressedDocumentIds.IsDefault ? [] : suppressedDocumentIds,
+                poisonTraversalDiagnostics.IsDefault ? [] : poisonTraversalDiagnostics,
+                poisonTraversalDiagnosticEvictionCount
             ),
             failureDiagnostics: new DocumentCacheProjectionFailureDiagnostics(
                 target.EffectiveSettings.ProjectorPageSize,
@@ -543,6 +577,19 @@ public class Given_DocumentCacheStatusMapping
             $"Document diagnostic {category}\r\n{{unsafe}}",
             RuntimeObservedAt,
             RuntimeObservedAt.AddSeconds(30)
+        );
+
+    private static DocumentCacheProjectionPoisonTraversalDiagnostic PoisonTraversalDiagnostic(
+        long documentId,
+        DocumentCacheProjectionPoisonTraversalDiagnosticCategory category,
+        DateTimeOffset observedAt
+    ) =>
+        new(
+            documentId,
+            category,
+            $"Poison traversal diagnostic {category}\r\n{{unsafe}}",
+            observedAt,
+            observedAt.AddSeconds(30)
         );
 
     private static DocumentCacheAdministrativeCommandObservationSnapshot CommandObservation(

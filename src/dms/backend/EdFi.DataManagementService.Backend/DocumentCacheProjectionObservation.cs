@@ -83,6 +83,13 @@ public enum DocumentCacheProjectionDocumentDiagnosticCategory
     PossibleUnseededBaseline = 8,
 }
 
+public enum DocumentCacheProjectionPoisonTraversalDiagnosticCategory
+{
+    RetryScheduled = 1,
+    PageCapacityExhausted = 2,
+    SkippedUntilRetry = 3,
+}
+
 public enum DocumentCacheProjectionLifecycleFenceState
 {
     Unknown = 1,
@@ -329,7 +336,9 @@ public sealed record DocumentCacheProjectionPoisonTraversalSnapshot
         int effectiveProjectorPageSize,
         int suppressedDocumentCount,
         DateTimeOffset? earliestRetryAt,
-        IEnumerable<long>? suppressedDocumentIds
+        IEnumerable<long>? suppressedDocumentIds,
+        IEnumerable<DocumentCacheProjectionPoisonTraversalDiagnostic>? diagnosticEvents = null,
+        long diagnosticEventEvictionCount = 0
     )
     {
         EffectiveProjectorPageSize = DocumentCacheProjectionObservationGuard.RequirePositive(
@@ -347,6 +356,18 @@ public sealed record DocumentCacheProjectionPoisonTraversalSnapshot
             nameof(suppressedDocumentIds)
         );
         EvictionCount = Math.Max(0, SuppressedDocumentCount - SuppressedDocumentIds.Length);
+        DiagnosticEventEvictionCount = DocumentCacheProjectionObservationGuard.RequireNonNegative(
+            diagnosticEventEvictionCount,
+            nameof(diagnosticEventEvictionCount)
+        );
+        ImmutableArray<DocumentCacheProjectionPoisonTraversalDiagnostic> diagnosticItems = (
+            diagnosticEvents ?? []
+        ).ToImmutableArray();
+        DiagnosticEventEvictionCount += Math.Max(0, diagnosticItems.Length - EffectiveProjectorPageSize);
+        DiagnosticEvents = DocumentCacheProjectionObservationBounds.CapLatest(
+            diagnosticItems,
+            EffectiveProjectorPageSize
+        );
     }
 
     public int EffectiveProjectorPageSize { get; }
@@ -359,6 +380,10 @@ public sealed record DocumentCacheProjectionPoisonTraversalSnapshot
 
     public long EvictionCount { get; }
 
+    public ImmutableArray<DocumentCacheProjectionPoisonTraversalDiagnostic> DiagnosticEvents { get; }
+
+    public long DiagnosticEventEvictionCount { get; }
+
     public static DocumentCacheProjectionPoisonTraversalSnapshot Empty(int effectiveProjectorPageSize) =>
         new(
             effectiveProjectorPageSize,
@@ -366,6 +391,38 @@ public sealed record DocumentCacheProjectionPoisonTraversalSnapshot
             earliestRetryAt: null,
             suppressedDocumentIds: []
         );
+}
+
+public sealed record DocumentCacheProjectionPoisonTraversalDiagnostic
+{
+    public DocumentCacheProjectionPoisonTraversalDiagnostic(
+        long documentId,
+        DocumentCacheProjectionPoisonTraversalDiagnosticCategory category,
+        string message,
+        DateTimeOffset observedAt,
+        DateTimeOffset? nextRetryAt = null
+    )
+    {
+        DocumentId = DocumentCacheProjectionObservationGuard.RequirePositive(documentId, nameof(documentId));
+        Category = DocumentCacheProjectionObservationGuard.RequireDefined(
+            category,
+            nameof(category),
+            "Unsupported projection poison traversal diagnostic category."
+        );
+        Message = DocumentCacheProjectionObservationText.Sanitize(message);
+        ObservedAt = observedAt;
+        NextRetryAt = nextRetryAt;
+    }
+
+    public long DocumentId { get; }
+
+    public DocumentCacheProjectionPoisonTraversalDiagnosticCategory Category { get; }
+
+    public string Message { get; }
+
+    public DateTimeOffset ObservedAt { get; }
+
+    public DateTimeOffset? NextRetryAt { get; }
 }
 
 public sealed record DocumentCacheProjectionLifecycleFenceSnapshot

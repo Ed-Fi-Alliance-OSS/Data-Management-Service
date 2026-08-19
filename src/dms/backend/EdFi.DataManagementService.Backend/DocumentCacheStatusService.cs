@@ -1114,17 +1114,17 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
 
         return new(
             targetHealth
-                .PoisonTraversal.SuppressedDocumentIds.Select(
-                    documentId => new DocumentCacheStatusPoisonTraversalDiagnosticEvent(
-                        documentId,
-                        targetHealth.ObservedAt,
-                        DocumentCacheStatusPoisonTraversalDiagnosticCategory.SkippedUntilRetry,
-                        targetHealth.PoisonTraversal.EarliestRetryAt,
-                        "DocumentCache poison traversal skipped document until retry."
+                .PoisonTraversal.DiagnosticEvents.Select(
+                    diagnostic => new DocumentCacheStatusPoisonTraversalDiagnosticEvent(
+                        diagnostic.DocumentId,
+                        diagnostic.ObservedAt,
+                        ToPoisonTraversalDiagnosticCategory(diagnostic.Category),
+                        diagnostic.NextRetryAt,
+                        diagnostic.Message
                     )
                 )
                 .ToImmutableArray(),
-            ToIntEvictionCount(targetHealth.PoisonTraversal.EvictionCount)
+            ToIntEvictionCount(targetHealth.PoisonTraversal.DiagnosticEventEvictionCount)
         );
     }
 
@@ -1277,6 +1277,20 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             DocumentCacheProjectionDocumentDiagnosticCategory.PossibleUnseededBaseline =>
                 DocumentCacheStatusDocumentDiagnosticCategory.CacheAheadSuspected,
             _ => DocumentCacheStatusDocumentDiagnosticCategory.MaterializationFailed,
+        };
+
+    private static DocumentCacheStatusPoisonTraversalDiagnosticCategory ToPoisonTraversalDiagnosticCategory(
+        DocumentCacheProjectionPoisonTraversalDiagnosticCategory category
+    ) =>
+        category switch
+        {
+            DocumentCacheProjectionPoisonTraversalDiagnosticCategory.RetryScheduled =>
+                DocumentCacheStatusPoisonTraversalDiagnosticCategory.RetryScheduled,
+            DocumentCacheProjectionPoisonTraversalDiagnosticCategory.PageCapacityExhausted =>
+                DocumentCacheStatusPoisonTraversalDiagnosticCategory.PageCapacityExhausted,
+            DocumentCacheProjectionPoisonTraversalDiagnosticCategory.SkippedUntilRetry =>
+                DocumentCacheStatusPoisonTraversalDiagnosticCategory.SkippedUntilRetry,
+            _ => DocumentCacheStatusPoisonTraversalDiagnosticCategory.SkippedUntilRetry,
         };
 
     private static int ToIntEvictionCount(long evictionCount) =>

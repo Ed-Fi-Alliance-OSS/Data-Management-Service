@@ -96,6 +96,12 @@ public sealed class DocumentCacheProjectionCursorState
 
 public sealed class DocumentCacheProjectionFailureBackoffState
 {
+    private const string RetryScheduledMessage = "DocumentCache poison traversal scheduled document retry.";
+    private const string SkippedUntilRetryMessage =
+        "DocumentCache poison traversal skipped document until retry.";
+    private const string PageCapacityExhaustedMessage =
+        "DocumentCache poison traversal page capacity exhausted by suppressed work.";
+
     private readonly object _sync = new();
     private ImmutableDictionary<long, FailureEntry> _entries = ImmutableDictionary<long, FailureEntry>.Empty;
     private ImmutableDictionary<long, DiagnosticEntry> _diagnostics = ImmutableDictionary<
@@ -105,6 +111,8 @@ public sealed class DocumentCacheProjectionFailureBackoffState
     private ImmutableArray<long> _lastSuppressedDocumentIds = [];
     private int _lastSuppressedDocumentCount;
     private DateTimeOffset? _lastSuppressedEarliestRetryAt;
+    private ImmutableArray<DocumentCacheProjectionPoisonTraversalDiagnostic> _poisonTraversalDiagnostics = [];
+    private long _poisonTraversalDiagnosticEvictionCount;
     private long _evictionCount;
     private bool _processedEligibleWorkSinceCursorWrap;
 
@@ -177,6 +185,7 @@ public sealed class DocumentCacheProjectionFailureBackoffState
 
         lock (_sync)
         {
+            DateTimeOffset nextRetryAt = observedAt + failureBackoff;
             if (!_entries.ContainsKey(documentId) && _entries.Count >= Capacity)
             {
                 FailureEntry entryToEvict = _entries
@@ -190,9 +199,16 @@ public sealed class DocumentCacheProjectionFailureBackoffState
 
             _entries = _entries.SetItem(
                 documentId,
-                new FailureEntry(documentId, category, message, observedAt, observedAt + failureBackoff)
+                new FailureEntry(documentId, category, message, observedAt, nextRetryAt)
             );
             _diagnostics = _diagnostics.Remove(documentId);
+            AppendPoisonTraversalDiagnostic(
+                documentId,
+                DocumentCacheProjectionPoisonTraversalDiagnosticCategory.RetryScheduled,
+                RetryScheduledMessage,
+                observedAt,
+                nextRetryAt
+            );
         }
     }
 
@@ -275,7 +291,11 @@ public sealed class DocumentCacheProjectionFailureBackoffState
         }
     }
 
-    public void RecordSuppressedTraversal(IEnumerable<long> suppressedDocumentIds, DateTimeOffset observedAt)
+    public void RecordSuppressedTraversal(
+        IEnumerable<long> suppressedDocumentIds,
+        DateTimeOffset observedAt,
+        bool pageCapacityExhausted = false
+    )
     {
         ArgumentNullException.ThrowIfNull(suppressedDocumentIds);
 
@@ -290,17 +310,43 @@ public sealed class DocumentCacheProjectionFailureBackoffState
 
         lock (_sync)
         {
+            List<(long DocumentId, DateTimeOffset NextRetryAt)> activelySuppressedDocuments = [];
             _lastSuppressedDocumentIds = materializedDocumentIds.TakeLast(Capacity).ToImmutableArray();
             _lastSuppressedDocumentCount = materializedDocumentIds.Length;
-            _lastSuppressedEarliestRetryAt = materializedDocumentIds
-                .Select(documentId =>
+            foreach (long documentId in materializedDocumentIds)
+            {
+                if (
                     _entries.TryGetValue(documentId, out FailureEntry? entry)
                     && entry.NextRetryAt > observedAt
-                        ? entry.NextRetryAt
-                        : (DateTimeOffset?)null
                 )
-                .Where(nextRetryAt => nextRetryAt is not null)
-                .Min();
+                {
+                    activelySuppressedDocuments.Add((documentId, entry.NextRetryAt));
+                    AppendPoisonTraversalDiagnostic(
+                        documentId,
+                        DocumentCacheProjectionPoisonTraversalDiagnosticCategory.SkippedUntilRetry,
+                        SkippedUntilRetryMessage,
+                        observedAt,
+                        entry.NextRetryAt
+                    );
+                }
+            }
+
+            _lastSuppressedEarliestRetryAt =
+                activelySuppressedDocuments.Count == 0
+                    ? null
+                    : activelySuppressedDocuments.Min(document => document.NextRetryAt);
+
+            if (pageCapacityExhausted && activelySuppressedDocuments.Count > 0)
+            {
+                (long documentId, DateTimeOffset nextRetryAt) = activelySuppressedDocuments[^1];
+                AppendPoisonTraversalDiagnostic(
+                    documentId,
+                    DocumentCacheProjectionPoisonTraversalDiagnosticCategory.PageCapacityExhausted,
+                    PageCapacityExhaustedMessage,
+                    observedAt,
+                    nextRetryAt
+                );
+            }
         }
     }
 
@@ -369,9 +415,36 @@ public sealed class DocumentCacheProjectionFailureBackoffState
                 Capacity,
                 _lastSuppressedDocumentCount,
                 _lastSuppressedEarliestRetryAt,
-                _lastSuppressedDocumentIds
+                _lastSuppressedDocumentIds,
+                _poisonTraversalDiagnostics,
+                _poisonTraversalDiagnosticEvictionCount
             );
         }
+    }
+
+    private void AppendPoisonTraversalDiagnostic(
+        long documentId,
+        DocumentCacheProjectionPoisonTraversalDiagnosticCategory category,
+        string message,
+        DateTimeOffset observedAt,
+        DateTimeOffset? nextRetryAt
+    )
+    {
+        if (_poisonTraversalDiagnostics.Length >= Capacity)
+        {
+            _poisonTraversalDiagnostics = _poisonTraversalDiagnostics.RemoveAt(0);
+            _poisonTraversalDiagnosticEvictionCount++;
+        }
+
+        _poisonTraversalDiagnostics = _poisonTraversalDiagnostics.Add(
+            new DocumentCacheProjectionPoisonTraversalDiagnostic(
+                documentId,
+                category,
+                message,
+                observedAt,
+                nextRetryAt
+            )
+        );
     }
 
     private DateTimeOffset? EarliestSuppressedRetryAt(DateTimeOffset observedAt)
