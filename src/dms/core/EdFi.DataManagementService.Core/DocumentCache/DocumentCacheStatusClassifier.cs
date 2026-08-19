@@ -385,6 +385,10 @@ public static class DocumentCacheStatusClassifier
             DocumentCacheStatusReason.ConnectionInputMissing
         ),
         (
+            DocumentCacheTargetDiagnosticCategory.UnexpectedProviderFailure,
+            DocumentCacheStatusReason.ProviderObservationFailed
+        ),
+        (
             DocumentCacheTargetDiagnosticCategory.PhysicalSourceFingerprintFailure,
             DocumentCacheStatusReason.PhysicalSourceFingerprintFailure
         ),

@@ -433,6 +433,43 @@ public class DocumentCacheStatusClassifierTests
         processEligibility.Status.Should().Be(ExpectedProcessEligibilityStatus(expectedReason));
     }
 
+    [Test]
+    public void It_reports_an_unexpected_provider_failure_before_the_missing_fingerprint_fallback()
+    {
+        DocumentCacheTargetContextGeneration generation = new(3);
+        const string message = "DocumentCache provider services do not match this DMS process provider.";
+        DocumentCacheTargetDiagnostic diagnostic = Diagnostic(
+            DocumentCacheTargetDiagnosticCategory.UnexpectedProviderFailure,
+            generation,
+            RelationalProviderToken.Postgresql,
+            physicalSourceFingerprint: null,
+            inventory: null,
+            enqueueTrigger: null,
+            sqlServerPrerequisites: null,
+            message
+        );
+        DocumentCacheTargetObservation targetObservation = DocumentCacheTargetObservation.ResolvedIneligible(
+            TargetKey,
+            EffectiveSettings,
+            generation,
+            RelationalProviderToken.Postgresql,
+            physicalSourceFingerprint: null,
+            lifecycle: null,
+            inventory: null,
+            enqueueTrigger: null,
+            sqlServerPrerequisites: null,
+            retryState: null,
+            [diagnostic]
+        );
+
+        DocumentCacheStatusProcessEligibility processEligibility =
+            DocumentCacheStatusClassifier.ClassifyProcessEligibility(targetObservation, RunningRuntime());
+
+        processEligibility.Status.Should().Be(DocumentCacheStatusProcessEligibilityStatus.Ineligible);
+        processEligibility.Reason.Should().Be(DocumentCacheStatusReason.ProviderObservationFailed);
+        processEligibility.Message.Should().Be(message);
+    }
+
     private static IEnumerable<TestCaseData> DurableUnknownCases()
     {
         yield return new TestCaseData(
