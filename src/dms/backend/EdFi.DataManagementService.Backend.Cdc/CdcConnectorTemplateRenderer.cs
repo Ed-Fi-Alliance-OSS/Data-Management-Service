@@ -204,6 +204,7 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
         config["poll.interval.ms"] = CdcConnectorTemplateSharedRules
             .PollIntervalMilliseconds(request)
             .ToString();
+        config["snapshot.isolation.mode"] = "snapshot";
 
         config["schema.history.internal.kafka.bootstrap.servers"] = request
             .DeploymentPolicy

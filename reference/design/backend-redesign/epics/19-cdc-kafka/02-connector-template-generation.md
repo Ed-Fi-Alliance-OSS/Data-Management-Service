@@ -210,6 +210,9 @@ implements those contracts.
   second capture-name mapping.
 - Set `time.precision.mode=isostring` and
   `unavailable.value.placeholder=__debezium_unavailable_value` explicitly.
+- Set `snapshot.isolation.mode=snapshot` explicitly. SQL Server CDC provider setup must
+  enable `ALLOW_SNAPSHOT_ISOLATION` on the captured database so the initial Debezium
+  snapshot stays consistent without blocking the connector's own heartbeat action query.
 - Configure the required internal schema-history store exactly:
 
   ```properties
