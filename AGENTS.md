@@ -11,6 +11,7 @@ This repository contains the **Ed-Fi Data Management Service (DMS) Platform**, w
 - Declare variables non-nullable.
 - Always use `is null` or `is not null` instead of `== null` or `!= null`.
 - Use `System.Text.Json` for JSON serialization and parsing in .NET application code and build tooling. Do not introduce new `Newtonsoft.Json` dependencies or usages.
+- Treat `RelationalMappingVersion` as release-scoped: one bump per release covers mapping-rule and physical `dms.*` DDL changes in that release. Hash algorithm changes use the separate hash header/version path.
 
 ### Format Code
 

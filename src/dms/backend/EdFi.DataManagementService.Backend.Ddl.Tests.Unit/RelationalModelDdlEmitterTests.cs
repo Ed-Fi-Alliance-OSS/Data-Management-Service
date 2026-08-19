@@ -1690,9 +1690,8 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
     {
         // DMS-1127: pins the "never UPDATE(column)" invariant on the non-root child-collection stamp
         // path — the path a mutable parent-identity rename actually cascades through into a child
-        // binding. The attached-Resource key-change path is already pinned by
-        // It_should_derive_key_changes_from_the_value_diff_workset, while ConcreteAbstract attachments
-        // remain tombstone-only, without an identity-stamp UPDATE(column) path in
+        // binding. Attached-Resource key-change paths are pinned by the Change Queries trigger
+        // tests, while ConcreteAbstract attachments remain tombstone-only, without an identity-stamp UPDATE(column) path in
         // It_should_emit_tombstone_but_no_key_change; this closes the third path at the unit layer.
         // SchoolAddress is a child collection of the (immutable) School, so it exercises the
         // child-collection stamp path structurally: the change is detected by a null-safe stored-value

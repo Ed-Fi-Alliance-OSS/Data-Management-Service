@@ -11,11 +11,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
-internal sealed record ChildBindingDocumentStampState(
-    long ContentVersion,
-    DateTimeOffset ContentLastModifiedAt
-);
-
 /// <summary>
 /// PostgreSQL parity counterpart to the MSSQL
 /// <c>Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedule_Child_Binding</c> fixture. Proves that a
@@ -490,7 +485,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_A_ClassPeriod_To_BellS
         return rows.Single();
     }
 
-    private async Task<ChildBindingDocumentStampState> GetChildBindingDocumentStampStateAsync(long documentId)
+    private async Task<DocumentStampState> GetChildBindingDocumentStampStateAsync(long documentId)
     {
         var row = (
             await _database.QueryRowsAsync(
@@ -513,7 +508,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_A_ClassPeriod_To_BellS
 
     // Root tables carry ContentVersion/ContentLastModifiedAt mirror columns that resource change-version
     // queries filter on; this reads the mirror pair for the owning root row.
-    private async Task<ChildBindingDocumentStampState> GetRootMirrorStampStateAsync(
+    private async Task<DocumentStampState> GetRootMirrorStampStateAsync(
         string schemaName,
         string tableName,
         long documentId
@@ -539,8 +534,8 @@ public class Given_A_Provisioned_Postgresql_Database_With_A_ClassPeriod_To_BellS
     }
 
     private static void AssertMirrorContentMatchesDocument(
-        ChildBindingDocumentStampState mirror,
-        ChildBindingDocumentStampState document
+        DocumentStampState mirror,
+        DocumentStampState document
     )
     {
         mirror.ContentVersion.Should().Be(document.ContentVersion);

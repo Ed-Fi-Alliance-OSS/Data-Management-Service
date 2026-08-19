@@ -1584,18 +1584,6 @@ public class Given_A_Pgsql_Query_Keyset_That_Returns_Its_Selected_Ids
             """
             DROP SCHEMA IF EXISTS hydselected CASCADE;
             CREATE SCHEMA hydselected;
-            CREATE SCHEMA IF NOT EXISTS dms;
-
-            CREATE TABLE IF NOT EXISTS dms."Document" (
-                "DocumentId" bigint PRIMARY KEY,
-                "DocumentUuid" uuid NOT NULL,
-                "ResourceKeyId" smallint NOT NULL DEFAULT 0,
-                "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "IdentityVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "CreatedAt" timestamptz NOT NULL DEFAULT now()
-            );
 
             CREATE TABLE hydselected."School" (
                 "DocumentId" bigint PRIMARY KEY,
