@@ -333,6 +333,13 @@ endpoints, which are still a placeholder shim (see the note below).
 > that returns `[]` (with a `Total-Count: 0` header only when `totalCount=true` is requested). Do not
 > expect `/deletes` or `/keyChanges` to read the tracked-change tables yet.
 
+`newestChangeVersion` is the current value reported by the provider's change-version sequence, not
+`MAX(ContentVersion)` over `dms.Document`. After identity stamp columns were removed from
+`dms.Document`, regular writes allocate one sequence value for the content stamp instead of allocating
+a second unused identity stamp. A database provisioned by an earlier pre-release v2 build still has
+the removed columns and their defaults; deploy fresh from current generated DDL rather than mixing
+that physical schema with this runtime.
+
 ## 5. Mapping packs (optional)
 
 A "mapping pack" (`.mpack`) is a planned ahead-of-time-compiled artifact that would let DMS load

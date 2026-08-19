@@ -1891,14 +1891,11 @@ Implementation guidance (dialect-neutral semantics):
 - Fire on `INSERT`, `UPDATE`, and `DELETE` for each schema-derived table (as described in `update-tracking.md`).
 - Compute `affectedDocumentIds` from `inserted ∪ deleted` (dedupe).
 - Always bump **Content** stamps for `affectedDocumentIds` (representation changed).
-- Compute `identityChangedDocumentIds` by diffing the document’s identity projection values between `inserted` and
-  `deleted` (null-safe comparison). For unified members, diff the **presence-gated canonical expression** above (not
-  the alias column name).
-- Record key-change rows only for `identityChangedDocumentIds`; representation-changing identity propagation still follows the content-stamp rules for `affectedDocumentIds`.
-
-Change Queries key-change rows are the exception to this generic presence-gated guidance: the Change Queries
-`DocumentStamping` / `ChangeTracking` path uses ODS-compatible canonical storage semantics for its shared
-key-change workset. See [change-queries.md](change-queries.md) for that narrower contract.
+- Record key-change rows for documents whose persisted identity projection values differ between `inserted` and
+  `deleted` under the ODS-compatible canonical storage semantics described in
+  [change-queries.md](change-queries.md). This key-change workset is intentionally separate from the
+  presence-gated identity-propagation compare set above.
+- Representation-changing identity propagation still follows the content-stamp rules for `affectedDocumentIds`.
 
 #### `TriggerKindParameters.AbstractIdentityMaintenance`
 
