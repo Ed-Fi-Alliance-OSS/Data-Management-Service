@@ -24,7 +24,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 
 [TestFixture]
 [Parallelizable]
-public class Given_DescriptorReadHandler
+public partial class Given_DescriptorReadHandler
 {
     private static readonly QualifiedResourceName _descriptorResource = new("Ed-Fi", "SchoolTypeDescriptor");
     private static readonly QualifiedResourceName _requestResource = new("Ed-Fi", "Student");

@@ -1059,6 +1059,10 @@ public class PostgresqlRuntimeMappingInitializationTests
                 .NotContain(descriptor => descriptor.ServiceType == typeof(IDocumentStoreRepository));
 
             _services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IQueryHandler));
+
+            _services
+                .Should()
+                .NotContain(descriptor => descriptor.ServiceType == typeof(IPartitionQueryHandler));
         }
     }
 }

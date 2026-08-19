@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Globalization;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
@@ -103,6 +104,28 @@ public abstract class ApiIntegrationTestBase
     protected virtual bool ResourceLinksEnabled => true;
 
     /// <summary>
+    /// Replaces the deployed maximum page size for this fixture's host, or null to leave it in place.
+    /// </summary>
+    /// <remarks>
+    /// Partition sizing is the reason this exists: the mandatory minimum partition size is a multiple of
+    /// the configured maximum page size, so at the deployed value a collection has to hold thousands of
+    /// rows before it can be cut into more than one partition. A fixture that needs several partitions
+    /// lowers the page size instead of seeding that many documents over HTTP.
+    /// </remarks>
+    protected virtual int? MaximumPageSizeOverride => null;
+
+    /// <summary>
+    /// Profile names assigned to the requesting application, by name. Empty means no assignment.
+    /// </summary>
+    /// <remarks>
+    /// This is what separates the two profile branches. With no assignment a request that names no
+    /// profile is answered by the no-profiles-assigned exit and never reaches implicit selection, so a
+    /// scenario asserting that an unreadable profile is correctly excluded from a GET has to assign one
+    /// to exercise the code it claims to cover.
+    /// </remarks>
+    protected virtual IReadOnlyList<string> AssignedProfileNames => [];
+
+    /// <summary>
     /// Builds the claim set provider used by the in-process host.
     /// </summary>
     protected virtual IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
@@ -151,6 +174,7 @@ public abstract class ApiIntegrationTestBase
         var documentCacheReadTelemetryRecorder = _documentCacheReadTelemetryRecorder;
         var providerFailureRecorder = _providerFailureRecorder;
         var clientNamespacePrefixes = ClientNamespacePrefixes;
+        var assignedProfileNames = AssignedProfileNames;
 
         _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -172,6 +196,13 @@ public abstract class ApiIntegrationTestBase
                 "DataManagement:ResourceLinks:Enabled",
                 ResourceLinksEnabled ? "true" : "false"
             );
+            if (MaximumPageSizeOverride is { } maximumPageSize)
+            {
+                builder.UseSetting(
+                    "AppSettings:MaximumPageSize",
+                    maximumPageSize.ToString(CultureInfo.InvariantCulture)
+                );
+            }
             builder.UseSetting(
                 "DataManagement:DocumentCache:ReadAcceleration:Enabled",
                 EnableDocumentCacheReadAcceleration ? "true" : "false"
@@ -208,7 +239,8 @@ public abstract class ApiIntegrationTestBase
                     EnableDocumentCacheReadAcceleration ? GetRelationalProviderToken() : null,
                     documentCacheReadAcquisitionFailureRecorder,
                     documentCacheDirectFillTimeoutRecorder,
-                    documentCacheReadTelemetryRecorder
+                    documentCacheReadTelemetryRecorder,
+                    assignedProfileNames
                 );
 
                 if (queryRecorder is not null)

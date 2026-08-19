@@ -3,15 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Globalization;
-using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.ChangeQueries;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
+using EdFi.DataManagementService.Core.Validation;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
 
@@ -32,7 +30,19 @@ internal class ValidateQueryMiddleware(
     bool _cursorParametersRecognized
 ) : IPipelineStep
 {
-    private static readonly string[] _paginationQueryParameters = ["limit", "offset", "totalCount"];
+    /// <summary>
+    /// The paging names this operation parses and excludes from filter matching. Spelled from the
+    /// constants the cursor validator reads, because <see cref="Paging.PartitionRequestValidator" />
+    /// reserves the same five names from the same constants: matching filters over a different set of
+    /// names than /partitions rejects would let one operation filter on a resource property the other
+    /// treats as paging.
+    /// </summary>
+    private static readonly string[] _paginationQueryParameters =
+    [
+        CursorRequestValidator.LimitParameter,
+        CursorRequestValidator.OffsetParameter,
+        CursorRequestValidator.TotalCountParameter,
+    ];
 
     /// <summary>
     /// Finds and sets PaginationParameters on the requestInfo by parsing the client request.
@@ -97,59 +107,6 @@ internal class ValidateQueryMiddleware(
             );
         }
         return errors;
-    }
-
-    /// <summary>
-    /// Returns a QueryElement for the given client query term using the list of possible query fields,
-    /// or null if there is not a match with a valid query field name.
-    /// </summary>
-    private static QueryElementAndType? QueryElementFrom(
-        KeyValuePair<string, string> clientQueryTerm,
-        QueryField[] possibleQueryFields
-    )
-    {
-        QueryField? matchingQueryField = possibleQueryFields.FirstOrDefault(
-            queryField =>
-                queryField is not null
-                && string.Equals(
-                    queryField.QueryFieldName,
-                    clientQueryTerm.Key,
-                    StringComparison.OrdinalIgnoreCase
-                ),
-            null
-        );
-
-        if (matchingQueryField is null)
-        {
-            return null;
-        }
-
-        if (
-            matchingQueryField.DocumentPathsWithType[0].Type == "date-time"
-            && DateTime.TryParse(
-                clientQueryTerm.Value,
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
-                out DateTime dateTimeValue
-            )
-        )
-        {
-            string fullDateTimeString = dateTimeValue
-                .ToUniversalTime()
-                .ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
-
-            return new QueryElementAndType(
-                QueryFieldName: clientQueryTerm.Key,
-                DocumentPathsAndTypes: matchingQueryField.DocumentPathsWithType,
-                Value: fullDateTimeString
-            );
-        }
-
-        return new QueryElementAndType(
-            QueryFieldName: clientQueryTerm.Key,
-            DocumentPathsAndTypes: matchingQueryField.DocumentPathsWithType,
-            Value: clientQueryTerm.Value
-        );
     }
 
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
@@ -243,183 +200,64 @@ internal class ValidateQueryMiddleware(
         //
         // The cursor parameters are excluded in both modes, for different reasons. Where they are
         // recognized, the cursor validation above has already consumed them. Where they are not,
-        // excluding them here is what lets the Change Query step reject them by name instead of this
-        // loop answering first with the resource-field wording. Excluding a name is not accepting
-        // it: an operation that does not recognize these rejects them in the step that follows.
-        IEnumerable<KeyValuePair<string, string>> nonPaginationQueryTerms = requestInfo
-            .FrontendRequest.QueryParameters.ExceptBy(_paginationQueryParameters, (term) => term.Key)
-            .ExceptBy(CursorRequestValidator.CursorParameters, (term) => term.Key)
-            .ExceptBy(
-                ChangeVersionParameterValidator.ReservedParameterNames,
-                (term) => term.Key,
-                StringComparer.OrdinalIgnoreCase
-            );
+        // excluding them here is what lets the Change Query step reject them by name instead of the
+        // filter validator answering first with the resource-field wording. Excluding a name is not
+        // accepting it: an operation that does not recognize these rejects them in the step that
+        // follows.
+        ResourceQueryFilterResult filterResult = ResourceQueryFilterValidator.Validate(
+            requestInfo.FrontendRequest.QueryParameters,
+            requestInfo.ResourceSchema.QueryFields.ToArray(),
+            ordinalExcludedNames: [.. _paginationQueryParameters, .. CursorRequestValidator.CursorParameters],
+            ignoreCaseExcludedNames: ChangeVersionParameterValidator.ReservedParameterNames
+        );
 
-        QueryField[] possibleQueryFields = requestInfo.ResourceSchema.QueryFields.ToArray();
-
-        List<QueryElement> queryElements = [];
-
-        Dictionary<string, string[]> validationErrors = [];
-
-        foreach (KeyValuePair<string, string> clientQueryTerm in nonPaginationQueryTerms)
+        switch (filterResult)
         {
-            QueryElementAndType? queryElementAndType = QueryElementFrom(clientQueryTerm, possibleQueryFields);
+            case ResourceQueryFilterResult.UnknownQueryField unknownQueryField:
+                requestInfo.FrontendResponse = new FrontendResponse(
+                    StatusCode: 400,
+                    Body: FailureResponse.ForBadRequest(
+                        "The request could not be processed. See 'errors' for details.",
+                        requestInfo.FrontendRequest.TraceId,
+                        [],
+                        [
+                            $@"The query field '{unknownQueryField.QueryFieldName}' is not valid for this resource.",
+                        ]
+                    ),
+                    []
+                );
+                return;
 
-            if (queryElementAndType == null)
-            {
-                JsonNode failureResponse = FailureResponse.ForBadRequest(
-                    "The request could not be processed. See 'errors' for details.",
-                    requestInfo.FrontendRequest.TraceId,
-                    [],
-                    [$@"The query field '{clientQueryTerm.Key}' is not valid for this resource."]
+            case ResourceQueryFilterResult.InvalidValues invalidValues:
+                _logger.LogDebug(
+                    "Query parameter format error - {TraceId}",
+                    requestInfo.FrontendRequest.TraceId.Value
                 );
 
                 requestInfo.FrontendResponse = new FrontendResponse(
                     StatusCode: 400,
-                    Body: failureResponse,
-                    []
+                    Body: ForDataValidation(
+                        "Data validation failed. See 'validationErrors' for details.",
+                        traceId: requestInfo.FrontendRequest.TraceId,
+                        invalidValues.ValidationErrors,
+                        []
+                    ),
+                    Headers: []
                 );
                 return;
-            }
 
-            string jsonPathString = queryElementAndType.DocumentPathsAndTypes[0].JsonPathString;
-            string queryFieldName = queryElementAndType.QueryFieldName;
-            string queryFieldValue = queryElementAndType.Value;
-            string type = queryElementAndType.DocumentPathsAndTypes[0].Type;
+            case ResourceQueryFilterResult.Valid valid:
+                requestInfo.CollectionPaging = collectionPaging;
+                requestInfo.QueryElements = valid.QueryElements;
 
-            switch (type)
-            {
-                case "boolean":
-                    if (!bool.TryParse(queryFieldValue, out _))
-                    {
-                        AddValidationError(validationErrors, jsonPathString, queryFieldValue, queryFieldName);
-                    }
-                    queryFieldValue = queryFieldValue.ToLower();
-                    break;
-                case "date":
-                    if (
-                        DateTime.TryParse(
-                            queryFieldValue,
-                            CultureInfo.InvariantCulture,
-                            DateTimeStyles.None,
-                            out var dateTime
-                        )
-                    )
-                    {
-                        // query parameter was valid but ensure we only pass the date portion downstream to queries
-                        queryFieldValue = dateTime.ToString("yyyy-MM-dd");
-                    }
-                    else
-                    {
-                        AddValidationError(validationErrors, jsonPathString, queryFieldValue, queryFieldName);
-                    }
-                    break;
-                case "date-time":
-                    if (
-                        !DateTime.TryParse(
-                            queryFieldValue,
-                            CultureInfo.InvariantCulture,
-                            DateTimeStyles.None,
-                            out _
-                        )
-                    )
-                    {
-                        AddValidationError(validationErrors, jsonPathString, queryFieldValue, queryFieldName);
-                    }
-                    break;
+                await next();
+                return;
 
-                case "number":
-                    if (!decimal.TryParse(queryFieldValue, out _))
-                    {
-                        AddValidationError(validationErrors, jsonPathString, queryFieldValue, queryFieldName);
-                    }
-                    break;
-
-                case "string":
-                    if (queryFieldValue is not string)
-                    {
-                        AddValidationError(validationErrors, jsonPathString, queryFieldValue, queryFieldName);
-                    }
-                    break;
-
-                case "time":
-                    if (
-                        !DateTime.TryParseExact(
-                            queryFieldValue,
-                            "HH:mm:ss",
-                            CultureInfo.InvariantCulture,
-                            DateTimeStyles.None,
-                            out _
-                        )
-                    )
-                    {
-                        AddValidationError(validationErrors, jsonPathString, queryFieldValue, queryFieldName);
-                    }
-                    break;
-                default:
-                    throw new InvalidOperationException(
-                        $"ValidateQueryMiddleware found an unsupported type {type}"
-                    );
-            }
-
-            // Convert QueryElementAndType to QueryElement
-            queryElements.Add(
-                new(
-                    queryElementAndType.QueryFieldName,
-                    queryElementAndType
-                        .DocumentPathsAndTypes.Select(x => new JsonPath(x.JsonPathString))
-                        .ToArray(),
-                    queryFieldValue,
-                    type
-                )
-            );
+            default:
+                throw new InvalidOperationException(
+                    $"ValidateQueryMiddleware received an unhandled resource query filter result "
+                        + $"'{filterResult.GetType().Name}'."
+                );
         }
-
-        if (validationErrors.Count != 0)
-        {
-            _logger.LogDebug(
-                "Query parameter format error - {TraceId}",
-                requestInfo.FrontendRequest.TraceId.Value
-            );
-
-            requestInfo.FrontendResponse = new FrontendResponse(
-                StatusCode: 400,
-                Body: ForDataValidation(
-                    "Data validation failed. See 'validationErrors' for details.",
-                    traceId: requestInfo.FrontendRequest.TraceId,
-                    validationErrors,
-                    []
-                ),
-                Headers: []
-            );
-            return;
-        }
-        else
-        {
-            requestInfo.CollectionPaging = collectionPaging;
-            requestInfo.QueryElements = queryElements.ToArray();
-
-            await next();
-        }
-    }
-
-    private static void AddValidationError(
-        Dictionary<string, string[]> errors,
-        string jsonPathString,
-        object queryValue,
-        string queryFieldName
-    )
-    {
-        if (!errors.ContainsKey(jsonPathString))
-        {
-            errors[jsonPathString] = [];
-        }
-
-        string errorMessage = $"The value '{queryValue}' is not valid for {queryFieldName}.";
-        string[] updatedErrors = new string[errors[jsonPathString].Length + 1];
-        errors[jsonPathString].CopyTo(updatedErrors, 0);
-        updatedErrors[^1] = errorMessage;
-
-        errors[jsonPathString] = updatedErrors;
     }
 }

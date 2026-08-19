@@ -223,7 +223,9 @@ Acceptance gates are:
   gate;
 - cursor hydration performs one database command, uses the existing single-command page-keyset
   architecture, and adds no roundtrip;
-- `/partitions` performs one database command and returns identifiers only;
+- `/partitions` performs one database command for its boundary selection and returns identifiers
+  only; the separate custom-view validation probe, present only where a view-based authorization
+  strategy is configured, is the explicit exception;
 - middle/last cursor p50 is at most `1.20x` first-page cursor p50, and p95 is at most `1.30x`;
 - first-page cursor p50/p95 is at most `1.20x`/`1.30x` the offset-0 baseline;
 - existing shallow-offset p50/p95 is at most `1.20x`/`1.30x` its pre-change baseline;
@@ -297,6 +299,21 @@ The approved intentional ODS differences are:
   blank and non-numeric values, where ODS's `int?` model binding reads a blank value as absent and
   returns HTTP 200, and fails binding on a non-numeric value before its validator can emit a range
   message;
+- reserve the `number` count key out of resource-filter matching on `/partitions`, so a resource
+  exposing a query field of that name filters on it on its collection GET but cannot filter on it
+  here, where ODS 7.3.2 applies one supplied `?number=` as both meanings at once. DMS keeps the name
+  the consumed base ApiSchema's `numberOfPartitions` component publishes and ODS 7.3.2 serves; what
+  differs is the collision handling. ODS's `PartitionsController` takes `[FromQuery] int? number` and
+  then binds the same request against the generated `{Resource}GetByExample` with an empty prefix, so
+  a case-insensitive match carries the same value into the filter specification and into the
+  partition count. DMS answers with one meaning rather than two, because a partition-control
+  parameter is removed from filter matching before the query-field lookup runs, and Ed-Fi's flat
+  query namespace has no qualification syntax that would let one raw key carry both. Which deployed
+  resources declare a query field of that name depends on the extensions loaded at runtime, so the
+  parity harness can exercise this difference only against a schema that declares one. The general
+  problem — DMS reserving query keys that model validation does not protect against a colliding
+  resource property, which predates this epic in `minChangeVersion` and `maxChangeVersion` — is
+  raised as DMS-1442 for team triage rather than resolved here;
 - return `Number of partitions must be between 1 and 200.` for a non-numeric
   `/partitions?number=abc`, where ODS's `[FromQuery] int? number` binding fails before its
   controller body runs. `PartitionsController` is an `[ApiController]`, and
@@ -368,6 +385,23 @@ The approved intentional ODS differences are:
 - use DMS `Int64 DocumentId` bounds rather than ODS `Int32 AggregateId` bounds;
 - omit the next header rather than overflowing at `Int64.MaxValue`; and
 - use the stricter approved base64url and decimal decoder contract.
+
+### Approved Behavior Changes to Existing Endpoints
+
+`/partitions` reuses GET-many's resource-property filter validation rather than reimplementing it,
+so extracting that validation into one shared component is part of this epic. One behavior of the
+existing collection GET changed in the extraction, deliberately, and is recorded here so DMS-1390
+compares against the post-change behavior rather than capturing the pre-change one as the DMS
+baseline:
+
+- canonicalize a boolean filter value from the parsed boolean rather than by lowercasing the
+  supplied text. `bool.TryParse` ignores surrounding whitespace while `ToLower` does not, so
+  `?isActive=%20true%20` previously reached the candidate query as `" true "` and matched nothing at
+  HTTP 200; it now reaches it as `"true"` and matches. The same change removes a culture-sensitive
+  fold on a fixed protocol token. This applies to GET-many and `/partitions` alike, because both
+  operations must accept the same filters over the same candidate set. The plain extraction alone
+  would have preserved the previous behavior; the canonicalization is a separate, deliberate
+  correction carried in the same work.
 
 ## Likely Affected Areas
 

@@ -55,15 +55,16 @@ public class ApiServiceGetDispatchTests
     {
         [TestCase("/ed-fi/endpointName/partitions")]
         [TestCase("/ed-fi/endpointName/PARTITIONS")]
-        public void It_dispatches_to_the_pipeline_that_declines_to_serve_it(string path)
+        [TestCase("/ed-fi/endpointName/Partitions")]
+        public void It_dispatches_to_the_partitions_pipeline(string path)
         {
             ApiService
                 .SelectGetPipelineKind(ResourcePathParser.Parse(path))
                 .Should()
                 .Be(
-                    ApiService.GetPipelineKind.GetById,
-                    "the partitions pipeline does not exist yet, so the operation is answered with "
-                        + "the existing invalid-identifier response rather than an incomplete surface"
+                    ApiService.GetPipelineKind.Partitions,
+                    "the partitions operation has its own pipeline, and neither of the two GET "
+                        + "pipelines can serve it"
                 );
         }
     }

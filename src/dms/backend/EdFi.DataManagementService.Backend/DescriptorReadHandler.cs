@@ -15,6 +15,7 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Profile;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend;
@@ -49,6 +50,13 @@ internal sealed class DescriptorReadHandler(
     // The descriptor page query binds a single ResourceKeyId discriminator parameter on top of the paging
     // parameters; see DescriptorQueryPageKeysetPlanner. Counted into the non-authorization parameter budget.
     private const int DescriptorQueryResourceKeyParameterCount = 1;
+
+    // The boundary statement binds the unpaged candidate mode's own parameters where a page binds its
+    // paging ones. Derived from the mode rather than written as a literal, so the budget cannot drift
+    // from what the statement actually emits.
+    private static readonly int _descriptorPartitionParameterCount = PageCandidateModeParameters
+        .For(PageCandidateModePlanning.UnpagedCandidatesMode)
+        .Count;
     private readonly IRelationalCommandExecutor _commandExecutor =
         commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
     private readonly IReadableProfileProjector _readableProfileProjector =
@@ -109,6 +117,21 @@ internal sealed class DescriptorReadHandler(
 
         public sealed record Prepared(DescriptorQueryPreparation Preparation)
             : DescriptorQueryPreparationResult;
+    }
+
+    private sealed record DescriptorPartitionPreparation(
+        PageDocumentIdAuthorizationSpec? AuthorizationSpec,
+        PartitionWindowPlan PartitionPlan
+    );
+
+    private abstract record DescriptorPartitionPreparationResult
+    {
+        private DescriptorPartitionPreparationResult() { }
+
+        public sealed record Complete(PartitionResult Result) : DescriptorPartitionPreparationResult;
+
+        public sealed record Prepared(DescriptorPartitionPreparation Preparation)
+            : DescriptorPartitionPreparationResult;
     }
 
     public async Task<GetResult> HandleGetByIdAsync(
@@ -1010,6 +1033,260 @@ internal sealed class DescriptorReadHandler(
         );
     }
 
+    public async Task<PartitionResult> HandlePartitionsAsync(
+        DescriptorPartitionRequest request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        _logger.LogDebug(
+            "Descriptor partition boundaries routed to descriptor read handler for {Resource} - {TraceId}",
+            RelationalWriteSupport.FormatResource(request.Resource),
+            LoggingSanitizer.SanitizeForLogging(request.TraceId.Value)
+        );
+
+        // No read-acceleration path: the cache holds hydrated documents and the candidate pages that
+        // selected them, and a boundary calculation ranges over the whole authorized candidate relation.
+        DescriptorPartitionPreparationResult preparationResult = await PrepareDescriptorPartitionAsync(
+                request,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (preparationResult is DescriptorPartitionPreparationResult.Complete complete)
+        {
+            return complete.Result;
+        }
+
+        var preparation = ((DescriptorPartitionPreparationResult.Prepared)preparationResult).Preparation;
+
+        IReadOnlyList<long> ascendingStarts;
+
+        try
+        {
+            ascendingStarts = await PartitionBoundaryCommand
+                .ExecuteAsync(
+                    _commandExecutor,
+                    preparation.PartitionPlan,
+                    "Descriptor partition boundary",
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        // Trade-off: a provider error raised while executing a custom-view boundary statement is
+        // intentionally relabeled as a custom-view validation failure, even though not every such error
+        // originates in the view. This mirrors the page path so the two operations report the same public
+        // urn:ed-fi:api:system contract for the same condition.
+        catch (DbException ex) when (preparation.AuthorizationSpec?.CustomViewChecks is { Count: > 0 })
+        {
+            throw new CustomViewAuthorizationValidationException(ex);
+        }
+        // The same non-provider fault set the page path catches. A condition both operations can reach
+        // has to leave the backend as the same kind of result, or one answers with the logged
+        // problem+json unknown failure while the other escapes to the generic unhandled 500.
+        catch (NotSupportedException ex)
+        {
+            return new PartitionResult.UnknownPartitionFailure(ex.Message);
+        }
+        catch (DescriptorReadInvariantException ex)
+        {
+            return new PartitionResult.UnknownPartitionFailure(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new PartitionResult.UnknownPartitionFailure(ex.Message);
+        }
+        catch (ArgumentException ex)
+        {
+            return new PartitionResult.UnknownPartitionFailure(ex.Message);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return new PartitionResult.UnknownPartitionFailure(ex.Message);
+        }
+
+        try
+        {
+            return new PartitionResult.PartitionSuccess(
+                PartitionRangeAssembler.ToInclusiveRanges(ascendingStarts)
+            );
+        }
+        // Non-ascending starts mean the compiled statement changed, not that a client sent something
+        // unusual. Reporting it keeps a corrupted boundary set from reaching a client as a walkable one.
+        catch (ArgumentException ex)
+        {
+            return new PartitionResult.UnknownPartitionFailure(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Resolves authorization, preprocesses the filter, and compiles the descriptor boundary statement,
+    /// or reports the outcome that stops the request.
+    /// </summary>
+    /// <remarks>
+    /// Every seam here is the one <see cref="PrepareDescriptorQueryAsync" /> uses, in the same order, so
+    /// a boundary set is calculated over exactly the rows the equivalent GET-many would page: the same
+    /// authorization preflight and its custom-view ordering, the same preprocessor, the same
+    /// <c>ResourceKeyId</c>-rooted candidate planner, and the same parameter budget.
+    /// </remarks>
+    private async Task<DescriptorPartitionPreparationResult> PrepareDescriptorPartitionAsync(
+        DescriptorPartitionRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        var dialect = request.MappingSet.Key.Dialect;
+        var authorizationPreflight = ResolveDescriptorReadAuthorization(
+            request.MappingSet,
+            request.Resource,
+            request.AuthorizationStrategyEvaluators,
+            request.RelationalAuthorizationContext,
+            NamespaceAuthorizationOperation.ReadMany,
+            "descriptor partitions",
+            "GET-many"
+        );
+
+        // Each terminal validates the custom views configured ahead of it. An empty list is a no-op.
+        switch (authorizationPreflight)
+        {
+            case DescriptorReadAuthorizationPreflightOutcome.NotImplemented notImplemented:
+                await ValidateCustomViewsAsync(dialect, notImplemented.CustomViewChecks, cancellationToken)
+                    .ConfigureAwait(false);
+                return new DescriptorPartitionPreparationResult.Complete(
+                    new PartitionResult.PartitionFailureNotImplemented(notImplemented.FailureMessage)
+                );
+            case DescriptorReadAuthorizationPreflightOutcome.SecurityConfigurationError configError:
+                await ValidateCustomViewsAsync(dialect, configError.CustomViewChecks, cancellationToken)
+                    .ConfigureAwait(false);
+                return new DescriptorPartitionPreparationResult.Complete(
+                    new PartitionResult.PartitionFailureSecurityConfiguration(
+                        configError.Errors,
+                        configError.Diagnostics
+                    )
+                );
+            case DescriptorReadAuthorizationPreflightOutcome.NamespaceNotAuthorized namespaceNotAuthorized:
+                await ValidateCustomViewsAsync(
+                        dialect,
+                        namespaceNotAuthorized.CustomViewChecks,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+                return new DescriptorPartitionPreparationResult.Complete(
+                    new PartitionResult.PartitionFailureNamespaceNotAuthorized(namespaceNotAuthorized.Failure)
+                );
+        }
+
+        var proceed = (DescriptorReadAuthorizationPreflightOutcome.Proceed)authorizationPreflight;
+        var authorizationSpec = BuildDescriptorQueryAuthorizationSpec(proceed);
+
+        DescriptorQueryPreprocessingResult preprocessingResult;
+
+        try
+        {
+            preprocessingResult = DescriptorQueryRequestPreprocessor.Preprocess(
+                request.MappingSet,
+                request.Resource,
+                request.QueryElements
+            );
+        }
+        catch (NotSupportedException ex)
+        {
+            return new DescriptorPartitionPreparationResult.Complete(
+                new PartitionResult.PartitionFailureNotImplemented(ex.Message)
+            );
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new DescriptorPartitionPreparationResult.Complete(
+                new PartitionResult.UnknownPartitionFailure(ex.Message)
+            );
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return new DescriptorPartitionPreparationResult.Complete(
+                new PartitionResult.UnknownPartitionFailure(ex.Message)
+            );
+        }
+
+        if (preprocessingResult.Outcome is RelationalQueryPreprocessingOutcome.EmptyPage)
+        {
+            await ValidateCustomViewsAsync(dialect, authorizationSpec?.CustomViewChecks, cancellationToken)
+                .ConfigureAwait(false);
+
+            return new DescriptorPartitionPreparationResult.Complete(
+                new PartitionResult.PartitionSuccess([])
+            );
+        }
+
+        await ValidateCustomViewsAsync(dialect, authorizationSpec?.CustomViewChecks, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (
+            BuildDescriptorQueryParameterBudgetFailure(
+                dialect,
+                request.Resource,
+                proceed.NamespacePrefixParameterization,
+                preprocessingResult.QueryElementsInOrder.Count,
+                _descriptorPartitionParameterCount,
+                CountChangeVersionParameters(request.ChangeVersionRange)
+            ) is
+            { } parameterBudgetFailure
+        )
+        {
+            return new DescriptorPartitionPreparationResult.Complete(
+                RelationalPartitionResultMapping.FromQueryResult(parameterBudgetFailure)
+            );
+        }
+
+        PartitionWindowPlan partitionPlan;
+
+        try
+        {
+            var candidatePlan = new DescriptorQueryPageKeysetPlanner(dialect).PlanCandidates(
+                request.MappingSet,
+                request.Resource,
+                preprocessingResult,
+                authorizationSpec,
+                request.ChangeVersionRange
+            );
+
+            partitionPlan = new PartitionWindowPlanner(dialect).Plan(
+                candidatePlan,
+                request.RequestedPartitionCount,
+                request.MinimumPartitionSize
+            );
+        }
+        catch (NotSupportedException ex)
+        {
+            return new DescriptorPartitionPreparationResult.Complete(
+                new PartitionResult.UnknownPartitionFailure(ex.Message)
+            );
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new DescriptorPartitionPreparationResult.Complete(
+                new PartitionResult.UnknownPartitionFailure(ex.Message)
+            );
+        }
+        catch (ArgumentException ex)
+        {
+            return new DescriptorPartitionPreparationResult.Complete(
+                new PartitionResult.UnknownPartitionFailure(ex.Message)
+            );
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return new DescriptorPartitionPreparationResult.Complete(
+                new PartitionResult.UnknownPartitionFailure(ex.Message)
+            );
+        }
+
+        return new DescriptorPartitionPreparationResult.Prepared(
+            new DescriptorPartitionPreparation(authorizationSpec, partitionPlan)
+        );
+    }
+
     /// <summary>
     /// The maximum <c>DocumentId</c> among the selected descriptor rows, or <see langword="null"/> when
     /// the page selected none. Taken across every row rather than from the last one: the page query
@@ -1183,10 +1460,21 @@ internal sealed class DescriptorReadHandler(
         DescriptorQueryRequest request,
         IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck>? customViewChecks,
         CancellationToken cancellationToken
+    ) => ValidateCustomViewsAsync(request.MappingSet.Key.Dialect, customViewChecks, cancellationToken);
+
+    /// <summary>
+    /// The dialect-keyed form the GET-many and partition terminals share. Neither operation needs
+    /// anything from its request beyond the dialect, and one validator call site keeps the two from
+    /// validating different check sets for the same authorization plan.
+    /// </summary>
+    private Task ValidateCustomViewsAsync(
+        SqlDialect dialect,
+        IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck>? customViewChecks,
+        CancellationToken cancellationToken
     ) =>
         CustomViewAuthorizationValidator.ValidateAsync(
             _commandExecutor,
-            request.MappingSet.Key.Dialect,
+            dialect,
             customViewChecks,
             cancellationToken
         );

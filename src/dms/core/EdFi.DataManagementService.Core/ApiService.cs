@@ -66,6 +66,11 @@ internal class ApiService : IApiService
     private readonly Lazy<PipelineProvider> _querySteps;
 
     /// <summary>
+    /// The pipeline steps to satisfy a partitions request
+    /// </summary>
+    private readonly Lazy<PipelineProvider> _getPartitionsSteps;
+
+    /// <summary>
     /// The pipeline steps to satisfy an update request
     /// </summary>
     private readonly Lazy<PipelineProvider> _updateSteps;
@@ -164,6 +169,7 @@ internal class ApiService : IApiService
         _upsertSteps = new Lazy<PipelineProvider>(CreateUpsertPipeline);
         _getByIdSteps = new Lazy<PipelineProvider>(CreateGetByIdPipeline);
         _querySteps = new Lazy<PipelineProvider>(CreateQueryPipeline);
+        _getPartitionsSteps = new Lazy<PipelineProvider>(CreateGetPartitionsPipeline);
         _updateSteps = new Lazy<PipelineProvider>(CreateUpdatePipeline);
         _deleteByIdSteps = new Lazy<PipelineProvider>(CreateDeleteByIdPipeline);
         _getTokenInfoSteps = new Lazy<PipelineProvider>(CreateGetTokenInfoPipeline);
@@ -297,6 +303,38 @@ internal class ApiService : IApiService
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
             new QueryRequestHandler(_logger, _resiliencePipeline),
+        ]);
+
+        return new PipelineProvider(steps);
+    }
+
+    /// <summary>
+    /// The GET-many pipeline with its paging validation and hydrating handler replaced by the
+    /// partition equivalents.
+    /// </summary>
+    /// <remarks>
+    /// Every step before the swap is shared with GET-many by construction, which is what makes a
+    /// boundary set describe the same authorized candidate relation a page of the same request would be
+    /// selected from. ValidateRouteSemanticsMiddleware is deliberately absent: this pipeline only ever
+    /// serves GET, and a write method never reaches it — dispatch routes writes to their own pipelines,
+    /// where that middleware answers 405 with the partitions Allow set.
+    /// </remarks>
+    private PipelineProvider CreateGetPartitionsPipeline()
+    {
+        var steps = GetRoutedResourceInitialSteps();
+        steps.AddRange([
+            new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
+            new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
+            new ValidateEndpointMiddleware(_logger),
+            _serviceProvider.GetRequiredService<ProfileResolutionMiddleware>(),
+            new BuildResourceInfoMiddleware(
+                _logger,
+                _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
+            ),
+            new ValidatePartitionQueryMiddleware(_logger, _appSettings.Value.DefaultPartitionCount),
+            new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
+            new ProvideAuthorizationFiltersMiddleware(_logger),
+            new PartitionRequestHandler(_logger, _resiliencePipeline, _appSettings.Value.MaximumPageSize),
         ]);
 
         return new PipelineProvider(steps);
@@ -534,6 +572,7 @@ internal class ApiService : IApiService
     {
         Query,
         GetById,
+        Partitions,
     }
 
     /// <summary>
@@ -554,15 +593,10 @@ internal class ApiService : IApiService
             } => GetPipelineKind.Query,
             ResourcePathParseResult.Recognized { PathComponents.Operation: ResourcePathOperation.ById } =>
                 GetPipelineKind.GetById,
-            // The partitions pipeline does not exist yet. Both GET pipelines take their path parsing
-            // from the same shared initial steps, and that parsing answers a recognized partitions
-            // operation with the invalid-identifier response either way, so the served response does
-            // not depend on this choice. GetById is named to match the response a third path segment
-            // already receives, and no incomplete partitions surface is exposed.
             ResourcePathParseResult.Recognized
             {
                 PathComponents.Operation: ResourcePathOperation.Partitions,
-            } => GetPipelineKind.GetById,
+            } => GetPipelineKind.Partitions,
             ResourcePathParseResult.InvalidIdentifier => GetPipelineKind.GetById,
             ResourcePathParseResult.Unmatched => GetPipelineKind.Query,
             _ => throw new InvalidOperationException(
@@ -590,6 +624,7 @@ internal class ApiService : IApiService
         PipelineProvider steps = SelectGetPipelineKind(ResourcePathParser.Parse(frontendRequest.Path)) switch
         {
             GetPipelineKind.GetById => _getByIdSteps.Value,
+            GetPipelineKind.Partitions => _getPartitionsSteps.Value,
             _ => _querySteps.Value,
         };
 

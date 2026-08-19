@@ -63,6 +63,40 @@ internal interface IPlanSqlDialect
     void AppendCursorPagingClause(SqlWriter writer, string pageSizeParameterName);
 
     /// <summary>
+    /// Gets the dialect's window aggregate that counts every row of the partition candidate relation.
+    /// SQL Server uses <c>COUNT_BIG</c>, whose <c>bigint</c> result a candidate set larger than an
+    /// <c>int</c> requires; PostgreSQL's <c>COUNT</c> already returns <c>bigint</c>.
+    /// </summary>
+    string CandidateCountOverWindowSql { get; }
+
+    /// <summary>
+    /// Appends the dialect's partition-size expression: the greater of the mathematical ceiling of
+    /// <paramref name="candidateCountExpression" /> divided by the requested partition count, and the
+    /// minimum partition size, as a <c>bigint</c>.
+    /// </summary>
+    /// <remarks>
+    /// The division must be performed in a non-integer type. An integer quotient with a ceiling applied
+    /// afterward is a no-op on an already-truncated value, which produces partitions smaller than the
+    /// requested count requires and therefore one token more than the contract permits. The result is
+    /// converted back to <c>bigint</c> so that the modulo that selects start rows has operands of the
+    /// same type as <c>ROW_NUMBER()</c>.
+    /// </remarks>
+    /// <param name="writer">The SQL writer to append to.</param>
+    /// <param name="candidateCountExpression">
+    /// The already-qualified expression yielding the candidate count.
+    /// </param>
+    /// <param name="partitionCountParameterName">The bare requested partition count parameter name.</param>
+    /// <param name="minimumPartitionSizeParameterName">
+    /// The bare minimum partition size parameter name.
+    /// </param>
+    void AppendPartitionSizeExpression(
+        SqlWriter writer,
+        string candidateCountExpression,
+        string partitionCountParameterName,
+        string minimumPartitionSizeParameterName
+    );
+
+    /// <summary>
     /// Appends a dialect-specific <c>CREATE TEMP TABLE</c> DDL statement for the keyset table.
     /// </summary>
     /// <param name="writer">The SQL writer to append to.</param>

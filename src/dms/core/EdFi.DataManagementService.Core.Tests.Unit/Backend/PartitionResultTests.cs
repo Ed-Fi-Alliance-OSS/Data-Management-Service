@@ -58,6 +58,111 @@ public class Given_A_Partition_Success_Result
     }
 }
 
+/// <summary>
+/// The partition failures reachable from the shared authorization, capability, and execution path the
+/// partition operation runs. Named for partitions rather than reusing the query names, so a partition
+/// outcome cannot be mistaken for a GET-many one at the seam.
+/// </summary>
+[TestFixture]
+[Parallelizable]
+public class Given_A_Partition_Failure_Result
+{
+    [Test]
+    public void It_carries_the_not_implemented_message()
+    {
+        new PartitionResult.PartitionFailureNotImplemented("no query capability")
+            .FailureMessage.Should()
+            .Be("no query capability");
+    }
+
+    [Test]
+    public void It_carries_security_configuration_errors_and_diagnostics()
+    {
+        SecurityConfigurationFailureDiagnostic[] diagnostics =
+        [
+            new(ResourceFullName: "Ed-Fi.School", CmsAction: "Read"),
+        ];
+
+        PartitionResult.PartitionFailureSecurityConfiguration failure = new(
+            ["metadata is invalid"],
+            diagnostics
+        );
+
+        failure.Errors.Should().Equal("metadata is invalid");
+        failure.Diagnostics.Should().BeSameAs(diagnostics);
+    }
+
+    [Test]
+    public void It_allows_security_configuration_failures_without_diagnostics()
+    {
+        new PartitionResult.PartitionFailureSecurityConfiguration(["metadata is invalid"])
+            .Diagnostics.Should()
+            .BeNull();
+    }
+
+    private static NamespaceAuthorizationFailure CreateNamespaceFailure() =>
+        new(
+            FailureKind: NamespaceAuthorizationFailureKind.NoPrefixesConfigured,
+            ValueSource: null,
+            EmittedAuth1Index: null,
+            StrategyName: "NamespaceBased",
+            ConfiguredNamespacePrefixes: []
+        );
+
+    [Test]
+    public void It_carries_the_namespace_authorization_failure_metadata()
+    {
+        NamespaceAuthorizationFailure namespaceFailure = CreateNamespaceFailure();
+
+        new PartitionResult.PartitionFailureNamespaceNotAuthorized(namespaceFailure)
+            .NamespaceFailure.Should()
+            .BeSameAs(namespaceFailure);
+    }
+
+    [Test]
+    public void It_carries_no_payload_for_a_retryable_failure()
+    {
+        typeof(PartitionResult.PartitionFailureRetryable)
+            .GetProperties(BindingFlags.Instance | BindingFlags.Public)
+            .Should()
+            .BeEmpty();
+    }
+
+    [Test]
+    public void It_carries_the_unknown_failure_message()
+    {
+        new PartitionResult.UnknownPartitionFailure("something else went wrong")
+            .FailureMessage.Should()
+            .Be("something else went wrong");
+    }
+
+    [TestCaseSource(nameof(FailureAlternatives))]
+    public void It_is_a_partition_result(PartitionResult failure)
+    {
+        failure.Should().BeAssignableTo<PartitionResult>();
+    }
+
+    private static IEnumerable<PartitionResult> FailureAlternatives() =>
+        [
+            new PartitionResult.PartitionFailureNotImplemented("message"),
+            new PartitionResult.PartitionFailureSecurityConfiguration(["message"]),
+            new PartitionResult.PartitionFailureNamespaceNotAuthorized(CreateNamespaceFailure()),
+            new PartitionResult.PartitionFailureRetryable(),
+            new PartitionResult.UnknownPartitionFailure("message"),
+        ];
+
+    [Test]
+    public void It_offers_no_known_error_alternative()
+    {
+        // GET-many has one for invalid query terms that evaded validation. No partition path produces
+        // that condition, so the contract does not advertise an outcome nothing can return.
+        typeof(PartitionResult)
+            .GetNestedTypes()
+            .Should()
+            .NotContain(type => type.Name.Contains("KnownError", StringComparison.Ordinal));
+    }
+}
+
 [TestFixture]
 [Parallelizable]
 public class Given_The_Cursor_Paging_And_Partition_Contracts

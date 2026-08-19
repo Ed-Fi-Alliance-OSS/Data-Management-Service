@@ -17,10 +17,11 @@ namespace EdFi.DataManagementService.Core.Paging;
 /// three of them should learn about all three in one response rather than over three round trips.
 /// </param>
 /// <param name="RequestedPartitionCount">
-/// The validated desired partition count, or null when the request omitted it or was rejected. The
-/// partitions pipeline does not exist yet. A caller that comes to serve it must apply the configured
-/// default to a null. It is deliberately null whenever <paramref name="Errors"/> is non-empty, so a
-/// count from a rejected request cannot be used by mistake.
+/// The validated desired partition count, or null when the request omitted it or was rejected.
+/// Applying the configured default to a null belongs to the caller, because the configuration this
+/// validator would have to read is not something a pure validator should know. It is deliberately null
+/// whenever <paramref name="Errors"/> is non-empty, so a count from a rejected request cannot be used
+/// by mistake.
 /// </param>
 internal sealed record PartitionValidationResult(IReadOnlyList<string> Errors, int? RequestedPartitionCount);
 
@@ -34,6 +35,19 @@ internal sealed record PartitionValidationResult(IReadOnlyList<string> Errors, i
 /// </remarks>
 internal static class PartitionRequestValidator
 {
+    /// <summary>
+    /// The public query key carrying the desired partition count. Spelled <c>number</c>, which is the
+    /// query name the consumed base ApiSchema's <c>numberOfPartitions</c> parameter component
+    /// publishes.
+    /// </summary>
+    /// <remarks>
+    /// A partition-control parameter is removed from resource-filter matching before the query-field
+    /// lookup runs, so a resource declaring a query field named <c>number</c> can filter on it on its
+    /// collection GET but not on its <c>/partitions</c> sibling. That asymmetry is a recorded approved
+    /// difference rather than an oversight. Ed-Fi's query namespace is flat and offers no qualification
+    /// syntax, so one raw key cannot carry both meanings on this operation, and serving the published
+    /// name is worth more than the filter the operation gives up for it.
+    /// </remarks>
     internal const string NumberParameter = "number";
 
     /// <summary>
@@ -94,9 +108,8 @@ internal static class PartitionRequestValidator
         // Phase 2, reserved paging parameters. Reported without parsing their values: the complaint is
         // that the parameter does not apply here at all, so whether its value is well formed is beside
         // the point. Resource-property filters and the change-version filters are not reserved and are
-        // deliberately not reported. The partitions pipeline does not exist yet. Every other unknown
-        // field is left for a caller that comes to serve it to answer with its own
-        // unknown-query-field rule.
+        // deliberately not reported. Every other unknown field is left to the caller's own
+        // unknown-query-field rule, which ValidatePartitionQueryMiddleware applies before this phase.
         string[] errors =
         [
             .. ReservedParameters.Where(queryParameters.ContainsKey).Select(UnsupportedParameter),

@@ -46,3 +46,23 @@ public interface IQueryHandler
         CancellationToken cancellationToken = default
     );
 }
+
+/// <summary>
+/// The handler DMS Core uses to calculate partition boundaries.
+/// </summary>
+/// <remarks>
+/// Dedicated rather than another <see cref="IQueryHandler" /> operation: the query contract is built
+/// around hydrated documents and a total count, and a partition request selects identifiers only. The
+/// two contracts also differ in what they may carry — a partition request has no page, no profile
+/// projection, and no token text.
+/// </remarks>
+public interface IPartitionQueryHandler
+{
+    /// <summary>
+    /// Entry point for partition boundary requests.
+    /// </summary>
+    Task<PartitionResult> QueryPartitions(
+        IPartitionRequest partitionRequest,
+        CancellationToken cancellationToken = default
+    );
+}

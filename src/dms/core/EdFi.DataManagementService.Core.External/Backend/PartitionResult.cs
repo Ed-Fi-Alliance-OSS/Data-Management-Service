@@ -11,8 +11,20 @@ namespace EdFi.DataManagementService.Core.External.Backend;
 /// A partition-boundary result from a partition handler.
 /// </summary>
 /// <remarks>
-/// Provider-neutral by construction: it carries typed inclusive DocumentId ranges only, never token
-/// text and no provider syntax. Core encodes each range as a page token at the HTTP contract boundary.
+/// Provider-neutral by construction: success carries typed inclusive DocumentId ranges only, never
+/// token text and no provider syntax. Core encodes each range as a page token at the HTTP contract
+/// boundary.
+///
+/// The failure alternatives mirror the query failure set the shared capability lookup, authorization
+/// resolution, and command execution report, so the two operations cannot answer the same backend
+/// condition differently. Mirroring the set rather than only the conditions a partition request reaches
+/// means an alternative may have no producer: nothing classifies a provider fault as retryable on
+/// either operation today, so <see cref="PartitionFailureRetryable"/> is carried for the query
+/// alternative it mirrors rather than because a partition path constructs it. They are named for
+/// partitions rather than reused from <see cref="QueryResult"/> so a partition outcome cannot be
+/// mistaken for a GET-many one at the seam. There is deliberately no known-error alternative: that
+/// query failure reports invalid query terms that evaded validation against a hydrating page, and no
+/// partition path produces it, so the contract does not advertise an outcome nothing can return.
 /// </remarks>
 public abstract record PartitionResult
 {
@@ -24,6 +36,41 @@ public abstract record PartitionResult
     /// bounded above, so a later insert cannot move into a completed partition.
     /// </param>
     public sealed record PartitionSuccess(IReadOnlyList<CursorRange> Ranges) : PartitionResult;
+
+    /// <summary>
+    /// A failure because the requested partition operation is intentionally not implemented, for
+    /// example a resource with no relational query capability.
+    /// </summary>
+    /// <param name="FailureMessage">A message providing failure information</param>
+    public sealed record PartitionFailureNotImplemented(string FailureMessage) : PartitionResult;
+
+    /// <summary>
+    /// A failure because security configuration metadata for the partition query is invalid.
+    /// </summary>
+    /// <param name="Errors">Actionable diagnostics describing the invalid metadata</param>
+    public sealed record PartitionFailureSecurityConfiguration(
+        string[] Errors,
+        SecurityConfigurationFailureDiagnostic[]? Diagnostics = null
+    ) : PartitionResult;
+
+    /// <summary>
+    /// A failure because namespace authorization denied the request. Carries the namespace failure
+    /// metadata so Core can build the ProblemDetails response.
+    /// </summary>
+    public sealed record PartitionFailureNamespaceNotAuthorized(
+        NamespaceAuthorizationFailure NamespaceFailure
+    ) : PartitionResult;
+
+    /// <summary>
+    /// A transient failure due to a retryable condition, for example a serialization issue.
+    /// </summary>
+    public sealed record PartitionFailureRetryable : PartitionResult;
+
+    /// <summary>
+    /// A failure of unknown category.
+    /// </summary>
+    /// <param name="FailureMessage">A message providing failure information</param>
+    public sealed record UnknownPartitionFailure(string FailureMessage) : PartitionResult;
 
     private PartitionResult() { }
 }

@@ -72,12 +72,19 @@ internal static class PageCandidateModePlanning
     }
 
     /// <summary>
+    /// The unpaged candidate mode instance. Candidate planning reserves its parameter names against
+    /// filter collisions and partition-window compilation emits and binds them, so both read the same
+    /// instance: a second construction site could reserve names the emitted SQL never uses.
+    /// </summary>
+    public static PageCandidateMode.UnpagedCandidates UnpagedCandidatesMode { get; } = new();
+
+    /// <summary>
     /// Builds the unpaged candidate mode. It binds no values: its partition parameter names are
     /// reserved against filter collisions, and partition-window SQL binds them when it emits them.
     /// </summary>
     public static PlannedCandidateMode ForUnpagedCandidates()
     {
-        return Plan(new PageCandidateMode.UnpagedCandidates(), []);
+        return Plan(UnpagedCandidatesMode, []);
     }
 
     private static PlannedCandidateMode ForTraditional(

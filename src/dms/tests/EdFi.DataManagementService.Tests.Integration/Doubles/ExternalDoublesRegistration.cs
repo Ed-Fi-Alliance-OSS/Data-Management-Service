@@ -54,7 +54,8 @@ internal static class ExternalDoublesRegistration
         RelationalProviderToken? relationalProviderToken = null,
         DocumentCacheReadAcquisitionFailureRecorder? documentCacheReadAcquisitionFailureRecorder = null,
         DocumentCacheDirectFillTimeoutRecorder? documentCacheDirectFillTimeoutRecorder = null,
-        DocumentCacheReadTelemetryRecorder? documentCacheReadTelemetryRecorder = null
+        DocumentCacheReadTelemetryRecorder? documentCacheReadTelemetryRecorder = null,
+        IReadOnlyList<string>? assignedProfileNames = null
     )
     {
         if (
@@ -149,7 +150,9 @@ internal static class ExternalDoublesRegistration
             services.AddSingleton(documentCacheReadTelemetryRecorder);
             services.AddSingleton<IDocumentCacheReadTelemetry, TelemetryOnlyDocumentCacheReadTelemetry>();
         }
-        services.AddSingleton<IProfileCmsProvider>(FakeProfileCmsProvider.FromFixture(fixture));
+        services.AddSingleton<IProfileCmsProvider>(
+            FakeProfileCmsProvider.FromFixture(fixture, assignedProfileNames)
+        );
         services.AddSingleton<IStartupProcessExit, NonExitingStartupProcessExit>();
     }
 }

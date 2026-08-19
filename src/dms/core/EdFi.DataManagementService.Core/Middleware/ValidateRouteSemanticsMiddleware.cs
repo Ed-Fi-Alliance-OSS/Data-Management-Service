@@ -28,10 +28,8 @@ internal class ValidateRouteSemanticsMiddleware(ILogger _logger) : IPipelineStep
 
     /// <summary>
     /// The partitions operation is a read-only sibling of the GET-many endpoint, so the write
-    /// methods this middleware rejects on it leave GET as the whole Allow set. Advertised even
-    /// though no partitions pipeline exists yet and ParsePathMiddleware answers the GET itself as
-    /// an invalid identifier: the header has to name the methods the route will serve, and naming
-    /// the collection's set instead would advertise the very POST being rejected.
+    /// methods this middleware rejects on it leave GET as the whole Allow set. Naming the
+    /// collection's set instead would advertise the very POST being rejected.
     /// </summary>
     internal const string PartitionsMethods = "GET";
 

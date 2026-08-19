@@ -259,6 +259,86 @@ public class PipelineOrderingTests
         }
     }
 
+    /// <summary>
+    /// The partitions pipeline is the GET-many pipeline with its paging validation and hydrating
+    /// handler replaced. Asserting the whole composed sequence against the query pipeline's, rather
+    /// than spot-checking a few steps, is what makes a boundary set provably calculated over the same
+    /// authorized candidate relation a page of the same request would be selected from: a step silently
+    /// added to or dropped from either one fails here.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Partitions_Pipeline : PipelineOrderingTests
+    {
+        private List<Type> _partitionStepTypes = [];
+        private List<Type> _queryStepTypes = [];
+
+        [SetUp]
+        public void Setup()
+        {
+            _partitionStepTypes = GetRoutedResourcePipelineStepTypes("CreateGetPartitionsPipeline");
+            _queryStepTypes = GetRoutedResourcePipelineStepTypes("CreateQueryPipeline");
+        }
+
+        /// <summary>
+        /// The two substitutions that turn a query pipeline step into its partitions counterpart.
+        /// </summary>
+        private static Type SubstitutePartitionStep(Type queryStepType)
+        {
+            if (queryStepType == typeof(ValidateQueryMiddleware))
+            {
+                return typeof(ValidatePartitionQueryMiddleware);
+            }
+
+            if (queryStepType == typeof(QueryRequestHandler))
+            {
+                return typeof(PartitionRequestHandler);
+            }
+
+            return queryStepType;
+        }
+
+        [Test]
+        public void It_differs_from_the_query_pipeline_only_in_its_validation_and_handler()
+        {
+            _partitionStepTypes.Should().Equal([.. _queryStepTypes.Select(SubstitutePartitionStep)]);
+        }
+
+        // The candidate relation is authorized before the boundary statement runs, exactly as it is
+        // before a page is selected.
+        [Test]
+        public void It_places_authorization_between_validation_and_the_handler()
+        {
+            var validationIndex = _partitionStepTypes.IndexOf(typeof(ValidatePartitionQueryMiddleware));
+            var authorizationIndex = _partitionStepTypes.IndexOf(
+                typeof(ResourceActionAuthorizationMiddleware)
+            );
+            var filtersIndex = _partitionStepTypes.IndexOf(typeof(ProvideAuthorizationFiltersMiddleware));
+            var handlerIndex = _partitionStepTypes.IndexOf(typeof(PartitionRequestHandler));
+
+            validationIndex.Should().BeGreaterThanOrEqualTo(0);
+            authorizationIndex.Should().BeGreaterThan(validationIndex);
+            filtersIndex.Should().BeGreaterThan(authorizationIndex);
+            handlerIndex.Should().BeGreaterThan(filtersIndex);
+        }
+
+        // This pipeline only ever serves GET, so the middleware that rejects a method for an operation
+        // has nothing to do here. A write method never reaches it: dispatch routes writes to their own
+        // pipelines, where that middleware answers with the partitions Allow set.
+        [Test]
+        public void It_omits_route_semantics_validation()
+        {
+            _partitionStepTypes.Should().NotContain(typeof(ValidateRouteSemanticsMiddleware));
+        }
+
+        [Test]
+        public void It_never_validates_page_paging()
+        {
+            _partitionStepTypes.Should().NotContain(typeof(ValidateQueryMiddleware));
+            _partitionStepTypes.Should().NotContain(typeof(QueryRequestHandler));
+        }
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_The_Tracked_Changes_Pipeline : PipelineOrderingTests
@@ -400,81 +480,85 @@ public class PipelineOrderingTests
         }
     }
 
+    /// <summary>
+    /// Builds a routed-resource pipeline through the real ApiService factory, so the composed sequence
+    /// under test is the one production builds.
+    /// </summary>
+    private static List<Type> GetRoutedResourcePipelineStepTypes(string factoryMethodName)
+    {
+        var services = new ServiceCollection();
+
+        services.Configure<JwtAuthenticationOptions>(options => { });
+        services.AddTransient<JwtAuthenticationMiddleware>();
+        services.AddTransient<IJwtValidationService>(_ => A.Fake<IJwtValidationService>());
+        services.AddTransient<ILogger<JwtAuthenticationMiddleware>>(_ =>
+            NullLogger<JwtAuthenticationMiddleware>.Instance
+        );
+
+        services.AddTransient<ResolveDataStoreMiddleware>();
+        services.AddSingleton<IApplicationContextProvider>(A.Fake<IApplicationContextProvider>());
+        services.AddSingleton<IDataStoreProvider>(A.Fake<IDataStoreProvider>());
+        services.AddSingleton<IDataStoreSelection>(A.Fake<IDataStoreSelection>());
+        services.AddTransient<ILogger<ResolveDataStoreMiddleware>>(_ =>
+            NullLogger<ResolveDataStoreMiddleware>.Instance
+        );
+
+        var appSettingsOptions = Options.Create(
+            new AppSettings { AllowIdentityUpdateOverrides = "", MaskRequestBodyInLogs = false }
+        );
+        services.AddSingleton(appSettingsOptions);
+        services.AddSingleton<IDatabaseFingerprintReader, NullDatabaseFingerprintReader>();
+        services.AddSingleton<DatabaseFingerprintProvider>();
+        services.AddTransient<ValidateDatabaseFingerprintMiddleware>();
+        services.AddTransient<ILogger<ValidateDatabaseFingerprintMiddleware>>(_ =>
+            NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance
+        );
+
+        TestHelper.AddResourceKeyValidationServices(services);
+        TestHelper.AddMappingSetResolutionServices(services);
+
+        services.AddSingleton<IProfileService>(A.Fake<IProfileService>());
+        services.AddTransient<ProfileResolutionMiddleware>();
+        services.AddTransient<ILogger<ProfileResolutionMiddleware>>(_ =>
+            NullLogger<ProfileResolutionMiddleware>.Instance
+        );
+
+        services.AddSingleton<ICompiledSchemaCache>(A.Fake<ICompiledSchemaCache>());
+        services.AddTransient<ProfileWritePipelineMiddleware>();
+        services.AddTransient<ILogger<ProfileWritePipelineMiddleware>>(_ =>
+            NullLogger<ProfileWritePipelineMiddleware>.Instance
+        );
+
+        var serviceProvider = services.BuildServiceProvider();
+
+        var apiService = new ApiService(
+            A.Fake<IApiSchemaProvider>(),
+            A.Fake<IEffectiveApiSchemaProvider>(),
+            A.Fake<IClaimSetProvider>(),
+            A.Fake<IDocumentValidator>(),
+            A.Fake<IMatchingDocumentUuidsValidator>(),
+            A.Fake<IEqualityConstraintValidator>(),
+            A.Fake<IDecimalValidator>(),
+            NullLogger<ApiService>.Instance,
+            NullLoggerFactory.Instance,
+            appSettingsOptions,
+            ResiliencePipeline.Empty,
+            A.Fake<ResourceLoadOrderCalculator>(),
+            serviceProvider,
+            A.Fake<IServiceScopeFactory>(),
+            A.Fake<CachedClaimSetProvider>(),
+            A.Fake<IResourceDependencyGraphMLFactory>(),
+            A.Fake<IProfileService>(),
+            new CircuitBreakerSettings()
+        );
+
+        return GetStepTypes(apiService, factoryMethodName);
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_The_Routed_Resource_Pipelines : PipelineOrderingTests
     {
-        private static List<Type> GetRoutedResourcePipelineStepTypes(string factoryMethodName)
-        {
-            var services = new ServiceCollection();
-
-            services.Configure<JwtAuthenticationOptions>(options => { });
-            services.AddTransient<JwtAuthenticationMiddleware>();
-            services.AddTransient<IJwtValidationService>(_ => A.Fake<IJwtValidationService>());
-            services.AddTransient<ILogger<JwtAuthenticationMiddleware>>(_ =>
-                NullLogger<JwtAuthenticationMiddleware>.Instance
-            );
-
-            services.AddTransient<ResolveDataStoreMiddleware>();
-            services.AddSingleton<IApplicationContextProvider>(A.Fake<IApplicationContextProvider>());
-            services.AddSingleton<IDataStoreProvider>(A.Fake<IDataStoreProvider>());
-            services.AddSingleton<IDataStoreSelection>(A.Fake<IDataStoreSelection>());
-            services.AddTransient<ILogger<ResolveDataStoreMiddleware>>(_ =>
-                NullLogger<ResolveDataStoreMiddleware>.Instance
-            );
-
-            var appSettingsOptions = Options.Create(
-                new AppSettings { AllowIdentityUpdateOverrides = "", MaskRequestBodyInLogs = false }
-            );
-            services.AddSingleton(appSettingsOptions);
-            services.AddSingleton<IDatabaseFingerprintReader, NullDatabaseFingerprintReader>();
-            services.AddSingleton<DatabaseFingerprintProvider>();
-            services.AddTransient<ValidateDatabaseFingerprintMiddleware>();
-            services.AddTransient<ILogger<ValidateDatabaseFingerprintMiddleware>>(_ =>
-                NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance
-            );
-
-            TestHelper.AddResourceKeyValidationServices(services);
-            TestHelper.AddMappingSetResolutionServices(services);
-
-            services.AddSingleton<IProfileService>(A.Fake<IProfileService>());
-            services.AddTransient<ProfileResolutionMiddleware>();
-            services.AddTransient<ILogger<ProfileResolutionMiddleware>>(_ =>
-                NullLogger<ProfileResolutionMiddleware>.Instance
-            );
-
-            services.AddSingleton<ICompiledSchemaCache>(A.Fake<ICompiledSchemaCache>());
-            services.AddTransient<ProfileWritePipelineMiddleware>();
-            services.AddTransient<ILogger<ProfileWritePipelineMiddleware>>(_ =>
-                NullLogger<ProfileWritePipelineMiddleware>.Instance
-            );
-
-            var serviceProvider = services.BuildServiceProvider();
-
-            var apiService = new ApiService(
-                A.Fake<IApiSchemaProvider>(),
-                A.Fake<IEffectiveApiSchemaProvider>(),
-                A.Fake<IClaimSetProvider>(),
-                A.Fake<IDocumentValidator>(),
-                A.Fake<IMatchingDocumentUuidsValidator>(),
-                A.Fake<IEqualityConstraintValidator>(),
-                A.Fake<IDecimalValidator>(),
-                NullLogger<ApiService>.Instance,
-                NullLoggerFactory.Instance,
-                appSettingsOptions,
-                ResiliencePipeline.Empty,
-                A.Fake<ResourceLoadOrderCalculator>(),
-                serviceProvider,
-                A.Fake<IServiceScopeFactory>(),
-                A.Fake<CachedClaimSetProvider>(),
-                A.Fake<IResourceDependencyGraphMLFactory>(),
-                A.Fake<IProfileService>(),
-                new CircuitBreakerSettings()
-            );
-
-            return GetStepTypes(apiService, factoryMethodName);
-        }
-
         [TestCase("CreateUpsertPipeline")]
         [TestCase("CreateUpdatePipeline")]
         [TestCase("CreateDeleteByIdPipeline")]

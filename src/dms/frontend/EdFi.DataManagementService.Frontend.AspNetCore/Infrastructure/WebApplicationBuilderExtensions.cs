@@ -332,6 +332,7 @@ public static class WebApplicationBuilderExtensions
         );
         webAppBuilder.Services.AddScoped<IDocumentStoreRepository, RelationalDocumentStoreRepository>();
         webAppBuilder.Services.AddScoped<IQueryHandler, RelationalDocumentStoreRepository>();
+        webAppBuilder.Services.AddScoped<IPartitionQueryHandler, RelationalDocumentStoreRepository>();
         webAppBuilder.Services.Replace(
             ServiceDescriptor.Singleton<IBackendMappingInitializer, RelationalBackendMappingInitializer>()
         );
