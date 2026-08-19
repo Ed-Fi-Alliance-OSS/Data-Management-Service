@@ -16,7 +16,7 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 [TestFixture]
 [Parallelizable]
 [Category("CdcConnectorTemplateValidation")]
-public class Given_CdcConnectorTemplateInputValidation
+public class Given_CdcConnectorTemplateValidationTests
 {
     [Test]
     public void It_accepts_allow_listed_postgresql_connection_and_unprefixed_kafka_security_properties()
@@ -513,6 +513,55 @@ public class Given_CdcConnectorTemplateInputValidation
         act.Should()
             .Throw<CdcConnectorTemplateValidationException>()
             .Where(exception => !exception.ToString().Contains(rawSecret, StringComparison.Ordinal));
+    }
+
+    [Test]
+    public void It_accepts_exact_file_secret_references()
+    {
+        CdcConnectorTemplateValidationResult result = Validate(
+            CdcProvider.Postgresql,
+            BuildPostgresqlConnectionProperties("${file:/run/secrets/db:password}")
+        );
+
+        using var _ = new AssertionScope();
+        result.IsValid.Should().BeTrue();
+        result.Diagnostics.Should().BeEmpty();
+    }
+
+    [TestCase("${file:/run/secrets/db:password}Passw0rd}")]
+    [TestCase("${file:/run/secrets/db:password}}")]
+    [TestCase("${file:relative/path:password}")]
+    [TestCase("${file:/run/secrets/db:}")]
+    [TestCase("${file:/run/secrets/db:password")]
+    [TestCase("${env:CDC_DATABASE_PASSWORD}Passw0rd}")]
+    public void It_rejects_malformed_externalized_secret_references_without_leaking_them(
+        string malformedReference
+    )
+    {
+        CdcConnectorTemplateValidationResult result = Validate(
+            CdcProvider.Postgresql,
+            BuildPostgresqlConnectionProperties(malformedReference)
+        );
+        Action act = () => result.ThrowIfInvalid();
+
+        CdcConnectorTemplateDiagnostic diagnostic = result.Diagnostics.Should().ContainSingle().Subject;
+
+        using var _ = new AssertionScope();
+        result.IsValid.Should().BeFalse();
+        diagnostic.Code.Should().Be(CdcConnectorTemplateDiagnosticCodes.ExternalizedSecretReferenceRequired);
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.SecretRedactionViolation);
+        diagnostic.PropertyName.Should().Be("database.password");
+        diagnostic.ObservedValue.Should().Be("[redacted]");
+        diagnostic
+            .RedactionClassification.Should()
+            .Be(CdcConnectorTemplateRedactionClassification.SecretValue);
+        result
+            .Diagnostics.SelectMany(DiagnosticText)
+            .Should()
+            .NotContain(value => value.Contains(malformedReference, StringComparison.Ordinal));
+        act.Should()
+            .Throw<CdcConnectorTemplateValidationException>()
+            .Where(exception => !exception.ToString().Contains(malformedReference, StringComparison.Ordinal));
     }
 
     [Test]
