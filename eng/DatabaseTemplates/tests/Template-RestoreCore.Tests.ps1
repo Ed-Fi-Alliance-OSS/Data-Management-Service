@@ -750,6 +750,10 @@ Describe "inventory catalog query SQL builders" {
         $sql | Should -BeLike "*is_ms_shipped = 0*"
         $sql | Should -BeLike "*WHEN 'U' THEN 'table'*"
         $sql | Should -BeLike "*WHEN 'TR' THEN 'trigger'*"
+        # The CASE over sys.objects.type carries the fixed catalog collation, which conflicts
+        # with the sysname concatenation when the database collation differs (the DMS containers
+        # do; live-proven). The DATABASE_DEFAULT coercion must stay on the CASE expression.
+        $sql | Should -BeLike "*END COLLATE DATABASE_DEFAULT*"
     }
 
     It "excludes the built-in public role and fixed roles from the MSSQL principal query" {
