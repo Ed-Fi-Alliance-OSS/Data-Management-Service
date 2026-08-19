@@ -59,7 +59,7 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
         services.TryAdd(
             ServiceDescriptor.Singleton<IDocumentProjectionWorkPager, PostgresqlDocumentProjectionWorkPager>()
         );
-        services.TryAdd(
+        services.TryAddEnumerable(
             ServiceDescriptor.Singleton<
                 IDocumentCacheStatusCurrentSourceObserver,
                 PostgresqlDocumentCacheStatusCurrentSourceObserver

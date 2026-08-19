@@ -56,7 +56,7 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
         services.TryAdd(
             ServiceDescriptor.Singleton<IDocumentProjectionWorkPager, MssqlDocumentProjectionWorkPager>()
         );
-        services.TryAdd(
+        services.TryAddEnumerable(
             ServiceDescriptor.Singleton<
                 IDocumentCacheStatusCurrentSourceObserver,
                 MssqlDocumentCacheStatusCurrentSourceObserver
