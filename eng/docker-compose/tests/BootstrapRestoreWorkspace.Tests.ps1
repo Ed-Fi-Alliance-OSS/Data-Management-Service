@@ -1252,13 +1252,13 @@ Describe "Invoke-RestoreScratchValidation" {
 
         # Replay sequence: role init, terminate, drop-if-exists, create - then cp and psql -f.
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -like "*edfi_dms_enqueue_owner*" }
-        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -like "CREATE DATABASE edfi_dms_restore_scratch_*" }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -like 'CREATE DATABASE "edfi_dms_restore_scratch_*' }
         Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "cp * dms-postgresql:/tmp/restore-scratch-*.sql" }
         Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql psql -U postgres -d edfi_dms_restore_scratch_* -v ON_ERROR_STOP=1 -f /tmp/restore-scratch-*.sql" }
 
         # The scratch is dropped in finally (the initial defensive drop plus the cleanup drop)
         # and the transient in-container file is removed.
-        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 2 -Exactly -ParameterFilter { $Query -like "DROP DATABASE IF EXISTS edfi_dms_restore_scratch_*" }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 2 -Exactly -ParameterFilter { $Query -like 'DROP DATABASE IF EXISTS "edfi_dms_restore_scratch_*' }
         Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql rm -f /tmp/restore-scratch-*.sql" }
     }
 
@@ -1305,7 +1305,7 @@ Describe "Invoke-RestoreScratchValidation" {
         { Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Populated -DatabaseEngine postgresql } |
             Should -Throw $Expected
 
-        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 2 -Exactly -ParameterFilter { $Query -like "DROP DATABASE IF EXISTS edfi_dms_restore_scratch_*" }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 2 -Exactly -ParameterFilter { $Query -like 'DROP DATABASE IF EXISTS "edfi_dms_restore_scratch_*' }
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "*SourceIdentity*" }
     }
 
@@ -1418,8 +1418,8 @@ Describe "Invoke-RestoreTargetReplacement" {
         $global:TargetCallSequence[0] | Should -Be "safety"
 
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -like "*pg_terminate_backend*edfi_datamanagementservice*" }
-        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -eq "DROP DATABASE IF EXISTS edfi_datamanagementservice;" }
-        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -eq "CREATE DATABASE edfi_datamanagementservice;" }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -eq 'DROP DATABASE IF EXISTS "edfi_datamanagementservice";' }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -eq 'CREATE DATABASE "edfi_datamanagementservice";' }
         Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "cp * dms-postgresql:/tmp/restore-target-*.sql" }
         Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql psql -U postgres -d edfi_datamanagementservice -v ON_ERROR_STOP=1 -f /tmp/restore-target-*.sql" }
         # Reseed runs against the TARGET database, then the transient file is removed.
@@ -1465,6 +1465,38 @@ Describe "Invoke-RestoreTargetReplacement" {
         $global:TargetCallSequence | Should -Be @("safety")
         Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly
+    }
+
+    It "PostgreSQL: a mixed-case target is quoted so it cannot case-fold onto a different database" {
+        $stage = New-ScratchStage -Directory $script:targetRoot
+
+        Invoke-RestoreTargetReplacement -Stage $stage -TargetDatabaseName "EdFi_DMS" -PackageSourceIdentity $script:packageSourceIdentity -DatabaseEngine postgresql | Out-Null
+
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -ceq 'DROP DATABASE IF EXISTS "EdFi_DMS";' }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -ceq 'CREATE DATABASE "EdFi_DMS";' }
+        # The psql connection parameter is exact-case by nature; the replay targets the same
+        # database the quoted CREATE produced.
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -clike "exec dms-postgresql psql -U postgres -d EdFi_DMS -v ON_ERROR_STOP=1 -f /tmp/restore-target-*.sql" }
+    }
+
+    It "PostgreSQL: a copy failure leaves the target completely untouched - no drop, no create" {
+        Mock docker {
+            $global:TargetCallSequence.Add("docker " + ($args -join " "))
+            if ($args[0] -eq "cp") {
+                $global:LASTEXITCODE = 1
+                "no space left on device"
+            }
+            else {
+                $global:LASTEXITCODE = 0
+            }
+        } -ModuleName bootstrap-restore
+        $stage = New-ScratchStage -Directory $script:targetRoot
+
+        { Invoke-RestoreTargetReplacement -Stage $stage -TargetDatabaseName "edfi_datamanagementservice" -PackageSourceIdentity $script:packageSourceIdentity -DatabaseEngine postgresql } |
+            Should -Throw "*Failed to copy the staged artifact*no space left on device*"
+
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "DROP DATABASE*" }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "CREATE DATABASE*" }
     }
 
     It "hard-fails on <Name> (<Engine>) after reseed, before any service can select the target" -ForEach @(
@@ -1519,7 +1551,7 @@ Describe "Remove-RestorePreflightDatabase and Remove-RestoreScratchDatabase" {
         Remove-RestorePreflightDatabase -DatabaseEngine postgresql -PreflightDatabaseName "edfi_dms_restore_preflight_0123456789ab"
 
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
-            $Query -eq "DROP DATABASE IF EXISTS edfi_dms_restore_preflight_0123456789ab;" -and $DatabaseName -eq "postgres"
+            $Query -eq 'DROP DATABASE IF EXISTS "edfi_dms_restore_preflight_0123456789ab";' -and $DatabaseName -eq "postgres"
         }
     }
 
@@ -1535,6 +1567,17 @@ Describe "Remove-RestorePreflightDatabase and Remove-RestoreScratchDatabase" {
             Should -Throw "*Refusing to drop 'edfi_datamanagementservice'*"
         { Remove-RestoreScratchDatabase -DatabaseEngine postgresql -ScratchDatabaseName "edfi_datamanagementservice" -ContainerName "dms-postgresql" } |
             Should -Throw "*Refusing to drop 'edfi_datamanagementservice'*"
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly
+    }
+
+    It "refuses a suffix that is not exactly the generator's 12 hex characters (<Name>)" -ForEach @(
+        @{ Name = "too short"; Suffix = "0123456789a" }
+        @{ Name = "too long"; Suffix = "0123456789abc" }
+    ) {
+        { Remove-RestorePreflightDatabase -DatabaseEngine postgresql -PreflightDatabaseName "edfi_dms_restore_preflight_$Suffix" } |
+            Should -Throw "*Refusing to drop*"
+        { Remove-RestoreScratchDatabase -DatabaseEngine postgresql -ScratchDatabaseName "edfi_dms_restore_scratch_$Suffix" -ContainerName "dms-postgresql" } |
+            Should -Throw "*Refusing to drop*"
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly
     }
 

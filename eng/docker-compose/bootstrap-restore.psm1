@@ -1656,11 +1656,13 @@ function Invoke-RestoreScratchValidation {
             $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
                 -Query "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$scratchDatabaseName' AND pid <> pg_backend_pid();" `
                 -FailureMessage "Failed to terminate connections to scratch database '$scratchDatabaseName'."
+            # Quoted for consistency with every PostgreSQL identifier interpolation in this
+            # module (generated names are lowercase, so quoting changes nothing here).
             $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
-                -Query "DROP DATABASE IF EXISTS $scratchDatabaseName;" `
+                -Query "DROP DATABASE IF EXISTS `"$scratchDatabaseName`";" `
                 -FailureMessage "Failed to drop a pre-existing scratch database '$scratchDatabaseName'."
             $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
-                -Query "CREATE DATABASE $scratchDatabaseName;" `
+                -Query "CREATE DATABASE `"$scratchDatabaseName`";" `
                 -FailureMessage "Failed to create scratch database '$scratchDatabaseName'."
 
             $containerArtifactPath = "/tmp/restore-scratch-$([Guid]::NewGuid().ToString('N')).sql"
@@ -1817,8 +1819,8 @@ function Remove-RestoreScratchDatabase {
         [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!"
     )
 
-    if ($ScratchDatabaseName -cnotmatch '^edfi_dms_restore_scratch_[0-9a-f]+\z') {
-        throw "Refusing to drop '$ScratchDatabaseName': only generated restore scratch databases (edfi_dms_restore_scratch_<hex>) may be dropped by this helper."
+    if ($ScratchDatabaseName -cnotmatch '^edfi_dms_restore_scratch_[0-9a-f]{12}\z') {
+        throw "Refusing to drop '$ScratchDatabaseName': only generated restore scratch databases (edfi_dms_restore_scratch_<12 hex>) may be dropped by this helper."
     }
 
     $adminQueryArguments = @{
@@ -1833,7 +1835,7 @@ function Remove-RestoreScratchDatabase {
             -Query "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$ScratchDatabaseName' AND pid <> pg_backend_pid();" `
             -FailureMessage "Failed to terminate connections to scratch database '$ScratchDatabaseName' during cleanup."
         $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
-            -Query "DROP DATABASE IF EXISTS $ScratchDatabaseName;" `
+            -Query "DROP DATABASE IF EXISTS `"$ScratchDatabaseName`";" `
             -FailureMessage "Failed to drop scratch database '$ScratchDatabaseName'."
     }
     else {
@@ -1867,8 +1869,8 @@ function Remove-RestorePreflightDatabase {
         return
     }
 
-    if ($PreflightDatabaseName -cnotmatch '^edfi_dms_restore_preflight_[0-9a-f]+\z') {
-        throw "Refusing to drop '$PreflightDatabaseName': only generated restore preflight databases (edfi_dms_restore_preflight_<hex>) may be dropped by this helper."
+    if ($PreflightDatabaseName -cnotmatch '^edfi_dms_restore_preflight_[0-9a-f]{12}\z') {
+        throw "Refusing to drop '$PreflightDatabaseName': only generated restore preflight databases (edfi_dms_restore_preflight_<12 hex>) may be dropped by this helper."
     }
 
     if ([string]::IsNullOrWhiteSpace($ContainerName)) {
@@ -1886,7 +1888,7 @@ function Remove-RestorePreflightDatabase {
             -DatabaseEngine $DatabaseEngine `
             -ContainerName $ContainerName `
             -DatabaseName "postgres" `
-            -Query "DROP DATABASE IF EXISTS $PreflightDatabaseName;" `
+            -Query "DROP DATABASE IF EXISTS `"$PreflightDatabaseName`";" `
             -FailureMessage "Failed to drop preflight database '$PreflightDatabaseName'."
     }
     catch {
@@ -1979,6 +1981,15 @@ function Invoke-RestoreTargetReplacement {
 
     try {
         if ($DatabaseEngine -eq "postgresql") {
+            # The copy happens FIRST, mirroring the SQL Server branch: a copy failure must
+            # leave the target completely untouched, and the hash proven a moment ago must be
+            # the bytes that land in the container - no window between emptying the target and
+            # copying.
+            $containerArtifactPath = "/tmp/restore-target-$([Guid]::NewGuid().ToString('N')).sql"
+            $null = Invoke-RestoreDockerCommand `
+                -ArgumentList @("cp", $Stage.ArtifactPath, "$($ContainerName):$containerArtifactPath") `
+                -FailureMessage "Failed to copy the staged artifact into container '$ContainerName'."
+
             # Idempotent role init keeps the target replay self-sufficient even when invoked
             # standalone (scratch validation normally ensured the role moments earlier).
             $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
@@ -1987,17 +1998,16 @@ function Invoke-RestoreTargetReplacement {
             $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
                 -Query "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$TargetDatabaseName' AND pid <> pg_backend_pid();" `
                 -FailureMessage "Failed to terminate connections to target database '$TargetDatabaseName'."
+            # Identifiers are double-quoted so PostgreSQL cannot case-fold a mixed-case target
+            # (e.g. EdFi_DMS) onto a different database; the safe-name charset excludes the
+            # double quote, so no escaping is needed.
             $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
-                -Query "DROP DATABASE IF EXISTS $TargetDatabaseName;" `
+                -Query "DROP DATABASE IF EXISTS `"$TargetDatabaseName`";" `
                 -FailureMessage "Failed to drop target database '$TargetDatabaseName'."
             $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
-                -Query "CREATE DATABASE $TargetDatabaseName;" `
+                -Query "CREATE DATABASE `"$TargetDatabaseName`";" `
                 -FailureMessage "Failed to create target database '$TargetDatabaseName'."
 
-            $containerArtifactPath = "/tmp/restore-target-$([Guid]::NewGuid().ToString('N')).sql"
-            $null = Invoke-RestoreDockerCommand `
-                -ArgumentList @("cp", $Stage.ArtifactPath, "$($ContainerName):$containerArtifactPath") `
-                -FailureMessage "Failed to copy the staged artifact into container '$ContainerName'."
             $null = Invoke-RestoreDockerCommand `
                 -ArgumentList @("exec", $ContainerName, "psql", "-U", "postgres", "-d", $TargetDatabaseName, "-v", "ON_ERROR_STOP=1", "-f", $containerArtifactPath) `
                 -FailureMessage "Replay of the artifact into target database '$TargetDatabaseName' failed."
