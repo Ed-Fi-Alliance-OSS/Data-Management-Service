@@ -18,7 +18,7 @@ public static class SchemaHashConstants
 
     /// <summary>
     /// Version identifier for the relational mapping conventions.
-    /// Bump this when mapping rules change to force schema mismatch detection.
+    /// Bump this once per release for mapping-rule or physical dms.* DDL changes.
     /// This value MUST match the relational_mapping_version used in .mpack files.
     /// </summary>
     public const string RelationalMappingVersion = "v2";

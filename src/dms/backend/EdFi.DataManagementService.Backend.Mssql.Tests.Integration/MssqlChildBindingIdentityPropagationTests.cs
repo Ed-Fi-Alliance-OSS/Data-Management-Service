@@ -527,7 +527,7 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
         pendingClassPeriod.ContentLastModifiedAt.Should().BeAfter(baselineClassPeriod.ContentLastModifiedAt);
         AssertMirrorContentMatchesDocument(pendingClassPeriodMirror, pendingClassPeriod);
 
-        // Owning root BellSchedule: content stamps advance, the document identity remains stable, mirror tracks.
+        // Owning root BellSchedule: content stamps advance and the mirror tracks the document.
         pendingBellSchedule.ContentVersion.Should().BeGreaterThan(baselineBellSchedule.ContentVersion);
         pendingBellSchedule
             .ContentLastModifiedAt.Should()

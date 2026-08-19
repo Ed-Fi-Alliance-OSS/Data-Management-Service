@@ -1182,14 +1182,6 @@ The offline operation follows this sequence:
      `contentVersion` and different `document._etag` values.
    - In canonical-only mode, start only corrected DMS instances and verify the relational API
      validators and Change Query results. Do not start or wait for projection or claim Kafka
-5. Complete the selected mode:
-   - In projection/publication mode, start only corrected DMS and projector instances.
-     Existing affected cache rows are behind, and queue processing replaces or creates them.
-     API reads retain relational fallback while projection catches up. Observe eventual
-     projection and connector recovery and verify that affected public records have higher
-     `contentVersion` and different `document._etag` values.
-   - In canonical-only mode, start only corrected DMS instances and verify the relational API
-     validators and Change Query results. Do not start or wait for projection or claim Kafka
      publication. A later explicit projection activation establishes current cache state
      through its ordinary baseline.
 

@@ -32,7 +32,7 @@ Mapping packs are selected strictly by this 4-tuple:
 
 1. `EffectiveSchemaHash` (lowercase hex, 64 chars) — see `reference/design/backend-redesign/design-docs/data-model.md`
 2. `SqlDialect` (`PGSQL` or `MSSQL`)
-3. `RelationalMappingVersion` (DMS-controlled string constant; bump when mapping rules change)
+3. `RelationalMappingVersion` (DMS-controlled string constant; bump once per release for mapping-rule or physical `dms.*` DDL changes)
 4. `PackFormatVersion` (integer protocol/version gate; bump only for breaking serialization/envelope changes)
 
 Logical identity is therefore:
@@ -762,13 +762,13 @@ Bump it only for breaking changes to:
 
 ### 9.2 `RelationalMappingVersion`
 
-`RelationalMappingVersion` is bumped when mapping rules change, even if `ApiSchema.json` content is unchanged.
+`RelationalMappingVersion` is bumped once per release when mapping rules or physical `dms.*` DDL change, even if `ApiSchema.json` content is unchanged.
 
 It is expected to be included in `EffectiveSchemaHash` computation (see `reference/design/backend-redesign/design-docs/data-model.md`), and is also present in the envelope key for defense-in-depth.
 
 Key unification is gated by `RelationalMappingVersion` (not `PackFormatVersion`):
 
-- Producers MUST bump `RelationalMappingVersion` when key-unification semantics are first enabled in emitted artifacts.
+- Producers MUST bump `RelationalMappingVersion` in the release where key-unification semantics are first enabled in emitted artifacts.
 - Consumers MUST reject packs whose `relational_mapping_version` does not match the expected value, including older packs that omit key-unification metadata.
 - Consumers MAY interpret missing `DbColumnModel.storage` as `Stored` and missing `DbTableModel.key_unification_classes` as empty only when explicitly operating in an older `RelationalMappingVersion` mode.
 

@@ -12,6 +12,8 @@ Feature: The Change Queries availableChangeVersions endpoint reports the oldest 
         @API-262
         @e2e-ci-shard-4
         Scenario: 02 newestChangeVersion increases after a resource is created
+            # Use a regular resource so this endpoint proves the public resource write path advances
+            # the same ODS-compatible maximum assigned ChangeVersion reported by Change Queries.
             Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org"
               And the system has these descriptors
                   | descriptorValue                                                |
