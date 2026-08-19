@@ -976,6 +976,137 @@ function Invoke-RestoreCandidateCrossCheck {
     }
 }
 
+
+function Assert-DmsComposeProjectStopped {
+    <#
+    .SYNOPSIS
+    Stop proof for one DMS compose project: fails when any container of the project is still
+    running, listing the container names, and fails CLOSED when docker itself errors - an
+    indeterminate answer is never treated as "stopped". The restore flow must hold this proof
+    immediately before replacing the bootstrap workspace or the target database.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("dms-local", "dms-published")]
+        [string]$ProjectName
+    )
+
+    $global:LASTEXITCODE = 0
+    $output = docker ps --filter "label=com.docker.compose.project=$ProjectName" --format '{{.Names}}' 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Stop proof is indeterminate: 'docker ps' exited with code $LASTEXITCODE while checking compose project '$ProjectName' ($(($output | Out-String).Trim())). Refusing to continue without proof that the project is stopped."
+    }
+
+    $runningContainers = @($output | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($runningContainers.Count -gt 0) {
+        throw "Compose project '$ProjectName' still has running containers: $($runningContainers -join ', '). Stop the stack before the restore touches the bootstrap workspace or the target database."
+    }
+}
+
+function Test-RestoreWorkspaceTreeEqual {
+    <#
+    .SYNOPSIS
+    Recursive byte-identity comparison of two directory trees: the sorted relative path sets
+    must match exactly (ordinal, so a casing difference reads as different - the fail-closed
+    direction, since "different" leads to replacement) and every file pair must carry the same
+    SHA-256. Enumeration uses -Force so dotfiles - hidden by default on Linux - are compared
+    too; Get-BootstrapWorkspaceFingerprint is insufficient here because it covers only the
+    ApiSchema workspace and normalizes text content.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$ReferenceDirectory,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DifferenceDirectory
+    )
+
+    $referenceFiles = @(Get-ChildItem -LiteralPath $ReferenceDirectory -Recurse -File -Force |
+            Sort-Object -Property FullName)
+    $differenceFiles = @(Get-ChildItem -LiteralPath $DifferenceDirectory -Recurse -File -Force |
+            Sort-Object -Property FullName)
+
+    $referencePaths = @($referenceFiles | ForEach-Object {
+            [System.IO.Path]::GetRelativePath($ReferenceDirectory, $_.FullName).Replace("\", "/") } | Sort-Object)
+    $differencePaths = @($differenceFiles | ForEach-Object {
+            [System.IO.Path]::GetRelativePath($DifferenceDirectory, $_.FullName).Replace("\", "/") } | Sort-Object)
+
+    if ($referencePaths.Count -ne $differencePaths.Count) {
+        return $false
+    }
+    for ($index = 0; $index -lt $referencePaths.Count; $index++) {
+        if ($referencePaths[$index] -cne $differencePaths[$index]) {
+            return $false
+        }
+        $referenceHash = Get-FileSha256Hex -Path (Join-Path $ReferenceDirectory $referencePaths[$index])
+        $differenceHash = Get-FileSha256Hex -Path (Join-Path $DifferenceDirectory $differencePaths[$index])
+        if ($referenceHash -cne $differenceHash) {
+            return $false
+        }
+    }
+    return $true
+}
+
+function Publish-RestoreCandidateWorkspace {
+    <#
+    .SYNOPSIS
+    Commits a validated restore candidate as the active bootstrap workspace, whole-tree only.
+
+    .DESCRIPTION
+    Re-proves the stop precondition internally (both known compose projects, fail-closed on an
+    indeterminate docker answer) before reading or writing anything, because a running service
+    holds the active workspace bind-mounted. Then: a candidate byte-identical to the active tree
+    is discarded and the active tree reused as-is; anything else removes the ENTIRE active tree
+    and moves the candidate into place - never a subtree, so no partial/mixed workspace can ever
+    exist. A crash between remove and move leaves no active workspace and an intact candidate;
+    the next run re-stages from scratch (the accepted failure shape).
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Restore-internal commit step; the restore flow does not expose -WhatIf end to end, and a silent no-op would leave the active workspace inconsistent with the validated candidate.')]
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$CandidateDirectory,
+
+        # Test seam; production default is the module-adjacent active workspace.
+        [string]$ActiveBootstrapRoot = ""
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ActiveBootstrapRoot)) {
+        $ActiveBootstrapRoot = Join-Path $PSScriptRoot ".bootstrap"
+    }
+
+    if (-not (Test-Path -LiteralPath (Join-Path $CandidateDirectory "bootstrap-manifest.json") -PathType Leaf)) {
+        throw "Refusing to commit candidate '$CandidateDirectory': it has no bootstrap-manifest.json, so it is not a complete prepare-phase product."
+    }
+
+    # Internal stop-proof re-assert (D10 precondition): the wrapper orders this call after its
+    # own stop proof, but the commit itself must never run against a live stack.
+    Assert-DmsComposeProjectStopped -ProjectName "dms-local"
+    Assert-DmsComposeProjectStopped -ProjectName "dms-published"
+
+    if (Test-Path -LiteralPath $ActiveBootstrapRoot) {
+        if (Test-RestoreWorkspaceTreeEqual -ReferenceDirectory $ActiveBootstrapRoot -DifferenceDirectory $CandidateDirectory) {
+            Remove-Item -LiteralPath $CandidateDirectory -Recurse -Force
+            return [pscustomobject]@{
+                Replaced            = $false
+                ActiveBootstrapRoot = $ActiveBootstrapRoot
+            }
+        }
+
+        Remove-Item -LiteralPath $ActiveBootstrapRoot -Recurse -Force
+    }
+
+    $activeParentDirectory = Split-Path -Parent $ActiveBootstrapRoot
+    if (-not [string]::IsNullOrWhiteSpace($activeParentDirectory)) {
+        New-Item -ItemType Directory -Path $activeParentDirectory -Force | Out-Null
+    }
+    Move-Item -LiteralPath $CandidateDirectory -Destination $ActiveBootstrapRoot
+
+    return [pscustomobject]@{
+        Replaced            = $true
+        ActiveBootstrapRoot = $ActiveBootstrapRoot
+    }
+}
+
 Export-ModuleMember -Function `
     Get-RestoreWorkspaceRoot, `
     Resolve-RestoreTemplatePackageIdentity, `
@@ -991,5 +1122,8 @@ Export-ModuleMember -Function `
     Get-RestoreCandidateRelationalMappingVersion, `
     Assert-RestoreManifestMatchesCandidate, `
     Invoke-RestoreCandidateCrossCheck, `
+    Assert-DmsComposeProjectStopped, `
+    Test-RestoreWorkspaceTreeEqual, `
+    Publish-RestoreCandidateWorkspace, `
     Resolve-RestoreTargetDatabaseName, `
     Assert-RestoreTargetDatabaseNameSafe
