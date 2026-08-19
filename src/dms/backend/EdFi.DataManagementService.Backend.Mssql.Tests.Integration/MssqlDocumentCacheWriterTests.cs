@@ -36,6 +36,12 @@ public class Given_A_Mssql_DocumentCacheWriter
     private const int PerformanceEvidenceContentionCount = 5;
 
     private static readonly QualifiedResourceName PersonResource = new("Ed-Fi", "Person");
+    private static readonly DocumentCacheProjectionTargetKey TargetKey = new(
+        "tenant-cache-writer",
+        new DataStoreId(7)
+    );
+    private static readonly string ExpectedTelemetryTargetLabel =
+        DocumentCacheTelemetryTargetLabel.FromProjectionTargetKey(TargetKey);
     private static readonly DateTimeOffset LastModifiedAt = new(2026, 7, 31, 12, 0, 0, TimeSpan.Zero);
 
     private MssqlGeneratedDdlFixture _fixture = null!;
@@ -1619,7 +1625,7 @@ public class Given_A_Mssql_DocumentCacheWriter
 
     private DocumentCacheMaterializationTargetContext CreateTargetContext() =>
         new(
-            new DocumentCacheProjectionTargetKey("tenant-cache-writer", new DataStoreId(7)),
+            TargetKey,
             _fixture.MappingSet,
             DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated,
             _database.ConnectionString
@@ -2367,7 +2373,7 @@ public class Given_A_Mssql_DocumentCacheWriter
         );
 
         return context.Provider == provider
-            && context.TargetKey == "tenant-cache-writer:7"
+            && context.TargetKey == ExpectedTelemetryTargetLabel
             && context.Provider.Length <= 128
             && context.TargetKey.Length <= 128
             && context.Purpose.Length <= 128
