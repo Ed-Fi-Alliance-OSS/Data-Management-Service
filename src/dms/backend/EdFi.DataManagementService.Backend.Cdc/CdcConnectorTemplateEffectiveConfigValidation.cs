@@ -535,7 +535,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
 
             if (CdcConnectorTemplateInputValidator.IsSecretBearingRenderedProperty(expectedProperty.Key))
             {
-                if (IsAcceptedSecretReadBack(expectedProperty.Value, observedValue))
+                if (IsAcceptedSecretReadBack(expectedProperty.Value, observedValue, sourcePhase))
                 {
                     continue;
                 }
@@ -591,12 +591,21 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
         }
     }
 
-    private static bool IsAcceptedSecretReadBack(string expectedValue, string observedValue) =>
+    private static bool IsAcceptedSecretReadBack(
+        string expectedValue,
+        string observedValue,
+        CdcConnectorTemplateSourcePhase sourcePhase
+    ) =>
         observedValue.Length > 0
         && (
             string.Equals(expectedValue, observedValue, StringComparison.Ordinal)
-            || string.Equals(observedValue, "[hidden]", StringComparison.Ordinal)
-            || observedValue.All(character => character == '*')
+            || (
+                sourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack
+                && (
+                    string.Equals(observedValue, "[hidden]", StringComparison.Ordinal)
+                    || observedValue.All(character => character == '*')
+                )
+            )
         );
 
     private static void AddSourcePartitionDiagnostics(
