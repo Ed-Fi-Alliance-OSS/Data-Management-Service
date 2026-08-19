@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.OpenApi;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
@@ -36,7 +37,8 @@ public class ApiServiceOpenApiTests
 
     private static ApiService CreateApiService(
         ApiSchemaDocumentNodes apiSchemaDocumentNodes,
-        IProfileService? profileService = null
+        IProfileService? profileService = null,
+        AppSettings? appSettings = null
     )
     {
         var apiSchemaProvider = A.Fake<IApiSchemaProvider>();
@@ -66,7 +68,13 @@ public class ApiServiceOpenApiTests
             NullLogger<ApiService>.Instance,
             NullLoggerFactory.Instance,
             Options.Create(
-                new AppSettings { AllowIdentityUpdateOverrides = "", AuthenticationService = TokenUrl }
+                appSettings
+                    ?? new AppSettings
+                    {
+                        AllowIdentityUpdateOverrides = "",
+                        AuthenticationService = TokenUrl,
+                        MaximumPageSize = OpenApiPagingSettings.MaximumPageSizeDefault,
+                    }
             ),
             ResiliencePipeline.Empty,
             resourceLoadOrderCalculator,
@@ -408,6 +416,99 @@ public class ApiServiceOpenApiTests
                 .Should()
                 .Be(TokenUrl);
             profileService.BaseSpecificationRequestCount.Should().Be(1);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_ApiService_Configured_With_Non_Default_Paging_Values : ApiServiceOpenApiTests
+    {
+        private const int ConfiguredMaximumPageSize = 250;
+        private const int ConfiguredPartitionCount = 7;
+
+        private JsonNode resourceSpecification = null!;
+        private JsonNode descriptorSpecification = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiService apiService = CreateApiService(
+                CursorPagingOpenApiTestBase.ApiSchemaNodes(),
+                appSettings: new AppSettings
+                {
+                    AllowIdentityUpdateOverrides = "",
+                    AuthenticationService = TokenUrl,
+                    MaximumPageSize = ConfiguredMaximumPageSize,
+                    DefaultPartitionCount = ConfiguredPartitionCount,
+                }
+            );
+
+            resourceSpecification = apiService.GetResourceOpenApiSpecification(
+                Servers("https://example.org/data/v3")
+            );
+            descriptorSpecification = apiService.GetDescriptorOpenApiSpecification(
+                Servers("https://example.org/data/v3")
+            );
+        }
+
+        private static JsonNode ParameterSchema(JsonNode specification, string componentName)
+        {
+            return specification["components"]!["parameters"]![componentName]!["schema"]!;
+        }
+
+        [Test]
+        public void It_should_publish_the_configured_maximum_page_size_in_the_resource_document()
+        {
+            JsonNode limitSchema = ParameterSchema(resourceSpecification, "limit");
+            limitSchema["default"]!.GetValue<int>().Should().Be(ConfiguredMaximumPageSize);
+            limitSchema["maximum"]!.GetValue<int>().Should().Be(ConfiguredMaximumPageSize);
+
+            JsonNode pageSizeSchema = ParameterSchema(resourceSpecification, "pageSize");
+            pageSizeSchema["default"]!.GetValue<int>().Should().Be(ConfiguredMaximumPageSize);
+            pageSizeSchema["maximum"]!.GetValue<int>().Should().Be(ConfiguredMaximumPageSize);
+        }
+
+        [Test]
+        public void It_should_publish_the_configured_partition_count_in_the_resource_document()
+        {
+            ParameterSchema(resourceSpecification, "numberOfPartitions")["default"]!
+                .GetValue<int>()
+                .Should()
+                .Be(ConfiguredPartitionCount);
+        }
+
+        [Test]
+        public void It_should_publish_the_configured_maximum_page_size_in_the_descriptor_document()
+        {
+            JsonNode limitSchema = ParameterSchema(descriptorSpecification, "limit");
+            limitSchema["default"]!.GetValue<int>().Should().Be(ConfiguredMaximumPageSize);
+            limitSchema["maximum"]!.GetValue<int>().Should().Be(ConfiguredMaximumPageSize);
+
+            JsonNode pageSizeSchema = ParameterSchema(descriptorSpecification, "pageSize");
+            pageSizeSchema["default"]!.GetValue<int>().Should().Be(ConfiguredMaximumPageSize);
+            pageSizeSchema["maximum"]!.GetValue<int>().Should().Be(ConfiguredMaximumPageSize);
+        }
+
+        [Test]
+        public void It_should_publish_the_configured_partition_count_in_the_descriptor_document()
+        {
+            ParameterSchema(descriptorSpecification, "numberOfPartitions")["default"]!
+                .GetValue<int>()
+                .Should()
+                .Be(ConfiguredPartitionCount);
+        }
+
+        [Test]
+        public void It_should_serve_the_partition_paths_from_both_runtime_documents()
+        {
+            resourceSpecification["paths"]!
+                .AsObject()
+                .Should()
+                .ContainKey(CursorPagingOpenApiTestBase.CorePartitionPath);
+            descriptorSpecification["paths"]!
+                .AsObject()
+                .Should()
+                .ContainKey(CursorPagingOpenApiTestBase.DescriptorPartitionPath);
         }
     }
 }

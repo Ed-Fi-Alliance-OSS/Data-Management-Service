@@ -524,11 +524,27 @@ internal class ApiService : IApiService
                 .ToArray();
     }
 
+    /// <summary>
+    /// The paging values published into the served documents, read from the same configuration the
+    /// request pipeline enforces so published metadata cannot disagree with runtime behavior.
+    /// </summary>
+    private OpenApiPagingSettings GetOpenApiPagingSettingsFromConfiguration()
+    {
+        return new OpenApiPagingSettings(
+            _appSettings.Value.MaximumPageSize,
+            _appSettings.Value.DefaultPartitionCount
+        );
+    }
+
     private JsonNode CreateResourceOpenApiSpecification()
     {
         string[] excludedDomains = GetExcludedDomainsFromConfiguration();
 
-        OpenApiDocument openApiDocument = new(_logger, excludedDomains);
+        OpenApiDocument openApiDocument = new(
+            _logger,
+            excludedDomains,
+            GetOpenApiPagingSettingsFromConfiguration()
+        );
         return openApiDocument.CreateDocument(
             _apiSchemaProvider.GetApiSchemaNodes(),
             OpenApiDocument.OpenApiDocumentType.Resource
@@ -539,7 +555,11 @@ internal class ApiService : IApiService
     {
         string[] excludedDomains = GetExcludedDomainsFromConfiguration();
 
-        OpenApiDocument descriptorOpenApiDocument = new(_logger, excludedDomains);
+        OpenApiDocument descriptorOpenApiDocument = new(
+            _logger,
+            excludedDomains,
+            GetOpenApiPagingSettingsFromConfiguration()
+        );
         return descriptorOpenApiDocument.CreateDocument(
             _apiSchemaProvider.GetApiSchemaNodes(),
             OpenApiDocument.OpenApiDocumentType.Descriptor
