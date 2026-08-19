@@ -565,7 +565,21 @@ function Invoke-BootstrapWrapper {
         # E2E-shaped .env.ds<NN> overlays (which add the Sample/Homograph test extensions) and
         # would override this surface.
         [ValidateSet("5.2", "6.1")]
-        [string]$DataStandardVersion = "5.2"
+        [string]$DataStandardVersion = "5.2",
+
+        # Restore mode: restore the DMS datastore from a trusted database-template package of
+        # this kind (Minimal or Populated) before services start. Mutually exclusive with
+        # -InfraOnly, -NoDataStore, and -SchoolYearRange (one invocation = one route-unqualified
+        # physical target), and combining -LoadSeedData turns it into the explicit supplemental
+        # seed, which requires its own -SeedTemplate or -SeedDataPath.
+        [ValidateSet("Minimal", "Populated")]
+        [string]$RestoreTemplate,
+
+        # Restore mode: explicit local package source - a directory holding exactly one matching
+        # template .nupkg and its sibling attestation document. Requires -RestoreTemplate.
+        # Without it, restore mode resolves the package from the configured NuGet feed using
+        # DATABASE_TEMPLATE_PACKAGE / DATABASE_TEMPLATE_NUGET_VERSION.
+        [string]$PackageDirectory
     )
 
     $ErrorActionPreference = "Stop"
@@ -605,6 +619,28 @@ function Invoke-BootstrapWrapper {
     # function entry rather than inside the -LoadSeedData branch.
     $seedTemplateSupplied = $PSBoundParameters.ContainsKey('SeedTemplate') -and -not [string]::IsNullOrWhiteSpace($SeedTemplate)
     $seedDataPathSupplied = $PSBoundParameters.ContainsKey('SeedDataPath') -and -not [string]::IsNullOrWhiteSpace($SeedDataPath)
+
+    # Fail fast: restore-mode parameter surface. Every exclusion rejects BEFORE any phase
+    # invocation, so a known-bad restore request never reaches Docker, CMS, or the workspace.
+    $restoreTemplateSupplied = $PSBoundParameters.ContainsKey('RestoreTemplate') -and -not [string]::IsNullOrWhiteSpace($RestoreTemplate)
+    $packageDirectorySupplied = $PSBoundParameters.ContainsKey('PackageDirectory') -and -not [string]::IsNullOrWhiteSpace($PackageDirectory)
+    if ($packageDirectorySupplied -and -not $restoreTemplateSupplied) {
+        throw "-PackageDirectory requires -RestoreTemplate. The directory only selects WHERE the template package comes from; -RestoreTemplate Minimal|Populated selects the restore itself."
+    }
+    if ($restoreTemplateSupplied) {
+        if ($InfraOnly) {
+            throw "-RestoreTemplate is not valid with -InfraOnly. A restore replaces the target datastore and then starts the full stack; the IDE pre-DMS shape is not supported in restore mode."
+        }
+        if ($NoDataStore) {
+            throw "-RestoreTemplate is not valid with -NoDataStore. A restore's entire purpose is the datastore that -NoDataStore asks the configure phase to skip."
+        }
+        if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange)) {
+            throw "-RestoreTemplate is not valid with -SchoolYearRange. One restore invocation replaces exactly one route-unqualified physical target."
+        }
+        if ($LoadSeedData -and -not ($seedTemplateSupplied -or $seedDataPathSupplied)) {
+            throw "-LoadSeedData with -RestoreTemplate is the explicit supplemental seed and requires its own seed source (-SeedTemplate or -SeedDataPath). A bare -LoadSeedData is ambiguous in restore mode: the restored template already carries its data."
+        }
+    }
 
     # Pre-start seed preflights: catch mutually-exclusive seed-source flags and ApiSchemaPath combos
     # here so a known-bad -LoadSeedData invocation doesn't first spin up Docker + CMS state.
@@ -656,6 +692,20 @@ function Invoke-BootstrapWrapper {
     # would otherwise reinterpret the relative path against eng/docker-compose/.
     if ($seedDataPathSupplied -and -not [System.IO.Path]::IsPathRooted($SeedDataPath)) {
         $SeedDataPath = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $SeedDataPath))
+    }
+
+    # Same caller-CWD normalization for -PackageDirectory: the restore package source must
+    # resolve against the directory the operator invoked from, not eng/docker-compose/.
+    if ($packageDirectorySupplied -and -not [System.IO.Path]::IsPathRooted($PackageDirectory)) {
+        $PackageDirectory = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $PackageDirectory))
+    }
+
+    # Fail closed until the restore sequencing lands: the parameter surface above is complete
+    # and validated, but no partial restore may ever run. This guard is replaced by the
+    # restore-mode sequencing in the next change; it fires AFTER every parameter rejection so
+    # the exclusions above stay the first-line errors.
+    if ($restoreTemplateSupplied) {
+        throw "-RestoreTemplate is accepted by this build's parameter surface, but the restore sequencing is not wired yet. No phase was invoked."
     }
 
     # Same caller-CWD normalization for -EnvironmentFile: Get-EffectiveBootstrapEnvFile's relative-

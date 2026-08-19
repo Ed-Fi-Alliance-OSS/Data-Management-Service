@@ -1426,6 +1426,71 @@ $resultStatement
     }
 
     # =========================================================================
+    # DMS-1271 restore-mode parameter surface (D1): -RestoreTemplate and
+    # -PackageDirectory on both entry wrappers, every exclusion failing before
+    # any phase invocation.
+    # =========================================================================
+    Context "restore-mode parameter surface" {
+        BeforeEach {
+            # Recording stubs for every phase: the exclusion matrix must reject BEFORE any of
+            # these is invoked, so the call log must stay nonexistent.
+            $script:restoreSurfaceLog = Join-Path $script:repo.RepoRoot "call-log-restore-surface.txt"
+            New-RecordingPrepareScripts -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreSurfaceLog
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreSurfaceLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreSurfaceLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreSurfaceLog | Out-Null
+            New-RecordingSeedScript -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreSurfaceLog | Out-Null
+        }
+
+        It "both entry scripts declare -RestoreTemplate and -PackageDirectory with help text" {
+            foreach ($entryScriptName in @("bootstrap-local-dms.ps1", "bootstrap-published-dms.ps1")) {
+                $entryScriptPath = Join-Path $script:sourceDockerComposeRoot $entryScriptName
+                $declaredParameters = Get-DeclaredScriptParameters -Path $entryScriptPath
+                $declaredParameters | Should -Contain "RestoreTemplate" -Because "$entryScriptName must declare -RestoreTemplate"
+                $declaredParameters | Should -Contain "PackageDirectory" -Because "$entryScriptName must declare -PackageDirectory"
+
+                $entryScriptContent = Get-Content -LiteralPath $entryScriptPath -Raw
+                $entryScriptContent.Contains(".PARAMETER RestoreTemplate") | Should -BeTrue -Because "$entryScriptName must document -RestoreTemplate"
+                $entryScriptContent.Contains(".PARAMETER PackageDirectory") | Should -BeTrue -Because "$entryScriptName must document -PackageDirectory"
+            }
+        }
+
+        It "rejects <Name> before any phase invocation" -ForEach @(
+            @{ Name = "-RestoreTemplate with -InfraOnly"; Arguments = @{ RestoreTemplate = "Minimal"; InfraOnly = $true }; Expected = "*-RestoreTemplate is not valid with -InfraOnly*" }
+            @{ Name = "-RestoreTemplate with -NoDataStore"; Arguments = @{ RestoreTemplate = "Minimal"; NoDataStore = $true }; Expected = "*-RestoreTemplate is not valid with -NoDataStore*" }
+            @{ Name = "-RestoreTemplate with -SchoolYearRange"; Arguments = @{ RestoreTemplate = "Populated"; SchoolYearRange = "2024-2025" }; Expected = "*-RestoreTemplate is not valid with -SchoolYearRange*" }
+            @{ Name = "a bare -LoadSeedData with -RestoreTemplate"; Arguments = @{ RestoreTemplate = "Populated"; LoadSeedData = $true }; Expected = "*requires its own seed source*bare -LoadSeedData is ambiguous*" }
+            @{ Name = "-PackageDirectory without -RestoreTemplate"; Arguments = @{ PackageDirectory = "C:\\packages" }; Expected = "*-PackageDirectory requires -RestoreTemplate*" }
+        ) {
+            $invocationArguments = $Arguments
+            { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile @invocationArguments } |
+                Should -Throw $Expected
+
+            $script:restoreSurfaceLog | Should -Not -Exist -Because "every restore-mode exclusion must reject before any phase runs"
+        }
+
+        It "forwards -RestoreTemplate and -PackageDirectory to Invoke-BootstrapWrapper on <_>" -ForEach @("bootstrap-local-dms.ps1", "bootstrap-published-dms.ps1") {
+            # A valid restore request passes every exclusion and reaches the wrapper's
+            # fail-closed not-yet-wired guard - proof the values arrived at
+            # Invoke-BootstrapWrapper, with still no phase invoked.
+            Copy-DockerComposeFile -FileName $_ -Destination $script:repo.DockerComposeRoot
+            $entryScript = Join-Path $script:repo.DockerComposeRoot $_
+
+            { & $entryScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Minimal -PackageDirectory $script:repo.RepoRoot } |
+                Should -Throw "*restore sequencing is not wired yet*"
+
+            $script:restoreSurfaceLog | Should -Not -Exist
+        }
+
+        It "a restore with -LoadSeedData and an explicit seed source passes the seed-source rule" {
+            { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Populated -LoadSeedData -SeedTemplate Populated } |
+                Should -Throw "*restore sequencing is not wired yet*"
+
+            $script:restoreSurfaceLog | Should -Not -Exist
+        }
+    }
+
+    # =========================================================================
     # R5 - Wrapper -InfraOnly -DmsBaseUrl: call-graph proof
     #   Story Req 2: first start invocation has -InfraOnly but NOT -DmsBaseUrl;
     #   second (health-wait) start invocation carries -DmsBaseUrl;
@@ -2107,7 +2172,10 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                 # files a teardown must cover: local-config.yml is unconditional in
                 # start-local-dms.ps1's compose set. So it is excluded, like the other
                 # non-compose-shaping options.
-                'SeparateConfigDatabase'
+                'SeparateConfigDatabase',
+                # Restore mode selects what the datastore is restored FROM, never which compose
+                # files a teardown must cover.
+                'RestoreTemplate', 'PackageDirectory'
             )
 
             # Completeness guard: every parameter the entry script declares must be classified here
@@ -2137,6 +2205,8 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                 -NoDataStore `
                 -AddSmokeTestCredentials `
                 -SeparateConfigDatabase `
+                -RestoreTemplate Minimal `
+                -PackageDirectory (Join-Path $script:repo.RepoRoot "packages") `
                 -d
 
             $log = @(Get-Content -LiteralPath $callLog)
