@@ -1093,7 +1093,6 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
 
                 """
             );
-        lookup.SelectBySingleDocumentSql.Should().NotContain("INNER JOIN [#page]");
     }
 
     [Test]
@@ -1207,6 +1206,45 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 """
             );
         lookup.SelectBySingleDocumentSql.Should().NotContain("INNER JOIN \"page\"");
+    }
+
+    /// <summary>
+    /// The <c>CROSS APPLY (VALUES ...)</c> single-scan form is what SQL Server emits for any root table
+    /// carrying two or more document references, so it needs its own pin rather than riding on the
+    /// single-binding case.
+    /// </summary>
+    [Test]
+    public void It_should_emit_exact_mssql_DocumentReferenceLookup_single_document_sql_for_multiple_bindings_on_one_table_as_a_single_scan()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Mssql).Compile(
+            CreateRootMultiBindingReferenceProjectionResourceModel()
+        );
+        var lookup = readPlan.DocumentReferenceLookup;
+
+        lookup.Should().NotBeNull();
+        lookup!
+            .SelectBySingleDocumentSql.Should()
+            .Be(
+                """
+                SELECT
+                    doc.[DocumentId],
+                    doc.[DocumentUuid],
+                    doc.[ResourceKeyId]
+                FROM
+                    (
+                        SELECT DISTINCT v0.[DocumentId]
+                        FROM [edfi].[StudentReferenceProjection] t0
+                        CROSS APPLY (VALUES (t0.[School_DocumentId]), (t0.[Calendar_DocumentId])) AS v0([DocumentId])
+                        WHERE t0.[DocumentId] = @DocumentId
+                        AND v0.[DocumentId] IS NOT NULL
+                    ) p
+                INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = p.[DocumentId]
+                ORDER BY
+                    doc.[DocumentId] ASC
+                ;
+
+                """
+            );
     }
 
     [TestCase(SqlDialect.Pgsql)]

@@ -762,8 +762,8 @@ public class Given_HydrationBatchBuilder_With_Mssql_Single_Document_Fast_Path
     }
 
     /// <summary>
-    /// Every write hydrates current state through the guarded builder, so the preamble has to be gone
-    /// on that path and not only on the read path the fixture above covers.
+    /// A composite write hydrates current state through the guarded builder, so the preamble has to be
+    /// gone on that path and not only on the read path the fixture above covers.
     /// </summary>
     [Test]
     public void It_should_not_emit_sql_server_page_temp_table_work_on_the_guarded_write_path_when_the_fast_path_is_enabled()
