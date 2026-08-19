@@ -334,17 +334,21 @@ foreach ($row in $result) {
         continue
     }
 
-    if (-not $row.FieldMatch) {
-        $sentBody = ($document | Where-Object { $_.label -eq $row.Label }).body
-        $mismatch = Compare-SentField -Sent $sentBody -Fetched ($recheck.Content | ConvertFrom-Json)
-        if ($mismatch.Count -eq 0) {
-            $row.FieldMatch = $true
-            Write-Output "     fields: all sent fields match"
-        }
-        else {
-            foreach ($text in $mismatch) { Write-Output "     field mismatch: $text" }
-            $failure.Add("$($row.Label): $($mismatch.Count) field mismatch(es) on re-verification")
-        }
+    # Compared for every document, every time, and FieldMatch is set from this comparison alone. The
+    # mid-manifest comparison ran against an unfinished state, so treating an earlier match as
+    # sufficient would leave the finished body unverified for exactly the documents that looked fine
+    # at the wrong moment.
+    $sentBody = ($document | Where-Object { $_.label -eq $row.Label }).body
+    $mismatch = Compare-SentField -Sent $sentBody -Fetched ($recheck.Content | ConvertFrom-Json)
+
+    if ($mismatch.Count -eq 0) {
+        $row.FieldMatch = $true
+        Write-Output "     fields: all sent fields match"
+    }
+    else {
+        $row.FieldMatch = $false
+        foreach ($text in $mismatch) { Write-Output "     field mismatch: $text" }
+        $failure.Add("$($row.Label): $($mismatch.Count) field mismatch(es) on final verification")
     }
 }
 
