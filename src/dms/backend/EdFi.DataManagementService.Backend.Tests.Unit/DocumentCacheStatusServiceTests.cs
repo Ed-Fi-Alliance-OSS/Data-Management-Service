@@ -603,6 +603,19 @@ public class Given_DocumentCacheStatusService
     }
 
     [Test]
+    public async Task It_reports_completed_provider_success_when_timeout_token_is_cancelled_before_mapping()
+    {
+        await AssertCompletedProviderSuccessAfterTimeoutAsync(
+            statusObservationTimeout: TimeSpan.FromMilliseconds(20),
+            endpointTimeout: TimeSpan.FromMilliseconds(250)
+        );
+        await AssertCompletedProviderSuccessAfterTimeoutAsync(
+            statusObservationTimeout: TimeSpan.FromMilliseconds(250),
+            endpointTimeout: TimeSpan.FromMilliseconds(20)
+        );
+    }
+
+    [Test]
     public async Task It_serializes_provider_observation_failure_without_blocking_peer_targets()
     {
         DocumentCacheTargetObservation failedTarget = ResolvedTarget(DocumentCacheTargetKey.Create("", 1));
@@ -1237,6 +1250,62 @@ public class Given_DocumentCacheStatusService
             diagnostics,
             lifecycleReadStatus: DocumentCacheLifecycleReadStatus.Missing
         );
+    }
+
+    private static async Task AssertCompletedProviderSuccessAfterTimeoutAsync(
+        TimeSpan statusObservationTimeout,
+        TimeSpan endpointTimeout
+    )
+    {
+        DocumentCacheTargetEffectiveSettings effectiveSettings = EffectiveSettings(
+            statusObservationTimeout: statusObservationTimeout,
+            endpointTimeout: endpointTimeout
+        );
+        DocumentCacheTargetObservation target = ResolvedTarget(
+            DocumentCacheTargetKey.Create("", 1),
+            effectiveSettings
+        );
+        StaticTargetRegistry registry = new([target], [ExecutionContext(target)]);
+        CapturingStatusTelemetry telemetry = new();
+        ScriptedStatusObserver observer = new(
+            async (_, cancellationToken) =>
+            {
+                await WaitForCancellationAsync(cancellationToken);
+                return DocumentCacheStatusCurrentSourceObservationResult.Success(
+                    DocumentCacheLifecycleState.Tracking,
+                    cacheAheadRecoveryRequired: false,
+                    DocumentCacheStatusDurableQueuePresence.Empty,
+                    oldestWorkFirstEnqueuedAt: null,
+                    oldestWorkAgeSeconds: null,
+                    DurableObservedAt
+                );
+            }
+        );
+        DocumentCacheStatusService service = CreateService(
+            registry,
+            ObservationStore(target),
+            observer,
+            telemetry
+        );
+
+        DocumentCacheStatusResponse response = await service.GetStatusAsync();
+
+        DocumentCacheStatusTarget statusTarget = response.Targets.Should().ContainSingle().Which;
+        statusTarget.OperationalHealth.Status.Should().Be(DocumentCacheOperationalHealthStatus.Operational);
+        statusTarget.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.None);
+        statusTarget.CaughtUp.Status.Should().Be(DocumentCacheCaughtUpStatus.CaughtUp);
+        statusTarget.CaughtUp.Reason.Should().Be(DocumentCacheStatusReason.None);
+        statusTarget.Lifecycle.Availability.Should().Be(DocumentCacheStatusAvailability.Available);
+        statusTarget.DurableObservedAt.Should().Be(DurableObservedAt);
+
+        CapturedProviderObservation providerObservation = telemetry
+            .ProviderObservations.Should()
+            .ContainSingle()
+            .Which;
+        providerObservation
+            .Outcome.Should()
+            .Be(DocumentCacheStatusProviderObservationTelemetryOutcome.Succeeded);
+        providerObservation.Reason.Should().Be(DocumentCacheStatusReason.None);
     }
 
     private static DocumentCacheTargetExecutionContext ExecutionContext(

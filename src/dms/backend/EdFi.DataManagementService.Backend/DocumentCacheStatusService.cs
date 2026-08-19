@@ -471,6 +471,8 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
 
         return result.Outcome switch
         {
+            // A completed provider statement reports the facts it obtained; a timeout token may
+            // be observed as cancelled after the durable statement has already succeeded.
             DocumentCacheStatusCurrentSourceObservationOutcome.Succeeded =>
                 DocumentCacheStatusDurableObservation.Success(
                     result.LifecycleState!.Value,
