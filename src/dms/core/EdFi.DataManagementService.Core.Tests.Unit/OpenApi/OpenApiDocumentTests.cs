@@ -67,6 +67,7 @@ public class OpenApiDocumentTests
         {
             ["get"] = new JsonObject
             {
+                ["operationId"] = $"get_{tagName}",
                 ["tags"] = new JsonArray(tagName),
                 ["parameters"] = new JsonArray(parameterNames.Select(Parameter).ToArray()),
                 ["responses"] = new JsonObject
@@ -276,6 +277,52 @@ public class OpenApiDocumentTests
                         "properties": {},
                         "type": "string"
                       }
+                    },
+                    "parameters": {
+                      "limit": {
+                        "description": "Indicates the maximum number of items that should be returned in the results.",
+                        "in": "query",
+                        "name": "limit",
+                        "schema": {
+                          "default": 500,
+                          "format": "int32",
+                          "maximum": 500,
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "numberOfPartitions": {
+                        "description": "The number of evenly distributed partitions to provide for client-side parallel processing.",
+                        "in": "query",
+                        "name": "number",
+                        "schema": {
+                          "format": "int32",
+                          "maximum": 200,
+                          "minimum": 1,
+                          "type": "integer",
+                          "default": 10
+                        }
+                      },
+                      "pageSize": {
+                        "description": "The maximum number of items to retrieve in the page. For use with pageToken (cursor paging) only.",
+                        "in": "query",
+                        "name": "pageSize",
+                        "schema": {
+                          "default": 500,
+                          "format": "int32",
+                          "minimum": 0,
+                          "type": "integer",
+                          "maximum": 500
+                        }
+                      },
+                      "pageToken": {
+                        "description": "The token of the page to retrieve.",
+                        "in": "query",
+                        "name": "pageToken",
+                        "schema": {
+                          "type": "string"
+                        }
+                      }
                     }
                   },
                   "paths": {
@@ -356,6 +403,52 @@ public class OpenApiDocumentTests
                         "description": "An Ed-Fi Descriptor",
                         "properties": {},
                         "type": "string"
+                      }
+                    },
+                    "parameters": {
+                      "limit": {
+                        "description": "Indicates the maximum number of items that should be returned in the results.",
+                        "in": "query",
+                        "name": "limit",
+                        "schema": {
+                          "default": 500,
+                          "format": "int32",
+                          "maximum": 500,
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "numberOfPartitions": {
+                        "description": "The number of evenly distributed partitions to provide for client-side parallel processing.",
+                        "in": "query",
+                        "name": "number",
+                        "schema": {
+                          "format": "int32",
+                          "maximum": 200,
+                          "minimum": 1,
+                          "type": "integer",
+                          "default": 10
+                        }
+                      },
+                      "pageSize": {
+                        "description": "The maximum number of items to retrieve in the page. For use with pageToken (cursor paging) only.",
+                        "in": "query",
+                        "name": "pageSize",
+                        "schema": {
+                          "default": 500,
+                          "format": "int32",
+                          "minimum": 0,
+                          "type": "integer",
+                          "maximum": 500
+                        }
+                      },
+                      "pageToken": {
+                        "description": "The token of the page to retrieve.",
+                        "in": "query",
+                        "name": "pageToken",
+                        "schema": {
+                          "type": "string"
+                        }
                       }
                     }
                   },

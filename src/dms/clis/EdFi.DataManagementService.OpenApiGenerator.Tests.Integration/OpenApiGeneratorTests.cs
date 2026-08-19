@@ -70,6 +70,28 @@ public class OpenApiGeneratorTests
                                     ""version"": ""5.2.0""
                                 },
                                 ""components"": {
+                                    ""parameters"": {
+                                        ""limit"": {
+                                            ""in"": ""query"",
+                                            ""name"": ""limit"",
+                                            ""schema"": { ""type"": ""integer"" }
+                                        },
+                                        ""numberOfPartitions"": {
+                                            ""in"": ""query"",
+                                            ""name"": ""number"",
+                                            ""schema"": { ""type"": ""integer"" }
+                                        },
+                                        ""pageSize"": {
+                                            ""in"": ""query"",
+                                            ""name"": ""pageSize"",
+                                            ""schema"": { ""type"": ""integer"" }
+                                        },
+                                        ""pageToken"": {
+                                            ""in"": ""query"",
+                                            ""name"": ""pageToken"",
+                                            ""schema"": { ""type"": ""string"" }
+                                        }
+                                    },
                                     ""schemas"": {
                                         ""EdFi_Visa"": {
                                             ""description"": ""An Ed-Fi Descriptor""
@@ -92,6 +114,28 @@ public class OpenApiGeneratorTests
                                     ""version"": ""5.2.0""
                                 },
                                 ""components"": {
+                                    ""parameters"": {
+                                        ""limit"": {
+                                            ""in"": ""query"",
+                                            ""name"": ""limit"",
+                                            ""schema"": { ""type"": ""integer"" }
+                                        },
+                                        ""numberOfPartitions"": {
+                                            ""in"": ""query"",
+                                            ""name"": ""number"",
+                                            ""schema"": { ""type"": ""integer"" }
+                                        },
+                                        ""pageSize"": {
+                                            ""in"": ""query"",
+                                            ""name"": ""pageSize"",
+                                            ""schema"": { ""type"": ""integer"" }
+                                        },
+                                        ""pageToken"": {
+                                            ""in"": ""query"",
+                                            ""name"": ""pageToken"",
+                                            ""schema"": { ""type"": ""string"" }
+                                        }
+                                    },
                                     ""schemas"": {
                                         ""EdFi_StudentResource"": {
                                             ""description"": ""A resource representing a student""
@@ -154,7 +198,17 @@ public class OpenApiGeneratorTests
                                         ""paths"": {
                                             ""/tpdm/accreditationStatusDescriptors"": {
                                                 ""get"": {
-                                                    ""operationId"": ""getAccreditationStatus""
+                                                    ""operationId"": ""getAccreditationStatus"",
+                                                    ""responses"": {
+                                                        ""200"": {
+                                                            ""description"": ""OK"",
+                                                            ""content"": {
+                                                                ""application/json"": {
+                                                                    ""schema"": { ""type"": ""array"" }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                             }
                                         },
@@ -187,7 +241,17 @@ public class OpenApiGeneratorTests
                                         ""paths"": {
                                             ""/tpdm/candidates"": {
                                                 ""get"": {
-                                                    ""operationId"": ""getAccreditationStatus""
+                                                    ""operationId"": ""getAccreditationStatus"",
+                                                    ""responses"": {
+                                                        ""200"": {
+                                                            ""description"": ""OK"",
+                                                            ""content"": {
+                                                                ""application/json"": {
+                                                                    ""schema"": { ""type"": ""array"" }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                             }
                                         },

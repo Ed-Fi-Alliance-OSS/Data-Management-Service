@@ -27,7 +27,11 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
     /// The response header carrying the token for the page after this one, as published by the Ed-Fi
     /// cursor-paging client contract.
     /// </summary>
-    private const string NextPageTokenHeaderName = "Next-Page-Token";
+    /// <summary>
+    /// The response header name. Internal so OpenAPI assembly publishes the header this handler emits
+    /// rather than a second spelling of it.
+    /// </summary>
+    internal const string NextPageTokenHeaderName = "Next-Page-Token";
 
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {

@@ -788,6 +788,95 @@ public class ApiSchemaBuilder
     }
 
     /// <summary>
+    /// The cursor-paging parameter components every published ApiSchema base document declares. OpenAPI
+    /// assembly requires them, so fixtures inherit them and each test states only what it is about.
+    /// </summary>
+    public static JsonObject CursorPagingParameterComponents()
+    {
+        return new JsonObject
+        {
+            ["limit"] = new JsonObject
+            {
+                ["description"] =
+                    "Indicates the maximum number of items that should be returned in the results.",
+                ["in"] = "query",
+                ["name"] = "limit",
+                ["schema"] = new JsonObject
+                {
+                    ["default"] = 25,
+                    ["format"] = "int32",
+                    ["maximum"] = 500,
+                    ["minimum"] = 0,
+                    ["type"] = "integer",
+                },
+            },
+            ["numberOfPartitions"] = new JsonObject
+            {
+                ["description"] =
+                    "The number of evenly distributed partitions to provide for client-side parallel processing.",
+                ["in"] = "query",
+                ["name"] = "number",
+                ["schema"] = new JsonObject
+                {
+                    ["format"] = "int32",
+                    ["maximum"] = 200,
+                    ["minimum"] = 1,
+                    ["type"] = "integer",
+                },
+            },
+            ["pageSize"] = new JsonObject
+            {
+                ["description"] =
+                    "The maximum number of items to retrieve in the page. For use with pageToken (cursor paging) only.",
+                ["in"] = "query",
+                ["name"] = "pageSize",
+                ["schema"] = new JsonObject
+                {
+                    ["default"] = 25,
+                    ["format"] = "int32",
+                    ["minimum"] = 0,
+                    ["type"] = "integer",
+                },
+            },
+            ["pageToken"] = new JsonObject
+            {
+                ["description"] = "The token of the page to retrieve.",
+                ["in"] = "query",
+                ["name"] = "pageToken",
+                ["schema"] = new JsonObject { ["type"] = "string" },
+            },
+        };
+    }
+
+    /// <summary>
+    /// Adds any cursor-paging parameter component the given base document does not already declare.
+    /// </summary>
+    private static JsonNode WithCursorPagingParameterComponents(JsonNode openApiDocument)
+    {
+        if (openApiDocument["components"] is not JsonObject components)
+        {
+            components = new JsonObject();
+            openApiDocument["components"] = components;
+        }
+
+        if (components["parameters"] is not JsonObject parameters)
+        {
+            parameters = new JsonObject();
+            components["parameters"] = parameters;
+        }
+
+        foreach ((string componentName, JsonNode? component) in CursorPagingParameterComponents())
+        {
+            if (!parameters.ContainsKey(componentName))
+            {
+                parameters[componentName] = component!.DeepClone();
+            }
+        }
+
+        return openApiDocument;
+    }
+
+    /// <summary>
     /// Creates a minimal OpenAPI doc structure.
     /// </summary>
     private static JsonObject CreateMinimalOpenApiDoc(string title)
@@ -801,7 +890,7 @@ public class ApiSchemaBuilder
             ["components"] = new JsonObject
             {
                 ["schemas"] = new JsonObject(),
-                ["parameters"] = new JsonObject(),
+                ["parameters"] = CursorPagingParameterComponents(),
             },
             ["tags"] = new JsonArray(),
         };
@@ -852,8 +941,12 @@ public class ApiSchemaBuilder
 
         JsonObject openApiBaseDocuments = new()
         {
-            ["resources"] = resourcesDoc ?? CreateMinimalOpenApiDoc("Ed-Fi Resources API"),
-            ["descriptors"] = descriptorsDoc ?? CreateMinimalOpenApiDoc("Ed-Fi Descriptors API"),
+            ["resources"] = resourcesDoc is null
+                ? CreateMinimalOpenApiDoc("Ed-Fi Resources API")
+                : WithCursorPagingParameterComponents(resourcesDoc),
+            ["descriptors"] = descriptorsDoc is null
+                ? CreateMinimalOpenApiDoc("Ed-Fi Descriptors API")
+                : WithCursorPagingParameterComponents(descriptorsDoc),
         };
 
         if (changeQueriesDoc is not null)
