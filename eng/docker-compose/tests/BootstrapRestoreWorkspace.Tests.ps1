@@ -1361,3 +1361,190 @@ Describe "Invoke-RestoreScratchValidation" {
         Remove-Variable -Name ScratchIdentityRows -Scope Global -ErrorAction SilentlyContinue
     }
 }
+
+Describe "Invoke-RestoreTargetReplacement" {
+    BeforeAll {
+        $script:createdDockerFallback = $false
+        if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+            Set-Item -Path function:global:docker -Value { throw "the docker fallback must always be mocked" }
+            $script:createdDockerFallback = $true
+        }
+    }
+
+    AfterAll {
+        if ($script:createdDockerFallback) {
+            Remove-Item function:global:docker -ErrorAction SilentlyContinue
+        }
+    }
+
+    BeforeEach {
+        $script:targetRoot = Join-Path $TestDrive "target-$([Guid]::NewGuid().ToString('n'))"
+        New-Item -ItemType Directory -Path $script:targetRoot -Force | Out-Null
+        $script:packageSourceIdentity = "11111111-1111-1111-1111-111111111111"
+
+        # Call-sequence capture across the three mock surfaces: the safety gate must precede
+        # the first destructive statement.
+        $global:TargetCallSequence = [System.Collections.Generic.List[string]]::new()
+        Mock Assert-RestoreTargetSafety { $global:TargetCallSequence.Add("safety") } -ModuleName bootstrap-restore
+        Mock docker {
+            $global:LASTEXITCODE = 0
+            $global:TargetCallSequence.Add("docker " + ($args -join " "))
+            if (($args -join " ") -like "*FILELISTONLY*") {
+                "edfi_dms|/var/opt/mssql/data/edfi.mdf|D|extra"
+                "edfi_dms_log|/var/opt/mssql/data/edfi_log.ldf|L|extra"
+            }
+        } -ModuleName bootstrap-restore
+        Mock Invoke-RestoreCatalogQuery {
+            $global:TargetCallSequence.Add("query " + $Query)
+            if ($Query -like "*CASE WHEN DB_ID(N'edfi_datamanagementservice')*") { return "1" }
+            if ($Query -like "*UPDATE*") { return @() }
+            if ($Query -like "*SourceIdentity*") { return "33333333-3333-3333-3333-333333333333" }
+            return @()
+        } -ModuleName bootstrap-restore
+    }
+
+    AfterEach {
+        Remove-Variable -Name TargetCallSequence -Scope Global -ErrorAction SilentlyContinue
+    }
+
+    It "PostgreSQL: safety gate first, then drop/create/replay of the target, reseed, and verified identity" {
+        $stage = New-ScratchStage -Directory $script:targetRoot
+
+        $result = Invoke-RestoreTargetReplacement -Stage $stage -TargetDatabaseName "edfi_datamanagementservice" -PackageSourceIdentity $script:packageSourceIdentity -DatabaseEngine postgresql
+
+        $result.RestoredSourceIdentity | Should -Be "33333333-3333-3333-3333-333333333333"
+
+        # The non-destructive gate is the very first act.
+        $global:TargetCallSequence[0] | Should -Be "safety"
+
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -like "*pg_terminate_backend*edfi_datamanagementservice*" }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -eq "DROP DATABASE IF EXISTS edfi_datamanagementservice;" }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -eq "CREATE DATABASE edfi_datamanagementservice;" }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "cp * dms-postgresql:/tmp/restore-target-*.sql" }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql psql -U postgres -d edfi_datamanagementservice -v ON_ERROR_STOP=1 -f /tmp/restore-target-*.sql" }
+        # Reseed runs against the TARGET database, then the transient file is removed.
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -like "*UPDATE*DataStoreIdentity*" -and $DatabaseName -eq "edfi_datamanagementservice" }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql rm -f /tmp/restore-target-*.sql" }
+    }
+
+    It "SQL Server: cp, exists-check, single-user drop, FILELISTONLY, RESTORE MOVE with target-derived names" {
+        $stage = New-ScratchStage -Directory $script:targetRoot -DatabaseEngine mssql
+
+        Invoke-RestoreTargetReplacement -Stage $stage -TargetDatabaseName "edfi_datamanagementservice" -PackageSourceIdentity $script:packageSourceIdentity -DatabaseEngine mssql | Out-Null
+
+        $global:TargetCallSequence[0] | Should -Be "safety"
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -like "*SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [[]edfi_datamanagementservice*" }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+            $joined = $args -join " "
+            $joined -like "*RESTORE DATABASE [[]edfi_datamanagementservice] FROM DISK = N'/var/opt/mssql/data/restore-target-*.bak' WITH MOVE N'edfi_dms' TO N'/var/opt/mssql/data/edfi_datamanagementservice.mdf', MOVE N'edfi_dms_log' TO N'/var/opt/mssql/data/edfi_datamanagementservice_log.ldf', REPLACE;*"
+        }
+    }
+
+    It "SQL Server: skips the drop when the target does not exist" {
+        Mock Invoke-RestoreCatalogQuery {
+            $global:TargetCallSequence.Add("query " + $Query)
+            if ($Query -like "*CASE WHEN DB_ID(N'edfi_datamanagementservice')*") { return "0" }
+            if ($Query -like "*UPDATE*") { return @() }
+            if ($Query -like "*SourceIdentity*") { return "33333333-3333-3333-3333-333333333333" }
+            return @()
+        } -ModuleName bootstrap-restore
+        $stage = New-ScratchStage -Directory $script:targetRoot -DatabaseEngine mssql
+
+        Invoke-RestoreTargetReplacement -Stage $stage -TargetDatabaseName "edfi_datamanagementservice" -PackageSourceIdentity $script:packageSourceIdentity -DatabaseEngine mssql | Out-Null
+
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "*SINGLE_USER*" }
+    }
+
+    It "a re-hash mismatch after the safety gate aborts before any destructive statement" {
+        $stage = New-ScratchStage -Directory $script:targetRoot
+        Add-Content -LiteralPath $stage.ArtifactPath -Value "tampered"
+
+        { Invoke-RestoreTargetReplacement -Stage $stage -TargetDatabaseName "edfi_datamanagementservice" -PackageSourceIdentity $script:packageSourceIdentity -DatabaseEngine postgresql } |
+            Should -Throw "*changed after scratch validation*"
+
+        $global:TargetCallSequence | Should -Be @("safety")
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly
+    }
+
+    It "hard-fails on <Name> (<Engine>) after reseed, before any service can select the target" -ForEach @(
+        @{ Name = "zero identity rows"; Engine = "postgresql"; Rows = @(); Expected = "*Expected exactly one dms.DataStoreIdentity row after restore, found 0*" }
+        @{ Name = "zero identity rows"; Engine = "mssql"; Rows = @(); Expected = "*Expected exactly one dms.DataStoreIdentity row after restore, found 0*" }
+        @{ Name = "two identity rows"; Engine = "postgresql"; Rows = @("33333333-3333-3333-3333-333333333333", "44444444-4444-4444-4444-444444444444"); Expected = "*found 2*" }
+        @{ Name = "two identity rows"; Engine = "mssql"; Rows = @("33333333-3333-3333-3333-333333333333", "44444444-4444-4444-4444-444444444444"); Expected = "*found 2*" }
+        @{ Name = "a non-UUID value"; Engine = "postgresql"; Rows = @("not-a-uuid"); Expected = "*is not a valid UUID*" }
+        @{ Name = "a non-UUID value"; Engine = "mssql"; Rows = @("not-a-uuid"); Expected = "*is not a valid UUID*" }
+        @{ Name = "the empty UUID"; Engine = "postgresql"; Rows = @("00000000-0000-0000-0000-000000000000"); Expected = "*is the empty UUID*" }
+        @{ Name = "the empty UUID"; Engine = "mssql"; Rows = @("00000000-0000-0000-0000-000000000000"); Expected = "*is the empty UUID*" }
+        @{ Name = "a value equal to the package's"; Engine = "postgresql"; Rows = @("11111111-1111-1111-1111-111111111111"); Expected = "*still matches the package value*" }
+        @{ Name = "a value equal to the package's"; Engine = "mssql"; Rows = @("11111111-1111-1111-1111-111111111111"); Expected = "*still matches the package value*" }
+    ) {
+        $global:TargetIdentityRows = $Rows
+        Mock Invoke-RestoreCatalogQuery {
+            $global:TargetCallSequence.Add("query " + $Query)
+            if ($Query -like "*CASE WHEN DB_ID(N'edfi_datamanagementservice')*") { return "1" }
+            if ($Query -like "*UPDATE*") { return @() }
+            if ($Query -like "*SourceIdentity*") { return $global:TargetIdentityRows }
+            return @()
+        } -ModuleName bootstrap-restore
+        $stage = New-ScratchStage -Directory $script:targetRoot -DatabaseEngine $Engine
+
+        { Invoke-RestoreTargetReplacement -Stage $stage -TargetDatabaseName "edfi_datamanagementservice" -PackageSourceIdentity $script:packageSourceIdentity -DatabaseEngine $Engine } |
+            Should -Throw "*failed the SourceIdentity verification*$($Expected.Trim('*'))*"
+
+        Remove-Variable -Name TargetIdentityRows -Scope Global -ErrorAction SilentlyContinue
+    }
+}
+
+Describe "Remove-RestorePreflightDatabase and Remove-RestoreScratchDatabase" {
+    BeforeAll {
+        $script:createdDockerFallback = $false
+        if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+            Set-Item -Path function:global:docker -Value { throw "the docker fallback must always be mocked" }
+            $script:createdDockerFallback = $true
+        }
+    }
+
+    AfterAll {
+        if ($script:createdDockerFallback) {
+            Remove-Item function:global:docker -ErrorAction SilentlyContinue
+        }
+    }
+
+    BeforeEach {
+        Mock Invoke-RestoreCatalogQuery { @() } -ModuleName bootstrap-restore
+    }
+
+    It "drops a generated PostgreSQL preflight database through the admin connection" {
+        Remove-RestorePreflightDatabase -DatabaseEngine postgresql -PreflightDatabaseName "edfi_dms_restore_preflight_0123456789ab"
+
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+            $Query -eq "DROP DATABASE IF EXISTS edfi_dms_restore_preflight_0123456789ab;" -and $DatabaseName -eq "postgres"
+        }
+    }
+
+    It "is a no-op for SQL Server and for a blank name" {
+        Remove-RestorePreflightDatabase -DatabaseEngine mssql -PreflightDatabaseName "edfi_dms_restore_preflight_0123456789ab"
+        Remove-RestorePreflightDatabase -DatabaseEngine postgresql -PreflightDatabaseName ""
+
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly
+    }
+
+    It "refuses to drop anything that is not a generator-shaped name" {
+        { Remove-RestorePreflightDatabase -DatabaseEngine postgresql -PreflightDatabaseName "edfi_datamanagementservice" } |
+            Should -Throw "*Refusing to drop 'edfi_datamanagementservice'*"
+        { Remove-RestoreScratchDatabase -DatabaseEngine postgresql -ScratchDatabaseName "edfi_datamanagementservice" -ContainerName "dms-postgresql" } |
+            Should -Throw "*Refusing to drop 'edfi_datamanagementservice'*"
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly
+    }
+
+    It "preflight cleanup warns loudly instead of throwing when the server is unreachable" {
+        Mock Invoke-RestoreCatalogQuery { throw "server gone" } -ModuleName bootstrap-restore
+
+        $warnings = @()
+        Remove-RestorePreflightDatabase -DatabaseEngine postgresql -PreflightDatabaseName "edfi_dms_restore_preflight_0123456789ab" -WarningVariable warnings 3>$null
+
+        @($warnings) | Should -Not -BeNullOrEmpty
+        ([string]$warnings[0]) | Should -BeLike "*Preflight database cleanup did not complete*server gone*"
+    }
+}
