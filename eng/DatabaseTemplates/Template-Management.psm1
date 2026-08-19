@@ -1989,4 +1989,4 @@ function Build-Template {
     Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion -TemplateKind ([string]$TemplateType) -DatabaseName $DataStoreDatabaseName -DumpAllUserSchemas:$DumpAllUserSchemas -DatabaseEngine $DatabaseEngine -MssqlPassword $MssqlPassword -AttestationSignerKeyPath $AttestationSignerKeyPath -AttestationProducer $AttestationProducer
 }
 
-Export-ModuleMember -Function Build-Template, Get-UserSchemaNames, Restore-TemplatePackage, Get-TemplateSourceCatalogFacts
+Export-ModuleMember -Function Build-Template, Build-TemplateNuGetPackage, Invoke-TemplatePackageAttestation, Get-UserSchemaNames, Restore-TemplatePackage, Get-TemplateSourceCatalogFacts

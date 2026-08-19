@@ -478,6 +478,46 @@ Describe "New-RestoreCandidateWorkspace" {
             Should -BeNullOrEmpty -Because "the claims phase must not run after a schema-phase failure"
     }
 
+    It "heals the session's module instance after the candidate build (no import poisoning)" {
+        # The REAL prepare scripts import bootstrap-manifest -Force -Global while the override
+        # is set, baking the candidate root into the session instance; a later no-Force nested
+        # bind (e.g. the schema workspace validation) would then resolve the moved candidate
+        # path. Proven by the live restore smoke; the stub mimics exactly that import.
+        # This stub re-imports the REAL module, whose import-time containment validation only
+        # accepts candidates under the real .bootstrap-restore - so this test alone uses a
+        # (cleaned-up) workspace there instead of TestDrive.
+        $realWorkspaceRoot = Join-Path $script:restoreWorkspaceRoot "poison-regress-$([Guid]::NewGuid().ToString('n'))"
+        New-Item -ItemType Directory -Path $realWorkspaceRoot -Force | Out-Null
+        $stub = New-CandidatePrepareStub -Directory $script:candidateWorkspaceRoot -LogPath $script:prepareLogPath
+        $manifestModulePath = Join-Path $script:dockerComposeDir "bootstrap-manifest.psm1"
+        @"
+param([string]`$EnvironmentFile)
+Import-Module '$($manifestModulePath.Replace("'", "''"))' -Force -Global
+Add-Content -LiteralPath '$($script:prepareLogPath.Replace("'", "''"))' -Value "schema staged-root=[`$(Get-BootstrapRoot)]"
+New-Item -ItemType Directory -Path `$env:DMS_BOOTSTRAP_ROOT_OVERRIDE -Force | Out-Null
+Set-Content -LiteralPath (Join-Path `$env:DMS_BOOTSTRAP_ROOT_OVERRIDE 'bootstrap-manifest.json') -Value '{"version":1}'
+"@ | Set-Content -LiteralPath $stub.SchemaScriptPath -Encoding utf8
+
+        try {
+            $result = New-RestoreCandidateWorkspace `
+                -EnvironmentFile "x.env" `
+                -WorkspaceRoot $realWorkspaceRoot `
+                -PrepareSchemaScriptPath $stub.SchemaScriptPath `
+                -PrepareClaimsScriptPath $stub.ClaimsScriptPath
+
+            # The prepare phase itself saw the CANDIDATE root through the re-imported module...
+            @(Get-Content -LiteralPath $script:prepareLogPath) | Where-Object { $_ -eq "schema staged-root=[$($result.CandidateDirectory)]" } |
+                Should -Not -BeNullOrEmpty
+            # ...but after the candidate build, the session resolves the ACTIVE root again.
+            Get-BootstrapRoot | Should -Be $script:activeBootstrapRoot
+        }
+        finally {
+            if (Test-Path -LiteralPath $realWorkspaceRoot) {
+                Remove-Item -LiteralPath $realWorkspaceRoot -Recurse -Force
+            }
+        }
+    }
+
     It "treats a nonzero prepare exit code as failure even though the stub script did not throw" {
         $stub = New-CandidatePrepareStub -Directory $script:candidateWorkspaceRoot -LogPath $script:prepareLogPath -SchemaBehavior ExitCode
 

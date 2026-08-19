@@ -369,7 +369,12 @@ function Build-SmokeSourceAndPackage {
     )
 
     Invoke-SmokeStep -Name "build-source-datastore-$($TemplateKind.ToLowerInvariant())" -Body {
-        $sourceArgs = @{ EnvironmentFile = $script:ResolvedEnvironmentFile; DatabaseEngine = $DatabaseEngine }
+        # The SOURCE stack runs separate topology: the producer's DMS-only gate requires a
+        # dedicated DMS datastore, and the default shared topology would put the Configuration
+        # Service's dmscs schema and OpenIddict identity state into the very database the
+        # template is dumped from (the gate refuses exactly that - proven by this smoke's
+        # development history).
+        $sourceArgs = @{ EnvironmentFile = $script:ResolvedEnvironmentFile; DatabaseEngine = $DatabaseEngine; SeparateConfigDatabase = $true }
         if (-not $SkipSourceSeed) {
             $sourceArgs.LoadSeedData = $true
             $sourceArgs.SeedTemplate = $TemplateKind
@@ -639,7 +644,7 @@ try {
                 Move-Item -LiteralPath ($contaminatedPackagePath + ".zip") -Destination $contaminatedPackagePath
 
                 Invoke-TemplatePackageAttestation `
-                    -PackageId ([string]$manifest.packageId) `
+                    -Config @{ Id = [string]$manifest.packageId } `
                     -PackageVersion ([string]$manifest.packageVersion) `
                     -BackupDirectory $contaminatedDirectory `
                     -AttestationSignerKeyPath $script:SmokeSignerKeyPath `
