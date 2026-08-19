@@ -48,6 +48,14 @@ public abstract class Given_PinnedImageConnectorTemplateFixture
         await fixture.AssertHeartbeatAndCommittedOffsetProgressAsync(request, cancellation.Token);
         await fixture.RestartRegisteredConnectorAndAssertTemplateStillValidAsync(request, cancellation.Token);
     }
+}
+
+[TestFixture(CdcProvider.Postgresql)]
+[TestFixture(CdcProvider.SqlServer)]
+[Parallelizable]
+public sealed class Given_OfflinePinnedImageConnectorTemplateFixture(CdcProvider provider)
+{
+    private CdcProvider Provider { get; } = provider;
 
     [Test]
     public async Task It_configures_kafka_connect_env_config_provider_for_externalized_database_passwords()
@@ -161,7 +169,6 @@ public abstract class Given_PinnedImageConnectorTemplateFixture
 
 [TestFixture]
 [Parallelizable]
-[Category("CdcConnectorTemplateSmoke")]
 public sealed class Given_PinnedImageFixtureDockerCommandResult
 {
     [Test]
