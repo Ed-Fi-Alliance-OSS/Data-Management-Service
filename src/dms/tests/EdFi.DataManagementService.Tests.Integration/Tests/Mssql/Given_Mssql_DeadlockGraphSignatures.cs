@@ -10,7 +10,7 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests.Mssql;
 
 /// <summary>
 /// Coverage for the deadlock-graph normalizer and the incomplete-payload detection on
-/// <see cref="MssqlConcurrentWriteLoadTestBase"/>. Every graph here is hand-authored rather than
+/// <see cref="DeadlockGraphReader"/>. Every graph here is hand-authored rather than
 /// captured, so the expected tuples read next to the XML that produces them and nothing depends on a
 /// database or on a run that actually deadlocked.
 ///
@@ -31,7 +31,7 @@ public sealed class Given_Mssql_DeadlockGraphSignatures
     [Test]
     public void It_normalizes_a_two_process_cycle_to_one_tuple_per_resource_participant()
     {
-        MssqlConcurrentWriteLoadTestBase
+        DeadlockGraphReader
             .SignaturesOf(TwoProcessCycle(LeasedDatabase))
             .Should()
             .BeEquivalentTo(
@@ -49,12 +49,10 @@ public sealed class Given_Mssql_DeadlockGraphSignatures
     [Test]
     public void It_strips_the_per_run_database_qualifier_so_two_runs_of_one_cycle_compare_equal()
     {
-        MssqlConcurrentWriteLoadTestBase
+        DeadlockGraphReader
             .SignaturesOf(TwoProcessCycle(LeasedDatabase))
             .Should()
-            .BeEquivalentTo(
-                MssqlConcurrentWriteLoadTestBase.SignaturesOf(TwoProcessCycle(AnotherLeasedDatabase))
-            );
+            .BeEquivalentTo(DeadlockGraphReader.SignaturesOf(TwoProcessCycle(AnotherLeasedDatabase)));
     }
 
     /// <summary>
@@ -65,7 +63,7 @@ public sealed class Given_Mssql_DeadlockGraphSignatures
     [Test]
     public void It_ignores_stack_frames_when_reading_the_statement_a_process_was_running()
     {
-        MssqlConcurrentWriteLoadTestBase
+        DeadlockGraphReader
             .SignaturesOf(CycleCarryingStackFrameNoise(LeasedDatabase))
             .Should()
             .BeEquivalentTo(
@@ -77,7 +75,7 @@ public sealed class Given_Mssql_DeadlockGraphSignatures
     [Test]
     public void It_records_a_missing_indexname_rather_than_dropping_the_resource()
     {
-        MssqlConcurrentWriteLoadTestBase
+        DeadlockGraphReader
             .SignaturesOf(HeapCycleWithoutAnIndexName(LeasedDatabase))
             .Should()
             .BeEquivalentTo(
@@ -93,16 +91,16 @@ public sealed class Given_Mssql_DeadlockGraphSignatures
     [Test]
     public void It_reports_a_malformed_graph_as_unparsable_rather_than_as_no_signatures()
     {
-        MssqlConcurrentWriteLoadTestBase
+        DeadlockGraphReader
             .SignaturesOf("<deadlock><process-list>")
             .Should()
-            .BeEquivalentTo(MssqlConcurrentWriteLoadTestBase.UnparsableGraphSignature);
+            .BeEquivalentTo(DeadlockGraphReader.UnparsableGraphSignature);
     }
 
     [Test]
     public void It_reports_an_event_payload_that_is_not_a_graph_as_unparsable()
     {
-        DeadlockCapture capture = MssqlConcurrentWriteLoadTestBase.CaptureFromRingBufferTarget(
+        DeadlockCapture capture = DeadlockGraphReader.CaptureFromRingBufferTarget(
             RingBufferTarget("&lt;deadlock&gt;&lt;process-list&gt;"),
             LeasedDatabase
         );
@@ -110,9 +108,7 @@ public sealed class Given_Mssql_DeadlockGraphSignatures
         using (new AssertionScope())
         {
             capture.IsInconclusive.Should().BeFalse();
-            capture
-                .Signatures.Should()
-                .BeEquivalentTo(MssqlConcurrentWriteLoadTestBase.UnparsableGraphSignature);
+            capture.Signatures.Should().BeEquivalentTo(DeadlockGraphReader.UnparsableGraphSignature);
             capture.Graphs.Should().HaveCount(1);
         }
     }
@@ -124,7 +120,7 @@ public sealed class Given_Mssql_DeadlockGraphSignatures
     [Test]
     public void It_keeps_a_graph_from_another_database_as_evidence_but_out_of_the_signatures()
     {
-        DeadlockCapture capture = MssqlConcurrentWriteLoadTestBase.CaptureFromRingBufferTarget(
+        DeadlockCapture capture = DeadlockGraphReader.CaptureFromRingBufferTarget(
             RingBufferTarget(TwoProcessCycle(LeasedDatabase), CycleInAnotherDatabase()),
             LeasedDatabase
         );
@@ -161,7 +157,7 @@ public sealed class Given_Mssql_DeadlockGraphSignatures
         string expectedReasonFragment
     )
     {
-        DeadlockCapture capture = MssqlConcurrentWriteLoadTestBase.CaptureFromRingBufferTarget(
+        DeadlockCapture capture = DeadlockGraphReader.CaptureFromRingBufferTarget(
             IncompleteRingBufferTarget(
                 TwoProcessCycle(LeasedDatabase),
                 truncated,
@@ -190,7 +186,7 @@ public sealed class Given_Mssql_DeadlockGraphSignatures
     [Test]
     public void It_reports_a_ring_buffer_payload_that_does_not_parse_as_inconclusive()
     {
-        DeadlockCapture capture = MssqlConcurrentWriteLoadTestBase.CaptureFromRingBufferTarget(
+        DeadlockCapture capture = DeadlockGraphReader.CaptureFromRingBufferTarget(
             """<RingBufferTarget truncated="0" """,
             LeasedDatabase
         );

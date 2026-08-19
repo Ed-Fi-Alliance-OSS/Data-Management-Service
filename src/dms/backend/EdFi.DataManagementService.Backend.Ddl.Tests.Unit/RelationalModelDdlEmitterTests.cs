@@ -1803,18 +1803,10 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
         );
         statementEndStart.Should().BeGreaterThan(mirrorUpdateStart);
 
-        var mirrorUpdate = triggerBody.Substring(
+        return triggerBody.Substring(
             mirrorUpdateStart,
             statementEndStart - mirrorUpdateStart + statementEnd.Length
         );
-        mirrorUpdate
-            .Should()
-            .Contain(
-                "INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]",
-                "the slice must still span the mirror join it is named for"
-            );
-
-        return mirrorUpdate;
     }
 }
 

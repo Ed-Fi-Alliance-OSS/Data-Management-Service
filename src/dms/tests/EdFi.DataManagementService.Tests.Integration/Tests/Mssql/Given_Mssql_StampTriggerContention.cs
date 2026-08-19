@@ -234,29 +234,50 @@ public sealed class Given_Mssql_StampTriggerContention : MssqlConcurrentWriteLoa
     }
 
     /// <summary>
-    /// Records the leased database's isolation configuration next to the numbers, so a baseline is
-    /// known comparable to production rather than assumed to be.
+    /// Records the leased database's isolation configuration next to the numbers, and requires the
+    /// one setting the measurement depends on, so a baseline is known comparable to production
+    /// rather than assumed to be. Reporting alone would leave that to whoever reads the log, and
+    /// these numbers are read long after the run that produced them.
     /// </summary>
     private async Task ReportLeasedDatabaseConfigurationAsync()
     {
-        await using var command = Harness.DbConnection.CreateCommand();
-        command.CommandText = """
-            SELECT [name], [compatibility_level], [is_read_committed_snapshot_on],
-                   [snapshot_isolation_state_desc]
-            FROM sys.databases
-            WHERE [database_id] = DB_ID();
-            """;
+        bool readCommittedSnapshotOn;
 
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        await using (var command = Harness.DbConnection.CreateCommand())
         {
+            command.CommandText = """
+                SELECT [name], [compatibility_level], [is_read_committed_snapshot_on],
+                       [snapshot_isolation_state_desc]
+                FROM sys.databases
+                WHERE [database_id] = DB_ID();
+                """;
+
+            await using var reader = await command.ExecuteReaderAsync();
+            (await reader.ReadAsync())
+                .Should()
+                .BeTrue("sys.databases must describe the leased database this load runs against");
+
             await TestContext.Out.WriteLineAsync(
                 $"--- leased database {reader.GetValue(0)}: "
                     + $"compatibility_level={Convert.ToInt32(reader.GetValue(1))}, "
                     + $"is_read_committed_snapshot_on={Convert.ToBoolean(reader.GetValue(2))}, "
                     + $"snapshot_isolation_state_desc={reader.GetValue(3)} ---"
             );
+
+            readCommittedSnapshotOn = Convert.ToBoolean(reader.GetValue(2));
         }
+
+        // Asserted for the same reason the empty-dms.Descriptor precondition above is: a leased
+        // database that never received MatchProductionWriteIsolation runs at an isolation
+        // configuration production never uses, and every number this fixture reports would then
+        // describe a workload that is not the one under test - silently, and identically to a
+        // healthy run.
+        readCommittedSnapshotOn
+            .Should()
+            .BeTrue(
+                "production provisioning enables READ_COMMITTED_SNAPSHOT, so a load measured "
+                    + "without it is not comparable to the field workload this fixture exists to model"
+            );
     }
 
     /// <summary>

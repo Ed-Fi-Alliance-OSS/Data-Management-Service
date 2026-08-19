@@ -1285,6 +1285,8 @@ Do not receive the columns:
 3. For representation-changing updates and deletes, a trigger fire allocates exactly one `dms.ChangeVersionSequence` value per affected document and writes it to both `dms.Document` and the mirror, captured via `OUTPUT` (SQL Server) / `RETURNING` (PostgreSQL). Root-resource and descriptor inserts are the exception: `dms.Document` defaults allocate the initial content stamp before the root/descriptor row is inserted, and the root/descriptor insert trigger copies that existing stamp to the mirror without allocating another content version. `NEXT VALUE FOR` MUST NOT be invoked a second time for the same document in the same fire.
 4. `IdentityVersion` / `IdentityLastModifiedAt` are not mirrored; they remain internal-only on `dms.Document`.
 5. The `affectedDocs` CTE inside each `*_Stamp` trigger MUST exclude rows whose `inserted` / `deleted` images differ **only** in the four stamp columns (`ContentVersion`, `ContentLastModifiedAt`, `IdentityVersion`, `IdentityLastModifiedAt`). This tightens the existing "no-op updates are not representation changes" rule from [update-tracking.md](update-tracking.md) §"Stamping rules" and is the mechanism that keeps nested-trigger fire safe when a child / `_ext` trigger writes to the root mirror.
+6. On SQL Server, the root-resource and descriptor content stamps MUST be **skipped outright** — not merely evaluated to an empty workset — when the firing cannot change anything. Invariant 5 makes the workset empty; it does not stop the optimizer from resolving the join against `dms.Document` to discover that, and that resolution takes update locks on rows the statement will never modify. The guard is `IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE(<stored column>) OR …)`, which closes two cases in one predicate: a pure `INSERT`, where both `affectedDocs` branches require a matching `deleted` row; and a stamp-only re-firing, where `deleted` is non-empty but no stored column appears in the `SET` clause. `UPDATE(column)` is a **performance pre-filter only** — it reports SET-clause membership, not value change — so it MUST range over exactly the stored columns the invariant-5 value diff uses, and that diff remains authoritative. The child / `_ext` shape is deliberately unguarded: its inserted-side branch legitimately matches pure inserts, because a new collection row must stamp its root document.
+7. On SQL Server, the mirror `UPDATE` MUST be hinted `WITH (FORCESEEK)`. It joins the mirror table to a table variable, whose fixed cardinality estimate lets a cached plan scan the mirror and take update locks across rows the transaction never touched. The hint is only satisfiable while the mirror target exposes an index whose leading key column is the joined column — `DocumentId` for every mirror target — because SQL Server does not fall back to a scan when it cannot honor the hint; it fails the statement with error 8622. Any change that moves a mirror target's primary key off the joined column MUST therefore drop the hint at the same time.
 
 **MSSQL column additions** — illustrated on `edfi.Student`:
 
@@ -1376,37 +1378,57 @@ BEGIN
     LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
     WHERE del.[DocumentId] IS NULL;
 
-    ;WITH affectedDocs AS (
-        -- Avoids mirror-stamp self-fires; see "Concrete-resource ContentVersion / ContentLastModifiedAt mirror" above).
-        SELECT i.[DocumentId]
-        FROM inserted i
-        LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE del.[DocumentId] IS NOT NULL AND (
-            -- Generated null-safe representation-diff predicate across all non-stamp columns.
-            (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL))
-            OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL))
-            -- Other generated non-stamp column predicates omitted.
+    -- Invariant 6. Skips the workset outright when the firing cannot change anything: a pure
+    -- INSERT (both branches below require a matching deleted row) and a stamp-only re-firing
+    -- (deleted is non-empty, but no stored column appears in the SET clause). UPDATE(column) is
+    -- a performance pre-filter over exactly the stored columns the diff below uses; that diff
+    -- stays authoritative. Generated for the root and descriptor shapes only - the child / _ext
+    -- shape's inserted-side branch legitimately matches pure inserts.
+    IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE([DocumentId]) OR UPDATE([SchoolId_Unified]))
+    BEGIN
+        ;WITH affectedDocs AS (
+            -- Avoids mirror-stamp self-fires; see "Concrete-resource ContentVersion / ContentLastModifiedAt mirror" above).
+            SELECT i.[DocumentId]
+            FROM inserted i
+            LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+            WHERE del.[DocumentId] IS NOT NULL AND (
+                -- Generated null-safe representation-diff predicate across all non-stamp columns.
+                (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL))
+                OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL))
+                -- Other generated non-stamp column predicates omitted.
+            )
+            -- Root branches are disjoint (inserted-side takes changed updates, deleted-side pure
+            -- deletes), so the root shape uses UNION ALL. The child shape keeps UNION's dedup
+            -- because child rows map many-to-one onto the root document.
+            UNION ALL
+            SELECT del.[DocumentId]
+            FROM deleted del
+            LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
+            WHERE i.[DocumentId] IS NULL
         )
-        UNION
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL)) OR (i.[SchoolYear_Unified] <> del.[SchoolYear_Unified] OR (i.[SchoolYear_Unified] IS NULL AND del.[SchoolYear_Unified] IS NOT NULL) OR (i.[SchoolYear_Unified] IS NOT NULL AND del.[SchoolYear_Unified] IS NULL)) OR (i.[GradingPeriodGradingPeriod_DocumentId] <> del.[GradingPeriodGradingPeriod_DocumentId] OR (i.[GradingPeriodGradingPeriod_DocumentId] IS NULL AND del.[GradingPeriodGradingPeriod_DocumentId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_DocumentId] IS NOT NULL AND del.[GradingPeriodGradingPeriod_DocumentId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] <> del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) <> CAST(del.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL AND del.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL)) OR (i.[StudentSectionAssociation_DocumentId] <> del.[StudentSectionAssociation_DocumentId] OR (i.[StudentSectionAssociation_DocumentId] IS NULL AND del.[StudentSectionAssociation_DocumentId] IS NOT NULL) OR (i.[StudentSectionAssociation_DocumentId] IS NOT NULL AND del.[StudentSectionAssociation_DocumentId] IS NULL)) OR (i.[StudentSectionAssociation_BeginDate] <> del.[StudentSectionAssociation_BeginDate] OR (i.[StudentSectionAssociation_BeginDate] IS NULL AND del.[StudentSectionAssociation_BeginDate] IS NOT NULL) OR (i.[StudentSectionAssociation_BeginDate] IS NOT NULL AND del.[StudentSectionAssociation_BeginDate] IS NULL)) OR (CAST(i.[StudentSectionAssociation_LocalCourseCode] AS varbinary(max)) <> CAST(del.[StudentSectionAssociation_LocalCourseCode] AS varbinary(max)) OR (i.[StudentSectionAssociation_LocalCourseCode] IS NULL AND del.[StudentSectionAssociation_LocalCourseCode] IS NOT NULL) OR (i.[StudentSectionAssociation_LocalCourseCode] IS NOT NULL AND del.[StudentSectionAssociation_LocalCourseCode] IS NULL)) OR (CAST(i.[StudentSectionAssociation_SectionIdentifier] AS varbinary(max)) <> CAST(del.[StudentSectionAssociation_SectionIdentifier] AS varbinary(max)) OR (i.[StudentSectionAssociation_SectionIdentifier] IS NULL AND del.[StudentSectionAssociation_SectionIdentifier] IS NOT NULL) OR (i.[StudentSectionAssociation_SectionIdentifier] IS NOT NULL AND del.[StudentSectionAssociation_SectionIdentifier] IS NULL)) OR (CAST(i.[StudentSectionAssociation_SessionName] AS varbinary(max)) <> CAST(del.[StudentSectionAssociation_SessionName] AS varbinary(max)) OR (i.[StudentSectionAssociation_SessionName] IS NULL AND del.[StudentSectionAssociation_SessionName] IS NOT NULL) OR (i.[StudentSectionAssociation_SessionName] IS NOT NULL AND del.[StudentSectionAssociation_SessionName] IS NULL)) OR (CAST(i.[StudentSectionAssociation_StudentUniqueId] AS varbinary(max)) <> CAST(del.[StudentSectionAssociation_StudentUniqueId] AS varbinary(max)) OR (i.[StudentSectionAssociation_StudentUniqueId] IS NULL AND del.[StudentSectionAssociation_StudentUniqueId] IS NOT NULL) OR (i.[StudentSectionAssociation_StudentUniqueId] IS NOT NULL AND del.[StudentSectionAssociation_StudentUniqueId] IS NULL)) OR (i.[GradeTypeDescriptor_DescriptorId] <> del.[GradeTypeDescriptor_DescriptorId] OR (i.[GradeTypeDescriptor_DescriptorId] IS NULL AND del.[GradeTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradeTypeDescriptor_DescriptorId] IS NOT NULL AND del.[GradeTypeDescriptor_DescriptorId] IS NULL)) OR (i.[PerformanceBaseConversionDescriptor_DescriptorId] <> del.[PerformanceBaseConversionDescriptor_DescriptorId] OR (i.[PerformanceBaseConversionDescriptor_DescriptorId] IS NULL AND del.[PerformanceBaseConversionDescriptor_DescriptorId] IS NOT NULL) OR (i.[PerformanceBaseConversionDescriptor_DescriptorId] IS NOT NULL AND del.[PerformanceBaseConversionDescriptor_DescriptorId] IS NULL)) OR (i.[CurrentGradeAsOfDate] <> del.[CurrentGradeAsOfDate] OR (i.[CurrentGradeAsOfDate] IS NULL AND del.[CurrentGradeAsOfDate] IS NOT NULL) OR (i.[CurrentGradeAsOfDate] IS NOT NULL AND del.[CurrentGradeAsOfDate] IS NULL)) OR (i.[CurrentGradeIndicator] <> del.[CurrentGradeIndicator] OR (i.[CurrentGradeIndicator] IS NULL AND del.[CurrentGradeIndicator] IS NOT NULL) OR (i.[CurrentGradeIndicator] IS NOT NULL AND del.[CurrentGradeIndicator] IS NULL)) OR (CAST(i.[DiagnosticStatement] AS varbinary(max)) <> CAST(del.[DiagnosticStatement] AS varbinary(max)) OR (i.[DiagnosticStatement] IS NULL AND del.[DiagnosticStatement] IS NOT NULL) OR (i.[DiagnosticStatement] IS NOT NULL AND del.[DiagnosticStatement] IS NULL)) OR (CAST(i.[GradeEarnedDescription] AS varbinary(max)) <> CAST(del.[GradeEarnedDescription] AS varbinary(max)) OR (i.[GradeEarnedDescription] IS NULL AND del.[GradeEarnedDescription] IS NOT NULL) OR (i.[GradeEarnedDescription] IS NOT NULL AND del.[GradeEarnedDescription] IS NULL)) OR (CAST(i.[LetterGradeEarned] AS varbinary(max)) <> CAST(del.[LetterGradeEarned] AS varbinary(max)) OR (i.[LetterGradeEarned] IS NULL AND del.[LetterGradeEarned] IS NOT NULL) OR (i.[LetterGradeEarned] IS NOT NULL AND del.[LetterGradeEarned] IS NULL)) OR (i.[NumericGradeEarned] <> del.[NumericGradeEarned] OR (i.[NumericGradeEarned] IS NULL AND del.[NumericGradeEarned] IS NOT NULL) OR (i.[NumericGradeEarned] IS NOT NULL AND del.[NumericGradeEarned] IS NULL))
-    )
-    UPDATE d
-    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
-    OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
-    FROM [dms].[Document] d
-    INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
+        UPDATE d
+        SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
+        FROM [dms].[Document] d
+        INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
+    END
 
     -- Mirror the stamped values onto MirrorStampTargetTable from this trigger's DbTriggerInfo.
     -- For TR_Grade_Stamp the target is [edfi].[Grade] itself; for child / _ext stamping triggers
     -- the target is the resource's root table (e.g. TR_SchoolAddress_Stamp targets [edfi].[School]).
-    UPDATE r
-    SET r.[ContentVersion] = s.[ContentVersion],
-        r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-    FROM [edfi].[Grade] r
-    INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    --
+    -- The @stamped guard bounds direct recursion: statement triggers fire on zero affected rows,
+    -- so without it this self-UPDATE re-fires the trigger on an empty workset and recurses to the
+    -- nesting limit where RECURSIVE_TRIGGERS is ON. Invariant 7: FORCESEEK forbids a scan of the
+    -- mirror table, which a table-variable cardinality estimate would otherwise permit.
+    IF EXISTS (SELECT 1 FROM @stamped)
+    BEGIN
+        UPDATE r
+        SET r.[ContentVersion] = s.[ContentVersion],
+            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+        FROM [edfi].[Grade] r WITH (FORCESEEK)
+        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+    END
 
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN

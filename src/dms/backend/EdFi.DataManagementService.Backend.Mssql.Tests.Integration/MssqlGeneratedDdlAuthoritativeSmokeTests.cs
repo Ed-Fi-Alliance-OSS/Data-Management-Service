@@ -572,6 +572,168 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     }
 
     [Test]
+    public async Task It_should_not_run_the_descriptor_affected_docs_update_on_a_pure_insert()
+    {
+        // The descriptor stamping trigger carries the same guard as the resource root shape. Its
+        // reachable half here is the pure-INSERT case: both affectedDocs branches require a matching
+        // deleted row, so on an insert the workset is provably empty while the statement would still
+        // resolve its join against [dms].[Document] and take update locks on rows it never modifies.
+        // Descriptors are bulk-loaded first and heaviest, so that is the firing the guard has to
+        // skip. As with the resource shape, every stamping assertion is satisfied identically by
+        // "the statement was skipped" and by "the statement ran and found nothing", so this reads
+        // the actual execution plan: a skipped statement executes no plan and contributes no node.
+        var descriptorStampTriggerObjectId = await GetTriggerObjectIdAsync(
+            "dms.TR_Descriptor_Stamp_Document"
+        );
+        var termDescriptorResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "TermDescriptor");
+        var documentId = await InsertDocumentAsync(
+            Guid.Parse("0a0a0a0a-0a0a-0a0a-0a0a-0a0a0a0a0a0a"),
+            termDescriptorResourceKeyId
+        );
+
+        await DelayForDistinctTimestampsAsync();
+        var descriptorInsertStatements = await ReadExecutedPlanStatementsAsync(
+            """
+            INSERT INTO [dms].[Descriptor] (
+                [DocumentId],
+                [ResourceKeyId],
+                [Namespace],
+                [CodeValue],
+                [ShortDescription],
+                [Description],
+                [Discriminator],
+                [Uri]
+            )
+            VALUES (
+                @documentId,
+                @resourceKeyId,
+                N'uri://ed-fi.org/TermDescriptor',
+                N'Summer',
+                N'Summer',
+                N'Summer',
+                N'Ed-Fi:TermDescriptor',
+                N'uri://ed-fi.org/TermDescriptor#Summer'
+            );
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@resourceKeyId", termDescriptorResourceKeyId)
+        );
+
+        var descriptorTriggerStatements = PlanStatementTextsFor(
+            descriptorInsertStatements,
+            descriptorStampTriggerObjectId
+        );
+
+        // The trigger did fire and did evaluate the guard, so the capture reads inside it.
+        descriptorTriggerStatements
+            .Should()
+            .Contain(statementText =>
+                statementText.Contains(
+                    "IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE(",
+                    StringComparison.Ordinal
+                )
+            );
+
+        // The defect itself: the guarded statement contributed no plan, so it did not execute.
+        descriptorTriggerStatements
+            .Should()
+            .NotContain(statementText => statementText.Contains("affectedDocs", StringComparison.Ordinal));
+
+        // The @stamped pre-population sits outside the guard precisely so a descriptor insert still
+        // carries the document's existing stamp into the mirror. If the guard ever swallowed it, the
+        // mirror would keep its DEFAULT 0 sentinel and this would fail.
+        await AssertRootMirrorMatchesDocumentAsync("dms", "Descriptor", documentId);
+
+        // Control arm. The same statement is captured when the guard admits real work, so its
+        // absence above is "it did not execute", not "it is not visible to this capture".
+        var descriptorUpdateStatements = await ReadExecutedPlanStatementsAsync(
+            """
+            UPDATE [dms].[Descriptor]
+            SET [ShortDescription] = @shortDescription
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@shortDescription", "Summer term"),
+            new SqlParameter("@documentId", documentId)
+        );
+
+        PlanStatementTextsFor(descriptorUpdateStatements, descriptorStampTriggerObjectId)
+            .Should()
+            .ContainSingle(statementText => statementText.Contains("affectedDocs", StringComparison.Ordinal));
+    }
+
+    [Test]
+    public async Task It_should_stamp_every_document_when_one_statement_produces_a_multi_row_mirror_workset()
+    {
+        // The mirror stamp is hinted WITH (FORCESEEK), which forbids a scan of the mirror table and
+        // so constrains the plan to one seek per @stamped row. Every other write in this fixture
+        // drives a single row per statement, which never exercises that plan shape. It matters
+        // because SQL Server does not fall back when it cannot honor the hint - it fails the
+        // statement with error 8622 - and because a multi-row workset is what a cascade fan-out or a
+        // bulk delete produces in production. One UPDATE across many root rows yields one trigger
+        // firing whose @stamped carries all of them.
+        const int AdditionalContacts = 10;
+        var contactResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Contact");
+
+        List<long> documentIds = [_seedData.ContactDocumentId, _seedData.OtherContactDocumentId];
+        for (int i = 0; i < AdditionalContacts; i++)
+        {
+            var documentId = await InsertDocumentAsync(
+                Guid.Parse($"0b0b0b0b-0b0b-0b0b-0b0b-0b0b0b0b0b{i:D2}"),
+                contactResourceKeyId
+            );
+            await InsertContactAsync(documentId, $"205{i:D2}", "Alex", $"Rivera{i:D2}");
+            documentIds.Add(documentId);
+        }
+
+        Dictionary<long, DocumentStampState> before = [];
+        foreach (var documentId in documentIds)
+        {
+            before[documentId] = await GetDocumentStampStateAsync(documentId);
+        }
+
+        await DelayForDistinctTimestampsAsync();
+
+        // No WHERE clause: every seeded Contact changes in one statement, so the root trigger fires
+        // once with a @stamped of documentIds.Count rows. None of them is already named "Rowan", so
+        // the null-safe value diff admits all of them.
+        var affectedRows = await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[Contact]
+            SET [FirstName] = @firstName;
+            """,
+            new SqlParameter("@firstName", "Rowan")
+        );
+
+        affectedRows
+            .Should()
+            .Be(documentIds.Count, "the statement must reach every Contact for the workset to be multi-row");
+
+        List<long> contentVersions = [];
+        foreach (var documentId in documentIds)
+        {
+            var after = await GetDocumentStampStateAsync(documentId);
+            after
+                .ContentVersion.Should()
+                .BeGreaterThan(
+                    before[documentId].ContentVersion,
+                    $"document {documentId} was in the multi-row workset and must be stamped"
+                );
+
+            // The FORCESEEK-hinted mirror update has to land on every row of the workset, not only
+            // on whichever row a single-row plan would have found.
+            await AssertRootMirrorMatchesDocumentAsync("edfi", "Contact", documentId);
+            contentVersions.Add(after.ContentVersion);
+        }
+
+        contentVersions
+            .Should()
+            .OnlyHaveUniqueItems(
+                "one trigger fire allocates exactly one change version per affected document, so a "
+                    + "multi-row workset must not collapse onto a shared value"
+            );
+    }
+
+    [Test]
     public async Task It_should_not_stamp_successful_no_op_child_updates()
     {
         var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
