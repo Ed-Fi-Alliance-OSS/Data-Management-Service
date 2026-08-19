@@ -742,7 +742,8 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
         return path.StartsWith("/", StringComparison.Ordinal)
             && !string.IsNullOrWhiteSpace(property)
             && !path.Any(char.IsControl)
-            && !property.Any(char.IsControl);
+            && !property.Any(char.IsControl)
+            && !fileReference.Any(character => character is '{' or '}');
     }
 
     private static bool IsEnvironmentVariableStart(char character) =>
