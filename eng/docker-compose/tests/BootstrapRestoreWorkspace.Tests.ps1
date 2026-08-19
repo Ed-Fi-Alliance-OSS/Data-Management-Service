@@ -772,6 +772,90 @@ Describe "Assert-DmsComposeProjectStopped (stop proof)" {
     }
 }
 
+Describe "Stop-RestoreDatabaseOnlySlice" {
+    AfterEach {
+        Remove-Item Env:\POSTGRES_USE_TMPFS -ErrorAction SilentlyContinue
+    }
+
+    Context "database-only compose set" {
+        It "mirrors the start scripts' -DbOnly set: the engine file only, tmpfs solely under the PostgreSQL opt-in" {
+            Remove-Item Env:\POSTGRES_USE_TMPFS -ErrorAction SilentlyContinue
+            $postgresqlSet = @(Get-RestoreDatabaseOnlyComposeFile -DatabaseEngine postgresql)
+            $postgresqlSet.Count | Should -Be 2
+            $postgresqlSet[0] | Should -Be "-f"
+            $postgresqlSet[1] | Should -BeLike "*postgresql.yml"
+
+            $mssqlSet = @(Get-RestoreDatabaseOnlyComposeFile -DatabaseEngine mssql)
+            $mssqlSet.Count | Should -Be 2
+            $mssqlSet[1] | Should -BeLike "*mssql.yml"
+
+            # Same condition the start scripts use: the process-environment opt-in, and only on
+            # PostgreSQL - SQL Server never gets the tmpfs override.
+            $env:POSTGRES_USE_TMPFS = "TRUE"
+            $tmpfsSet = @(Get-RestoreDatabaseOnlyComposeFile -DatabaseEngine postgresql)
+            $tmpfsSet.Count | Should -Be 4
+            $tmpfsSet[3] | Should -BeLike "*postgresql-tmpfs.yml"
+            @(Get-RestoreDatabaseOnlyComposeFile -DatabaseEngine mssql).Count | Should -Be 2
+        }
+
+        It "never includes application, CMS, or bootstrap compose files" {
+            $env:POSTGRES_USE_TMPFS = "true"
+            foreach ($engine in @("postgresql", "mssql")) {
+                $composeSet = @(Get-RestoreDatabaseOnlyComposeFile -DatabaseEngine $engine) -join " "
+                foreach ($forbidden in @("local-dms.yml", "published-dms.yml", "local-config.yml", "published-config.yml", "bootstrap-dms.yml", "keycloak.yml", "kafka.yml", "swagger-ui.yml")) {
+                    $composeSet | Should -Not -BeLike "*$forbidden*"
+                }
+            }
+        }
+    }
+
+    Context "stop invocation" {
+        BeforeEach {
+            $global:StopSliceArguments = $null
+            Mock Invoke-RestoreDockerCommand {
+                $global:StopSliceArguments = @($ArgumentList)
+            } -ModuleName bootstrap-restore
+        }
+
+        AfterEach {
+            Remove-Variable -Name StopSliceArguments -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        It "stops only the db service with the compose files, the preflight env file, and this run's project (<Project>/<Engine>)" -ForEach @(
+            @{ Project = "dms-local"; Engine = "postgresql"; ExpectedFile = "postgresql.yml" }
+            @{ Project = "dms-published"; Engine = "mssql"; ExpectedFile = "mssql.yml" }
+        ) {
+            Stop-RestoreDatabaseOnlySlice `
+                -ProjectName $Project `
+                -DatabaseEngine $Engine `
+                -EnvironmentFile "C:\work\.env.restore-preflight"
+
+            $arguments = @($global:StopSliceArguments)
+            $joined = $arguments -join " "
+            $arguments[0] | Should -Be "compose"
+            $joined | Should -BeLike "*-f *$ExpectedFile*"
+            $joined | Should -BeLike "*--env-file C:\work\.env.restore-preflight*"
+            $joined | Should -BeLike "*-p $Project*"
+
+            # "stop db" and nothing else: the last two tokens are the whole action.
+            $arguments[-2] | Should -Be "stop"
+            $arguments[-1] | Should -Be "db"
+
+            # Never a teardown: no down, no -v, no volume/orphan removal anywhere in the argv.
+            foreach ($forbidden in @("down", "-v", "--volumes", "rm", "--remove-orphans")) {
+                $arguments | Should -Not -Contain $forbidden
+            }
+        }
+
+        It "fails closed through the shared docker runner" {
+            Mock Invoke-RestoreDockerCommand { throw "docker unavailable" } -ModuleName bootstrap-restore
+
+            { Stop-RestoreDatabaseOnlySlice -ProjectName "dms-local" -DatabaseEngine postgresql -EnvironmentFile "x.env" } |
+                Should -Throw "*docker unavailable*"
+        }
+    }
+}
+
 Describe "Publish-RestoreCandidateWorkspace (whole-tree commit)" {
     BeforeAll {
         $script:createdDockerFallback = $false

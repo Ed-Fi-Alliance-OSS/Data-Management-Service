@@ -495,6 +495,14 @@ $failureStatement
                 Add-Content -LiteralPath $log -Value "restore:preflight-drop name=[$PreflightDatabaseName]"
                 & $stubThrow "Remove-RestorePreflightDatabase"
             }.GetNewClosure()
+            Set-Item function:global:Stop-RestoreDatabaseOnlySlice {
+                param($ProjectName, $DatabaseEngine, $EnvironmentFile)
+                # Records the full shape so tests can prove the slice is stopped with the same
+                # compose files/env file it was started with - never a bare compose call.
+                $composeFiles = if ($DatabaseEngine -eq "mssql") { "mssql.yml" } else { "postgresql.yml" }
+                Add-Content -LiteralPath $log -Value "restore:stop-db project=$ProjectName engine=$DatabaseEngine env=[$EnvironmentFile] files=[$composeFiles]"
+                & $stubThrow "Stop-RestoreDatabaseOnlySlice"
+            }.GetNewClosure()
             Set-Item function:global:Publish-RestoreCandidateWorkspace {
                 param($CandidateDirectory)
                 Add-Content -LiteralPath $log -Value "restore:publish"
@@ -540,6 +548,7 @@ $failureStatement
                 "Invoke-RestoreCandidateCrossCheck", "Assert-DmsComposeProjectStopped",
                 "New-RestorePreflightEnvironment", "Assert-RestoreTargetSafety",
                 "Invoke-RestoreScratchValidation", "Remove-RestorePreflightDatabase",
+                "Stop-RestoreDatabaseOnlySlice",
                 "Publish-RestoreCandidateWorkspace", "Invoke-RestoreTargetReplacement",
                 "Remove-RestorePackageStage", "docker"
             )) {
@@ -1744,7 +1753,7 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed args=[`$(`$args -join
                 "restore:target-safety",
                 "restore:scratch template=Minimal",
                 "restore:preflight-drop name=[[]edfi_dms_restore_preflight_*",
-                "docker compose -p dms-local stop db",
+                "restore:stop-db project=dms-local*",
                 "restore:publish",
                 "restore:replacement package-identity=11111111-1111-1111-1111-111111111111",
                 "start-infra env=*",
@@ -1758,10 +1767,15 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed args=[`$(`$args -join
                 $previousIndex = $currentIndex
             }
 
-            # No Docker activity of any kind before the cross-check completes.
+            # No Docker activity of any kind before the cross-check completes: nothing in the
+            # log prefix ahead of it may be a start-script invocation, a raw docker call, or the
+            # container-lifecycle steps. Asserted over the slice rather than by first-index, so
+            # the claim holds whether or not such a line exists anywhere at all.
             $crossCheckIndex = Get-RestoreLogIndex -Log $log -Pattern "restore:crosscheck"
-            (Get-RestoreLogIndex -Log $log -Pattern "start-db-only*") | Should -BeGreaterThan $crossCheckIndex
-            (Get-RestoreLogIndex -Log $log -Pattern "docker *") | Should -BeGreaterThan $crossCheckIndex
+            $crossCheckIndex | Should -BeGreaterThan -1
+            @($log[0..($crossCheckIndex - 1)] | Where-Object {
+                    $_ -like "start-*" -or $_ -like "docker *" -or $_ -like "restore:stop-db*" -or $_ -like "restore:stop-proof*"
+                }) | Should -BeNullOrEmpty -Because "acquisition, staging, and the cross-check must all complete before any container is touched"
 
             # Both -DbOnly slices run on the SAME preflight env; the real -InfraOnly does not.
             $dbOnlyLines = @($log | Where-Object { $_ -like "start-db-only*" })
@@ -1788,8 +1802,23 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed args=[`$(`$args -join
             # Two stop-proof PAIRS: before the first -DbOnly and again before the commit.
             @($log | Where-Object { $_ -like "restore:stop-proof*" }).Count | Should -Be 4
             $secondStopProofPairIndex = Get-RestoreLogIndex -Log $log -Pattern "restore:stop-proof project=dms-local" -Occurrence 2
-            $secondStopProofPairIndex | Should -BeGreaterThan (Get-RestoreLogIndex -Log $log -Pattern "docker compose -p dms-local stop db")
+            $secondStopProofPairIndex | Should -BeGreaterThan (Get-RestoreLogIndex -Log $log -Pattern "restore:stop-db project=dms-local*")
             $publishIndex | Should -BeGreaterThan $secondStopProofPairIndex
+
+            # The database-only slice is stopped with the SAME shape it was started with: this
+            # run's project, the preflight env file, and the engine's database-only compose file.
+            # Nothing removes volumes: no "down" and no -v anywhere in the restore branch.
+            $stopDbLine = $log[(Get-RestoreLogIndex -Log $log -Pattern "restore:stop-db*")]
+            $stopDbLine | Should -BeLike "*project=dms-local engine=postgresql*"
+            $stopDbLine | Should -BeLike "*env=[[]*preflight.env]*"
+            $stopDbLine | Should -BeLike "*files=[[]postgresql.yml]*"
+            $wrapperSource = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Raw
+            # No bare compose invocation survives anywhere in the wrapper: every remaining
+            # mention is commentary. (The helper's own argv contract - stop/db only, carrying the
+            # database-only compose files and the preflight env file, never down and never -v -
+            # is pinned by the Stop-RestoreDatabaseOnlySlice unit tests against the real module.)
+            $wrapperSource | Should -Not -Match '(?m)^\s*docker compose'
+            $wrapperSource.Contains("Stop-RestoreDatabaseOnlySlice") | Should -BeTrue
 
             # Restore mode NEVER provisions, never runs the prepare scripts against the active
             # workspace, and cleans the package stage in finally.
@@ -1810,7 +1839,7 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed args=[`$(`$args -join
 
             & (Join-Path $script:repo.DockerComposeRoot "bootstrap-published-dms.ps1") -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Minimal
 
-            @(Get-Content -LiteralPath $script:restoreLog) | Where-Object { $_ -like "docker compose -p dms-published stop db" } |
+            @(Get-Content -LiteralPath $script:restoreLog) | Where-Object { $_ -like "restore:stop-db project=dms-published *" } |
                 Should -Not -BeNullOrEmpty
         }
 

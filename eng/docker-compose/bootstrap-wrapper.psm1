@@ -965,11 +965,13 @@ function Invoke-BootstrapWrapper {
                 # Drop the preflight database, stop the db-only slice, and re-prove the stop
                 # before the whole-tree workspace commit (D10 precondition).
                 Remove-RestorePreflightDatabase -DatabaseEngine $DatabaseEngine -PreflightDatabaseName $restorePreflightDatabaseName
-                $global:LASTEXITCODE = 0
-                docker compose -p $composeProjectName stop db 2>&1 | Out-Host
-                if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
-                    throw "docker compose -p $composeProjectName stop db failed with exit code $LASTEXITCODE."
-                }
+                # Stopped with the SAME compose shape that started the slice (database-only
+                # compose files + the preflight env file + this run's project), never a bare
+                # "docker compose -p <project> stop db", and never "down"/-v: nothing is removed.
+                Stop-RestoreDatabaseOnlySlice `
+                    -ProjectName $composeProjectName `
+                    -DatabaseEngine $DatabaseEngine `
+                    -EnvironmentFile $restorePreflight.EnvironmentFile
                 Assert-DmsComposeProjectStopped -ProjectName "dms-local"
                 Assert-DmsComposeProjectStopped -ProjectName "dms-published"
 

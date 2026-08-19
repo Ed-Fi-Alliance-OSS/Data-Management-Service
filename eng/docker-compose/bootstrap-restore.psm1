@@ -984,6 +984,78 @@ function Invoke-RestoreCandidateCrossCheck {
 }
 
 
+function Get-RestoreDatabaseOnlyComposeFile {
+    <#
+    .SYNOPSIS
+    The compose-file arguments of the database-only slice, mirroring exactly what
+    start-local-dms.ps1 / start-published-dms.ps1 assemble for -DbOnly: the engine's database
+    file, plus the PostgreSQL tmpfs override under the same condition the start scripts use
+    (the POSTGRES_USE_TMPFS process-environment opt-in, PostgreSQL only). No application, CMS,
+    or bootstrap compose files belong here - the slice defines only the "db" service.
+
+    .DESCRIPTION
+    Paths are $PSScriptRoot-anchored so the set resolves identically regardless of the caller's
+    working directory; the compose project is pinned separately by the caller's -p argument.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine
+    )
+
+    $databaseComposeFile = if ($DatabaseEngine -eq "mssql") { "mssql.yml" } else { "postgresql.yml" }
+    $composeArguments = [System.Collections.Generic.List[string]]::new()
+    $composeArguments.Add("-f")
+    $composeArguments.Add((Join-Path $PSScriptRoot $databaseComposeFile))
+
+    $usePostgresqlTmpfs = [string]::Equals(
+        $env:POSTGRES_USE_TMPFS,
+        "true",
+        [System.StringComparison]::OrdinalIgnoreCase
+    )
+    if ($usePostgresqlTmpfs -and $DatabaseEngine -eq "postgresql") {
+        $composeArguments.Add("-f")
+        $composeArguments.Add((Join-Path $PSScriptRoot "postgresql-tmpfs.yml"))
+    }
+
+    return [string[]]$composeArguments.ToArray()
+}
+
+function Stop-RestoreDatabaseOnlySlice {
+    <#
+    .SYNOPSIS
+    Stops ONLY the "db" service of the restore's database-only slice, using the same compose
+    shape that started it: the database-only compose files, the preflight environment file, and
+    the run's compose project. A bare "docker compose -p <project> stop db" (no -f, no
+    --env-file) asks Compose to resolve a project it cannot see, so it is never used here.
+
+    .DESCRIPTION
+    Deliberately "stop", never "down": no volumes, no networks, and no workspaces are removed -
+    the restore flow's only destructive step is the guarded target replacement. Failures are
+    fail-closed through Invoke-RestoreDockerCommand (unresolvable docker, invocation failure,
+    and nonzero exit all throw).
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Restore-internal lifecycle step that stops one container; the restore flow does not expose -WhatIf end to end, and a silent no-op would leave the database running into the workspace commit.')]
+    param (
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("dms-local", "dms-published")]
+        [string]$ProjectName,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [Parameter(Mandatory = $true)]
+        [string]$EnvironmentFile
+    )
+
+    $composeArguments = @(Get-RestoreDatabaseOnlyComposeFile -DatabaseEngine $DatabaseEngine)
+    $argumentList = @("compose") + $composeArguments + @("--env-file", $EnvironmentFile, "-p", $ProjectName, "stop", "db")
+    $null = Invoke-RestoreDockerCommand `
+        -ArgumentList $argumentList `
+        -FailureMessage "Failed to stop the database-only slice ('db') of compose project '$ProjectName'."
+}
+
 function Assert-DmsComposeProjectStopped {
     <#
     .SYNOPSIS
@@ -2099,6 +2171,8 @@ Export-ModuleMember -Function `
     Get-RestoreCandidateRelationalMappingVersion, `
     Assert-RestoreManifestMatchesCandidate, `
     Invoke-RestoreCandidateCrossCheck, `
+    Get-RestoreDatabaseOnlyComposeFile, `
+    Stop-RestoreDatabaseOnlySlice, `
     Assert-DmsComposeProjectStopped, `
     Test-RestoreWorkspaceTreeEqual, `
     Publish-RestoreCandidateWorkspace, `
