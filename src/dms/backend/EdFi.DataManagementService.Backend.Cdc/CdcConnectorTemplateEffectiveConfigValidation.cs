@@ -957,7 +957,13 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
                 is "table.include.list"
                     or "message.key.columns"
                     or "heartbeat.action.query"
+                    or "publication.name"
+                    or "slot.name"
+                    or "topic.prefix"
+                    or "transforms.documentState.target.topic"
+                    or "transforms.documentState.progress.topic"
                     or "schema.history.internal.kafka.bootstrap.servers"
+                    or "schema.history.internal.kafka.topic"
         )
         {
             return CdcConnectorTemplateRedactionClassification.PhysicalIdentifier;
@@ -980,7 +986,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
             return CdcConnectorTemplateRedactionClassification.SecretValue;
         }
 
-        if (partitionKey == "database")
+        if (partitionKey is "server" or "database")
         {
             return CdcConnectorTemplateRedactionClassification.PhysicalIdentifier;
         }

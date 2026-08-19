@@ -571,6 +571,167 @@ public class Given_CdcConnectorTemplateLiveValidationTests
     }
 
     [Test]
+    public void It_redacts_binding_derived_topic_and_source_partition_read_back_mismatches()
+    {
+        const string observedTopicPrefix = "TenantBeta_connector;DROP_TABLE";
+        const string observedPublicTopic = "TenantBeta.documents;DROP_TABLE";
+        const string observedProgressTopic = "TenantBeta.documents.cdc-progress;DROP_TABLE";
+        const string observedSchemaHistoryTopic = "TenantBeta.documents.schema-history;DROP_TABLE";
+        const string observedSourceDatabase = "TenantBeta_datastore;DROP_TABLE";
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(CdcProvider.SqlServer);
+        CdcConnectorTemplateResult rendered = service.Render(request);
+        Dictionary<string, string> effectiveConfig = CopyConfig(rendered.Config);
+        effectiveConfig["topic.prefix"] = observedTopicPrefix;
+        effectiveConfig["transforms.documentState.target.topic"] = observedPublicTopic;
+        effectiveConfig["transforms.documentState.progress.topic"] = observedProgressTopic;
+        effectiveConfig["schema.history.internal.kafka.topic"] = observedSchemaHistoryTopic;
+        effectiveConfig["value.converter"] = "org.example.VisibleWrongConverter";
+        effectiveConfig["tombstones.on.delete"] = "true";
+        effectiveConfig["producer.override.max.request.size"] = "12345";
+
+        CdcConnectorTemplateResult result = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                effectiveConfig,
+                new CdcConnectorProviderSetupEvidence(
+                    bindingGeneration: 7,
+                    BuildProviderSetupResult(CdcProvider.SqlServer)
+                ),
+                new CdcConnectorTemplateSourcePartitionEvidence(
+                    new Dictionary<string, string>
+                    {
+                        ["server"] = observedTopicPrefix,
+                        ["database"] = observedSourceDatabase,
+                    }
+                )
+            )
+        );
+        var exception = new CdcConnectorTemplateValidationException(result.Diagnostics);
+
+        using var _ = new AssertionScope();
+        rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        foreach (
+            string propertyName in new[]
+            {
+                "topic.prefix",
+                "transforms.documentState.target.topic",
+                "transforms.documentState.progress.topic",
+                "schema.history.internal.kafka.topic",
+                "source.partition.server",
+                "source.partition.database",
+            }
+        )
+        {
+            CdcConnectorTemplateDiagnostic diagnostic = result
+                .Diagnostics.Should()
+                .ContainSingle(diagnostic => diagnostic.PropertyName == propertyName)
+                .Which;
+            diagnostic.ExpectedValue.Should().Be("[redacted]");
+            diagnostic.ObservedValue.Should().Be("[redacted]");
+            diagnostic
+                .RedactionClassification.Should()
+                .Be(CdcConnectorTemplateRedactionClassification.PhysicalIdentifier);
+        }
+
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.PropertyName == "value.converter"
+                && diagnostic.ExpectedValue == "org.edfi.kafka.connect.converters.DocumentStateJsonConverter"
+                && diagnostic.ObservedValue == "org.example.VisibleWrongConverter"
+                && diagnostic.RedactionClassification == CdcConnectorTemplateRedactionClassification.Safe
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.PropertyName == "tombstones.on.delete"
+                && diagnostic.ExpectedValue == "false"
+                && diagnostic.ObservedValue == "true"
+                && diagnostic.RedactionClassification == CdcConnectorTemplateRedactionClassification.Safe
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.PropertyName == "producer.override.max.request.size"
+                && diagnostic.ExpectedValue == "67108864"
+                && diagnostic.ObservedValue == "12345"
+                && diagnostic.RedactionClassification == CdcConnectorTemplateRedactionClassification.Safe
+            );
+        string[] sentinelValues =
+        [
+            observedTopicPrefix,
+            observedPublicTopic,
+            observedProgressTopic,
+            observedSchemaHistoryTopic,
+            observedSourceDatabase,
+            "TenantBeta",
+            "DROP_TABLE",
+        ];
+        result
+            .Diagnostics.SelectMany(DiagnosticText)
+            .Should()
+            .NotContain(value =>
+                sentinelValues.Any(sentinel => value.Contains(sentinel, StringComparison.Ordinal))
+            );
+        result.ToString().Should().NotContainAny(sentinelValues);
+        exception.Message.Should().NotContainAny(sentinelValues);
+    }
+
+    [Test]
+    public void It_redacts_postgresql_publication_and_slot_read_back_mismatches()
+    {
+        const string observedPublicationName = "TenantBeta_publication;DROP_TABLE";
+        const string observedSlotName = "TenantBeta_slot;DROP_TABLE";
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(CdcProvider.Postgresql);
+        CdcConnectorTemplateResult rendered = service.Render(request);
+        Dictionary<string, string> effectiveConfig = CopyConfig(rendered.Config);
+        effectiveConfig["publication.name"] = observedPublicationName;
+        effectiveConfig["slot.name"] = observedSlotName;
+
+        CdcConnectorTemplateResult result = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                effectiveConfig,
+                new CdcConnectorProviderSetupEvidence(
+                    bindingGeneration: 7,
+                    BuildProviderSetupResult(CdcProvider.Postgresql)
+                ),
+                BuildSourcePartitionEvidence(request)
+            )
+        );
+        var exception = new CdcConnectorTemplateValidationException(result.Diagnostics);
+
+        using var _ = new AssertionScope();
+        rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        foreach (string propertyName in new[] { "publication.name", "slot.name" })
+        {
+            CdcConnectorTemplateDiagnostic diagnostic = result
+                .Diagnostics.Should()
+                .ContainSingle(diagnostic => diagnostic.PropertyName == propertyName)
+                .Which;
+            diagnostic.ExpectedValue.Should().Be("[redacted]");
+            diagnostic.ObservedValue.Should().Be("[redacted]");
+            diagnostic
+                .RedactionClassification.Should()
+                .Be(CdcConnectorTemplateRedactionClassification.PhysicalIdentifier);
+        }
+
+        string[] sentinelValues = [observedPublicationName, observedSlotName, "TenantBeta", "DROP_TABLE"];
+        result
+            .Diagnostics.SelectMany(DiagnosticText)
+            .Should()
+            .NotContain(value =>
+                sentinelValues.Any(sentinel => value.Contains(sentinel, StringComparison.Ordinal))
+            );
+        result.ToString().Should().NotContainAny(sentinelValues);
+        exception.Message.Should().NotContainAny(sentinelValues);
+    }
+
+    [Test]
     public void It_rejects_arbitrary_unexpected_read_back_properties_without_an_allow_list()
     {
         const string rawPhysicalIdentifier = "Server=unsafe-prod;Password=should-not-leak;Tenant=GrandBend";
@@ -1644,8 +1805,8 @@ public class Given_CdcConnectorTemplateLiveValidationTests
             .Contain(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackSourcePartitionMismatch
                 && diagnostic.PropertyName == "source.partition.server"
-                && diagnostic.ExpectedValue == "dms_binding_connector"
-                && diagnostic.ObservedValue == "different_connector"
+                && diagnostic.ExpectedValue == "[redacted]"
+                && diagnostic.ObservedValue == "[redacted]"
             )
             .And.Contain(diagnostic =>
                 diagnostic.PropertyName == "source.partition.database"
@@ -1665,7 +1826,11 @@ public class Given_CdcConnectorTemplateLiveValidationTests
             )
             .Where(value => value is not null)
             .Should()
-            .NotContain(value => value!.Contains("other_datastore", StringComparison.Ordinal));
+            .NotContain(value =>
+                value!.Contains("dms_binding_connector", StringComparison.Ordinal)
+                || value.Contains("different_connector", StringComparison.Ordinal)
+                || value.Contains("other_datastore", StringComparison.Ordinal)
+            );
     }
 
     private static ServiceProvider BuildServiceProvider() =>
