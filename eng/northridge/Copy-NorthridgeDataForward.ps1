@@ -376,7 +376,9 @@ function Resolve-ExpectedInvariant {
 
 function Test-Invariant {
     [CmdletBinding()]
-    [OutputType([System.Collections.Generic.List[string]])]
+    # Object[] rather than List[string]: the comma operator that stops an empty result unrolling to
+    # $null wraps the return, and the declared type has to match what callers actually receive.
+    [OutputType([System.Object[]])]
     param(
         [Parameter(Mandatory)] [System.Collections.Specialized.OrderedDictionary] $Measurement,
         [Parameter(Mandatory)] [System.Collections.Specialized.OrderedDictionary] $Expected,
@@ -424,7 +426,9 @@ function Test-Invariant {
         $failure.Add("staging schema '$script:StagingSchema' still exists and would appear in the schema compare")
     }
 
-    return $failure
+    # Comma operator: PowerShell unrolls an empty collection to $null on return, so a caller doing
+    # .Count on a clean result would fail -- a bug that can only fire when there is nothing to report.
+    return ,$failure
 }
 
 # A sequence left at its fresh-database position is invisible to a row-count reconciliation and only
@@ -433,7 +437,9 @@ function Test-Invariant {
 # sequence is compared against the maximum value actually present in the copied data.
 function Test-SequencePosition {
     [CmdletBinding()]
-    [OutputType([System.Collections.Generic.List[string]])]
+    # Object[] rather than List[string]: the comma operator that stops an empty result unrolling to
+    # $null wraps the return, and the declared type has to match what callers actually receive.
+    [OutputType([System.Object[]])]
     param([Parameter(Mandatory)] [string] $DatabaseName)
 
     $failure = [System.Collections.Generic.List[string]]::new()
@@ -503,7 +509,9 @@ SELECT 'CollectionItemIdSequence|' ||
         }
     }
 
-    return $failure
+    # Comma operator: PowerShell unrolls an empty collection to $null on return, so a caller doing
+    # .Count on a clean result would fail -- a bug that can only fire when there is nothing to report.
+    return ,$failure
 }
 
 # --disable-triggers also suppresses foreign-key enforcement, so referential integrity is not a
@@ -511,7 +519,9 @@ SELECT 'CollectionItemIdSequence|' ||
 # silently: a document with no resource key, a descriptor with no document, an identity with no owner.
 function Test-ReferentialIntegrity {
     [CmdletBinding()]
-    [OutputType([System.Collections.Generic.List[string]])]
+    # Object[] rather than List[string]: the comma operator that stops an empty result unrolling to
+    # $null wraps the return, and the declared type has to match what callers actually receive.
+    [OutputType([System.Object[]])]
     param([Parameter(Mandatory)] [string] $DatabaseName)
 
     $failure = [System.Collections.Generic.List[string]]::new()
@@ -530,7 +540,9 @@ function Test-ReferentialIntegrity {
         }
     }
 
-    return $failure
+    # Comma operator: PowerShell unrolls an empty collection to $null on return, so a caller doing
+    # .Count on a clean result would fail -- a bug that can only fire when there is nothing to report.
+    return ,$failure
 }
 
 # Row counts cannot see a rewritten stamp: the trigger that would corrupt these values updates rows in
@@ -749,8 +761,12 @@ if ($Mode -eq "Checkpoint") {
     Save-Record -Path (Join-Path $OutputDirectory "checkpoint.$CheckpointName.$TargetDatabase.txt") `
         -Content ((($line) -join "`n") + "`n")
 
-    $failure = Test-Invariant -Measurement $measurement -Expected $expected `
-        -ExpectedIdentity $ExpectedSourceIdentity
+    # Built as a List rather than reassigned from a function result, so an empty return cannot turn
+    # this into $null before .Count is read.
+    $failure = [System.Collections.Generic.List[string]]::new()
+    foreach ($item in (Test-Invariant -Measurement $measurement -Expected $expected -ExpectedIdentity $ExpectedSourceIdentity)) {
+        $failure.Add($item)
+    }
     foreach ($item in $sequenceFailure) { $failure.Add($item) }
 
     Write-Output ""
