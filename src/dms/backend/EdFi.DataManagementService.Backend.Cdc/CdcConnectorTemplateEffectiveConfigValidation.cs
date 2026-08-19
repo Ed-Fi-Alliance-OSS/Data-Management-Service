@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.Ddl;
+using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Cdc;
 
@@ -246,6 +247,266 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
                 )
             );
         }
+
+        if (HasErrors(diagnostics) || HasProviderPrerequisiteErrors(request, sourcePhase))
+        {
+            return;
+        }
+
+        AddProviderSetupEvidenceDriftDiagnostics(request, sourcePhase, diagnostics);
+    }
+
+    private static bool HasProviderPrerequisiteErrors(
+        CdcConnectorTemplateEffectiveConfigValidationRequest request,
+        CdcConnectorTemplateSourcePhase sourcePhase
+    ) =>
+        CdcProviderSetupPrerequisiteRules
+            .Validate(
+                request.ProviderSetupEvidence.Result,
+                request.TemplateRequest.ConnectorName,
+                sourcePhase
+            )
+            .Any(diagnostic => diagnostic.Severity == CdcConnectorTemplateDiagnosticSeverity.Error);
+
+    private static void AddProviderSetupEvidenceDriftDiagnostics(
+        CdcConnectorTemplateEffectiveConfigValidationRequest request,
+        CdcConnectorTemplateSourcePhase sourcePhase,
+        List<CdcConnectorTemplateDiagnostic> diagnostics
+    )
+    {
+        CdcProviderSetupResult renderedResult = request.TemplateRequest.ProviderSetupEvidence.Result;
+        CdcProviderSetupResult freshResult = request.ProviderSetupEvidence.Result;
+
+        if (
+            !SourceTableInventoriesMatch(
+                renderedResult.SourceTableInventory,
+                freshResult.SourceTableInventory
+            )
+        )
+        {
+            diagnostics.Add(
+                BuildDiagnostic(
+                    CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch,
+                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
+                    "providerSetup.sourceTableInventory",
+                    "rendered request source-table inventory",
+                    RedactedValue,
+                    request.TemplateRequest,
+                    sourcePhase,
+                    CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+                )
+            );
+        }
+
+        if (
+            !MessageKeyInventoriesMatch(
+                renderedResult.ExpectedMessageKeyColumns,
+                freshResult.ExpectedMessageKeyColumns
+            )
+        )
+        {
+            diagnostics.Add(
+                BuildDiagnostic(
+                    CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch,
+                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
+                    "providerSetup.expectedMessageKeyColumns",
+                    "rendered request message-key inventory",
+                    RedactedValue,
+                    request.TemplateRequest,
+                    sourcePhase,
+                    CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+                )
+            );
+        }
+
+        if (
+            !HeartbeatActionQueriesMatch(
+                renderedResult.HeartbeatActionQuery,
+                freshResult.HeartbeatActionQuery
+            )
+        )
+        {
+            diagnostics.Add(
+                BuildDiagnostic(
+                    CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch,
+                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
+                    "providerSetup.heartbeatActionQuery",
+                    "rendered request heartbeat action query",
+                    RedactedValue,
+                    request.TemplateRequest,
+                    sourcePhase,
+                    CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+                )
+            );
+        }
+    }
+
+    private static bool SourceTableInventoriesMatch(
+        IReadOnlyList<CdcSourceTableInventory>? expectedInventory,
+        IReadOnlyList<CdcSourceTableInventory>? observedInventory
+    )
+    {
+        if (
+            expectedInventory is null
+            || observedInventory is null
+            || expectedInventory.Count != observedInventory.Count
+        )
+        {
+            return false;
+        }
+
+        for (int index = 0; index < expectedInventory.Count; index++)
+        {
+            if (!SourceTablesMatch(expectedInventory[index], observedInventory[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool SourceTablesMatch(
+        CdcSourceTableInventory? expectedTable,
+        CdcSourceTableInventory? observedTable
+    ) =>
+        expectedTable is not null
+        && observedTable is not null
+        && expectedTable.TableKind == observedTable.TableKind
+        && expectedTable.TableName.Equals(observedTable.TableName)
+        && string.Equals(
+            expectedTable.EmittedQuotedTableName,
+            observedTable.EmittedQuotedTableName,
+            StringComparison.Ordinal
+        )
+        && SourceColumnsMatch(expectedTable.Columns, observedTable.Columns);
+
+    private static bool SourceColumnsMatch(
+        IReadOnlyList<CdcSourceColumnInventory>? expectedColumns,
+        IReadOnlyList<CdcSourceColumnInventory>? observedColumns
+    )
+    {
+        if (
+            expectedColumns is null
+            || observedColumns is null
+            || expectedColumns.Count != observedColumns.Count
+        )
+        {
+            return false;
+        }
+
+        for (int index = 0; index < expectedColumns.Count; index++)
+        {
+            if (!SourceColumnMatches(expectedColumns[index], observedColumns[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool SourceColumnMatches(
+        CdcSourceColumnInventory? expectedColumn,
+        CdcSourceColumnInventory? observedColumn
+    ) =>
+        expectedColumn is not null
+        && observedColumn is not null
+        && string.Equals(
+            expectedColumn.ColumnName.Value,
+            observedColumn.ColumnName.Value,
+            StringComparison.Ordinal
+        )
+        && string.Equals(
+            expectedColumn.EmittedQuotedColumnName,
+            observedColumn.EmittedQuotedColumnName,
+            StringComparison.Ordinal
+        )
+        && expectedColumn.Ordinal == observedColumn.Ordinal
+        && string.Equals(
+            expectedColumn.ProviderDataType,
+            observedColumn.ProviderDataType,
+            StringComparison.Ordinal
+        )
+        && expectedColumn.IsNullable == observedColumn.IsNullable;
+
+    private static bool MessageKeyInventoriesMatch(
+        IReadOnlyList<CdcExpectedMessageKeyColumns>? expectedInventory,
+        IReadOnlyList<CdcExpectedMessageKeyColumns>? observedInventory
+    )
+    {
+        if (
+            expectedInventory is null
+            || observedInventory is null
+            || expectedInventory.Count != observedInventory.Count
+        )
+        {
+            return false;
+        }
+
+        for (int index = 0; index < expectedInventory.Count; index++)
+        {
+            if (!MessageKeyColumnsMatch(expectedInventory[index], observedInventory[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool MessageKeyColumnsMatch(
+        CdcExpectedMessageKeyColumns? expectedColumns,
+        CdcExpectedMessageKeyColumns? observedColumns
+    ) =>
+        expectedColumns is not null
+        && observedColumns is not null
+        && expectedColumns.TableKind == observedColumns.TableKind
+        && ColumnNamesMatch(expectedColumns.KeyColumns, observedColumns.KeyColumns);
+
+    private static bool ColumnNamesMatch(
+        IReadOnlyList<DbColumnName>? expectedColumns,
+        IReadOnlyList<DbColumnName>? observedColumns
+    )
+    {
+        if (
+            expectedColumns is null
+            || observedColumns is null
+            || expectedColumns.Count != observedColumns.Count
+        )
+        {
+            return false;
+        }
+
+        for (int index = 0; index < expectedColumns.Count; index++)
+        {
+            if (
+                !string.Equals(
+                    expectedColumns[index].Value,
+                    observedColumns[index].Value,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool HeartbeatActionQueriesMatch(
+        CdcHeartbeatActionQuery? expectedQuery,
+        CdcHeartbeatActionQuery? observedQuery
+    )
+    {
+        if (expectedQuery is null || observedQuery is null)
+        {
+            return expectedQuery is null && observedQuery is null;
+        }
+
+        return string.Equals(expectedQuery.Sql, observedQuery.Sql, StringComparison.Ordinal)
+            && string.Equals(expectedQuery.Sha256Hash, observedQuery.Sha256Hash, StringComparison.Ordinal);
     }
 
     private static void AddEffectiveConfigDiagnostics(
