@@ -1780,6 +1780,44 @@ function Get-SourceIdentityReseedSql {
     ) -join "`n"
 }
 
+function Get-PostgresqlRestoreGlobalRoleSql {
+    <#
+    .SYNOPSIS
+    The idempotent DO-block that ensures the locked-down 'edfi_dms_enqueue_owner' global role
+    a PostgreSQL template dump's ownership statements reference. Shared by the producer-side
+    Restore-TemplatePackage and the bootstrap restore consumer's scratch/target replays; a
+    pre-existing role that is NOT locked down (or holds privilege-bearing memberships) raises
+    inside the block rather than being silently reused.
+    #>
+    param ()
+
+    return @'
+DO $$
+DECLARE
+    _owner_role oid := pg_catalog.to_regrole('edfi_dms_enqueue_owner');
+BEGIN
+    IF _owner_role IS NULL THEN
+        CREATE ROLE "edfi_dms_enqueue_owner" WITH NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+    ELSIF EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_roles roles
+        WHERE roles.oid = _owner_role
+          AND (roles.rolcanlogin OR roles.rolinherit OR roles.rolsuper OR roles.rolcreatedb OR roles.rolcreaterole OR roles.rolreplication OR roles.rolbypassrls)
+    ) THEN
+        RAISE EXCEPTION 'PostgreSQL role edfi_dms_enqueue_owner exists but is not locked down as NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS. Drop or repair the role before restoring template packages.';
+    ELSIF EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_auth_members memberships
+        WHERE memberships.member = _owner_role
+          AND (memberships.admin_option OR memberships.inherit_option OR memberships.set_option)
+    ) THEN
+        RAISE EXCEPTION 'PostgreSQL role edfi_dms_enqueue_owner must not hold outgoing privilege-bearing memberships before restoring template packages.';
+    END IF;
+END
+$$;
+'@
+}
+
 function Get-SourceIdentitySelectSql {
     <#
     .SYNOPSIS
@@ -1906,5 +1944,6 @@ Export-ModuleMember -Function `
     ConvertFrom-MssqlBackupFileList, `
     New-MssqlRestoreMoveClause, `
     Get-SourceIdentityReseedSql, `
+    Get-PostgresqlRestoreGlobalRoleSql, `
     Get-SourceIdentitySelectSql, `
     Test-RestoredSourceIdentityValue

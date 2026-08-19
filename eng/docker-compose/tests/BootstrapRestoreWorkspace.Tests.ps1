@@ -10,6 +10,9 @@
 # refusal in every phase command that consumes the ACTIVE workspace. A leaked override must
 # never let a live-service phase read a half-validated restore candidate.
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification = 'Pester mock bodies execute in the mocked module''s session state, where test-scope locals are invisible; global variables are the documented crossing mechanism and are removed in AfterEach/AfterAll.')]
+param()
+
 BeforeAll {
     $script:dockerComposeDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
     $script:manifestModulePath = Join-Path $script:dockerComposeDir "bootstrap-manifest.psm1"
@@ -19,6 +22,7 @@ BeforeAll {
     # Without -Force: bootstrap-restore's nested import already bound an instance, and a forced
     # re-import here would strip that binding (the documented nested-Force gotcha in reverse).
     Import-Module (Join-Path $script:dockerComposeDir "../DatabaseTemplates/Template-RestoreCore.psm1")
+    Import-Module (Join-Path $script:dockerComposeDir "../DatabaseTemplates/Template-RestoreTrust.psm1")
 
     function script:Import-ManifestModule {
         Import-Module $script:manifestModulePath -Force -Global
@@ -1103,5 +1107,257 @@ Describe "Assert-RestoreTargetSafety" {
 
         { Assert-RestoreTargetSafety -DatabaseEngine mssql -TargetDatabaseName "edfi_datamanagementservice" -Manifest $script:mssqlManifest } |
             Should -Throw "*has CDC enabled*governed new-generation recovery workflow*"
+    }
+}
+
+Describe "Invoke-RestoreScratchValidation" {
+    BeforeAll {
+        $script:createdDockerFallback = $false
+        if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+            Set-Item -Path function:global:docker -Value { throw "the docker fallback must always be mocked" }
+            $script:createdDockerFallback = $true
+        }
+
+        function script:New-ScratchInventory {
+            # A DMS-only inventory that passes the gate: dms, one resource project (edfi) with
+            # its tracked_changes companion, and the engine's always-present support schema.
+            # Built fresh per call so tests can mutate FullInventory and ArtifactInventory
+            # independently.
+            param(
+                [ValidateSet("postgresql", "mssql")]
+                [string]$DatabaseEngine = "postgresql"
+            )
+
+            $supportSchemaName = if ($DatabaseEngine -eq "mssql") { "dbo" } else { "public" }
+            return @{
+                schemas    = @(
+                    @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }, @{ name = "EffectiveSchema"; type = "table" }) },
+                    @{ schemaName = "edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                    @{ schemaName = "tracked_changes_edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                    @{ schemaName = $supportSchemaName; objects = @() }
+                )
+                principals = @()
+            }
+        }
+
+        function script:New-ScratchCatalogFact {
+            # The consumer facts record Get-RestoreDatabaseCatalogFact would return from a
+            # correctly restored scratch database, matching New-ScratchStage's manifest.
+            param(
+                [ValidateSet("postgresql", "mssql")]
+                [string]$DatabaseEngine = "postgresql"
+            )
+
+            return [pscustomobject]@{
+                ApiSchemaFormatVersion     = "1.0.0"
+                EffectiveSchemaHash        = ("ab" * 32)
+                ResourceKeyCount           = 42
+                ResourceKeySeedHashB64     = [System.Convert]::ToBase64String([byte[]](1..32))
+                EngineVersion              = $(if ($DatabaseEngine -eq "mssql") { "17.0.900.7" } else { "16.8" })
+                DatabaseCompatibilityLevel = $(if ($DatabaseEngine -eq "mssql") { 170 } else { $null })
+                DocumentJsonColumnType     = $(if ($DatabaseEngine -eq "mssql") { "nvarchar" } else { "jsonb" })
+                FullInventory              = (New-ScratchInventory -DatabaseEngine $DatabaseEngine)
+                ArtifactInventory          = (New-ScratchInventory -DatabaseEngine $DatabaseEngine)
+            }
+        }
+
+        function script:New-ScratchStage {
+            # A staged-package stand-in: a real artifact file whose hash the manifest records,
+            # plus the manifest fields scratch validation consumes. The inventorySha256 is
+            # computed from the default facts fixture so the comparator passes by construction.
+            param(
+                [Parameter(Mandatory)]
+                [string]$Directory,
+
+                [ValidateSet("postgresql", "mssql")]
+                [string]$DatabaseEngine = "postgresql",
+
+                [hashtable]$ManifestOverride = @{}
+            )
+
+            $artifactExtension = if ($DatabaseEngine -eq "mssql") { "bak" } else { "sql" }
+            $artifactPath = Join-Path $Directory "artifact.$artifactExtension"
+            Set-Content -LiteralPath $artifactPath -Value "scratch artifact bytes" -Encoding utf8 -NoNewline
+
+            $referenceFact = New-ScratchCatalogFact -DatabaseEngine $DatabaseEngine
+            $manifest = @{
+                databaseEngine             = $DatabaseEngine
+                effectiveSchemaHash        = $referenceFact.EffectiveSchemaHash
+                apiSchemaFormatVersion     = $referenceFact.ApiSchemaFormatVersion
+                resourceKeyCount           = $referenceFact.ResourceKeyCount
+                resourceKeySeedHashB64     = $referenceFact.ResourceKeySeedHashB64
+                engineVersion              = $referenceFact.EngineVersion
+                documentJsonColumnType     = $referenceFact.DocumentJsonColumnType
+                databaseCompatibilityLevel = $referenceFact.DatabaseCompatibilityLevel
+                inventorySha256            = (Get-CanonicalInventoryHash -Inventory $referenceFact.ArtifactInventory)
+                artifactFileName           = "artifact.$artifactExtension"
+                artifactSha256             = (Get-FileSha256Hex -Path $artifactPath)
+                projects                   = @("edfi")
+            }
+            foreach ($overrideKey in $ManifestOverride.Keys) {
+                $manifest[$overrideKey] = $ManifestOverride[$overrideKey]
+            }
+
+            return [pscustomobject]@{
+                StageDirectory = $Directory
+                ArtifactPath   = $artifactPath
+                Manifest       = [pscustomobject]$manifest
+            }
+        }
+    }
+
+    AfterAll {
+        if ($script:createdDockerFallback) {
+            Remove-Item function:global:docker -ErrorAction SilentlyContinue
+        }
+    }
+
+    BeforeEach {
+        $script:scratchRoot = Join-Path $TestDrive "scratch-$([Guid]::NewGuid().ToString('n'))"
+        New-Item -ItemType Directory -Path $script:scratchRoot -Force | Out-Null
+        $script:candidateFact = [pscustomobject]@{
+            EffectiveSchemaHash    = ("ab" * 32)
+            ApiSchemaFormatVersion = "1.0.0"
+        }
+
+        # Defaults: every docker command succeeds (FILELISTONLY answers with a two-file list),
+        # the package's SourceIdentity is one valid row, and the populated count is nonzero.
+        Mock docker {
+            $global:LASTEXITCODE = 0
+            if (($args -join " ") -like "*FILELISTONLY*") {
+                "edfi_dms|/var/opt/mssql/data/edfi.mdf|D|extra"
+                "edfi_dms_log|/var/opt/mssql/data/edfi_log.ldf|L|extra"
+            }
+        } -ModuleName bootstrap-restore
+        Mock Invoke-RestoreCatalogQuery {
+            if ($Query -like "*SourceIdentity*") { return "11111111-1111-1111-1111-111111111111" }
+            if ($Query -like "*COUNT(`*)*") { return "5" }
+            return @()
+        } -ModuleName bootstrap-restore
+        $global:ScratchFactToReturn = New-ScratchCatalogFact
+        Mock Get-RestoreDatabaseCatalogFact { $global:ScratchFactToReturn } -ModuleName bootstrap-restore
+    }
+
+    AfterEach {
+        Remove-Variable -Name ScratchFactToReturn -Scope Global -ErrorAction SilentlyContinue
+    }
+
+    It "PostgreSQL: replays into a generated scratch, validates, captures the package SourceIdentity, and drops the scratch" {
+        $stage = New-ScratchStage -Directory $script:scratchRoot
+
+        $result = Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Populated -DatabaseEngine postgresql
+
+        $result.PackageSourceIdentity | Should -Be "11111111-1111-1111-1111-111111111111"
+        @($result.ProjectSchemaNames) | Should -Be @("edfi")
+
+        # Replay sequence: role init, terminate, drop-if-exists, create - then cp and psql -f.
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -like "*edfi_dms_enqueue_owner*" }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -like "CREATE DATABASE edfi_dms_restore_scratch_*" }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "cp * dms-postgresql:/tmp/restore-scratch-*.sql" }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql psql -U postgres -d edfi_dms_restore_scratch_* -v ON_ERROR_STOP=1 -f /tmp/restore-scratch-*.sql" }
+
+        # The scratch is dropped in finally (the initial defensive drop plus the cleanup drop)
+        # and the transient in-container file is removed.
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 2 -Exactly -ParameterFilter { $Query -like "DROP DATABASE IF EXISTS edfi_dms_restore_scratch_*" }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql rm -f /tmp/restore-scratch-*.sql" }
+    }
+
+    It "SQL Server: cp, FILELISTONLY, then RESTORE with MOVE clauses derived from the scratch name" {
+        $stage = New-ScratchStage -Directory $script:scratchRoot -DatabaseEngine mssql
+        $global:ScratchFactToReturn = New-ScratchCatalogFact -DatabaseEngine mssql
+
+        Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Minimal -DatabaseEngine mssql | Out-Null
+
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "cp * dms-mssql:/var/opt/mssql/data/restore-scratch-*.bak" }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "*RESTORE FILELISTONLY FROM DISK*" }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+            $joined = $args -join " "
+            $joined -like "*RESTORE DATABASE [[]edfi_dms_restore_scratch_*] FROM DISK = N'/var/opt/mssql/data/restore-scratch-*.bak' WITH MOVE N'edfi_dms' TO N'/var/opt/mssql/data/edfi_dms_restore_scratch_*.mdf', MOVE N'edfi_dms_log' TO N'/var/opt/mssql/data/edfi_dms_restore_scratch_*_log.ldf', REPLACE;*"
+        }
+
+        # Minimal kind: the populated predicate never runs; the scratch is dropped in finally.
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "*COUNT(`*)*" }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -like "IF DB_ID(N'edfi_dms_restore_scratch_*DROP DATABASE*" }
+    }
+
+    It "a re-hash mismatch aborts before ANY docker activity" {
+        $stage = New-ScratchStage -Directory $script:scratchRoot
+        Add-Content -LiteralPath $stage.ArtifactPath -Value "tampered"
+
+        { Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Minimal -DatabaseEngine postgresql } |
+            Should -Throw "*changed since staging*"
+
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly
+    }
+
+    It "on <Name>: fails naming the defect, drops the scratch, and performs no further validation" -ForEach @(
+        @{ Name = "an effective-schema hash mismatch"; FactMutation = { param($fact) $fact.EffectiveSchemaHash = ("cd" * 32) }; Expected = "*does not match the restore manifest*effectiveSchemaHash*" }
+        @{ Name = "inventory drift"; FactMutation = { param($fact) $fact.ArtifactInventory.schemas[1].objects += @{ name = "Smuggled"; type = "table" } }; Expected = "*inventorySha256*" }
+        @{ Name = "a dmscs schema in the scratch"; FactMutation = { param($fact) $fact.FullInventory.schemas += @{ schemaName = "dmscs"; objects = @(@{ name = "Application"; type = "table" }) } }; Expected = "*dmscs*" }
+        @{ Name = "a lookalike companion schema"; FactMutation = { param($fact) $fact.FullInventory.schemas += @{ schemaName = "tracked_changesx"; objects = @(@{ name = "X"; type = "table" }) } }; Expected = "*tracked_changesx*" }
+        @{ Name = "a wrong ApiSchema format version"; FactMutation = { param($fact) $fact.ApiSchemaFormatVersion = "9.9.9" }; Expected = "*apiSchemaFormatVersion*" }
+        @{ Name = "a mismatched DocumentJson storage type"; FactMutation = { param($fact) $fact.DocumentJsonColumnType = "json" }; Expected = "*documentJsonColumnType*" }
+    ) {
+        $stage = New-ScratchStage -Directory $script:scratchRoot
+        & $FactMutation $global:ScratchFactToReturn
+
+        { Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Populated -DatabaseEngine postgresql } |
+            Should -Throw $Expected
+
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 2 -Exactly -ParameterFilter { $Query -like "DROP DATABASE IF EXISTS edfi_dms_restore_scratch_*" }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "*SourceIdentity*" }
+    }
+
+    It "on <Name> (SQL Server): fails naming the defect and drops the scratch" -ForEach @(
+        @{ Name = "a mismatched compatibility level"; FactMutation = { param($fact) $fact.DatabaseCompatibilityLevel = 160 }; Expected = "*databaseCompatibilityLevel*" }
+        @{ Name = "a mismatched DocumentJson storage type"; FactMutation = { param($fact) $fact.DocumentJsonColumnType = "varchar" }; Expected = "*documentJsonColumnType*" }
+    ) {
+        $stage = New-ScratchStage -Directory $script:scratchRoot -DatabaseEngine mssql
+        $global:ScratchFactToReturn = New-ScratchCatalogFact -DatabaseEngine mssql
+        & $FactMutation $global:ScratchFactToReturn
+
+        { Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Minimal -DatabaseEngine mssql } |
+            Should -Throw $Expected
+
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -like "IF DB_ID(N'edfi_dms_restore_scratch_*DROP DATABASE*" }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "*SourceIdentity*" }
+    }
+
+    It "fails when the manifest and the candidate workspace disagree" {
+        $stage = New-ScratchStage -Directory $script:scratchRoot
+        $script:candidateFact.EffectiveSchemaHash = ("ef" * 32)
+
+        { Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Minimal -DatabaseEngine postgresql } |
+            Should -Throw "*does not match the candidate workspace's*"
+    }
+
+    It "fails when the manifest's project set differs from the scratch partition" {
+        $stage = New-ScratchStage -Directory $script:scratchRoot -ManifestOverride @{ projects = @("edfi", "tpdm") }
+
+        { Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Minimal -DatabaseEngine postgresql } |
+            Should -Throw "*declares projects*edfi, tpdm*"
+    }
+
+    It "fails a Populated package whose scratch contains no non-descriptor, non-school-year documents" {
+        Mock Invoke-RestoreCatalogQuery { "0" } -ModuleName bootstrap-restore -ParameterFilter { $Query -like "*COUNT(`*)*" }
+        $stage = New-ScratchStage -Directory $script:scratchRoot
+
+        { Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Populated -DatabaseEngine postgresql } |
+            Should -Throw "*templateKind 'Populated'*no non-descriptor, non-school-year documents*"
+    }
+
+    It "fails the SourceIdentity capture when the scratch has <Name>" -ForEach @(
+        @{ Name = "no identity row"; Rows = @(); ExpectedCount = 0 }
+        @{ Name = "two identity rows"; Rows = @("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"); ExpectedCount = 2 }
+    ) {
+        $global:ScratchIdentityRows = $Rows
+        Mock Invoke-RestoreCatalogQuery { $global:ScratchIdentityRows } -ModuleName bootstrap-restore -ParameterFilter { $Query -like "*SourceIdentity*" }
+        $stage = New-ScratchStage -Directory $script:scratchRoot
+
+        { Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Minimal -DatabaseEngine postgresql } |
+            Should -Throw "*exactly one dms.DataStoreIdentity row, found $ExpectedCount*"
+
+        Remove-Variable -Name ScratchIdentityRows -Scope Global -ErrorAction SilentlyContinue
     }
 }
