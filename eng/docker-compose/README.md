@@ -425,8 +425,8 @@ skipped in restore mode: the restored artifact already carries the schema and da
 # plus its sibling .nupkg.attestation.json (no NuGet version key needed)
 ./bootstrap-local-dms.ps1 -RestoreTemplate Minimal -PackageDirectory C:\path\to\packages
 
-# Same through the build script at the repository root
-./build-dms.ps1 StartEnvironment -RestoreTemplate Populated
+# Same through the build script, which lives at the repository root
+../../build-dms.ps1 StartEnvironment -RestoreTemplate Populated
 
 # Optional supplemental seed AFTER the restored stack is up (explicit source required;
 # a bare -LoadSeedData is rejected in restore mode - the template already carries data)
