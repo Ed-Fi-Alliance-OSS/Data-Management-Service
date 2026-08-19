@@ -1062,6 +1062,74 @@ jobs:
           list-tests: failed
           use-actions-summary: "true"
 
+  run-backend-cdc-connector-template-smoke-tests:
+    name: Run Backend CDC Connector Template Smoke Tests
+    needs:
+      - detect-fresh-build-changes
+      - build-integration-test-assemblies
+    if: >-
+      (github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true') &&
+      vars.CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE != '' &&
+      vars.CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE != '' &&
+      vars.CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE != '' &&
+      vars.CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      TEST_ASSEMBLY: ./TestArtifacts/integration-test-assemblies/backend-cdc/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.dll
+      CDC_CONNECTOR_TEMPLATE_FAIL_FAST: "true"
+      CDC_CONNECTOR_TEMPLATE_KEEP_CONTAINERS: "false"
+      CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE }}
+      CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE }}
+      CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE }}
+      CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE }}
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Download Integration Test Assemblies
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-integration-test-assemblies
+          path: TestArtifacts/integration-test-assemblies
+
+      - name: Validate CDC Connector Template Smoke Settings
+        run: |
+          if (-not $env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE.Contains("@sha256:")) {
+            throw "CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE must be an immutable digest reference containing '@sha256:'."
+          }
+
+      - name: Run Backend CDC Connector Template Smoke Tests
+        run: |
+          dotnet test ${{ env.TEST_ASSEMBLY }} `
+            -v normal `
+            --results-directory "./src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/TestResults" `
+            --filter "Category=CdcConnectorTemplateSmoke" `
+            --logger "trx;LogFileName=EdFi.DataManagementService.Backend.Cdc.Tests.Integration.ConnectorTemplateSmoke.trx" `
+            --logger "console" `
+            --nologo
+
+      - name: Upload Backend CDC Connector Template Smoke Test Results
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        if: (success() || failure())
+        with:
+          name: Backend CDC Connector Template Smoke Tests
+          path: "**/*.trx"
+          path-replace-backslashes: "true"
+          reporter: dotnet-trx
+          list-tests: failed
+          use-actions-summary: "true"
+
   run-cli-integration-tests:
     name: Run CLI Integration Tests (${{ matrix.cli }})
     needs: detect-fresh-build-changes
@@ -2919,6 +2987,7 @@ jobs:
         test-timing-summary,
         run-backend-postgresql-integration-tests,
         run-backend-cdc-integration-tests,
+        run-backend-cdc-connector-template-smoke-tests,
         run-dms-api-postgresql-integration-tests,
         run-dms-api-mssql-integration-tests,
         run-cli-integration-tests,
@@ -2963,6 +3032,7 @@ jobs:
       - run-dms-api-mssql-integration-tests
       - run-backend-postgresql-integration-tests
       - run-backend-cdc-integration-tests
+      - run-backend-cdc-connector-template-smoke-tests
       - run-dms-api-postgresql-integration-tests
       - run-cli-integration-tests
       - run-schematools-cli-integration-tests
