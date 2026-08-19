@@ -218,7 +218,7 @@ internal sealed class DocumentCacheStatusTelemetry : IDocumentCacheStatusTelemet
         double durationSeconds = ClampToNonNegativeSeconds(duration);
         _providerObservationDuration.Record(durationSeconds, durationTags);
 
-        if (oldestWorkAgeSeconds is not null && lifecycleState is not null)
+        if (oldestWorkAgeSeconds is not null)
         {
             if (oldestWorkAgeSeconds < 0)
             {
@@ -233,7 +233,7 @@ internal sealed class DocumentCacheStatusTelemetry : IDocumentCacheStatusTelemet
             [
                 new("provider", providerToken.Value),
                 new("target", DocumentCacheTelemetryTargetLabel.FromTargetKey(targetKey)),
-                new("lifecycle", DocumentCacheTelemetryLabel.LowerCamel(lifecycleState.Value)),
+                new("lifecycle", LifecycleLabel(lifecycleState)),
             ];
             _oldestWorkAge.Record(oldestWorkAgeSeconds.Value, oldestWorkTags);
         }
@@ -253,6 +253,11 @@ internal sealed class DocumentCacheStatusTelemetry : IDocumentCacheStatusTelemet
 
     private static string ProviderLabel(string? provider) =>
         string.IsNullOrWhiteSpace(provider) ? DocumentCacheTelemetryLabel.Unknown : provider;
+
+    private static string LifecycleLabel(DocumentCacheLifecycleState? lifecycleState) =>
+        lifecycleState is null
+            ? DocumentCacheTelemetryLabel.Unknown
+            : DocumentCacheTelemetryLabel.LowerCamel(lifecycleState.Value);
 
     private static double ClampToNonNegativeSeconds(TimeSpan duration) =>
         duration < TimeSpan.Zero ? 0 : duration.TotalSeconds;

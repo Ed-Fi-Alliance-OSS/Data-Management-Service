@@ -92,6 +92,33 @@ public class Given_DocumentCacheStatusTelemetry
     }
 
     [Test]
+    public void It_records_state_missing_or_invalid_oldest_work_age_with_unknown_lifecycle_label()
+    {
+        using MetricCollector collector = new();
+        DocumentCacheStatusTelemetry telemetry = collector.CreateTelemetry();
+
+        telemetry.RecordProviderObservation(
+            TargetKey,
+            RelationalProviderToken.Postgresql,
+            DocumentCacheStatusProviderObservationTelemetryOutcome.Succeeded,
+            DocumentCacheStatusReason.None,
+            TimeSpan.FromMilliseconds(25),
+            lifecycleState: null,
+            oldestWorkAgeSeconds: 17.25
+        );
+
+        MetricMeasurement oldestWorkAge = collector
+            .MeasurementsFor(DocumentCacheStatusTelemetry.OldestWorkAgeName)
+            .Should()
+            .ContainSingle()
+            .Which;
+        oldestWorkAge.DoubleValue.Should().Be(17.25);
+        oldestWorkAge.Tags["provider"].Should().Be("postgresql");
+        oldestWorkAge.Tags["target"].Should().Be(TargetLabel);
+        oldestWorkAge.Tags["lifecycle"].Should().Be("unknown");
+    }
+
+    [Test]
     public void It_records_provider_failure_metric_and_warning_log_without_oldest_work_age()
     {
         using MetricCollector collector = new();
