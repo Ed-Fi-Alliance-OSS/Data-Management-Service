@@ -1774,19 +1774,11 @@ function Invoke-RestoreScratchValidation {
     }
     finally {
         try {
-            if ($DatabaseEngine -eq "postgresql") {
-                $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
-                    -Query "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$scratchDatabaseName' AND pid <> pg_backend_pid();" `
-                    -FailureMessage "Failed to terminate connections to scratch database '$scratchDatabaseName' during cleanup."
-                $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
-                    -Query "DROP DATABASE IF EXISTS $scratchDatabaseName;" `
-                    -FailureMessage "Failed to drop scratch database '$scratchDatabaseName'."
-            }
-            else {
-                $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
-                    -Query "IF DB_ID(N'$scratchDatabaseName') IS NOT NULL BEGIN ALTER DATABASE [$scratchDatabaseName] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [$scratchDatabaseName]; END" `
-                    -FailureMessage "Failed to drop scratch database '$scratchDatabaseName'."
-            }
+            Remove-RestoreScratchDatabase `
+                -DatabaseEngine $DatabaseEngine `
+                -ScratchDatabaseName $scratchDatabaseName `
+                -ContainerName $ContainerName `
+                -MssqlPassword $MssqlPassword
             if ($null -ne $containerArtifactPath) {
                 $null = Invoke-RestoreDockerCommand `
                     -ArgumentList @("exec", $ContainerName, "rm", "-f", $containerArtifactPath) `
@@ -1795,6 +1787,282 @@ function Invoke-RestoreScratchValidation {
         }
         catch {
             Write-Warning "Scratch cleanup did not complete: $(($_.Exception.Message | Out-String).Trim()) Remove scratch database '$scratchDatabaseName' and '$containerArtifactPath' in container '$ContainerName' manually if they remain."
+        }
+    }
+}
+
+
+function Remove-RestoreScratchDatabase {
+    <#
+    .SYNOPSIS
+    Drops one generated restore scratch database. The name must match the scratch generator's
+    exact shape - this helper can never be pointed at a real database. Throws on failure so
+    the caller decides whether cleanup failures are fatal (scratch validation demotes them to
+    a loud warning).
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Drops only generator-shaped throwaway scratch databases; the restore flow does not expose -WhatIf end to end.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to the sqlcmd transport, which carries the password via SQLCMDPASSWORD on docker exec; the account is always "sa" and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Forwarded to the sqlcmd transport; SecureString adds no protection across the docker exec boundary.')]
+    param (
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ScratchDatabaseName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ContainerName,
+
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!"
+    )
+
+    if ($ScratchDatabaseName -cnotmatch '^edfi_dms_restore_scratch_[0-9a-f]+\z') {
+        throw "Refusing to drop '$ScratchDatabaseName': only generated restore scratch databases (edfi_dms_restore_scratch_<hex>) may be dropped by this helper."
+    }
+
+    $adminQueryArguments = @{
+        DatabaseEngine = $DatabaseEngine
+        ContainerName  = $ContainerName
+        DatabaseName   = $(if ($DatabaseEngine -eq "mssql") { "master" } else { "postgres" })
+        MssqlPassword  = $MssqlPassword
+    }
+
+    if ($DatabaseEngine -eq "postgresql") {
+        $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
+            -Query "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$ScratchDatabaseName' AND pid <> pg_backend_pid();" `
+            -FailureMessage "Failed to terminate connections to scratch database '$ScratchDatabaseName' during cleanup."
+        $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
+            -Query "DROP DATABASE IF EXISTS $ScratchDatabaseName;" `
+            -FailureMessage "Failed to drop scratch database '$ScratchDatabaseName'."
+    }
+    else {
+        $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
+            -Query "IF DB_ID(N'$ScratchDatabaseName') IS NOT NULL BEGIN ALTER DATABASE [$ScratchDatabaseName] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [$ScratchDatabaseName]; END" `
+            -FailureMessage "Failed to drop scratch database '$ScratchDatabaseName'."
+    }
+}
+
+function Remove-RestorePreflightDatabase {
+    <#
+    .SYNOPSIS
+    Drops the generated PostgreSQL preflight database, best-effort: a failure warns loudly and
+    never throws, because this cleanup runs on failure paths where the server may already be
+    unreachable, and the generated name cannot collide with a real database. SQL Server creates
+    no preflight database (a blank name is the documented no-op). The name must match the
+    preflight generator's exact shape - this helper can never be pointed at a real database.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Drops only generator-shaped throwaway preflight databases; the restore flow does not expose -WhatIf end to end.')]
+    param (
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [string]$PreflightDatabaseName = "",
+
+        [string]$ContainerName = ""
+    )
+
+    if ($DatabaseEngine -eq "mssql" -or [string]::IsNullOrWhiteSpace($PreflightDatabaseName)) {
+        return
+    }
+
+    if ($PreflightDatabaseName -cnotmatch '^edfi_dms_restore_preflight_[0-9a-f]+\z') {
+        throw "Refusing to drop '$PreflightDatabaseName': only generated restore preflight databases (edfi_dms_restore_preflight_<hex>) may be dropped by this helper."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($ContainerName)) {
+        $ContainerName = Get-RestoreDatabaseContainerName -DatabaseEngine $DatabaseEngine
+    }
+
+    try {
+        $null = Invoke-RestoreCatalogQuery `
+            -DatabaseEngine $DatabaseEngine `
+            -ContainerName $ContainerName `
+            -DatabaseName "postgres" `
+            -Query "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$PreflightDatabaseName' AND pid <> pg_backend_pid();" `
+            -FailureMessage "Failed to terminate connections to preflight database '$PreflightDatabaseName'."
+        $null = Invoke-RestoreCatalogQuery `
+            -DatabaseEngine $DatabaseEngine `
+            -ContainerName $ContainerName `
+            -DatabaseName "postgres" `
+            -Query "DROP DATABASE IF EXISTS $PreflightDatabaseName;" `
+            -FailureMessage "Failed to drop preflight database '$PreflightDatabaseName'."
+    }
+    catch {
+        Write-Warning "Preflight database cleanup did not complete: $(($_.Exception.Message | Out-String).Trim()) Drop '$PreflightDatabaseName' in container '$ContainerName' manually if it remains."
+    }
+}
+
+function Invoke-RestoreTargetReplacement {
+    <#
+    .SYNOPSIS
+    The destructive step: replaces the target database with the scratch-validated artifact,
+    then reseeds and verifies the datastore identity.
+
+    .DESCRIPTION
+    Re-runs the full non-destructive target-safety gate (Assert-RestoreTargetSafety)
+    immediately before the first destructive statement, re-hashes the staged artifact
+    immediately before the copy (the SAME immutable bytes scratch validation proved), then
+    dispatches per engine: PostgreSQL ensures the shared restore-global role, terminates
+    connections, drops and recreates the target, and replays via psql ON_ERROR_STOP;
+    SQL Server copies the backup in, single-user-drops an existing target, reads the file
+    list, and restores with one MOVE per logical file to target-derived physical names plus
+    REPLACE. Afterwards dms.DataStoreIdentity.SourceIdentity is reseeded and verified against
+    ALL FOUR conditions (exactly one row, a valid UUID, not the empty UUID, different from the
+    package value captured in scratch) - any failure is a hard error before any service can
+    select the target. The transient in-container artifact copy is removed in finally.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'The guarded destructive restore step itself; the restore flow does not expose -WhatIf end to end, and every precondition is enforced by the preceding gates.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to the sqlcmd transport, which carries the password via SQLCMDPASSWORD on docker exec; the account is always "sa" and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Forwarded to the sqlcmd transport; SecureString adds no protection across the docker exec boundary.')]
+    param (
+        [Parameter(Mandatory = $true)]
+        $Stage,
+
+        [Parameter(Mandatory = $true)]
+        [string]$TargetDatabaseName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PackageSourceIdentity,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [string]$ContainerName = "",
+
+        [switch]$SeparateConfigDatabase,
+
+        [string]$EffectiveConfigDatabaseName = "",
+
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!"
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ContainerName)) {
+        $ContainerName = Get-RestoreDatabaseContainerName -DatabaseEngine $DatabaseEngine
+    }
+    $manifest = $Stage.Manifest
+    $adminDatabaseName = if ($DatabaseEngine -eq "mssql") { "master" } else { "postgres" }
+
+    # The full non-destructive gate re-runs IMMEDIATELY before the first destructive statement:
+    # name safety, live reserved catalog, running services, live engine major, CDC bindings.
+    Assert-RestoreTargetSafety `
+        -DatabaseEngine $DatabaseEngine `
+        -TargetDatabaseName $TargetDatabaseName `
+        -Manifest $manifest `
+        -ContainerName $ContainerName `
+        -SeparateConfigDatabase:$SeparateConfigDatabase `
+        -EffectiveConfigDatabaseName $EffectiveConfigDatabaseName `
+        -MssqlPassword $MssqlPassword
+
+    # Immutability: the target consumes exactly the bytes scratch validation proved, re-hashed
+    # immediately before the copy.
+    $artifactSha256 = Get-FileSha256Hex -Path $Stage.ArtifactPath
+    if ($artifactSha256 -cne [string]$manifest.artifactSha256) {
+        throw "The staged artifact's SHA-256 '$artifactSha256' no longer matches the manifest's artifactSha256 '$($manifest.artifactSha256)'; the artifact changed after scratch validation. Aborting before any destructive statement."
+    }
+
+    $adminQueryArguments = @{
+        DatabaseEngine = $DatabaseEngine
+        ContainerName  = $ContainerName
+        DatabaseName   = $adminDatabaseName
+        MssqlPassword  = $MssqlPassword
+    }
+    $targetQueryArguments = @{
+        DatabaseEngine = $DatabaseEngine
+        ContainerName  = $ContainerName
+        DatabaseName   = $TargetDatabaseName
+        MssqlPassword  = $MssqlPassword
+    }
+    $containerArtifactPath = $null
+
+    try {
+        if ($DatabaseEngine -eq "postgresql") {
+            # Idempotent role init keeps the target replay self-sufficient even when invoked
+            # standalone (scratch validation normally ensured the role moments earlier).
+            $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
+                -Query (Get-PostgresqlRestoreGlobalRoleSql) `
+                -FailureMessage "Failed to ensure the PostgreSQL restore-global role before the target replay."
+            $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
+                -Query "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$TargetDatabaseName' AND pid <> pg_backend_pid();" `
+                -FailureMessage "Failed to terminate connections to target database '$TargetDatabaseName'."
+            $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
+                -Query "DROP DATABASE IF EXISTS $TargetDatabaseName;" `
+                -FailureMessage "Failed to drop target database '$TargetDatabaseName'."
+            $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
+                -Query "CREATE DATABASE $TargetDatabaseName;" `
+                -FailureMessage "Failed to create target database '$TargetDatabaseName'."
+
+            $containerArtifactPath = "/tmp/restore-target-$([Guid]::NewGuid().ToString('N')).sql"
+            $null = Invoke-RestoreDockerCommand `
+                -ArgumentList @("cp", $Stage.ArtifactPath, "$($ContainerName):$containerArtifactPath") `
+                -FailureMessage "Failed to copy the staged artifact into container '$ContainerName'."
+            $null = Invoke-RestoreDockerCommand `
+                -ArgumentList @("exec", $ContainerName, "psql", "-U", "postgres", "-d", $TargetDatabaseName, "-v", "ON_ERROR_STOP=1", "-f", $containerArtifactPath) `
+                -FailureMessage "Replay of the artifact into target database '$TargetDatabaseName' failed."
+        }
+        else {
+            $containerArtifactPath = "/var/opt/mssql/data/restore-target-$([Guid]::NewGuid().ToString('N')).bak"
+            $null = Invoke-RestoreDockerCommand `
+                -ArgumentList @("cp", $Stage.ArtifactPath, "$($ContainerName):$containerArtifactPath") `
+                -FailureMessage "Failed to copy the staged artifact into container '$ContainerName'."
+
+            $existsRows = @(Invoke-RestoreCatalogQuery @adminQueryArguments `
+                    -Query "SET NOCOUNT ON; SELECT CASE WHEN DB_ID(N'$TargetDatabaseName') IS NOT NULL THEN 1 ELSE 0 END;" `
+                    -FailureMessage "Failed to check whether target database '$TargetDatabaseName' exists.")
+            $targetExists = (@($existsRows | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -First 1) -eq "1")
+            if ($targetExists) {
+                $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
+                    -Query "ALTER DATABASE [$TargetDatabaseName] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [$TargetDatabaseName];" `
+                    -FailureMessage "Failed to drop existing target database '$TargetDatabaseName'."
+            }
+
+            $fileListRows = Invoke-RestoreDockerCommand `
+                -ArgumentList @("exec", "-e", "SQLCMDPASSWORD=$MssqlPassword", $ContainerName, "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-d", "master", "-C", "-b", "-h", "-1", "-W", "-s", "|", "-Q", "SET NOCOUNT ON; RESTORE FILELISTONLY FROM DISK = N'$containerArtifactPath';") `
+                -FailureMessage "Failed to read the file list from the staged artifact."
+            $backupFileList = ConvertFrom-MssqlBackupFileList -FileListOutput ([string[]]$fileListRows) -BackupFileName ([string]$manifest.artifactFileName)
+            $moveClauses = New-MssqlRestoreMoveClause `
+                -DatabaseName $TargetDatabaseName `
+                -DataLogicalNames $backupFileList.DataLogicalNames `
+                -LogLogicalNames $backupFileList.LogLogicalNames `
+                -BackupFileName ([string]$manifest.artifactFileName)
+
+            $null = Invoke-RestoreDockerCommand `
+                -ArgumentList @("exec", "-e", "SQLCMDPASSWORD=$MssqlPassword", $ContainerName, "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-d", "master", "-C", "-b", "-Q", "RESTORE DATABASE [$TargetDatabaseName] FROM DISK = N'$containerArtifactPath' WITH $($moveClauses -join ', '), REPLACE;") `
+                -FailureMessage "Restore of the staged artifact into target database '$TargetDatabaseName' failed."
+        }
+
+        # Reseed the datastore identity, then verify ALL FOUR conditions. Any failure is a hard
+        # error before any service can select the target.
+        $null = Invoke-RestoreCatalogQuery @targetQueryArguments `
+            -Query (Get-SourceIdentityReseedSql -DatabaseEngine $DatabaseEngine) `
+            -FailureMessage "Failed to reseed dms.DataStoreIdentity.SourceIdentity in target database '$TargetDatabaseName'."
+        $identityRows = @(Invoke-RestoreCatalogQuery @targetQueryArguments `
+                -Query (Get-SourceIdentitySelectSql -DatabaseEngine $DatabaseEngine) `
+                -FailureMessage "Failed to read dms.DataStoreIdentity.SourceIdentity from target database '$TargetDatabaseName'.")
+        $identityVerdict = Test-RestoredSourceIdentityValue `
+            -SourceIdentityRow ([string[]]$identityRows) `
+            -PackageSourceIdentity $PackageSourceIdentity
+        if (-not $identityVerdict.IsValid) {
+            throw "Restored target '$TargetDatabaseName' failed the SourceIdentity verification: $($identityVerdict.Reason) No service may select this target until this is resolved."
+        }
+
+        return [pscustomobject]@{
+            TargetDatabaseName      = $TargetDatabaseName
+            RestoredSourceIdentity  = ([string]@($identityRows | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -First 1)).Trim()
+        }
+    }
+    finally {
+        try {
+            if ($null -ne $containerArtifactPath) {
+                $null = Invoke-RestoreDockerCommand `
+                    -ArgumentList @("exec", $ContainerName, "rm", "-f", $containerArtifactPath) `
+                    -FailureMessage "Failed to remove the transient in-container artifact '$containerArtifactPath'."
+            }
+        }
+        catch {
+            Write-Warning "Target-replacement cleanup did not complete: $(($_.Exception.Message | Out-String).Trim()) Remove '$containerArtifactPath' in container '$ContainerName' manually if it remains."
         }
     }
 }
@@ -1824,5 +2092,8 @@ Export-ModuleMember -Function `
     Assert-RestoreTargetSafety, `
     Get-RestoreDatabaseCatalogFact, `
     Invoke-RestoreScratchValidation, `
+    Remove-RestoreScratchDatabase, `
+    Remove-RestorePreflightDatabase, `
+    Invoke-RestoreTargetReplacement, `
     Resolve-RestoreTargetDatabaseName, `
     Assert-RestoreTargetDatabaseNameSafe
