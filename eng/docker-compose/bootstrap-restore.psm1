@@ -1123,6 +1123,323 @@ function Publish-RestoreCandidateWorkspace {
     }
 }
 
+
+function Get-RestoreDatabaseContainerName {
+    <#
+    .SYNOPSIS
+    The compose container name of the selected engine's database service (postgresql.yml /
+    mssql.yml both name the service 'db' with a fixed container_name).
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine
+    )
+
+    if ($DatabaseEngine -eq "mssql") {
+        return "dms-mssql"
+    }
+    return "dms-postgresql"
+}
+
+function New-RestorePreflightEnvironment {
+    <#
+    .SYNOPSIS
+    Materializes the database-only preflight environment without target exposure.
+
+    .DESCRIPTION
+    PostgreSQL: fresh-volume initialization (postgresql-init.sh createdb) creates whatever
+    POSTGRES_DB_NAME names, so the preflight -DbOnly run gets a DERIVED env whose
+    POSTGRES_DB_NAME is a generated non-target preflight database name - the selected target can
+    never be created by initialization, only by the guarded restore itself. Everything else in
+    the effective env is carried over verbatim. SQL Server creates no database at startup, so
+    the effective env passes through unchanged and no preflight database exists to clean.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Restore-internal derived-env materialization into the private restore workspace; the restore flow does not expose -WhatIf end to end.')]
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$EnvironmentFile,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [Parameter(Mandatory = $true)]
+        [string]$TargetDatabaseName,
+
+        # Test seam; production default is a derived-file area inside the restore workspace.
+        [string]$DerivedDirectory = ""
+    )
+
+    if ($DatabaseEngine -eq "mssql") {
+        return [pscustomobject]@{
+            EnvironmentFile        = $EnvironmentFile
+            PreflightDatabaseName  = ""
+            IsDerived              = $false
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($DerivedDirectory)) {
+        $DerivedDirectory = Join-Path $script:RestoreWorkspaceRoot "derived"
+    }
+
+    $preflightDatabaseName = New-RestorePreflightDatabaseName
+    # The generator's prefix+crypto-suffix construction makes these unreachable, but the
+    # preflight name standing in for the target would defeat the whole non-exposure design, so
+    # both properties are asserted rather than assumed.
+    Assert-SafeRestoreDatabaseName -DatabaseEngine $DatabaseEngine -DatabaseName $preflightDatabaseName -Purpose "restore preflight database"
+    if ($preflightDatabaseName.Equals($TargetDatabaseName, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "The generated preflight database name '$preflightDatabaseName' collides with the restore target; refusing to run preflight against the target."
+    }
+
+    $derivedEnvironmentPath = Join-Path $DerivedDirectory ".env.restore-preflight"
+    Write-DerivedEnvFile `
+        -BaseEnvironmentFile $EnvironmentFile `
+        -TargetPath $derivedEnvironmentPath `
+        -KeyOverrides @{ POSTGRES_DB_NAME = $preflightDatabaseName }
+
+    return [pscustomobject]@{
+        EnvironmentFile        = $derivedEnvironmentPath
+        PreflightDatabaseName  = $preflightDatabaseName
+        IsDerived              = $true
+    }
+}
+
+function Invoke-RestoreCatalogQuery {
+    <#
+    .SYNOPSIS
+    Runs one read-only catalog query against a database inside the running engine container,
+    returning the raw output rows. Same psql/sqlcmd transports as the template producer's
+    catalog reader, hardened fail-closed: an unresolvable docker, an invocation failure, or a
+    nonzero exit each throw - a silent empty answer must never read as "no rows".
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The MSSQL password is handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); the account is always "sa" so there is no companion username parameter, and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The MSSQL password is handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec (still visible in host-side docker argv); SecureString adds no protection across that boundary.')]
+    param (
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ContainerName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DatabaseName,
+
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!",
+
+        [Parameter(Mandatory = $true)]
+        [string]$Query,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FailureMessage
+    )
+
+    try {
+        $null = Get-Command docker -ErrorAction Stop
+    }
+    catch {
+        throw "$FailureMessage The 'docker' command is not available in this session."
+    }
+
+    $global:LASTEXITCODE = 0
+    try {
+        if ($DatabaseEngine -eq "mssql") {
+            $output = docker exec -e "SQLCMDPASSWORD=$MssqlPassword" $ContainerName /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -d $DatabaseName -C -b -h -1 -W -Q $Query 2>&1
+        }
+        else {
+            $output = docker exec $ContainerName psql -U postgres -d $DatabaseName -tA -c $Query 2>&1
+        }
+    }
+    catch {
+        throw "$FailureMessage Invoking docker exec failed: $(($_.Exception.Message | Out-String).Trim())"
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw "$FailureMessage ($(($output | Out-String).Trim()))"
+    }
+
+    return @($output)
+}
+
+function Get-RestoreEngineMajorVersion {
+    <#
+    .SYNOPSIS
+    Leading-integer major version of an engine version string ('16.8' -> 16,
+    '17.0.900.7' -> 17). An unparsable value fails closed - version comparisons must never
+    silently pass on garbage.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$EngineVersion,
+
+        [Parameter(Mandatory = $true)]
+        [string]$SourceDescription
+    )
+
+    $match = [System.Text.RegularExpressions.Regex]::Match($EngineVersion.Trim(), '^(?<major>\d+)')
+    if (-not $match.Success) {
+        throw "Cannot parse a major version from $SourceDescription engine version '$EngineVersion'."
+    }
+    return [int]$match.Groups["major"].Value
+}
+
+function Assert-RestoreTargetSafety {
+    <#
+    .SYNOPSIS
+    The non-destructive live target-safety gate, re-run immediately before any destructive
+    restore step, in the design's order: reserved-name normalization + denylist and the
+    separate-CMS exclusion (parameter-time), the live-catalog reserved check (a system/template
+    database can hide behind a non-reserved NAME), the running-service check (only the db
+    container of either compose project may be up), the live-server engine major check (the
+    live major must be >= the manifest's - a newer artifact never replays onto an older
+    server), and the CDC-binding refusal (a CDC-bound target needs the governed new-generation
+    recovery workflow, not an in-place replace). Every indeterminate answer fails closed.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to Invoke-RestoreCatalogQuery, whose sqlcmd transport carries the password via SQLCMDPASSWORD on docker exec; the account is always "sa" and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Forwarded to Invoke-RestoreCatalogQuery; SecureString adds no protection across the docker exec boundary.')]
+    param (
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [Parameter(Mandatory = $true)]
+        [string]$TargetDatabaseName,
+
+        [Parameter(Mandatory = $true)]
+        $Manifest,
+
+        [string]$ContainerName = "",
+
+        [switch]$SeparateConfigDatabase,
+
+        [string]$EffectiveConfigDatabaseName = "",
+
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!"
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ContainerName)) {
+        $ContainerName = Get-RestoreDatabaseContainerName -DatabaseEngine $DatabaseEngine
+    }
+    $adminDatabaseName = if ($DatabaseEngine -eq "mssql") { "master" } else { "postgres" }
+
+    # 1) Parameter-time checks: reserved-name normalization + denylist + separate-CMS exclusion.
+    #    These run before any docker activity, so a denylisted target never reaches a query.
+    Assert-RestoreTargetDatabaseNameSafe `
+        -DatabaseEngine $DatabaseEngine `
+        -TargetDatabaseName $TargetDatabaseName `
+        -SeparateConfigDatabase:$SeparateConfigDatabase `
+        -EffectiveConfigDatabaseName $EffectiveConfigDatabaseName
+
+    $catalogQueryArguments = @{
+        DatabaseEngine = $DatabaseEngine
+        ContainerName  = $ContainerName
+        DatabaseName   = $adminDatabaseName
+        MssqlPassword  = $MssqlPassword
+    }
+
+    # 2) Live-catalog reserved check: the NAME denylist cannot see a template/system database
+    #    hiding behind a custom name (PG datistemplate/datallowconn, MSSQL database_id <= 4).
+    #    TargetDatabaseName is charset-validated above, so embedding it in SQL is safe.
+    $reservedCatalogQuery = if ($DatabaseEngine -eq "mssql") {
+        "SET NOCOUNT ON; SELECT name FROM sys.databases WHERE name = N'$TargetDatabaseName' AND database_id <= 4;"
+    }
+    else {
+        "SELECT datname FROM pg_database WHERE datname = '$TargetDatabaseName' AND (datistemplate OR NOT datallowconn);"
+    }
+    $reservedRows = @(Invoke-RestoreCatalogQuery @catalogQueryArguments `
+            -Query $reservedCatalogQuery `
+            -FailureMessage "Live-catalog reserved check failed for restore target '$TargetDatabaseName'.")
+    if (@($reservedRows | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }).Count -gt 0) {
+        throw "The live catalog marks restore target '$TargetDatabaseName' as a reserved/system database (template, connection-disabled, or system id). Restore never replaces it."
+    }
+
+    # 3) Running-service check: with bind-mounts, "is anything pointed at the target" cannot be
+    #    answered from configuration - so only the db service of either compose project may be
+    #    running. Fail-closed like the stop proof: unresolvable docker or a nonzero exit is
+    #    indeterminate, and a container without a readable service label is refused too.
+    try {
+        $null = Get-Command docker -ErrorAction Stop
+    }
+    catch {
+        throw "Target safety is indeterminate: the 'docker' command is not available in this session, so running services cannot be ruled out."
+    }
+    foreach ($projectName in @("dms-local", "dms-published")) {
+        $global:LASTEXITCODE = 0
+        try {
+            $containerRows = @(docker ps --filter "label=com.docker.compose.project=$projectName" --format '{{.Names}}|{{.Label "com.docker.compose.service"}}' 2>&1)
+        }
+        catch {
+            throw "Target safety is indeterminate: invoking 'docker ps' failed while checking compose project '$projectName' ($(($_.Exception.Message | Out-String).Trim()))."
+        }
+        if ($LASTEXITCODE -ne 0) {
+            throw "Target safety is indeterminate: 'docker ps' exited with code $LASTEXITCODE while checking compose project '$projectName' ($(($containerRows | Out-String).Trim()))."
+        }
+        $nonDatabaseContainers = @($containerRows |
+                ForEach-Object { [string]$_ } |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+                Where-Object {
+                    $rowParts = $_.Split("|", 2)
+                    $rowParts.Count -lt 2 -or [string]::IsNullOrWhiteSpace($rowParts[1]) -or $rowParts[1].Trim() -cne "db"
+                })
+        if ($nonDatabaseContainers.Count -gt 0) {
+            throw "Compose project '$projectName' has running non-database containers while the restore is about to touch the target: $($nonDatabaseContainers -join ', '). Only the db service may be up."
+        }
+    }
+
+    # 4) D8a live-server engine major: the live major must be >= the manifest's engine major
+    #    (MSSQL cannot restore a newer-version .bak; PostgreSQL replay is held to the same rule
+    #    for determinism). Unparsable versions fail closed.
+    $liveVersionRows = @(Invoke-RestoreCatalogQuery @catalogQueryArguments `
+            -Query (Get-EngineVersionQuerySql -DatabaseEngine $DatabaseEngine) `
+            -FailureMessage "Live engine-version check failed for restore target '$TargetDatabaseName'.")
+    $liveVersionText = ([string]($liveVersionRows | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -First 1))
+    if ([string]::IsNullOrWhiteSpace($liveVersionText)) {
+        throw "Live engine-version check returned no version for restore target '$TargetDatabaseName'; refusing on an indeterminate answer."
+    }
+    $liveMajor = Get-RestoreEngineMajorVersion -EngineVersion $liveVersionText -SourceDescription "the live server's"
+    $manifestMajor = Get-RestoreEngineMajorVersion -EngineVersion ([string]$Manifest.engineVersion) -SourceDescription "the restore manifest's"
+    if ($liveMajor -lt $manifestMajor) {
+        throw "The live server major version $liveMajor is older than the restore manifest's engine major version $manifestMajor ('$($Manifest.engineVersion)'); a template from a newer engine never replays onto an older server."
+    }
+
+    # 5) CDC-binding refusal: a CDC-bound target must go through the governed new-generation
+    #    recovery workflow, never an in-place replacement.
+    if ($DatabaseEngine -eq "mssql") {
+        $cdcRows = @(Invoke-RestoreCatalogQuery @catalogQueryArguments `
+                -Query "SET NOCOUNT ON; SELECT name FROM sys.databases WHERE name = N'$TargetDatabaseName' AND is_cdc_enabled = 1;" `
+                -FailureMessage "CDC-binding check failed for restore target '$TargetDatabaseName'.")
+        if (@($cdcRows | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }).Count -gt 0) {
+            throw "Restore target '$TargetDatabaseName' has CDC enabled (sys.databases.is_cdc_enabled = 1). Replacing a CDC-bound database requires the governed new-generation recovery workflow; restore refuses."
+        }
+    }
+    else {
+        $slotRows = @(Invoke-RestoreCatalogQuery @catalogQueryArguments `
+                -Query "SELECT slot_name FROM pg_replication_slots WHERE database = '$TargetDatabaseName';" `
+                -FailureMessage "CDC-binding (replication slot) check failed for restore target '$TargetDatabaseName'.")
+        if (@($slotRows | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }).Count -gt 0) {
+            throw "Restore target '$TargetDatabaseName' is bound by replication slot(s): $(@($slotRows) -join ', '). Replacing a CDC-bound database requires the governed new-generation recovery workflow; restore refuses."
+        }
+
+        $targetExistsRows = @(Invoke-RestoreCatalogQuery @catalogQueryArguments `
+                -Query "SELECT 1 FROM pg_database WHERE datname = '$TargetDatabaseName';" `
+                -FailureMessage "Target-existence check failed for restore target '$TargetDatabaseName'.")
+        if (@($targetExistsRows | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }).Count -gt 0) {
+            # Publications live INSIDE the target database, so this query only runs when the
+            # target exists.
+            $publicationRows = @(Invoke-RestoreCatalogQuery `
+                    -DatabaseEngine $DatabaseEngine `
+                    -ContainerName $ContainerName `
+                    -DatabaseName $TargetDatabaseName `
+                    -MssqlPassword $MssqlPassword `
+                    -Query "SELECT pubname FROM pg_publication;" `
+                    -FailureMessage "CDC-binding (publication) check failed for restore target '$TargetDatabaseName'.")
+            if (@($publicationRows | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }).Count -gt 0) {
+                throw "Restore target '$TargetDatabaseName' contains publication(s): $(@($publicationRows) -join ', '). Replacing a CDC-bound database requires the governed new-generation recovery workflow; restore refuses."
+            }
+        }
+    }
+}
+
 Export-ModuleMember -Function `
     Get-RestoreWorkspaceRoot, `
     Resolve-RestoreTemplatePackageIdentity, `
@@ -1141,5 +1458,10 @@ Export-ModuleMember -Function `
     Assert-DmsComposeProjectStopped, `
     Test-RestoreWorkspaceTreeEqual, `
     Publish-RestoreCandidateWorkspace, `
+    Get-RestoreDatabaseContainerName, `
+    New-RestorePreflightEnvironment, `
+    Invoke-RestoreCatalogQuery, `
+    Get-RestoreEngineMajorVersion, `
+    Assert-RestoreTargetSafety, `
     Resolve-RestoreTargetDatabaseName, `
     Assert-RestoreTargetDatabaseNameSafe
