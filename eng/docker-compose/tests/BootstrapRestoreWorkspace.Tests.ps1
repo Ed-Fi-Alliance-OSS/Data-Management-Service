@@ -1342,7 +1342,21 @@ Describe "Invoke-RestoreScratchValidation" {
         $script:candidateFact = [pscustomobject]@{
             EffectiveSchemaHash    = ("ab" * 32)
             ApiSchemaFormatVersion = "1.0.0"
+            SchemaFilePaths        = [string[]]@("$script:scratchRoot/ApiSchema/schemas/Ed-Fi/ApiSchema.json")
         }
+
+        # The authoritative inventory is derived from the CANDIDATE schema by replaying its DDL
+        # into a throwaway database; the derivation itself is covered by its own tests. Here it
+        # defaults to agreeing with whatever scratch inventory the test returns, so existing
+        # cases still fail for their own reasons. A test sets the override to model a package
+        # whose artifact (and manifest) carry objects the candidate schema does not define.
+        $global:AuthoritativeInventoryOverride = $null
+        Mock Get-RestoreAuthoritativeObjectInventory {
+            if ($null -ne $global:AuthoritativeInventoryOverride) {
+                return $global:AuthoritativeInventoryOverride
+            }
+            return $global:ScratchFactToReturn.FullInventory
+        } -ModuleName bootstrap-restore
 
         # Defaults: every docker command succeeds (FILELISTONLY answers with a two-file list),
         # the package's SourceIdentity is one valid row, and the populated count is nonzero.
@@ -1364,6 +1378,7 @@ Describe "Invoke-RestoreScratchValidation" {
 
     AfterEach {
         Remove-Variable -Name ScratchFactToReturn -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name AuthoritativeInventoryOverride -Scope Global -ErrorAction SilentlyContinue
     }
 
     It "PostgreSQL: replays into a generated scratch, validates, captures the package SourceIdentity, and drops the scratch" {
@@ -1471,6 +1486,54 @@ Describe "Invoke-RestoreScratchValidation" {
             Should -Throw "*templateKind 'Populated'*no non-descriptor, non-school-year documents*"
     }
 
+    It "refuses a self-consistent contaminated package: manifest and scratch agree, the candidate schema does not (<SchemaName>.ExtraTable)" -ForEach @(
+        @{ SchemaName = "dms" }
+        @{ SchemaName = "edfi" }
+    ) {
+        # The attack this closes: a signed package whose ARTIFACT carries an extra object and
+        # whose MANIFEST inventory declares that same object. Every manifest-versus-database
+        # comparison is then satisfied, because the package is being checked against its own
+        # claims.
+        $contaminatedFact = New-ScratchCatalogFact
+        foreach ($inventory in @($contaminatedFact.FullInventory, $contaminatedFact.ArtifactInventory)) {
+            $targetSchema = @($inventory.schemas | Where-Object { $_.schemaName -eq $SchemaName })[0]
+            $targetSchema.objects += @{ name = "ExtraTable"; type = "table" }
+        }
+        $global:ScratchFactToReturn = $contaminatedFact
+
+        # The manifest records the contaminated inventory, so its hash matches the database.
+        $stage = New-ScratchStage -Directory $script:scratchRoot -ManifestOverride @{
+            inventorySha256 = (Get-CanonicalInventoryHash -Inventory $contaminatedFact.ArtifactInventory)
+        }
+
+        # Control: prove the self-referential comparison is NOT enough - it passes outright.
+        { Assert-RestoreManifestMatchesDatabase -Manifest $stage.Manifest -Facts $contaminatedFact -DatabaseEngine postgresql } |
+            Should -Not -Throw
+
+        # The authoritative inventory comes from the candidate schema's own DDL, which defines
+        # no ExtraTable anywhere.
+        $global:AuthoritativeInventoryOverride = New-ScratchInventory
+
+        { Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Minimal -DatabaseEngine postgresql } |
+            Should -Throw "*does not match the authoritative inventory derived from the candidate schema*$SchemaName.ExtraTable (table)*"
+
+        # The gate fires before the identity capture, and the scratch is still dropped.
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "*SourceIdentity*" }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 2 -Exactly -ParameterFilter { $Query -like 'DROP DATABASE IF EXISTS "edfi_dms_restore_scratch_*' }
+    }
+
+    It "refuses an artifact missing an object the candidate schema defines" {
+        # The mirror case: the authoritative inventory is the reference, so a truncated artifact
+        # is rejected too, naming what it lacks.
+        $global:AuthoritativeInventoryOverride = New-ScratchInventory
+        $targetSchema = @($global:AuthoritativeInventoryOverride.schemas | Where-Object { $_.schemaName -eq "edfi" })[0]
+        $targetSchema.objects += @{ name = "RequiredTable"; type = "table" }
+        $stage = New-ScratchStage -Directory $script:scratchRoot
+
+        { Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Minimal -DatabaseEngine postgresql } |
+            Should -Throw "*objects the candidate schema defines but the artifact lacks: edfi.RequiredTable (table)*"
+    }
+
     It "fails the SourceIdentity capture when the scratch has <Name>" -ForEach @(
         @{ Name = "no identity row"; Rows = @(); ExpectedCount = 0 }
         @{ Name = "two identity rows"; Rows = @("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"); ExpectedCount = 2 }
@@ -1483,6 +1546,129 @@ Describe "Invoke-RestoreScratchValidation" {
             Should -Throw "*exactly one dms.DataStoreIdentity row, found $ExpectedCount*"
 
         Remove-Variable -Name ScratchIdentityRows -Scope Global -ErrorAction SilentlyContinue
+    }
+}
+
+Describe "Get-RestoreAuthoritativeObjectInventory" {
+    BeforeAll {
+        $script:createdDockerFallback = $false
+        if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+            Set-Item -Path function:global:docker -Value { throw "the docker fallback must always be mocked" }
+            $script:createdDockerFallback = $true
+        }
+
+        function script:New-StubDdlEmitTool {
+            # An api-schema-tools stand-in for "ddl emit": records its argv and writes the
+            # dialect SQL file the caller then replays.
+            param(
+                [Parameter(Mandatory)]
+                [string]$Directory
+            )
+
+            $logPath = Join-Path $Directory "ddl-emit-args.log"
+            $toolPath = Join-Path $Directory "api-schema-tools.ps1"
+            @"
+Add-Content -LiteralPath '$logPath' -Value (`$args -join ' ')
+`$outputIndex = [array]::IndexOf(`$args, '--output')
+`$outputDirectory = `$args[`$outputIndex + 1]
+`$dialectIndex = [array]::IndexOf(`$args, '--dialect')
+`$dialect = `$args[`$dialectIndex + 1]
+New-Item -ItemType Directory -Path `$outputDirectory -Force | Out-Null
+Set-Content -LiteralPath (Join-Path `$outputDirectory "`$dialect.sql") -Value 'CREATE SCHEMA dms;'
+exit 0
+"@ | Set-Content -LiteralPath $toolPath -Encoding utf8
+
+            return [pscustomobject]@{ ToolPath = $toolPath; LogPath = $logPath }
+        }
+    }
+
+    AfterAll {
+        if ($script:createdDockerFallback) {
+            Remove-Item function:global:docker -ErrorAction SilentlyContinue
+        }
+    }
+
+    BeforeEach {
+        $script:derivationRoot = Join-Path $TestDrive "derive-$([Guid]::NewGuid().ToString('n'))"
+        New-Item -ItemType Directory -Path $script:derivationRoot -Force | Out-Null
+        $script:derivationTool = New-StubDdlEmitTool -Directory $script:derivationRoot
+
+        $global:DerivationQueryLog = [System.Collections.Generic.List[string]]::new()
+        $global:DerivationDockerLog = [System.Collections.Generic.List[string]]::new()
+        Mock Invoke-RestoreCatalogQuery { $global:DerivationQueryLog.Add([string]$Query); @() } -ModuleName bootstrap-restore
+        Mock Invoke-RestoreDockerCommand { $global:DerivationDockerLog.Add(($ArgumentList -join " ")); @() } -ModuleName bootstrap-restore
+        Mock Get-RestoreDatabaseCatalogFact {
+            [pscustomobject]@{ FullInventory = @{ schemas = @(@{ schemaName = "dms"; objects = @() }); principals = @() } }
+        } -ModuleName bootstrap-restore
+    }
+
+    AfterEach {
+        Remove-Variable -Name DerivationQueryLog -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name DerivationDockerLog -Scope Global -ErrorAction SilentlyContinue
+    }
+
+    It "PostgreSQL: emits the candidate DDL, replays it into a generated expected database, and drops that database" {
+        $inventory = Get-RestoreAuthoritativeObjectInventory `
+            -SchemaFilePath ([string[]]@("C:\candidate\core.json", "C:\candidate\ext.json")) `
+            -DatabaseEngine postgresql `
+            -ContainerName "dms-postgresql" `
+            -OutputRoot $script:derivationRoot `
+            -SchemaToolPath $script:derivationTool.ToolPath
+
+        @($inventory.schemas).Count | Should -Be 1
+
+        # The emit is driven by the CANDIDATE schema files, core first, into the private stage.
+        $emitArgs = @(Get-Content -LiteralPath $script:derivationTool.LogPath)
+        $emitArgs.Count | Should -Be 1
+        $emitArgs[0] | Should -BeLike "ddl emit --schema C:\candidate\core.json C:\candidate\ext.json --output *expected-ddl-* --dialect pgsql*"
+
+        # The expected database is created, seeded with pgcrypto, replayed, then dropped.
+        $queries = @($global:DerivationQueryLog)
+        @($queries | Where-Object { $_ -like 'CREATE DATABASE "edfi_dms_restore_expected_*' }) | Should -Not -BeNullOrEmpty
+        @($queries | Where-Object { $_ -like "*pgcrypto*" }) | Should -Not -BeNullOrEmpty
+        @($queries | Where-Object { $_ -like 'DROP DATABASE IF EXISTS "edfi_dms_restore_expected_*' }) | Should -Not -BeNullOrEmpty
+
+        $dockerCalls = @($global:DerivationDockerLog)
+        @($dockerCalls | Where-Object { $_ -like "cp *pgsql.sql dms-postgresql:/tmp/restore-expected-*.sql" }) | Should -Not -BeNullOrEmpty
+        @($dockerCalls | Where-Object { $_ -like "exec dms-postgresql psql -U postgres -d edfi_dms_restore_expected_* -v ON_ERROR_STOP=1 -f /tmp/restore-expected-*.sql" }) | Should -Not -BeNullOrEmpty
+        @($dockerCalls | Where-Object { $_ -like "exec dms-postgresql rm -f /tmp/restore-expected-*.sql" }) | Should -Not -BeNullOrEmpty
+    }
+
+    It "SQL Server: creates, replays with sqlcmd -i, and single-user-drops the expected database" {
+        Get-RestoreAuthoritativeObjectInventory `
+            -SchemaFilePath ([string[]]@("C:\candidate\core.json")) `
+            -DatabaseEngine mssql `
+            -ContainerName "dms-mssql" `
+            -OutputRoot $script:derivationRoot `
+            -SchemaToolPath $script:derivationTool.ToolPath | Out-Null
+
+        @(Get-Content -LiteralPath $script:derivationTool.LogPath)[0] | Should -BeLike "*--dialect mssql*"
+        @($global:DerivationDockerLog | Where-Object { $_ -like "*sqlcmd -S localhost -U sa -d edfi_dms_restore_expected_* -C -b -i /tmp/restore-expected-*.sql" }) |
+            Should -Not -BeNullOrEmpty
+        @($global:DerivationQueryLog | Where-Object { $_ -like "IF DB_ID(N'edfi_dms_restore_expected_*SINGLE_USER*DROP DATABASE*" }) |
+            Should -Not -BeNullOrEmpty
+    }
+
+    It "drops the expected database even when the inventory read fails" {
+        Mock Get-RestoreDatabaseCatalogFact { throw "catalog unreachable" } -ModuleName bootstrap-restore
+
+        { Get-RestoreAuthoritativeObjectInventory `
+                -SchemaFilePath ([string[]]@("C:\candidate\core.json")) `
+                -DatabaseEngine postgresql `
+                -ContainerName "dms-postgresql" `
+                -OutputRoot $script:derivationRoot `
+                -SchemaToolPath $script:derivationTool.ToolPath } |
+            Should -Throw "*catalog unreachable*"
+
+        @($global:DerivationQueryLog | Where-Object { $_ -like 'DROP DATABASE IF EXISTS "edfi_dms_restore_expected_*' }) |
+            Should -Not -BeNullOrEmpty -Because "the expected database is throwaway state that must never outlive the derivation"
+    }
+
+    It "refuses to drop anything that is not a generated expected-database name" {
+        { Remove-RestoreExpectedDatabase -DatabaseEngine postgresql -ExpectedDatabaseName "edfi_datamanagementservice" -ContainerName "dms-postgresql" } |
+            Should -Throw "*Refusing to drop 'edfi_datamanagementservice'*"
+        { Remove-RestoreExpectedDatabase -DatabaseEngine postgresql -ExpectedDatabaseName "edfi_dms_restore_expected_0123456789abc" -ContainerName "dms-postgresql" } |
+            Should -Throw "*Refusing to drop*"
     }
 }
 
