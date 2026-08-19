@@ -570,13 +570,15 @@ internal static class DocumentCacheEnqueueFailureClassifier
 
         bool hasEnqueueArtifactEvidence = HasEnqueueArtifactEvidence(classificationText);
 
-        if (providerCommandTimeoutClassifier.IsProviderCommandTimeout(exception))
+        if (
+            hasEnqueueArtifactEvidence && providerCommandTimeoutClassifier.IsProviderCommandTimeout(exception)
+        )
         {
             category = DocumentCacheEnqueueFailureCategory.ProviderTimeout;
             return true;
         }
 
-        if (IsProviderUnavailable(classificationText))
+        if (hasEnqueueArtifactEvidence && IsProviderUnavailable(classificationText))
         {
             category = DocumentCacheEnqueueFailureCategory.ProviderUnavailable;
             return true;

@@ -444,7 +444,7 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public async Task It_records_DocumentCacheEnqueueTelemetry_provider_timeout_only_from_timeout_classifier()
+    public async Task It_does_not_record_DocumentCacheEnqueueTelemetry_provider_timeout_without_enqueue_artifacts()
     {
         var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
         _sut = CreateExecutor(
@@ -479,8 +479,7 @@ public class Given_Default_Relational_Write_Executor
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureWriteConflict())
             );
-        telemetry.Failures.Should().ContainSingle();
-        telemetry.Failures[0].Category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderTimeout);
+        telemetry.Failures.Should().BeEmpty();
     }
 
     [Test]
