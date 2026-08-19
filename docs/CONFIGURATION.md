@@ -525,5 +525,12 @@ relevant environment variables or appsettings to set `IdentityProvider` to
 | `AppSettings.AuthenticationService`       | URL of the identity provider's authority (issuer)   | `http://dms-keycloak:8080/realms/edfi/protocol/openid-connect/token`              | `http://ed-fi-api-config:8081/connect/token`              |
 | `JwtAuthentication.Authority`       | URL of the identity provider's authority (issuer)   | `http://dms-keycloak:8080/realms/edfi`              | `http://ed-fi-api-config:8081`              |
 | `JwtAuthentication.MetadataAddress` | OpenID Connect metadata endpoint                    | `http://dms-keycloak:8080/realms/edfi/.well-known/openid-configuration` | `http://ed-fi-api-config:8081/.well-known/openid-configuration` |
+| `JwtAuthentication.RoleClaimType` | Exact inbound claim type used by endpoints that require a specifically configured role | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` |
 
 Refer to the API service's `appsettings.json` for additional options and defaults.
+
+DMS preserves JWT claim types as emitted by the identity provider. Configure
+`JwtAuthentication.RoleClaimType` to that exact claim type for endpoints that require an explicitly
+configured role claim. The ordinary `JwtAuthentication.ClientRole` gate remains backward compatible
+with the configured type and the standard `role`, `roles`, and
+`http://schemas.microsoft.com/ws/2008/06/identity/claims/role` representations.

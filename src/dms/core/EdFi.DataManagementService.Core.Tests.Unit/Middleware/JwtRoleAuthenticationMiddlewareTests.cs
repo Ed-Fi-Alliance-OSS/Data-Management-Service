@@ -625,15 +625,59 @@ public class JwtRoleAuthenticationMiddlewareTests
         }
 
         [Test]
-        public void It_does_not_call_the_next_middleware()
+        public void It_calls_the_next_middleware()
         {
-            _nextCalled.Should().BeFalse();
+            _nextCalled.Should().BeTrue();
         }
 
         [Test]
-        public void It_returns_403_forbidden()
+        public void It_does_not_set_a_response()
         {
-            _requestInfo.FrontendResponse!.StatusCode.Should().Be(403);
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    [TestFixture("role")]
+    [TestFixture("roles")]
+    [Parallelizable]
+    public class Given_A_Valid_Token_With_A_Json_Role_Claim_When_The_Configured_Type_Is_ClaimTypes_Role(
+        string claimType
+    ) : JwtRoleAuthenticationMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ClaimsPrincipal principal = new(
+                new ClaimsIdentity(
+                    [new Claim(ClaimTypes.Name, "test-user"), new Claim(claimType, "service")],
+                    "Test",
+                    ClaimTypes.Name,
+                    ClaimTypes.Role
+                )
+            );
+
+            var (middleware, jwtValidationService, _) = CreateMiddleware(roleClaimType: ClaimTypes.Role);
+
+            (_requestInfo, _nextCalled) = await ExecuteValidBearerRequest(
+                middleware,
+                jwtValidationService,
+                principal
+            );
+        }
+
+        [Test]
+        public void It_calls_the_next_middleware()
+        {
+            _nextCalled.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_does_not_set_a_response()
+        {
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 

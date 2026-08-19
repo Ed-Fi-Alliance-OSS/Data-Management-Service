@@ -27,6 +27,9 @@ internal class JwtRoleAuthenticationMiddleware(
     IOptions<JwtAuthenticationOptions> options
 ) : IPipelineStep
 {
+    private const string JwtRoleClaimType = "role";
+    private const string JwtRolesClaimType = "roles";
+
     private readonly JwtAuthenticationOptions _options = options.Value;
 
     /// <summary>
@@ -126,17 +129,19 @@ internal class JwtRoleAuthenticationMiddleware(
     ) =>
         principal.Claims.Any(claim =>
             string.Equals(claim.Value, requiredRole, StringComparison.Ordinal)
-            && (
-                (
-                    !string.IsNullOrEmpty(configuredRoleClaimType)
-                    && string.Equals(claim.Type, configuredRoleClaimType, StringComparison.Ordinal)
-                )
-                || (
-                    !string.Equals(configuredRoleClaimType, ClaimTypes.Role, StringComparison.Ordinal)
-                    && string.Equals(claim.Type, ClaimTypes.Role, StringComparison.Ordinal)
-                )
-            )
+            && IsAcceptedClientRoleClaimType(claim.Type, configuredRoleClaimType)
         );
+
+    private static bool IsAcceptedClientRoleClaimType(string claimType, string configuredRoleClaimType) =>
+        // JWT validation preserves inbound JSON claim types. Keep the ordinary client-role gate
+        // compatible with the role claim representations accepted before that change.
+        (
+            !string.IsNullOrEmpty(configuredRoleClaimType)
+            && string.Equals(claimType, configuredRoleClaimType, StringComparison.Ordinal)
+        )
+        || string.Equals(claimType, ClaimTypes.Role, StringComparison.Ordinal)
+        || string.Equals(claimType, JwtRoleClaimType, StringComparison.Ordinal)
+        || string.Equals(claimType, JwtRolesClaimType, StringComparison.Ordinal);
 
     /// <summary>
     /// Creates a standardized 401 Unauthorized response with problem details format.
