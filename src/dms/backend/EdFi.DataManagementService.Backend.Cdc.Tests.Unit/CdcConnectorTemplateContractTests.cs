@@ -14,7 +14,7 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 [TestFixture]
 [Parallelizable]
 [Category("CdcConnectorTemplateContract")]
-public class Given_CdcConnectorTemplateContracts
+public class Given_CdcConnectorTemplateContractTests
 {
     [Test]
     public void It_derives_progress_and_sqlserver_schema_history_topics_from_the_binding_topic()
@@ -535,6 +535,51 @@ public class Given_CdcConnectorTemplateContracts
         result
             .ConfigSha256.Should()
             .Be("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        result.Diagnostics.Should().ContainSingle().Which.Should().BeSameAs(diagnostic);
+    }
+
+    [Test]
+    public void It_snapshots_result_diagnostics_from_caller_owned_collections()
+    {
+        CdcConnectorTemplateBindingIdentity binding = BuildBinding(CdcProvider.Postgresql);
+        var config = new Dictionary<string, string> { ["name"] = binding.ConnectorName.Value };
+        var diagnostic = new CdcConnectorTemplateDiagnostic(
+            code: "CDC_TEMPLATE_CONTRACT_SENTINEL",
+            category: CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure,
+            severity: CdcConnectorTemplateDiagnosticSeverity.Info,
+            propertyName: "topic.prefix",
+            safeArtifactOrObjectName: binding.ConnectorName,
+            expectedValue: binding.ConnectorName.Value,
+            observedValue: binding.ConnectorName.Value,
+            provider: CdcProvider.Postgresql,
+            sourcePhase: CdcConnectorTemplateSourcePhase.Render,
+            redactionClassification: CdcConnectorTemplateRedactionClassification.Safe
+        );
+        var addedAfterConstruction = new CdcConnectorTemplateDiagnostic(
+            code: "CDC_TEMPLATE_MUTATED_SENTINEL",
+            category: CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch,
+            severity: CdcConnectorTemplateDiagnosticSeverity.Error,
+            propertyName: "database.password",
+            safeArtifactOrObjectName: binding.ConnectorName,
+            expectedValue: "[redacted]",
+            observedValue: "[redacted]",
+            provider: CdcProvider.Postgresql,
+            sourcePhase: CdcConnectorTemplateSourcePhase.LiveReadBack,
+            redactionClassification: CdcConnectorTemplateRedactionClassification.SecretValue
+        );
+        List<CdcConnectorTemplateDiagnostic> diagnostics = [diagnostic];
+
+        var result = new CdcConnectorTemplateResult(
+            binding,
+            CdcConnectorTemplateOutcome.ValidationFailed,
+            config,
+            registrationPayload: null,
+            redactedArtifactPayload: null,
+            configSha256: null,
+            diagnostics
+        );
+        diagnostics.Add(addedAfterConstruction);
+
         result.Diagnostics.Should().ContainSingle().Which.Should().BeSameAs(diagnostic);
     }
 

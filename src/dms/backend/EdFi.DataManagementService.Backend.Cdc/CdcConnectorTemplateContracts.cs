@@ -576,7 +576,7 @@ public sealed record CdcConnectorTemplateResult
         RegistrationPayload = registrationPayload;
         RedactedArtifactPayload = redactedArtifactPayload;
         ConfigSha256 = ValidateConfigHash(configSha256, nameof(configSha256));
-        Diagnostics = diagnostics;
+        Diagnostics = diagnostics.ToArray();
     }
 
     public CdcProvider Provider { get; }
