@@ -521,7 +521,19 @@ function Invoke-DatabaseDump {
     # ahead of the dump so the template restores as a self-contained, writable database.
     "CREATE EXTENSION IF NOT EXISTS ""pgcrypto"";" | Out-File -FilePath $backupPath -Encoding utf8
 
+    $global:LASTEXITCODE = 0
     & docker @options | Out-File -FilePath $backupPath -Encoding utf8 -Append
+    $dumpExitCode = $LASTEXITCODE
+    if ($dumpExitCode -ne 0) {
+        # The redirection above already wrote whatever pg_dump emitted before it failed, so what
+        # is on disk is a partial dump that would otherwise look like a usable artifact to the
+        # manifest, packaging, and attestation steps that follow. Remove it and fail here, before
+        # any of them run and before any "Backup Created" claim is printed.
+        if (Test-Path -LiteralPath $backupPath) {
+            Remove-Item -LiteralPath $backupPath -Force -ErrorAction SilentlyContinue
+        }
+        throw "pg_dump of '$DatabaseName' failed in container '$ContainerName' with exit code $dumpExitCode."
+    }
 
     Write-Host
     Write-Host "Backup Created: " -ForegroundColor Green -NoNewline

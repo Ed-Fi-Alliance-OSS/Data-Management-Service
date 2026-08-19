@@ -554,6 +554,27 @@ Describe "Invoke-DatabaseDump" {
             }
         }
 
+        It "throws immediately when pg_dump fails, and leaves no partial artifact behind" {
+            InModuleScope Template-Management -Parameters @{ backupDir = $TestDrive } {
+                param($backupDir)
+                # pg_dump writes some output and then fails: the redirection has already produced a
+                # partial file, so a missing exit-code check would report "Backup Created" over a
+                # truncated dump and let manifest/packaging/attestation consume it.
+                Mock docker {
+                    "-- partial dump output"
+                    $global:LASTEXITCODE = 1
+                }
+                Mock Write-Host {}
+
+                { Invoke-DatabaseDump -DatabaseEngine postgresql -ContainerName "dms-postgresql" -DatabaseName "edfi_datamanagementservice" -DatabaseSchemas @("dms") -BackupDirectory $backupDir -BackupFileName "failed.sql" } |
+                    Should -Throw "*pg_dump of 'edfi_datamanagementservice' failed in container 'dms-postgresql' with exit code 1*"
+
+                # No "Backup Created" banner, and no partial artifact left for a later step to pick up.
+                Should -Invoke Write-Host -Times 0 -Exactly
+                Test-Path -LiteralPath (Join-Path $backupDir "failed.sql") | Should -BeFalse
+            }
+        }
+
         It "produces byte-identical pg_dump arguments whether or not -DatabaseEngine is supplied" {
             InModuleScope Template-Management -Parameters @{ backupDir = $TestDrive } {
                 param($backupDir)
@@ -1271,6 +1292,48 @@ Describe "Build-TemplateNuGetPackage restore gate and manifest" {
             Should -Invoke Write-TemplateRestoreManifest -Times 0 -Exactly
             Should -Invoke New-DatabaseTemplateCsproj -Times 0 -Exactly
             Should -Invoke Build-NuGetPackage -Times 0 -Exactly
+        }
+    }
+
+    It "does not write a manifest, pack, or attest after a failed dump" {
+        InModuleScope Template-Management -Parameters @{ configPath = (Join-Path (Split-Path $PSScriptRoot -Parent) "MinimalTemplateSettings.psd1") } {
+            param($configPath)
+
+            $configPath | Should -Exist
+
+            # A clean, gate-passing source; -DumpAllUserSchemas keeps the artifact scope valid, so
+            # the dump failure below is the only thing that can stop the build.
+            $cleanFacts = [pscustomobject]@{
+                FullInventory = @{
+                    schemas    = @(
+                        @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
+                        @{ schemaName = "edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                        @{ schemaName = "tracked_changes_edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                        @{ schemaName = "public"; objects = @() }
+                    )
+                    principals = @()
+                }
+            }
+
+            Mock Get-TemplateSourceCatalogFacts { $cleanFacts }
+            # -DumpAllUserSchemas discovers the dump scope from the live database; the mock keeps
+            # this test off Docker while matching the facts above.
+            Mock Get-UserSchemaNames { @("dms", "edfi", "tracked_changes_edfi") }
+            Mock Invoke-DatabaseDump { throw "pg_dump of 'edfi_datamanagementservice' failed in container 'dms-postgresql' with exit code 1." }
+            Mock Write-TemplateRestoreManifest {}
+            Mock New-DatabaseTemplateCsproj {}
+            Mock Add-FileToCsProjForNuget {}
+            Mock Build-NuGetPackage {}
+            Mock Invoke-TemplatePackageAttestation {}
+
+            { Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0" -TemplateKind "Minimal" -DumpAllUserSchemas } |
+                Should -Throw "*pg_dump*failed*exit code 1*"
+
+            # A failed or partial dump never reaches manifest, packaging, or attestation work.
+            Should -Invoke Write-TemplateRestoreManifest -Times 0 -Exactly
+            Should -Invoke New-DatabaseTemplateCsproj -Times 0 -Exactly
+            Should -Invoke Build-NuGetPackage -Times 0 -Exactly
+            Should -Invoke Invoke-TemplatePackageAttestation -Times 0 -Exactly
         }
     }
 
