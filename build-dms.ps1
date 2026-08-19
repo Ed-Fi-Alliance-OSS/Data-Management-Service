@@ -1000,13 +1000,22 @@ function Start-BootstrapDockerEnvironment {
         Invoke-Step { DockerBuild }
     }
 
-    # Restore mode must NOT be preceded by this teardown: Stop-DockerEnvironment delegates to
-    # start-*-dms.ps1 -d -v, which deletes the database volumes before the restore package has
-    # been resolved, authenticated, staged, or cross-checked. Destroying data on the strength of
-    # an unproven package is exactly what the restore branch's fail-closed ordering exists to
-    # prevent, so the wrapper's own stop-proof sequence owns that decision instead: it refuses a
-    # running stack without deleting volumes or workspaces.
-    if ([string]::IsNullOrWhiteSpace($RestoreTemplate)) {
+    # A restore-SHAPED invocation must NOT be preceded by this teardown: Stop-DockerEnvironment
+    # delegates to start-*-dms.ps1 -d -v, which deletes the database volumes before the restore
+    # package has been resolved, authenticated, staged, or cross-checked. Destroying data on the
+    # strength of an unproven package is exactly what the restore branch's fail-closed ordering
+    # exists to prevent, so the wrapper's own stop-proof sequence owns that decision instead: it
+    # refuses a running stack without deleting volumes or workspaces.
+    #
+    # EITHER restore input suppresses the teardown, not just -RestoreTemplate. -PackageDirectory
+    # alone is an invalid restore request, but the wrapper is what rejects it ("-PackageDirectory
+    # requires -RestoreTemplate"), and that rejection happens after this point - so gating on
+    # -RestoreTemplate alone still deleted the datastore for a mistyped restore command. Skipping
+    # the teardown for both inputs keeps every restore-mode rule wrapper-owned; build-dms.ps1
+    # stays thin and duplicates no validation.
+    $restoreModeRequested = (-not [string]::IsNullOrWhiteSpace($RestoreTemplate)) -or
+        (-not [string]::IsNullOrWhiteSpace($PackageDirectory))
+    if (-not $restoreModeRequested) {
         Stop-DockerEnvironment `
             -EnvironmentFilePath $environmentFilePath `
             -IdentityProvider $IdentityProvider `

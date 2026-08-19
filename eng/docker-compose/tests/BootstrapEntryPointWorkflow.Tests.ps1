@@ -3227,8 +3227,10 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
             # The teardown call must be guarded by the restore-mode predicate, not unconditional:
             # Stop-DockerEnvironment delegates to start-*-dms.ps1 -d -v, which deletes the database
             # volumes - unacceptable before the restore package is resolved, authenticated, staged,
-            # and cross-checked.
-            $functionBody | Should -Match '(?s)if \(\[string\]::IsNullOrWhiteSpace\(\$RestoreTemplate\)\) \{\s*Stop-DockerEnvironment\s'
+            # and cross-checked. The predicate covers BOTH restore inputs, so a mistyped
+            # -PackageDirectory-only request cannot delete data before the wrapper rejects it.
+            $functionBody | Should -Match '(?s)\$restoreModeRequested = \(-not \[string\]::IsNullOrWhiteSpace\(\$RestoreTemplate\)\) -or\s+\(-not \[string\]::IsNullOrWhiteSpace\(\$PackageDirectory\)\)'
+            $functionBody | Should -Match '(?s)if \(-not \$restoreModeRequested\) \{\s*Stop-DockerEnvironment\s'
 
             # Non-restore StartEnvironment keeps the teardown: the guarded call is the ONLY
             # Stop-DockerEnvironment invocation in this function, and it still forwards the same
@@ -3238,7 +3240,7 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
             $functionBody | Should -Match '(?s)Stop-DockerEnvironment\s+`\s*-EnvironmentFilePath \$environmentFilePath\s+`\s*-IdentityProvider \$IdentityProvider\s+`\s*-DatabaseEngine \$effectiveDatabaseEngine'
         }
 
-        It "restore mode does not invoke Stop-DockerEnvironment, non-restore does (behavioral, AST-extracted)" {
+        It "no restore-shaped invocation invokes Stop-DockerEnvironment, non-restore does (behavioral, AST-extracted)" {
             # Stronger than a text assertion: extract the real function from build-dms.ps1, define
             # it in this session with recording stubs for its collaborators, and call it both ways.
             # Invoke-Execute is stubbed to a no-op so the wrapper invocation itself is skipped -
@@ -3266,6 +3268,8 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
                 $functionAst.Extent.Text
                 "if (`$Mode -eq 'restore') {"
                 "    Start-BootstrapDockerEnvironment -SkipDockerBuild -DatabaseEngine postgresql -RestoreTemplate Minimal"
+                "} elseif (`$Mode -eq 'packagedir') {"
+                "    Start-BootstrapDockerEnvironment -SkipDockerBuild -DatabaseEngine postgresql -PackageDirectory 'C:\packages'"
                 "} else {"
                 "    Start-BootstrapDockerEnvironment -SkipDockerBuild -DatabaseEngine postgresql"
                 "}"
@@ -3275,6 +3279,13 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
             $LASTEXITCODE | Should -Be 0
             $restoreOutput | Should -Not -Contain "STOP-DOCKER-ENVIRONMENT-CALLED" -Because "restore mode must not delete volumes before the package is proven"
             $restoreOutput | Should -Contain "INVOKE-EXECUTE-CALLED" -Because "restore mode must still reach the wrapper invocation"
+
+            # -PackageDirectory alone is an INVALID restore request, but the wrapper owns that
+            # rejection - so build-dms must still not delete the datastore on the way there.
+            $packageDirectoryOutput = @(& pwsh -NoProfile -NonInteractive -File $probePath -Mode packagedir 2>&1)
+            $LASTEXITCODE | Should -Be 0
+            $packageDirectoryOutput | Should -Not -Contain "STOP-DOCKER-ENVIRONMENT-CALLED" -Because "a mistyped restore request must not delete volumes before the wrapper rejects it"
+            $packageDirectoryOutput | Should -Contain "INVOKE-EXECUTE-CALLED" -Because "the invocation must still reach the wrapper, which owns the rejection"
 
             $plainOutput = @(& pwsh -NoProfile -NonInteractive -File $probePath -Mode plain 2>&1)
             $LASTEXITCODE | Should -Be 0
