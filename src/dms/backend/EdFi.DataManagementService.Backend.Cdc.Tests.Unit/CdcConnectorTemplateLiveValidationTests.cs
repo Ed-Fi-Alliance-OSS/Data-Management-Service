@@ -95,7 +95,7 @@ public class Given_CdcConnectorTemplateLiveValidation
     }
 
     [Test]
-    public void It_accepts_masked_secret_read_back_values_for_sqlserver_generated_clients()
+    public void It_accepts_exact_externalized_and_masked_secret_read_back_values_for_sqlserver_generated_clients()
     {
         using ServiceProvider serviceProvider = BuildServiceProvider();
         ICdcConnectorTemplateService service =
@@ -113,6 +113,19 @@ public class Given_CdcConnectorTemplateLiveValidation
             }
         );
         CdcConnectorTemplateResult rendered = service.Render(request);
+
+        CdcConnectorTemplateResult exactReadBack = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                new CdcConnectorProviderSetupEvidence(
+                    bindingGeneration: 7,
+                    BuildProviderSetupResult(CdcProvider.SqlServer)
+                ),
+                BuildSourcePartitionEvidence(request)
+            )
+        );
+
         Dictionary<string, string> effectiveConfig = CopyConfig(rendered.Config);
         effectiveConfig["database.password"] = "[hidden]";
         effectiveConfig["driver.trustStorePassword"] = "[hidden]";
@@ -134,8 +147,54 @@ public class Given_CdcConnectorTemplateLiveValidation
 
         using var _ = new AssertionScope();
         rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        exactReadBack.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        exactReadBack.Diagnostics.Should().BeEmpty();
         result.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
         result.Diagnostics.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_rejects_empty_secret_read_back_values_as_secret_value_failures()
+    {
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(CdcProvider.Postgresql);
+        CdcConnectorTemplateResult rendered = service.Render(request);
+        Dictionary<string, string> effectiveConfig = CopyConfig(rendered.Config);
+        effectiveConfig["database.password"] = "";
+
+        CdcConnectorTemplateResult result = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                effectiveConfig,
+                new CdcConnectorProviderSetupEvidence(
+                    bindingGeneration: 7,
+                    BuildProviderSetupResult(CdcProvider.Postgresql)
+                ),
+                BuildSourcePartitionEvidence(request)
+            )
+        );
+
+        CdcConnectorTemplateDiagnostic diagnostic = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackSecretMismatch
+                && diagnostic.PropertyName == "database.password"
+            )
+            .Which;
+
+        using var _ = new AssertionScope();
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.SecretRedactionViolation);
+        diagnostic.ExpectedValue.Should().Be("[redacted]");
+        diagnostic.ObservedValue.Should().Be("[redacted]");
+        diagnostic
+            .RedactionClassification.Should()
+            .Be(CdcConnectorTemplateRedactionClassification.SecretValue);
+        diagnostic
+            .RedactionClassification.Should()
+            .NotBe(CdcConnectorTemplateRedactionClassification.MaskedSecret);
     }
 
     [Test]
@@ -309,8 +368,11 @@ public class Given_CdcConnectorTemplateLiveValidation
             .Contain(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackSecretMismatch
                 && diagnostic.PropertyName == "database.password"
+                && diagnostic.ExpectedValue == "[redacted]"
                 && diagnostic.ObservedValue == "[redacted]"
                 && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.SecretRedactionViolation
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.SecretValue
             );
         CdcConnectorTemplateDiagnostic missingSecretDiagnostic = result.Diagnostics.Single(diagnostic =>
             diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackPropertyMissing

@@ -284,9 +284,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
                         expectedProperty.Key,
                         request.TemplateRequest,
                         sourcePhase,
-                        observedValue.Length == 0
-                            ? CdcConnectorTemplateRedactionClassification.MaskedSecret
-                            : CdcConnectorTemplateRedactionClassification.SecretValue
+                        CdcConnectorTemplateRedactionClassification.SecretValue
                     )
                 );
                 continue;
@@ -500,7 +498,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
             CdcConnectorTemplateDiagnosticCodes.LiveReadBackSecretMismatch,
             CdcConnectorTemplateDiagnosticCategory.SecretRedactionViolation,
             propertyName,
-            "exact externalized reference or masked secret evidence",
+            RedactedValue,
             RedactedValue,
             request,
             sourcePhase,
