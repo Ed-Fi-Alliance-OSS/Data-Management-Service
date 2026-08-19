@@ -149,13 +149,10 @@ public static class HydrationBatchBuilder
     /// co-batching this batch substitute that token with their captured-target expression.
     /// </summary>
     /// <remarks>
-    /// Every dialect that ships today supports single-document hydration, so this returns the fast-path
-    /// batch, which needs no guard: it is pure selects, and an absent id compares as
-    /// <c>= NULL</c> and yields zero rows on its own. <paramref name="keysetRowGuardPredicateSql"/>
-    /// is consumed only by the keyset fallback, where it stops an absent id from inserting NULL into
-    /// the keyset table instead of materializing no row. That fallback is unreachable through
-    /// <see cref="PlanSqlDialectFactory"/> today and exists for a dialect that cannot take the fast
-    /// path.
+    /// <paramref name="keysetRowGuardPredicateSql"/> is consumed only by the keyset batch, where it
+    /// stops an absent id from inserting NULL into the keyset table instead of materializing no row.
+    /// The fast path discards it, because it is pure selects: an absent id compares as <c>= NULL</c>
+    /// and yields zero rows on its own.
     /// </remarks>
     /// <param name="plan">The compiled resource read plan.</param>
     /// <param name="dialect">The SQL dialect.</param>
