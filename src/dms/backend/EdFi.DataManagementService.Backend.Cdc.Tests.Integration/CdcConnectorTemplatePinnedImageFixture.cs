@@ -105,7 +105,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 
     private readonly CdcConnectorTemplateSmokeSettings _settings;
     private readonly HttpClient _httpClient;
-    private readonly DockerCli _docker;
+    private readonly IDockerCli _docker;
     private readonly ServiceProvider _serviceProvider;
     private readonly string _resourcePrefix;
 
@@ -114,7 +114,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         CdcConnectorTemplateSmokeSettings settings,
         Uri connectBaseUri,
         string resourcePrefix,
-        DockerCli docker
+        IDockerCli docker
     )
     {
         Provider = provider;
@@ -277,6 +277,17 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         );
 
         string resourcePrefix = $"dms-cdc-template-{Guid.NewGuid():N}";
+        return await StartAsync(provider, settings, docker, resourcePrefix, cancellationToken);
+    }
+
+    internal static async Task<CdcConnectorTemplatePinnedImageFixture> StartAsync(
+        CdcProvider provider,
+        CdcConnectorTemplateSmokeSettings settings,
+        IDockerCli docker,
+        string resourcePrefix,
+        CancellationToken cancellationToken
+    )
+    {
         var fixture = new CdcConnectorTemplatePinnedImageFixture(
             provider,
             settings,
@@ -295,9 +306,14 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 
             return fixture;
         }
-        catch (Exception ex) when (ex is not AssertionException and not OperationCanceledException)
+        catch (Exception ex) when (ex is not AssertionException)
         {
-            await fixture.DisposeAsync();
+            await fixture.DisposeAfterStartupFailureAsync();
+            if (ex is OperationCanceledException)
+            {
+                throw;
+            }
+
             settings.StopOnPrerequisiteFailure(
                 $"Pinned-image fixture prerequisites are not ready for {provider}: {ex.Message}"
             );
@@ -681,6 +697,20 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         await _docker.RunAllowingFailureAsync(["rm", "-f", ProviderContainerName], CancellationToken.None);
         await _docker.RunAllowingFailureAsync(["rm", "-f", BrokerContainerName], CancellationToken.None);
         await _docker.RunAllowingFailureAsync(["network", "rm", NetworkName], CancellationToken.None);
+    }
+
+    private async ValueTask DisposeAfterStartupFailureAsync()
+    {
+        try
+        {
+            await DisposeAsync();
+        }
+        catch (Exception ex)
+        {
+            await TestContext.Error.WriteLineAsync(
+                $"Pinned-image fixture cleanup failed after startup failure: {ex.Message}"
+            );
+        }
     }
 
     public static CdcConnectorTemplateRequest BuildRequest(
@@ -1184,6 +1214,25 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             cancellationToken
         );
 
+        await _docker.RunAsync(
+            [
+                "exec",
+                "-e",
+                $"PGPASSWORD={ConnectorDatabasePassword}",
+                ProviderContainerName,
+                "psql",
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-U",
+                "postgres",
+                "-d",
+                PostgresqlDatabaseName,
+                "-c",
+                BuildPostgresqlReplicationSlotSql(),
+            ],
+            cancellationToken
+        );
+
         await AssertPostgresqlPublicationMatchesProviderSetupEvidenceAsync(cancellationToken);
     }
 
@@ -1215,6 +1264,10 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
                 END IF;
             END
             $$;
+            """;
+
+    private static string BuildPostgresqlReplicationSlotSql() =>
+        $$"""
             SELECT
                 CASE
                     WHEN NOT EXISTS (
@@ -2403,7 +2456,21 @@ internal sealed record CdcConnectorTemplateSmokeSettings(
         bool.TryParse(Environment.GetEnvironmentVariable(variableName), out bool value) && value;
 }
 
-internal sealed class DockerCli
+internal interface IDockerCli
+{
+    bool IsOffline { get; }
+
+    Task RequireDockerAsync(CancellationToken cancellationToken);
+
+    Task<DockerCommandResult> RunAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken);
+
+    Task<DockerCommandResult> RunAllowingFailureAsync(
+        IReadOnlyList<string> arguments,
+        CancellationToken cancellationToken
+    );
+}
+
+internal sealed class DockerCli : IDockerCli
 {
     public static DockerCli Offline { get; } = new(isOffline: true);
 
