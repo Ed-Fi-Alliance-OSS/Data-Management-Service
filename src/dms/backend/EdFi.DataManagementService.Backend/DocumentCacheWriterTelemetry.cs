@@ -92,12 +92,13 @@ internal sealed record DocumentCacheWriterMetricContext
 
     public static DocumentCacheWriterMetricContext ForCanonicalWriter(
         RelationalProviderToken providerToken,
+        DocumentCacheTargetKey? targetKey,
         string purpose,
         string outcome
     ) =>
         new(
             ProviderLabel(providerToken),
-            DocumentCacheWriterTelemetryLabel.Unknown,
+            DocumentCacheTelemetryTargetLabel.FromTargetKey(targetKey),
             purpose,
             DocumentCacheWriterTelemetryLabel.Unknown,
             outcome
@@ -105,9 +106,10 @@ internal sealed record DocumentCacheWriterMetricContext
 
     public static DocumentCacheWriterMetricContext ForCanonicalWriter(
         SqlDialect dialect,
+        DocumentCacheTargetKey? targetKey,
         string purpose,
         string outcome
-    ) => ForCanonicalWriter(ProviderTokenForDialect(dialect), purpose, outcome);
+    ) => ForCanonicalWriter(ProviderTokenForDialect(dialect), targetKey, purpose, outcome);
 
     public TagList ToTags()
     {

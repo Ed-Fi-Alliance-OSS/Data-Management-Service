@@ -245,7 +245,10 @@ internal static class DocumentCacheEnqueueTelemetryWriteBoundary
         ArgumentNullException.ThrowIfNull(providerCommandTimeoutClassifier);
         ArgumentNullException.ThrowIfNull(exception);
 
-        DocumentCacheTargetKey? targetKey = TryCreateTelemetryTargetKey(dataStoreSelection, tenantKey);
+        DocumentCacheTargetKey? targetKey = DocumentCacheTelemetryTargetKeyResolver.Resolve(
+            dataStoreSelection,
+            tenantKey
+        );
 
         if (
             !DocumentCacheEnqueueFailureClassifier.TryClassify(
@@ -280,7 +283,10 @@ internal static class DocumentCacheEnqueueTelemetryWriteBoundary
         DocumentCacheEnqueueTelemetryResourceKind resourceKind
     )
     {
-        DocumentCacheTargetKey? targetKey = TryCreateTelemetryTargetKey(dataStoreSelection, tenantKey);
+        DocumentCacheTargetKey? targetKey = DocumentCacheTelemetryTargetKeyResolver.Resolve(
+            dataStoreSelection,
+            tenantKey
+        );
         DocumentCacheTargetObservation? targetObservation = targetKey is null
             ? null
             : TryGetCurrentTarget(targetRegistry, targetKey);
@@ -290,36 +296,6 @@ internal static class DocumentCacheEnqueueTelemetryWriteBoundary
             canonicalOperation,
             resourceKind
         );
-    }
-
-    private static DocumentCacheTargetKey? TryCreateTelemetryTargetKey(
-        IDataStoreSelection? dataStoreSelection,
-        string tenantKey
-    )
-    {
-        if (dataStoreSelection?.IsSet != true)
-        {
-            return null;
-        }
-
-        long dataStoreId;
-        try
-        {
-            dataStoreId = dataStoreSelection.GetSelectedDataStore().Id;
-        }
-        catch (InvalidOperationException)
-        {
-            return null;
-        }
-
-        return DocumentCacheTargetKey.TryCreate(
-            tenantKey,
-            dataStoreId,
-            out DocumentCacheTargetKey? targetKey,
-            out _
-        )
-            ? targetKey
-            : null;
     }
 
     private static DocumentCacheTargetObservation? TryGetCurrentTarget(

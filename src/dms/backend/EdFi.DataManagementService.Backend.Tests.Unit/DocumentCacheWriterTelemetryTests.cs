@@ -125,6 +125,7 @@ public class Given_DocumentCacheWriterTelemetry
         telemetry.RecordSameDocumentWait(
             DocumentCacheWriterMetricContext.ForCanonicalWriter(
                 RelationalProviderToken.SqlServer,
+                DocumentCacheTargetKey.Create("tenant-a", 7),
                 DocumentCacheWriterTelemetryLabel.CanonicalWrite,
                 DocumentCacheWriterTelemetryLabel.AppliedWrite
             ),
@@ -139,7 +140,7 @@ public class Given_DocumentCacheWriterTelemetry
             .ContainSingle()
             .Which;
         sameDocumentWait.Tags["provider"].Should().Be("sqlserver");
-        sameDocumentWait.Tags["target"].Should().Be(DocumentCacheWriterTelemetryLabel.Unknown);
+        sameDocumentWait.Tags["target"].Should().Be(TargetLabel);
         sameDocumentWait.Tags["purpose"].Should().Be(DocumentCacheWriterTelemetryLabel.CanonicalWrite);
         sameDocumentWait.Tags["lifecycle"].Should().Be(DocumentCacheWriterTelemetryLabel.Unknown);
         sameDocumentWait.Tags["outcome"].Should().Be(DocumentCacheWriterTelemetryLabel.AppliedWrite);
@@ -152,6 +153,7 @@ public class Given_DocumentCacheWriterTelemetry
     {
         DocumentCacheWriterMetricContext context = DocumentCacheWriterMetricContext.ForCanonicalWriter(
             SqlDialect.Mssql,
+            targetKey: null,
             DocumentCacheWriterTelemetryLabel.CanonicalWrite,
             DocumentCacheWriterTelemetryLabel.AppliedWrite
         );
@@ -221,10 +223,12 @@ public class Given_DocumentCacheWriterTelemetry
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var targetLookupService = new StubRelationalWriteTargetLookupService();
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        DataStoreSelection dataStoreSelection = CreateDataStoreSelection();
         var sut = CreateDescriptorWriteHandler(
             targetLookupService,
             sessionFactory,
-            collector.CreateTelemetry()
+            collector.CreateTelemetry(),
+            dataStoreSelection
         );
         var mappingSet = CreateDescriptorMappingSet(SqlDialect.Pgsql);
 
@@ -288,7 +292,7 @@ public class Given_DocumentCacheWriterTelemetry
             .ContainSingle()
             .Which;
         sameDocumentWait.Tags["provider"].Should().Be("postgresql");
-        sameDocumentWait.Tags["target"].Should().Be(DocumentCacheWriterTelemetryLabel.Unknown);
+        sameDocumentWait.Tags["target"].Should().Be(TargetLabel);
         sameDocumentWait.Tags["purpose"].Should().Be(DocumentCacheWriterTelemetryLabel.CanonicalWrite);
         sameDocumentWait.Tags["lifecycle"].Should().Be(DocumentCacheWriterTelemetryLabel.Unknown);
         sameDocumentWait.Tags["outcome"].Should().Be(DocumentCacheWriterTelemetryLabel.AppliedWrite);
@@ -410,7 +414,8 @@ public class Given_DocumentCacheWriterTelemetry
     private static DescriptorWriteHandler CreateDescriptorWriteHandler(
         IRelationalWriteTargetLookupService targetLookupService,
         IRelationalWriteSessionFactory writeSessionFactory,
-        IDocumentCacheWriterTelemetry telemetry
+        IDocumentCacheWriterTelemetry telemetry,
+        IDataStoreSelection? dataStoreSelection = null
     )
     {
         return new DescriptorWriteHandler(
@@ -420,8 +425,18 @@ public class Given_DocumentCacheWriterTelemetry
             writeSessionFactory,
             NullLogger<DescriptorWriteHandler>.Instance,
             new ServedEtagComposer(),
-            documentCacheWriterTelemetry: telemetry
+            documentCacheWriterTelemetry: telemetry,
+            dataStoreSelection: dataStoreSelection
         );
+    }
+
+    private static DataStoreSelection CreateDataStoreSelection()
+    {
+        DataStoreSelection dataStoreSelection = new();
+        dataStoreSelection.SetSelectedDataStore(
+            new DataStore(7, "document", "Writer telemetry", "Host=localhost", [])
+        );
+        return dataStoreSelection;
     }
 
     private static DescriptorWriteRequest CreatePostDescriptorWriteRequest(
@@ -436,7 +451,8 @@ public class Given_DocumentCacheWriterTelemetry
             CreateDescriptorRequestBody(description),
             documentUuid,
             new ReferentialId(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
-            new TraceId("descriptor-post-telemetry")
+            new TraceId("descriptor-post-telemetry"),
+            tenantKey: "tenant-a"
         );
     }
 
@@ -452,7 +468,8 @@ public class Given_DocumentCacheWriterTelemetry
             CreateDescriptorRequestBody(description),
             documentUuid,
             null,
-            new TraceId("descriptor-put-telemetry")
+            new TraceId("descriptor-put-telemetry"),
+            tenantKey: "tenant-a"
         );
     }
 

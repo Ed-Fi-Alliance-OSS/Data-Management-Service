@@ -62,3 +62,33 @@ internal static class DocumentCacheTelemetryTargetLabel
         return Prefix + Convert.ToHexString(hash, 0, LabelHashByteCount).ToLowerInvariant();
     }
 }
+
+internal static class DocumentCacheTelemetryTargetKeyResolver
+{
+    public static DocumentCacheTargetKey? Resolve(IDataStoreSelection? dataStoreSelection, string tenantKey)
+    {
+        if (dataStoreSelection?.IsSet != true)
+        {
+            return null;
+        }
+
+        long dataStoreId;
+        try
+        {
+            dataStoreId = dataStoreSelection.GetSelectedDataStore().Id;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+
+        return DocumentCacheTargetKey.TryCreate(
+            tenantKey,
+            dataStoreId,
+            out DocumentCacheTargetKey? targetKey,
+            out _
+        )
+            ? targetKey
+            : null;
+    }
+}

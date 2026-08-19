@@ -625,6 +625,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         _documentCacheWriterTelemetry.RecordSameDocumentWait(
             DocumentCacheWriterMetricContext.ForCanonicalWriter(
                 request.MappingSet.Key.Dialect,
+                DocumentCacheTelemetryTargetKeyResolver.Resolve(_dataStoreSelection, request.TenantKey),
                 DocumentCacheWriterTelemetryLabel.CanonicalWrite,
                 outcome
             ),
