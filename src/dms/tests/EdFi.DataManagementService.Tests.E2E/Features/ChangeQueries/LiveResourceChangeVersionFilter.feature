@@ -15,6 +15,9 @@ Feature: Live resource endpoints filter by change version.
         @e2e-ci-shard-3
         @reset-data-before-scenario
         Scenario: 01 Live programs collection filters by minChangeVersion
+             When a GET request is made to "/changeQueries/v1/availableChangeVersions"
+             Then it should respond with 200
+              And the response body path "newestChangeVersion" is stored in request variable "liveMinBaseline"
              When a POST request is made to "/ed-fi/programs" with
                   """
                   {
@@ -36,11 +39,10 @@ Feature: Live resource endpoints filter by change version.
                   }
                   """
              Then it should respond with 201
-             When a GET request is made to "/ed-fi/programs?minChangeVersion={liveMidVersion}&totalCount=true"
+             When a GET request is made to "/ed-fi/programs?minChangeVersion={liveMinBaseline}&maxChangeVersion={liveMidVersion}&totalCount=true"
              Then it should respond with 200
-              And total of records should be 2
+              And total of records should be 1
               And the response body path "0.programName" should have value "Live Filter Program A"
-              And the response body path "1.programName" should have value "Live Filter Program B"
 
         @ods-migrated
         @e2e-ci-shard-3
@@ -79,9 +81,19 @@ Feature: Live resource endpoints filter by change version.
         @e2e-ci-shard-3
         @reset-data-before-scenario
         Scenario: 03 Live programs collection filters by a change version window
-             # The window relies on the ContentVersion-advances-per-write invariant: each write gets a
-             # strictly greater newestChangeVersion. Both bounds are inclusive, so afterA <= A's version
-             # and B's version <= afterB, and the [afterA, afterB] window contains Programs A and B.
+             # The window relies on one ContentVersion allocation per write. liveWindowAfterA is captured
+             # after Program A and equals A's ContentVersion; liveWindowAfterB is captured after Program B
+             # and equals B's ContentVersion. Both bounds are inclusive, so afterA <= A's version <= afterB
+             # because one sequence value per insert makes this window contain exactly A and B.
+             When a POST request is made to "/ed-fi/programs" with
+                  """
+                  {
+                    "programName": "Live Window Program Before",
+                    "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Bilingual",
+                    "educationOrganizationReference": { "educationOrganizationId": 920100001 }
+                  }
+                  """
+             Then it should respond with 201
              When a POST request is made to "/ed-fi/programs" with
                   """
                   {
@@ -106,6 +118,15 @@ Feature: Live resource endpoints filter by change version.
              When a GET request is made to "/changeQueries/v1/availableChangeVersions"
              Then it should respond with 200
               And the response body path "newestChangeVersion" is stored in request variable "liveWindowAfterB"
+             When a POST request is made to "/ed-fi/programs" with
+                  """
+                  {
+                    "programName": "Live Window Program After",
+                    "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Bilingual",
+                    "educationOrganizationReference": { "educationOrganizationId": 920100001 }
+                  }
+                  """
+             Then it should respond with 201
              When a GET request is made to "/ed-fi/programs?minChangeVersion={liveWindowAfterA}&maxChangeVersion={liveWindowAfterB}&totalCount=true"
              Then it should respond with 200
               And total of records should be 2

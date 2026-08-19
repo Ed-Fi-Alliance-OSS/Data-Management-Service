@@ -125,7 +125,6 @@ When a document’s **identity projection changes**, the change is stamped throu
 rules above when it changes stored resource state. No additional `dms.Document` columns are written
 for identity tracking.
 
-
 ### Initialization on insert (normative)
 
 Inserting a new document is a representation change (and also an identity projection change). Therefore, on `INSERT` of a new `dms.Document` row, the inserted row MUST have:

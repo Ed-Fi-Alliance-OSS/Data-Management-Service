@@ -737,6 +737,24 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     }
 
     [Test]
+    public async Task It_should_advance_max_change_version_by_one_for_document_inserts()
+    {
+        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
+        var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
+
+        var documentId = await InsertDocumentAsync(
+            Guid.Parse("13131313-1313-1313-1313-131313131313"),
+            schoolResourceKeyId
+        );
+
+        var afterMaxChangeVersion = await ReadMaxChangeVersionAsync();
+        var documentStamps = await GetDocumentStampStateAsync(documentId);
+
+        afterMaxChangeVersion.Should().Be(beforeMaxChangeVersion + 1);
+        documentStamps.ContentVersion.Should().Be(afterMaxChangeVersion);
+    }
+
+    [Test]
     public async Task It_should_stamp_content_only_updates_on_identity_propagation_tables()
     {
         var before = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);

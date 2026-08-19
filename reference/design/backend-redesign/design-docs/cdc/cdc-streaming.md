@@ -1168,12 +1168,20 @@ The offline operation follows this sequence:
    document, allocate a fresh unique value from the normal change-version sequence, update
    `dms.Document.ContentVersion` and `ContentLastModifiedAt`, and update the concrete
    resource-root or `dms.Descriptor` content-stamp mirror in the same provider transaction.
-Do not change domain fields, keys, or deletion history. The utility only refreshes the stored change-tracking columns.
-   a captured pre-restamp version boundary so a retry resumes without stamping an already
-   completed document again. In projection/publication mode, the existing enqueue trigger
-   records the required version in that same transaction, and an enqueue failure rolls back
-   the complete restamp transaction. In canonical-only mode, lifecycle `Disabled`
-   deliberately records no work.
+   Do not change domain fields, keys, or deletion history. The utility only refreshes the
+   stored change-tracking columns. The utility uses a captured pre-restamp version boundary
+   so a retry resumes without stamping an already completed document again. In
+   projection/publication mode, the existing enqueue trigger records the required version in
+   that same transaction, and an enqueue failure rolls back the complete restamp transaction.
+   In canonical-only mode, lifecycle `Disabled` deliberately records no work.
+5. Complete the selected mode:
+   - In projection/publication mode, start only corrected DMS and projector instances.
+     Existing affected cache rows are behind, and queue processing replaces or creates them.
+     API reads retain relational fallback while projection catches up. Observe eventual
+     projection and connector recovery and verify that affected public records have higher
+     `contentVersion` and different `document._etag` values.
+   - In canonical-only mode, start only corrected DMS instances and verify the relational API
+     validators and Change Query results. Do not start or wait for projection or claim Kafka
 5. Complete the selected mode:
    - In projection/publication mode, start only corrected DMS and projector instances.
      Existing affected cache rows are behind, and queue processing replaces or creates them.

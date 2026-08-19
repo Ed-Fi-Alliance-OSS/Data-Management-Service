@@ -11,11 +11,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-internal sealed record ChildBindingDocumentStampState(
-    long ContentVersion,
-    DateTimeOffset ContentLastModifiedAt
-);
-
 /// <summary>
 /// Runtime proof that a rename of an upstream resource's identity (<c>ClassPeriod</c>)
 /// reaches stored child-collection bindings through the native <c>ON UPDATE CASCADE</c>
@@ -1007,7 +1002,7 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
         );
     }
 
-    private async Task<ChildBindingDocumentStampState> GetChildBindingDocumentStampStateAsync(long documentId)
+    private async Task<DocumentStampState> GetChildBindingDocumentStampStateAsync(long documentId)
     {
         var row = (
             await _database.QueryRowsAsync(
@@ -1030,7 +1025,7 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
 
     // Root tables carry ContentVersion/ContentLastModifiedAt mirror columns that resource
     // change-version queries filter on; this reads the mirror pair for the owning root row.
-    private async Task<ChildBindingDocumentStampState> GetRootMirrorStampStateAsync(
+    private async Task<DocumentStampState> GetRootMirrorStampStateAsync(
         string schemaName,
         string tableName,
         long documentId
@@ -1056,8 +1051,8 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
     }
 
     private static void AssertMirrorContentMatchesDocument(
-        ChildBindingDocumentStampState mirror,
-        ChildBindingDocumentStampState document
+        DocumentStampState mirror,
+        DocumentStampState document
     )
     {
         mirror.ContentVersion.Should().Be(document.ContentVersion);
@@ -1209,7 +1204,7 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
         return rows;
     }
 
-    private static async Task<ChildBindingDocumentStampState> GetChildBindingDocumentStampStateInTransactionAsync(
+    private static async Task<DocumentStampState> GetChildBindingDocumentStampStateInTransactionAsync(
         SqlConnection connection,
         SqlTransaction transaction,
         long documentId
@@ -1236,7 +1231,7 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
         );
     }
 
-    private static async Task<ChildBindingDocumentStampState> GetRootMirrorStampStateInTransactionAsync(
+    private static async Task<DocumentStampState> GetRootMirrorStampStateInTransactionAsync(
         SqlConnection connection,
         SqlTransaction transaction,
         string schemaName,

@@ -11,30 +11,17 @@ Feature: The Change Queries availableChangeVersions endpoint reports the oldest 
 
         @API-262
         @e2e-ci-shard-4
-        Scenario: 02 newestChangeVersion increases after a resource is created
+        Scenario: 02 newestChangeVersion increases after a descriptor is created
             Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org"
-              And the system has these descriptors
-                  | descriptorValue                                                |
-                  | uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade               |
-                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
              When a GET request is made to "/changeQueries/v1/availableChangeVersions"
              Then it should respond with 200
               And the response body path "newestChangeVersion" is stored as variable "previousChangeVersion"
-             When a POST request is made to "/ed-fi/schools" with
+             When a POST request is made to "/ed-fi/academicSubjectDescriptors" with
                   """
                   {
-                      "schoolId": 1184001,
-                      "nameOfInstitution": "Available Change Versions Test School",
-                      "gradeLevels": [
-                        {
-                          "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"
-                        }
-                      ],
-                      "educationOrganizationCategories": [
-                        {
-                          "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
-                        }
-                      ]
+                      "codeValue": "AvailableChangeVersionsSubject",
+                      "namespace": "uri://ed-fi.org/AcademicSubjectDescriptor",
+                      "shortDescription": "Available Change Versions Subject"
                   }
                   """
              Then it should respond with 201

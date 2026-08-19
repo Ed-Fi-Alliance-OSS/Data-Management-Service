@@ -1548,6 +1548,24 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     }
 
     [Test]
+    public async Task It_should_advance_max_change_version_by_one_for_document_inserts()
+    {
+        var contactResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Contact");
+        var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
+
+        var documentId = await InsertDocumentAsync(
+            Guid.Parse("13131313-1313-1313-1313-131313131313"),
+            contactResourceKeyId
+        );
+
+        var afterMaxChangeVersion = await ReadMaxChangeVersionAsync();
+        var documentStamps = await GetDocumentStampStateAsync(documentId);
+
+        afterMaxChangeVersion.Should().Be(beforeMaxChangeVersion + 1);
+        documentStamps.ContentVersion.Should().Be(afterMaxChangeVersion);
+    }
+
+    [Test]
     public async Task It_should_not_stamp_document_or_track_changes_for_direct_root_stamp_only_updates()
     {
         var busResourceKeyId = await GetResourceKeyIdAsync("Sample", "Bus");

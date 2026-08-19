@@ -405,7 +405,7 @@ Canonical JSON contract (normative for `canonicalizeJson(...)`):
 
 - `RelationalMappingVersion` is a single DMS-owned string constant (recommended: a short value like `v2`).
 - The value used in the `EffectiveSchemaHash` manifest MUST match the value used for mapping pack selection (`relational_mapping_version` in `.mpack`).
-- Changing mapping rules requires bumping `RelationalMappingVersion` (or, if the hash algorithm itself changes, bump the hash header/version).
+- Each release that changes mapping rules or physical `dms.*` DDL carries one `RelationalMappingVersion` bump for that release. If the hash algorithm itself changes, bump the hash header/version separately.
 
 Algorithm (suggested):
 

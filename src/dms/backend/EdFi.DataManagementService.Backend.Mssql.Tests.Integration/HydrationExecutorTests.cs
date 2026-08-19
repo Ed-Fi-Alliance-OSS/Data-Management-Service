@@ -1317,19 +1317,7 @@ public class Given_A_Mssql_Query_Keyset_That_Returns_Its_Selected_Ids
         await ExecuteSql(
             connection,
             """
-            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'dms') EXEC('CREATE SCHEMA [dms]');
             IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'hydselected') EXEC('CREATE SCHEMA [hydselected]');
-
-            CREATE TABLE dms.Document (
-                DocumentId bigint PRIMARY KEY,
-                DocumentUuid uniqueidentifier NOT NULL,
-                ResourceKeyId smallint NOT NULL DEFAULT 0,
-                ContentVersion bigint NOT NULL DEFAULT 1,
-                IdentityVersion bigint NOT NULL DEFAULT 1,
-                ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                CreatedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
-            );
 
             CREATE TABLE hydselected.School (
                 DocumentId bigint PRIMARY KEY,

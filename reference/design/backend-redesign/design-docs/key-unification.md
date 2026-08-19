@@ -978,7 +978,7 @@ Pack producers and consumers MUST validate the following invariants at build/loa
 Adding proto fields is wire-compatible and does not require bumping `PackFormatVersion`. However, key unification is a
 semantic change to mapping behavior and MUST be gated by `RelationalMappingVersion`:
 
-- Producers MUST bump `RelationalMappingVersion` when key unification semantics are enabled in emitted artifacts.
+- The release that enables key unification semantics in emitted artifacts MUST carry a `RelationalMappingVersion` bump.
 - Consumers MUST reject mapping packs whose `relational_mapping_version` does not match the runtime’s expected value,
   including older artifacts that omit storage/unification metadata.
 - If backward compatibility for older artifacts is required, it MUST be explicit:
@@ -1894,7 +1894,7 @@ Implementation guidance (dialect-neutral semantics):
 - Compute `identityChangedDocumentIds` by diffing the document’s identity projection values between `inserted` and
   `deleted` (null-safe comparison). For unified members, diff the **presence-gated canonical expression** above (not
   the alias column name).
-- Bump **Identity** stamps only for `identityChangedDocumentIds`.
+- Record key-change rows only for `identityChangedDocumentIds`; representation-changing identity propagation still follows the content-stamp rules for `affectedDocumentIds`.
 
 #### `TriggerKindParameters.AbstractIdentityMaintenance`
 
