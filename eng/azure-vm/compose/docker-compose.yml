@@ -145,6 +145,11 @@ x-app-defaults: &app-defaults
   networks: [dms-sec]
   # Prevent privilege escalation via setuid/setgid binaries inside the container.
   security_opt: ["no-new-privileges:true"]
+  logging:
+    driver: json-file
+    options:
+      max-size: "${DOCKER_LOG_MAX_SIZE:-50m}"
+      max-file: "${DOCKER_LOG_MAX_FILE:-5}"
 
 services:
   # =========================================================================
@@ -170,6 +175,11 @@ services:
     networks: [dms-sec]
     restart: unless-stopped
     security_opt: ["no-new-privileges:true"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "${DOCKER_LOG_MAX_SIZE:-50m}"
+        max-file: "${DOCKER_LOG_MAX_FILE:-5}"
 
   # =========================================================================
   # Single-tenant stack
@@ -315,6 +325,11 @@ services:
           - "${PUBLIC_HOST:-localhost}"
     restart: unless-stopped
     security_opt: ["no-new-privileges:true"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "${DOCKER_LOG_MAX_SIZE:-50m}"
+        max-file: "${DOCKER_LOG_MAX_FILE:-5}"
 
 networks:
   dms-sec:

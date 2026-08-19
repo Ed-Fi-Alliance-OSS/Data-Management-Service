@@ -378,17 +378,19 @@ backend.
 
 ## Docker Compose Defaults and Container Log Retention
 
-The Docker Compose stacks under `eng/docker-compose` ship a set of defaults
-for log verbosity and container log retention. This section documents those
-defaults, how to override them, and the trade-offs involved in doing so.
+The Docker Compose stacks under `eng/docker-compose` and
+`eng/azure-vm/compose` ship a set of defaults for log verbosity and container
+log retention. This section documents those defaults, how to override them,
+and the trade-offs involved in doing so.
 
 ### Shipped Log Levels
 
-The Compose `.env` files (`.env.example` and the active `.env.template*`
-files) ship `LOG_LEVEL=Information` for DMS and `DMS_CONFIG_LOG_LEVEL=Information`
-for the Configuration Service. Neither service ships at `Debug` by default:
-`Debug` includes anonymized HTTP request payloads and additional
-service-call detail (see [Log Levels](#log-levels) above), which is more
+The Compose `.env` files (`.env.example`, `.env.multitenancy`, the active
+`.env.template*` files, and the Azure VM `.env.example`) ship
+`LOG_LEVEL=Information` for DMS and `DMS_CONFIG_LOG_LEVEL=Information` for the
+Configuration Service. Neither service ships at `Debug` by default: `Debug`
+includes anonymized HTTP request payloads and additional service-call detail
+(see [Log Levels](#log-levels)), which is more
 verbose and more expensive to store than most deployments need day to day.
 
 ### Overriding Log Levels
@@ -403,7 +405,7 @@ Set either variable to `Information`, `Warning`, or `Debug` (see
 [Log Levels](#log-levels)) in the `.env` file used to start the stack, or
 export it in the shell before running `docker compose up`. Raise a service to
 `Debug` temporarily when investigating an integration problem, then return it
-to `Information` — `Debug` logging is verbose and, per the container
+to `Information` - `Debug` logging is verbose and, per the container
 retention behavior below, shortens how long evidence survives on disk.
 
 ### Docker Container Log Retention
@@ -411,10 +413,10 @@ retention behavior below, shortens how long evidence survives on disk.
 The Compose stacks configure the Docker `json-file` log driver with two
 variables:
 
-* `DOCKER_LOG_MAX_SIZE` (default `50m`) — the maximum size of a single log
+* `DOCKER_LOG_MAX_SIZE` (default `50m`) - the maximum size of a single log
   file before Docker rotates it.
-* `DOCKER_LOG_MAX_FILE` (default `5`) — the maximum number of rotated log
-  files Docker keeps per container.
+* `DOCKER_LOG_MAX_FILE` (default `5`) - the maximum number of log files Docker
+  keeps per container, including the active file.
 
 These defaults cap retained container logs at 250 MB (`50m` × `5`) **per
 container**. The cap is per-container, not per-stack: each service (DMS,
@@ -422,39 +424,42 @@ Configuration Service, Postgres, Kafka, Keycloak, and so on) gets its own
 independent 50 MB × 5-file allowance, so a multi-service stack retains up to
 250 MB per service on disk, not 250 MB in total.
 
-Retention is also a time window, not just a size, and that window can be
-short under load. At a measured logging rate of 25.6 MB/s under sustained
-high-throughput request traffic, a single 50 MB log file fills in roughly 2
-seconds, and the full 250 MB allowance (all 5 rotated files) is overwritten
-in roughly 10 seconds. In other words, at that rate the oldest evidence in
-the retained log files is no more than about 10 seconds old — once a new
-entry causes Docker to rotate out the oldest file, whatever was only in that
-file is gone. Quieter workloads fill the allowance much more slowly and
-retain evidence far longer; the 10-second figure is a worst-case bound at
-the measured peak rate, not a general expectation.
+Retention is also a time window, not just a size, and that window can be short
+under load. The 25.6 MB/s measurement came from sustained high-throughput
+request traffic while DMS was at `Debug`. At that rate, a single 50 MB log file
+fills in roughly 2 seconds, and the full 250 MB allowance (all 5 files) is
+overwritten in roughly 10 seconds. In other words, at that rate the oldest
+evidence in the retained log files is no more than about 10 seconds old - once
+a new entry causes Docker to rotate out the oldest file, whatever was only in
+that file is gone. Quieter workloads, including routine `Information` logging,
+fill the allowance much more slowly and retain evidence far longer; the
+10-second figure is a worst-case `Debug`-load bound, not a general expectation.
 
-### Unbounded Container Logs
+### Very Large Container Log Caps
 
-To disable size-based rotation entirely and retain all container logs
-without a cap, set:
+Docker's `json-file` driver does not accept an "unlimited" sentinel value for
+`max-size` in these Compose files. Values such as `-1`, `0`, `0m`, and
+`unlimited` are rejected by Docker before any container starts. If an
+investigation needs an env-only escape hatch from the default 250 MB retention
+window, use a very large accepted size value instead:
 
 ```dotenv
-DOCKER_LOG_MAX_SIZE=-1
+DOCKER_LOG_MAX_SIZE=1000g
 ```
 
 > [!WARNING]
-> Setting `DOCKER_LOG_MAX_SIZE=-1` removes Docker's log rotation safety net.
-> An unbounded log file can grow until it exhausts the host's disk, which can
-> destabilize every container on that host, not only the one doing the
-> logging. Only disable rotation on hosts with monitored, ample free disk
-> space, and prefer the mitigations below for long-running investigations
-> instead of leaving rotation disabled indefinitely.
+> Setting `DOCKER_LOG_MAX_SIZE=1000g` effectively removes the local rotation
+> safety net for most investigations. A very large log file can grow until it
+> exhausts the host's disk, which can destabilize every container on that host,
+> not only the one doing the logging. Use a large cap only on hosts with
+> monitored, ample free disk space, and prefer the mitigations below for
+> long-running investigations instead of leaving the cap raised indefinitely.
 
 ### Long-Running Investigations
 
 For an investigation that needs more history than the default 250 MB /
 ~10-second worst-case window allows, prefer one of these over leaving
-rotation disabled:
+the cap raised indefinitely:
 
 * **Increase the cap temporarily.** Raise `DOCKER_LOG_MAX_SIZE` and/or
   `DOCKER_LOG_MAX_FILE` for the duration of the investigation, then restore
@@ -475,19 +480,21 @@ survives:
 
 * **Bounded (the default, `50m` / `5` files).** Safe for unattended hosts —
   disk usage per container is capped — but under sustained heavy load the
-  retained window can be as short as ~10 seconds, so evidence of a
-  transient problem may already be gone by the time someone goes looking
-  for it.
-* **Unbounded (`DOCKER_LOG_MAX_SIZE=-1`).** No evidence loss from rotation,
-  but no disk-usage safety net either; left in place indefinitely, it risks
-  disk exhaustion.
+  retained window can be as short as ~10 seconds when DMS is at `Debug`, so
+  evidence of a transient problem may already be gone by the time someone goes
+  looking for it.
+* **Very large cap (`DOCKER_LOG_MAX_SIZE=1000g`).** Less evidence loss from
+  rotation, but little practical disk-usage safety net; left in place
+  indefinitely, it risks disk exhaustion.
 * **OTLP export.** Avoids both problems for logs that reach the collector
   before rotation would have discarded them, but adds an external
   dependency (the collector must be reachable and correctly configured;
   see [Security Considerations for OTLP Export](#security-considerations-for-otlp-export)
   above) and does not itself change the local container's rotation
-  behavior — console/file logs on the host are still governed by
-  `DOCKER_LOG_MAX_SIZE` and `DOCKER_LOG_MAX_FILE`.
+  behavior. Docker's `DOCKER_LOG_MAX_SIZE` and `DOCKER_LOG_MAX_FILE` settings
+  govern the container stdout/stderr `json-file` logs only; the Serilog file
+  sinks inside the DMS and CMS containers are separate daily rolling files and
+  are not capped by these Docker variables.
 
 Choose based on the deployment: bounded defaults for routine operation,
 a temporarily raised cap or OTLP export when a specific investigation
