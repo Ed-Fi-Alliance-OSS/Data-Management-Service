@@ -15,9 +15,6 @@ Feature: Live resource endpoints filter by change version.
         @e2e-ci-shard-3
         @reset-data-before-scenario
         Scenario: 01 Live programs collection filters by minChangeVersion
-             When a GET request is made to "/changeQueries/v1/availableChangeVersions"
-             Then it should respond with 200
-              And the response body path "newestChangeVersion" is stored in request variable "liveMinBaseline"
              When a POST request is made to "/ed-fi/programs" with
                   """
                   {
@@ -29,7 +26,11 @@ Feature: Live resource endpoints filter by change version.
              Then it should respond with 201
              When a GET request is made to "/changeQueries/v1/availableChangeVersions"
              Then it should respond with 200
-              And the response body path "newestChangeVersion" is stored in request variable "liveMidVersion"
+              And the response body path "newestChangeVersion" is stored in request variable "liveProgramAVersion"
+             When a GET request is made to "/ed-fi/programs?minChangeVersion={liveProgramAVersion}&totalCount=true"
+             Then it should respond with 200
+              And total of records should be 1
+              And the response body path "0.programName" should have value "Live Filter Program A"
              When a POST request is made to "/ed-fi/programs" with
                   """
                   {
@@ -39,10 +40,13 @@ Feature: Live resource endpoints filter by change version.
                   }
                   """
              Then it should respond with 201
-             When a GET request is made to "/ed-fi/programs?minChangeVersion={liveMinBaseline}&maxChangeVersion={liveMidVersion}&totalCount=true"
+             When a GET request is made to "/changeQueries/v1/availableChangeVersions"
+             Then it should respond with 200
+              And the response body path "newestChangeVersion" is stored in request variable "liveProgramBVersion"
+             When a GET request is made to "/ed-fi/programs?minChangeVersion={liveProgramBVersion}&totalCount=true"
              Then it should respond with 200
               And total of records should be 1
-              And the response body path "0.programName" should have value "Live Filter Program A"
+              And the response body path "0.programName" should have value "Live Filter Program B"
 
         @ods-migrated
         @e2e-ci-shard-3

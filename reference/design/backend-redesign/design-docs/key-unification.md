@@ -1896,6 +1896,10 @@ Implementation guidance (dialect-neutral semantics):
   the alias column name).
 - Record key-change rows only for `identityChangedDocumentIds`; representation-changing identity propagation still follows the content-stamp rules for `affectedDocumentIds`.
 
+Change Queries key-change rows are the exception to this generic presence-gated guidance: the Change Queries
+`DocumentStamping` / `ChangeTracking` path uses ODS-compatible canonical storage semantics for its shared
+key-change workset. See [change-queries.md](change-queries.md) for that narrower contract.
+
 #### `TriggerKindParameters.AbstractIdentityMaintenance`
 
 These triggers must use the same value-diff gating:

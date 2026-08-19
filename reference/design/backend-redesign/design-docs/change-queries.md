@@ -572,6 +572,14 @@ Example response:
 }
 ```
 
+`newestChangeVersion` is the maximum assigned `ChangeVersion`, not the next
+available sequence value. A newly written document can therefore have
+`ChangeVersion == newestChangeVersion`. Because `minChangeVersion` and
+`maxChangeVersion` filters are inclusive, clients that store `newestChangeVersion`
+as an extraction watermark and later want only newer changes should resume with
+`minChangeVersion = watermark + 1`; using `minChangeVersion = watermark`
+intentionally includes records stamped at that exact boundary.
+
 The generated SQL used to fulfill the request is:
 
 ```sql
@@ -1341,7 +1349,7 @@ The existing `*_Stamp` trigger inventory entries will be updated to store tombst
 
 The dialect trigger emitters must use the tracked-change inventory directly. They must not re-derive old/new columns, descriptor joins, person joins, or key-change predicates from SQL text or from ad hoc DDL-only metadata.
 
-For updates, the key-change workset is the owning trigger's `IdentityProjectionColumns` null-safe old/new value-diff workset. The identity-stamp workset uses only identity storage columns; the content-stamp workset can be broader and also includes reference `DocumentId` changes and deleted-side propagation branches that alter serialized content without changing identity values. Under key unification, Change Query key-change detection uses the canonical storage columns, not the presence-gated alias expressions from [key-unification.md](key-unification.md). This intentionally follows legacy ODS behavior: ODS also stores equality-constrained identity parts once and reuses the same physical value across unified paths, but its tracked key-change triggers compare the stored key columns rather than a per-reference or per-path presence-gated value.
+For updates, the key-change workset is the owning trigger's `IdentityProjectionColumns` null-safe old/new value-diff workset. That key-change workset uses only identity storage columns; the content-stamp workset can be broader and also includes reference `DocumentId` changes and deleted-side propagation branches that alter serialized content without changing identity values. Under key unification, Change Query key-change detection uses the canonical storage columns, not the presence-gated alias expressions from [key-unification.md](key-unification.md). This intentionally follows legacy ODS behavior: ODS also stores equality-constrained identity parts once and reuses the same physical value across unified paths, but its tracked key-change triggers compare the stored key columns rather than a per-reference or per-path presence-gated value.
 
 A presence-only change, such as attaching or detaching an optional reference while the shared canonical key value remains unchanged, is a representation change and receives a new content `ChangeVersion`, but it is not a Change Queries key-change event. A key-change row is inserted only when the effective resource identity storage values change.
 
