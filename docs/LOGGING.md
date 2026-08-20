@@ -385,8 +385,9 @@ and the trade-offs involved in doing so.
 
 ### Shipped Log Levels
 
-The Compose `.env` files (`.env.example`, `.env.multitenancy`, the active
-`.env.template*` files, and the Azure VM `.env.example`) ship
+The tracked Compose `.env` files (`.env.example`, `.env.multitenancy`, the
+active `.env.template*` files, E2E/smoke environment files, and the Azure VM
+`.env.example`) ship
 `LOG_LEVEL=Information` for DMS and `DMS_CONFIG_LOG_LEVEL=Information` for the
 Configuration Service. Neither service ships at `Debug` by default: `Debug`
 includes anonymized HTTP request payloads and additional service-call detail
@@ -478,11 +479,12 @@ the cap raised indefinitely:
 The three options above trade off disk usage against how much log history
 survives:
 
-* **Bounded (the default, `50m` / `5` files).** Safe for unattended hosts —
-  disk usage per container is capped — but under sustained heavy load the
-  retained window can be as short as ~10 seconds when DMS is at `Debug`, so
-  evidence of a transient problem may already be gone by the time someone goes
-  looking for it.
+* **Bounded (the default, `50m` / `5` files).** Safe for unattended Docker
+  stdout/stderr collection because disk usage per container is capped, but
+  under sustained heavy load the retained window can be as short as ~10
+  seconds when DMS is at `Debug`, so evidence of a transient problem may
+  already be gone by the time someone goes looking for it. These Docker
+  settings do not cap the in-container Serilog file sink.
 * **Very large cap (`DOCKER_LOG_MAX_SIZE=1000g`).** Less evidence loss from
   rotation, but little practical disk-usage safety net; left in place
   indefinitely, it risks disk exhaustion.
@@ -504,9 +506,12 @@ needs a longer window.
 
 In an emergency — for example, a container's log file has already grown
 large enough to threaten disk space and rotation has not caught up — the
-underlying `json-file` log file on the host can be truncated manually (for
-example, with `truncate -s 0` on the file Docker reports via
-`docker inspect --format='{{.LogPath}}' <container>`).
+underlying `json-file` log file can be truncated manually on native Linux
+Docker hosts (for example, with `truncate -s 0` on the file Docker reports via
+`docker inspect --format='{{.LogPath}}' <container>`). On Docker Desktop, that
+reported path can live inside Docker Desktop's Linux VM instead of the Windows
+or macOS host filesystem, so the same host-shell command may not find the
+file.
 
 > [!WARNING]
 > Docker's own documentation warns that manually manipulating a container's
