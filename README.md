@@ -41,6 +41,9 @@ for detailed information on how to contribute source code.
 - [Data Strictness](./docs/DATA-STRICTNESS.md) — case-sensitive request-body
   property names (a breaking change from the ODS/API) and related request-body
   validation rules
+- [Cursor Paging](./docs/CURSOR-PAGING.md) — walking a collection with an opaque
+  `pageToken` instead of `limit`/`offset`, and splitting one for parallel reads
+  with `/partitions`
 
 ## Developer Documents
 
