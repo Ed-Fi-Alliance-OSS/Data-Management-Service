@@ -12,7 +12,19 @@ internal static class ResultSamples
 {
     public const string RunnerCommit = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     public const string SubjectCommit = "cccccccccccccccccccccccccccccccccccccccc";
+    public const long DeepOffset = 450_000;
     public static readonly string Sha256 = new('a', 64);
+
+    private static long OffsetFor(string scenarioId, int pageSize) =>
+        scenarioId switch
+        {
+            PerfScenarios.TraditionalOffsetZero => 0,
+            PerfScenarios.TraditionalOffsetShallow => pageSize,
+            _ => DeepOffset,
+        };
+
+    private static IReadOnlyList<double> ThirtySamples(double baseMs) =>
+        [.. Enumerable.Range(0, 30).Select(i => baseMs + (i * 0.5))];
 
     public static PerfScenarioResult Postgresql(
         string scenarioId = PerfScenarios.TraditionalOffsetZero,
@@ -22,13 +34,13 @@ internal static class ResultSamples
             Provider: "postgresql",
             ScenarioId: scenarioId,
             PageSize: pageSize,
-            Offset: 0,
+            Offset: OffsetFor(scenarioId, pageSize),
             ReturnedRows: pageSize,
             CommandCountPerRequest: 1,
             WarmupIterations: 5,
             MeasuredIterations: 30,
-            LatencyMs: new(12.5, 20.25, 14.125, 10.0, 22.5, [12.5, 20.25, 10.0]),
-            DbCommandMs: new(8.5, 15.0, 10.0, 7.5, 16.0, [8.5, 15.0, 7.5]),
+            LatencyMs: new(12.5, 20.25, 14.125, 10.0, 22.5, ThirtySamples(10.0)),
+            DbCommandMs: new(8.5, 15.0, 10.0, 7.5, 16.0, ThirtySamples(7.5)),
             Database: new(
                 BuffersHit: 1200,
                 BuffersRead: 34,
@@ -38,7 +50,7 @@ internal static class ResultSamples
                 DbCpuMs: null,
                 DbElapsedMs: null
             ),
-            PlanFile: "plans/pg.traditional-offset-zero.25.explain.json",
+            PlanFile: $"plans/pg.{scenarioId}.{pageSize}.explain.json",
             PageSelectionSqlSha256: Sha256,
             RunnerCommit: RunnerCommit,
             SubjectCommit: SubjectCommit
@@ -52,13 +64,13 @@ internal static class ResultSamples
             Provider: "mssql",
             ScenarioId: scenarioId,
             PageSize: pageSize,
-            Offset: 0,
+            Offset: OffsetFor(scenarioId, pageSize),
             ReturnedRows: pageSize,
             CommandCountPerRequest: 1,
             WarmupIterations: 5,
             MeasuredIterations: 30,
-            LatencyMs: new(13.5, 21.25, 15.125, 11.0, 23.5, [13.5, 21.25, 11.0]),
-            DbCommandMs: new(9.5, 16.0, 11.0, 8.5, 17.0, [9.5, 16.0, 8.5]),
+            LatencyMs: new(13.5, 21.25, 15.125, 11.0, 23.5, ThirtySamples(11.0)),
+            DbCommandMs: new(9.5, 16.0, 11.0, 8.5, 17.0, ThirtySamples(8.5)),
             Database: new(
                 BuffersHit: null,
                 BuffersRead: null,
@@ -68,31 +80,46 @@ internal static class ResultSamples
                 DbCpuMs: 5.0,
                 DbElapsedMs: 7.75
             ),
-            PlanFile: "plans/mssql.traditional-offset-zero.25.sqlplan",
+            PlanFile: $"plans/mssql.{scenarioId}.{pageSize}.sqlplan",
             PageSelectionSqlSha256: Sha256,
             RunnerCommit: RunnerCommit,
             SubjectCommit: SubjectCommit
         );
 
-    public static PerfRunManifest Manifest() =>
+    public static PerfResultsDocument PostgresqlDocument() =>
+        PerfResultsDocument.Create(
+            PerfScenarios.AllIds.SelectMany(scenarioId =>
+                PerfScenarios.PageSizes.Select(pageSize => Postgresql(scenarioId, pageSize))
+            )
+        );
+
+    public static PerfResultsDocument MssqlDocument() =>
+        PerfResultsDocument.Create(
+            PerfScenarios.AllIds.SelectMany(scenarioId =>
+                PerfScenarios.PageSizes.Select(pageSize => Mssql(scenarioId, pageSize))
+            )
+        );
+
+    public static PerfRunManifest Manifest(string provider = "postgresql") =>
         PerfRunManifest.Create(
-            new PerfRunIdentity("pg-primary-500k-20260820", "2026-08-20T12:00:00Z", "postgresql"),
+            new PerfRunIdentity($"{provider}-primary-500k-20260820", "2026-08-20T12:00:00Z", provider),
             new PerfCommitIdentity(
                 RunnerCommit,
                 SubjectCommit,
                 ["src/dms/tests/EdFi.DataManagementService.Performance.Harness/"]
             ),
-            new PerfManifestFixture("primary-500k", 500_000, 450_000),
+            new PerfManifestFixture("primary-500k", 500_000, DeepOffset),
             new PerfIterationPlan(
                 5,
                 30,
                 [
-                    new PerfExecutedCell(PerfScenarios.TraditionalOffsetZero, 25, 0),
-                    new PerfExecutedCell(PerfScenarios.TraditionalOffsetZero, 500, 0),
-                    new PerfExecutedCell(PerfScenarios.TraditionalOffsetShallow, 25, 25),
-                    new PerfExecutedCell(PerfScenarios.TraditionalOffsetShallow, 500, 500),
-                    new PerfExecutedCell(PerfScenarios.TraditionalOffsetDeep, 25, 450_000),
-                    new PerfExecutedCell(PerfScenarios.TraditionalOffsetDeep, 500, 450_000),
+                    .. PerfScenarios.AllIds.SelectMany(scenarioId =>
+                        PerfScenarios.PageSizes.Select(pageSize => new PerfExecutedCell(
+                            scenarioId,
+                            pageSize,
+                            OffsetFor(scenarioId, pageSize)
+                        ))
+                    ),
                 ]
             ),
             PerfEnvironmentIdentity.Create(
