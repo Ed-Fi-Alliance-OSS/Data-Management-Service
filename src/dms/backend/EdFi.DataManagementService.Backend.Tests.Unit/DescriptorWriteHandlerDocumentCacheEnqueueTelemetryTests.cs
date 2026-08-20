@@ -17,6 +17,7 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
@@ -534,6 +535,84 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         telemetry.Failures[0].Category.Should().Be(DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed);
     }
 
+    [Test]
+    public async Task It_preserves_mapped_descriptor_write_failure_when_enqueue_failure_telemetry_throws()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService();
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.Executor.ExceptionsToThrow.Enqueue(null);
+        sessionFactory.Session.Executor.ExceptionsToThrow.Enqueue(
+            new StubDbException("deadlock detected while inserting into dms.DocumentProjectionWork")
+        );
+        var telemetry = new ThrowingFailureDocumentCacheEnqueueTelemetry();
+        CapturingLogger<DescriptorWriteHandler> logger = new();
+        var sut = CreateSut(
+            targetLookupService,
+            sessionFactory,
+            telemetry,
+            logger: logger,
+            writeExceptionClassifier: new TransientRelationalWriteExceptionClassifier()
+        );
+        var mappingSet = CreateMappingSet(SqlDialect.Pgsql);
+        targetLookupService.PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(
+            345L,
+            documentUuid,
+            44L
+        );
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([
+            CreatePersistedDescriptorResultSet(description: "Previous Description"),
+        ]);
+
+        var result = await sut.HandlePutAsync(
+            CreatePutRequest(mappingSet, documentUuid, description: "Updated Description")
+        );
+
+        result.Should().BeOfType<UpdateResult.UpdateFailureWriteConflict>();
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+        telemetry.RecordFailureCallCount.Should().Be(1);
+        logger.JoinedMessages().Should().Contain("DocumentCache enqueue failure telemetry failed");
+    }
+
+    [Test]
+    public async Task It_preserves_mapped_descriptor_write_failure_when_enqueue_failure_telemetry_and_warning_logger_throw()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService();
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.Executor.ExceptionsToThrow.Enqueue(null);
+        sessionFactory.Session.Executor.ExceptionsToThrow.Enqueue(
+            new StubDbException("deadlock detected while inserting into dms.DocumentProjectionWork")
+        );
+        var telemetry = new ThrowingFailureDocumentCacheEnqueueTelemetry();
+        var sut = CreateSut(
+            targetLookupService,
+            sessionFactory,
+            telemetry,
+            logger: new ThrowingWarningLogger<DescriptorWriteHandler>(),
+            writeExceptionClassifier: new TransientRelationalWriteExceptionClassifier()
+        );
+        var mappingSet = CreateMappingSet(SqlDialect.Pgsql);
+        targetLookupService.PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(
+            345L,
+            documentUuid,
+            44L
+        );
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([
+            CreatePersistedDescriptorResultSet(description: "Previous Description"),
+        ]);
+
+        var result = await sut.HandlePutAsync(
+            CreatePutRequest(mappingSet, documentUuid, description: "Updated Description")
+        );
+
+        result.Should().BeOfType<UpdateResult.UpdateFailureWriteConflict>();
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+        telemetry.RecordFailureCallCount.Should().Be(1);
+    }
+
     [TestCase(DescriptorWritePath.PostInsert, typeof(UpsertResult.UpsertFailureWriteConflict))]
     [TestCase(DescriptorWritePath.PostAsUpdate, typeof(UpsertResult.UpsertFailureWriteConflict))]
     [TestCase(DescriptorWritePath.PutUpdate, typeof(UpdateResult.UpdateFailureWriteConflict))]
@@ -622,7 +701,8 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         IDocumentCacheTargetRegistry? targetRegistry = null,
         string tenantKey = TargetKeyTenant,
         IRelationalWriteExceptionClassifier? writeExceptionClassifier = null,
-        IDocumentCacheProviderCommandTimeoutClassifier? documentCacheProviderCommandTimeoutClassifier = null
+        IDocumentCacheProviderCommandTimeoutClassifier? documentCacheProviderCommandTimeoutClassifier = null,
+        ILogger<DescriptorWriteHandler>? logger = null
     )
     {
         return new DescriptorWriteHandler(
@@ -630,7 +710,7 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
             writeExceptionClassifier ?? new NoOpRelationalWriteExceptionClassifier(),
             A.Fake<IRelationalDeleteConstraintResolver>(),
             writeSessionFactory,
-            NullLogger<DescriptorWriteHandler>.Instance,
+            logger ?? NullLogger<DescriptorWriteHandler>.Instance,
             new ServedEtagComposer(),
             dataStoreSelection: CreateSelectedDataStoreSelection(tenantKey),
             documentCacheEnqueueTelemetry: telemetry,
@@ -915,6 +995,68 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         DocumentCacheEnqueueFailureCategory Category,
         int RollbackCallCountAtRecord
     );
+
+    private sealed class ThrowingFailureDocumentCacheEnqueueTelemetry : IDocumentCacheEnqueueTelemetry
+    {
+        public int RecordFailureCallCount { get; private set; }
+
+        public void RecordSuccess(DocumentCacheEnqueueTelemetryContext context) =>
+            throw new InvalidOperationException("unexpected success telemetry call");
+
+        public void RecordFailure(
+            DocumentCacheEnqueueTelemetryContext context,
+            DocumentCacheEnqueueFailureCategory category
+        )
+        {
+            RecordFailureCallCount++;
+            throw new InvalidOperationException("telemetry sink failed");
+        }
+    }
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        private readonly List<string> _messages = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            _messages.Add($"{formatter(state, exception)} {exception?.Message}");
+        }
+
+        public string JoinedMessages() => string.Join('\n', _messages);
+    }
+
+    private sealed class ThrowingWarningLogger<T> : ILogger<T>
+    {
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            if (logLevel is LogLevel.Warning)
+            {
+                throw new InvalidOperationException("warning logger failed");
+            }
+        }
+    }
 
     private sealed class TransientRelationalWriteExceptionClassifier : IRelationalWriteExceptionClassifier
     {

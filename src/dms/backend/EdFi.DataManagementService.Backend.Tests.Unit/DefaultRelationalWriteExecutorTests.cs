@@ -587,6 +587,77 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
+    public async Task It_preserves_mapped_resource_write_failure_when_enqueue_failure_telemetry_throws()
+    {
+        var telemetry = new ThrowingFailureDocumentCacheEnqueueTelemetry();
+        CapturingLogger<DefaultRelationalWriteExecutor> logger = new();
+        _sut = CreateExecutor(
+            logger: logger,
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry()
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException(
+            "deadlock detected while inserting into dms.DocumentProjectionWork"
+        );
+        _writeExceptionClassifier.IsTransientFailureToReturn = true;
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureWriteConflict())
+            );
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        telemetry.RecordFailureCallCount.Should().Be(1);
+        logger.JoinedMessages().Should().Contain("DocumentCache enqueue failure telemetry failed");
+    }
+
+    [Test]
+    public async Task It_rethrows_unmapped_resource_provider_exception_when_enqueue_failure_telemetry_and_warning_logger_throw()
+    {
+        var telemetry = new ThrowingFailureDocumentCacheEnqueueTelemetry();
+        _sut = CreateExecutor(
+            logger: new ThrowingWarningLogger<DefaultRelationalWriteExecutor>(),
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry()
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException(
+            "insert or update on table DocumentProjectionWork violates foreign key"
+        );
+
+        var act = () => _sut.ExecuteAsync(request);
+
+        await act.Should().ThrowAsync<StubDbException>().WithMessage("*DocumentProjectionWork*");
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        telemetry.RecordFailureCallCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_does_not_record_DocumentCacheEnqueueTelemetry_failure_for_mapped_ordinary_write_failures()
     {
         var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
@@ -9761,6 +9832,28 @@ public class Given_Default_Relational_Write_Executor
         public string JoinedMessages() => string.Join('\n', _messages);
     }
 
+    private sealed class ThrowingWarningLogger<T> : ILogger<T>
+    {
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            if (logLevel is LogLevel.Warning)
+            {
+                throw new InvalidOperationException("warning logger failed");
+            }
+        }
+    }
+
     private sealed class RecordingRelationalWriteExceptionClassifier : IRelationalWriteExceptionClassifier
     {
         public int IsTransientFailureCallCount { get; private set; }
@@ -10249,6 +10342,23 @@ public class Given_Default_Relational_Write_Executor
         DocumentCacheEnqueueTelemetryContext Context,
         DocumentCacheEnqueueFailureCategory Category
     );
+
+    private sealed class ThrowingFailureDocumentCacheEnqueueTelemetry : IDocumentCacheEnqueueTelemetry
+    {
+        public int RecordFailureCallCount { get; private set; }
+
+        public void RecordSuccess(DocumentCacheEnqueueTelemetryContext context) =>
+            throw new InvalidOperationException("unexpected success telemetry call");
+
+        public void RecordFailure(
+            DocumentCacheEnqueueTelemetryContext context,
+            DocumentCacheEnqueueFailureCategory category
+        )
+        {
+            RecordFailureCallCount++;
+            throw new InvalidOperationException("telemetry sink failed");
+        }
+    }
 
     private sealed class RecordingDocumentCacheProviderCommandTimeoutClassifier
         : IDocumentCacheProviderCommandTimeoutClassifier

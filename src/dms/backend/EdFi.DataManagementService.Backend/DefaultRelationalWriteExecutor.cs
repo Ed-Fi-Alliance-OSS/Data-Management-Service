@@ -670,7 +670,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         DbException exception
     )
     {
-        DocumentCacheEnqueueTelemetryWriteBoundary.RecordFailureIfClassified(
+        DocumentCacheEnqueueTelemetryWriteBoundary.RecordFailureIfClassifiedBestEffort(
             _documentCacheEnqueueTelemetry,
             _documentCacheProviderCommandTimeoutClassifier,
             _dataStoreSelection,
@@ -679,7 +679,8 @@ internal sealed class DefaultRelationalWriteExecutor(
             request.MappingSet.Key.Dialect,
             ToCanonicalOperation(request),
             DocumentCacheEnqueueTelemetryResourceKind.Resource,
-            exception
+            exception,
+            _logger
         );
     }
 

@@ -474,6 +474,29 @@ public class Given_DocumentCacheEnqueueTelemetry
     }
 
     [Test]
+    public void It_contains_enqueue_failure_telemetry_and_warning_logger_failures_after_provider_failure()
+    {
+        var telemetry = new ThrowingFailureDocumentCacheEnqueueTelemetry();
+
+        Action act = () =>
+            DocumentCacheEnqueueTelemetryWriteBoundary.RecordFailureIfClassifiedBestEffort(
+                telemetry,
+                NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance,
+                dataStoreSelection: null,
+                targetRegistry: null,
+                tenantKey: string.Empty,
+                SqlDialect.Pgsql,
+                DocumentCacheEnqueueTelemetryCanonicalOperation.Update,
+                DocumentCacheEnqueueTelemetryResourceKind.Resource,
+                new StubDbException("insert or update on table DocumentProjectionWork violates foreign key"),
+                new ThrowingLogger()
+            );
+
+        act.Should().NotThrow();
+        telemetry.RecordFailureCallCount.Should().Be(1);
+    }
+
+    [Test]
     public void It_does_not_record_no_work_write_boundary_outcomes_with_unknown_target()
     {
         using MetricCollector collector = new();
@@ -1007,6 +1030,23 @@ public class Given_DocumentCacheEnqueueTelemetry
             DocumentCacheEnqueueTelemetryContext context,
             DocumentCacheEnqueueFailureCategory category
         ) => throw new InvalidOperationException("unexpected failure telemetry call");
+    }
+
+    private sealed class ThrowingFailureDocumentCacheEnqueueTelemetry : IDocumentCacheEnqueueTelemetry
+    {
+        public int RecordFailureCallCount { get; private set; }
+
+        public void RecordSuccess(DocumentCacheEnqueueTelemetryContext context) =>
+            throw new InvalidOperationException("unexpected success telemetry call");
+
+        public void RecordFailure(
+            DocumentCacheEnqueueTelemetryContext context,
+            DocumentCacheEnqueueFailureCategory category
+        )
+        {
+            RecordFailureCallCount++;
+            throw new InvalidOperationException("telemetry sink failed");
+        }
     }
 
     private sealed class ThrowingLogger : ILogger

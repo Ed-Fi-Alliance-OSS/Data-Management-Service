@@ -3382,7 +3382,7 @@ internal sealed class DescriptorWriteHandler(
         DbException exception
     )
     {
-        DocumentCacheEnqueueTelemetryWriteBoundary.RecordFailureIfClassified(
+        DocumentCacheEnqueueTelemetryWriteBoundary.RecordFailureIfClassifiedBestEffort(
             _documentCacheEnqueueTelemetry,
             _documentCacheProviderCommandTimeoutClassifier,
             _dataStoreSelection,
@@ -3391,7 +3391,8 @@ internal sealed class DescriptorWriteHandler(
             request.MappingSet.Key.Dialect,
             canonicalOperation,
             DocumentCacheEnqueueTelemetryResourceKind.Descriptor,
-            exception
+            exception,
+            _logger
         );
     }
 

@@ -320,6 +320,54 @@ internal static class DocumentCacheEnqueueTelemetryWriteBoundary
         telemetry.RecordFailure(context, category);
     }
 
+    public static void RecordFailureIfClassifiedBestEffort(
+        IDocumentCacheEnqueueTelemetry telemetry,
+        IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
+        IDataStoreSelection? dataStoreSelection,
+        IDocumentCacheTargetRegistry? targetRegistry,
+        string tenantKey,
+        SqlDialect dialect,
+        DocumentCacheEnqueueTelemetryCanonicalOperation canonicalOperation,
+        DocumentCacheEnqueueTelemetryResourceKind resourceKind,
+        DbException exception,
+        ILogger logger
+    )
+    {
+        ArgumentNullException.ThrowIfNull(logger);
+
+        try
+        {
+            RecordFailureIfClassified(
+                telemetry,
+                providerCommandTimeoutClassifier,
+                dataStoreSelection,
+                targetRegistry,
+                tenantKey,
+                dialect,
+                canonicalOperation,
+                resourceKind,
+                exception
+            );
+        }
+        catch (Exception telemetryException)
+        {
+            // Enqueue-failure telemetry is observation only. It must not replace the mapped
+            // write failure or the original provider exception being preserved by the write path.
+            try
+            {
+                logger.LogWarning(
+                    telemetryException,
+                    "DocumentCache enqueue failure telemetry failed after a canonical write provider failure. ProviderFailurePreserved: true."
+                );
+            }
+            catch
+            {
+                // A failing logging provider is itself an observability failure and must not escape
+                // this best-effort boundary.
+            }
+        }
+    }
+
     private static DocumentCacheEnqueueTelemetryContext CreateContext(
         IDataStoreSelection? dataStoreSelection,
         IDocumentCacheTargetRegistry? targetRegistry,
