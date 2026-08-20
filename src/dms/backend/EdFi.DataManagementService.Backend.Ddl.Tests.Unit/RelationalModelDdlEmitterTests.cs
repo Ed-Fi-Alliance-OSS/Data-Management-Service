@@ -1409,6 +1409,7 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
             StringComparison.Ordinal
         );
         var mirrorFromStart = triggerBody.IndexOf("FROM [edfi].[School] r", StringComparison.Ordinal);
+        // FORCESEEK is a table hint on the mirror target, so the join still terminates the statement.
         var mirrorJoinStart = triggerBody.IndexOf(
             "INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];",
             StringComparison.Ordinal
@@ -1429,6 +1430,13 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
         mirrorSetLastModifiedStart.Should().BeGreaterThan(mirrorSetVersionStart);
         mirrorFromStart.Should().BeGreaterThan(mirrorSetLastModifiedStart);
         mirrorJoinStart.Should().BeGreaterThan(mirrorFromStart);
+
+        // A scanning plan for this statement takes update locks across mirror rows the transaction
+        // never touched, which is the measured deadlock cycle. FORCESEEK forbids the scan; RECOMPILE
+        // was measured to cost a compile on every root write, and OPTION (LOOP JOIN) was measured not
+        // to prevent the contention at all.
+        triggerBody.Should().Contain("FROM [edfi].[School] r WITH (FORCESEEK)");
+        triggerBody.Should().NotContain("OPTION (");
     }
 
     [Test]
@@ -1550,6 +1558,113 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
     public void It_should_not_attempt_identity_gating_on_child_locator_columns()
     {
         _ddl.Should().NotContain("UPDATE([School_DocumentId])");
+    }
+
+    /// <summary>
+    /// The whole guard predicate, asserted as one literal so the NOT EXISTS disjunct cannot go
+    /// missing. A test that pinned only the UPDATE(col) half would keep passing while DELETEs
+    /// silently stopped stamping: UPDATE() is false for every column on a DELETE, so without that
+    /// disjunct the guard would skip the delete branch entirely.
+    /// </summary>
+    [Test]
+    public void It_should_guard_the_root_content_stamp_with_a_deleted_probe_and_stored_column_prefilter()
+    {
+        GetSchoolStampTriggerBody()
+            .Should()
+            .Contain(
+                "IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE([DocumentId]) OR UPDATE([SchoolId]))"
+            );
+    }
+
+    /// <summary>
+    /// The disjunction must cover exactly the stored columns the affectedDocs value diff uses. If it
+    /// covered fewer, the guard could skip a statement whose diff would have been non-empty; if it
+    /// covered a mirrored stamp column, a stamp-only mirror UPDATE would re-open the recursion the
+    /// guard exists to close.
+    /// </summary>
+    [Test]
+    public void It_should_not_prefilter_the_root_content_stamp_on_mirrored_stamp_columns()
+    {
+        var triggerBody = GetSchoolStampTriggerBody();
+
+        triggerBody.Should().NotContain("UPDATE([ContentVersion])");
+        triggerBody.Should().NotContain("UPDATE([ContentLastModifiedAt])");
+    }
+
+    [Test]
+    public void It_should_place_the_root_affected_docs_workset_inside_the_guard()
+    {
+        var triggerBody = GetSchoolStampTriggerBody();
+
+        var stampedPrepopulationStart = triggerBody.IndexOf(
+            "INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])",
+            StringComparison.Ordinal
+        );
+        var guardStart = triggerBody.IndexOf(
+            "IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE(",
+            StringComparison.Ordinal
+        );
+        var worksetStart = triggerBody.IndexOf(";WITH affectedDocs AS (", StringComparison.Ordinal);
+        var documentUpdateStart = triggerBody.IndexOf(
+            "INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];",
+            StringComparison.Ordinal
+        );
+        var mirrorGuardStart = triggerBody.IndexOf(
+            "IF EXISTS (SELECT 1 FROM @stamped)",
+            StringComparison.Ordinal
+        );
+
+        stampedPrepopulationStart.Should().BeGreaterOrEqualTo(0);
+        guardStart.Should().BeGreaterOrEqualTo(0);
+
+        // Outside the guard: a pure INSERT skips the guarded stamp, and this is what still carries the
+        // document's existing stamps into the mirror. Inside the guard it would stop running for the
+        // exact case the guard exists to skip.
+        stampedPrepopulationStart
+            .Should()
+            .BeLessThan(guardStart, "@stamped pre-population must stay outside the guard");
+
+        worksetStart.Should().BeGreaterThan(guardStart);
+        documentUpdateStart.Should().BeGreaterThan(worksetStart);
+        mirrorGuardStart
+            .Should()
+            .BeGreaterThan(documentUpdateStart, "the mirror stamp must follow the guarded block");
+    }
+
+    /// <summary>
+    /// The child shape's inserted-side branch legitimately matches pure inserts - a new collection row
+    /// must stamp its root document - so a deleted-row guard there would drop real stamps.
+    /// </summary>
+    [Test]
+    public void It_should_not_guard_the_child_collection_content_stamp()
+    {
+        GetStampTriggerBody("SchoolAddress")
+            .Should()
+            .NotContain("IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted)");
+    }
+
+    /// <summary>
+    /// The blocks after the guarded content stamp keep their order. This fixture configures no
+    /// tracked-change tables, so its School trigger emits no tombstone block; that block's placement
+    /// relative to the mirror update is pinned where a tracked-change table actually exists, by
+    /// <see cref="Given_RelationalModelDdlEmitter_With_TrackedChange_Attached_Resource_Mssql.It_should_place_tombstone_branch_after_mirror_update_block"/>.
+    /// </summary>
+    [Test]
+    public void It_should_keep_the_mirror_guard_and_identity_stamp_in_order_after_the_guard()
+    {
+        var triggerBody = GetSchoolStampTriggerBody();
+
+        var mirrorGuardStart = triggerBody.IndexOf(
+            "IF EXISTS (SELECT 1 FROM @stamped)",
+            StringComparison.Ordinal
+        );
+        var identityStampStart = triggerBody.IndexOf(
+            "SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]",
+            StringComparison.Ordinal
+        );
+
+        mirrorGuardStart.Should().BeGreaterThan(0);
+        identityStampStart.Should().BeGreaterThan(mirrorGuardStart);
     }
 
     [Test]
@@ -1676,13 +1791,21 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
                 "the School stamp trigger must mirror captured stamps to the target table"
             );
 
-        const string mirrorJoin = "INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];";
-        var mirrorJoinStart = triggerBody.IndexOf(mirrorJoin, mirrorUpdateStart, StringComparison.Ordinal);
-        mirrorJoinStart.Should().BeGreaterThan(mirrorUpdateStart);
+        // The mirror join terminates the statement, so the slice runs to the end of that line. If a
+        // query hint were ever appended after it, this slice would stop short of the statement's tail
+        // and silently hide whatever the caller asserts about it - which is why the emission test
+        // above pins the absence of "OPTION (".
+        const string statementEnd = "INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];";
+        var statementEndStart = triggerBody.IndexOf(
+            statementEnd,
+            mirrorUpdateStart,
+            StringComparison.Ordinal
+        );
+        statementEndStart.Should().BeGreaterThan(mirrorUpdateStart);
 
         return triggerBody.Substring(
             mirrorUpdateStart,
-            mirrorJoinStart - mirrorUpdateStart + mirrorJoin.Length
+            statementEndStart - mirrorUpdateStart + statementEnd.Length
         );
     }
 }
@@ -3910,7 +4033,21 @@ public class Given_RelationalModelDdlEmitter_With_TrackedChange_Attached_Resourc
         _ddl.Should().Contain("DECLARE @identityChangedDocs TABLE");
         _ddl.Should()
             .Contain("OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs");
-        _ddl.Should().NotContain("UPDATE("); // AC: no UPDATE(col) gating on attached Resource triggers
+
+        // DMS-1127 AC: the IdentityVersion stamp on an attached Resource trigger must not be gated by
+        // UPDATE(col). It captures @identityChangedDocs by null-safe value diff instead, so a
+        // cascade-driven identity change cannot be pre-filtered away and lose its tracked-change row.
+        //
+        // Scoped to that gate's exact shape rather than to "UPDATE( appears anywhere". The blanket
+        // form was equivalent only while nothing else in the DDL emitted UPDATE(; the ContentVersion
+        // stamp is now guarded by "AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE(...))", which is
+        // a different statement with a different safety argument - it can only skip a workset that
+        // would have been empty, and its value diff remains authoritative.
+        _ddl.Should()
+            .NotContain(
+                "IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE(",
+                "the identity stamp must not be gated by UPDATE(col) on attached Resource triggers"
+            );
     }
 
     [Test]

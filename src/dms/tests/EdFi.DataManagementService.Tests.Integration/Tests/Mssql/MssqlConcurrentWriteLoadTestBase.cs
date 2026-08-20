@@ -15,10 +15,30 @@ using Microsoft.Data.SqlClient;
 namespace EdFi.DataManagementService.Tests.Integration.Tests.Mssql;
 
 /// <summary>
+/// A <c>LCK[_]%</c> wait-stats reading: how many tasks waited on a lock, and how long they waited in
+/// total. Named rather than a tuple because the two are both counters of the same shape and Gate C
+/// reads them against different thresholds, so transposing them would produce a plausible number.
+/// </summary>
+public sealed record LockWaitTotals(long WaitingTasks, long WaitTimeMs)
+{
+    /// <summary>
+    /// The growth from <paramref name="before"/> to this reading. Only this load's work when nothing
+    /// else runs against the instance; the underlying counters are instance-wide and cumulative.
+    /// </summary>
+    public LockWaitTotals Since(LockWaitTotals before) =>
+        new(WaitingTasks - before.WaitingTasks, WaitTimeMs - before.WaitTimeMs);
+
+    public override string ToString() => $"{WaitingTasks} lock wait(s), {WaitTimeMs} ms";
+}
+
+/// <summary>
 /// Shared machinery for the concurrency reproductions that drive deliberate lock contention through
 /// the real HTTP pipeline. Both run against a leased database configured the way production
 /// provisioning configures it, classify every response, and report what the database actually
 /// persisted alongside what the engine recorded.
+///
+/// <para>Owns the Extended Events capture session's lifecycle; reading the XML it produces belongs
+/// to <see cref="DeadlockGraphReader"/>, which needs no database and is unit-tested on its own.</para>
 /// </summary>
 public abstract class MssqlConcurrentWriteLoadTestBase : MssqlApiIntegrationTestBase
 {
@@ -125,18 +145,129 @@ public abstract class MssqlConcurrentWriteLoadTestBase : MssqlApiIntegrationTest
     }
 
     /// <summary>
-    /// Counts tasks that have waited on a lock. Its value over a load is a contention signal
-    /// independent of what any request returned: contention the retry pipeline absorbed into
-    /// successful responses still shows up here, which is what makes it usable as the precondition
-    /// for an assertion about response status.
-    ///
-    /// Read it as a floor, not as attribution. The counter is instance-wide and cumulative across
-    /// every database on the server, so a delta is only this load's work when nothing else is
-    /// running against the instance - true for these reproductions, which are
-    /// <see cref="ExplicitAttribute"/> and driven one at a time, but not a property the query can
-    /// enforce.
+    /// Comfortably above the ~4 MB the ring buffer target can render into <c>target_data</c>, so an
+    /// incomplete capture reports itself through <c>truncated</c> rather than through eviction.
     /// </summary>
-    protected static async Task<long> CountLockWaitsAsync()
+    private const int DeadlockRingBufferMaxMemoryKb = 16384;
+
+    /// <summary>
+    /// Events sit in session buffers until dispatch. The session asks for the one-second minimum, so
+    /// this is the wait that makes the read see the load's last graphs.
+    /// </summary>
+    private static readonly TimeSpan DeadlockDispatchDrainDelay = TimeSpan.FromSeconds(2);
+
+    private string? _deadlockSessionName;
+
+    /// <summary>
+    /// Creates and starts an Extended Events session that belongs to this run alone, so its ring
+    /// buffer cannot contain another run's graphs. <see cref="CountDeadlockGraphsAsync"/> reads the
+    /// server-wide <c>system_health</c> buffer instead, which is enough to answer "did deadlocks
+    /// happen at all" but cannot attribute a graph to a run; a differential signature comparison
+    /// needs attribution, so it gets its own session rather than a filter over a shared one.
+    /// </summary>
+    protected async Task StartDeadlockCaptureAsync()
+    {
+        if (_deadlockSessionName is not null)
+        {
+            throw new InvalidOperationException(
+                "A deadlock capture session is already running for this test."
+            );
+        }
+
+        // Recorded before the session exists so a failure between CREATE and START still leaves a
+        // name for the teardown to drop.
+        _deadlockSessionName = $"dms1381_{Guid.NewGuid():N}"[..24];
+        string quotedSessionName = MssqlTestDatabaseHelper.QuoteIdentifier(_deadlockSessionName);
+
+        await MssqlTestDatabaseHelper.ExecuteAdminNonQueryAsync(
+            $"""
+            CREATE EVENT SESSION {quotedSessionName} ON SERVER
+                ADD EVENT sqlserver.xml_deadlock_report
+                ADD TARGET package0.ring_buffer
+                    (SET max_memory = {DeadlockRingBufferMaxMemoryKb}, max_events_limit = 0)
+                WITH (MAX_DISPATCH_LATENCY = 1 SECONDS, STARTUP_STATE = OFF);
+            ALTER EVENT SESSION {quotedSessionName} ON SERVER STATE = START;
+            """
+        );
+    }
+
+    /// <summary>
+    /// Reads this run's graphs, reports them, and drops the session. Reading has to happen while the
+    /// session is still running: <c>sys.dm_xe_sessions</c> lists running sessions only, so stopping
+    /// it first would make <c>target_data</c> unreadable.
+    /// </summary>
+    protected async Task<DeadlockCapture> CaptureDeadlockSignaturesAsync()
+    {
+        if (_deadlockSessionName is null)
+        {
+            throw new InvalidOperationException(
+                $"{nameof(StartDeadlockCaptureAsync)} must run before the load for its graphs to be captured."
+            );
+        }
+
+        string sessionName = _deadlockSessionName;
+        await Task.Delay(DeadlockDispatchDrainDelay);
+
+        var (targetData, droppedEvents) = await ReadDeadlockRingBufferAsync(sessionName);
+        await StopDeadlockCaptureAsync();
+
+        DeadlockCapture capture = targetData is null
+            ? new DeadlockCapture(
+                [],
+                [],
+                0,
+                $"Extended Events session '{sessionName}' was not running when its target was read"
+            )
+            : DeadlockGraphReader.CaptureFromRingBufferTarget(targetData, Harness.DbConnection.Database);
+
+        if (droppedEvents > 0 && !capture.IsInconclusive)
+        {
+            capture = capture with
+            {
+                Signatures = [],
+                InconclusiveReason =
+                    $"the capture session dropped {droppedEvents} event(s) before they reached its target",
+            };
+        }
+
+        await ReportDeadlockCaptureAsync(sessionName, capture);
+        return capture;
+    }
+
+    /// <summary>
+    /// Drops the session if the test never reached <see cref="CaptureDeadlockSignaturesAsync"/>. An
+    /// Extended Events session is server-scoped, so a leaked one outlives the leased database and
+    /// keeps recording for every later test on the instance.
+    /// </summary>
+    [TearDown]
+    public Task DropLeakedDeadlockCaptureSessionAsync() => StopDeadlockCaptureAsync();
+
+    private async Task StopDeadlockCaptureAsync()
+    {
+        if (_deadlockSessionName is null)
+        {
+            return;
+        }
+
+        string quotedSessionName = MssqlTestDatabaseHelper.QuoteIdentifier(_deadlockSessionName);
+        string escapedSessionName = MssqlTestDatabaseHelper.EscapeSqlLiteral(_deadlockSessionName);
+        _deadlockSessionName = null;
+
+        // DROP stops a running session, so there is no separate STATE = STOP step to get wrong -
+        // stopping an already-stopped session is an error.
+        await MssqlTestDatabaseHelper.ExecuteAdminNonQueryAsync(
+            $"""
+            IF EXISTS (SELECT 1 FROM sys.server_event_sessions WHERE [name] = N'{escapedSessionName}')
+            BEGIN
+                DROP EVENT SESSION {quotedSessionName} ON SERVER;
+            END
+            """
+        );
+    }
+
+    private static async Task<(string? TargetData, long DroppedEvents)> ReadDeadlockRingBufferAsync(
+        string sessionName
+    )
     {
         await using var connection = new SqlConnection(
             MssqlTestDatabaseHelper.BuildConnectionString("master")
@@ -144,12 +275,91 @@ public abstract class MssqlConcurrentWriteLoadTestBase : MssqlApiIntegrationTest
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT ISNULL(SUM(waiting_tasks_count), 0)
+            SELECT CAST(xet.target_data AS nvarchar(max)), xes.dropped_event_count
+            FROM sys.dm_xe_sessions xes
+            INNER JOIN sys.dm_xe_session_targets xet
+                ON xet.event_session_address = xes.address
+            WHERE xes.[name] = @sessionName AND xet.target_name = N'ring_buffer';
+            """;
+        command.Parameters.Add(new SqlParameter("@sessionName", sessionName));
+
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
+        {
+            return (null, 0);
+        }
+
+        return (
+            await reader.IsDBNullAsync(0) ? null : reader.GetString(0),
+            await reader.IsDBNullAsync(1) ? 0 : Convert.ToInt64(reader.GetValue(1))
+        );
+    }
+
+    private static async Task ReportDeadlockCaptureAsync(string sessionName, DeadlockCapture capture)
+    {
+        await TestContext.Out.WriteLineAsync(
+            $"=== deadlock capture '{sessionName}': {capture.Graphs.Count} graph(s), "
+                + $"{capture.AttributedGraphCount} attributed to the leased database, "
+                + $"{capture.Signatures.Count} signature(s) ==="
+        );
+
+        if (capture.IsInconclusive)
+        {
+            await TestContext.Out.WriteLineAsync($"--- INCONCLUSIVE: {capture.InconclusiveReason} ---");
+        }
+
+        foreach (string signature in capture.Signatures)
+        {
+            await TestContext.Out.WriteLineAsync($"    {signature}");
+        }
+
+        // The raw graphs are the evidence, and they have to outlive the normalizer that a
+        // differential comparison is trusting.
+        foreach (string graph in capture.Graphs)
+        {
+            await TestContext.Out.WriteLineAsync(graph);
+        }
+    }
+
+    /// <summary>
+    /// Both halves of the <c>LCK[_]%</c> reading: how many tasks waited on a lock, and how long they
+    /// waited in total. Both, because waiting-task count alone does not describe contention - a load
+    /// can trade many short waits for few long ones and leave the count flat - and wait <em>time</em>
+    /// is the field metric: the Northridge run's headline number was <c>LCK_M_U</c> at 4,339,447 ms
+    /// across 4,086 waits, 38x the tempdb latch time.
+    ///
+    /// <para>The growth over a load is a contention signal independent of what any request returned:
+    /// contention the retry pipeline absorbed into successful responses still shows up here, which is
+    /// what makes it usable as the precondition for an assertion about response status.</para>
+    ///
+    /// <para>Read it as a floor, not as attribution. These are instance-wide counters, cumulative
+    /// across every database on the server, so a delta is only this load's work when nothing else is
+    /// running against the instance - true for these reproductions, which are
+    /// <see cref="ExplicitAttribute"/> and driven one at a time, but not a property the query can
+    /// enforce.</para>
+    /// </summary>
+    protected static async Task<LockWaitTotals> CaptureLockWaitsAsync()
+    {
+        await using var connection = new SqlConnection(
+            MssqlTestDatabaseHelper.BuildConnectionString("master")
+        );
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT ISNULL(SUM(waiting_tasks_count), 0), ISNULL(SUM(wait_time_ms), 0)
             FROM sys.dm_os_wait_stats
             WHERE wait_type LIKE 'LCK[_]%';
             """;
 
-        return Convert.ToInt64(await command.ExecuteScalarAsync());
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
+        {
+            throw new InvalidOperationException(
+                "The LCK[_]% wait-stats aggregate returned no row; sys.dm_os_wait_stats was unreadable."
+            );
+        }
+
+        return new LockWaitTotals(reader.GetInt64(0), reader.GetInt64(1));
     }
 
     protected async Task SeedCoreDescriptorsAsync(string ns)

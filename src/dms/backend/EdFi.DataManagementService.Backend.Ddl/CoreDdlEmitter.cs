@@ -1807,57 +1807,83 @@ public sealed class CoreDdlEmitter
             writer.Append("WHERE del.");
             writer.Append(quotedKeyColumn);
             writer.AppendLine(" IS NULL;");
-            writer.AppendLine(";WITH affectedDocs AS (");
+            void EmitContentVersionStamp()
+            {
+                writer.AppendLine(";WITH affectedDocs AS (");
+                using (writer.Indent())
+                {
+                    writer.Append("SELECT i.");
+                    writer.AppendLine(quotedKeyColumn);
+                    writer.AppendLine("FROM inserted i");
+                    writer.Append("LEFT JOIN deleted del ON del.");
+                    writer.Append(quotedKeyColumn);
+                    writer.Append(" = i.");
+                    writer.AppendLine(quotedKeyColumn);
+                    writer.Append("WHERE del.");
+                    writer.Append(quotedKeyColumn);
+                    writer.Append(" IS NOT NULL AND (");
+                    EmitMssqlDescriptorColumnDiffDisjunction(writer, "i", "del");
+                    writer.Append(")");
+                    writer.AppendLine();
+                    // Branches are disjoint (changed updates vs pure deletes), so UNION ALL
+                    // skips the dedup sort.
+                    writer.AppendLine("UNION ALL");
+                    writer.Append("SELECT del.");
+                    writer.AppendLine(quotedKeyColumn);
+                    writer.AppendLine("FROM deleted del");
+                    writer.Append("LEFT JOIN inserted i ON i.");
+                    writer.Append(quotedKeyColumn);
+                    writer.Append(" = del.");
+                    writer.AppendLine(quotedKeyColumn);
+                    writer.Append("WHERE i.");
+                    writer.Append(quotedKeyColumn);
+                    writer.AppendLine(" IS NULL");
+                }
+                writer.AppendLine(")");
+
+                writer.AppendLine("UPDATE d");
+                writer.Append("SET d.");
+                writer.Append(Quote("ContentVersion"));
+                writer.Append(" = NEXT VALUE FOR ");
+                writer.Append(sequenceName);
+                writer.Append(", d.");
+                writer.Append(Quote("ContentLastModifiedAt"));
+                writer.AppendLine(" = sysutcdatetime()");
+                writer.AppendLine(
+                    "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped"
+                );
+                writer.Append("FROM ");
+                writer.Append(documentTable);
+                writer.AppendLine(" d");
+                writer.Append("INNER JOIN affectedDocs a ON d.");
+                writer.Append(quotedKeyColumn);
+                writer.Append(" = a.");
+                writer.Append(quotedKeyColumn);
+                writer.AppendLine(";");
+            }
+
+            // Same predicate the resource root shape carries, for the same two reasons. On a pure
+            // INSERT both affectedDocs branches require a matching deleted row, so the workset is
+            // provably empty while the statement still scans and locks dms.Document to resolve the
+            // join. And the mirror stamp below re-fires this trigger as an UPDATE that sets only
+            // ContentVersion/ContentLastModifiedAt, where deleted is non-empty so EXISTS alone
+            // cannot exclude it - but no stored column appears in that SET clause. Descriptors have
+            // no child collections, so that recursion reaches them only directly, under the
+            // RECURSIVE_TRIGGERS ON configuration the mirror guard below already names.
+            //
+            // UPDATE(col) is a performance pre-filter only: it reports that a column appeared in a
+            // SET clause, not that its value changed. The null-safe diff inside affectedDocs stays
+            // authoritative, and the disjunction covers exactly the columns that diff uses, so the
+            // guard can only skip a statement whose workset would have been empty.
+            writer.Append("IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR ");
+            EmitMssqlDescriptorUpdateColumnDisjunction(writer);
+            writer.AppendLine(")");
+            writer.AppendLine("BEGIN");
             using (writer.Indent())
             {
-                writer.Append("SELECT i.");
-                writer.AppendLine(quotedKeyColumn);
-                writer.AppendLine("FROM inserted i");
-                writer.Append("LEFT JOIN deleted del ON del.");
-                writer.Append(quotedKeyColumn);
-                writer.Append(" = i.");
-                writer.AppendLine(quotedKeyColumn);
-                writer.Append("WHERE del.");
-                writer.Append(quotedKeyColumn);
-                writer.Append(" IS NOT NULL AND (");
-                EmitMssqlDescriptorColumnDiffDisjunction(writer, "i", "del");
-                writer.Append(")");
-                writer.AppendLine();
-                // Branches are disjoint (changed updates vs pure deletes), so UNION ALL
-                // skips the dedup sort.
-                writer.AppendLine("UNION ALL");
-                writer.Append("SELECT del.");
-                writer.AppendLine(quotedKeyColumn);
-                writer.AppendLine("FROM deleted del");
-                writer.Append("LEFT JOIN inserted i ON i.");
-                writer.Append(quotedKeyColumn);
-                writer.Append(" = del.");
-                writer.AppendLine(quotedKeyColumn);
-                writer.Append("WHERE i.");
-                writer.Append(quotedKeyColumn);
-                writer.AppendLine(" IS NULL");
+                EmitContentVersionStamp();
             }
-            writer.AppendLine(")");
-
-            writer.AppendLine("UPDATE d");
-            writer.Append("SET d.");
-            writer.Append(Quote("ContentVersion"));
-            writer.Append(" = NEXT VALUE FOR ");
-            writer.Append(sequenceName);
-            writer.Append(", d.");
-            writer.Append(Quote("ContentLastModifiedAt"));
-            writer.AppendLine(" = sysutcdatetime()");
-            writer.AppendLine(
-                "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped"
-            );
-            writer.Append("FROM ");
-            writer.Append(documentTable);
-            writer.AppendLine(" d");
-            writer.Append("INNER JOIN affectedDocs a ON d.");
-            writer.Append(quotedKeyColumn);
-            writer.Append(" = a.");
-            writer.Append(quotedKeyColumn);
-            writer.AppendLine(";");
+            writer.AppendLine("END");
             // The guard bounds direct recursion: without it the mirror self-UPDATE re-fires
             // this trigger even with an empty workset (statement triggers fire on 0 rows),
             // which recurses to the nesting limit on databases with RECURSIVE_TRIGGERS ON.
@@ -1878,7 +1904,12 @@ public sealed class CoreDdlEmitter
                 writer.AppendLine();
                 writer.Append("FROM ");
                 writer.Append(descriptorTable);
-                writer.AppendLine(" r");
+                // Same reason as the resource mirror stamp: @stamped is a table variable, so the
+                // cached plan reflects the cardinality of whichever firing compiled it, and a plan
+                // that scans dms.Descriptor takes update locks across rows the transaction never
+                // touched. FORCESEEK forbids that scan; the join predicate is an equality on this
+                // table's primary key, so a seek is always available.
+                writer.AppendLine(" r WITH (FORCESEEK)");
                 writer.Append("INNER JOIN @stamped s ON s.");
                 writer.Append(quotedKeyColumn);
                 writer.Append(" = r.");
@@ -1959,6 +1990,26 @@ public sealed class CoreDdlEmitter
                 quotedColumn,
                 _descriptorStoredColumns[i].Kind
             );
+        }
+    }
+
+    /// <summary>
+    /// Emits a MSSQL <c>UPDATE(col)</c> disjunction across the same stored descriptor columns the
+    /// no-op diff uses, as a <b>performance pre-filter only</b> (not a correctness gate).
+    /// <c>UPDATE(col)</c> reports that a column appeared in the SET clause regardless of whether its
+    /// value changed. Mirrors <c>RelationalModelDdlEmitter.EmitMssqlUpdateColumnDisjunction</c>.
+    /// </summary>
+    private void EmitMssqlDescriptorUpdateColumnDisjunction(SqlWriter writer)
+    {
+        for (int i = 0; i < _descriptorStoredColumns.Count; i++)
+        {
+            if (i > 0)
+            {
+                writer.Append(" OR ");
+            }
+            writer.Append("UPDATE(");
+            writer.Append(Quote(_descriptorStoredColumns[i].Column.Value));
+            writer.Append(")");
         }
     }
 

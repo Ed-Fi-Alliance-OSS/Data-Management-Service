@@ -199,66 +199,69 @@ AFTER UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
-    DELETE tbd
-    FROM [auth].[EducationOrganizationIdToEducationOrganizationId] AS tbd
-        INNER JOIN (
-            SELECT d1.[SourceEducationOrganizationId], d2.[TargetEducationOrganizationId]
+    IF UPDATE([StateEducationAgency_EducationOrganizationId])
+    BEGIN
+        DELETE tbd
+        FROM [auth].[EducationOrganizationIdToEducationOrganizationId] AS tbd
+            INNER JOIN (
+                SELECT d1.[SourceEducationOrganizationId], d2.[TargetEducationOrganizationId]
+                FROM (
+                    SELECT tuples.[SourceEducationOrganizationId], new.[EducationOrganizationId]
+                    FROM inserted new
+                        INNER JOIN deleted old
+                            ON old.[EducationOrganizationId] = new.[EducationOrganizationId]
+                        INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
+                            ON old.[StateEducationAgency_EducationOrganizationId] = tuples.[TargetEducationOrganizationId]
+                    WHERE old.[StateEducationAgency_EducationOrganizationId] IS NOT NULL
+                        AND (new.[StateEducationAgency_EducationOrganizationId] IS NULL OR old.[StateEducationAgency_EducationOrganizationId] <> new.[StateEducationAgency_EducationOrganizationId])
+
+                    EXCEPT
+
+                    SELECT tuples.[SourceEducationOrganizationId], new.[EducationOrganizationId]
+                    FROM inserted new
+                        INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
+                            ON new.[StateEducationAgency_EducationOrganizationId] = tuples.[TargetEducationOrganizationId]
+                ) AS d1
+                CROSS JOIN
+                (
+                    SELECT new.[EducationOrganizationId], tuples.[TargetEducationOrganizationId]
+                    FROM inserted new
+                        INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
+                            ON new.[EducationOrganizationId] = tuples.[SourceEducationOrganizationId]
+                ) AS d2
+                WHERE d1.[EducationOrganizationId] = d2.[EducationOrganizationId]
+            ) AS cj
+                ON tbd.[SourceEducationOrganizationId] = cj.[SourceEducationOrganizationId]
+                AND tbd.[TargetEducationOrganizationId] = cj.[TargetEducationOrganizationId];
+
+        MERGE INTO [auth].[EducationOrganizationIdToEducationOrganizationId] target
+        USING (
+            SELECT sources.[SourceEducationOrganizationId], targets.[TargetEducationOrganizationId]
             FROM (
                 SELECT tuples.[SourceEducationOrganizationId], new.[EducationOrganizationId]
                 FROM inserted new
                     INNER JOIN deleted old
-                        ON old.[EducationOrganizationId] = new.[EducationOrganizationId]
-                    INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
-                        ON old.[StateEducationAgency_EducationOrganizationId] = tuples.[TargetEducationOrganizationId]
-                WHERE old.[StateEducationAgency_EducationOrganizationId] IS NOT NULL
-                    AND (new.[StateEducationAgency_EducationOrganizationId] IS NULL OR old.[StateEducationAgency_EducationOrganizationId] <> new.[StateEducationAgency_EducationOrganizationId])
-
-                EXCEPT
-
-                SELECT tuples.[SourceEducationOrganizationId], new.[EducationOrganizationId]
-                FROM inserted new
+                        ON new.[EducationOrganizationId] = old.[EducationOrganizationId]
                     INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
                         ON new.[StateEducationAgency_EducationOrganizationId] = tuples.[TargetEducationOrganizationId]
-            ) AS d1
+                WHERE (old.[StateEducationAgency_EducationOrganizationId] IS NULL AND new.[StateEducationAgency_EducationOrganizationId] IS NOT NULL)
+                    OR old.[StateEducationAgency_EducationOrganizationId] <> new.[StateEducationAgency_EducationOrganizationId]
+            ) AS sources
             CROSS JOIN
             (
                 SELECT new.[EducationOrganizationId], tuples.[TargetEducationOrganizationId]
                 FROM inserted new
                     INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
                         ON new.[EducationOrganizationId] = tuples.[SourceEducationOrganizationId]
-            ) AS d2
-            WHERE d1.[EducationOrganizationId] = d2.[EducationOrganizationId]
-        ) AS cj
-            ON tbd.[SourceEducationOrganizationId] = cj.[SourceEducationOrganizationId]
-            AND tbd.[TargetEducationOrganizationId] = cj.[TargetEducationOrganizationId];
-
-    MERGE INTO [auth].[EducationOrganizationIdToEducationOrganizationId] target
-    USING (
-        SELECT sources.[SourceEducationOrganizationId], targets.[TargetEducationOrganizationId]
-        FROM (
-            SELECT tuples.[SourceEducationOrganizationId], new.[EducationOrganizationId]
-            FROM inserted new
-                INNER JOIN deleted old
-                    ON new.[EducationOrganizationId] = old.[EducationOrganizationId]
-                INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
-                    ON new.[StateEducationAgency_EducationOrganizationId] = tuples.[TargetEducationOrganizationId]
-            WHERE (old.[StateEducationAgency_EducationOrganizationId] IS NULL AND new.[StateEducationAgency_EducationOrganizationId] IS NOT NULL)
-                OR old.[StateEducationAgency_EducationOrganizationId] <> new.[StateEducationAgency_EducationOrganizationId]
-        ) AS sources
-        CROSS JOIN
-        (
-            SELECT new.[EducationOrganizationId], tuples.[TargetEducationOrganizationId]
-            FROM inserted new
-                INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
-                    ON new.[EducationOrganizationId] = tuples.[SourceEducationOrganizationId]
-        ) AS targets
-        WHERE sources.[EducationOrganizationId] = targets.[EducationOrganizationId]
-    ) AS source
-        ON target.[SourceEducationOrganizationId] = source.[SourceEducationOrganizationId]
-        AND target.[TargetEducationOrganizationId] = source.[TargetEducationOrganizationId]
-    WHEN NOT MATCHED BY TARGET THEN
-        INSERT ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
-        VALUES (source.[SourceEducationOrganizationId], source.[TargetEducationOrganizationId]);
+            ) AS targets
+            WHERE sources.[EducationOrganizationId] = targets.[EducationOrganizationId]
+        ) AS source
+            ON target.[SourceEducationOrganizationId] = source.[SourceEducationOrganizationId]
+            AND target.[TargetEducationOrganizationId] = source.[TargetEducationOrganizationId]
+        WHEN NOT MATCHED BY TARGET THEN
+            INSERT ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
+            VALUES (source.[SourceEducationOrganizationId], source.[TargetEducationOrganizationId]);
+    END
 END;
 GO
 
@@ -319,28 +322,31 @@ BEGIN
     INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
     LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
     WHERE del.[DocumentId] IS NULL;
-    ;WITH affectedDocs AS (
-        SELECT i.[DocumentId]
-        FROM inserted i
-        LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganizationId] <> del.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND del.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND del.[EducationOrganizationId] IS NULL)) OR (i.[StateEducationAgency_EducationOrganizationId] <> del.[StateEducationAgency_EducationOrganizationId] OR (i.[StateEducationAgency_EducationOrganizationId] IS NULL AND del.[StateEducationAgency_EducationOrganizationId] IS NOT NULL) OR (i.[StateEducationAgency_EducationOrganizationId] IS NOT NULL AND del.[StateEducationAgency_EducationOrganizationId] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
-    )
-    UPDATE d
-    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
-    OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
-    FROM [dms].[Document] d
-    INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
+    IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE([DocumentId]) OR UPDATE([EducationOrganizationId]) OR UPDATE([StateEducationAgency_EducationOrganizationId]))
+    BEGIN
+        ;WITH affectedDocs AS (
+            SELECT i.[DocumentId]
+            FROM inserted i
+            LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+            WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganizationId] <> del.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND del.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND del.[EducationOrganizationId] IS NULL)) OR (i.[StateEducationAgency_EducationOrganizationId] <> del.[StateEducationAgency_EducationOrganizationId] OR (i.[StateEducationAgency_EducationOrganizationId] IS NULL AND del.[StateEducationAgency_EducationOrganizationId] IS NOT NULL) OR (i.[StateEducationAgency_EducationOrganizationId] IS NOT NULL AND del.[StateEducationAgency_EducationOrganizationId] IS NULL)))
+            UNION ALL
+            SELECT del.[DocumentId]
+            FROM deleted del
+            LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
+            WHERE i.[DocumentId] IS NULL
+        )
+        UPDATE d
+        SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
+        FROM [dms].[Document] d
+        INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
+    END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[LocalEducationAgency] r
+        FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([EducationOrganizationId]))
@@ -476,28 +482,31 @@ BEGIN
     INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
     LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
     WHERE del.[DocumentId] IS NULL;
-    ;WITH affectedDocs AS (
-        SELECT i.[DocumentId]
-        FROM inserted i
-        LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganizationId] <> del.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND del.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND del.[EducationOrganizationId] IS NULL)))
-        UNION ALL
-        SELECT del.[DocumentId]
-        FROM deleted del
-        LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-        WHERE i.[DocumentId] IS NULL
-    )
-    UPDATE d
-    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
-    OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
-    FROM [dms].[Document] d
-    INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
+    IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE([DocumentId]) OR UPDATE([EducationOrganizationId]))
+    BEGIN
+        ;WITH affectedDocs AS (
+            SELECT i.[DocumentId]
+            FROM inserted i
+            LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+            WHERE del.[DocumentId] IS NOT NULL AND ((i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (i.[EducationOrganizationId] <> del.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND del.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND del.[EducationOrganizationId] IS NULL)))
+            UNION ALL
+            SELECT del.[DocumentId]
+            FROM deleted del
+            LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
+            WHERE i.[DocumentId] IS NULL
+        )
+        UPDATE d
+        SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
+        FROM [dms].[Document] d
+        INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
+    END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
             r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[StateEducationAgency] r
+        FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([EducationOrganizationId]))
