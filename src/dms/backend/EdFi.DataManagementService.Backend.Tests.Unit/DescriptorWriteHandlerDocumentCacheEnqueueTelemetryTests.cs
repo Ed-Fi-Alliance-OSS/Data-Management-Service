@@ -405,7 +405,7 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
         sessionFactory.Session.Executor.ExceptionsToThrow.Enqueue(null);
         sessionFactory.Session.Executor.ExceptionsToThrow.Enqueue(
-            new StubDbException("command timeout while inserting into dms.DocumentProjectionWork")
+            new StubDbException("command timeout while applying canonical descriptor write")
         );
         var telemetry = new RecordingDocumentCacheEnqueueTelemetry(
             () => sessionFactory.Session.CommitCallCount,
@@ -441,6 +441,53 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
         telemetry.Failures.Should().ContainSingle();
         telemetry.Failures[0].Category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderTimeout);
+    }
+
+    [Test]
+    public async Task It_records_descriptor_enqueue_provider_unavailable_without_enqueue_artifacts()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService();
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.Executor.ExceptionsToThrow.Enqueue(null);
+        sessionFactory.Session.Executor.ExceptionsToThrow.Enqueue(
+            new StubDbException("connection reset while applying canonical descriptor write")
+        );
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry(
+            () => sessionFactory.Session.CommitCallCount,
+            () => sessionFactory.Session.RollbackCallCount
+        );
+        var sut = CreateSut(
+            targetLookupService,
+            sessionFactory,
+            telemetry,
+            writeExceptionClassifier: new TransientRelationalWriteExceptionClassifier()
+        );
+        var mappingSet = CreateMappingSet(SqlDialect.Pgsql);
+        targetLookupService.PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(
+            345L,
+            documentUuid,
+            44L
+        );
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([
+            CreatePersistedDescriptorResultSet(description: "Previous Description"),
+        ]);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(45L)]);
+
+        var result = await sut.HandlePutAsync(
+            CreatePutRequest(mappingSet, documentUuid, description: "Updated Description")
+        );
+
+        result.Should().BeOfType<UpdateResult.UpdateFailureWriteConflict>();
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+        telemetry.Failures.Should().ContainSingle();
+        telemetry.Failures[0].Category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderUnavailable);
+        telemetry
+            .Failures[0]
+            .Context.ResourceKind.Should()
+            .Be(DocumentCacheEnqueueTelemetryResourceKind.Descriptor);
     }
 
     [Test]

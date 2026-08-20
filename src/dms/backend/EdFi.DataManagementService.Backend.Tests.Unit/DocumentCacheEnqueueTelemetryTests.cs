@@ -565,7 +565,7 @@ public class Given_DocumentCacheEnqueueTelemetry
     }
 
     [Test]
-    public void It_does_not_record_provider_unavailable_write_boundary_failures_without_enqueue_artifacts()
+    public void It_records_provider_unavailable_write_boundary_failures_without_enqueue_artifacts()
     {
         using MetricCollector collector = new();
         DocumentCacheTargetObservation target = ResolvedTarget(TargetKey);
@@ -588,8 +588,20 @@ public class Given_DocumentCacheEnqueueTelemetry
             new StubDbException("connection reset while opening the provider connection")
         );
 
-        telemetry.GetFailureSnapshot(TargetKey).RecentEvents.Should().BeEmpty();
-        collector.MeasurementsFor(DocumentCacheEnqueueTelemetry.FailureCounterName).Should().BeEmpty();
+        DocumentCacheEnqueueFailureSnapshot snapshot = telemetry.GetFailureSnapshot(TargetKey);
+        snapshot.RecentEvents.Should().ContainSingle();
+        snapshot
+            .RecentEvents[0]
+            .Category.Should()
+            .Be(DocumentCacheEnqueueFailureCategory.ProviderUnavailable);
+
+        MetricMeasurement failure = collector
+            .MeasurementsFor(DocumentCacheEnqueueTelemetry.FailureCounterName)
+            .Should()
+            .ContainSingle()
+            .Which;
+        failure.Tags["category"].Should().Be("providerUnavailable");
+        failure.Tags["target"].Should().Be(TargetLabel);
     }
 
     [TestCase(
@@ -708,7 +720,7 @@ public class Given_DocumentCacheEnqueueTelemetry
     }
 
     [Test]
-    public void It_does_not_classify_provider_command_timeouts_without_enqueue_artifacts()
+    public void It_classifies_provider_command_timeouts_without_enqueue_artifacts()
     {
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             new StubDbException("command timeout while applying the canonical write"),
@@ -716,8 +728,8 @@ public class Given_DocumentCacheEnqueueTelemetry
             out DocumentCacheEnqueueFailureCategory category
         );
 
-        classified.Should().BeFalse();
-        category.Should().Be(default(DocumentCacheEnqueueFailureCategory));
+        classified.Should().BeTrue();
+        category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderTimeout);
     }
 
     [Test]
@@ -773,7 +785,7 @@ public class Given_DocumentCacheEnqueueTelemetry
     }
 
     [Test]
-    public void It_does_not_classify_provider_unavailable_failures_without_enqueue_artifacts()
+    public void It_classifies_provider_unavailable_failures_without_enqueue_artifacts()
     {
         bool classified = DocumentCacheEnqueueFailureClassifier.TryClassify(
             new StubDbException("connection refused while opening the provider connection"),
@@ -781,8 +793,8 @@ public class Given_DocumentCacheEnqueueTelemetry
             out DocumentCacheEnqueueFailureCategory category
         );
 
-        classified.Should().BeFalse();
-        category.Should().Be(default(DocumentCacheEnqueueFailureCategory));
+        classified.Should().BeTrue();
+        category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderUnavailable);
     }
 
     [Test]

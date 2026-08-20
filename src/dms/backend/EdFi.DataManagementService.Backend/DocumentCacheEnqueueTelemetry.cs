@@ -614,21 +614,19 @@ internal static class DocumentCacheEnqueueFailureClassifier
             return true;
         }
 
-        bool hasEnqueueArtifactEvidence = HasEnqueueArtifactEvidence(classificationText);
-
-        if (
-            hasEnqueueArtifactEvidence && providerCommandTimeoutClassifier.IsProviderCommandTimeout(exception)
-        )
+        if (providerCommandTimeoutClassifier.IsProviderCommandTimeout(exception))
         {
             category = DocumentCacheEnqueueFailureCategory.ProviderTimeout;
             return true;
         }
 
-        if (hasEnqueueArtifactEvidence && IsProviderUnavailable(classificationText))
+        if (IsProviderUnavailable(classificationText))
         {
             category = DocumentCacheEnqueueFailureCategory.ProviderUnavailable;
             return true;
         }
+
+        bool hasEnqueueArtifactEvidence = HasEnqueueArtifactEvidence(classificationText);
 
         if (
             ContainsAny(classificationText, EnqueueFunctionNames)
@@ -653,8 +651,8 @@ internal static class DocumentCacheEnqueueFailureClassifier
 
         // A provider exception at the canonical write boundary is not automatically an enqueue
         // failure. Ordinary write-rule failures are mapped by RelationalWriteDatabaseFailureResultMapper
-        // and must not pollute DocumentCache enqueue telemetry unless the provider message names a
-        // known enqueue artifact above.
+        // and must not pollute DocumentCache enqueue telemetry unless they are provider-wide
+        // timeout/unavailable failures or the provider message names a known enqueue artifact above.
         category = default;
         return false;
     }

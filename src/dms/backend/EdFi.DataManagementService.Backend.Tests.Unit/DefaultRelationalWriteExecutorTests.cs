@@ -470,7 +470,7 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public async Task It_does_not_record_DocumentCacheEnqueueTelemetry_provider_timeout_without_enqueue_artifacts()
+    public async Task It_records_DocumentCacheEnqueueTelemetry_provider_timeout_without_enqueue_artifacts()
     {
         var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
         _sut = CreateExecutor(
@@ -505,7 +505,48 @@ public class Given_Default_Relational_Write_Executor
             .BeEquivalentTo(
                 new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureWriteConflict())
             );
-        telemetry.Failures.Should().BeEmpty();
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        telemetry.Failures.Should().ContainSingle();
+        telemetry.Failures[0].Category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderTimeout);
+        telemetry.Failures[0].Context.TargetKey.Should().Be(DocumentCacheTelemetryTargetKey);
+    }
+
+    [Test]
+    public async Task It_records_DocumentCacheEnqueueTelemetry_provider_unavailable_without_enqueue_artifacts()
+    {
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry()
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException(
+            "connection reset while applying the canonical write"
+        );
+        _writeExceptionClassifier.IsTransientFailureToReturn = true;
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureWriteConflict())
+            );
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        telemetry.Failures.Should().ContainSingle();
+        telemetry.Failures[0].Category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderUnavailable);
+        telemetry.Failures[0].Context.TargetKey.Should().Be(DocumentCacheTelemetryTargetKey);
     }
 
     [Test]
