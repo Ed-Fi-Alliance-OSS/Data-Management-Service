@@ -470,12 +470,11 @@ public static class DocumentCacheStatusClassifier
 
         return runtimeObservation.Status switch
         {
-            DocumentCacheStatusExecutionState.Cancelling or DocumentCacheStatusExecutionState.Cancelled =>
-                DocumentCacheStatusProcessEligibility.Ineligible(
-                    DocumentCacheStatusReason.RuntimeCancelled,
-                    runtimeObservation.Message
-                        ?? "Current-generation DocumentCache projection runtime is cancelled."
-                ),
+            DocumentCacheStatusExecutionState.Cancelled => DocumentCacheStatusProcessEligibility.Ineligible(
+                DocumentCacheStatusReason.RuntimeCancelled,
+                runtimeObservation.Message
+                    ?? "Current-generation DocumentCache projection runtime is cancelled."
+            ),
             DocumentCacheStatusExecutionState.TargetBackoff =>
                 DocumentCacheStatusProcessEligibility.Ineligible(
                     DocumentCacheStatusReason.TargetBackoff,

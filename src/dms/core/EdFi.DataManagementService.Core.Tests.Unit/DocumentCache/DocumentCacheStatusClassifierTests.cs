@@ -416,6 +416,69 @@ public class DocumentCacheStatusClassifierTests
         result.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.ProviderObservationFailed);
     }
 
+    [Test]
+    public void It_keeps_cancelling_runtime_eligible_for_durable_observation()
+    {
+        DocumentCacheStatusClassificationResult result = Classify(
+            EligibleTarget(),
+            new DocumentCacheStatusRuntimeObservation(
+                DocumentCacheStatusExecutionState.Cancelling,
+                ProcessObservedAt,
+                message: "Runtime cancellation is in flight."
+            ),
+            DocumentCacheStatusDurableObservation.Success(
+                DocumentCacheLifecycleState.Tracking,
+                cacheAheadRecoveryRequired: false,
+                DocumentCacheStatusQueuePresence.NotEmpty,
+                OldestWorkFirstEnqueuedAt,
+                oldestWorkAgeSeconds: 300,
+                DurableObservedAt
+            )
+        );
+
+        result.ProcessEligibility.Status.Should().Be(DocumentCacheStatusProcessEligibilityStatus.Eligible);
+        result.DurableObservedAt.Should().Be(DurableObservedAt);
+        result.Lifecycle.State.Should().Be(DocumentCacheStatusLifecycleState.Tracking);
+        result.Lifecycle.Availability.Should().Be(DocumentCacheStatusAvailability.Available);
+        result.CacheAhead.State.Should().Be(DocumentCacheStatusCacheAheadState.Clear);
+        result.QueueSummary.Presence.Should().Be(DocumentCacheStatusQueuePresence.NotEmpty);
+        result.OperationalHealth.Status.Should().Be(DocumentCacheOperationalHealthStatus.Operational);
+        result.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.None);
+        result.CaughtUp.Status.Should().Be(DocumentCacheCaughtUpStatus.NotCaughtUp);
+        result.CaughtUp.Reason.Should().Be(DocumentCacheStatusReason.QueueNotEmpty);
+    }
+
+    [Test]
+    public void It_classifies_cancelled_runtime_as_process_failure()
+    {
+        DocumentCacheStatusClassificationResult result = Classify(
+            EligibleTarget(),
+            new DocumentCacheStatusRuntimeObservation(
+                DocumentCacheStatusExecutionState.Cancelled,
+                ProcessObservedAt,
+                message: "Runtime cancellation completed."
+            ),
+            DocumentCacheStatusDurableObservation.Success(
+                DocumentCacheLifecycleState.Tracking,
+                cacheAheadRecoveryRequired: false,
+                DocumentCacheStatusQueuePresence.Empty,
+                oldestWorkFirstEnqueuedAt: null,
+                oldestWorkAgeSeconds: null,
+                DurableObservedAt
+            )
+        );
+
+        result.ProcessEligibility.Status.Should().Be(DocumentCacheStatusProcessEligibilityStatus.Ineligible);
+        result.ProcessEligibility.Reason.Should().Be(DocumentCacheStatusReason.RuntimeCancelled);
+        result.DurableObservedAt.Should().BeNull();
+        result.Lifecycle.Availability.Should().Be(DocumentCacheStatusAvailability.Unavailable);
+        result.QueueSummary.Presence.Should().Be(DocumentCacheStatusQueuePresence.Unavailable);
+        result.OperationalHealth.Status.Should().Be(DocumentCacheOperationalHealthStatus.NonOperational);
+        result.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.RuntimeCancelled);
+        result.CaughtUp.Status.Should().Be(DocumentCacheCaughtUpStatus.NotCaughtUp);
+        result.CaughtUp.Reason.Should().Be(DocumentCacheStatusReason.RuntimeCancelled);
+    }
+
     [TestCaseSource(nameof(ProcessPrecedenceCases))]
     public void It_applies_process_reason_precedence(DocumentCacheStatusReason expectedReason)
     {

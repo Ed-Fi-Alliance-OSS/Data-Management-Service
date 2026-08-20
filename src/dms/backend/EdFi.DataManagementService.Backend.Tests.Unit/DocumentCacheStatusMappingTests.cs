@@ -181,8 +181,16 @@ public class Given_DocumentCacheStatusMapping
             .Equal("2026-08-17T14:00:12Z", "2026-08-17T14:00:22Z");
     }
 
-    [Test]
-    public async Task It_maps_requested_runtime_cancellation_to_cancelling()
+    [TestCase(
+        true,
+        false,
+        TestName = "It_maps_active_processing_cancellation_to_cancelling_with_durable_facts"
+    )]
+    [TestCase(false, true, TestName = "It_maps_worker_gate_cancellation_to_cancelling_with_durable_facts")]
+    public async Task It_maps_active_runtime_cancellation_to_cancelling_with_durable_facts(
+        bool isActivelyProcessing,
+        bool isWaitingForWorkerGate
+    )
     {
         DocumentCacheTargetObservation target = ResolvedTarget(generation: 3);
         DocumentCacheProjectionObservationStore observationStore = new(
@@ -193,12 +201,12 @@ public class Given_DocumentCacheStatusMapping
                 target,
                 executionState: new DocumentCacheProjectionExecutionStateSnapshot(
                     isRunning: true,
-                    isActivelyProcessing: false,
-                    isWaitingForWorkerGate: false,
+                    isActivelyProcessing,
+                    isWaitingForWorkerGate,
                     isInBackoff: false,
                     backoffUntil: null,
                     cancellationRequested: true,
-                    cancellationObservedAt: null
+                    cancellationObservedAt: RuntimeObservedAt
                 )
             )
         );
@@ -212,12 +220,19 @@ public class Given_DocumentCacheStatusMapping
 
         statusTarget.ExecutionState.Status.Should().Be(DocumentCacheStatusExecutionState.Cancelling);
         root["executionState"]!["status"]!.GetValue<string>().Should().Be("cancelling");
-        statusTarget.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.RuntimeCancelled);
-        statusTarget.CaughtUp.Reason.Should().Be(DocumentCacheStatusReason.RuntimeCancelled);
+        statusTarget.DurableObservedAt.Should().Be(DurableObservedAt);
+        statusTarget.Lifecycle.State.Should().Be(DocumentCacheStatusLifecycleState.Tracking);
+        statusTarget.Lifecycle.Availability.Should().Be(DocumentCacheStatusAvailability.Available);
+        statusTarget.CacheAhead.State.Should().Be(DocumentCacheStatusCacheAheadState.Clear);
+        statusTarget.QueueSummary.Presence.Should().Be(DocumentCacheStatusQueuePresence.Empty);
+        statusTarget.OperationalHealth.Status.Should().Be(DocumentCacheOperationalHealthStatus.Operational);
+        statusTarget.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.None);
+        statusTarget.CaughtUp.Status.Should().Be(DocumentCacheCaughtUpStatus.CaughtUp);
+        statusTarget.CaughtUp.Reason.Should().Be(DocumentCacheStatusReason.None);
     }
 
     [Test]
-    public async Task It_maps_observed_runtime_cancellation_to_cancelled()
+    public async Task It_maps_terminal_runtime_cancellation_to_cancelled()
     {
         DocumentCacheTargetObservation target = ResolvedTarget(generation: 3);
         DocumentCacheProjectionObservationStore observationStore = new(
@@ -227,7 +242,7 @@ public class Given_DocumentCacheStatusMapping
             TargetHealth(
                 target,
                 executionState: new DocumentCacheProjectionExecutionStateSnapshot(
-                    isRunning: true,
+                    isRunning: false,
                     isActivelyProcessing: false,
                     isWaitingForWorkerGate: false,
                     isInBackoff: false,
@@ -247,6 +262,9 @@ public class Given_DocumentCacheStatusMapping
 
         statusTarget.ExecutionState.Status.Should().Be(DocumentCacheStatusExecutionState.Cancelled);
         root["executionState"]!["status"]!.GetValue<string>().Should().Be("cancelled");
+        statusTarget.DurableObservedAt.Should().BeNull();
+        statusTarget.Lifecycle.Availability.Should().Be(DocumentCacheStatusAvailability.Unavailable);
+        statusTarget.QueueSummary.Presence.Should().Be(DocumentCacheStatusQueuePresence.Unavailable);
         statusTarget.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.RuntimeCancelled);
         statusTarget.CaughtUp.Reason.Should().Be(DocumentCacheStatusReason.RuntimeCancelled);
     }
@@ -337,19 +355,19 @@ public class Given_DocumentCacheStatusMapping
             expectedState: DocumentCacheStatusExecutionState.Cancelling,
             executionState: new DocumentCacheProjectionExecutionStateSnapshot(
                 isRunning: true,
-                isActivelyProcessing: false,
+                isActivelyProcessing: true,
                 isWaitingForWorkerGate: false,
                 isInBackoff: false,
                 backoffUntil: null,
                 cancellationRequested: true,
-                cancellationObservedAt: null
+                cancellationObservedAt: RuntimeObservedAt
             )
         );
         AddTarget(
             dataStoreId: 8,
             expectedState: DocumentCacheStatusExecutionState.Cancelled,
             executionState: new DocumentCacheProjectionExecutionStateSnapshot(
-                isRunning: true,
+                isRunning: false,
                 isActivelyProcessing: false,
                 isWaitingForWorkerGate: false,
                 isInBackoff: false,

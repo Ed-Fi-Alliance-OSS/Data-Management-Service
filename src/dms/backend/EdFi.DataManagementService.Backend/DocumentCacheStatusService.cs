@@ -853,12 +853,21 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
     {
         DocumentCacheProjectionExecutionStateSnapshot executionState = targetHealth.ExecutionState;
 
-        if (executionState.CancellationObservedAt is not null)
+        if (executionState.CancellationRequested)
         {
+            if (
+                executionState.CancellationObservedAt is null
+                || executionState.IsActivelyProcessing
+                || executionState.IsWaitingForWorkerGate
+            )
+            {
+                return DocumentCacheStatusExecutionState.Cancelling;
+            }
+
             return DocumentCacheStatusExecutionState.Cancelled;
         }
 
-        if (executionState.CancellationRequested)
+        if (executionState.CancellationObservedAt is not null)
         {
             return DocumentCacheStatusExecutionState.Cancelling;
         }
