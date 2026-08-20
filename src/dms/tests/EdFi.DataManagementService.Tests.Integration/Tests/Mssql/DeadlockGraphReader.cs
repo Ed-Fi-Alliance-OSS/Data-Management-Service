@@ -40,9 +40,11 @@ public sealed record DeadlockCapture(
 public static class DeadlockGraphReader
 {
     /// <summary>
-    /// Returned in place of a signature list for a graph whose XML did not parse. A malformed graph
-    /// must not reduce to "no signatures": that is the same silent under-reporting the truncation
-    /// check exists to prevent, and it biases a differential comparison toward a false pass.
+    /// Returned in place of a signature list for any graph this reader could not reduce to tuples -
+    /// XML that did not parse, and XML that parsed but described no locked resource with a
+    /// participant. Neither must reduce to "no signatures": that is the same silent under-reporting
+    /// the truncation check exists to prevent, and it biases a differential comparison toward a false
+    /// pass.
     /// </summary>
     public const string UnparsableGraphSignature = "(unparsable deadlock graph)";
 
@@ -199,7 +201,14 @@ public static class DeadlockGraphReader
             }
         }
 
-        return [.. signatures.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
+        // Reached when the XML parsed but carried nothing to describe: no resource-list, an empty
+        // one, or resources with no owner or waiter. Every real graph names at least one locked
+        // resource with at least one participant, so returning an empty list here would only ever
+        // report a graph the reader failed to understand as a run that deadlocked less - the same
+        // false pass the parse failure above refuses.
+        return signatures.Count == 0
+            ? [UnparsableGraphSignature]
+            : [.. signatures.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
     }
 
     /// <summary>

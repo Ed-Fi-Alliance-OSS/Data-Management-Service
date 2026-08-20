@@ -737,12 +737,17 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     public async Task It_should_stamp_every_document_when_one_statement_produces_a_multi_row_mirror_workset()
     {
         // The mirror stamp is hinted WITH (FORCESEEK), which forbids a scan of the mirror table and
-        // so constrains the plan to one seek per @stamped row. Every other write in this fixture
-        // drives a single row per statement, which never exercises that plan shape. It matters
-        // because SQL Server does not fall back when it cannot honor the hint - it fails the
-        // statement with error 8622 - and because a multi-row workset is what a cascade fan-out or a
-        // bulk delete produces in production. One UPDATE across many root rows yields one trigger
-        // firing whose @stamped carries all of them.
+        // so constrains the plan to one seek per @stamped row. It matters because SQL Server does not
+        // fall back when it cannot honor the hint - it fails the statement with error 8622 - and
+        // because a multi-row workset is what a cascade fan-out or a bulk delete produces in
+        // production. One UPDATE across many root rows yields one trigger firing whose @stamped
+        // carries all of them.
+        //
+        // Not redundant with It_should_allocate_distinct_content_versions_for_multi_row_root_updates,
+        // which also drives a multi-row statement: that test reads only dms.Document, so nothing in
+        // it would notice the mirror UPDATE landing on some rows of @stamped and not others. This one
+        // asserts the mirror per document. The workset is also deliberately larger than two, so a
+        // plan built on the table variable's fixed one-row estimate is unambiguously wrong for it.
         const int AdditionalContacts = 10;
         var contactResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Contact");
 

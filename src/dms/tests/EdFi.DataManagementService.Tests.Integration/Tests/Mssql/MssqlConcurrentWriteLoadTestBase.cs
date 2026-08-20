@@ -322,42 +322,21 @@ public abstract class MssqlConcurrentWriteLoadTestBase : MssqlApiIntegrationTest
     }
 
     /// <summary>
-    /// Counts tasks that have waited on a lock. Its value over a load is a contention signal
-    /// independent of what any request returned: contention the retry pipeline absorbed into
-    /// successful responses still shows up here, which is what makes it usable as the precondition
-    /// for an assertion about response status.
+    /// Both halves of the <c>LCK[_]%</c> reading: how many tasks waited on a lock, and how long they
+    /// waited in total. Both, because waiting-task count alone does not describe contention - a load
+    /// can trade many short waits for few long ones and leave the count flat - and wait <em>time</em>
+    /// is the field metric: the Northridge run's headline number was <c>LCK_M_U</c> at 4,339,447 ms
+    /// across 4,086 waits, 38x the tempdb latch time.
     ///
-    /// Read it as a floor, not as attribution. The counter is instance-wide and cumulative across
-    /// every database on the server, so a delta is only this load's work when nothing else is
+    /// <para>The growth over a load is a contention signal independent of what any request returned:
+    /// contention the retry pipeline absorbed into successful responses still shows up here, which is
+    /// what makes it usable as the precondition for an assertion about response status.</para>
+    ///
+    /// <para>Read it as a floor, not as attribution. These are instance-wide counters, cumulative
+    /// across every database on the server, so a delta is only this load's work when nothing else is
     /// running against the instance - true for these reproductions, which are
     /// <see cref="ExplicitAttribute"/> and driven one at a time, but not a property the query can
-    /// enforce.
-    /// </summary>
-    protected static async Task<long> CountLockWaitsAsync()
-    {
-        await using var connection = new SqlConnection(
-            MssqlTestDatabaseHelper.BuildConnectionString("master")
-        );
-        await connection.OpenAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT ISNULL(SUM(waiting_tasks_count), 0)
-            FROM sys.dm_os_wait_stats
-            WHERE wait_type LIKE 'LCK[_]%';
-            """;
-
-        return Convert.ToInt64(await command.ExecuteScalarAsync());
-    }
-
-    /// <summary>
-    /// Both halves of the lock-wait reading, because waiting-task count alone does not describe
-    /// contention: a load can trade many short waits for few long ones and leave the count flat.
-    /// Wait <em>time</em> is the field metric - the Northridge run's headline number was
-    /// <c>LCK_M_U</c> at 4,339,447 ms across 4,086 waits, 38x the tempdb latch time - and
-    /// <see cref="CountLockWaitsAsync"/> returns the count only.
-    ///
-    /// Carries the same caveat as that method: these are instance-wide cumulative counters, so a
-    /// delta is only this load's work when nothing else is running against the instance.
+    /// enforce.</para>
     /// </summary>
     protected static async Task<LockWaitTotals> CaptureLockWaitsAsync()
     {

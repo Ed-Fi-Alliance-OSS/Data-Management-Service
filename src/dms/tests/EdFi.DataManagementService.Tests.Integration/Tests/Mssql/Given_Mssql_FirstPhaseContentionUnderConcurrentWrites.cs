@@ -48,7 +48,7 @@ public sealed class Given_Mssql_FirstPhaseContentionUnderConcurrentWrites : Mssq
         string schoolPath = await CreateSchoolAsync(ns, schoolId, suffix);
         string[] childPaths = await CreateSharedChildrenAsync(ns, schoolId, suffix);
 
-        long lockWaitsBefore = await CountLockWaitsAsync();
+        LockWaitTotals lockWaitsBefore = await CaptureLockWaitsAsync();
 
         ConcurrentBag<(int Status, string Body)> responses = [];
 
@@ -126,10 +126,10 @@ public sealed class Given_Mssql_FirstPhaseContentionUnderConcurrentWrites : Mssq
         await Task.WhenAll(updateSchool.Concat(insertChildren).Concat(updateChildren));
 
         var failures = responses.Where(response => response.Status is not (200 or 201 or 204)).ToArray();
-        long lockWaits = await CountLockWaitsAsync() - lockWaitsBefore;
+        LockWaitTotals lockWaits = (await CaptureLockWaitsAsync()).Since(lockWaitsBefore);
 
         await ReportFailuresAsync(
-            $"=== {responses.Count} attempts, {failures.Length} failed; {lockWaits} lock wait(s) ===",
+            $"=== {responses.Count} attempts, {failures.Length} failed; {lockWaits} ===",
             failures
         );
 
@@ -155,7 +155,7 @@ public sealed class Given_Mssql_FirstPhaseContentionUnderConcurrentWrites : Mssq
             // signal visible to an HTTP client separates that from a run where the mapping under
             // test was exercised. Read the printed report, not just the green result.
             lockWaits
-                .Should()
+                .WaitingTasks.Should()
                 .BeGreaterThan(
                     0,
                     "the load must actually make writers wait on each other's locks for the absence "

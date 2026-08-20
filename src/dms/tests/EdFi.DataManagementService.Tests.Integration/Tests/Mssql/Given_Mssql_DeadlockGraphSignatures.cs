@@ -97,6 +97,28 @@ public sealed class Given_Mssql_DeadlockGraphSignatures
             .BeEquivalentTo(DeadlockGraphReader.UnparsableGraphSignature);
     }
 
+    /// <summary>
+    /// The other way a graph can fail to reduce to tuples: it parses, so the <c>XmlException</c> path
+    /// never runs, but it describes no locked resource. Returning nothing for it would report a graph
+    /// the reader did not understand as a run that deadlocked less - which on the candidate side of
+    /// Gate B is indistinguishable from the fix working.
+    /// </summary>
+    [TestCase("<deadlock><victim-list /></deadlock>", TestName = "no resource-list at all")]
+    [TestCase("<deadlock><resource-list /></deadlock>", TestName = "resource-list with no resources")]
+    [TestCase(
+        "<deadlock><resource-list><keylock objectname=\"db.dms.Document\" /></resource-list></deadlock>",
+        TestName = "a resource with no owner or waiter"
+    )]
+    public void It_reports_a_graph_that_parses_but_describes_no_locked_resource_as_unparsable(
+        string deadlockXml
+    )
+    {
+        DeadlockGraphReader
+            .SignaturesOf(deadlockXml)
+            .Should()
+            .BeEquivalentTo(DeadlockGraphReader.UnparsableGraphSignature);
+    }
+
     [Test]
     public void It_reports_an_event_payload_that_is_not_a_graph_as_unparsable()
     {
