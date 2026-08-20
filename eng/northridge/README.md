@@ -93,14 +93,21 @@ DUMP="$ART/${ARTIFACT}.dump"
 #    default for Data Standard 5.2 stages core PLUS TPDM, which computes a different hash and makes
 #    DMS answer 503 for every request.
 #
-#    Use the expert ApiSchemaPath path rather than editing SCHEMA_PACKAGES: the bootstrap wrapper
-#    reads SCHEMA_PACKAGES from the environment FILE, so an ambient shell variable is ignored, and
-#    the DS 5.2 overlay would overwrite a value set in your own base env file.
 cd "$DC"
+APISCHEMA_VER=1.0.333       # the version THIS artifact was provisioned from
+
+#    Materialize the core package. The repo pins it centrally and references it with
+#    GeneratePathProperty, so restoring the project that consumes it puts the package in the NuGet
+#    global-packages folder at a path you can compute.
+dotnet restore ../../src/dms/core/EdFi.DataManagementService.Core.Tests.Unit
+PKGROOT=$(dotnet nuget locals global-packages --list | sed 's/^[^:]*: *//' | tr -d '\r')
+CORE="${PKGROOT}/edfi.datastandard52.apischema/${APISCHEMA_VER}/contentFiles/any/any/ApiSchema/ApiSchema.json"
+test -f "$CORE" || { echo "core ApiSchema ${APISCHEMA_VER} is not in the package cache -- check out the
+  DMS commit this artifact was produced from, whose src/Directory.Packages.props pins that version"; exit 1; }
+
+#    That file, ALONE in its own directory, is what makes the staging core-only.
 mkdir -p "$ART/apischema-core-only"
-#    Take the core ApiSchema.json from the NuGet package EdFi.DataStandard52.ApiSchema 1.0.333,
-#    at contentFiles/any/any/ApiSchema/ApiSchema.json, and place it in that directory ALONE.
-cp <path-to-package>/contentFiles/any/any/ApiSchema/ApiSchema.json "$ART/apischema-core-only/"
+cp "$CORE" "$ART/apischema-core-only/"
 
 dotnet publish ../../src/dms/clis/EdFi.DataManagementService.SchemaTools \
   -c Release -p:UseAppHost=true -o .bootstrap/tools/api-schema-tools
@@ -109,6 +116,20 @@ dotnet publish ../../src/dms/clis/EdFi.DataManagementService.SchemaTools \
 pwsh -NoProfile -File ./prepare-dms-schema.ps1 -ApiSchemaPath "$ART/apischema-core-only"
 #    Expect: "Effective schema hash: 816fe17af8c06994204f5c73903a616a16ca43a4be98a3716c07ae7b7b58587b"
 #    If that hash differs, STOP: the restored database will answer 503 and no later step will fix it.
+#
+#    -ApiSchemaPath (expert mode) is required here, and the tempting shortcuts do not work:
+#      * Running prepare-dms-schema.ps1 with no arguments does stage catalog-pinned core-only, and
+#        it prints the right hash -- but step 4 then refuses to start, because the wrapper compares
+#        the staged package identity against the effective env's SCHEMA_PACKAGES and reports
+#        "staged packages [core] vs effective packages [core, TPDM]". Expert workspaces are exempt
+#        from that comparison and are reused as-is, which is why this recipe uses one.
+#      * Editing SCHEMA_PACKAGES in your own env file does not survive, because the DS 5.2 overlay
+#        is composed on top of it; setting it in your shell does nothing at all, because it is read
+#        from the environment FILE rather than the ambient environment.
+#
+#    Staging must run against a clean workspace: prepare-dms-schema.ps1 refuses to overwrite one
+#    staged from different inputs, failing with "workspace fingerprint mismatch". If you have staged
+#    before, clear it first:  pwsh -NoProfile -File ./bootstrap-local-dms.ps1 -d -v
 
 # 4. Bootstrap a normal PostgreSQL stack. The staged core-only workspace is reused as-is.
 pwsh -NoProfile -File ./bootstrap-local-dms.ps1 -DatabaseEngine postgresql -IdentityProvider self-contained
@@ -205,21 +226,35 @@ echo "DMS healthy"
 #     application and client rows in dmscs, whose secrets you do not have, so create your own.
 #     `EdFiAPIPublisherWriter` is the claim set to ask for: API Publisher loaded this dataset
 #     originally, so that claim set already covers every resource present.
-VID=$(curl -s -X POST "$CMS/v3/vendors" -H "Authorization: Bearer $T" \
-  -H "Content-Type: application/json" -o /dev/null -w '%{header_json}' \
-  -d '{"company":"Local Consumer","contactName":"Consumer","contactEmailAddress":"consumer@example.com",
-       "namespacePrefixes":"uri://ed-fi.org"}' | sed -n 's|.*/v3/vendors/\([0-9]*\).*|\1|p')
-#     POST /v3/vendors answers 201 with an EMPTY body; the new id is in the Location header only.
-curl -s -X POST "$CMS/v3/applications" -H "Authorization: Bearer $T" \
+#     POST /v3/vendors answers 201 with an EMPTY body, so read the new id from the Location header.
+VID=$(curl -s -D - -o /dev/null -X POST "$CMS/v3/vendors" -H "Authorization: Bearer $T" \
   -H "Content-Type: application/json" \
-  -d "{\"applicationName\":\"Local Consumer Read\",\"vendorId\":${VID},
-       \"claimSetName\":\"EdFiAPIPublisherWriter\",\"educationOrganizationIds\":[255901],
-       \"dataStoreIds\":[1]}"
-#     The application response carries the "key" and "secret" -- the only time the secret is shown.
-#     Mint a DMS token with them exactly as in step 9, then read:
-#       curl -H "Authorization: Bearer <dms-token>" \
-#            "http://localhost:8080/data/ed-fi/students?limit=1&totalCount=true"
-#     Expect HTTP 200 with Total-Count: 21628.
+  -d '{"company":"Local Consumer","contactName":"Consumer",
+       "contactEmailAddress":"consumer@example.com","namespacePrefixes":"uri://ed-fi.org"}' \
+  | sed -n 's|^[Ll]ocation:.*/v3/vendors/\([0-9]*\).*|\1|p' | tr -d '\r')
+test -n "$VID" || { echo "vendor was not created"; exit 1; }
+
+APP=$(curl -s -X POST "$CMS/v3/applications" -H "Authorization: Bearer $T" \
+  -H "Content-Type: application/json" \
+  -d "{\"applicationName\":\"Local Consumer Read\",\"vendorId\":${VID},\"claimSetName\":\"EdFiAPIPublisherWriter\",\"educationOrganizationIds\":[255901],\"dataStoreIds\":[1]}")
+#     This response is the only place the secret is ever shown -- keep it if you want the client again.
+KEY=$(echo "$APP" | sed -n 's/.*"key"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+SEC=$(echo "$APP" | sed -n 's/.*"secret"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+test -n "$KEY" -a -n "$SEC" || { echo "no credentials issued: $APP"; exit 1; }
+
+DT=$(curl -s -X POST "$CMS/connect/token" -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode "client_id=$KEY" --data-urlencode "client_secret=$SEC" \
+  --data-urlencode "grant_type=client_credentials" \
+  --data-urlencode "scope=edfi_admin_api/full_access" \
+  | sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+test -n "$DT" || { echo "no DMS token minted"; exit 1; }
+
+#     The read that proves the dataset is being served. Send a real token: an absent or malformed
+#     one answers 401, which tells you nothing about the data.
+curl -s -D - -o /dev/null -H "Authorization: Bearer $DT" \
+  "http://localhost:8080/data/ed-fi/students?limit=1&totalCount=true" |
+  grep -Ei '^(HTTP/|total-count:)'
+#     Expect: HTTP/1.1 200 OK  and  Total-Count: 21628
 ```
 
 > **Do not drop and recreate the database part-way through this recipe and expect a CMS restart to
