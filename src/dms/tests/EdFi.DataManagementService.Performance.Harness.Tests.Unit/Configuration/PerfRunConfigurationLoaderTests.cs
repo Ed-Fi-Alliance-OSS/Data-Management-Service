@@ -10,15 +10,19 @@ namespace EdFi.DataManagementService.Performance.Harness.Tests.Unit.Configuratio
 
 internal static class LoaderTestValues
 {
-    // Rooted on both Windows and Linux, because CI unit tests run on ubuntu-latest.
-    public const string RootedResultsDirectory = "/perf-results";
+    // Computed at runtime so the path is fully qualified on whichever platform runs the
+    // tests. CI unit tests run on ubuntu-latest while development happens on Windows.
+    public static readonly string FullyQualifiedResultsDirectory = Path.Combine(
+        Path.GetTempPath(),
+        "perf-results"
+    );
 
     public const string BaselineCommit = "5656477957eb2f18e827b7969e5079b424596ae0";
 
     public static Dictionary<string, string?> Valid() =>
         new()
         {
-            [PerfEnvironmentVariables.ResultsDirectory] = RootedResultsDirectory,
+            [PerfEnvironmentVariables.ResultsDirectory] = FullyQualifiedResultsDirectory,
             [PerfEnvironmentVariables.RunnerCommit] = BaselineCommit,
             [PerfEnvironmentVariables.Fixture] = PerfFixtureKind.Primary500k.Id,
         };
@@ -43,7 +47,7 @@ public class Given_A_Complete_Valid_Configuration
     [Test]
     public void It_parses_the_results_directory()
     {
-        _configuration.ResultsDirectory.Should().Be(LoaderTestValues.RootedResultsDirectory);
+        _configuration.ResultsDirectory.Should().Be(LoaderTestValues.FullyQualifiedResultsDirectory);
     }
 
     [Test]
@@ -239,12 +243,69 @@ public class Given_A_Relative_Results_Directory
     }
 
     [Test]
-    public void It_requires_an_absolute_path()
+    public void It_requires_a_fully_qualified_path()
     {
         _exception
             .Errors.Should()
             .ContainSingle(error =>
                 error.Contains(PerfEnvironmentVariables.ResultsDirectory) && error.Contains("absolute path")
+            );
+    }
+}
+
+[TestFixture]
+public class Given_A_Drive_Relative_Results_Directory
+{
+    private PerfConfigurationException _exception = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Drive-relative on Windows, and not fully qualified on Unix either, so this
+        // rejection holds on both platforms.
+        Dictionary<string, string?> values = LoaderTestValues.Valid();
+        values[PerfEnvironmentVariables.ResultsDirectory] = "C:perf-results";
+        _exception = Assert.Throws<PerfConfigurationException>(() =>
+            PerfRunConfigurationLoader.Load(LoaderTestValues.ReaderFor(values))
+        );
+    }
+
+    [Test]
+    public void It_rejects_the_drive_relative_form()
+    {
+        _exception
+            .Errors.Should()
+            .ContainSingle(error =>
+                error.Contains(PerfEnvironmentVariables.ResultsDirectory) && error.Contains("fully qualified")
+            );
+    }
+}
+
+[TestFixture]
+[Platform("Win")]
+public class Given_A_Root_Relative_Results_Directory_On_Windows
+{
+    private PerfConfigurationException _exception = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // "/perf-results" resolves against the current drive on Windows; on Unix the same
+        // string is a fully qualified path, so this fixture is Windows-only.
+        Dictionary<string, string?> values = LoaderTestValues.Valid();
+        values[PerfEnvironmentVariables.ResultsDirectory] = "/perf-results";
+        _exception = Assert.Throws<PerfConfigurationException>(() =>
+            PerfRunConfigurationLoader.Load(LoaderTestValues.ReaderFor(values))
+        );
+    }
+
+    [Test]
+    public void It_rejects_the_root_relative_form()
+    {
+        _exception
+            .Errors.Should()
+            .ContainSingle(error =>
+                error.Contains(PerfEnvironmentVariables.ResultsDirectory) && error.Contains("fully qualified")
             );
     }
 }

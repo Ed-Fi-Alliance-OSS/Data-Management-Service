@@ -35,10 +35,13 @@ public static class PerfRunConfigurationLoader
         {
             errors.Add($"{PerfEnvironmentVariables.ResultsDirectory} is required.");
         }
-        else if (!Path.IsPathRooted(resultsDirectory))
+        else if (!Path.IsPathFullyQualified(resultsDirectory))
         {
+            // Merely rooted is not enough: on Windows, drive-relative (C:results) and
+            // root-relative (\results) paths still resolve against ambient process state,
+            // which could scatter evidence artifacts somewhere unintended.
             errors.Add(
-                $"{PerfEnvironmentVariables.ResultsDirectory} must be an absolute path; got '{resultsDirectory}'."
+                $"{PerfEnvironmentVariables.ResultsDirectory} must be a fully qualified absolute path; got '{resultsDirectory}'."
             );
         }
 
