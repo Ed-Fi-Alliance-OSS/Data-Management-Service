@@ -29,8 +29,25 @@ public static partial class PerfArtifactValidator
     public static IReadOnlyList<string> Validate(PerfRunManifest manifest, PerfResultsDocument document)
     {
         List<string> errors = [];
-        ValidateManifest(manifest, errors);
-        ValidateResults(document, manifest, errors);
+
+        if (manifest is null)
+        {
+            errors.Add("manifest: manifest is required.");
+        }
+        else
+        {
+            ValidateManifest(manifest, errors);
+        }
+
+        if (document is null)
+        {
+            errors.Add("results: results document is required.");
+        }
+        else
+        {
+            ValidateResults(document, manifest, errors);
+        }
+
         return errors;
     }
 
@@ -68,12 +85,14 @@ public static partial class PerfArtifactValidator
             errors.Add($"manifest: unknown provider '{run.Provider}'.");
         }
 
-        bool parsable = DateTimeOffset.TryParse(
-            run.CapturedAtUtc,
-            CultureInfo.InvariantCulture,
-            DateTimeStyles.RoundtripKind,
-            out _
-        );
+        bool parsable =
+            !string.IsNullOrWhiteSpace(run.CapturedAtUtc)
+            && DateTimeOffset.TryParse(
+                run.CapturedAtUtc,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.RoundtripKind,
+                out _
+            );
         if (!parsable || !run.CapturedAtUtc.EndsWith('Z'))
         {
             errors.Add(
@@ -115,6 +134,12 @@ public static partial class PerfArtifactValidator
         if (fixture is null)
         {
             errors.Add("manifest: fixture is required.");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(fixture.FixtureId))
+        {
+            errors.Add("manifest: fixture id is required.");
             return;
         }
 
@@ -172,15 +197,22 @@ public static partial class PerfArtifactValidator
             );
         }
 
+        IReadOnlyList<PerfExecutedCell>? cells = iterations.CellExecutionOrder;
+        if (cells is not null && cells.Any(cell => cell is null))
+        {
+            errors.Add("manifest: cell execution order entries must be non-null.");
+            cells = [.. cells.Where(cell => cell is not null)];
+        }
+
         ValidateCellSet(
             "manifest: cell execution order",
-            iterations.CellExecutionOrder?.Select(cell => (cell.ScenarioId, cell.PageSize)),
+            cells?.Select(cell => (cell.ScenarioId, cell.PageSize)),
             errors
         );
 
-        if (iterations.CellExecutionOrder is not null && fixture is not null)
+        if (cells is not null && fixture is not null)
         {
-            foreach (PerfExecutedCell cell in iterations.CellExecutionOrder)
+            foreach (PerfExecutedCell cell in cells)
             {
                 long? expected = ExpectedOffset(cell.ScenarioId, cell.PageSize, fixture.DeepOffset);
                 if (expected is not null && cell.Offset != expected)
@@ -272,7 +304,7 @@ public static partial class PerfArtifactValidator
 
     private static void ValidateResults(
         PerfResultsDocument document,
-        PerfRunManifest manifest,
+        PerfRunManifest? manifest,
         List<string> errors
     )
     {
@@ -291,30 +323,38 @@ public static partial class PerfArtifactValidator
 
         ValidateCellSet(
             "results",
-            document.Results.Select(result => (result.ScenarioId, result.PageSize)),
+            document
+                .Results.Where(result => result is not null)
+                .Select(result => (result.ScenarioId, result.PageSize)),
             errors
         );
 
         for (int index = 0; index < document.Results.Count; index++)
         {
-            ValidateRow(document.Results[index], index, manifest, errors);
+            PerfScenarioResult row = document.Results[index];
+            if (row is null)
+            {
+                errors.Add($"results[{index}]: row is required.");
+                continue;
+            }
+
+            ValidateRow(row, index, manifest, errors);
         }
     }
 
     private static void ValidateRow(
         PerfScenarioResult row,
         int index,
-        PerfRunManifest manifest,
+        PerfRunManifest? manifest,
         List<string> errors
     )
     {
         string at = $"results[{index}]";
 
-        if (manifest.Run is not null && row.Provider != manifest.Run.Provider)
+        PerfRunIdentity? run = manifest?.Run;
+        if (run is not null && row.Provider != run.Provider)
         {
-            errors.Add(
-                $"{at}: provider '{row.Provider}' must match the run provider '{manifest.Run.Provider}'."
-            );
+            errors.Add($"{at}: provider '{row.Provider}' must match the run provider '{run.Provider}'.");
         }
 
         if (!PerfScenarios.IsKnown(row.ScenarioId))
@@ -327,9 +367,10 @@ public static partial class PerfArtifactValidator
             errors.Add($"{at}: page size {row.PageSize} is not in the measured matrix.");
         }
 
-        if (manifest.Fixture is not null)
+        PerfManifestFixture? fixture = manifest?.Fixture;
+        if (fixture is not null)
         {
-            long? expected = ExpectedOffset(row.ScenarioId, row.PageSize, manifest.Fixture.DeepOffset);
+            long? expected = ExpectedOffset(row.ScenarioId, row.PageSize, fixture.DeepOffset);
             if (expected is not null && row.Offset != expected)
             {
                 errors.Add(
@@ -349,29 +390,30 @@ public static partial class PerfArtifactValidator
             errors.Add($"{at}: command count per request must be 1; got {row.CommandCountPerRequest}.");
         }
 
-        if (manifest.Iterations is not null)
+        PerfIterationPlan? iterations = manifest?.Iterations;
+        if (iterations is not null)
         {
-            if (row.WarmupIterations != manifest.Iterations.WarmupIterations)
+            if (row.WarmupIterations != iterations.WarmupIterations)
             {
                 errors.Add(
                     $"{at}: warmup iterations {row.WarmupIterations} must match the manifest's "
-                        + $"{manifest.Iterations.WarmupIterations}."
+                        + $"{iterations.WarmupIterations}."
                 );
             }
 
-            if (row.MeasuredIterations != manifest.Iterations.MeasuredIterations)
+            if (row.MeasuredIterations != iterations.MeasuredIterations)
             {
                 errors.Add(
                     $"{at}: measured iterations {row.MeasuredIterations} must match the manifest's "
-                        + $"{manifest.Iterations.MeasuredIterations}."
+                        + $"{iterations.MeasuredIterations}."
                 );
             }
         }
 
         ValidateLatency(at, "latency", row.LatencyMs, row.MeasuredIterations, errors);
         ValidateLatency(at, "db command", row.DbCommandMs, row.MeasuredIterations, errors);
-        ValidateCommit(at, "runner commit", row.RunnerCommit, manifest.Commits?.RunnerCommit, errors);
-        ValidateCommit(at, "subject commit", row.SubjectCommit, manifest.Commits?.SubjectCommit, errors);
+        ValidateCommit(at, "runner commit", row.RunnerCommit, manifest?.Commits?.RunnerCommit, errors);
+        ValidateCommit(at, "subject commit", row.SubjectCommit, manifest?.Commits?.SubjectCommit, errors);
 
         if (!IsLowercaseHex(row.PageSelectionSqlSha256, 64))
         {

@@ -596,3 +596,156 @@ public class Given_Ensure_Valid_On_Invalid_Artifacts
         _exception.Errors.Should().NotBeEmpty();
     }
 }
+
+[TestFixture]
+public class Given_A_Manifest_With_Null_Subrecords
+{
+    private IReadOnlyList<string> _errors = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Constructor binding can materialize null sub-records from JSON missing properties
+        // without throwing, so the validator must answer with errors rather than an NRE.
+        PerfRunManifest manifest = ResultSamples.Manifest() with
+        {
+            Run = null!,
+            Commits = null!,
+            Fixture = null!,
+            Iterations = null!,
+            Environment = null!,
+        };
+        _errors = PerfArtifactValidator.Validate(manifest, ResultSamples.PostgresqlDocument());
+    }
+
+    [Test]
+    public void It_reports_every_missing_subrecord()
+    {
+        _errors.Should().Contain("manifest: run identity is required.");
+        _errors.Should().Contain("manifest: commit identity is required.");
+        _errors.Should().Contain("manifest: fixture is required.");
+        _errors.Should().Contain("manifest: iteration plan is required.");
+        _errors.Should().Contain("manifest: environment identity is required.");
+    }
+}
+
+[TestFixture]
+public class Given_A_Manifest_With_Null_Required_Strings
+{
+    private IReadOnlyList<string> _errors = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        PerfRunManifest manifest = ResultSamples.Manifest();
+        manifest = manifest with
+        {
+            Run = manifest.Run with { CapturedAtUtc = null!, Provider = null! },
+            Fixture = manifest.Fixture with { FixtureId = null! },
+        };
+        _errors = PerfArtifactValidator.Validate(manifest, ResultSamples.PostgresqlDocument());
+    }
+
+    [Test]
+    public void It_rejects_the_missing_timestamp()
+    {
+        _errors.Should().Contain(error => error.Contains("ISO-8601"));
+    }
+
+    [Test]
+    public void It_rejects_the_missing_provider()
+    {
+        _errors.Should().Contain(error => error.Contains("unknown provider"));
+    }
+
+    [Test]
+    public void It_rejects_the_missing_fixture_id()
+    {
+        _errors.Should().Contain("manifest: fixture id is required.");
+    }
+}
+
+[TestFixture]
+public class Given_A_Manifest_With_A_Null_Execution_Cell
+{
+    private IReadOnlyList<string> _errors = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        PerfRunManifest manifest = ResultSamples.Manifest();
+        manifest = manifest with
+        {
+            Iterations = manifest.Iterations with
+            {
+                CellExecutionOrder = [.. manifest.Iterations.CellExecutionOrder.Take(5), null!],
+            },
+        };
+        _errors = PerfArtifactValidator.Validate(manifest, ResultSamples.PostgresqlDocument());
+    }
+
+    [Test]
+    public void It_rejects_the_null_cell()
+    {
+        _errors.Should().Contain("manifest: cell execution order entries must be non-null.");
+    }
+
+    [Test]
+    public void It_still_reports_the_incomplete_cell_set()
+    {
+        _errors
+            .Should()
+            .Contain(error => error.StartsWith("manifest: cell execution order") && error.Contains("got 5"));
+    }
+}
+
+[TestFixture]
+public class Given_A_Results_Document_With_A_Null_Row
+{
+    private IReadOnlyList<string> _errors = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _errors = PerfArtifactValidator.Validate(
+            ResultSamples.Manifest(),
+            ValidatorTestSupport.WithRow(ResultSamples.PostgresqlDocument(), 0, _ => null!)
+        );
+    }
+
+    [Test]
+    public void It_rejects_the_null_row()
+    {
+        _errors.Should().Contain("results[0]: row is required.");
+    }
+
+    [Test]
+    public void It_still_reports_the_incomplete_cell_set()
+    {
+        _errors.Should().Contain(error => error.StartsWith("results") && error.Contains("got 5"));
+    }
+}
+
+[TestFixture]
+public class Given_Null_Artifacts
+{
+    private IReadOnlyList<string> _errors = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _errors = PerfArtifactValidator.Validate(null!, null!);
+    }
+
+    [Test]
+    public void It_requires_the_manifest()
+    {
+        _errors.Should().Contain("manifest: manifest is required.");
+    }
+
+    [Test]
+    public void It_requires_the_results_document()
+    {
+        _errors.Should().Contain("results: results document is required.");
+    }
+}
