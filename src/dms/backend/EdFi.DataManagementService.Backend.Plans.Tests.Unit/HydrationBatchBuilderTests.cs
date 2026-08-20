@@ -699,9 +699,7 @@ public class Given_HydrationBatchBuilder_With_Mssql_Single_Document_Fast_Path
                     d.[DocumentId],
                     d.[DocumentUuid],
                     d.[ContentVersion],
-                    d.[IdentityVersion],
                     d.[ContentLastModifiedAt],
-                    d.[IdentityLastModifiedAt],
                     d.[ResourceKeyId]
                 FROM [dms].[Document] d
                 WHERE d.[DocumentId] = @DocumentId

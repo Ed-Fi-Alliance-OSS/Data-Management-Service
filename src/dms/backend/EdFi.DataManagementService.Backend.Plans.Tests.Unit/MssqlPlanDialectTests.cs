@@ -94,9 +94,7 @@ public class Given_MssqlPlanDialect
                     d.[DocumentId],
                     d.[DocumentUuid],
                     d.[ContentVersion],
-                    d.[IdentityVersion],
                     d.[ContentLastModifiedAt],
-                    d.[IdentityLastModifiedAt],
                     d.[ResourceKeyId]
                 FROM [dms].[Document] d
                 WHERE d.[DocumentId] = @DocumentId
