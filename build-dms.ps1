@@ -593,6 +593,9 @@ function RunTests {
                     dotnet tool run coverlet -- $($_) `
                         --target dotnet --targetargs "test $target --logger:console --logger:trx --nologo --blame"`
                         --exclude "[EdFi.DataManagementService.Tests.E2E]*" `
+                        --exclude "[EdFi.DataManagementService.Tests.Integration]*" `
+                        --exclude "[EdFi.DataManagementService.Backend.Tests.Integration.Common]*" `
+                        --exclude "[EdFi.DataManagementService.Performance.Harness]*" `
                         --threshold $thresholdCoverage `
                         --threshold-type line `
                         --threshold-type branch `
@@ -608,6 +611,9 @@ function RunTests {
                     dotnet tool run coverlet -- $($_) `
                         --target dotnet --targetargs "test $target --logger:console --logger:trx --nologo --blame"`
                         --exclude "[EdFi.DataManagementService.Tests.E2E]*" `
+                        --exclude "[EdFi.DataManagementService.Tests.Integration]*" `
+                        --exclude "[EdFi.DataManagementService.Backend.Tests.Integration.Common]*" `
+                        --exclude "[EdFi.DataManagementService.Performance.Harness]*" `
                         --format json `
                         --merge-with "coverage.json"
                 }
