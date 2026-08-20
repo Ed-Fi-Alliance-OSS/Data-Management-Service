@@ -572,6 +572,78 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     }
 
     [Test]
+    public async Task It_should_not_run_the_root_affected_docs_update_on_a_pure_insert()
+    {
+        // The other half of the resource root guard's predicate, and the case the ticket opened on:
+        // both affectedDocs branches require a matching deleted row, so on a pure INSERT into a root
+        // table the workset is provably empty while the statement would still resolve its join
+        // against [dms].[Document] and take update locks on rows it never modifies.
+        //
+        // Covered here rather than inferred from the descriptor test above: that test proves the
+        // pure-INSERT skip for CoreDdlEmitter's predicate, and the child re-firing test proves the
+        // skip for RelationalModelDdlEmitter's, but the two emitters build the predicate
+        // independently, so neither result carries to the other's shape. As everywhere else in this
+        // suite, every stamping assertion is satisfied identically by "the statement was skipped"
+        // and by "the statement ran and found nothing", so this reads the actual execution plan.
+        var rootStampTriggerObjectId = await GetTriggerObjectIdAsync("edfi.TR_Contact_Stamp");
+        var contactResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Contact");
+        var documentId = await InsertDocumentAsync(
+            Guid.Parse("0c0c0c0c-0c0c-0c0c-0c0c-0c0c0c0c0c0c"),
+            contactResourceKeyId
+        );
+
+        await DelayForDistinctTimestampsAsync();
+        var rootInsertStatements = await ReadExecutedPlanStatementsAsync(
+            """
+            INSERT INTO [edfi].[Contact] ([DocumentId], [ContactUniqueId], [FirstName], [LastSurname])
+            VALUES (@documentId, @contactUniqueId, @firstName, @lastSurname);
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@contactUniqueId", "10004"),
+            new SqlParameter("@firstName", "Devi"),
+            new SqlParameter("@lastSurname", "Nakamura")
+        );
+
+        var rootTriggerStatements = PlanStatementTextsFor(rootInsertStatements, rootStampTriggerObjectId);
+
+        // The trigger did fire and did evaluate the guard, so the capture reads inside it.
+        rootTriggerStatements
+            .Should()
+            .Contain(statementText =>
+                statementText.Contains(
+                    "IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE(",
+                    StringComparison.Ordinal
+                )
+            );
+
+        // The defect itself: the guarded statement contributed no plan, so it did not execute.
+        rootTriggerStatements
+            .Should()
+            .NotContain(statementText => statementText.Contains("affectedDocs", StringComparison.Ordinal));
+
+        // The @stamped pre-population sits outside the guard precisely so a root insert still carries
+        // the document's existing stamp into the mirror. If the guard ever swallowed it, the mirror
+        // would keep its DEFAULT 0 sentinel and this would fail.
+        await AssertRootMirrorMatchesDocumentAsync("edfi", "Contact", documentId);
+
+        // Control arm. The same statement is captured when the guard admits real work, so its
+        // absence above is "it did not execute", not "it is not visible to this capture".
+        var rootUpdateStatements = await ReadExecutedPlanStatementsAsync(
+            """
+            UPDATE [edfi].[Contact]
+            SET [FirstName] = @firstName
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@firstName", "Rowan"),
+            new SqlParameter("@documentId", documentId)
+        );
+
+        PlanStatementTextsFor(rootUpdateStatements, rootStampTriggerObjectId)
+            .Should()
+            .ContainSingle(statementText => statementText.Contains("affectedDocs", StringComparison.Ordinal));
+    }
+
+    [Test]
     public async Task It_should_not_run_the_descriptor_affected_docs_update_on_a_pure_insert()
     {
         // The descriptor stamping trigger carries the same guard as the resource root shape. Its

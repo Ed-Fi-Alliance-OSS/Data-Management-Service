@@ -75,8 +75,9 @@ public abstract class DdlEmissionGoldenTestBase
             // DerivedRelationalModelSet builders: they construct DbTableModel.Key directly instead
             // of deriving it from an ApiSchema, so this is the emission path that can actually
             // produce a mirror target whose key has moved off the joined column. An unsatisfiable
-            // hint regenerates its golden cleanly and only fails at write time, with error 8622.
-            MssqlForceSeekInvariant.AssertHintedMirrorTargetsAreSeekable(
+            // hint regenerates its golden cleanly and only fails at write time, with error 8622 -
+            // and a missing hint regenerates cleanly and never fails at all.
+            MssqlForceSeekInvariant.AssertMirrorStampsAreHintedAndSeekable(
                 ddl,
                 $"ddl-emission fixture '{fixtureName}' (mssql)"
             );

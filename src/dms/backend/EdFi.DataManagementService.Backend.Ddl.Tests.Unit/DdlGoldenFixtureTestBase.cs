@@ -122,20 +122,22 @@ public abstract class DdlGoldenFixtureTestBase
     /// <summary>
     /// change-queries.md invariant 7, over the full SQL Server DDL this fixture emits. The check
     /// itself lives in <see cref="MssqlForceSeekInvariant"/> because the other SQL Server golden path
-    /// needs it too; see that type for why the hint's satisfiability has to be asserted rather than
+    /// needs it too; see that type for why neither the hint's presence nor its satisfiability can be
     /// assumed.
     /// </summary>
     [Test]
-    public void It_should_only_force_seek_mirror_targets_keyed_on_the_joined_column()
+    public void It_should_force_seek_every_mirror_stamp_on_a_target_keyed_on_the_joined_column()
     {
         var mssqlPath = Path.Combine(_actualDir, "mssql.sql");
         if (!File.Exists(mssqlPath))
         {
-            // PostgreSQL-only fixture: nothing emits the hint, so there is no invariant to check.
+            // PostgreSQL-only fixture: it emits no mirror stamp, so there is no invariant to check.
+            // A fixture that declares mssql but emitted no file fails
+            // It_should_emit_dialect_sql_for_each_declared_dialect instead.
             return;
         }
 
-        MssqlForceSeekInvariant.AssertHintedMirrorTargetsAreSeekable(
+        MssqlForceSeekInvariant.AssertMirrorStampsAreHintedAndSeekable(
             File.ReadAllText(mssqlPath),
             $"fixture '{Path.GetFileName(_fixtureDirectory)}' (mssql.sql)"
         );
