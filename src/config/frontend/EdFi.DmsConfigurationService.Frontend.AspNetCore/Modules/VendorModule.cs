@@ -11,7 +11,6 @@ using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
-using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.OpenApi;
 
@@ -155,14 +154,9 @@ public class VendorModule : IEndpointModule
         ILogger<ApplicationModule> logger
     )
     {
-        await validator.GuardAsync(command);
+        Infrastructure.ValidatorExtensions.GuardRouteIdMatchesBodyId(id, command.Id);
 
-        if (command.Id != id)
-        {
-            throw new ValidationException(
-                new[] { new ValidationFailure("Id", "Request body id must match the id in the url.") }
-            );
-        }
+        await validator.GuardAsync(command);
 
         var vendorUpdateResult = await repository.UpdateVendor(command);
 

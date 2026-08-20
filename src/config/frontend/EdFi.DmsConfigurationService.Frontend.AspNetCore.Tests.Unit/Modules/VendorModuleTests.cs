@@ -386,6 +386,35 @@ public class VendorModuleTests
             updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             updateResponseContent.Should().Contain("Request body id must match the id in the url.");
         }
+
+        [Test]
+        public async Task Should_return_bad_request_when_vendor_body_id_is_omitted()
+        {
+            // Arrange
+            using var client = SetUpClient();
+
+            //Act: PUT with route id=1, body omits "id" (defaults to 0)
+            var updateResponse = await client.PutAsync(
+                "/v3/vendors/1",
+                new StringContent(
+                    """
+                    {
+                        "company": "Test 11",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": "Test"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            //Assert
+            string updateResponseContent = await updateResponse.Content.ReadAsStringAsync();
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            updateResponseContent.Should().Contain("Request body id must match the id in the url.");
+        }
     }
 
     [TestFixture]

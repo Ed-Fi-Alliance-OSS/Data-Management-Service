@@ -3001,6 +3001,102 @@ public class ApplicationModuleTests
         [Test]
         public void It_calls_no_repository_or_identity_provider_dependency() =>
             _dependencyCalls.Should().BeEmpty();
+
+        [Test]
+        public void It_does_not_call_identity_provider_update_async()
+        {
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+
+        [Test]
+        public void It_does_not_call_application_repository_update()
+        {
+            A.CallTo(() =>
+                    _applicationRepository.UpdateApplication(
+                        A<ApplicationUpdateCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_application_update_with_omitted_body_id : ApplicationModuleTests
+    {
+        private HttpResponseMessage _updateResponse = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            using var client = SetUpClient();
+            var json = """
+                {
+                    "ApplicationName": "Test Application",
+                    "ClaimSetName": "TestClaimSet",
+                    "VendorId": 1,
+                    "EducationOrganizationIds": [1],
+                    "DataStoreIds": [1]
+                }
+                """;
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+            _updateResponse = await client.PutAsync("/v3/applications/1", content);
+        }
+
+        [TearDown]
+        public void TearDownResponse() => _updateResponse?.Dispose();
+
+        [Test]
+        public async Task It_returns_the_id_mismatch_validation_contract()
+        {
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            string responseBody = await _updateResponse.Content.ReadAsStringAsync();
+            JsonNode actualResponse = JsonNode.Parse(responseBody)!;
+            actualResponse["validationErrors"]!["Id"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be("Request body id must match the id in the url.");
+        }
+
+        [Test]
+        public void It_does_not_call_identity_provider_update_async()
+        {
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+
+        [Test]
+        public void It_does_not_call_application_repository_update()
+        {
+            A.CallTo(() =>
+                    _applicationRepository.UpdateApplication(
+                        A<ApplicationUpdateCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+        }
     }
 
     [TestFixture]

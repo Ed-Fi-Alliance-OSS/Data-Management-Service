@@ -343,6 +343,33 @@ public class DataStoreModuleTests
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
+
+        [Test]
+        public async Task Should_return_bad_request_when_datastore_body_id_is_omitted()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.PutAsync(
+                "/v3/dataStores/1",
+                new StringContent(
+                    JsonSerializer.Serialize(
+                        new DataStoreUpdateCommand
+                        {
+                            // Id omitted - defaults to 0
+                            DataStoreType = "Production",
+                            Name = "Test Instance",
+                            ConnectionString = "Server=localhost;Database=TestDb;",
+                        }
+                    ),
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            string content = await response.Content.ReadAsStringAsync();
+            content.Should().Contain("Request body id must match the id in the url.");
+        }
     }
 
     [TestFixture]

@@ -11,7 +11,6 @@ using EdFi.DmsConfigurationService.DataModel.Model.Profile;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
-using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.Extensions.Logging;
 
@@ -139,13 +138,12 @@ public class ProfileModule : IEndpointModule
     )
     {
         logger.LogDebug("Entering Profile Update for id: {Id}", id);
+        EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.ValidatorExtensions.GuardRouteIdMatchesBodyId(
+            id,
+            command.Id
+        );
+
         await validator.GuardAsync(command);
-        if (command.Id != id)
-        {
-            throw new ValidationException([
-                new ValidationFailure("Id", "Request body id must match the id in the url."),
-            ]);
-        }
         var result = await repository.UpdateProfile(command);
         return result switch
         {
