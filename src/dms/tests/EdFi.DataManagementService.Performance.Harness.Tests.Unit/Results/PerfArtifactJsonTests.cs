@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Performance.Harness.Configuration;
 using EdFi.DataManagementService.Performance.Harness.Results;
 using FluentAssertions;
 
@@ -94,5 +95,46 @@ public class Given_A_Serialized_Run_Manifest
     {
         _manifest.Commits.RunnerCommit.Should().Be(ResultSamples.RunnerCommit);
         _manifest.Commits.SubjectCommit.Should().Be(ResultSamples.SubjectCommit);
+    }
+
+    [Test]
+    public void It_records_all_six_execution_cells_with_full_identity()
+    {
+        IReadOnlyList<PerfExecutedCell> cells = _manifest.Iterations.CellExecutionOrder;
+        cells.Should().HaveCount(6);
+        cells
+            .Select(cell => (cell.ScenarioId, cell.PageSize))
+            .Should()
+            .OnlyHaveUniqueItems()
+            .And.BeEquivalentTo(
+                PerfScenarios.AllIds.SelectMany(scenarioId =>
+                    PerfScenarios.PageSizes.Select(pageSize => (scenarioId, pageSize))
+                )
+            );
+    }
+
+    [Test]
+    public void It_resolves_each_cell_offset()
+    {
+        _manifest
+            .Iterations.CellExecutionOrder.Where(cell =>
+                cell.ScenarioId == PerfScenarios.TraditionalOffsetShallow
+            )
+            .Should()
+            .OnlyContain(cell => cell.Offset == cell.PageSize);
+    }
+
+    [Test]
+    public void It_records_the_added_environment_identity_fields()
+    {
+        _json.Should().Contain("\"cpuModel\"");
+        _json.Should().Contain("\"totalMemoryBytes\"");
+        _json.Should().Contain("\"connectionStringShape\"");
+    }
+
+    [Test]
+    public void It_redacts_connection_string_secrets()
+    {
+        _manifest.Environment.Server.ConnectionStringShape.Should().Contain("password=REDACTED");
     }
 }

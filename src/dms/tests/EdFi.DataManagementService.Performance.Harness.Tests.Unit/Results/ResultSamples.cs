@@ -83,16 +83,38 @@ internal static class ResultSamples
                 ["src/dms/tests/EdFi.DataManagementService.Performance.Harness/"]
             ),
             new PerfManifestFixture("primary-500k", 500_000, 450_000),
-            new PerfIterationPlan(5, 30, [.. PerfScenarios.AllIds]),
+            new PerfIterationPlan(
+                5,
+                30,
+                [
+                    new PerfExecutedCell(PerfScenarios.TraditionalOffsetZero, 25, 0),
+                    new PerfExecutedCell(PerfScenarios.TraditionalOffsetZero, 500, 0),
+                    new PerfExecutedCell(PerfScenarios.TraditionalOffsetShallow, 25, 25),
+                    new PerfExecutedCell(PerfScenarios.TraditionalOffsetShallow, 500, 500),
+                    new PerfExecutedCell(PerfScenarios.TraditionalOffsetDeep, 25, 450_000),
+                    new PerfExecutedCell(PerfScenarios.TraditionalOffsetDeep, 500, 450_000),
+                ]
+            ),
             PerfEnvironmentIdentity.Create(
                 PerfServerIdentity.Create(
                     "PostgreSQL 16.8",
                     "postgres:16.8-alpine",
                     "sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0",
                     "local volume, not tmpfs",
+                    "host=localhost;port=5435;username=postgres;password=REDACTED;"
+                        + "database=perf;pooling=true;minimum pool size=10;maximum pool size=50",
                     [new PerfSetting("work_mem", "4MB"), new PerfSetting("shared_buffers", "128MB")]
                 ),
-                new PerfHostIdentity("Windows 11", "X64", 16, "10.0.400", false, "f0e1d2c3b4a59687"),
+                new PerfHostIdentity(
+                    "Windows 11",
+                    "X64",
+                    "AMD Ryzen 9 7950X",
+                    16,
+                    68_719_476_736,
+                    "10.0.400",
+                    false,
+                    "f0e1d2c3b4a59687"
+                ),
                 [new PerfSetting("Npgsql", "8.0.4")]
             )
         );

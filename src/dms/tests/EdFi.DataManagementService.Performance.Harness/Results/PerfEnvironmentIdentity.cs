@@ -12,7 +12,8 @@ namespace EdFi.DataManagementService.Performance.Harness.Results;
 public sealed record PerfSetting(string Name, string Value);
 
 /// <summary>
-/// Identity of the measured database server: version, pinned image, storage caveats, and the
+/// Identity of the measured database server: version, pinned image, storage caveats, the
+/// connection-string shape (pooling and prepare settings with every secret redacted), and the
 /// settings snapshot that shapes plans and timing.
 /// </summary>
 public sealed record PerfServerIdentity(
@@ -20,6 +21,7 @@ public sealed record PerfServerIdentity(
     string ImageTag,
     string ImageDigest,
     string StorageNote,
+    string ConnectionStringShape,
     IReadOnlyList<PerfSetting> Settings
 )
 {
@@ -32,6 +34,7 @@ public sealed record PerfServerIdentity(
         string imageTag,
         string imageDigest,
         string storageNote,
+        string connectionStringShape,
         IEnumerable<PerfSetting> settings
     ) =>
         new(
@@ -39,6 +42,7 @@ public sealed record PerfServerIdentity(
             imageTag,
             imageDigest,
             storageNote,
+            connectionStringShape,
             [.. settings.OrderBy(setting => setting.Name, StringComparer.Ordinal)]
         );
 }
@@ -51,7 +55,9 @@ public sealed record PerfServerIdentity(
 public sealed record PerfHostIdentity(
     string OsDescription,
     string ProcessArchitecture,
+    string CpuModel,
     int LogicalCores,
+    long TotalMemoryBytes,
     string DotnetVersion,
     bool ServerGc,
     string MachineFingerprint

@@ -28,13 +28,19 @@ public sealed record PerfCommitIdentity(
 public sealed record PerfManifestFixture(string FixtureId, long RowCount, long DeepOffset);
 
 /// <summary>
-/// Iteration counts and the order scenario cells actually executed in, which matters for
-/// provider plan-cache effects.
+/// One scenario cell as it actually executed: scenario, page size, and the resolved offset.
+/// </summary>
+public sealed record PerfExecutedCell(string ScenarioId, int PageSize, long Offset);
+
+/// <summary>
+/// Iteration counts and the exact order the six cells executed in. The full cell identity is
+/// recorded, not just the scenario id, because SQL Server compiles one cached plan for the
+/// shared page-selection SQL text from whichever cell's parameter values run first.
 /// </summary>
 public sealed record PerfIterationPlan(
     int WarmupIterations,
     int MeasuredIterations,
-    IReadOnlyList<string> ScenarioExecutionOrder
+    IReadOnlyList<PerfExecutedCell> CellExecutionOrder
 );
 
 /// <summary>
