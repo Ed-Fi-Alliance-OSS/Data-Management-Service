@@ -69,6 +69,31 @@ Describe "Docker Compose logging defaults (DMS-1407)" {
         return $violations
     }
 
+    function script:Get-TrackedRelativePath {
+        param(
+            [Parameter(Mandatory)]
+            [string]
+            $Root,
+
+            [Parameter(Mandatory)]
+            [string]
+            $Pattern
+        )
+
+        # These tests guard the repository contract. Local .env files and compose overrides are
+        # developer state, so enumerate only files tracked by git.
+        $trackedFiles = @(git -C $Root ls-files $Pattern 2>$null)
+        if ($LASTEXITCODE -ne 0 -or $trackedFiles.Count -eq 0) {
+            # Unlike broad consistency checks that can skip when git is unavailable, this DMS-1407
+            # guard must fail closed: an empty tracked set would make the shipped-default contract
+            # appear green while checking no compose or environment files.
+            throw "git returned no tracked '$Pattern' files under $Root"
+        }
+
+        return $trackedFiles |
+            ForEach-Object { [System.IO.Path]::GetRelativePath($script:repoRoot, (Join-Path $Root $_)).Replace("\", "/") }
+    }
+
     function script:Get-ComposeServiceFileUnderTest {
         $excludedOverrideFiles = @(
             "eng/docker-compose/bootstrap-dms.yml",
@@ -77,20 +102,16 @@ Describe "Docker Compose logging defaults (DMS-1407)" {
         )
 
         return @(
-            Get-ChildItem -LiteralPath $script:dockerComposeRoot -Filter "*.yml" |
-                ForEach-Object { [System.IO.Path]::GetRelativePath($script:repoRoot, $_.FullName).Replace("\", "/") } |
+            Get-TrackedRelativePath -Root $script:dockerComposeRoot -Pattern "*.yml" |
                 Where-Object { $excludedOverrideFiles -notcontains $_ }
-            Get-ChildItem -LiteralPath $script:azureComposeRoot -Filter "*.yml" |
-                ForEach-Object { [System.IO.Path]::GetRelativePath($script:repoRoot, $_.FullName).Replace("\", "/") }
+            Get-TrackedRelativePath -Root $script:azureComposeRoot -Pattern "*.yml"
         ) | Sort-Object
     }
 
     function script:Get-TrackedComposeEnvFile {
         return @(
-            Get-ChildItem -LiteralPath $script:dockerComposeRoot -File -Force -Filter ".env*" |
-                ForEach-Object { [System.IO.Path]::GetRelativePath($script:repoRoot, $_.FullName).Replace("\", "/") }
-            Get-ChildItem -LiteralPath $script:azureComposeRoot -File -Force -Filter ".env*" |
-                ForEach-Object { [System.IO.Path]::GetRelativePath($script:repoRoot, $_.FullName).Replace("\", "/") }
+            Get-TrackedRelativePath -Root $script:dockerComposeRoot -Pattern ".env*"
+            Get-TrackedRelativePath -Root $script:azureComposeRoot -Pattern ".env*"
         ) | Sort-Object
     }
 
@@ -109,12 +130,36 @@ Describe "Docker Compose logging defaults (DMS-1407)" {
         }
     }
 
+    It "ignores local untracked env files when checking shipped defaults" {
+        $localEnvFileName = ".env.codex-local-state-$([Guid]::NewGuid().ToString('N'))"
+        $localEnvFile = Join-Path $script:dockerComposeRoot $localEnvFileName
+        "LOG_LEVEL=Debug`n" | Set-Content -LiteralPath $localEnvFile -Encoding utf8
+        try {
+            Get-TrackedComposeEnvFile | Should -Not -Contain "eng/docker-compose/$localEnvFileName"
+        }
+        finally {
+            Remove-Item -LiteralPath $localEnvFile -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     It "caps json-file logs in every compose service file that ships a runnable stack" {
         $composeFiles = Get-ComposeServiceFileUnderTest
 
         foreach ($relativePath in $composeFiles) {
             $content = Get-Content -LiteralPath (Join-Path $script:repoRoot $relativePath) -Raw
             @(Get-ComposeLoggingViolation -RelativePath $relativePath -Content $content) | Should -BeNullOrEmpty
+        }
+    }
+
+    It "ignores local untracked compose override files when checking shipped stack files" {
+        $localOverrideFileName = "docker-compose.codex-local-state-$([Guid]::NewGuid().ToString('N')).yml"
+        $localOverrideFile = Join-Path $script:dockerComposeRoot $localOverrideFileName
+        "services:`n  scratch:`n    image: busybox`n" | Set-Content -LiteralPath $localOverrideFile -Encoding utf8
+        try {
+            Get-ComposeServiceFileUnderTest | Should -Not -Contain "eng/docker-compose/$localOverrideFileName"
+        }
+        finally {
+            Remove-Item -LiteralPath $localOverrideFile -Force -ErrorAction SilentlyContinue
         }
     }
 
