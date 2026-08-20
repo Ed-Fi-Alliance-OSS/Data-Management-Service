@@ -24,8 +24,16 @@ public class HealthCheckEndpointModule(
     {
         endpoints.MapGet("/health", GetHealthStatus);
 
-        if (!documentCacheOptions.Value.Status.TryGetRequiredRoleForEndpointMapping(out _))
+        DocumentCacheStatusOptions statusOptions = documentCacheOptions.Value.Status;
+        if (!statusOptions.TryGetRequiredRoleForEndpointMapping(out _))
         {
+            if (!string.IsNullOrWhiteSpace(statusOptions.RequiredRole))
+            {
+                logger.LogWarning(
+                    "DocumentCache status endpoint was not mapped because DataManagement:DocumentCache:Status:RequiredRole is invalid. Configure a single role token such as dms-document-cache-operator."
+                );
+            }
+
             return;
         }
 

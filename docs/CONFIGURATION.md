@@ -78,12 +78,19 @@ and
 | Projector:FailureBackoff                | Positive delay before retrying projector work after a target-level failure. Default: `00:00:30`.                                                             |
 | Projector:BaselineHighWaterMark         | Positive high-water mark used during baseline projection. Must be less than `int.MaxValue`. Default: `1000`.                                                  |
 | Administration:WorkflowTimeout          | Positive timeout for cache administrative workflows. Default: `1.00:00:00`.                                                                                   |
+| Status:StatusObservationTimeout         | Positive per-target timeout for observing durable DocumentCache status facts. Default: `00:00:05`.                                                           |
+| Status:EndpointTimeout                  | Positive timeout budget for the `GET /health/document-cache` status endpoint. Default: `00:00:30`.                                                           |
+| Status:RequiredRole                     | Single literal role token required to map and authorize `GET /health/document-cache`. Empty by default, leaving the endpoint unmapped. Recommended: `dms-document-cache-operator`. |
 
 Direct fill uses the shared cache materializer/writer with purpose `DirectFill`; it does
 not build cache rows from the shaped API response and it does not replace the response
 already selected by relational fallback. Snapshot and read-replica requests are read-only
 for this purpose, so direct fill is skipped for those targets when derivative routing is
 available.
+
+`Status:RequiredRole` must be one untrimmed token no longer than 256 characters. Values
+containing ASCII whitespace, commas, semicolons, quotes, brackets, braces, or control
+characters are invalid and leave the DocumentCache status endpoint unmapped.
 
 ## Configuration Service AppSettings
 

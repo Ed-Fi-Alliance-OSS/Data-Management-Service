@@ -10,6 +10,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -17,6 +18,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
@@ -34,12 +36,18 @@ public class Given_HealthCheckEndpointModule
         ScriptedDocumentCacheStatusService documentCacheStatusService,
         string? requiredRole,
         ScriptedJwtValidationService? jwtValidationService = null,
-        string? roleClaimType = RoleClaimType
+        string? roleClaimType = RoleClaimType,
+        RecordingLoggerProvider? loggerProvider = null
     )
     {
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
+            if (loggerProvider is not null)
+            {
+                builder.ConfigureLogging(logging => logging.AddProvider(loggerProvider));
+            }
+
             builder.ConfigureAppConfiguration(
                 (context, configuration) =>
                 {
@@ -123,13 +131,14 @@ public class Given_HealthCheckEndpointModule
         documentCacheStatusService.CallCount.Should().Be(0);
     }
 
-    [Test]
-    public async Task It_omits_document_cache_status_when_required_role_is_invalid()
+    [TestCase("")]
+    [TestCase("   ")]
+    public async Task It_omits_document_cache_status_when_required_role_is_blank(string requiredRole)
     {
         ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
         await using WebApplicationFactory<Program> factory = CreateFactory(
             documentCacheStatusService,
-            requiredRole: "dms document cache operator"
+            requiredRole
         );
         using HttpClient client = factory.CreateClient();
 
@@ -137,6 +146,34 @@ public class Given_HealthCheckEndpointModule
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         documentCacheStatusService.CallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_warns_and_omits_document_cache_status_when_required_role_is_present_but_invalid()
+    {
+        const string invalidRequiredRole = "dms document cache operator";
+        ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
+        var loggerProvider = new RecordingLoggerProvider();
+        await using WebApplicationFactory<Program> factory = CreateFactory(
+            documentCacheStatusService,
+            requiredRole: invalidRequiredRole,
+            loggerProvider: loggerProvider
+        );
+        using HttpClient client = factory.CreateClient();
+
+        HttpResponseMessage response = await client.GetAsync("/health/document-cache");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        documentCacheStatusService.CallCount.Should().Be(0);
+        RecordingLogEntry warning = loggerProvider
+            .Entries.Should()
+            .ContainSingle(entry =>
+                entry.Category == typeof(HealthCheckEndpointModule).FullName
+                && entry.Level == LogLevel.Warning
+                && entry.Message.Contains("DataManagement:DocumentCache:Status:RequiredRole is invalid")
+            )
+            .Subject;
+        warning.Message.Should().NotContain(invalidRequiredRole);
     }
 
     [TestCase("")]
@@ -339,4 +376,53 @@ public class Given_HealthCheckEndpointModule
             return Task.FromResult<(ClaimsPrincipal?, ClientAuthorizations?)>((principal, null));
         }
     }
+
+    private sealed class RecordingLoggerProvider : ILoggerProvider
+    {
+        private readonly Lock _sync = new();
+        private readonly List<RecordingLogEntry> _entries = [];
+
+        public IReadOnlyList<RecordingLogEntry> Entries
+        {
+            get
+            {
+                lock (_sync)
+                {
+                    return _entries.ToArray();
+                }
+            }
+        }
+
+        public ILogger CreateLogger(string categoryName) =>
+            new RecordingLogger(categoryName, _sync, _entries);
+
+        public void Dispose() { }
+
+        private sealed class RecordingLogger(string categoryName, Lock sync, List<RecordingLogEntry> entries)
+            : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            )
+            {
+                ArgumentNullException.ThrowIfNull(formatter);
+
+                lock (sync)
+                {
+                    entries.Add(new RecordingLogEntry(categoryName, logLevel, formatter(state, exception)));
+                }
+            }
+        }
+    }
+
+    private sealed record RecordingLogEntry(string Category, LogLevel Level, string Message);
 }
