@@ -789,7 +789,7 @@ Build one command that:
 WITH page_ids AS (
   -- Provided by DMS query compilation (ApiSchema-driven):
   -- GET by query: SELECT r.DocumentId FROM <schema>.<ResourceRoot> r WHERE ... ORDER BY r.DocumentId OFFSET/FETCH ...
-  -- A single known DocumentId does not come through here; see 6.3.
+  -- A single known DocumentId does not come through here; see "Single-document fast path" below.
   <PageDocumentIdSql>
 )
 INSERT INTO page (DocumentId)
