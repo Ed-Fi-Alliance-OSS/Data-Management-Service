@@ -739,7 +739,7 @@ BEGIN
     END IF;
 
     IF _lifecycle_state NOT IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking') THEN
-        RAISE EXCEPTION 'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value for projection enqueue.';
+        RAISE EXCEPTION 'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value % for projection enqueue.', _lifecycle_state;
     END IF;
 
     IF _lifecycle_state = 'Disabled' THEN
@@ -785,7 +785,7 @@ BEGIN
     END IF;
 
     IF _lifecycle_state NOT IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking') THEN
-        RAISE EXCEPTION 'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value for projection enqueue.';
+        RAISE EXCEPTION 'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value % for projection enqueue.', _lifecycle_state;
     END IF;
 
     IF _lifecycle_state = 'Disabled' THEN

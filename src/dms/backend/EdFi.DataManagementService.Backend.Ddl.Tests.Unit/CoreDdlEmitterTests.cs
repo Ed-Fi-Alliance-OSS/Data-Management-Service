@@ -1126,7 +1126,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect_Enqueue
             functionBody
                 .Should()
                 .Contain(
-                    "RAISE EXCEPTION 'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value for projection enqueue.';"
+                    "RAISE EXCEPTION 'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value % for projection enqueue.', _lifecycle_state;"
                 );
             functionBody.Should().Contain("IF _lifecycle_state = 'Disabled' THEN");
             functionBody.Should().Contain("RETURN NULL;");
