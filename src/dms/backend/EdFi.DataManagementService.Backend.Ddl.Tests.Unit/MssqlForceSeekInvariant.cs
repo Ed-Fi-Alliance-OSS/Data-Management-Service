@@ -37,24 +37,31 @@ namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;
 internal static class MssqlForceSeekInvariant
 {
     /// <summary>
-    /// Matches an emitted SQL Server mirror-stamp UPDATE, capturing the hinted table and the column
-    /// the <c>@stamped</c> table variable is joined on.
+    /// Matches an emitted SQL Server mirror-stamp UPDATE, capturing the target table, whatever table
+    /// hint it carries, and the column the <c>@stamped</c> table variable is joined on.
+    ///
+    /// <para>One pattern rather than a hinted/unhinted pair. A pair only classifies the two spellings
+    /// it anticipates: a mirror stamp carrying any other hint — <c>WITH (INDEX(…))</c>, or
+    /// <c>WITH(FORCESEEK)</c> without the space — matches neither, so it is reported as neither
+    /// unhinted nor checked for seekability and the invariant passes with nothing to look at.
+    /// Capturing the hint instead makes every spelling land somewhere.</para>
     /// </summary>
-    private static readonly Regex _mssqlForceSeekMirrorUpdate = new(
-        @"FROM \[(?<schema>[^\]]+)\]\.\[(?<table>[^\]]+)\] r WITH \(FORCESEEK\)\r?\n\s*INNER JOIN @stamped s ON s\.\[[^\]]+\] = r\.\[(?<targetColumn>[^\]]+)\]",
+    private static readonly Regex _mssqlMirrorUpdate = new(
+        @"FROM \[(?<schema>[^\]]+)\]\.\[(?<table>[^\]]+)\] r(?<hint>[^\r\n]*)\r?\n\s*INNER JOIN @stamped s ON s\.\[[^\]]+\] = r\.\[(?<targetColumn>[^\]]+)\]",
         RegexOptions.Compiled
     );
 
     /// <summary>
-    /// Matches a mirror-stamp UPDATE that carries no table hint. Disjoint from
-    /// <see cref="_mssqlForceSeekMirrorUpdate"/> by construction: this one requires the line break
-    /// immediately after the <c>r</c> alias, which the hinted form fills with
-    /// <c>WITH (FORCESEEK)</c>.
+    /// The exact hint invariant 7 requires, as it is emitted — leading space included, because the
+    /// capture above starts immediately after the <c>r</c> alias.
     /// </summary>
-    private static readonly Regex _mssqlUnhintedMirrorUpdate = new(
-        @"FROM \[(?<schema>[^\]]+)\]\.\[(?<table>[^\]]+)\] r\r?\n\s*INNER JOIN @stamped s ON ",
-        RegexOptions.Compiled
-    );
+    private const string RequiredHint = " WITH (FORCESEEK)";
+
+    /// <summary>
+    /// The join every mirror stamp is built around. Counted, so that a mirror stamp
+    /// <see cref="_mssqlMirrorUpdate"/> stops matching fails instead of silently leaving scope.
+    /// </summary>
+    private const string MirrorStampJoin = "INNER JOIN @stamped s ON";
 
     private static readonly Regex _mssqlCreateTable = new(
         @"CREATE TABLE \[(?<schema>[^\]]+)\]\.\[(?<table>[^\]]+)\]\r?\n\((?<body>.*?)\r?\n\);",
@@ -81,23 +88,39 @@ internal static class MssqlForceSeekInvariant
     /// </param>
     public static void AssertMirrorStampsAreHintedAndSeekable(string generatedSql, string source)
     {
-        _mssqlUnhintedMirrorUpdate
-            .Matches(generatedSql)
-            .Select(unhinted => $"[{unhinted.Groups["schema"].Value}].[{unhinted.Groups["table"].Value}]")
-            .Should()
-            .BeEmpty(
-                $"change-queries.md invariant 7 requires WITH (FORCESEEK) on every mirror stamp, and "
-                    + $"the DDL emitted for {source} updates the listed mirror target(s) without it. "
-                    + "The join is on a table variable, so an unhinted plan may scan the mirror table "
-                    + "and take update locks across rows the transaction never touched."
+        var mirrorStamps = _mssqlMirrorUpdate.Matches(generatedSql);
+
+        // This pattern is the only thing that decides what gets checked below, so a mirror stamp it
+        // stops matching takes its own hint and seekability out of scope without failing anything.
+        // Counting the join every mirror stamp is built around turns that into a failure.
+        mirrorStamps
+            .Count.Should()
+            .Be(
+                generatedSql.AsSpan().Count(MirrorStampJoin),
+                $"every mirror stamp in the DDL emitted for {source} must be recognized by the "
+                    + "mirror-stamp pattern; one it does not recognize is one whose hint and "
+                    + "seekability go unchecked"
             );
 
         var primaryKeyLeadColumns = ReadMssqlPrimaryKeyLeadColumns(generatedSql);
 
-        foreach (Match hint in _mssqlForceSeekMirrorUpdate.Matches(generatedSql))
+        foreach (Match mirrorStamp in mirrorStamps)
         {
-            var qualifiedTable = $"[{hint.Groups["schema"].Value}].[{hint.Groups["table"].Value}]";
-            var joinedColumn = hint.Groups["targetColumn"].Value;
+            var qualifiedTable =
+                $"[{mirrorStamp.Groups["schema"].Value}].[{mirrorStamp.Groups["table"].Value}]";
+            var joinedColumn = mirrorStamp.Groups["targetColumn"].Value;
+
+            mirrorStamp
+                .Groups["hint"]
+                .Value.Should()
+                .Be(
+                    RequiredHint,
+                    $"change-queries.md invariant 7 requires exactly WITH (FORCESEEK) on every mirror "
+                        + $"stamp, and the one emitted for {source} against {qualifiedTable} carries "
+                        + "something else. The join is on a table variable, so any plan free to scan "
+                        + "the mirror table takes update locks across rows the transaction never "
+                        + "touched."
+                );
 
             primaryKeyLeadColumns
                 .TryGetValue(qualifiedTable, out var leadColumn)

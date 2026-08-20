@@ -770,9 +770,24 @@ public class Given_DdlEmitter_With_AuthEdOrgHierarchy_For_Mssql : DdlEmissionGol
                     + "predicates read, so a stamp-only re-firing skips it outright"
             );
 
-        // Both steps inside the gate: either one left outside keeps scanning the shared table.
-        deleteStepStart.Should().BeGreaterThan(gateStart, "the tuple DELETE step must sit inside the gate");
-        insertStepStart.Should().BeGreaterThan(gateStart, "the tuple MERGE step must sit inside the gate");
+        // Both steps inside the gate's block, not merely after the IF: without BEGIN / END, T-SQL
+        // binds a bare IF to the first statement only, leaving the MERGE running on every firing
+        // while the DELETE stays gated. There is no nested BEGIN / END in this body, so the first
+        // END after the block opens is the gate's.
+        var blockStart = triggerBody.IndexOf("BEGIN", gateStart, StringComparison.Ordinal);
+
+        // Ranged rather than BeLessThan: a missing BEGIN yields -1, which is less than every other
+        // index here and would satisfy the weaker form. Asserted before blockEnd is read so an
+        // absent BEGIN reports itself instead of throwing out of the IndexOf below.
+        blockStart
+            .Should()
+            .BeInRange(gateStart, deleteStepStart, "the gate must open a BEGIN block before the DELETE step");
+
+        var blockEnd = triggerBody.IndexOf("END", blockStart, StringComparison.Ordinal);
+
+        insertStepStart
+            .Should()
+            .BeLessThan(blockEnd, "the MERGE step must sit inside the gate's block, not after its END");
 
         // The gate must not widen past the columns the predicates use. EducationOrganizationId is
         // the identity, not a parent id, and every branch joins inserted to deleted on it unchanged,

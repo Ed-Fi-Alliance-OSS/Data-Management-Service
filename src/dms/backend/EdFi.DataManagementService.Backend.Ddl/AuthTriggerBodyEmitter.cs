@@ -152,10 +152,12 @@ internal static class AuthTriggerBodyEmitter
         // the INSERT step's sources on the mirror-image predicate - so a firing that wrote neither
         // parent id can produce no tuple. The optimizer cannot know that, and it still resolves both
         // steps' joins against the shared auth.EducationOrganizationIdToEducationOrganizationId to
-        // discover it, taking update locks on rows the statement will never modify. That is the same
-        // mechanism as change-queries.md invariant 6, and it is reached the same way: the stamping
-        // trigger's mirror UPDATE on this table is a real UPDATE, so nested triggers re-fire this
-        // one on every insert and every stamp of an EducationOrganization.
+        // discover it, taking update locks on rows the statement will never modify. Required by
+        // auth.md, "We also need to bring the same triggers that update the Education Organization
+        // hierarchy". The same mechanism drives change-queries.md invariant 6, though that invariant
+        // governs the content stamps rather than this trigger, and it is reached the same way: the
+        // stamping trigger's mirror UPDATE on this table is a real UPDATE, so nested triggers
+        // re-fire this one on every insert and every stamp of an EducationOrganization.
         //
         // UPDATE(col) is a performance pre-filter only - it reports that a column appeared in a SET
         // clause, not that its value changed - so the null-safe predicates inside both steps stay
