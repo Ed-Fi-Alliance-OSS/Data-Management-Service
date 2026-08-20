@@ -340,12 +340,10 @@ public class EffectiveSchemaHashProviderTests
         private string _hash = null!;
 
         // This is the locked expected hash for the fixture schema file.
-        // If canonicalization, manifest format, hash algorithm, or fixture content changes,
-        // this value must be updated intentionally via a "bless" workflow.
-        // Last blessed for the RelationalMappingVersion v1 -> v2 bump (dms.Descriptor gained
-        // ResourceKeyId and descriptor paging re-rooted onto it). Later v2 physical DDL
-        // changes, including dropping dms.Document identity stamp columns, did not change this
-        // fixture hash.
+        // If canonicalization, manifest format, hash algorithm, fixture content, or
+        // RelationalMappingVersion changes, this value must be updated intentionally
+        // via a "bless" workflow. Later v2 physical DDL changes do not change this
+        // fixture hash unless RelationalMappingVersion is bumped.
         private const string ExpectedHash =
             "4994be5692aaccb7f5969618d3655f6014a97e334e98e1213541f54e8d2ee849";
 
