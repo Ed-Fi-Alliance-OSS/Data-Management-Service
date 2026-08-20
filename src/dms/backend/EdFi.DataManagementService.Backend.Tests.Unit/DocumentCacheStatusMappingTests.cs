@@ -181,6 +181,139 @@ public class Given_DocumentCacheStatusMapping
             .Equal("2026-08-17T14:00:12Z", "2026-08-17T14:00:22Z");
     }
 
+    [Test]
+    public async Task It_maps_execution_last_failure_at_from_latest_document_diagnostic()
+    {
+        DocumentCacheTargetObservation target = ResolvedTarget(generation: 3, pageSize: 10);
+        DocumentCacheProjectionObservationStore observationStore = new(
+            new FixedTimeProvider(ProcessObservedAt)
+        );
+        DateTimeOffset latestDocumentFailureAt = RuntimeObservedAt.AddSeconds(40);
+        observationStore.ObserveTarget(
+            TargetHealth(
+                target,
+                documentDiagnostics:
+                [
+                    DocumentDiagnostic(
+                        101,
+                        DocumentCacheProjectionDocumentDiagnosticCategory.ProviderFailure,
+                        latestDocumentFailureAt
+                    ),
+                    DocumentDiagnostic(
+                        102,
+                        DocumentCacheProjectionDocumentDiagnosticCategory.WriterOutcome,
+                        RuntimeObservedAt.AddSeconds(10)
+                    ),
+                ]
+            )
+        );
+        DocumentCacheStatusService service = CreateService(
+            new StaticTargetRegistry([target], [ExecutionContext(target)]),
+            observationStore
+        );
+
+        DocumentCacheStatusTarget statusTarget = (await service.GetStatusAsync()).Targets.Single();
+        JsonObject root = JsonNode.Parse(JsonSerializer.Serialize(statusTarget))!.AsObject();
+
+        statusTarget.ExecutionState.LastFailureAt.Should().Be(latestDocumentFailureAt);
+        root["executionState"]!["lastFailureAt"]!.GetValue<string>().Should().Be("2026-08-17T14:00:42Z");
+    }
+
+    [Test]
+    public async Task It_maps_execution_last_failure_at_from_latest_target_diagnostic()
+    {
+        DocumentCacheTargetObservation target = ResolvedTarget(generation: 3, pageSize: 10);
+        DocumentCacheProjectionObservationStore observationStore = new(
+            new FixedTimeProvider(ProcessObservedAt)
+        );
+        DocumentCacheProjectionTargetHealthSnapshot targetHealth = TargetHealth(target);
+        DateTimeOffset latestTargetFailureAt = RuntimeObservedAt.AddSeconds(40);
+
+        observationStore.ObserveTarget(targetHealth);
+        observationStore.AppendTargetDiagnostic(
+            targetHealth.ContextKey,
+            TargetDiagnostic(target, DocumentCacheTargetDiagnosticCategory.UnexpectedProviderFailure),
+            latestTargetFailureAt
+        );
+        observationStore.AppendTargetDiagnostic(
+            targetHealth.ContextKey,
+            TargetDiagnostic(target, DocumentCacheTargetDiagnosticCategory.CacheAheadLatchSet),
+            RuntimeObservedAt.AddSeconds(10)
+        );
+        DocumentCacheStatusService service = CreateService(
+            new StaticTargetRegistry([target], [ExecutionContext(target)]),
+            observationStore
+        );
+
+        DocumentCacheStatusTarget statusTarget = (await service.GetStatusAsync()).Targets.Single();
+
+        statusTarget.ExecutionState.LastFailureAt.Should().Be(latestTargetFailureAt);
+    }
+
+    [Test]
+    public async Task It_maps_execution_last_failure_at_from_latest_mixed_diagnostic()
+    {
+        DocumentCacheTargetObservation target = ResolvedTarget(generation: 3, pageSize: 10);
+        DocumentCacheProjectionObservationStore observationStore = new(
+            new FixedTimeProvider(ProcessObservedAt)
+        );
+        DateTimeOffset latestTargetFailureAt = RuntimeObservedAt.AddSeconds(50);
+        DocumentCacheProjectionTargetHealthSnapshot targetHealth = TargetHealth(
+            target,
+            documentDiagnostics:
+            [
+                DocumentDiagnostic(
+                    101,
+                    DocumentCacheProjectionDocumentDiagnosticCategory.ProviderFailure,
+                    RuntimeObservedAt.AddSeconds(45)
+                ),
+                DocumentDiagnostic(
+                    102,
+                    DocumentCacheProjectionDocumentDiagnosticCategory.WriterOutcome,
+                    RuntimeObservedAt.AddSeconds(20)
+                ),
+            ]
+        );
+
+        observationStore.ObserveTarget(targetHealth);
+        observationStore.AppendTargetDiagnostic(
+            targetHealth.ContextKey,
+            TargetDiagnostic(target, DocumentCacheTargetDiagnosticCategory.UnexpectedProviderFailure),
+            latestTargetFailureAt
+        );
+        observationStore.AppendTargetDiagnostic(
+            targetHealth.ContextKey,
+            TargetDiagnostic(target, DocumentCacheTargetDiagnosticCategory.CacheAheadLatchSet),
+            RuntimeObservedAt.AddSeconds(15)
+        );
+        DocumentCacheStatusService service = CreateService(
+            new StaticTargetRegistry([target], [ExecutionContext(target)]),
+            observationStore
+        );
+
+        DocumentCacheStatusTarget statusTarget = (await service.GetStatusAsync()).Targets.Single();
+
+        statusTarget.ExecutionState.LastFailureAt.Should().Be(latestTargetFailureAt);
+    }
+
+    [Test]
+    public async Task It_maps_execution_last_failure_at_to_null_without_failure_diagnostics()
+    {
+        DocumentCacheTargetObservation target = ResolvedTarget(generation: 3, pageSize: 10);
+        DocumentCacheProjectionObservationStore observationStore = new(
+            new FixedTimeProvider(ProcessObservedAt)
+        );
+        observationStore.ObserveTarget(TargetHealth(target));
+        DocumentCacheStatusService service = CreateService(
+            new StaticTargetRegistry([target], [ExecutionContext(target)]),
+            observationStore
+        );
+
+        DocumentCacheStatusTarget statusTarget = (await service.GetStatusAsync()).Targets.Single();
+
+        statusTarget.ExecutionState.LastFailureAt.Should().BeNull();
+    }
+
     [TestCase(
         true,
         false,
@@ -587,15 +720,20 @@ public class Given_DocumentCacheStatusMapping
 
     private static DocumentCacheProjectionDocumentDiagnostic DocumentDiagnostic(
         long documentId,
-        DocumentCacheProjectionDocumentDiagnosticCategory category
-    ) =>
-        new(
+        DocumentCacheProjectionDocumentDiagnosticCategory category,
+        DateTimeOffset? observedAt = null
+    )
+    {
+        DateTimeOffset diagnosticObservedAt = observedAt ?? RuntimeObservedAt;
+
+        return new(
             documentId,
             category,
             $"Document diagnostic {category}\r\n{{unsafe}}",
-            RuntimeObservedAt,
-            RuntimeObservedAt.AddSeconds(30)
+            diagnosticObservedAt,
+            diagnosticObservedAt.AddSeconds(30)
         );
+    }
 
     private static DocumentCacheProjectionPoisonTraversalDiagnostic PoisonTraversalDiagnostic(
         long documentId,

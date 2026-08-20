@@ -835,7 +835,7 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             activeWorkerCount,
             targetHealth.ExecutionState.BackoffUntil,
             targetHealth.LastSuccess?.CompletedAt,
-            targetHealth.FailureDiagnostics.DocumentDiagnostics.LastOrDefault()?.ObservedAt,
+            SelectLastFailureAt(targetHealth),
             status switch
             {
                 DocumentCacheStatusExecutionState.TargetBackoff =>
@@ -845,6 +845,20 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
                 _ => null,
             }
         );
+    }
+
+    private static DateTimeOffset? SelectLastFailureAt(
+        DocumentCacheProjectionTargetHealthSnapshot targetHealth
+    )
+    {
+        return targetHealth
+            .TargetDiagnosticEvents.Select(diagnostic => (DateTimeOffset?)diagnostic.ObservedAt)
+            .Concat(
+                targetHealth.FailureDiagnostics.DocumentDiagnostics.Select(diagnostic =>
+                    (DateTimeOffset?)diagnostic.ObservedAt
+                )
+            )
+            .Max();
     }
 
     private static DocumentCacheStatusExecutionState SelectExecutionStatus(
