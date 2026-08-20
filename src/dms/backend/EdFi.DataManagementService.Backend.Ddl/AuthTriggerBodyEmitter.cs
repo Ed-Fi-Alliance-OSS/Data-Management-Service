@@ -138,9 +138,68 @@ internal static class AuthTriggerBodyEmitter
         AuthEdOrgEntity entity
     )
     {
-        EmitUpdateDeleteStep(writer, dialect, entity);
+        void EmitSteps()
+        {
+            EmitUpdateDeleteStep(writer, dialect, entity);
+            writer.AppendLine();
+            EmitUpdateInsertStep(writer, dialect, entity);
+        }
+
+        // On SQL Server this trigger has to be skipped outright when no parent id was written, not
+        // merely evaluated to an empty workset. Every branch below already requires a parent id to
+        // have changed - the DELETE step's sources are gated on
+        // "old.<parent> IS NOT NULL AND (new.<parent> IS NULL OR old.<parent> <> new.<parent>)", and
+        // the INSERT step's sources on the mirror-image predicate - so a firing that wrote neither
+        // parent id can produce no tuple. The optimizer cannot know that, and it still resolves both
+        // steps' joins against the shared auth.EducationOrganizationIdToEducationOrganizationId to
+        // discover it, taking update locks on rows the statement will never modify. That is the same
+        // mechanism as change-queries.md invariant 6, and it is reached the same way: the stamping
+        // trigger's mirror UPDATE on this table is a real UPDATE, so nested triggers re-fire this
+        // one on every insert and every stamp of an EducationOrganization.
+        //
+        // UPDATE(col) is a performance pre-filter only - it reports that a column appeared in a SET
+        // clause, not that its value changed - so the null-safe predicates inside both steps stay
+        // authoritative, and the gate ranges over exactly the parent id columns those predicates
+        // use. It can therefore only skip a firing whose tuple set would have been empty.
+        if (dialect.Rules.Dialect != SqlDialect.Mssql || entity.ParentEdOrgFks.Count == 0)
+        {
+            EmitSteps();
+            return;
+        }
+
+        writer.Append("IF ");
+        EmitMssqlParentEdOrgIdUpdateDisjunction(writer, dialect, entity);
         writer.AppendLine();
-        EmitUpdateInsertStep(writer, dialect, entity);
+        writer.AppendLine("BEGIN");
+        using (writer.Indent())
+        {
+            EmitSteps();
+        }
+        writer.AppendLine("END");
+    }
+
+    /// <summary>
+    /// Emits a SQL Server <c>UPDATE(col)</c> disjunction across the denormalized parent id columns
+    /// the hierarchical UPDATE body's own predicates read, as a <b>performance pre-filter only</b>
+    /// (not a correctness gate). Mirrors
+    /// <c>RelationalModelDdlEmitter.EmitMssqlUpdateColumnDisjunction</c>.
+    /// </summary>
+    private static void EmitMssqlParentEdOrgIdUpdateDisjunction(
+        SqlWriter writer,
+        ISqlDialect dialect,
+        AuthEdOrgEntity entity
+    )
+    {
+        for (int i = 0; i < entity.ParentEdOrgFks.Count; i++)
+        {
+            if (i > 0)
+            {
+                writer.Append(" OR ");
+            }
+            writer.Append("UPDATE(");
+            writer.Append(Quote(dialect, entity.ParentEdOrgFks[i].DenormalizedParentIdColumn));
+            writer.Append(")");
+        }
     }
 
     private static void EmitUpdateDeleteStep(SqlWriter writer, ISqlDialect dialect, AuthEdOrgEntity entity)

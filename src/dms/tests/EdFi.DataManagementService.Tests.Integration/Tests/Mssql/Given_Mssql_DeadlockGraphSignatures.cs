@@ -132,6 +132,50 @@ public sealed class Given_Mssql_DeadlockGraphSignatures
             capture.IsInconclusive.Should().BeFalse();
             capture.Signatures.Should().BeEquivalentTo(DeadlockGraphReader.UnparsableGraphSignature);
             capture.Graphs.Should().HaveCount(1);
+            capture
+                .AttributedGraphCount.Should()
+                .Be(0, "a payload that did not parse cannot be attributed to any database");
+        }
+    }
+
+    /// <summary>
+    /// The third way an event can fail to yield a graph, and the one with no text to fall back on:
+    /// the payload rendered empty. It has to reach the unparsable path like the other two, because
+    /// an event that satisfies neither the graph walk nor the unparsed walk is dropped outright -
+    /// leaving the capture reporting itself complete while a graph is missing from it, which on the
+    /// baseline side of Gate B reads as a fix.
+    ///
+    /// <para>The value element is written here rather than through <see cref="DeadlockEvent"/>
+    /// because that builder puts the graph on its own line, so its <c>value</c> always carries
+    /// surrounding whitespace and a self-closing one is unreachable through it.</para>
+    /// </summary>
+    [TestCase("<value />", TestName = "an event payload that rendered as an empty element")]
+    [TestCase("<value></value>", TestName = "an event payload that rendered with no content")]
+    [TestCase("<value>   </value>", TestName = "an event payload that rendered only whitespace")]
+    public void It_reports_an_event_payload_with_no_content_as_unparsable(string valueElement)
+    {
+        DeadlockCapture capture = DeadlockGraphReader.CaptureFromRingBufferTarget(
+            $"""
+            <RingBufferTarget truncated="0" processingTime="0" totalEventsProcessed="1" eventCount="1" droppedCount="0" memoryUsed="12">
+              <event name="xml_deadlock_report" package="sqlserver" timestamp="2026-08-18T12:00:00.000Z">
+                <data name="xml_report">
+                  <type name="xml" package="package0" />
+                  {valueElement}
+                </data>
+              </event>
+            </RingBufferTarget>
+            """,
+            LeasedDatabase
+        );
+
+        using (new AssertionScope())
+        {
+            capture.IsInconclusive.Should().BeFalse();
+            capture.Signatures.Should().BeEquivalentTo(DeadlockGraphReader.UnparsableGraphSignature);
+            capture.Graphs.Should().HaveCount(1, "the event is still evidence that something was recorded");
+            capture
+                .AttributedGraphCount.Should()
+                .Be(0, "a payload that did not parse cannot be attributed to any database");
         }
     }
 

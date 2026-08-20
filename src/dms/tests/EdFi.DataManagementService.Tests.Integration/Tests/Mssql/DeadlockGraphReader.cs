@@ -115,10 +115,14 @@ public static class DeadlockGraphReader
             signatures.AddRange(SignaturesOf(graph.ToString()));
         }
 
+        // Not counted as attributed: a payload this reader could not reduce to XML carries neither a
+        // currentdbname nor a qualified objectname, so nothing in it can be attributed to the leased
+        // database and reporting it as such overstates a number read across runs. Nothing is lost by
+        // that - it still lands in Graphs as evidence, and it still contributes a signature, which is
+        // the half a differential comparison must not be allowed to under-report.
         foreach (string unparsed in UnparsedGraphsIn(graphSource))
         {
             graphs.Add(unparsed);
-            attributedGraphCount++;
             signatures.AddRange(SignaturesOf(unparsed));
         }
 
@@ -282,12 +286,19 @@ public static class DeadlockGraphReader
         DeadlockReportValuesIn(ringBuffer).Select(value => value.Element("deadlock")).OfType<XElement>();
 
     /// <summary>
-    /// Event payloads that carried no <c>&lt;deadlock&gt;</c> element but did carry text. Kept as raw
-    /// strings so <see cref="SignaturesOf"/> reports them as unparsable rather than dropping them.
+    /// Every event payload that carried no <c>&lt;deadlock&gt;</c> element, kept as a raw string so
+    /// <see cref="SignaturesOf"/> reports it as unparsable rather than dropping it.
+    ///
+    /// <para>Exactly the complement of <see cref="DeadlockGraphsIn"/>, including payloads whose text
+    /// is empty or whitespace. Excluding those would leave an event that satisfies neither walk, so
+    /// a capture missing a graph would report itself complete with a shorter signature list - the
+    /// same silent under-reporting the truncation and eviction checks exist to prevent. An empty
+    /// string does not parse, so it lands on <see cref="UnparsableGraphSignature"/> like any other
+    /// payload this reader cannot reduce to tuples.</para>
     /// </summary>
     private static IEnumerable<string> UnparsedGraphsIn(XElement ringBuffer) =>
         DeadlockReportValuesIn(ringBuffer)
-            .Where(value => value.Element("deadlock") is null && !string.IsNullOrWhiteSpace(value.Value))
+            .Where(value => value.Element("deadlock") is null)
             .Select(value => value.Value);
 
     private static IEnumerable<XElement> DeadlockReportValuesIn(XElement ringBuffer) =>

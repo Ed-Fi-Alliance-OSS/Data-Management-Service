@@ -40158,66 +40158,69 @@ AFTER UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
-    DELETE tbd
-    FROM [auth].[EducationOrganizationIdToEducationOrganizationId] AS tbd
-        INNER JOIN (
-            SELECT d1.[SourceEducationOrganizationId], d2.[TargetEducationOrganizationId]
+    IF UPDATE([CommunityOrganization_CommunityOrganizationId])
+    BEGIN
+        DELETE tbd
+        FROM [auth].[EducationOrganizationIdToEducationOrganizationId] AS tbd
+            INNER JOIN (
+                SELECT d1.[SourceEducationOrganizationId], d2.[TargetEducationOrganizationId]
+                FROM (
+                    SELECT tuples.[SourceEducationOrganizationId], new.[CommunityProviderId]
+                    FROM inserted new
+                        INNER JOIN deleted old
+                            ON old.[CommunityProviderId] = new.[CommunityProviderId]
+                        INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
+                            ON old.[CommunityOrganization_CommunityOrganizationId] = tuples.[TargetEducationOrganizationId]
+                    WHERE old.[CommunityOrganization_CommunityOrganizationId] IS NOT NULL
+                        AND (new.[CommunityOrganization_CommunityOrganizationId] IS NULL OR old.[CommunityOrganization_CommunityOrganizationId] <> new.[CommunityOrganization_CommunityOrganizationId])
+
+                    EXCEPT
+
+                    SELECT tuples.[SourceEducationOrganizationId], new.[CommunityProviderId]
+                    FROM inserted new
+                        INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
+                            ON new.[CommunityOrganization_CommunityOrganizationId] = tuples.[TargetEducationOrganizationId]
+                ) AS d1
+                CROSS JOIN
+                (
+                    SELECT new.[CommunityProviderId], tuples.[TargetEducationOrganizationId]
+                    FROM inserted new
+                        INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
+                            ON new.[CommunityProviderId] = tuples.[SourceEducationOrganizationId]
+                ) AS d2
+                WHERE d1.[CommunityProviderId] = d2.[CommunityProviderId]
+            ) AS cj
+                ON tbd.[SourceEducationOrganizationId] = cj.[SourceEducationOrganizationId]
+                AND tbd.[TargetEducationOrganizationId] = cj.[TargetEducationOrganizationId];
+
+        MERGE INTO [auth].[EducationOrganizationIdToEducationOrganizationId] target
+        USING (
+            SELECT sources.[SourceEducationOrganizationId], targets.[TargetEducationOrganizationId]
             FROM (
                 SELECT tuples.[SourceEducationOrganizationId], new.[CommunityProviderId]
                 FROM inserted new
                     INNER JOIN deleted old
-                        ON old.[CommunityProviderId] = new.[CommunityProviderId]
-                    INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
-                        ON old.[CommunityOrganization_CommunityOrganizationId] = tuples.[TargetEducationOrganizationId]
-                WHERE old.[CommunityOrganization_CommunityOrganizationId] IS NOT NULL
-                    AND (new.[CommunityOrganization_CommunityOrganizationId] IS NULL OR old.[CommunityOrganization_CommunityOrganizationId] <> new.[CommunityOrganization_CommunityOrganizationId])
-
-                EXCEPT
-
-                SELECT tuples.[SourceEducationOrganizationId], new.[CommunityProviderId]
-                FROM inserted new
+                        ON new.[CommunityProviderId] = old.[CommunityProviderId]
                     INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
                         ON new.[CommunityOrganization_CommunityOrganizationId] = tuples.[TargetEducationOrganizationId]
-            ) AS d1
+                WHERE (old.[CommunityOrganization_CommunityOrganizationId] IS NULL AND new.[CommunityOrganization_CommunityOrganizationId] IS NOT NULL)
+                    OR old.[CommunityOrganization_CommunityOrganizationId] <> new.[CommunityOrganization_CommunityOrganizationId]
+            ) AS sources
             CROSS JOIN
             (
                 SELECT new.[CommunityProviderId], tuples.[TargetEducationOrganizationId]
                 FROM inserted new
                     INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
                         ON new.[CommunityProviderId] = tuples.[SourceEducationOrganizationId]
-            ) AS d2
-            WHERE d1.[CommunityProviderId] = d2.[CommunityProviderId]
-        ) AS cj
-            ON tbd.[SourceEducationOrganizationId] = cj.[SourceEducationOrganizationId]
-            AND tbd.[TargetEducationOrganizationId] = cj.[TargetEducationOrganizationId];
-
-    MERGE INTO [auth].[EducationOrganizationIdToEducationOrganizationId] target
-    USING (
-        SELECT sources.[SourceEducationOrganizationId], targets.[TargetEducationOrganizationId]
-        FROM (
-            SELECT tuples.[SourceEducationOrganizationId], new.[CommunityProviderId]
-            FROM inserted new
-                INNER JOIN deleted old
-                    ON new.[CommunityProviderId] = old.[CommunityProviderId]
-                INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
-                    ON new.[CommunityOrganization_CommunityOrganizationId] = tuples.[TargetEducationOrganizationId]
-            WHERE (old.[CommunityOrganization_CommunityOrganizationId] IS NULL AND new.[CommunityOrganization_CommunityOrganizationId] IS NOT NULL)
-                OR old.[CommunityOrganization_CommunityOrganizationId] <> new.[CommunityOrganization_CommunityOrganizationId]
-        ) AS sources
-        CROSS JOIN
-        (
-            SELECT new.[CommunityProviderId], tuples.[TargetEducationOrganizationId]
-            FROM inserted new
-                INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
-                    ON new.[CommunityProviderId] = tuples.[SourceEducationOrganizationId]
-        ) AS targets
-        WHERE sources.[CommunityProviderId] = targets.[CommunityProviderId]
-    ) AS source
-        ON target.[SourceEducationOrganizationId] = source.[SourceEducationOrganizationId]
-        AND target.[TargetEducationOrganizationId] = source.[TargetEducationOrganizationId]
-    WHEN NOT MATCHED BY TARGET THEN
-        INSERT ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
-        VALUES (source.[SourceEducationOrganizationId], source.[TargetEducationOrganizationId]);
+            ) AS targets
+            WHERE sources.[CommunityProviderId] = targets.[CommunityProviderId]
+        ) AS source
+            ON target.[SourceEducationOrganizationId] = source.[SourceEducationOrganizationId]
+            AND target.[TargetEducationOrganizationId] = source.[TargetEducationOrganizationId]
+        WHEN NOT MATCHED BY TARGET THEN
+            INSERT ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
+            VALUES (source.[SourceEducationOrganizationId], source.[TargetEducationOrganizationId]);
+    END
 END;
 GO
 
@@ -44864,66 +44867,69 @@ AFTER UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
-    DELETE tbd
-    FROM [auth].[EducationOrganizationIdToEducationOrganizationId] AS tbd
-        INNER JOIN (
-            SELECT d1.[SourceEducationOrganizationId], d2.[TargetEducationOrganizationId]
+    IF UPDATE([StateEducationAgency_StateEducationAgencyId])
+    BEGIN
+        DELETE tbd
+        FROM [auth].[EducationOrganizationIdToEducationOrganizationId] AS tbd
+            INNER JOIN (
+                SELECT d1.[SourceEducationOrganizationId], d2.[TargetEducationOrganizationId]
+                FROM (
+                    SELECT tuples.[SourceEducationOrganizationId], new.[EducationServiceCenterId]
+                    FROM inserted new
+                        INNER JOIN deleted old
+                            ON old.[EducationServiceCenterId] = new.[EducationServiceCenterId]
+                        INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
+                            ON old.[StateEducationAgency_StateEducationAgencyId] = tuples.[TargetEducationOrganizationId]
+                    WHERE old.[StateEducationAgency_StateEducationAgencyId] IS NOT NULL
+                        AND (new.[StateEducationAgency_StateEducationAgencyId] IS NULL OR old.[StateEducationAgency_StateEducationAgencyId] <> new.[StateEducationAgency_StateEducationAgencyId])
+
+                    EXCEPT
+
+                    SELECT tuples.[SourceEducationOrganizationId], new.[EducationServiceCenterId]
+                    FROM inserted new
+                        INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
+                            ON new.[StateEducationAgency_StateEducationAgencyId] = tuples.[TargetEducationOrganizationId]
+                ) AS d1
+                CROSS JOIN
+                (
+                    SELECT new.[EducationServiceCenterId], tuples.[TargetEducationOrganizationId]
+                    FROM inserted new
+                        INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
+                            ON new.[EducationServiceCenterId] = tuples.[SourceEducationOrganizationId]
+                ) AS d2
+                WHERE d1.[EducationServiceCenterId] = d2.[EducationServiceCenterId]
+            ) AS cj
+                ON tbd.[SourceEducationOrganizationId] = cj.[SourceEducationOrganizationId]
+                AND tbd.[TargetEducationOrganizationId] = cj.[TargetEducationOrganizationId];
+
+        MERGE INTO [auth].[EducationOrganizationIdToEducationOrganizationId] target
+        USING (
+            SELECT sources.[SourceEducationOrganizationId], targets.[TargetEducationOrganizationId]
             FROM (
                 SELECT tuples.[SourceEducationOrganizationId], new.[EducationServiceCenterId]
                 FROM inserted new
                     INNER JOIN deleted old
-                        ON old.[EducationServiceCenterId] = new.[EducationServiceCenterId]
-                    INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
-                        ON old.[StateEducationAgency_StateEducationAgencyId] = tuples.[TargetEducationOrganizationId]
-                WHERE old.[StateEducationAgency_StateEducationAgencyId] IS NOT NULL
-                    AND (new.[StateEducationAgency_StateEducationAgencyId] IS NULL OR old.[StateEducationAgency_StateEducationAgencyId] <> new.[StateEducationAgency_StateEducationAgencyId])
-
-                EXCEPT
-
-                SELECT tuples.[SourceEducationOrganizationId], new.[EducationServiceCenterId]
-                FROM inserted new
+                        ON new.[EducationServiceCenterId] = old.[EducationServiceCenterId]
                     INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
                         ON new.[StateEducationAgency_StateEducationAgencyId] = tuples.[TargetEducationOrganizationId]
-            ) AS d1
+                WHERE (old.[StateEducationAgency_StateEducationAgencyId] IS NULL AND new.[StateEducationAgency_StateEducationAgencyId] IS NOT NULL)
+                    OR old.[StateEducationAgency_StateEducationAgencyId] <> new.[StateEducationAgency_StateEducationAgencyId]
+            ) AS sources
             CROSS JOIN
             (
                 SELECT new.[EducationServiceCenterId], tuples.[TargetEducationOrganizationId]
                 FROM inserted new
                     INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
                         ON new.[EducationServiceCenterId] = tuples.[SourceEducationOrganizationId]
-            ) AS d2
-            WHERE d1.[EducationServiceCenterId] = d2.[EducationServiceCenterId]
-        ) AS cj
-            ON tbd.[SourceEducationOrganizationId] = cj.[SourceEducationOrganizationId]
-            AND tbd.[TargetEducationOrganizationId] = cj.[TargetEducationOrganizationId];
-
-    MERGE INTO [auth].[EducationOrganizationIdToEducationOrganizationId] target
-    USING (
-        SELECT sources.[SourceEducationOrganizationId], targets.[TargetEducationOrganizationId]
-        FROM (
-            SELECT tuples.[SourceEducationOrganizationId], new.[EducationServiceCenterId]
-            FROM inserted new
-                INNER JOIN deleted old
-                    ON new.[EducationServiceCenterId] = old.[EducationServiceCenterId]
-                INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
-                    ON new.[StateEducationAgency_StateEducationAgencyId] = tuples.[TargetEducationOrganizationId]
-            WHERE (old.[StateEducationAgency_StateEducationAgencyId] IS NULL AND new.[StateEducationAgency_StateEducationAgencyId] IS NOT NULL)
-                OR old.[StateEducationAgency_StateEducationAgencyId] <> new.[StateEducationAgency_StateEducationAgencyId]
-        ) AS sources
-        CROSS JOIN
-        (
-            SELECT new.[EducationServiceCenterId], tuples.[TargetEducationOrganizationId]
-            FROM inserted new
-                INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
-                    ON new.[EducationServiceCenterId] = tuples.[SourceEducationOrganizationId]
-        ) AS targets
-        WHERE sources.[EducationServiceCenterId] = targets.[EducationServiceCenterId]
-    ) AS source
-        ON target.[SourceEducationOrganizationId] = source.[SourceEducationOrganizationId]
-        AND target.[TargetEducationOrganizationId] = source.[TargetEducationOrganizationId]
-    WHEN NOT MATCHED BY TARGET THEN
-        INSERT ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
-        VALUES (source.[SourceEducationOrganizationId], source.[TargetEducationOrganizationId]);
+            ) AS targets
+            WHERE sources.[EducationServiceCenterId] = targets.[EducationServiceCenterId]
+        ) AS source
+            ON target.[SourceEducationOrganizationId] = source.[SourceEducationOrganizationId]
+            AND target.[TargetEducationOrganizationId] = source.[TargetEducationOrganizationId]
+        WHEN NOT MATCHED BY TARGET THEN
+            INSERT ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
+            VALUES (source.[SourceEducationOrganizationId], source.[TargetEducationOrganizationId]);
+    END
 END;
 GO
 
@@ -49389,124 +49395,127 @@ AFTER UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
-    DELETE tbd
-    FROM [auth].[EducationOrganizationIdToEducationOrganizationId] AS tbd
-        INNER JOIN (
-            SELECT d1.[SourceEducationOrganizationId], d2.[TargetEducationOrganizationId]
+    IF UPDATE([EducationServiceCenter_EducationServiceCenterId]) OR UPDATE([ParentLocalEducationAgency_LocalEducationAgencyId]) OR UPDATE([StateEducationAgency_StateEducationAgencyId])
+    BEGIN
+        DELETE tbd
+        FROM [auth].[EducationOrganizationIdToEducationOrganizationId] AS tbd
+            INNER JOIN (
+                SELECT d1.[SourceEducationOrganizationId], d2.[TargetEducationOrganizationId]
+                FROM (
+                    SELECT tuples.[SourceEducationOrganizationId], new.[LocalEducationAgencyId]
+                    FROM inserted new
+                        INNER JOIN deleted old
+                            ON old.[LocalEducationAgencyId] = new.[LocalEducationAgencyId]
+                        INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
+                            ON old.[EducationServiceCenter_EducationServiceCenterId] = tuples.[TargetEducationOrganizationId]
+                    WHERE old.[EducationServiceCenter_EducationServiceCenterId] IS NOT NULL
+                        AND (new.[EducationServiceCenter_EducationServiceCenterId] IS NULL OR old.[EducationServiceCenter_EducationServiceCenterId] <> new.[EducationServiceCenter_EducationServiceCenterId])
+
+                    UNION
+
+                    SELECT tuples.[SourceEducationOrganizationId], new.[LocalEducationAgencyId]
+                    FROM inserted new
+                        INNER JOIN deleted old
+                            ON old.[LocalEducationAgencyId] = new.[LocalEducationAgencyId]
+                        INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
+                            ON old.[ParentLocalEducationAgency_LocalEducationAgencyId] = tuples.[TargetEducationOrganizationId]
+                    WHERE old.[ParentLocalEducationAgency_LocalEducationAgencyId] IS NOT NULL
+                        AND (new.[ParentLocalEducationAgency_LocalEducationAgencyId] IS NULL OR old.[ParentLocalEducationAgency_LocalEducationAgencyId] <> new.[ParentLocalEducationAgency_LocalEducationAgencyId])
+
+                    UNION
+
+                    SELECT tuples.[SourceEducationOrganizationId], new.[LocalEducationAgencyId]
+                    FROM inserted new
+                        INNER JOIN deleted old
+                            ON old.[LocalEducationAgencyId] = new.[LocalEducationAgencyId]
+                        INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
+                            ON old.[StateEducationAgency_StateEducationAgencyId] = tuples.[TargetEducationOrganizationId]
+                    WHERE old.[StateEducationAgency_StateEducationAgencyId] IS NOT NULL
+                        AND (new.[StateEducationAgency_StateEducationAgencyId] IS NULL OR old.[StateEducationAgency_StateEducationAgencyId] <> new.[StateEducationAgency_StateEducationAgencyId])
+
+                    EXCEPT
+
+                    SELECT tuples.[SourceEducationOrganizationId], new.[LocalEducationAgencyId]
+                    FROM inserted new
+                        INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
+                            ON new.[EducationServiceCenter_EducationServiceCenterId] = tuples.[TargetEducationOrganizationId]
+
+                    EXCEPT
+
+                    SELECT tuples.[SourceEducationOrganizationId], new.[LocalEducationAgencyId]
+                    FROM inserted new
+                        INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
+                            ON new.[ParentLocalEducationAgency_LocalEducationAgencyId] = tuples.[TargetEducationOrganizationId]
+
+                    EXCEPT
+
+                    SELECT tuples.[SourceEducationOrganizationId], new.[LocalEducationAgencyId]
+                    FROM inserted new
+                        INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
+                            ON new.[StateEducationAgency_StateEducationAgencyId] = tuples.[TargetEducationOrganizationId]
+                ) AS d1
+                CROSS JOIN
+                (
+                    SELECT new.[LocalEducationAgencyId], tuples.[TargetEducationOrganizationId]
+                    FROM inserted new
+                        INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
+                            ON new.[LocalEducationAgencyId] = tuples.[SourceEducationOrganizationId]
+                ) AS d2
+                WHERE d1.[LocalEducationAgencyId] = d2.[LocalEducationAgencyId]
+            ) AS cj
+                ON tbd.[SourceEducationOrganizationId] = cj.[SourceEducationOrganizationId]
+                AND tbd.[TargetEducationOrganizationId] = cj.[TargetEducationOrganizationId];
+
+        MERGE INTO [auth].[EducationOrganizationIdToEducationOrganizationId] target
+        USING (
+            SELECT sources.[SourceEducationOrganizationId], targets.[TargetEducationOrganizationId]
             FROM (
                 SELECT tuples.[SourceEducationOrganizationId], new.[LocalEducationAgencyId]
                 FROM inserted new
                     INNER JOIN deleted old
-                        ON old.[LocalEducationAgencyId] = new.[LocalEducationAgencyId]
-                    INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
-                        ON old.[EducationServiceCenter_EducationServiceCenterId] = tuples.[TargetEducationOrganizationId]
-                WHERE old.[EducationServiceCenter_EducationServiceCenterId] IS NOT NULL
-                    AND (new.[EducationServiceCenter_EducationServiceCenterId] IS NULL OR old.[EducationServiceCenter_EducationServiceCenterId] <> new.[EducationServiceCenter_EducationServiceCenterId])
-
-                UNION
-
-                SELECT tuples.[SourceEducationOrganizationId], new.[LocalEducationAgencyId]
-                FROM inserted new
-                    INNER JOIN deleted old
-                        ON old.[LocalEducationAgencyId] = new.[LocalEducationAgencyId]
-                    INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
-                        ON old.[ParentLocalEducationAgency_LocalEducationAgencyId] = tuples.[TargetEducationOrganizationId]
-                WHERE old.[ParentLocalEducationAgency_LocalEducationAgencyId] IS NOT NULL
-                    AND (new.[ParentLocalEducationAgency_LocalEducationAgencyId] IS NULL OR old.[ParentLocalEducationAgency_LocalEducationAgencyId] <> new.[ParentLocalEducationAgency_LocalEducationAgencyId])
-
-                UNION
-
-                SELECT tuples.[SourceEducationOrganizationId], new.[LocalEducationAgencyId]
-                FROM inserted new
-                    INNER JOIN deleted old
-                        ON old.[LocalEducationAgencyId] = new.[LocalEducationAgencyId]
-                    INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
-                        ON old.[StateEducationAgency_StateEducationAgencyId] = tuples.[TargetEducationOrganizationId]
-                WHERE old.[StateEducationAgency_StateEducationAgencyId] IS NOT NULL
-                    AND (new.[StateEducationAgency_StateEducationAgencyId] IS NULL OR old.[StateEducationAgency_StateEducationAgencyId] <> new.[StateEducationAgency_StateEducationAgencyId])
-
-                EXCEPT
-
-                SELECT tuples.[SourceEducationOrganizationId], new.[LocalEducationAgencyId]
-                FROM inserted new
+                        ON new.[LocalEducationAgencyId] = old.[LocalEducationAgencyId]
                     INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
                         ON new.[EducationServiceCenter_EducationServiceCenterId] = tuples.[TargetEducationOrganizationId]
+                WHERE (old.[EducationServiceCenter_EducationServiceCenterId] IS NULL AND new.[EducationServiceCenter_EducationServiceCenterId] IS NOT NULL)
+                    OR old.[EducationServiceCenter_EducationServiceCenterId] <> new.[EducationServiceCenter_EducationServiceCenterId]
 
-                EXCEPT
+                UNION
 
                 SELECT tuples.[SourceEducationOrganizationId], new.[LocalEducationAgencyId]
                 FROM inserted new
+                    INNER JOIN deleted old
+                        ON new.[LocalEducationAgencyId] = old.[LocalEducationAgencyId]
                     INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
                         ON new.[ParentLocalEducationAgency_LocalEducationAgencyId] = tuples.[TargetEducationOrganizationId]
+                WHERE (old.[ParentLocalEducationAgency_LocalEducationAgencyId] IS NULL AND new.[ParentLocalEducationAgency_LocalEducationAgencyId] IS NOT NULL)
+                    OR old.[ParentLocalEducationAgency_LocalEducationAgencyId] <> new.[ParentLocalEducationAgency_LocalEducationAgencyId]
 
-                EXCEPT
+                UNION
 
                 SELECT tuples.[SourceEducationOrganizationId], new.[LocalEducationAgencyId]
                 FROM inserted new
+                    INNER JOIN deleted old
+                        ON new.[LocalEducationAgencyId] = old.[LocalEducationAgencyId]
                     INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
                         ON new.[StateEducationAgency_StateEducationAgencyId] = tuples.[TargetEducationOrganizationId]
-            ) AS d1
+                WHERE (old.[StateEducationAgency_StateEducationAgencyId] IS NULL AND new.[StateEducationAgency_StateEducationAgencyId] IS NOT NULL)
+                    OR old.[StateEducationAgency_StateEducationAgencyId] <> new.[StateEducationAgency_StateEducationAgencyId]
+            ) AS sources
             CROSS JOIN
             (
                 SELECT new.[LocalEducationAgencyId], tuples.[TargetEducationOrganizationId]
                 FROM inserted new
                     INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
                         ON new.[LocalEducationAgencyId] = tuples.[SourceEducationOrganizationId]
-            ) AS d2
-            WHERE d1.[LocalEducationAgencyId] = d2.[LocalEducationAgencyId]
-        ) AS cj
-            ON tbd.[SourceEducationOrganizationId] = cj.[SourceEducationOrganizationId]
-            AND tbd.[TargetEducationOrganizationId] = cj.[TargetEducationOrganizationId];
-
-    MERGE INTO [auth].[EducationOrganizationIdToEducationOrganizationId] target
-    USING (
-        SELECT sources.[SourceEducationOrganizationId], targets.[TargetEducationOrganizationId]
-        FROM (
-            SELECT tuples.[SourceEducationOrganizationId], new.[LocalEducationAgencyId]
-            FROM inserted new
-                INNER JOIN deleted old
-                    ON new.[LocalEducationAgencyId] = old.[LocalEducationAgencyId]
-                INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
-                    ON new.[EducationServiceCenter_EducationServiceCenterId] = tuples.[TargetEducationOrganizationId]
-            WHERE (old.[EducationServiceCenter_EducationServiceCenterId] IS NULL AND new.[EducationServiceCenter_EducationServiceCenterId] IS NOT NULL)
-                OR old.[EducationServiceCenter_EducationServiceCenterId] <> new.[EducationServiceCenter_EducationServiceCenterId]
-
-            UNION
-
-            SELECT tuples.[SourceEducationOrganizationId], new.[LocalEducationAgencyId]
-            FROM inserted new
-                INNER JOIN deleted old
-                    ON new.[LocalEducationAgencyId] = old.[LocalEducationAgencyId]
-                INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
-                    ON new.[ParentLocalEducationAgency_LocalEducationAgencyId] = tuples.[TargetEducationOrganizationId]
-            WHERE (old.[ParentLocalEducationAgency_LocalEducationAgencyId] IS NULL AND new.[ParentLocalEducationAgency_LocalEducationAgencyId] IS NOT NULL)
-                OR old.[ParentLocalEducationAgency_LocalEducationAgencyId] <> new.[ParentLocalEducationAgency_LocalEducationAgencyId]
-
-            UNION
-
-            SELECT tuples.[SourceEducationOrganizationId], new.[LocalEducationAgencyId]
-            FROM inserted new
-                INNER JOIN deleted old
-                    ON new.[LocalEducationAgencyId] = old.[LocalEducationAgencyId]
-                INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
-                    ON new.[StateEducationAgency_StateEducationAgencyId] = tuples.[TargetEducationOrganizationId]
-            WHERE (old.[StateEducationAgency_StateEducationAgencyId] IS NULL AND new.[StateEducationAgency_StateEducationAgencyId] IS NOT NULL)
-                OR old.[StateEducationAgency_StateEducationAgencyId] <> new.[StateEducationAgency_StateEducationAgencyId]
-        ) AS sources
-        CROSS JOIN
-        (
-            SELECT new.[LocalEducationAgencyId], tuples.[TargetEducationOrganizationId]
-            FROM inserted new
-                INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
-                    ON new.[LocalEducationAgencyId] = tuples.[SourceEducationOrganizationId]
-        ) AS targets
-        WHERE sources.[LocalEducationAgencyId] = targets.[LocalEducationAgencyId]
-    ) AS source
-        ON target.[SourceEducationOrganizationId] = source.[SourceEducationOrganizationId]
-        AND target.[TargetEducationOrganizationId] = source.[TargetEducationOrganizationId]
-    WHEN NOT MATCHED BY TARGET THEN
-        INSERT ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
-        VALUES (source.[SourceEducationOrganizationId], source.[TargetEducationOrganizationId]);
+            ) AS targets
+            WHERE sources.[LocalEducationAgencyId] = targets.[LocalEducationAgencyId]
+        ) AS source
+            ON target.[SourceEducationOrganizationId] = source.[SourceEducationOrganizationId]
+            AND target.[TargetEducationOrganizationId] = source.[TargetEducationOrganizationId]
+        WHEN NOT MATCHED BY TARGET THEN
+            INSERT ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
+            VALUES (source.[SourceEducationOrganizationId], source.[TargetEducationOrganizationId]);
+    END
 END;
 GO
 
@@ -51339,66 +51348,69 @@ AFTER UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
-    DELETE tbd
-    FROM [auth].[EducationOrganizationIdToEducationOrganizationId] AS tbd
-        INNER JOIN (
-            SELECT d1.[SourceEducationOrganizationId], d2.[TargetEducationOrganizationId]
+    IF UPDATE([ParentEducationOrganization_EducationOrganizationId])
+    BEGIN
+        DELETE tbd
+        FROM [auth].[EducationOrganizationIdToEducationOrganizationId] AS tbd
+            INNER JOIN (
+                SELECT d1.[SourceEducationOrganizationId], d2.[TargetEducationOrganizationId]
+                FROM (
+                    SELECT tuples.[SourceEducationOrganizationId], new.[OrganizationDepartmentId]
+                    FROM inserted new
+                        INNER JOIN deleted old
+                            ON old.[OrganizationDepartmentId] = new.[OrganizationDepartmentId]
+                        INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
+                            ON old.[ParentEducationOrganization_EducationOrganizationId] = tuples.[TargetEducationOrganizationId]
+                    WHERE old.[ParentEducationOrganization_EducationOrganizationId] IS NOT NULL
+                        AND (new.[ParentEducationOrganization_EducationOrganizationId] IS NULL OR old.[ParentEducationOrganization_EducationOrganizationId] <> new.[ParentEducationOrganization_EducationOrganizationId])
+
+                    EXCEPT
+
+                    SELECT tuples.[SourceEducationOrganizationId], new.[OrganizationDepartmentId]
+                    FROM inserted new
+                        INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
+                            ON new.[ParentEducationOrganization_EducationOrganizationId] = tuples.[TargetEducationOrganizationId]
+                ) AS d1
+                CROSS JOIN
+                (
+                    SELECT new.[OrganizationDepartmentId], tuples.[TargetEducationOrganizationId]
+                    FROM inserted new
+                        INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
+                            ON new.[OrganizationDepartmentId] = tuples.[SourceEducationOrganizationId]
+                ) AS d2
+                WHERE d1.[OrganizationDepartmentId] = d2.[OrganizationDepartmentId]
+            ) AS cj
+                ON tbd.[SourceEducationOrganizationId] = cj.[SourceEducationOrganizationId]
+                AND tbd.[TargetEducationOrganizationId] = cj.[TargetEducationOrganizationId];
+
+        MERGE INTO [auth].[EducationOrganizationIdToEducationOrganizationId] target
+        USING (
+            SELECT sources.[SourceEducationOrganizationId], targets.[TargetEducationOrganizationId]
             FROM (
                 SELECT tuples.[SourceEducationOrganizationId], new.[OrganizationDepartmentId]
                 FROM inserted new
                     INNER JOIN deleted old
-                        ON old.[OrganizationDepartmentId] = new.[OrganizationDepartmentId]
-                    INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
-                        ON old.[ParentEducationOrganization_EducationOrganizationId] = tuples.[TargetEducationOrganizationId]
-                WHERE old.[ParentEducationOrganization_EducationOrganizationId] IS NOT NULL
-                    AND (new.[ParentEducationOrganization_EducationOrganizationId] IS NULL OR old.[ParentEducationOrganization_EducationOrganizationId] <> new.[ParentEducationOrganization_EducationOrganizationId])
-
-                EXCEPT
-
-                SELECT tuples.[SourceEducationOrganizationId], new.[OrganizationDepartmentId]
-                FROM inserted new
+                        ON new.[OrganizationDepartmentId] = old.[OrganizationDepartmentId]
                     INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
                         ON new.[ParentEducationOrganization_EducationOrganizationId] = tuples.[TargetEducationOrganizationId]
-            ) AS d1
+                WHERE (old.[ParentEducationOrganization_EducationOrganizationId] IS NULL AND new.[ParentEducationOrganization_EducationOrganizationId] IS NOT NULL)
+                    OR old.[ParentEducationOrganization_EducationOrganizationId] <> new.[ParentEducationOrganization_EducationOrganizationId]
+            ) AS sources
             CROSS JOIN
             (
                 SELECT new.[OrganizationDepartmentId], tuples.[TargetEducationOrganizationId]
                 FROM inserted new
                     INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
                         ON new.[OrganizationDepartmentId] = tuples.[SourceEducationOrganizationId]
-            ) AS d2
-            WHERE d1.[OrganizationDepartmentId] = d2.[OrganizationDepartmentId]
-        ) AS cj
-            ON tbd.[SourceEducationOrganizationId] = cj.[SourceEducationOrganizationId]
-            AND tbd.[TargetEducationOrganizationId] = cj.[TargetEducationOrganizationId];
-
-    MERGE INTO [auth].[EducationOrganizationIdToEducationOrganizationId] target
-    USING (
-        SELECT sources.[SourceEducationOrganizationId], targets.[TargetEducationOrganizationId]
-        FROM (
-            SELECT tuples.[SourceEducationOrganizationId], new.[OrganizationDepartmentId]
-            FROM inserted new
-                INNER JOIN deleted old
-                    ON new.[OrganizationDepartmentId] = old.[OrganizationDepartmentId]
-                INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
-                    ON new.[ParentEducationOrganization_EducationOrganizationId] = tuples.[TargetEducationOrganizationId]
-            WHERE (old.[ParentEducationOrganization_EducationOrganizationId] IS NULL AND new.[ParentEducationOrganization_EducationOrganizationId] IS NOT NULL)
-                OR old.[ParentEducationOrganization_EducationOrganizationId] <> new.[ParentEducationOrganization_EducationOrganizationId]
-        ) AS sources
-        CROSS JOIN
-        (
-            SELECT new.[OrganizationDepartmentId], tuples.[TargetEducationOrganizationId]
-            FROM inserted new
-                INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
-                    ON new.[OrganizationDepartmentId] = tuples.[SourceEducationOrganizationId]
-        ) AS targets
-        WHERE sources.[OrganizationDepartmentId] = targets.[OrganizationDepartmentId]
-    ) AS source
-        ON target.[SourceEducationOrganizationId] = source.[SourceEducationOrganizationId]
-        AND target.[TargetEducationOrganizationId] = source.[TargetEducationOrganizationId]
-    WHEN NOT MATCHED BY TARGET THEN
-        INSERT ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
-        VALUES (source.[SourceEducationOrganizationId], source.[TargetEducationOrganizationId]);
+            ) AS targets
+            WHERE sources.[OrganizationDepartmentId] = targets.[OrganizationDepartmentId]
+        ) AS source
+            ON target.[SourceEducationOrganizationId] = source.[SourceEducationOrganizationId]
+            AND target.[TargetEducationOrganizationId] = source.[TargetEducationOrganizationId]
+        WHEN NOT MATCHED BY TARGET THEN
+            INSERT ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
+            VALUES (source.[SourceEducationOrganizationId], source.[TargetEducationOrganizationId]);
+    END
 END;
 GO
 
@@ -54469,66 +54481,69 @@ AFTER UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
-    DELETE tbd
-    FROM [auth].[EducationOrganizationIdToEducationOrganizationId] AS tbd
-        INNER JOIN (
-            SELECT d1.[SourceEducationOrganizationId], d2.[TargetEducationOrganizationId]
+    IF UPDATE([LocalEducationAgency_LocalEducationAgencyId])
+    BEGIN
+        DELETE tbd
+        FROM [auth].[EducationOrganizationIdToEducationOrganizationId] AS tbd
+            INNER JOIN (
+                SELECT d1.[SourceEducationOrganizationId], d2.[TargetEducationOrganizationId]
+                FROM (
+                    SELECT tuples.[SourceEducationOrganizationId], new.[SchoolId]
+                    FROM inserted new
+                        INNER JOIN deleted old
+                            ON old.[SchoolId] = new.[SchoolId]
+                        INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
+                            ON old.[LocalEducationAgency_LocalEducationAgencyId] = tuples.[TargetEducationOrganizationId]
+                    WHERE old.[LocalEducationAgency_LocalEducationAgencyId] IS NOT NULL
+                        AND (new.[LocalEducationAgency_LocalEducationAgencyId] IS NULL OR old.[LocalEducationAgency_LocalEducationAgencyId] <> new.[LocalEducationAgency_LocalEducationAgencyId])
+
+                    EXCEPT
+
+                    SELECT tuples.[SourceEducationOrganizationId], new.[SchoolId]
+                    FROM inserted new
+                        INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
+                            ON new.[LocalEducationAgency_LocalEducationAgencyId] = tuples.[TargetEducationOrganizationId]
+                ) AS d1
+                CROSS JOIN
+                (
+                    SELECT new.[SchoolId], tuples.[TargetEducationOrganizationId]
+                    FROM inserted new
+                        INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
+                            ON new.[SchoolId] = tuples.[SourceEducationOrganizationId]
+                ) AS d2
+                WHERE d1.[SchoolId] = d2.[SchoolId]
+            ) AS cj
+                ON tbd.[SourceEducationOrganizationId] = cj.[SourceEducationOrganizationId]
+                AND tbd.[TargetEducationOrganizationId] = cj.[TargetEducationOrganizationId];
+
+        MERGE INTO [auth].[EducationOrganizationIdToEducationOrganizationId] target
+        USING (
+            SELECT sources.[SourceEducationOrganizationId], targets.[TargetEducationOrganizationId]
             FROM (
                 SELECT tuples.[SourceEducationOrganizationId], new.[SchoolId]
                 FROM inserted new
                     INNER JOIN deleted old
-                        ON old.[SchoolId] = new.[SchoolId]
-                    INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
-                        ON old.[LocalEducationAgency_LocalEducationAgencyId] = tuples.[TargetEducationOrganizationId]
-                WHERE old.[LocalEducationAgency_LocalEducationAgencyId] IS NOT NULL
-                    AND (new.[LocalEducationAgency_LocalEducationAgencyId] IS NULL OR old.[LocalEducationAgency_LocalEducationAgencyId] <> new.[LocalEducationAgency_LocalEducationAgencyId])
-
-                EXCEPT
-
-                SELECT tuples.[SourceEducationOrganizationId], new.[SchoolId]
-                FROM inserted new
+                        ON new.[SchoolId] = old.[SchoolId]
                     INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
                         ON new.[LocalEducationAgency_LocalEducationAgencyId] = tuples.[TargetEducationOrganizationId]
-            ) AS d1
+                WHERE (old.[LocalEducationAgency_LocalEducationAgencyId] IS NULL AND new.[LocalEducationAgency_LocalEducationAgencyId] IS NOT NULL)
+                    OR old.[LocalEducationAgency_LocalEducationAgencyId] <> new.[LocalEducationAgency_LocalEducationAgencyId]
+            ) AS sources
             CROSS JOIN
             (
                 SELECT new.[SchoolId], tuples.[TargetEducationOrganizationId]
                 FROM inserted new
                     INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
                         ON new.[SchoolId] = tuples.[SourceEducationOrganizationId]
-            ) AS d2
-            WHERE d1.[SchoolId] = d2.[SchoolId]
-        ) AS cj
-            ON tbd.[SourceEducationOrganizationId] = cj.[SourceEducationOrganizationId]
-            AND tbd.[TargetEducationOrganizationId] = cj.[TargetEducationOrganizationId];
-
-    MERGE INTO [auth].[EducationOrganizationIdToEducationOrganizationId] target
-    USING (
-        SELECT sources.[SourceEducationOrganizationId], targets.[TargetEducationOrganizationId]
-        FROM (
-            SELECT tuples.[SourceEducationOrganizationId], new.[SchoolId]
-            FROM inserted new
-                INNER JOIN deleted old
-                    ON new.[SchoolId] = old.[SchoolId]
-                INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
-                    ON new.[LocalEducationAgency_LocalEducationAgencyId] = tuples.[TargetEducationOrganizationId]
-            WHERE (old.[LocalEducationAgency_LocalEducationAgencyId] IS NULL AND new.[LocalEducationAgency_LocalEducationAgencyId] IS NOT NULL)
-                OR old.[LocalEducationAgency_LocalEducationAgencyId] <> new.[LocalEducationAgency_LocalEducationAgencyId]
-        ) AS sources
-        CROSS JOIN
-        (
-            SELECT new.[SchoolId], tuples.[TargetEducationOrganizationId]
-            FROM inserted new
-                INNER JOIN [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
-                    ON new.[SchoolId] = tuples.[SourceEducationOrganizationId]
-        ) AS targets
-        WHERE sources.[SchoolId] = targets.[SchoolId]
-    ) AS source
-        ON target.[SourceEducationOrganizationId] = source.[SourceEducationOrganizationId]
-        AND target.[TargetEducationOrganizationId] = source.[TargetEducationOrganizationId]
-    WHEN NOT MATCHED BY TARGET THEN
-        INSERT ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
-        VALUES (source.[SourceEducationOrganizationId], source.[TargetEducationOrganizationId]);
+            ) AS targets
+            WHERE sources.[SchoolId] = targets.[SchoolId]
+        ) AS source
+            ON target.[SourceEducationOrganizationId] = source.[SourceEducationOrganizationId]
+            AND target.[TargetEducationOrganizationId] = source.[TargetEducationOrganizationId]
+        WHEN NOT MATCHED BY TARGET THEN
+            INSERT ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
+            VALUES (source.[SourceEducationOrganizationId], source.[TargetEducationOrganizationId]);
+    END
 END;
 GO
 

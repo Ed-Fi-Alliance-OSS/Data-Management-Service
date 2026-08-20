@@ -95,6 +95,7 @@ public sealed class Given_Mssql_StampTriggerContention : MssqlConcurrentWriteLoa
         long persisted = await CountDescriptorsInNamespaceAsync(ns);
         await ReportCaseAsync("descriptor creates from near-empty", result, persisted);
 
+        AssertLoadReachedTheDatabase(result);
         persisted
             .Should()
             .Be(
@@ -134,6 +135,7 @@ public sealed class Given_Mssql_StampTriggerContention : MssqlConcurrentWriteLoa
         long persisted = await CountPersistedChartOfAccountsAsync(suffix);
         await ReportCaseAsync("chartOfAccount creates", result, persisted);
 
+        AssertLoadReachedTheDatabase(result);
         persisted
             .Should()
             .Be(
@@ -141,6 +143,44 @@ public sealed class Given_Mssql_StampTriggerContention : MssqlConcurrentWriteLoa
                 "every accepted create must be durable; a gap is document loss and blocks landing "
                     + "regardless of what the throughput numbers say"
             );
+    }
+
+    /// <summary>
+    /// The durability check below it is <c>persisted == Accepted</c>, which a run that never reached
+    /// the database satisfies as 0 == 0. One deadlock opens the circuit breaker and the rest of the
+    /// load then fails without touching SQL Server, so that is not a hypothetical shape - and this
+    /// fixture exists to produce a report comparable across two runs, where a run that measured
+    /// nothing must not read like a clean one.
+    ///
+    /// <para>Asserted on lock waits rather than on accepted responses because contention is present
+    /// on both sides of the change under test while deadlocks are not, so this stays runnable on a
+    /// candidate where the cycles are gone - unlike the <c>deadlockGraphs &gt; 0</c> precondition
+    /// this fixture deliberately omits. It also survives a run the retry pipeline absorbed entirely
+    /// into successful responses. <see cref="Given_Mssql_FirstPhaseContentionUnderConcurrentWrites"/>
+    /// guards itself the same way.</para>
+    /// </summary>
+    private static void AssertLoadReachedTheDatabase(LoadResult result)
+    {
+        using (new AssertionScope())
+        {
+            result
+                .Accepted.Should()
+                .BeGreaterThan(
+                    0,
+                    "a load the circuit breaker rejected before it reached SQL Server measures the "
+                        + "breaker, not the stamping triggers, and would satisfy the durability "
+                        + "check below as 0 == 0"
+                );
+
+            result
+                .LockWaits.WaitingTasks.Should()
+                .BeGreaterThan(
+                    0,
+                    "the load must actually make writers wait on each other's locks for its "
+                        + "throughput and deadlock numbers to describe the contention this fixture "
+                        + "measures"
+                );
+        }
     }
 
     /// <summary>What one case measured. Everything here is reported; only the counts are asserted on.</summary>

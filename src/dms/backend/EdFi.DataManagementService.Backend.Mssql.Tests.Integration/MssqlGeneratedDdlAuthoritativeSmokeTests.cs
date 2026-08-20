@@ -751,7 +751,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         const int AdditionalContacts = 10;
         var contactResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Contact");
 
-        List<long> documentIds = [_seedData.ContactDocumentId, _seedData.OtherContactDocumentId];
         for (int i = 0; i < AdditionalContacts; i++)
         {
             var documentId = await InsertDocumentAsync(
@@ -759,8 +758,20 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 contactResourceKeyId
             );
             await InsertContactAsync(documentId, $"205{i:D2}", "Alex", $"Rivera{i:D2}");
-            documentIds.Add(documentId);
         }
+
+        // Read from the table rather than from the seed constants plus the loop above. The UPDATE
+        // below deliberately carries no WHERE, so the workset is whatever edfi.Contact holds, and a
+        // seed that grows a Contact would otherwise fail the row-count assertion with a message
+        // about the workset when the list is what went stale.
+        var documentIds = await ReadAllContactDocumentIdsAsync();
+        documentIds
+            .Count.Should()
+            .BeGreaterThan(
+                2,
+                "the workset must be unambiguously larger than the table variable's fixed one-row "
+                    + "cardinality estimate, and larger than the two-row sibling test"
+            );
 
         Dictionary<long, DocumentStampState> before = [];
         foreach (var documentId in documentIds)
@@ -781,9 +792,12 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             new SqlParameter("@firstName", "Rowan")
         );
 
+        // Consistency check on the reading above rather than a claim about the workset size, which
+        // documentIds.Count > 2 already made: the per-document assertions below only cover the
+        // workset if the rows the UPDATE reached are the rows that were read.
         affectedRows
             .Should()
-            .Be(documentIds.Count, "the statement must reach every Contact for the workset to be multi-row");
+            .Be(documentIds.Count, "the rows asserted below must be the rows the statement stamped");
 
         List<long> contentVersions = [];
         foreach (var documentId in documentIds)
@@ -4478,6 +4492,18 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     private async Task DelayForDistinctTimestampsAsync()
     {
         await _database.ExecuteNonQueryAsync("""WAITFOR DELAY '00:00:00.050';""");
+    }
+
+    /// <summary>
+    /// Every DocumentId currently in <c>edfi.Contact</c>. Used where a statement's workset is the
+    /// whole table, so the expectation tracks what the seed actually created rather than restating
+    /// its cardinality.
+    /// </summary>
+    private async Task<List<long>> ReadAllContactDocumentIdsAsync()
+    {
+        var rows = await _database.QueryRowsAsync("SELECT [DocumentId] FROM [edfi].[Contact];");
+
+        return [.. rows.Select(row => Convert.ToInt64(row["DocumentId"], CultureInfo.InvariantCulture))];
     }
 
     private async Task<int> GetTriggerObjectIdAsync(string qualifiedTriggerName)
