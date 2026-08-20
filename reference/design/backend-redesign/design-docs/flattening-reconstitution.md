@@ -21,15 +21,13 @@ It also defines the minimal `ApiSchema.json` metadata needed (beyond what alread
 
 ## Table of Contents
 
-- [1. Requirements & Constraints (Restated)](#1-requirements--constraints-restated)
+- [1. Requirements & Constraints](#1-requirements--constraints)
 - [2. Why “Derived Mapping” Can Be Enough (vs Full Flattening Metadata)](#2-why-derived-mapping-can-be-enough-vs-full-flattening-metadata)
 - [3. Minimal `ApiSchema.json` Additions (Relational Block)](#3-minimal-apischemajson-additions-relational-block)
 - [4. Derived Relational Resource Model (Runtime Compilation or AOT Pack)](#4-derived-relational-resource-model-runtime-compilation-or-aot-pack)
 - [5. Flattening (POST/PUT) Design](#5-flattening-postput-design)
 - [6. Reconstitution (GET by id / GET by query) Design](#6-reconstitution-get-by-id--get-by-query-design)
 - [7. Concrete C# Shapes (No Per-Resource Codegen)](#7-concrete-c-shapes-no-per-resource-codegen)
-- [8. Performance Notes / Failure Modes](#8-performance-notes--failure-modes)
-- [9. Next Steps (Design → Implementation)](#9-next-steps-design--implementation)
 
 ---
 
