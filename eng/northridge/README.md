@@ -44,6 +44,8 @@ fails for its reader, so the scripts and the recipe below use the same container
 | Item | Value |
 | --- | --- |
 | PostgreSQL artifact | `EdFi_DMS_Northridge_v80_20260819_PG.7z`, 869,019,055 bytes, sha256 `49129363581eab342146e8dd9a4da95dd6f7b035f0c39ee39c9691176cd856a0` |
+| — published at | <https://odsassets.blob.core.windows.net/public/Northridge/EdFi_DMS_Northridge_v80_20260819_PG.7z> |
+| — as served | `Content-Length: 869019055`, `Content-Type: application/x-7z-compressed`, access tier `Cool` |
 | — inner dump | `EdFi_DMS_Northridge_v80_20260819_PG.dump`, 888,167,269 bytes, sha256 `08c03fe279e7ab10516f3e29c8009dca76b154fe67b5b0aaaad31409035d4167` |
 | — contents | 10,576,801 documents across 210 resources; `dms` 10 tables, `edfi` 467, `tracked_changes_edfi` 139, `dmscs` 24, `auth` 1, `public` 1 |
 | SQL Server artifact | `EdFi_DMS_Northridge_v80_20260808_MSSQL.7z`, sha256 `2b7f1318bdbd5bcead90e6b74bfc3918ff12d31391a88f35f46f3199b6171d71` |
@@ -296,7 +298,8 @@ Every published artifact records the following, on its ticket and in this direct
 
 | | |
 | --- | --- |
-| Supersedes | `EdFi_DMS_Northridge_07_20260708.7z` — 10,576,794 documents on the DMS-1221 schema |
+| Published | 2026-08-20, to `odsassets` / container `public` / prefix `Northridge/` |
+| Supersedes | `EdFi_DMS_Northridge_07_20260708.7z` — 10,576,794 documents on the DMS-1221 schema. **Left in place, not deleted or renamed**; it is superseded, so prefer this artifact for any PostgreSQL-versus-SQL-Server comparison |
 | What changed | brought to the current schema by fresh deployment plus copy-forward (the document store has no migration path, so the old database was never patched in place); added the 7 documents the old artifact was missing |
 | The 7 added documents | Staff +2 (Krystal Redd, Lorraine Chen), StaffEducationOrganizationEmploymentAssociation +2, StaffEducationOrganizationAssignmentAssociation +2, AccountabilityRating +1 (EdOrg 255901, 2018, "Accountability Rating", "Recognized") |
 | Sourced from | the Northridge ODS artifact named above, added through the DMS API with GET-by-id verification of every field on every document — not via API Publisher, whose exit code can be 0 after silently dropping documents on 4xx |
@@ -324,9 +327,14 @@ manifest re-POST was issued against the live database to exercise the field comp
 as an idempotent upsert, creating no duplicates, and no `ContentVersion` moved on any of the
 10,576,794 copied documents.
 
-> The blob upload is the one step not yet exercised end to end: step 1's `curl` becomes valid when the
-> artifact is published to the container above. Everything after it in the recipe was run from a clean
-> slate against the exact local file whose checksums this document records.
+Publication was verified from the consumer's side, not the uploader's. After the upload, an anonymous
+`HEAD` reported `Content-Length: 869019055`, `Content-Type: application/x-7z-compressed` and access
+tier `Cool`; the blob was then re-downloaded from the public URL and hashed to
+`49129363581eab342146e8dd9a4da95dd6f7b035f0c39ee39c9691176cd856a0`, and `cmp` confirmed it
+byte-for-byte identical to the file that was uploaded rather than merely equal in digest. Finally,
+**step 1 of the recipe above was executed verbatim against the published URL** — `curl -O` followed by
+`sha256sum -c` — and reported `EdFi_DMS_Northridge_v80_20260819_PG.7z: OK`. Every step of the recipe
+has now been run end to end.
 
 ## Never commit
 
