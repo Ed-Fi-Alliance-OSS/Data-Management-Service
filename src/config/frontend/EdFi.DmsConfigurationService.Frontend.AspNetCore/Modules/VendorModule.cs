@@ -154,7 +154,7 @@ public class VendorModule : IEndpointModule
         ILogger<ApplicationModule> logger
     )
     {
-        Infrastructure.ValidatorExtensions.GuardRouteIdMatchesBodyId(id, command.Id);
+        PutGuards.GuardRouteIdMatchesBodyId(id, command.Id);
 
         await validator.GuardAsync(command);
 

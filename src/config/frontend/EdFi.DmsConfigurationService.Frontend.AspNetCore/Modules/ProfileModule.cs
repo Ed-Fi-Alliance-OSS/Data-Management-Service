@@ -138,10 +138,7 @@ public class ProfileModule : IEndpointModule
     )
     {
         logger.LogDebug("Entering Profile Update for id: {Id}", id);
-        EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.ValidatorExtensions.GuardRouteIdMatchesBodyId(
-            id,
-            command.Id
-        );
+        PutGuards.GuardRouteIdMatchesBodyId(id, command.Id);
 
         await validator.GuardAsync(command);
         var result = await repository.UpdateProfile(command);

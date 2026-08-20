@@ -222,7 +222,7 @@ public class DataStoreContextModuleTests
     }
 
     [TestFixture]
-    public class Given_ID_Validation_Tests : DataStoreContextModuleTests
+    public class Given_a_data_store_context_update_with_invalid_body_id : DataStoreContextModuleTests
     {
         [SetUp]
         public void SetUp()

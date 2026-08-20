@@ -333,7 +333,7 @@ public class ApplicationModule : IEndpointModule
         ILogger<ApplicationModule> logger
     )
     {
-        Frontend.AspNetCore.Infrastructure.ValidatorExtensions.GuardRouteIdMatchesBodyId(id, command.Id);
+        PutGuards.GuardRouteIdMatchesBodyId(id, command.Id);
 
         await validator.GuardAsync(command);
 

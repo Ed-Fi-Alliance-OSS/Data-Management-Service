@@ -116,10 +116,7 @@ public class DataStoreContextModule : IEndpointModule
     )
     {
         logger.LogDebug("Entering DataStoreContext Update for id: {Id}", id);
-        EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.ValidatorExtensions.GuardRouteIdMatchesBodyId(
-            id,
-            command.Id
-        );
+        PutGuards.GuardRouteIdMatchesBodyId(id, command.Id);
 
         await validator.GuardAsync(command);
 

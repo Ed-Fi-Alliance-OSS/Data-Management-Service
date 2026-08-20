@@ -284,10 +284,7 @@ public class ApiClientModule : IEndpointModule
     {
         logger.LogDebug("Entering UpdateApiClient for id: {Id}", SanitizeForLog(id.ToString()));
 
-        EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.ValidatorExtensions.GuardRouteIdMatchesBodyId(
-            id,
-            command.Id
-        );
+        PutGuards.GuardRouteIdMatchesBodyId(id, command.Id);
 
         await validator.GuardAsync(command);
 

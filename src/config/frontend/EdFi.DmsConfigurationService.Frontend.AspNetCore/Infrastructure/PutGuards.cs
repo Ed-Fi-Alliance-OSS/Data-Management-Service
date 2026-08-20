@@ -8,7 +8,7 @@ using FluentValidation.Results;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
-public static class ValidatorExtensions
+public static class PutGuards
 {
     public static void GuardRouteIdMatchesBodyId(int routeId, int bodyId)
     {

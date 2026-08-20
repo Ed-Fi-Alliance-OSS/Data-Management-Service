@@ -2293,10 +2293,24 @@ public class ApiClientModuleTests
             JsonNode actualResponse = JsonNode.Parse(responseBody)!;
             string correlationId = actualResponse["correlationId"]!.GetValue<string>();
             correlationId.Should().NotBeNullOrWhiteSpace();
-            actualResponse["validationErrors"]!["Id"]![0]!
-                .GetValue<string>()
-                .Should()
-                .Be("Request body id must match the id in the url.");
+            JsonNode expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "Id": [
+                      "Request body id must match the id in the url."
+                    ]
+                  },
+                  "errors": []
+                }
+                """.Replace("{correlationId}", correlationId)
+            )!;
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
         }
 
         [Test]

@@ -428,7 +428,7 @@ public class ProfileModuleTests
     }
 
     [Test]
-    public async Task UpdateProfile_IdOmitted_ShouldReturnBadRequest()
+    public async Task Should_return_bad_request_when_profile_body_id_is_omitted()
     {
         // Arrange
         using var client = SetUpClient();

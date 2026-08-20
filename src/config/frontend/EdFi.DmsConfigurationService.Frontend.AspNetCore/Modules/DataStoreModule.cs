@@ -100,7 +100,7 @@ public class DataStoreModule : IEndpointModule
         IDataStoreRepository repository
     )
     {
-        Infrastructure.ValidatorExtensions.GuardRouteIdMatchesBodyId(id, command.Id);
+        PutGuards.GuardRouteIdMatchesBodyId(id, command.Id);
 
         await validator.GuardAsync(command);
 
