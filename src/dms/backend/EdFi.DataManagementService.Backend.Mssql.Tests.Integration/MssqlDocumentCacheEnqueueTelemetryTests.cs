@@ -112,7 +112,7 @@ public class Given_Mssql_DocumentCacheEnqueueTelemetry
     }
 
     [Test]
-    public void It_classifies_provider_command_timeouts_without_enqueue_artifacts()
+    public void It_does_not_classify_provider_command_timeouts_without_enqueue_artifacts()
     {
         SqlException exception = CreateSqlException(
             -2,
@@ -125,12 +125,12 @@ public class Given_Mssql_DocumentCacheEnqueueTelemetry
             out DocumentCacheEnqueueFailureCategory category
         );
 
-        classified.Should().BeTrue();
-        category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderTimeout);
+        classified.Should().BeFalse();
+        category.Should().Be(default(DocumentCacheEnqueueFailureCategory));
     }
 
     [Test]
-    public void It_classifies_provider_unavailable_failures_without_enqueue_artifacts()
+    public void It_does_not_classify_provider_unavailable_failures_without_enqueue_artifacts()
     {
         SqlException exception = CreateSqlException(
             53,
@@ -143,8 +143,8 @@ public class Given_Mssql_DocumentCacheEnqueueTelemetry
             out DocumentCacheEnqueueFailureCategory category
         );
 
-        classified.Should().BeTrue();
-        category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderUnavailable);
+        classified.Should().BeFalse();
+        category.Should().Be(default(DocumentCacheEnqueueFailureCategory));
     }
 
     private static SqlException CreateSqlException(int number, string message)

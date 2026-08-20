@@ -107,7 +107,7 @@ public class Given_Postgresql_DocumentCacheEnqueueTelemetry
     }
 
     [Test]
-    public void It_classifies_provider_command_timeouts_without_enqueue_artifacts()
+    public void It_does_not_classify_provider_command_timeouts_without_enqueue_artifacts()
     {
         var exception = CreateException("57014", "canceling statement due to statement timeout");
 
@@ -117,12 +117,12 @@ public class Given_Postgresql_DocumentCacheEnqueueTelemetry
             out DocumentCacheEnqueueFailureCategory category
         );
 
-        classified.Should().BeTrue();
-        category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderTimeout);
+        classified.Should().BeFalse();
+        category.Should().Be(default(DocumentCacheEnqueueFailureCategory));
     }
 
     [Test]
-    public void It_classifies_provider_unavailable_failures_without_enqueue_artifacts()
+    public void It_does_not_classify_provider_unavailable_failures_without_enqueue_artifacts()
     {
         var exception = CreateException("08006", "connection reset while opening the provider connection");
 
@@ -132,8 +132,8 @@ public class Given_Postgresql_DocumentCacheEnqueueTelemetry
             out DocumentCacheEnqueueFailureCategory category
         );
 
-        classified.Should().BeTrue();
-        category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderUnavailable);
+        classified.Should().BeFalse();
+        category.Should().Be(default(DocumentCacheEnqueueFailureCategory));
     }
 
     private static PostgresException CreateException(
