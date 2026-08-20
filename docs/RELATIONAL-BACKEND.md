@@ -219,6 +219,22 @@ Bumping `HashVersion` or `RelationalMappingVersion` deliberately forces a new
 forces a new `ResourceKeySeedHash` (the separate resource-key seed hash), not the
 `EffectiveSchemaHash`.
 
+### Relational mapping version history
+
+`RelationalMappingVersion` is release-scoped: one bump covers every mapping-rule and physical
+`dms.*` DDL change in that release. The authoritative release number is assigned by release
+management and is intentionally not inferred from pre-release tags in this repository.
+
+| Version | Changes covered |
+|---|---|
+| `v1` | Initial relational mapping conventions. |
+| `v2` | `dms.Descriptor` gained `ResourceKeyId` and descriptor paging was re-rooted (DMS-1258); `dms.Document` dropped `IdentityVersion` and `IdentityLastModifiedAt` (DMS-1408). |
+
+Because the version is release-scoped, an earlier pre-release database can have different physical
+DDL while retaining the same effective-schema fingerprint. Reprovision databases from fresh
+generated DDL when moving between such pre-release builds; the fingerprint cannot detect that
+intra-release physical drift.
+
 ### Guards baked into the DDL (provision time)
 
 The generated DDL ([`SeedDmlEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/SeedDmlEmitter.cs),
@@ -336,9 +352,10 @@ endpoints, which are still a placeholder shim (see the note below).
 `newestChangeVersion` is the current value reported by the provider's change-version sequence, not
 `MAX(ContentVersion)` over `dms.Document`. After identity stamp columns were removed from
 `dms.Document`, regular writes allocate one sequence value for the content stamp instead of allocating
-a second unused identity stamp. A database provisioned by an earlier pre-release v2 build still has
-the removed columns and their defaults; deploy fresh from current generated DDL rather than mixing
-that physical schema with this runtime.
+a second unused identity stamp. This removes a DMS-only extra sequence allocation: the reported
+watermark now equals the latest document `ContentVersion` rather than appearing one value ahead,
+aligning this case with ODS change-version behavior. Database sequences can still have ordinary gaps,
+for example from rolled-back transactions.
 
 ## 5. Mapping packs (optional)
 

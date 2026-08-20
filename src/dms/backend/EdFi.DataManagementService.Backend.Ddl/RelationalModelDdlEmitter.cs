@@ -2747,7 +2747,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         var documentIdCol = Quote(DocumentIdColumn);
         writer.Append("DECLARE @changedDocs TABLE (");
         writer.Append(documentIdCol);
-        writer.AppendLine(" bigint NOT NULL);");
+        writer.AppendLine(" bigint NOT NULL PRIMARY KEY);");
         writer.Append("INSERT INTO @changedDocs (");
         writer.Append(documentIdCol);
         writer.AppendLine(")");
