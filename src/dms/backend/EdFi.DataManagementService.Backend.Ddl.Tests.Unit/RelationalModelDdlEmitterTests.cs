@@ -4098,6 +4098,9 @@ public class Given_RelationalModelDdlEmitter_With_TrackedChange_Attached_Resourc
         identityGuardEnd.Should().BeGreaterThan(keyChangeInsert);
 
         var guardedBlock = triggerBody.Substring(identityGuardStart, identityGuardEnd - identityGuardStart);
+        guardedBlock
+            .Should()
+            .Contain("DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY)");
         guardedBlock.Should().Contain("FROM inserted i INNER JOIN deleted d");
         guardedBlock
             .Should()

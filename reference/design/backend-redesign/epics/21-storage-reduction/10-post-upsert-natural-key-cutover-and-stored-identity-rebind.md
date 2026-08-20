@@ -53,7 +53,7 @@ bind the existing stored identity before authorization and no-op detection.
   exactly one natural-key capture/lookup command (`WriteSessionCommandStreamScenarios` create-stream
   expectations move from RI = 1 to RI = 0, natural-key = 1) and the update stream keeps RI = 0.
 - SQL Server case-variant POST tests prove HTTP 200, stored casing in the response, guarded no-op, no
-  referrer rewrite, no key-change row, and no `IdentityVersion` increment.
+  referrer rewrite, no key-change row, and no `ContentVersion` increment.
 - SQL Server case-variant PUT tests prove a casing-only identity change is not a key change and a
   mixed PUT cascades only the genuinely changed column.
 - SQL Server collection tests prove a PUT whose item differs from the stored row only in the casing

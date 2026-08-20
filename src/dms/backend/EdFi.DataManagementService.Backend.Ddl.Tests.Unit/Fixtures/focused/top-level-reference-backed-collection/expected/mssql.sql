@@ -814,7 +814,7 @@ BEGIN
     END
     ELSE IF (UPDATE([ProgramId]) OR UPDATE([ProgramName]))
     BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
         INSERT INTO @changedDocs ([DocumentId])
         SELECT i.[DocumentId]
         FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
@@ -890,7 +890,7 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
         INSERT INTO @changedDocs ([DocumentId])
         SELECT i.[DocumentId]
         FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
@@ -934,7 +934,7 @@ BEGIN
     END
     ELSE IF (UPDATE([SchoolId]))
     BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
         INSERT INTO @changedDocs ([DocumentId])
         SELECT i.[DocumentId]
         FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
@@ -1008,7 +1008,7 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
         INSERT INTO @changedDocs ([DocumentId])
         SELECT i.[DocumentId]
         FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
