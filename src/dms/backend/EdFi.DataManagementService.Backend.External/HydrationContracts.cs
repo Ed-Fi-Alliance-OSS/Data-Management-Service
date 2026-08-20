@@ -119,7 +119,9 @@ public sealed record HydratedPage(
 }
 
 /// <summary>
-/// Discriminated union specifying how the page keyset is materialized for hydration.
+/// Discriminated union specifying which documents a hydration batch returns, and where their ids come
+/// from. Whether those ids are materialized into a keyset table or filtered on directly is a separate
+/// decision made when the batch is built.
 /// </summary>
 public abstract record PageKeysetSpec
 {

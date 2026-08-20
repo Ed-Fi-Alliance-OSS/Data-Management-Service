@@ -1702,16 +1702,21 @@ public sealed record ResourceReadPlan(
 );
 
 /// <summary>
-/// Compiled hydration SQL for a single table based on a materialized keyset table (dialect-specific name).
+/// Compiled hydration SQL for a single table, in both hydration shapes.
 /// </summary>
 /// <param name="SelectByKeysetSql">
 /// A SELECT statement that returns all rows needed for the page, by joining to a materialized keyset table
 /// containing a BIGINT column named "DocumentId".
 /// The reconstituter is responsible for materializing this keyset (temp table / table variable) before running table SELECTs.
 /// </param>
+/// <param name="SelectBySingleDocumentSql">
+/// A SELECT statement that returns the rows for one document by filtering on the document id directly,
+/// materializing no keyset. Populated for dialects that support single-document hydration.
+/// </param>
 public sealed record TableReadPlan(
     DbTableModel TableModel,
-    string SelectByKeysetSql            // expects a keyset table with a BIGINT `DocumentId` column
+    string SelectByKeysetSql,           // expects a keyset table with a BIGINT `DocumentId` column
+    string? SelectBySingleDocumentSql   // expects a BIGINT `@DocumentId` parameter, no keyset
 );
 
 /// <summary>
@@ -2367,10 +2372,12 @@ public async Task<ReconstitutedPage> QueryAsync(IQueryRequest request, Cancellat
 
 Notes:
 - The query compiler is responsible for emitting stable ordering by the resource root table `DocumentId` (ascending).
-- The reconstituter is responsible for:
+- The reconstituter is responsible, for a page keyset such as this one, for:
   1) materializing the `page` keyset from `PageDocumentIdSql`
   2) running all `TableReadPlan.SelectByKeysetSql` statements (multi-resultset)
   3) performing descriptor expansion in batched follow-ups (or as additional result sets)
+
+  A single-document keyset skips steps 1 and 2 in favor of `TableReadPlan.SelectBySingleDocumentSql`.
 
 Reconstitution inner loop sketch (single round-trip hydration with `NextResult()`):
 
@@ -2383,10 +2390,15 @@ public async Task<ReconstitutedPage> ReconstituteAsync(
     await using var connection = await _dataSource.OpenConnectionAsync(ct);
     await using var cmd = connection.CreateCommand();
 
-    // One command text contains:
+    // One command text contains, for a page keyset:
     // - "materialize page keyset" SQL (from keyset spec)
     // - a SELECT for dms.Document joined to page
     // - one SELECT per TableReadPlan.SelectByKeysetSql
+    //
+    // For a single-document keyset on a dialect that supports the fast path, no keyset is
+    // materialized and each SELECT filters on the document id directly
+    // (one SELECT per TableReadPlan.SelectBySingleDocumentSql). Result-set order is the same
+    // either way, so the reader below does not branch.
     cmd.CommandText = SqlBatchBuilder.Build(plan, keyset);
     SqlBatchBuilder.AddParameters(cmd, keyset);
 
