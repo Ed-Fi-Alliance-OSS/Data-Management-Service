@@ -184,9 +184,9 @@ file static class WriteSessionCommandStreamTestSupport
             // The hydration batch reads the root table and its child collection together and modifies
             // neither. Touching several tables no longer separates it from persistence, because the DML
             // command co-batches every table's statements; being read-only still does. Matching on both
-            // table names avoids depending on how the batch opens, which differs by dialect: SQL
-            // Server materializes a keyset relation first, so its hydration batch does not begin
-            // with SELECT.
+            // table names avoids depending on how the batch opens, which is not stable across dialects
+            // or across hydration shapes: a keyset batch opens on its materialization, a single-document
+            // fast-path batch opens on a SELECT.
             HydrationBatchCount: recorder.Commands.Count(command =>
                 command.CommandText.Contains("[edfi].[School]", StringComparison.Ordinal)
                 && command.CommandText.Contains("[edfi].[SchoolAddress]", StringComparison.Ordinal)
@@ -203,8 +203,8 @@ file static class WriteSessionCommandStreamTestSupport
 
     /// <summary>
     /// Whether any statement in the command modifies a resource table. Scoped to the resource schemas
-    /// deliberately: SQL Server's hydration batch materializes its keyset relation with a temporary insert of its own, which says
-    /// nothing about whether it persists anything.
+    /// deliberately: a hydration batch can materialize its keyset relation with a temporary insert of
+    /// its own, which says nothing about whether it persists anything.
     /// </summary>
     private static bool ModifiesResourceTables(string commandText) =>
         Array.Exists(

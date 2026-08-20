@@ -146,10 +146,14 @@ public static class HydrationBatchBuilder
     /// <summary>
     /// Builds the single-document hydration batch for a document id that is not client-known at build
     /// time. The id is still referenced through the single-document parameter token — callers
-    /// co-batching this batch substitute that token with their captured-target expression — but a
-    /// keyset materialization is guarded so an absent id materializes no keyset row rather than
-    /// inserting NULL into it.
+    /// co-batching this batch substitute that token with their captured-target expression.
     /// </summary>
+    /// <remarks>
+    /// <paramref name="keysetRowGuardPredicateSql"/> is consumed only by the keyset batch, where it
+    /// stops an absent id from inserting NULL into the keyset table instead of materializing no row.
+    /// The fast path discards it, because it is pure selects: an absent id compares as <c>= NULL</c>
+    /// and yields zero rows on its own.
+    /// </remarks>
     /// <param name="plan">The compiled resource read plan.</param>
     /// <param name="dialect">The SQL dialect.</param>
     /// <param name="executionOptions">Controls optional projection work in the batch.</param>

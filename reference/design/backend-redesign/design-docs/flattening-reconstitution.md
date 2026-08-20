@@ -21,15 +21,13 @@ It also defines the minimal `ApiSchema.json` metadata needed (beyond what alread
 
 ## Table of Contents
 
-- [1. Requirements & Constraints (Restated)](#1-requirements--constraints-restated)
+- [1. Requirements & Constraints](#1-requirements--constraints)
 - [2. Why “Derived Mapping” Can Be Enough (vs Full Flattening Metadata)](#2-why-derived-mapping-can-be-enough-vs-full-flattening-metadata)
 - [3. Minimal `ApiSchema.json` Additions (Relational Block)](#3-minimal-apischemajson-additions-relational-block)
 - [4. Derived Relational Resource Model (Runtime Compilation or AOT Pack)](#4-derived-relational-resource-model-runtime-compilation-or-aot-pack)
 - [5. Flattening (POST/PUT) Design](#5-flattening-postput-design)
 - [6. Reconstitution (GET by id / GET by query) Design](#6-reconstitution-get-by-id--get-by-query-design)
 - [7. Concrete C# Shapes (No Per-Resource Codegen)](#7-concrete-c-shapes-no-per-resource-codegen)
-- [8. Performance Notes / Failure Modes](#8-performance-notes--failure-modes)
-- [9. Next Steps (Design → Implementation)](#9-next-steps-design--implementation)
 
 ---
 
@@ -756,6 +754,7 @@ The page case must not become “GET by id repeated N times”.
 ### 6.1 Fetch strategy (keyset-first, batched hydration)
 
 - **GET by id**: resolve `DocumentUuid → DocumentId`, then the keyset is a single `DocumentId`.
+  A single-document keyset is **not** materialized; see [Single-document fast path](#single-document-fast-path-no-keyset-materialization).
 - **GET by query**: compile a parameterized SQL over the **resource root table** that selects the `DocumentId`s in the requested page (filters + `ORDER BY r.DocumentId` + paging).
 
 Authorization integration:
@@ -831,8 +830,8 @@ Build one command that:
 
 WITH page_ids AS (
   -- Provided by DMS query compilation (ApiSchema-driven):
-  -- GET by id:    SELECT @DocumentId AS DocumentId
   -- GET by query: SELECT r.DocumentId FROM <schema>.<ResourceRoot> r WHERE ... ORDER BY r.DocumentId OFFSET/FETCH ...
+  -- A single known DocumentId does not come through here; see "Single-document fast path" below.
   <PageDocumentIdSql>
 )
 INSERT INTO page (DocumentId)
@@ -847,7 +846,8 @@ SELECT
   d.ContentVersion,
   d.IdentityVersion,
   d.ContentLastModifiedAt,
-  d.IdentityLastModifiedAt
+  d.IdentityLastModifiedAt,
+  d.ResourceKeyId
 FROM dms.Document d
 JOIN page p ON p.DocumentId = d.DocumentId;
 
@@ -865,6 +865,47 @@ ORDER BY c.<RootDocumentIdColumn>, c.<ParentScopeColumn>, c.Ordinal;
 ```
 
 This avoids N+1 queries and keeps network round-trips minimal (one command, multiple result sets).
+
+#### Single-document fast path: no keyset materialization
+
+The shape above materializes a keyset because a page is a set of ids the database has to compute or receive.
+When the caller already knows the one `DocumentId` it wants, there is nothing to materialize, and the keyset table is pure overhead: it costs a `CREATE`, an `INSERT`, and a `DROP` against catalog tables on every request, plus a join per result set.
+
+So a single-document hydration skips it and filters each result set directly on the id:
+
+```sql
+-- Document metadata
+SELECT
+  d.DocumentId,
+  d.DocumentUuid,
+  d.ContentVersion,
+  d.IdentityVersion,
+  d.ContentLastModifiedAt,
+  d.IdentityLastModifiedAt,
+  d.ResourceKeyId
+FROM dms.Document d
+WHERE d.DocumentId = @DocumentId
+ORDER BY d.DocumentId;
+
+-- Root table rows
+SELECT r.*
+FROM <schema>.<ResourceRoot> r
+WHERE r.DocumentId = @DocumentId
+ORDER BY r.DocumentId;
+
+-- Child table rows (one result set per child table)
+SELECT c.*
+FROM <schema>.<ChildTable> c
+WHERE c.<RootDocumentIdColumn> = @DocumentId
+ORDER BY c.<RootDocumentIdColumn>, c.<ParentScopeColumn>, c.Ordinal;
+```
+
+The result-set order, column order, and ordering guarantees are identical to the keyset shape, so the reader consuming them does not branch.
+The batch is pure `SELECT`s, which has a second consequence the keyset shape does not have: it can be co-batched into a composite write command, where the write path substitutes its captured-target id for `@DocumentId`.
+An absent captured target compares as `= NULL` and yields zero rows from every statement, which is the same outcome an empty keyset table produced.
+
+This applies to both engines and to every caller that hydrates one known document: GET by id, current-state loads during a write, and document-cache materialization.
+It is a per-dialect capability rather than an assumption, because a dialect could exist that cannot express it; dialects that decline it fall back to the keyset shape above with a guard predicate.
 
 #### Example: what the multi-result response looks like
 
@@ -1721,16 +1762,21 @@ public sealed record ResourceReadPlan(
 );
 
 /// <summary>
-/// Compiled hydration SQL for a single table based on a materialized keyset table (dialect-specific name).
+/// Compiled hydration SQL for a single table, in both hydration shapes.
 /// </summary>
 /// <param name="SelectByKeysetSql">
 /// A SELECT statement that returns all rows needed for the page, by joining to a materialized keyset table
 /// containing a BIGINT column named "DocumentId".
 /// The reconstituter is responsible for materializing this keyset (temp table / table variable) before running table SELECTs.
 /// </param>
+/// <param name="SelectBySingleDocumentSql">
+/// A SELECT statement that returns the rows for one document by filtering on the document id directly,
+/// materializing no keyset. Populated for dialects that support single-document hydration.
+/// </param>
 public sealed record TableReadPlan(
     DbTableModel TableModel,
-    string SelectByKeysetSql            // expects a keyset table with a BIGINT `DocumentId` column
+    string SelectByKeysetSql,           // expects a keyset table with a BIGINT `DocumentId` column
+    string? SelectBySingleDocumentSql   // expects a BIGINT `@DocumentId` parameter, no keyset
 );
 
 /// <summary>
@@ -2468,10 +2514,12 @@ public async Task<ReconstitutedPage> QueryAsync(IQueryRequest request, Cancellat
 
 Notes:
 - The query compiler is responsible for emitting stable ordering by the resource root table `DocumentId` (ascending).
-- The reconstituter is responsible for:
+- The reconstituter is responsible, for a page keyset such as this one, for:
   1) materializing the `page` keyset from `PageDocumentIdSql`
   2) running all `TableReadPlan.SelectByKeysetSql` statements (multi-resultset)
   3) performing descriptor expansion in batched follow-ups (or as additional result sets)
+
+  A single-document keyset skips steps 1 and 2 in favor of `TableReadPlan.SelectBySingleDocumentSql`.
 
 Reconstitution inner loop sketch (single round-trip hydration with `NextResult()`):
 
@@ -2484,10 +2532,15 @@ public async Task<ReconstitutedPage> ReconstituteAsync(
     await using var connection = await _dataSource.OpenConnectionAsync(ct);
     await using var cmd = connection.CreateCommand();
 
-    // One command text contains:
+    // One command text contains, for a page keyset:
     // - "materialize page keyset" SQL (from keyset spec)
     // - a SELECT for dms.Document joined to page
     // - one SELECT per TableReadPlan.SelectByKeysetSql
+    //
+    // For a single-document keyset on a dialect that supports the fast path, no keyset is
+    // materialized and each SELECT filters on the document id directly
+    // (one SELECT per TableReadPlan.SelectBySingleDocumentSql). Result-set order is the same
+    // either way, so the reader below does not branch.
     cmd.CommandText = SqlBatchBuilder.Build(plan, keyset);
     SqlBatchBuilder.AddParameters(cmd, keyset);
 

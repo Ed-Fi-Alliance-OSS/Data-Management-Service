@@ -8,7 +8,7 @@ using EdFi.DataManagementService.Backend.External.Plans;
 namespace EdFi.DataManagementService.Backend.External;
 
 /// <summary>
-/// One row of document metadata from <c>dms.Document</c> joined to the page keyset.
+/// One row of document metadata from <c>dms.Document</c>, selected for the page being hydrated.
 /// </summary>
 /// <param name="DocumentId">The internal document identity.</param>
 /// <param name="DocumentUuid">The public document UUID exposed as <c>id</c> in API responses.</param>
@@ -112,14 +112,16 @@ public sealed record HydratedPage(
     /// hydration completes, so this can be non-null while the body is empty. A body-derived boundary
     /// would stall a cursor walk on the last surviving document, or stop it entirely on an empty body.
     /// Populated from the ids the query keyset materialization returned; always null for a
-    /// <see cref="PageKeysetSpec.Single"/> keyset, which performs no page selection because it
-    /// materializes a caller-supplied id.
+    /// <see cref="PageKeysetSpec.Single"/> keyset, which performs no page selection because its
+    /// single id comes from the caller.
     /// </remarks>
     public long? HighestSelectedDocumentId { get; init; }
 }
 
 /// <summary>
-/// Discriminated union specifying how the page keyset is materialized for hydration.
+/// Discriminated union specifying which documents a hydration batch returns, and where their ids come
+/// from. Whether those ids are materialized into a keyset table or filtered on directly is a separate
+/// decision made when the batch is built.
 /// </summary>
 public abstract record PageKeysetSpec
 {

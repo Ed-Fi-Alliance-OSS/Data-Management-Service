@@ -137,14 +137,7 @@ public class Given_MappingSetManifestJsonEmitter
 
             readPlanSummary.Should().BeEquivalentTo(expectedSummary, options => options.WithStrictOrdering());
             readPlanSummary.TablePlans.Should().ContainSingle();
-            if (dialect == "pgsql")
-            {
-                readPlanSummary.TablePlans[0].SelectBySingleDocumentSqlSha256.Should().HaveLength(64);
-            }
-            else
-            {
-                readPlanSummary.TablePlans[0].SelectBySingleDocumentSqlSha256.Should().BeNull();
-            }
+            readPlanSummary.TablePlans[0].SelectBySingleDocumentSqlSha256.Should().HaveLength(64);
             readPlanSummary.ReferenceIdentityProjectionPlanCount.Should().Be(0);
             readPlanSummary.DescriptorProjectionPlanCount.Should().Be(0);
         }
@@ -215,21 +208,10 @@ public class Given_MappingSetManifestJsonEmitter
             projectionSummary.ReferenceIdentityProjectionPlans.Should().ContainSingle();
             projectionSummary.DescriptorProjectionPlans.Should().ContainSingle();
             projectionSummary.DescriptorProjectionPlans[0].SelectByKeysetSqlSha256.Should().HaveLength(64);
-
-            if (dialect == "pgsql")
-            {
-                projectionSummary
-                    .DescriptorProjectionPlans[0]
-                    .SelectBySingleDocumentSqlSha256.Should()
-                    .HaveLength(64);
-            }
-            else
-            {
-                projectionSummary
-                    .DescriptorProjectionPlans[0]
-                    .SelectBySingleDocumentSqlSha256.Should()
-                    .BeNull();
-            }
+            projectionSummary
+                .DescriptorProjectionPlans[0]
+                .SelectBySingleDocumentSqlSha256.Should()
+                .HaveLength(64);
         }
     }
 

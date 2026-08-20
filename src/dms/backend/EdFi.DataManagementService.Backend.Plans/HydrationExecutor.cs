@@ -19,8 +19,7 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// selected ids, document metadata, root rows, child rows, descriptor URI rows, and optional
 /// document-reference lookup rows) consumed sequentially via
 /// <see cref="DbDataReader.NextResultAsync"/>. Query and default single-document batches materialize
-/// a keyset relation first; the PostgreSQL single-document fast path starts directly with document
-/// metadata.
+/// a keyset relation first; the single-document fast path starts directly with document metadata.
 /// </para>
 /// <para>
 /// Takes an already-opened <see cref="DbConnection"/> so callers can manage connection
@@ -188,8 +187,8 @@ public static class HydrationExecutor
         // statement automatically. An OUTPUT/RETURNING clause still produces a result set when the
         // statement affects zero rows, so a query keyset's materialization insert always holds that
         // first position, returning the ids it selected — an empty result set for a zero-size page.
-        // Without such a clause the first position is the first SELECT, where the PostgreSQL
-        // single-document fast path also starts.
+        // Without such a clause the first position is the first SELECT, where the single-document
+        // fast path also starts.
         return await ReadPageAsync(reader, plan, keyset, executionOptions, ct);
     }
 

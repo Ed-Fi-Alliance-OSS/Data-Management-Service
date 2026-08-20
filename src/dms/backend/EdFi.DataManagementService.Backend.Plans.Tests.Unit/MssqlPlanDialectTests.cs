@@ -32,7 +32,7 @@ public class Given_MssqlPlanDialect
     {
         _dialect.Dialect.Should().Be(SqlDialect.Mssql);
         _dialect.DisplayName.Should().Be("SQL Server");
-        _dialect.SupportsSingleDocumentHydration.Should().BeFalse();
+        _dialect.SupportsSingleDocumentHydration.Should().BeTrue();
     }
 
     [Test]
@@ -80,16 +80,31 @@ public class Given_MssqlPlanDialect
     }
 
     [Test]
-    public void It_should_reject_single_document_metadata_select()
+    public void It_should_emit_single_document_metadata_select()
     {
-        var act = () =>
-            _dialect.AppendSingleDocumentMetadataSelect(
-                _writer,
-                HydrationSqlConventions.SingleDocumentIdParameterName
-            );
+        _dialect.AppendSingleDocumentMetadataSelect(
+            _writer,
+            HydrationSqlConventions.SingleDocumentIdParameterName
+        );
 
-        act.Should()
-            .Throw<NotSupportedException>()
-            .WithMessage("SQL Server plan dialect does not support single-document hydration.");
+        _writer
+            .ToString()
+            .Should()
+            .Be(
+                """
+                SELECT
+                    d.[DocumentId],
+                    d.[DocumentUuid],
+                    d.[ContentVersion],
+                    d.[IdentityVersion],
+                    d.[ContentLastModifiedAt],
+                    d.[IdentityLastModifiedAt],
+                    d.[ResourceKeyId]
+                FROM [dms].[Document] d
+                WHERE d.[DocumentId] = @DocumentId
+                ORDER BY d.[DocumentId];
+
+                """
+            );
     }
 }

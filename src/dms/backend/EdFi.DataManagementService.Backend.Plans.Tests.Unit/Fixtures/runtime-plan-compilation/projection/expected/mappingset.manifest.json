@@ -153,7 +153,7 @@
                   "name": "ProjectionExample"
                 },
                 "select_by_keyset_sql_sha256": "2c7d98f089384050c948d49eb68e15fa993f19e9ca25a0a2ebde51897df7e673",
-                "select_by_single_document_sql_sha256": null,
+                "select_by_single_document_sql_sha256": "14a334f243b4db067057019cd0e57c05294a4b731fd6b50f1ddb834c84f4121d",
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "SessionTerm_DocumentId",
@@ -209,7 +209,7 @@
             "descriptor_projection_plans_in_order": [
               {
                 "select_by_keyset_sql_sha256": "a3468ecfdbbeb8e5f410b4e6eba6ba96ffa3e18331692315f434207cfe043c72",
-                "select_by_single_document_sql_sha256": null,
+                "select_by_single_document_sql_sha256": "bdc5d02abe283ee90afc80a32a3fafe661821b0cb94c90cf78904345934abbda",
                 "result_shape": {
                   "descriptor_id_ordinal": 0,
                   "uri_ordinal": 1
@@ -356,7 +356,7 @@
                   "name": "SessionTerm"
                 },
                 "select_by_keyset_sql_sha256": "bec8ae3389118e038717d6329dc2a01b2957f1f3859a00baec4d7432338e9fac",
-                "select_by_single_document_sql_sha256": null,
+                "select_by_single_document_sql_sha256": "4634acb6a38ad2cdc7bfb8f6f83cc9c241a55b647735e8675f3e3fa9004a0b72",
                 "select_list_columns_in_order": [
                   "DocumentId",
                   "SchoolId",

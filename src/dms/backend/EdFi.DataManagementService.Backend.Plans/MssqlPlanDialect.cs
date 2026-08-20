@@ -24,7 +24,7 @@ internal sealed class MssqlPlanDialect : IPlanSqlDialect
     public string DisplayName => "SQL Server";
 
     /// <inheritdoc />
-    public bool SupportsSingleDocumentHydration => false;
+    public bool SupportsSingleDocumentHydration => true;
 
     /// <inheritdoc />
     public string CorrelatedRowSetJoinKeyword => "CROSS APPLY";
@@ -193,8 +193,10 @@ internal sealed class MssqlPlanDialect : IPlanSqlDialect
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(documentIdParameterName);
 
-        throw new NotSupportedException(
-            $"{DisplayName} plan dialect does not support single-document hydration."
+        DocumentMetadataColumns.AppendSingleDocumentMetadataSelectBody(
+            writer,
+            DocumentTable,
+            documentIdParameterName
         );
     }
 

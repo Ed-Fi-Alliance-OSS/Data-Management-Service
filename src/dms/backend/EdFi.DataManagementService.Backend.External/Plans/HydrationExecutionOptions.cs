@@ -21,9 +21,10 @@ namespace EdFi.DataManagementService.Backend.External.Plans;
 /// the lookup result never reaches link emission for them.
 /// </param>
 /// <param name="UseSingleDocumentFastPath">
-/// When <see langword="true"/>, single-document PostgreSQL hydration can use direct
+/// When <see langword="true"/>, single-document hydration can use direct
 /// <c>DocumentId</c> predicates instead of materializing a keyset table. Defaults to
-/// <see langword="false"/> so callers opt into the rollout deliberately.
+/// <see langword="false"/> so a caller takes the direct predicates only by asking for them; every
+/// production single-document caller asks.
 /// </param>
 public sealed record HydrationExecutionOptions(
     bool IncludeDescriptorProjection = true,
