@@ -6,7 +6,7 @@ Draft.
 
 This document is the transactions/concurrency deep dive for `overview.md`, focusing on:
 - reference validation,
-- write-time identity propagation and derived maintenance (`dms.ReferentialIdentity`, abstract identity tables),
+- write-time identity propagation and derived maintenance (abstract identity tables and update-tracking stamps),
 - update-tracking stamping (`dms.Document`), and
 - operational caching patterns.
 
@@ -18,6 +18,7 @@ This document is the transactions/concurrency deep dive for `overview.md`, focus
 - Key unification (canonical columns + generated aliases): [key-unification.md](key-unification.md)
 - Extensions: [extensions.md](extensions.md)
 - DDL Generation: [ddl-generation.md](ddl-generation.md)
+- Natural-key reference resolution: [natural-key-resolution.md](natural-key-resolution.md)
 - AOT compilation (optional mapping pack distribution): [aot-compilation.md](aot-compilation.md)
 - Strengths and risks: [strengths-risks.md](strengths-risks.md)
 
@@ -31,7 +32,6 @@ This document is the transactions/concurrency deep dive for `overview.md`, focus
 - [Optional Database Projection Behavior: `dms.DocumentCache`](#optional-database-projection-behavior-dmsdocumentcache)
 - [Delete Path (DELETE by id)](#delete-path-delete-by-id)
 - [Schema Validation (EffectiveSchema)](#schema-validation-effectiveschema)
-- [Operational Considerations](#operational-considerations)
 
 ---
 
@@ -51,37 +51,68 @@ This is required because relational tables store **stable `DocumentId` foreign k
 
 The **natural-key resolver** is the backend service that converts a `(Project, Resource, DocumentIdentity)` triple into a persisted `DocumentId` **without per-resource code**.
 
-This redesign keeps `ReferentialId` as the canonical “natural identity key” that the resolver uses for `ReferentialId → DocumentId` lookups; see [overview.md#Why keep ReferentialId](overview.md#why-keep-referentialid).
-
 It is used for:
 - resolving extracted `DocumentReference` / `DescriptorReference` instances during writes,
-- POST upsert existence detection (always via `dms.ReferentialIdentity`), and
+- POST upsert existence detection, and
 - query-time resolution when a filter targets a referenced identity but does not have a direct column mapping.
 
 **Inputs**
 - `QualifiedResourceName` of the target (from `DocumentReference.ResourceInfo` / `DescriptorReference.ResourceInfo`)
 - `DocumentIdentity` (ordered `IdentityJsonPath → string value` pairs)
-- the request-local `ReferentialId` (already computed by Core for writes; optional for query-time and computable deterministically using the same UUIDv5 algorithm as Core)
 - optional “location” info for error reporting (e.g., concrete JSON path instance from Core extraction)
 
 **Outputs**
 - `DocumentId` when found
+- concrete `ResourceKeyId` when the target can resolve polymorphically
 - “not found” when no matching row exists (write-time: validation failure; query-time: empty-match behavior)
 
 ##### Resolution algorithm (bulk, request-scoped)
 
-1. Dedupe referential ids across all extracted references.
-2. Resolve in bulk via `dms.ReferentialIdentity` (`ReferentialId → DocumentId`).
-3. For descriptor references, validate “is a descriptor” (and optional descriptor type) via `dms.Descriptor`.
+1. Dedupe references with a request-local structural key over `(target resource, ordered DocumentIdentity values)`.
+2. Convert identity strings to typed scalar values with the same scalar-literal parser the write flattener uses.
+3. Group by target resource and resolve in one batched command:
+   - concrete targets probe the target root's `UX_<R>_RefKey`;
+   - abstract targets probe `{AbstractResource}Identity` by its `RefKey` shape and project concrete `ResourceKeyId`;
+   - descriptor targets probe `dms.Descriptor` by the raw validated URI + `ResourceKeyId`; the
+     probe folds the URI in SQL under the engine's descriptor identity collation contract.
+4. Map results back by explicit request ordinal so not-found failures preserve request JSON locations.
+
+##### Descriptor URI validation boundary
+
+Descriptor URI validation is request validation, not lookup miss handling. After ordinary request
+canonicalization, every client-supplied descriptor URI must be well-formed: U+0000 NUL is invalid
+(PostgreSQL `text`/`varchar` cannot store it) and is rejected by the shared descriptor validator;
+malformed UTF-16 (an unpaired surrogate from a JSON `\uD800`-class escape, which PostgreSQL would
+reject as invalid UTF-8) never reaches a C# string — STJ throws on first read — and is rejected
+body-wide at parse by `ParseBodyMiddleware`, not by descriptor validation. Non-ASCII
+values are accepted; the application never lowercases a descriptor value — case folding is
+engine-owned and happens only in descriptor probe SQL (see `natural-key-resolution.md`). The
+validation boundary depends on the entry point:
+
+- During write identity/reference extraction, Core validates each descriptor reference at its
+  concrete request JSON path before constructing its `DocumentIdentity`. For a descriptor
+  resource POST/PUT, Core first derives the identity URI from the canonicalized `$.namespace` + `#` +
+  `$.codeValue`; it validates the two client-supplied components and attributes failures to
+  `$.namespace` and/or `$.codeValue`. It does not lowercase the derived URI.
+- During relational query preprocessing, `RelationalQueryRequestPreprocessor` uses the selected
+  `RelationalQueryCapability` to identify query elements whose backend-compiled target is
+  `RelationalQueryFieldTarget.DescriptorIdColumn`, validates those values, and rejects NUL or
+  malformed input before it creates a descriptor reference or calls `IReferenceResolver.ResolveAsync`.
+  Core query validation remains responsible for generic field/type validation and does not own
+  backend compiled target metadata. Invalid descriptor query input produces the existing
+  path-attributed query-validation 400, not an empty result page.
+
+Any validation failure terminates the operation before a descriptor natural-key resolver or
+descriptor target lookup is issued. Resolver batching, request-local memoization, the write
+flattener, and key-unification logic therefore consume validated well-formed-without-NUL raw
+descriptor keys, compared ordinally. Their helpers must assert the well-formed-without-NUL
+precondition and must never lowercase the value.
 
 ##### Caching
 
 The resolver uses layered caching:
 - **Per-request memoization** (always): avoids duplicate work within one request.
-- Optional L1/L2 caches (after-commit population only):
-  - `ReferentialId → DocumentId`
-
-When identity updates occur, any cross-request cache of `ReferentialId → DocumentId` must be updated/evicted for affected keys after commit (or disabled / short-TTL; see [Caching](#caching-low-complexity-options)).
+- Optional L1/L2 natural-key caches may be added later only if invalidation for identity updates is proven; otherwise keep them disabled or short-TTL.
 
 ### 2) Database enforcement (FKs + propagation)
 
@@ -112,9 +143,9 @@ DDL generator requirements (derived from ApiSchema):
   - Rationale: a composite FK does not enforce anything if *any* referencing column is `NULL`.
 - Enforce a composite FK anchored on canonical/storage identity-part columns:
   - PostgreSQL:
-    - concrete target: `{schema}.{TargetResource}(DocumentId, <CanonicalIdentityParts...>)` using `ON UPDATE CASCADE`
+    - concrete target: `{schema}.{TargetResource}(<CanonicalIdentityParts...>, DocumentId)` using `ON UPDATE CASCADE`
       when the target is transitively mutable (otherwise `ON UPDATE NO ACTION`).
-    - abstract target: `{schema}.{AbstractResource}Identity(DocumentId, <CanonicalIdentityParts...>)` using
+    - abstract target: `{schema}.{AbstractResource}Identity(<CanonicalIdentityParts...>, DocumentId)` using
       `ON UPDATE CASCADE`.
   - SQL Server:
     - concrete and abstract targets use full-composite FKs whose `ON UPDATE` actions are selected by
@@ -142,9 +173,9 @@ The pieces fit together like this:
 
 1. **API payload uses abstract identity fields** (not a `DocumentId`):
    - e.g., an `educationOrganizationReference` carries `educationOrganizationId`.
-2. **Write-time resolution uses `dms.ReferentialIdentity`**:
-   - DMS computes the target `ReferentialId` for the abstract resource type + identity values and resolves `ReferentialId → DocumentId` in bulk via `dms.ReferentialIdentity`.
-   - This works because each concrete subtype maintains superclass/abstract **alias** referential-id rows, so abstract references can resolve without per-subtype SQL.
+2. **Write-time resolution uses `{AbstractResource}Identity`**:
+   - DMS probes the abstract identity table by the abstract `RefKey` shape and resolves `DocumentId` plus concrete `ResourceKeyId`.
+   - This works because each concrete subtype maintains one abstract identity row, so abstract references resolve without per-subtype SQL.
 3. **Persist `..._DocumentId` plus abstract identity columns**:
    - The referencing row stores both the resolved `DocumentId` and the abstract identity column values provided in the payload.
 4. **Database enforces membership + propagation via `{AbstractResource}Identity`**
@@ -190,7 +221,7 @@ Deep dive on derived mapping and the minimal `ApiSchema.json` additions: [flatte
   hidden/internal row ids, and supported models that cannot supply a non-empty compiled identity from either source
   must fail validation/compilation.
 - `abstractResources`: abstract identity metadata for polymorphic reference targets (drives `{AbstractResource}Identity` tables and optional union views)
-- `isSubclass` + superclass metadata: drives insertion of superclass/abstract alias referential-id rows in `dms.ReferentialIdentity`
+- `isSubclass` + superclass metadata: drives abstract identity row maintenance and concrete `ResourceKeyId` projection for polymorphic reference resolution
 - `queryFieldMapping`: defines queryable fields and their JSON paths/types; may map to:
   - root scalar columns, or
   - reference-identity binding columns for reference-object identity fields (enabling no-subquery predicates)
@@ -208,19 +239,34 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
 ### Common steps
 
 1. Core validates JSON and extracts:
-   - `DocumentIdentity` + `ReferentialId`
-   - Document references (with `ReferentialId`s)
-   - Descriptor references (with `ReferentialId`s, normalized URI)
+   - `DocumentIdentity`
+   - document references with target resource, fully-flattened identity values, and request paths
+   - descriptor references with target resource, concrete request paths, and URI values validated
+     as well-formed without NUL (never lowercased by the application)
+   - for descriptor resource writes, the URI derived from canonicalized `namespace` + `#` +
+     `codeValue`, validated as well-formed without NUL with any failures attributed to the source
+     fields
 2. Backend resolves references in bulk:
-   - Use an ApiSchema-derived resolver to turn references into `DocumentId`s via `dms.ReferentialIdentity` (`ReferentialId → DocumentId`), including:
+   - Use an ApiSchema-derived resolver to turn references into `DocumentId`s via generated natural-key probes, including:
      - self-contained identities
-     - reference-bearing identities (kept current via cascades + per-resource triggers)
-     - polymorphic/abstract identities via superclass/abstract alias rows in `dms.ReferentialIdentity`
-   - Descriptor refs additionally require a `dms.Descriptor` existence/type check (for “is a descriptor” enforcement)
-3. Backend writes within a single transaction:
-   - For update flows that already loaded the current document state, backend SHOULD compare the request-derived
-     post-merge rowset to the current persisted rowset before issuing DML. If they are equal, treat the request as a successful
-     no-op and skip data-modifying statements (see “No-op update detection” below).
+     - reference-bearing identities (kept current via cascades and flattened `RefKey` columns)
+     - polymorphic/abstract identities via `{AbstractResource}Identity`
+   - Descriptor refs resolve through the lowered-URI + `ResourceKeyId` descriptor index.
+3. Backend plans and writes within a single transaction:
+   - For update flows, load the current document state needed for authorization, merge, stored-identity rebind,
+     and guarded no-op detection.
+   - Materialize the request-derived candidate rows after reference and descriptor ids have been populated. Before
+     storage binding, no-op synthesis, or collection-table DML, run the storage-resolved collection duplicate
+     validator from [natural-key-resolution.md](natural-key-resolution.md#collection-duplicate-detection).
+   - Bind candidates against current rows to produce the post-merge rowset.
+   - Before authorization-on-proposed-values and no-op detection, apply the stored-identity rebind required by
+     [natural-key-resolution.md](natural-key-resolution.md#how-the-write-path-will-preserve-stored-casing-sql-server)
+     for SQL Server regular-resource writes and for descriptor writes. The rebound rowset is the proposed state used
+     by downstream authorization, no-op comparison, and DML.
+   - Run authorization checks against stored values and the rebound proposed rowset before any data-modifying
+     statements.
+   - Compare the rebound post-merge rowset to the current persisted rowset before issuing DML. If they are equal,
+     treat the request as a successful no-op and skip data-modifying statements (see “No-op update detection” below).
    - Insert/update `dms.Document` (allocate `DocumentId`; persist `DocumentUuid` and `ResourceKeyId`).
    - Write resource root + child + extension tables (merge strategy for collections).
    - For each document reference site:
@@ -237,8 +283,8 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
      retains native cascades where legal and uses safe full-composite `NO ACTION` cuts under
      [sql-server-pruning.md](sql-server-pruning.md). Native propagation updates canonical/storage columns (binding aliases
      recompute).
-   - Generated triggers maintain `dms.ReferentialIdentity` (row-local recompute on identity-projection value-diff
-     changes). `DbTriggerInfo.IdentityProjectionColumns` are null-safe compare inputs, not `UPDATE(column)` gates.
+   - Generated triggers maintain abstract identity tables on identity-projection value-diff changes.
+     `DbTriggerInfo.IdentityProjectionColumns` are null-safe compare inputs, not `UPDATE(column)` gates.
    - The `*_Stamp` triggers stamp `dms.Document.ContentVersion` / `ContentLastModifiedAt` and `IdentityVersion` / `IdentityLastModifiedAt`, mirror `ContentVersion` / `ContentLastModifiedAt` onto the resource root (or `dms.Descriptor`) via `MirrorStampTargetTable`, and append tombstone / key-change rows to the corresponding `tracked_changes_*` table when applicable (see [update-tracking.md](update-tracking.md) for stamping rules and [change-queries.md](change-queries.md) for the mirror and tracked-change tables).
    - The set-based `dms.Document` projection-enqueue trigger observes every insert and
      every real `ContentVersion` change. In lifecycle `Tracking`, `Resetting`, or
@@ -257,7 +303,8 @@ Authorization is enforced for all writes and MUST be applied before executing an
 
 Integration points:
 - Authentication occurs before the write path begins and produces a token-derived authorization context (EdOrgIds, namespace prefixes, ownership tokens, and any claim-set-derived strategy configuration).
-- Authorization checks run after reference resolution (so checks can use already-resolved `DocumentId`s) and before inserts/updates/deletes.
+- Authorization checks run after reference resolution (so checks can use already-resolved `DocumentId`s) and after
+  any stored-identity rebind needed to form the proposed rowset; they still run before inserts/updates/deletes.
 - For update operations, authorization is evaluated against:
   - **stored values** (to authorize the current state), and
   - **new values** (to authorize the requested state) when identifying values change (see [auth.md](auth.md) for the execution order and error semantics).
@@ -276,7 +323,7 @@ Key effects:
 - **Indirect representation changes are materialized as row updates**: when a referenced identity changes, the database
   propagates updated identity values into all direct referrers’ canonical/storage columns; per-site/per-path binding
   aliases recompute and preserve presence semantics.
-- **Transitive identity effects converge without application traversal**: cascades propagate through chains of references, and row-local triggers recompute derived referential ids where needed.
+- **Transitive identity effects converge without application traversal**: cascades propagate through chains of references, and row-local triggers maintain abstract identity rows and update-tracking stamps where needed.
 
 Engine considerations:
 - PostgreSQL supports “cycles or multiple cascade paths” for FK cascades.
@@ -287,8 +334,8 @@ Engine considerations:
 
 ### Insert vs update detection
 
-- **Upsert (POST)**: detect an existing row by resolving the request’s `ReferentialId` via `dms.ReferentialIdentity` (`ReferentialId → DocumentId`).
-  - The resource root table’s natural-key unique constraint remains a recommended relational guardrail and is still useful for race detection (unique violation → 409) if two writers attempt to create the same natural key concurrently.
+- **Upsert (POST)**: detect an existing row with the target resource's generated natural-key probe. The composite write path uses a natural-key capture predicate; fallback paths probe the resource root's `UX_<R>_NK`.
+  - The resource root table’s natural-key unique constraint is the identity-uniqueness enforcement and remains the race detector (unique violation → 409) if two writers attempt to create the same natural key concurrently.
 - **Update by id (PUT)**: detect by `DocumentUuid`:
   - Find `DocumentId` from `dms.Document` by `DocumentUuid`.
 
@@ -297,8 +344,9 @@ Engine considerations:
 For `PUT`, and for `POST` when upsert resolves to an existing document, the write path SHOULD support a
 whole-document no-op fast path:
 
-- Compare the request-derived relational rowset to the current persisted rowset using the stored/writable columns that
-  the normal write executor would bind, after applying the same collection merge rules the write path would execute.
+- Compare the rebound request-derived relational rowset to the current persisted rowset using the stored/writable columns
+  that the normal write executor would bind, after applying the same collection merge rules and storage-resolved
+  duplicate-validation boundary the write path would execute.
 - Reuse the update flow’s existing “load current document” roundtrip for this comparison. Do not add a dedicated
   preflight query by default; the optimization is meant to reduce write amplification, not trade one write for an
   extra read roundtrip.
@@ -313,7 +361,7 @@ stored state.
 ### Identity updates (`AllowIdentityUpdates`)
 
 If identity changes on update:
-- Treat `dms.ReferentialIdentity` as a derived index and recompute it **transactionally** (via triggers) for the changed document and any documents whose identity projection changes due to cascaded identity-component updates.
+- Keep abstract identity rows and update-tracking stamps transactionally aligned for the changed document and any documents whose identity projection changes due to cascaded identity-component updates.
 - Relationships stored as `DocumentId` FKs remain valid; no rewrite of `..._DocumentId` columns is required.
 
 Operational guidance:
@@ -323,13 +371,13 @@ Operational guidance:
 
 Tables-per-resource storage removes the need for **relational** cascade rewrites when upstream natural keys change,
 because relationships are stored as stable `DocumentId` FKs. Identity propagation still exists for
-**canonical/storage identity-part columns** through retained native FK cascades and for **derived artifacts** (referential
-ids and stamps), and is handled in the database:
+**canonical/storage identity-part columns** through retained native FK cascades and for **derived artifacts** (abstract
+identity rows and stamps), and is handled in the database:
 
 - **Identity/URI change on a document itself** (e.g., `StudentUniqueId` update)
   - Propagation updates canonical/storage identity columns in all direct referrers (identity-component and non-identity references).
   - Referrers’ `dms.Document.ContentVersion` stamps update because their full resource-state representation changes (the embedded reference identity changed).
-  - For identity-component referrers, triggers also update `dms.Document.IdentityVersion` and `dms.ReferentialIdentity` for the referrer (and this may cascade further).
+  - For identity-component referrers, triggers also update `dms.Document.IdentityVersion` for the referrer and any affected abstract identity rows (and this may cascade further).
 
 - **Outgoing reference changes on a document** (`..._DocumentId` value changes)
   - Relational writes update the FK columns (`..._DocumentId`) and the canonical/storage identity-part columns (plus any
@@ -484,7 +532,11 @@ Ordering/paging contract:
 
 Query compilation patterns:
 - **Scalar query fields**: `queryFieldMapping` JSON path → derived root-table column → `r.Column = @value`
-- **Descriptor query fields**: normalize URI, compute descriptor `ReferentialId` → resolve `DescriptorId` via `dms.ReferentialIdentity` → `r.DescriptorIdColumn = @descriptorId`
+- **Descriptor query fields**: validate the URI as well-formed without NUL → on failure return a
+  path-attributed 400 before lookup → resolve `DescriptorId` by probing the descriptor
+  lowered-URI + `ResourceKeyId` index with the raw validated URI (the probe folds it in SQL) →
+  `r.DescriptorIdColumn = @descriptorId`. A valid URI that does not resolve still has the existing
+  empty-match behavior.
 - **Document reference identity query fields**: compile to predicates on local per-site identity binding columns (stored
   or alias), e.g.:
   - `r.Student_StudentUniqueId = @StudentUniqueId`
@@ -512,17 +564,10 @@ Indexing:
      - security configuration changes (best-effort evict on change; otherwise rely on short TTL),
      - avoid caching across tenants/instances (include `DataStoreId` in the cache key).
 
-3. **`dms.ReferentialIdentity` lookups**
-   - Cache `ReferentialId → DocumentId` for identity/reference resolution (all identities, including reference-bearing and abstract/superclass aliases).
-   - Invalidation:
-     - on insert: add cache entry after commit
-     - on delete: remove relevant entries (or rely on short TTL)
-     - on identity/URI change: identity updates can cascade; if you cannot enumerate impacted referential ids reliably, prefer short TTL or disable this cache for correctness.
-
-4. **Descriptor expansion lookups** (optional)
+3. **Descriptor expansion lookups** (optional)
    - Cache `DescriptorId → Uri` (and optionally `Discriminator`) to reconstitute descriptor strings without repeated joins.
 
-5. **`DocumentUuid → DocumentId`**
+4. **`DocumentUuid → DocumentId`**
    - Cache GET/PUT/DELETE resolution.
    - Invalidation: add on insert, remove on delete (or rely on TTL).
 
@@ -535,7 +580,7 @@ Indexing:
 
 Use an in-process `MemoryCache`:
 - Lowest complexity; no network hop.
-- Good for: derived mapping, `ReferentialId → DocumentId`, descriptor expansion.
+- Good for: derived mapping, compiled natural-key probe metadata, descriptor expansion.
 
 ### Redis (distributed) option
 
@@ -544,7 +589,7 @@ Add Redis as an optional L2 cache:
 - write-through updates after successful commit
 
 Invalidation approaches:
-- **TTL-only** (simplest): acceptable for non-critical caches; for `ReferentialId → DocumentId` a long TTL can cause incorrect resolution after identity updates.
+- **TTL-only** (simplest): acceptable for non-critical caches.
 - **Best-effort delete on writes**: on identity updates/deletes, delete known affected Redis keys after commit.
 - Optional later: pub/sub “invalidate key” messages.
 
@@ -676,8 +721,7 @@ remains best effort and never fails an otherwise successful relational response.
 1. Resolve `DocumentUuid` → `DocumentId`.
 2. Delete the concrete resource row, or the `dms.Descriptor` row for descriptor resources. This fires the resource or descriptor `_Stamp` trigger while `dms.Document` is still present, so the Change Queries tombstone trigger can read `DocumentUuid` and the freshly bumped `ContentVersion`.
 3. Delete the corresponding `dms.Document` row. Remaining `ON DELETE CASCADE` paths to
-   `dms.DocumentCache`, `dms.DocumentProjectionWork`, and
-   `dms.ReferentialIdentity` finalize relational cleanup. The CDC lifecycle consequence is
+   `dms.DocumentCache` and `dms.DocumentProjectionWork` finalize relational cleanup. The CDC lifecycle consequence is
    defined in the
    [projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#cache-backed-reads-and-domain-lifecycle).
 4. Rely on FK constraints from referencing resource tables to prevent deleting referenced records.
@@ -701,22 +745,3 @@ This redesign treats schema changes as an **operational concern outside DMS**. D
 - If no mapping set is available for that `EffectiveSchemaHash`, DMS rejects requests for that database (other databases can still be served).
 
 This keeps schema mismatch a **fail-fast** condition while avoiding “one mis-provisioned instance prevents the server from starting” in multi-instance deployments.
-
----
-
-## Operational Considerations
-
-### Random UUID index behavior (`dms.ReferentialIdentity.ReferentialId`)
-
-`ReferentialId` is a UUID (deterministic UUIDv5) and is effectively randomly distributed for index insertion. The primary concern is **write amplification** (page splits, fragmentation/bloat), not point-lookup speed.
-
-**SQL Server guidance**
-- Use a sequential clustered key (recommended: cluster on `(DocumentId, ResourceKeyId)`), and keep the UUID key as a **NONCLUSTERED** PK/unique index.
-- Consider a lower `FILLFACTOR` on the UUID index (e.g., 80–90) to reduce page splits; monitor fragmentation and rebuild/reorganize as needed.
-
-**PostgreSQL guidance**
-- B-tree point lookups on UUID are fine; manage bloat under high write rates with:
-  - index/table `fillfactor` (e.g., 80–90) if insert churn is high
-  - healthy autovacuum settings and monitoring
-  - periodic `REINDEX` when bloat warrants it
-- If sustained ingest is extreme, consider hash partitioning `dms.ReferentialIdentity` by `ReferentialId` (e.g., 8–32 partitions) to reduce contention and make maintenance cheaper.

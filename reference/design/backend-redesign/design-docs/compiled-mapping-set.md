@@ -322,17 +322,10 @@ public abstract record TriggerKindParameters
 {
     public sealed record DocumentStamping(TrackedChangeAttachment? ChangeTracking = null) : TriggerKindParameters;
 
-    public sealed record ReferentialIdentityMaintenance(
-        short ResourceKeyId,
-        string ProjectName,
-        string ResourceName,
-        IReadOnlyList<IdentityElementMapping> IdentityElements,
-        SuperclassAliasInfo? SuperclassAlias = null
-    ) : TriggerKindParameters;
-
     public sealed record AbstractIdentityMaintenance(
         DbTableName TargetTable,
         IReadOnlyList<TriggerColumnMapping> TargetColumnMappings,
+        short ResourceKeyIdValue,
         string DiscriminatorValue
     ) : TriggerKindParameters;
 
@@ -376,13 +369,18 @@ Notes:
 - Index/trigger/tracked-change inventories are dialect-aware (“SQL-free DDL intent”), derived deterministically from the derived tables/constraints plus the policies in `ddl-generation.md` and `change-queries.md`.
   - `IdentityProjectionColumns` is a null-safe value-diff compare set, not an `UPDATE(column)` gate list.
   - Emitters must not use SQL Server `UPDATE(column)`, PostgreSQL `UPDATE OF`, or equivalent target-list checks to decide whether a Change Queries key-change row should be emitted.
+  - `AbstractIdentityMaintenance.TargetColumnMappings` carries only source-to-target abstract
+    identity field mappings. Dialect emitters must populate abstract identity payload columns from
+    the typed contract fields: `ResourceKeyId` from `ResourceKeyIdValue` and `Discriminator` from
+    `DiscriminatorValue`. They must not derive the concrete resource key from the discriminator
+    string or re-infer it from the source table.
   - `DocumentStamping.ChangeTracking` is valid only on `TriggerKindParameters.DocumentStamping` entries and is attached when Change Queries requires that trigger to also write key-change and tombstone rows. The tracked-change table metadata tells emitters where and how to write tracked-change rows; the owning `DbTriggerInfo.IdentityProjectionColumns` remains the single key-change predicate source.
   - `MirrorStampTargetTable` is required (non-null) for every `TriggerKindParameters.DocumentStamping` entry and null for all other trigger kinds. The derivation pass assigns it by rule: the same table as `Table` for root-table stamping triggers, the resource's root table for child / `_ext` stamping triggers, and `dms.Descriptor` for the descriptor stamping trigger. Dialect emitters render the mirror UPDATE (the second UPDATE in the trigger body, after the `dms.Document` stamp UPDATE) against `MirrorStampTargetTable` and MUST NOT re-derive the target from `Table`. See `change-queries.md` §"Concrete-resource ContentVersion / ContentLastModifiedAt mirror".
   - For key-change rows, dialect emitters use the same null-safe old/new value-diff workset already required for identity stamping. Under key unification, this includes the presence-gated canonical expressions defined in `key-unification.md`.
   - Scope: schema-derived project objects only (resource/extension/abstract-identity tables). This includes authorization-required indexes on resource tables derived from `securableElements` (see `auth.md`) and tracked-change tables/views derived from Change Query metadata (see `change-queries.md`). Core `dms.*` / `auth.*` objects (and their indexes/triggers) are owned by core DDL emission, with the following carve-outs:
     - authorization indexes for descriptor `Namespace` securable elements land on `dms.Descriptor` (e.g. `IX_Descriptor_Namespace_Auth`) because all descriptor resources share that base table; these are emitted by `DeriveAuthorizationIndexInventoryPass` alongside resource-table auth indexes rather than by core DDL, since their existence is driven by per-resource `securableElements` metadata.
     - the shared descriptor tracked-change table (`tracked_changes_edfi.Descriptor`) and its `TriggerKindParameters.DocumentStamping`/`DocumentStamping.ChangeTracking` trigger are represented in tracked-change inventory because their columns and discriminator coverage are driven by descriptor resources in the effective schema.
-    - the descriptor change-version indexes `IX_Descriptor_Discriminator_ContentVersion` and `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId` land on the core-owned `dms.Descriptor` table but are derived by `DeriveIndexInventoryPass`; their existence and consumers are driven by the effective schema and Change Query planning. The core DDL emitter continues to own `IX_Descriptor_ResourceKeyId_DocumentId`. The derived key orders are `[Discriminator, ContentVersion]` and `[ResourceKeyId, ContentVersion, DocumentId]`, respectively.
+    - the descriptor change-version index `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId` lands on the core-owned `dms.Descriptor` table but is derived by `DeriveIndexInventoryPass`; its existence and consumers are driven by the effective schema and Change Query planning. The core DDL emitter continues to own `IX_Descriptor_ResourceKeyId_DocumentId`. The derived key order is `[ResourceKeyId, ContentVersion, DocumentId]`.
 - `IndexesInCreateOrder` / `TriggersInCreateOrder` are stored in canonical deterministic order (schema, table, name), not a dependency-aware DDL execution order; DDL emission chooses any required creation sequence.
 - `TrackedChangeTablesInNameOrder` is stored in canonical deterministic order by physical object name. Dialect emitters, runtime Change Query SQL planning, manifests, and tests must consume this inventory rather than re-deriving table columns, descriptor joins, or person joins from emitted SQL strings.
 - The ReadChanges authorization view inventory is not part of `DerivedRelationalModelSet`: it is the static `AuthObjectDefinitions.ReadChangesAuthorizationViewDefinitions` list in `Backend.External` (see the `ReadChangesAuthViewKind` note above). Emission of these views is gated per model set by people-auth availability plus the presence of the five required `tracked_changes_edfi` association tables in `TrackedChangeTablesInNameOrder`; the DDL emitter and the manifest emitter apply the same guard so the manifest never advertises views the DDL does not create.
@@ -396,6 +394,7 @@ Notes:
   - `IsOldColumnNullable` follows the nullability of the tracked source value. Required identity and required securable-element values are `false`; optional securable-element values, such as override-driven nullable paths, are `true`.
   - `IsNewColumnNullable` is normally `true` because delete tombstones leave `NewX` values `NULL`. If a future tracked-change table records only key-change rows and never tombstones, it may set `IsNewColumnNullable` from the source value nullability instead.
   - `DescriptorJoinName` and `PersonJoinName` reference entries in `DescriptorJoins` and `PersonJoins`; join definitions are owned once at the table level and are not duplicated per value column. Both lists are stored in ordinal name order (`DescriptorJoinName` and `PersonJoinName`, respectively) for deterministic manifests and emission.
+  - `TrackedChangeDescriptorJoinInfo.DescriptorResource` supplies the qualified descriptor resource whose compile-time key is resolved through `MappingSet.ResourceKeyIdByResource` whenever a Change Query probes the live descriptor table. Consumers must not derive that key from `Discriminator`.
   - `CanonicalStorageColumn` identifies the canonical writable storage column when the source uses key-unified storage; it is otherwise null, except that a zero-hop self-person `PersonDocumentId` column uses `DocumentId`.
   - `Origin` classifies whether the column serves identity, securable-element, or combined purposes.
   - `TrackedChangeColumnRole.DescriptorNamespace` and `TrackedChangeColumnRole.DescriptorCodeValue` require `DescriptorJoinName` and require `PersonJoinName = null`.
@@ -405,20 +404,96 @@ Notes:
   - `TrackedChangeSystemColumnRole.Id`: `NOT NULL`, copied from `dms.Document.DocumentUuid`; `ScalarType = null` because dialect emitters render PostgreSQL `uuid` / SQL Server `uniqueidentifier` by role.
   - `TrackedChangeSystemColumnRole.ChangeVersion`: `NOT NULL`, copied from the bumped `dms.Document.ContentVersion`; `ScalarType = Int64`; primary tracked-change window/sort column.
   - `TrackedChangeSystemColumnRole.CreatedAt`: `NOT NULL`, tracked row insert timestamp; `ScalarType = DateTime`; dialect emitters add PostgreSQL `now()` / SQL Server `sysutcdatetime()` defaults.
-  - `TrackedChangeSystemColumnRole.Discriminator`: present only when `Kind = SharedDescriptor`; `NOT NULL`; `ScalarType = String(MaxLength: 128)`; omitted from `SystemColumns` for per-resource tracked-change tables.
+  - `TrackedChangeSystemColumnRole.Discriminator`: present only when `Kind = SharedDescriptor`; `NOT NULL`; `ScalarType = String(MaxLength: 128)`; omitted from `SystemColumns` for per-resource tracked-change tables. It routes historical rows in the shared table to a descriptor endpoint and is not a live descriptor identity or type authority.
 
 ### 2.3 Mapping set (dialect-specific)
 
 The mapping set is what runtime code uses after selection. It is also the semantic target of mapping pack decode.
 
+> **Mapping-pack alignment pending.** The natural-key probe metadata (`NaturalKeyProbeTargets`,
+> `OwnNaturalKeyProbesByResource`, `DescriptorProbeTarget`, `NaturalKeyProbeKeyBinding`) and
+> `DbColumnModel.UsesSqlServerIdentityCollation` below are required by the runtime from E21 onward
+> but are not yet reflected in [`mpack-format-v1.md`](mpack-format-v1.md) or
+> [`aot-compilation.md`](aot-compilation.md). Mapping packs are out of scope for E21 (see
+> [natural-key-resolution.md § Out of scope](natural-key-resolution.md#out-of-scope)); E05 owns the
+> payload/loader alignment before any pack is built.
+
 ```csharp
+public enum NaturalKeyProbeTargetKind
+{
+    Concrete,
+    Abstract
+}
+
+public abstract record NaturalKeyProbeKeyBinding
+{
+    public sealed record Scalar(RelationalScalarType ScalarType) : NaturalKeyProbeKeyBinding;
+
+    // The request-side key value is a descriptor URI. The command builder resolves it through the
+    // descriptor probe using DescriptorResource's compile-time ResourceKeyId, then compares the
+    // resulting descriptor DocumentId to Column.
+    public sealed record Descriptor(QualifiedResourceName DescriptorResource) : NaturalKeyProbeKeyBinding;
+
+    // Valid only in OwnNaturalKeyProbe.KeyColumns; MappingSet validation rejects this binding in
+    // NaturalKeyProbeTarget.KeyColumns. The request-side key value is a document reference identity
+    // that participates in the owning resource's identity. The command builder resolves it inline
+    // before the normal reference-resolution statement, using the indexed DocumentReferenceBinding
+    // to select the reference target and identity bindings, then compares the resulting referenced
+    // DocumentId to Column.
+    public sealed record DocumentReference(int DocumentReferenceBindingIndex) : NaturalKeyProbeKeyBinding;
+}
+
+public sealed record NaturalKeyProbeKeyColumn(
+    DbColumnName Column,
+    NaturalKeyProbeKeyBinding Binding
+);
+
+public sealed record NaturalKeyProbeTarget(
+    QualifiedResourceName Resource,
+    NaturalKeyProbeTargetKind Kind,
+    DbTableName Table,
+    // Storage-resolved semantic identity order. Entries are self-contained for command builders,
+    // including abstract probes.
+    IReadOnlyList<NaturalKeyProbeKeyColumn> KeyColumns,
+    DbColumnName DocumentIdColumn,
+    // Present for abstract probes so the resolver can return the concrete member key for compatibility checks.
+    DbColumnName? ResourceKeyIdColumn = null
+);
+
+public sealed record OwnNaturalKeyProbe(
+    QualifiedResourceName Resource,
+    DbTableName RootTable,
+    // Storage-resolved semantic natural-key order. DocumentReference bindings are valid here
+    // because POST capture runs before the normal bulk reference resolver.
+    IReadOnlyList<NaturalKeyProbeKeyColumn> KeyColumns,
+    DbColumnName DocumentIdColumn
+);
+
+public sealed record DescriptorProbeTarget(
+    DbTableName DescriptorTable,
+    DbColumnName UriColumn,
+    // SQL Server binds the computed column; PostgreSQL emits lower(UriColumn COLLATE "pg_c_utf8") against the expression index.
+    DbColumnName? UriLoweredColumn,
+    DbColumnName ResourceKeyIdColumn,
+    DbColumnName DocumentIdColumn
+);
+
 public sealed record MappingSet(
     MappingSetKey Key,
     DerivedRelationalModelSet Model,
     IReadOnlyDictionary<QualifiedResourceName, ResourceWritePlan> WritePlansByResource,
     IReadOnlyDictionary<QualifiedResourceName, ResourceReadPlan> ReadPlansByResource,
     IReadOnlyDictionary<QualifiedResourceName, short> ResourceKeyIdByResource,
-    IReadOnlyDictionary<short, ResourceKeyEntry> ResourceKeyById
+    IReadOnlyDictionary<short, ResourceKeyEntry> ResourceKeyById,
+    // Entries exist for every abstract resource and for every concrete relational resource that
+    // carries UX_<R>_RefKey (i.e., is referenced by some resource in the effective schema).
+    // Never-referenced resources have no entry: no reference can target them, and their RefKey is
+    // not emitted. MappingSet validation rejects an entry for a resource without RefKey inventory.
+    IReadOnlyDictionary<QualifiedResourceName, NaturalKeyProbeTarget> NaturalKeyProbeTargets,
+    // Entries exist only for concrete resources with StorageKind=RelationalTables. Concrete
+    // resources stored in SharedDescriptorTable use DescriptorProbeTarget for identity lookup.
+    IReadOnlyDictionary<QualifiedResourceName, OwnNaturalKeyProbe> OwnNaturalKeyProbesByResource,
+    DescriptorProbeTarget DescriptorProbeTarget
 )
 {
     // Required for AOT mode. Must validate payload invariants before returning.
@@ -467,21 +542,43 @@ For a write request targeting resource `R`:
 
 1. **Plan lookup**
    - Resolve `QualifiedResourceName` from routing (project + resource).
-   - Lookup `ResourceWritePlan` via `MappingSet.WritePlansByResource[R]`.
-   - Use `MappingSet.ResourceKeyIdByResource[R]` when writing to shared tables like `dms.Document` / `dms.ReferentialIdentity`.
+   - Resolve `R` in `MappingSet.Model` and branch on its `StorageKind`.
+   - Abstract resources are not direct write targets.
+   - For `StorageKind = SharedDescriptorTable`, route to the descriptor write handler. It uses
+     `MappingSet.DescriptorProbeTarget` plus `MappingSet.ResourceKeyIdByResource[R]` to resolve
+     insert vs update by the engine-lowered validated URI + `ResourceKeyId`; it MUST NOT require or look up
+     `MappingSet.OwnNaturalKeyProbesByResource[R]`.
+   - For `StorageKind = RelationalTables`, lookup `ResourceWritePlan` via `MappingSet.WritePlansByResource[R]`.
+   - Use `MappingSet.ResourceKeyIdByResource[R]` when writing to shared tables like `dms.Document` / `dms.Descriptor` and when binding descriptor/abstract probe literals.
+   - The remaining generic flatten/write steps below apply to the `RelationalTables` branch.
 
 2. **Document identity and `DocumentId`**
-   - Core computes referential ids and extracts reference instances with concrete JSON locations.
-   - Backend resolves insert vs update and allocates/loads the root `DocumentId` (details in `flattening-reconstitution.md`).
+   - Core extracts the document identity and reference instances with concrete JSON locations.
+   - For `StorageKind = RelationalTables`, backend resolves insert vs update with the compiled
+     own-natural-key probe for `R` and allocates/loads the root `DocumentId` (details in
+     `flattening-reconstitution.md` and `natural-key-resolution.md`).
+   - For `StorageKind = SharedDescriptorTable`, the descriptor branch has already resolved
+     insert/update through the descriptor lowered-URI + `ResourceKeyId` probe described in
+     `natural-key-resolution.md`.
 
 3. **Bulk reference + descriptor resolution**
-   - Compute the full set of referential ids needed for this request:
-     - document references (target resource key + extracted identity values), and
-     - descriptor references (descriptor resource key + normalized URI).
-   - Perform a single batched lookup against `dms.ReferentialIdentity` to resolve `ReferentialId → DocumentId` for *all* of them.
+   - Before constructing lookup entries, Core descriptor extraction rejects every NUL-bearing
+     descriptor URI at its concrete request JSON path (unpaired-surrogate JSON escapes never reach
+     extraction; `ParseBodyMiddleware` rejects them body-wide at parse). The write returns a
+     path-attributed 400 and does not invoke the resolver. The application does not lowercase
+     descriptor values; case folding happens only in the probe SQL.
+   - Compute the full set of natural-key lookup entries needed for this request:
+     - document references (target resource + extracted `DocumentIdentity` values), and
+     - descriptor references (descriptor resource key + raw validated well-formed URI; the probe
+       folds it in SQL).
+   - Perform one batched natural-key resolver command using:
+     - `MappingSet.NaturalKeyProbeTargets` for concrete and abstract document references, and
+     - `MappingSet.DescriptorProbeTarget` for descriptor references.
    - Split the resolved rows into the request-scoped maps needed by the flattener:
-     - `ResolvedReferenceSet.DocumentIdByReferentialId` for document references, and
-     - `ResolvedReferenceSet.DescriptorIdByKey` for descriptor references (keyed by `(normalizedUri, descriptorResource)`).
+     - `ResolvedReferenceSet.DocumentReferences`, a dedicated document-reference map whose construction installs the structural natural-key comparer, and
+     - `ResolvedReferenceSet.DescriptorIdByKey` for descriptor references (keyed ordinally by
+       `(rawUri, descriptorResource)`; case-variant spellings remain separate entries that resolve
+       to the same `DescriptorId`, per the memo contract in `natural-key-resolution.md`).
    - Materialize `ResolvedReferenceSet` for this request.
    - Note: under key unification, this same `ResolvedReferenceSet.DescriptorIdByKey` map is also consumed by `KeyUnificationWritePlan`
      when coalescing unified descriptor endpoints into canonical storage columns (see `key-unification.md`).
@@ -490,7 +587,7 @@ For a write request targeting resource `R`:
    - Build an `IDocumentReferenceInstanceIndex` for this request using:
      - `ResourceWritePlan.Model.DocumentReferenceBindings` (the “reference sites”: wildcard reference-object path + FK column + target resource), and
      - Core’s extracted `DocumentReferenceArrays` (reference instances with concrete JSON locations that include array indices), and
-     - `ResolvedReferenceSet.DocumentIdByReferentialId` (to convert each instance’s referential id → referenced `DocumentId`).
+     - `ResolvedReferenceSet.DocumentReferences` (to convert each instance’s target resource + `DocumentIdentity` → referenced `DocumentId` without exposing a raw dictionary keyed by default equality).
    - The index answers: “for this `DocumentReferenceBinding` and this row’s `ordinalPath` (array indices along the wildcard reference path), what referenced `DocumentId` should be written to the FK column?”
      - `ordinalPath` examples: root reference `[]`; `$.students[*].studentReference` → `[studentOrdinal]`; `$.addresses[*].periods[*].calendarReference` → `[addressOrdinal, periodOrdinal]`.
    - This is what allows the flattener to populate FK columns for nested arrays in O(1) without per-row DB calls.
@@ -519,7 +616,12 @@ For a write request targeting resource `R`:
    - The compiled `InsertSql` for the table is emitted such that its parameter placeholders correspond to `ColumnBindings[0..N)` in that same order and use `WriteColumnBinding.ParameterName`.
    - Runtime binds parameters from `WriteColumnBinding.ParameterName` (not by “guessing” from SQL text), so it always knows which extracted value goes in which SQL parameter position.
 
-6. **Whole-document no-op detection for existing documents**
+6. **Post-resolution collection duplicate validation**
+   - For every collection table with a `CollectionMergePlan`, group incoming row buffers by stable parent scope instance and compare the semantic identity tuple from `CollectionMergePlan.SemanticIdentityBindings` after reference and descriptor values have been resolved.
+   - Reference and descriptor semantic-identity members compare by resolved `DocumentId`/`DescriptorId`; local string semantic-identity members compare with the backend schema equality contract (`OrdinalIgnoreCase` for SQL Server identity string columns, `Ordinal` for PostgreSQL).
+   - Duplicate candidates return the same path-attributed 400 duplicate-item validation error Core returns for request-local `arrayUniquenessConstraints` failures. The collection-table unique constraint remains a race/integrity backstop, not the routine duplicate-validator boundary.
+
+7. **Whole-document no-op detection for existing documents**
    - Applies to `PUT` and to `POST` requests that resolved to an existing `DocumentId`.
    - Use the current-document rows already materialized earlier in the request (for auth/reconstitution) and project
      them into comparable rowsets using the same table ordering and stored/writable column ordering as
@@ -531,7 +633,7 @@ For a write request targeting resource `R`:
      - ordered stored/writable values (resolved FK ids, canonical storage columns, synthetic presence flags, etc.).
    - If all comparable rowsets are equal, mark the request as a **no-op candidate** and proceed to guarded execution.
 
-7. **Execute (single transaction, merge semantics for scoped child data)**
+8. **Execute (single transaction, merge semantics for scoped child data)**
    - If the request is a no-op candidate, the write batch must first verify that the observed `ContentVersion` is still
      current for that `DocumentId`. If it is still current, commit without issuing DML for the resource tables or
      `dms.Document`.
@@ -547,7 +649,7 @@ For a write request targeting resource `R`:
      - load the current sibling sets for the document,
      - determine the visible stored rows for each scope instance from `ProfileAppliedWriteContext.VisibleStoredCollectionRows` (or treat all rows as visible when no profile filtering applies),
      - match incoming rows by the compiled semantic identity,
-     - assume at most one incoming row per `(scope instance, compiled semantic identity)`; duplicate request candidates are upstream data-validation failures and must not be left to database unique-constraint handling,
+     - consume only candidate sets that have passed both Core's request-local duplicate check and backend's storage-resolved duplicate validator; duplicate request candidates are validation failures and must not be left to database unique-constraint handling,
      - reserve new `CollectionItemId` values in batch using `CollectionKeyPreallocationPlan` when unmatched inserts are needed,
      - update matched rows in place via `CollectionMergePlan.UpdateByStableRowIdentitySql`, preserving bindings governed by `HiddenMemberPaths`,
      - delete omitted visible rows via `CollectionMergePlan.DeleteByStableRowIdentitySql`, and

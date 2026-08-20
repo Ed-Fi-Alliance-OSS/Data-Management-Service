@@ -182,7 +182,7 @@ Core is expected to own all of the following:
 5. **Writable request validation**
    - validate that the submitted request does not include data forbidden by the writable profile,
    - reject submitted collection items that fail writable profile value filters,
-   - reject submitted collection/common-type/extension collection items that collide on compiled semantic identity within the same stable parent scope after writable-profile shaping, and
+   - reject submitted collection/common-type/extension collection items that collide under Core's request-local compiled semantic identity within the same stable parent scope after writable-profile shaping, and
    - return structured validation/policy failures rather than silently pruning invalid submitted data.
 
 6. **Creatability analysis**
@@ -241,8 +241,9 @@ Core is expected to own all of the following:
 Backend is expected to own all of the following:
 
 - load the current persisted document state needed for auth, reconstitution, no-op detection, and profile-constrained merge execution,
-- resolve document and descriptor references to `DocumentId`,
+- resolve document references to `DocumentId` and descriptor references to `DescriptorId`,
 - flatten the `WritableRequestBody` into row candidates,
+- run post-resolution collection duplicate validation with resolved `DocumentId`/`DescriptorId` values and backend schema equality before merge/no-op/DML,
 - use compiled semantic identities to match visible stored collection rows to request candidates,
 - reserve new `CollectionItemId` values for unmatched inserts,
 - preserve hidden rows, hidden columns, and hidden scopes using Core-supplied visibility/creatability information,
@@ -375,7 +376,8 @@ Normative requirements:
 - `RequestScopeStates` and `StoredScopeStates` MUST distinguish `VisiblePresent`, `VisibleAbsent`, and `Hidden` for every compiled non-collection scope instance that can affect write behavior, including root-adjacent 1:1 scopes, nested/common-type scopes, and `_ext` scopes.
 - `RequestScopeState.Creatable` MUST answer only the "create a new visible scope instance here" question. When `Visibility=VisiblePresent` and a visible stored scope already exists at `Address`, backend may update that scope even when `Creatable=false`. For `VisibleAbsent` and `Hidden`, `Creatable` MUST be `false`.
 - `VisibleRequestCollectionItems` MUST include every visible submitted item for collection/common-type/extension collection scopes. If an item does not match an existing visible stored row, backend may insert it only when `Creatable=true`.
-- `VisibleRequestCollectionItems` MUST contain at most one item per `CollectionRowAddress`. If writable-profile shaping would emit two visible submitted items with the same stable parent address and compiled semantic identity, Core MUST reject the request before backend flattening, merge planning, or DML begins.
+- `VisibleRequestCollectionItems` MUST contain at most one item per request-local `CollectionRowAddress`. If writable-profile shaping would emit two visible submitted items with the same stable parent address and compiled semantic identity under Core's comparison, Core MUST reject the request before backend flattening, merge planning, or DML begins.
+- That Core uniqueness guarantee is not the final storage-equality guarantee. Backend MUST still run the post-resolution duplicate validator over flattened collection semantic identities before merge/no-op/DML, because resolved reference/descriptor ids and SQL Server identity string comparison can collapse two different request-local addresses.
 - `VisibleRequestCollectionItem.Creatable` MUST answer only the "insert a new visible row here" question. A matched visible stored row may be updated even when `Creatable=false`.
 - `VisibleStoredCollectionRows` MUST identify visible persisted rows by compiled semantic identity, not by array ordinal.
 - Every `JsonScope` in the contract MUST equal the compiled `DbTableModel.JsonScope` / `TableWritePlan.TableModel.JsonScope` for the addressed scope.
@@ -739,7 +741,8 @@ For collection scopes, backend classifies each row candidate or stored row by co
 Additional collection-state clarifications:
 
 - A request item that fails writable profile value filtering is rejected by Core before it reaches this dispatcher. Backend never interprets that case as `Preserve` or `Delete`.
-- Duplicate visible request items at the same `CollectionRowAddress` are invalid dispatcher input. Core MUST reject them as request-validation failures before runtime merge execution; backend MUST NOT pick a first-wins/last-wins tie-breaker or defer the public error behavior to a relational unique-constraint violation.
+- Duplicate visible request items at the same request-local `CollectionRowAddress` are invalid dispatcher input. Core MUST reject them as request-validation failures before runtime merge execution.
+- The dispatcher also requires the incoming candidate set to have passed backend's storage-resolved duplicate validator. Backend MUST NOT pick a first-wins/last-wins tie-breaker or defer the public error behavior to a relational unique-constraint violation.
 - A semantic-identity change is not an in-place rename. It decomposes into `Delete` for the old visible row plus `Insert` for the new visible row, and the `Insert` branch still requires `Creatable=true`.
 - Hidden stored rows never suppress the create branch for a new visible request item. They remain on the `Preserve` path unless the same row is also visible and matched under the profile.
 
@@ -1099,7 +1102,8 @@ Related redesign discussion:
 - invalid request usage of a readable vs writable profile fails before persistence logic runs,
 - Core/backend contract mismatches in emitted scope/row addresses or stored-side visibility metadata fail deterministically before DML or readable response shaping continues; backend does not guess or recover by ordinal,
 - submitted collection items that violate writable profile filters fail request validation,
-- submitted collection/common-type/extension collection items that duplicate an earlier visible item at the same stable parent address by compiled semantic identity fail request validation with the same `400 Data Validation Failed` category DMS already uses for `arrayUniquenessConstraints`; they are not deferred to DB unique-constraint mapping,
+- submitted collection/common-type/extension collection items that duplicate an earlier visible item at the same stable parent address by Core's request-local compiled semantic identity fail request validation with the same `400 Data Validation Failed` category DMS already uses for `arrayUniquenessConstraints`,
+- submitted collection/common-type/extension collection items that become duplicate only after backend storage resolution fail with the same path-attributed 400 duplicate-item response before merge/no-op/DML; they are not deferred to DB unique-constraint mapping,
 - attempts to create a new scope/item that the writable profile does not permit fail as a profile-based write validation/policy error,
 - creatability failures apply only to create-of-new-visible-data cases; matched visible scope/item updates remain valid even when the same profile would forbid creation of a brand-new visible instance because required members are hidden,
 - backend must not silently prune invalid submitted data to make the write succeed,

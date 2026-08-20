@@ -77,7 +77,7 @@ For each document reference site, the relational mapping stores:
 - `{RefBaseName}_DocumentId` (stable key)
 - `{RefBaseName}_{IdentityPart}` propagated identity columns (one per identity part)
 
-Composite FKs target `(DocumentId, <IdentityParts...>)` on the referenced table, using `ON UPDATE CASCADE` when the
+Composite FKs target `(<IdentityParts...>, DocumentId)` on the referenced table, using `ON UPDATE CASCADE` when the
 referenced target is abstract or transitively mutable.
 
 Core validates `equalityConstraints` on API writes (see `EdFi.DataManagementService.Core/Validation`), but the database
@@ -591,10 +591,18 @@ For each table row being materialized, and for each `KeyUnificationClass` on tha
      used for normal scalar columns (coercions are Core-owned; backend should treat incoming values as already
      canonicalized).
    - For `DescriptorFk` members: resolve the JSON descriptor URI string to the descriptor `DocumentId` (BIGINT) using:
-     - normalization consistent with descriptor resolution (baseline: `ToLowerInvariant()`), and
+     - the shared descriptor well-formedness assertion, which requires a previously validated
+       well-formed-without-NUL URI and never lowercases (case folding is engine-owned; the probe
+       folds the value in SQL), and
      - the member’s `DbColumnModel.TargetResource` as part of the lookup key.
-     - recommended key shape: `DescriptorKey(NormalizedUri, DescriptorResource)` as defined in
-       `flattening-reconstitution.md` (`ResolvedReferenceSet.DescriptorIdByKey`).
+     - recommended key shape: `DescriptorKey(RawUri, DescriptorResource)` compared ordinally, as
+       defined in `flattening-reconstitution.md` (`ResolvedReferenceSet.DescriptorIdByKey`);
+       case-variant spellings remain separate keys that resolve to the same `DocumentId`.
+     Core descriptor extraction MUST reject a NUL-bearing URI at its concrete request JSON path
+     before the resolver or this coalescing step runs (an unpaired-surrogate JSON escape cannot
+     reach a C# string; `ParseBodyMiddleware` rejects it body-wide at parse). It is a
+     path-attributed 400 validation failure, not an unresolved-reference failure. This step MUST
+     assert the well-formed-without-NUL invariant and MUST NOT lowercase the value.
      If a descriptor URI is present but cannot be resolved to a `DocumentId`, the write MUST fail closed (descriptor
      reference validation failure).
 3. Apply conflict detection:
@@ -1612,13 +1620,13 @@ and adds `NullOrTrue` hardening constraints for synthetic presence flags.
 For a reference site, the composite FK uses canonical storage columns for unified identity parts:
 
 - Local FK columns:
-  - `{RefBaseName}_DocumentId`
   - `<CanonicalIdentityParts...>` (in the referenced target’s identity path order; derived by mapping each identity
     part binding column through `DbColumnModel.Storage`)
+  - `{RefBaseName}_DocumentId`
 - Target columns:
-  - `DocumentId`
   - `<TargetIdentityColumns...>` (derived by mapping each target identity binding column through
     `DbColumnModel.Storage`)
+  - `DocumentId`
 
 Referential actions:
 
@@ -1673,8 +1681,8 @@ Example (illustrative only):
 
 Under this shape, `A` can end up with multiple composite FKs that share the same canonical identity-part column:
 
-- `FK_A_B`: `(B_DocumentId, StudentUniqueId_Unified) → B(DocumentId, StudentUniqueId_Unified)`
-- `FK_A_C`: `(C_DocumentId, StudentUniqueId_Unified) → C(DocumentId, StudentUniqueId_Unified)`
+- `FK_A_B`: `(StudentUniqueId_Unified, B_DocumentId) → B(StudentUniqueId_Unified, DocumentId)`
+- `FK_A_C`: `(StudentUniqueId_Unified, C_DocumentId) → C(StudentUniqueId_Unified, DocumentId)`
 
 If `B` and `C` themselves depend on the same upstream identity and that upstream identity is updated with
 `allowIdentityUpdates=true`, the cascade graph may contain **multiple update paths** that reach `A`.
@@ -1772,8 +1780,8 @@ Authorization note:
 
 Composite foreign keys require the referenced column set to be UNIQUE. In this redesign, many composite FKs target:
 
-- `(DocumentId, <IdentityParts...>)` on a concrete root table, or
-- `(DocumentId, <AbstractIdentityParts...>)` on an abstract identity table.
+- `(<IdentityParts...>, DocumentId)` on a concrete root table, or
+- `(<AbstractIdentityParts...>, DocumentId)` on an abstract identity table.
 
 Under key unification, composite reference FKs are defined over **canonical storage columns** for unified identity
 parts (see “Composite reference foreign keys” above). Therefore, any UNIQUE constraints whose sole purpose is “make
@@ -1782,10 +1790,10 @@ the composite FK legal” MUST be defined over the same canonical storage column
 Normative rules:
 
 1. When deriving a referenced-key UNIQUE for a composite FK target, the target column list MUST be:
-   - `DocumentId`, plus
    - the target identity-part columns mapped to their **canonical storage columns**:
      - `Stored` → itself
      - `UnifiedAlias` → `UnifiedAlias.CanonicalColumn`
+   - `DocumentId`, last.
 2. If two or more identity parts map to the same canonical column (because the identity schema contains duplicated
    endpoints that are equality-constrained), the derivation MUST de-duplicate the repeated canonical column name
    deterministically:
@@ -1888,7 +1896,7 @@ Implementation guidance (dialect-neutral semantics):
   the alias column name).
 - Bump **Identity** stamps only for `identityChangedDocumentIds`.
 
-#### `TriggerKindParameters.ReferentialIdentityMaintenance` + `TriggerKindParameters.AbstractIdentityMaintenance`
+#### `TriggerKindParameters.AbstractIdentityMaintenance`
 
 These triggers must use the same value-diff gating:
 
@@ -1896,8 +1904,7 @@ These triggers must use the same value-diff gating:
   values differ between `inserted` and `deleted` (null-safe).
 - For unified identity members, the identity value is the presence-gated canonical expression above.
 
-This guarantees that cascade updates to canonical columns correctly cause referential-id and abstract-identity
-maintenance, even though alias columns are read-only.
+This guarantees that cascade updates to canonical columns correctly cause abstract-identity maintenance, even though alias columns are read-only.
 
 Design note (applies to `07-index-and-trigger-inventory.md` and any DDL emission docs):
 

@@ -77,8 +77,8 @@ This ticket deliberately does **not** implement a general propagation-analysis o
 If a schema needs one of these capabilities, derivation fails with a concise diagnostic and the capability is considered
 for a separate feature backed by a real fixture.
 
-Existing abstract-identity maintenance, referential-identity maintenance, document stamping, and Change Query triggers
-retain their responsibilities. Only `MssqlIdentityPropagationTrigger` identity-value fan-out is retired.
+Existing abstract-identity maintenance, document stamping, and Change Query triggers retain their responsibilities. Only
+`MssqlIdentityPropagationTrigger` identity-value fan-out is retired.
 
 ## Terms and Direction
 

@@ -62,7 +62,7 @@ contract is specified in
 `dms.DocumentCache` contains one caller-agnostic, pre-profile, full API-shaped projection
 per current document. Its physical columns, keys, constraints, indexes, and validation
 triggers are defined only in
-[`data-model.md`](../data-model.md#6-dmsdocumentcache-always-provisioned-optional-projection).
+[`data-model.md`](../data-model.md#5-dmsdocumentcache-always-provisioned-optional-projection).
 
 The table retains `DocumentId` as its compact primary/foreign key and stores
 `DocumentUuid` as a non-indexed denormalized connector-key column. Provider-specific

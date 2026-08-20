@@ -273,7 +273,7 @@ DMS health polling does not activate or release a runtime gate.
 ## Cached Document Contract
 
 The physical row shape, constraints, indexes, and validation triggers are owned by
-[data-model.md](../data-model.md#6-dmsdocumentcache-always-provisioned-optional-projection).
+[data-model.md](../data-model.md#5-dmsdocumentcache-always-provisioned-optional-projection).
 The cached projection semantics and materialization invariants are owned by the
 [projector/source ADR](0001-relational-cdc-projector-and-sources.md#cached-document-contract).
 The public Kafka representation derived from that projection is owned by the
@@ -443,7 +443,7 @@ connector's committed Debezium source offset and prove publication through that 
 boundary.
 
 Both adapters use the opt-in singleton `dms.CdcHeartbeat` table defined by
-[`data-model.md`](../data-model.md#8-dmscdcheartbeat-opt-in-cdc-integration-object).
+[`data-model.md`](../data-model.md#7-dmscdcheartbeat-opt-in-cdc-integration-object).
 It contains no document or tenant data. Connector setup includes this table in the
 PostgreSQL publication or SQL Server CDC capture and configures a positive
 `heartbeat.interval.ms`. Its fixed provider `heartbeat.action.query` atomically

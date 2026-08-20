@@ -10,7 +10,7 @@ epic: DMS-1309
 
 - **Connector topology and provider setup**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#connector-topology-and-provider-setup
 - **Schema and query integration**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#schema-and-query-integration
-- **Physical CDC heartbeat object**: reference/design/backend-redesign/design-docs/data-model.md#8-dmscdcheartbeat-opt-in-cdc-integration-object
+- **Physical CDC heartbeat object**: reference/design/backend-redesign/design-docs/data-model.md#7-dmscdcheartbeat-opt-in-cdc-integration-object
 - **Projector and source decision**: reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md
 
 The referenced design sections define the opt-in provider objects and access requirements.

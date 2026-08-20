@@ -105,10 +105,10 @@ Isolation (and `ALLOW_SNAPSHOT_ISOLATION`) on newly created databases.
 Full relational provisioning always creates the fixed `dms` inventory needed by the
 DocumentCache and CDC design:
 
-- [`dms.DataStoreIdentity`](../reference/design/backend-redesign/design-docs/data-model.md#4-dmsdatastoreidentity)
-- [`dms.DocumentCache`](../reference/design/backend-redesign/design-docs/data-model.md#6-dmsdocumentcache-always-provisioned-optional-projection)
-- [`dms.DocumentProjectionWork`](../reference/design/backend-redesign/design-docs/data-model.md#6a-dmsdocumentprojectionwork-always-provisioned-durable-projection-work)
-- [`dms.DocumentCacheState`](../reference/design/backend-redesign/design-docs/data-model.md#7-dmsdocumentcachestate-singleton-projection-state)
+- [`dms.DataStoreIdentity`](../reference/design/backend-redesign/design-docs/data-model.md#3-dmsdatastoreidentity)
+- [`dms.DocumentCache`](../reference/design/backend-redesign/design-docs/data-model.md#5-dmsdocumentcache-always-provisioned-optional-projection)
+- [`dms.DocumentProjectionWork`](../reference/design/backend-redesign/design-docs/data-model.md#5a-dmsdocumentprojectionwork-always-provisioned-durable-projection-work)
+- [`dms.DocumentCacheState`](../reference/design/backend-redesign/design-docs/data-model.md#6-dmsdocumentcachestate-singleton-projection-state)
 
 These objects are physical schema and durable state. Runtime projection, projection
 administration, projection health/readiness, cache-backed reads, and complete target

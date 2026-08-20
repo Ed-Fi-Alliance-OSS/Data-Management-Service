@@ -8,7 +8,6 @@ Draft. This is an initial design proposal for replacing the current three-table 
 
 - [Goals and Constraints](#goals-and-constraints)
 - [Key Implications vs the Current Three-Table Design](#key-implications-vs-the-current-three-table-design)
-- [Why keep ReferentialId](#why-keep-referentialid)
 - [High-Level Architecture](#high-level-architecture)
 - [Deep Dives](#deep-dives)
 - [Related Changes Implied by This Redesign](#related-changes-implied-by-this-redesign)
@@ -34,58 +33,36 @@ Draft. This is an initial design proposal for replacing the current three-table 
   - requests are authenticated before any schema-dependent work (mapping selection, queries, writes), and
   - authorization is applied in the backend at the SQL layer (page selection + CRUD checks) using `auth.*` companion objects and token-derived authorization context.
 - **No code generation**: No generated per-resource C# or “checked-in generated SQL per resource” is required to compile/run DMS.
-- **Polymorphic references use abstract identity tables and abstract union views**: For abstract reference targets (e.g., `EducationOrganization`), provision an `{AbstractResource}Identity` table (`DocumentId` + abstract identity fields + `Discriminator` (NOT NULL)) and reference it with composite FKs (including identity columns). PostgreSQL uses `ON UPDATE CASCADE`; SQL Server assigns native cascade or a safe `NO ACTION` cut under [SQL Server foreign-key pruning](sql-server-pruning.md). Also provision `{AbstractResource}_View` union views for query/diagnostics; they are no longer required for reference identity projection. See [data-model.md](data-model.md).
+- **Polymorphic references use abstract identity tables and abstract union views**: For abstract reference targets (e.g., `EducationOrganization`), provision an `{AbstractResource}Identity` table (`DocumentId` + abstract identity fields + concrete-member `ResourceKeyId` (NOT NULL, paired with `DocumentId` in a composite FK to `dms.Document(DocumentId, ResourceKeyId)`) + diagnostic `Discriminator` (NOT NULL)) and reference it with composite FKs (including identity columns). Abstract natural-key probes project `DocumentId` plus `ResourceKeyId` so target-type compatibility checks do not parse or map `Discriminator`. PostgreSQL uses `ON UPDATE CASCADE`; SQL Server assigns native cascade or a safe `NO ACTION` cut under [SQL Server foreign-key pruning](sql-server-pruning.md). Also provision `{AbstractResource}_View` union views for query/diagnostics; they are no longer required for reference identity projection. See [data-model.md](data-model.md).
 
 ## Key Implications vs the Current Three-Table Design
 
 - Today, the backend uses:
   - `dms.Document` as JSONB canonical storage,
-  - `dms.Alias` for `ReferentialId → DocumentId` lookup,
+  - `dms.Alias` as the legacy identity-alias lookup table,
   - `dms.Reference` (+ FK) for reference validation and reverse lookups,
   - plus JSON rewrite cascades (`UpdateCascadeHandler`) to keep embedded reference identity values consistent.
 - In this redesign, canonical storage is relational (tables per resource). Referencing relationships are stored as stable `DocumentId` FKs, so:
   - the database enforces referential integrity via FKs (no `dms.Reference` required), and
   - responses can reconstitute reference identity values directly from local reference-identity binding columns. Propagation to those columns is database-driven: PostgreSQL uses `ON UPDATE CASCADE` for eligible edges, and SQL Server uses retained native cascades plus safe full-composite `NO ACTION` cuts selected by [SQL Server foreign-key pruning](sql-server-pruning.md). Under key unification, those binding columns may be presence-gated aliases of canonical stored columns, preserving “absent optional reference ⇒ `NULL` at the binding columns”.
-- Identity/URI changes do not rewrite stable `..._DocumentId` foreign keys, but **do** propagate into the local canonical stored identity columns that underpin reference-identity bindings through retained native cascades. Cascades still exist for derived artifacts, but they are handled row-locally:
-  - `dms.ReferentialIdentity` is maintained transactionally by per-resource triggers that recompute referential ids from locally present identity columns (including propagated reference identity values).
+- Identity/URI changes do not rewrite stable `..._DocumentId` foreign keys, but **do** propagate into the local canonical stored identity columns that underpin reference-identity bindings through retained native cascades. Row-local maintenance keeps only the surviving derived artifacts aligned:
+  - abstract identity tables are maintained transactionally for polymorphic reference targets, and
   - update tracking metadata is maintained by normal stamping on `dms.Document` (no read-time dependency derivation required); see [update-tracking.md](update-tracking.md).
-- Identity uniqueness is enforced by:
-  - `dms.ReferentialIdentity` (for all identities, including reference-bearing), and
-  - the resource root table’s natural-key unique constraint (including FK `..._DocumentId` columns) as a relational guardrail.
-
-## Why keep ReferentialId
-
-`ReferentialId` is the deterministic UUIDv5 hash of `(ProjectName, ResourceName, DocumentIdentity)` that DMS Core computes (`ProjectName` is the MetaEd project name like `EdFi`, not the URL project segment like `ed-fi`).
-
-This redesign keeps it and stores it in `dms.ReferentialIdentity(ReferentialId → DocumentId)` (absorbing today’s `dms.Alias`) as the backend’s uniform “natural identity key”.
-
-### What it is for
-
-- **Uniform identity resolution without per-resource SQL**: one metadata-driven lookup (`ReferentialId → DocumentId`) supports:
-  - write-time reference validation/resolution,
-  - POST upsert existence detection, and
-  - query-time resolution of reference and descriptor filters.
-- **Preserves the Core/Backend boundary**: Core continues to compute referential ids for the written document and extracted references; the backend turns those into relational `..._DocumentId` FKs via bulk lookups.
-- **Descriptors use the same mechanism**: descriptor referential ids are computed from (descriptor resource type + normalized URI), so descriptor resolution uses the same index.
-- **Polymorphism without an extra alias table**: superclass/abstract alias referential ids preserve current polymorphic reference behavior in a single identity index.
-
-### If we removed it
-
-- The backend needs an alternative identity index, or it must resolve identities by querying/joining per-resource tables on multi-column natural keys (derived from metadata), increasing implementation complexity and cross-engine divergence.
-- For reference-bearing identities, resolution becomes recursive/join-heavy (resolve referenced identities first, then match), or forces denormalizing referenced natural-key columns into referencing tables (reintroducing rewrite/cascade pressure the redesign is avoiding).
-- Bulk “resolve all refs in a request” becomes many resource-specific queries instead of one `IN (...)` lookup, raising N+1 and batching/parameterization risks.
-- Abstract identity lookups require additional mapping tables/views to find concrete `DocumentId`s from abstract identity values.
+- Identity uniqueness and lookup are enforced by the relational identity indexes themselves:
+  - concrete resources use the resource root table’s natural-key unique constraint and `RefKey` index,
+  - abstract targets use `{AbstractResource}Identity` uniqueness/`RefKey` indexes, and
+  - descriptors use the lowered-URI + `ResourceKeyId` descriptor index.
 
 ## High-Level Architecture
 
 Keep DMS Core mostly intact:
 
-- Core remains the home of API canonicalization, validation, identity extraction, and referential-id computation.
+- Core remains the home of API canonicalization, validation, and identity/reference extraction. It preserves ordered document identity and reference details for backend natural-key resolution.
 - For baseline non-profile relational writes, the required Core extraction-model change is to add concrete *JSON location* (with indices) to extracted document references (see “Document references inside nested collections” in [flattening-reconstitution.md](flattening-reconstitution.md)). Descriptors already carry location via `DescriptorReference.Path`.
 - Profile-constrained collection merges add a second Core/backend contract: Core supplies an optional request-scoped `ProfileAppliedWriteRequest` with a `WritableRequestBody`; backend then loads the current stored document and invokes a Core-owned projector to derive `ProfileAppliedWriteContext` (`VisibleStoredBody`, `StoredScopeStates`, and `VisibleStoredCollectionRows`) so merge/delete decisions come from Core-projected stored state rather than backend-owned profile evaluation.
 - Core MUST reject any writable profile definition that excludes a field required to compute the compiled semantic identity of a persisted multi-item collection scope.
 
-- Core continues to produce `DocumentInfo` (identity + `ReferentialId` + extracted references/descriptors, including reference locations) and operates on JSON bodies. When profile-specific collection filtering applies, Core also provides the request-scoped write-shaping input described above.
+- Core continues to produce `DocumentInfo` (document identity + extracted references/descriptors, including reference locations) and operates on JSON bodies. When profile-specific collection filtering applies, Core also provides the request-scoped write-shaping input described above.
 - Backend repositories (`IDocumentStoreRepository`, `IQueryHandler`) become responsible for:
   1. **Flattening** incoming JSON into relational tables
   2. **Reference resolution** (natural keys → `DocumentId`)
@@ -107,6 +84,7 @@ This redesign is split into focused docs in this directory:
 - Mapping pack file format (normative `.mpack` schema): [mpack-format-v1.md](mpack-format-v1.md)
 - Extensions (`_ext`, resource/common-type extensions, naming): [extensions.md](extensions.md)
 - Transactions, concurrency, and cascades (reference validation, transactional cascades, runtime caching): [transactions-and-concurrency.md](transactions-and-concurrency.md)
+- Natural-key reference resolution: [natural-key-resolution.md](natural-key-resolution.md)
 - Update tracking (stored stamps for `_lastModifiedDate` / `ChangeVersion`, composed `_etag`): [update-tracking.md](update-tracking.md)
 - Change Queries (`/deletes`, `/keyChanges`, `/availableChangeVersions`, `ContentVersion` mirror, `tracked_changes_*` tables): [change-queries.md](change-queries.md)
 - Partitioned cursor paging (`pageToken`/`pageSize`, `Next-Page-Token`, `/partitions`, cursor token contract, range-seek page selection): [partitioned-cursor-paging.md](partitioned-cursor-paging.md)

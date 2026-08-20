@@ -148,7 +148,7 @@ For a given `EffectiveSchemaHash` that DMS serves, DMS builds (or loads from an 
 - Child tables for each array path (and nested arrays)
 - Column types/nullability/constraints
 - Document-reference binding plan: JSON reference paths → FK columns + reference-identity binding columns → referenced resource
-- Descriptor edge source plan: descriptor JSON paths → FK columns (descriptor `DocumentId`, resolved via `dms.ReferentialIdentity`) and expected descriptor resource type
+- Descriptor edge source plan: descriptor JSON paths → FK columns (descriptor `DocumentId`, resolved via the descriptor lowered-URI + `ResourceKeyId` probe) and expected descriptor resource type
 - JSON reconstitution plan: table+column → JSON property path writer instructions
 - Reference reconstitution plan (local columns): reference-object writers populated from reference-identity binding columns (per `DocumentReferenceBinding`)
 - Abstract identity tables for polymorphic reference targets (from `abstractResources`)
@@ -233,7 +233,7 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
    - derive a deterministic natural-key UNIQUE constraint on the root table:
      - scalar identity elements map to scalar columns
      - identity elements that come from document references map to the corresponding `..._DocumentId` FK columns
-   - `dms.ReferentialIdentity` is the primary identity resolver for all resources (including reference-bearing identities), and must be maintained transactionally (including cascades) so `ReferentialId → DocumentId` is never stale after commit.
+   - compile the resource's own natural-key probe from the same identity bindings so POST upsert detection can find the current `DocumentId` through `UX_<R>_NK`.
 
 5. Apply collection semantic-identity inputs:
    - resolve `arrayUniquenessConstraints` into scope-relative bindings for persisted multi-item collection scopes
@@ -259,12 +259,32 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
 
 7. Apply `abstractResources` (polymorphic identity tables; optional views):
    - For each abstract resource `A`, create a physical identity table `{schema}.{A}Identity` with:
-     - `DocumentId` (PK; FK → `dms.Document(DocumentId)` ON DELETE CASCADE),
+     - `DocumentId` (PK; paired with `ResourceKeyId` in the composite FK to `dms.Document(DocumentId, ResourceKeyId)` ON DELETE CASCADE),
      - abstract identity fields (from `abstractResources[A].identityJsonPaths` order),
-     - `Discriminator` (NOT NULL; last).
-   - Maintain `{schema}.{A}Identity` via triggers on each participating concrete root table (upsert on insert/update of identity columns).
+     - `ResourceKeyId` (NOT NULL; paired with `DocumentId` in the composite FK to `dms.Document(DocumentId, ResourceKeyId)`; concrete member resource key projected for abstract reference compatibility checks),
+     - `Discriminator` (NOT NULL; concrete member discriminator literal; last).
+   - Maintain `{schema}.{A}Identity` via triggers on each participating concrete root table (upsert
+     on insert/update of identity columns), populating `ResourceKeyId` from the trigger's typed
+     compile-time concrete-member key literal and `Discriminator` from its diagnostic literal.
+     Root DELETE does not get a separate abstract-identity trigger; delete parity is delegated to
+     `FK_<AbstractResource>Identity_DocumentResourceKey ... ON DELETE CASCADE` when the write path
+     deletes the owning `dms.Document` row in the same transaction after the concrete root row.
    - Use `{schema}.{A}Identity` as the composite-FK target for abstract reference sites; FKs use `ON UPDATE CASCADE` (identity tables are trigger-maintained) to propagate identity changes and enforce membership/type at the DB level.
    - (Optional) also emit `{schema}.{A}_View` as a narrow `UNION ALL` projection for diagnostics/ad-hoc querying.
+
+8. Apply SQL Server identity-collation metadata:
+   - For each `DbColumnModel` whose `ScalarType.Kind` is `String`, set
+     `UsesSqlServerIdentityCollation = true` when the column stores or copies an identity value:
+     canonical root natural-key strings, flattened `RefKey` string copies, abstract-identity string
+     columns, and local string identity members used by child/common/extension collection uniqueness.
+   - Under key unification, this flag follows storage: if any identity-bearing binding aliases a
+     canonical string storage column, the canonical stored column must carry the flag, and any
+     generated alias expression must not downgrade the resulting collation.
+   - Equivalent DDL metadata is required for generated descriptor identity string columns and
+     tracked-change old/new string copies whose origin includes identity, even when those columns are
+     produced outside the per-resource `DbColumnModel` inventory.
+   - Leave ordinary non-identity scalar payload strings false so they inherit the database default
+     unless another explicit contract applies.
 
 ### 4.2 Recommended child-table keys (stable internal collection identity)
 
@@ -328,9 +348,11 @@ For a given request, backend already has:
   - empty arrays (and arrays of empty objects) removed
   - selected top-level descriptor strings trimmed (`codeValue`, `shortDescription`)
 - `DocumentInfo`:
-  - resource referential id
-  - descriptor references (with concrete JSON paths, including indices)
-  - document references (referential ids + concrete reference-object JSON paths, including indices; grouped by wildcard path; requires addition of `DocumentReference.Path` as described below)
+  - resource `DocumentIdentity`
+  - descriptor references (with concrete JSON paths, including indices); Core has rejected any
+    NUL-bearing URI at that path (an unpaired-surrogate escape never reaches extraction — it is
+    rejected at body parse) — Core does not lowercase descriptor values
+  - document references (target identities + concrete reference-object JSON paths, including indices; grouped by wildcard path; requires addition of `DocumentReference.Path` as described below)
 - optional `ProfileAppliedWriteRequest` for profile-constrained writes:
   - `WritableRequestBody`: the request body after Core applies writable profile semantics and normal canonicalization
   - `RootResourceCreatable`: Core-owned create/no-create decision for a new root instance under the active writable profile
@@ -346,21 +368,33 @@ For a given request, backend already has:
 Before writing resource tables:
 
 - Resolve all **document references**:
-  - resolve to `DocumentId` via `dms.ReferentialIdentity` (`ReferentialId → DocumentId`) for all identities (self-contained, reference-bearing, and polymorphic/abstract via superclass alias rows)
+  - concrete references probe the target resource's `UX_<R>_RefKey`
+  - abstract references probe `{AbstractResource}Identity` and project both `DocumentId` and the concrete `ResourceKeyId`
 - Resolve all **descriptor references**:
-  - `dms.ReferentialIdentity`: `ReferentialId → DocumentId` (descriptor referential ids are computed by Core from descriptor resource name + normalized URI)
+  - before building any lookup entry, Core descriptor extraction validates the raw URI at its
+    concrete request JSON path; a NUL-bearing value produces a path-attributed 400 and the resolver
+    is not invoked (an unpaired-surrogate escape is rejected earlier, at body parse)
+  - after validation, descriptors probe the lowered-URI + `ResourceKeyId` descriptor index with
+    the raw validated value — the probe folds it in SQL; the application never lowercases
 
-Cache these lookups aggressively (L1/L2 optional), but only populate caches after commit.
+This ordering is normative: validation is not deferred to lookup and a NUL or malformed URI must not
+be reported as a missing descriptor reference. For descriptor resource POST/PUT, the parallel direct
+write rule is owned by the descriptor identity/write flow: derive the URI from the canonicalized
+`$.namespace` + `#` + `$.codeValue`, validate the two client-supplied components as well-formed
+without NUL with failures attributed to their source paths, and only then probe the URI. See
+[transactions-and-concurrency.md](transactions-and-concurrency.md#descriptor-uri-validation-boundary).
+
+Memoize resolved references within the request using the structural natural-key comparer. Cross-request L1/L2 caches remain optional and should stay disabled or short-TTL unless identity-update invalidation is proven.
 
 ### 5.2.1 Document references inside nested collections
 
-When a document reference appears inside a collection (or nested collection), its FK is ultimately stored in a child-table row keyed by `CollectionItemId`. During request traversal, however, the flattener still reaches the incoming collection item by its concrete array location. To set the correct FK column without per-row JSONPath evaluation and per-row referential id hashing, we need a stable way to answer:
+When a document reference appears inside a collection (or nested collection), its FK is ultimately stored in a child-table row keyed by `CollectionItemId`. During request traversal, however, the flattener still reaches the incoming collection item by its concrete array location. To set the correct FK column without per-row JSONPath evaluation or per-row database lookup, we need a stable way to answer:
 
 > For this `DocumentReferenceBinding`, and for this row’s **ordinal path**, what is the referenced `DocumentId`?
 
 DMS uses a single required approach: Core emits each reference instance *with its concrete JSON location (indices)* so the backend can address it by ordinal path.
 
-- Keeps referential id computation centralized in Core; flattening becomes pure lookup; incoming collection traversal still works naturally even though stored row identity is `CollectionItemId`.
+- Keeps natural-key extraction centralized in Core; flattening becomes pure lookup; incoming collection traversal still works naturally even though stored row identity is `CollectionItemId`.
 - Requires enhancing Core’s extracted reference model to carry location; backend builds a small per-request index.
 - For baseline non-profile relational writes, this is the required Core extraction-model change in this redesign.
 - Profile-constrained collection merges additionally require the request/body-shaping and visibility-projection contract described in section 5.2.3.
@@ -370,7 +404,7 @@ DMS uses a single required approach: Core emits each reference instance *with it
 Core changes:
 - Add `JsonPath Path` to `Core.External.Model.DocumentReference` representing the **concrete reference-object path including indices**, e.g. `$.addresses[2].periods[0].calendarReference`.
 - Continue emitting the **wildcard reference-object path** via `DocumentReferenceArray.arrayPath`, e.g. `$.addresses[*].periods[*].calendarReference`.
-- Keep the computed `ReferentialId` on `DocumentReference` as today.
+- Keep the ordered `DocumentIdentity` values on each `DocumentReference` for backend natural-key resolution.
 
 This is the same pattern already used for descriptor extraction (`DescriptorReference.Path`).
 
@@ -384,8 +418,7 @@ Update Core’s `ReferenceExtractor` to populate `DocumentReference.Path` by usi
 2. Group extracted identity values by concrete reference-object path.
 3. For each concrete reference-object path group:
    - build `DocumentIdentity` using the `referenceJsonPaths[*]` order (identity json paths + values)
-   - compute `ReferentialId` using the existing UUIDv5 algorithm
-   - emit `DocumentReference(Path=...)`
+   - emit `DocumentReference(Path=..., DocumentIdentity=...)`
 4. Emit `DocumentReferenceArray` for the reference site using the wildcard reference-object path (as today), but with `DocumentReferences` ordered by concrete path/document order.
 
 **How backend uses it**
@@ -520,7 +553,10 @@ Materialization is a two-phase process:
 1. Traverse the incoming JSON and build logical collection-item candidates:
    - each candidate records its `JsonScope`, `OrdinalPath`, requested sibling order, scalar values, resolved FK values, and any extension subtrees
    - for each persisted multi-item collection scope, compute the candidate’s semantic key from the compiled paths
-   - candidates for the same stable parent scope instance MUST already be unique by semantic key before storage binding begins; duplicate submitted candidates are request-validation failures, not merge tie-breakers
+   - candidates for the same stable parent scope instance MUST first be unique by Core's request-local semantic key; ordinary duplicate submitted candidates remain request-validation failures
+   - after reference and descriptor ids have been populated, backend runs the storage-resolved duplicate check from `natural-key-resolution.md` before storage binding, no-op synthesis, or collection-table DML; this is the existing `RelationalWriteFlattener` semantic-identity dedupe, not a separate validator
+   - that check compares semantic-key members by resolved `DocumentId`/`DescriptorId` where present and by the backend schema comparer for local string identity members
+   - duplicates found by either layer are request-validation failures, not merge tie-breakers, and must not be left to collection-table unique constraints for routine client-visible behavior
 2. After loading the current document graph for update flows, bind each candidate to storage:
    - determine the visible persisted rows for each collection scope from `ProfileAppliedWriteContext.VisibleStoredCollectionRows` when present, keyed by compiled `JsonScope` plus stable parent address; otherwise treat all current rows in that scope as visible
    - match to an existing visible row by semantic key
@@ -532,9 +568,16 @@ The resulting write set is keyed by stable `CollectionItemId`s plus parent-scope
 
 ### 5.4 Write execution (single transaction, no N+1)
 
+This generic flatten-and-write algorithm applies to concrete resources with
+`StorageKind = RelationalTables`. Descriptor resources stored in the shared
+`dms.Descriptor` table use the descriptor write handler described in
+`natural-key-resolution.md`: upsert detection probes the engine-lowered validated URI +
+`ResourceKeyId` through the shared descriptor target and does not require an
+`OwnNaturalKeyProbe`.
+
 Within a single transaction:
 
-1. Write `dms.Document` and `dms.ReferentialIdentity`
+1. Resolve insert vs update with the compiled own-natural-key probe for the relational-table resource, then insert/update `dms.Document`
 2. Write the resource root row (`INSERT` or `UPDATE`)
 3. For each non-root 1:1 scope:
    - `InsertSql` when the scope is visible and present, the row is newly present, and Core marked the scope creatable
@@ -559,8 +602,8 @@ Within a single transaction:
    - collection/common-type extension scope rows keyed by the owning base row identity
    - extension child collections using the same merge strategy as core collections
 6. No derived reverse-edge maintenance is required:
-   - referential-id impacts propagate through composite reference FKs anchored on canonical storage columns (binding/path columns may be generated aliases); PostgreSQL uses `ON UPDATE CASCADE` for abstract or transitively mutable concrete targets, while SQL Server actions are selected under [sql-server-pruning.md](sql-server-pruning.md), and
-   - row-local triggers maintain `dms.ReferentialIdentity` and update-tracking stamps in the same transaction.
+   - identity impacts propagate through composite reference FKs anchored on canonical storage columns (binding/path columns may be generated aliases); PostgreSQL uses `ON UPDATE CASCADE` for abstract or transitively mutable concrete targets, while SQL Server actions are selected under [sql-server-pruning.md](sql-server-pruning.md), and
+   - row-local triggers maintain abstract identity tables and update-tracking stamps in the same transaction.
 
 Bulk insert options (non-codegen):
 - **Multi-row INSERT** with parameters (good default)
@@ -571,13 +614,14 @@ Bulk insert options (non-codegen):
 
 Collection writes use merge semantics, not blanket delete-and-reinsert:
 
-- Every persisted multi-item collection scope MUST have a compiled semantic key; match by `(ParentScope, SemanticKey)`.
-- Submitted request siblings that collide on `(ParentScope, SemanticKey)` are invalid input and MUST fail request validation before merge/no-op/DML. Relational unique constraints on collection tables remain defense in depth for races/corruption, not the primary client-visible behavior for duplicate submitted items.
+- Every persisted multi-item collection scope MUST have a compiled semantic key; match by `(ParentScope, SemanticKey)`. Reference and descriptor members match by resolved `DocumentId`/`DescriptorId`; local string members match with the backend schema comparer (`OrdinalIgnoreCase` under the SQL Server identity collation, `Ordinal` on PostgreSQL), and a comparer-equal but byte-different member is rebound to the stored row's value before no-op comparison and DML (stored casing wins; see `natural-key-resolution.md` § "How the write path will preserve stored casing").
+- Submitted request siblings that collide on `(ParentScope, SemanticKey)` under Core's request-local comparison are invalid input and MUST fail request validation before merge/no-op/DML.
+- Backend also rejects siblings that collide only after storage resolution. `RelationalWriteFlattener` already dedupes each scope's siblings on their materialized semantic identity (resolved `DocumentId`/`DescriptorId` values plus local scalars) with a path-attributed 400; under `natural-key-resolution.md` its comparison of local string identity members uses the backend schema comparer (`OrdinalIgnoreCase` under the SQL Server identity collation, `Ordinal` on PostgreSQL) instead of ordinal equality, and its message follows Core's duplicate-item wording. Relational unique constraints on collection tables remain defense in depth for races/corruption, not the primary client-visible behavior for duplicate submitted items.
 - For profile-constrained writes, visible stored rows are the rows enumerated in `ProfileAppliedWriteContext.VisibleStoredCollectionRows` for that collection scope and parent scope instance, in caller-visible order.
 - Core MUST reject any writable profile definition that excludes a field required to compute the semantic key of a persisted multi-item collection scope.
 - Hidden profile-scoped rows are current persisted rows for that collection scope instance that are not enumerated in `ProfileAppliedWriteContext.VisibleStoredCollectionRows`; they are never deleted or updated.
 - Hidden columns on matched rows are preserved by overlaying visible request-derived values onto the stored row while matched rows keep their existing `CollectionItemId`.
-- A change to a semantic-key value is treated as `delete old row + insert new row`, not as an in-place rename.
+- A change to a semantic-key value (one the schema comparer does not consider equal) is treated as `delete old row + insert new row`, not as an in-place rename; a comparer-equal casing variant is a match, not a change.
 
 Order rules:
 
@@ -675,7 +719,7 @@ Comparison rules:
 - Compare in **storage space**, not by raw JSON text. The comparison should use resolved `..._DocumentId` /
   `..._DescriptorId` values, canonical storage columns under key unification, row presence/absence for 1:1 scopes,
   and collection ordinals after merge.
-- Exclude generated/read-only aliases and derived artifacts (`dms.ReferentialIdentity`, update-tracking stamps,
+- Exclude generated/read-only aliases and derived artifacts (update-tracking stamps, abstract identity tables,
   `tracked_changes_*` rows) from the equality comparison. If the stored/writable rows are equal, those derived artifacts must
   remain unchanged as well.
 - If any comparable row differs, fall back to the normal write execution path unchanged: root update/insert plus
@@ -1004,7 +1048,7 @@ public enum ColumnKind
 
     /// <summary>
     /// A foreign key to a descriptor document row (stored as BIGINT DocumentId).
-    /// The referenced DocumentId is resolved from a descriptor URI via dms.ReferentialIdentity.
+    /// The referenced DocumentId is resolved from a descriptor URI via the descriptor lowered-URI + ResourceKeyId probe.
     /// Column naming convention: ..._DescriptorId
     /// </summary>
     DescriptorFk,
@@ -1058,6 +1102,8 @@ public enum ScalarKind
 
 /// <summary>
 /// The relational scalar type, including constraints that affect DDL and parameter binding.
+/// SQL Server collation is intentionally not part of this scalar type because it is a column-role
+/// contract, not a property of every string scalar.
 /// </summary>
 public sealed record RelationalScalarType(
     ScalarKind Kind,
@@ -1082,8 +1128,15 @@ Rules:
     - Descriptor URI strings, including descriptor collections and descriptor identity parts inside scalar references, are not stored as strings (e.g., `$.gradeLevelDescriptor`, `$.programDescriptors[*]`, `$.courseOfferingReference.termDescriptor`).
 - `ScalarKind.Decimal` requires a matching entry in `decimalPropertyValidationInfos` (`totalDigits`, `decimalPlaces`); missing info is a schema compilation error.
 - `ScalarKind.DateTime` uses SQL Server `datetime2(7)` (no timezone) to align with Ed-Fi ODS SQL Server conventions; any incoming offsets are normalized to a UTC instant at write time.
+- The SQL Server string entries below are base types only. DDL generation MUST also apply column-role
+  metadata: any generated string column that stores or copies identity values emits
+  `COLLATE SQL_Latin1_General_CP1_CI_AS` after the base `nvarchar(...)` type. This covers canonical
+  natural-key string columns, flattened `RefKey` string copies, abstract-identity string columns,
+  descriptor identity source/copy columns, tracked-change old/new string identity copies, and local
+  string identity members used by child or extension collection uniqueness. Ordinary non-identity
+  scalar payload strings inherit the database default unless another explicit contract applies.
 
-| `ScalarKind` | ApiSchema JSON schema source | PostgreSQL type | SQL Server type |
+| `ScalarKind` | ApiSchema JSON schema source | PostgreSQL type | SQL Server base type |
 | --- | --- | --- | --- |
 | `String` | `type: "string"` (no `format`, `maxLength` required for scalar columns) | `varchar(n)` | `nvarchar(n)` |
 | `Int32` | `type: "integer"` | `integer` | `int` |
@@ -1264,11 +1317,17 @@ public abstract record ColumnStorage
 /// </param>
 /// <param name="TargetResource">
 /// For Kind=DocumentFk: the referenced resource type.
-/// For Kind=DescriptorFk: the descriptor resource type (used to compute/validate descriptor referential identity).
+/// For Kind=DescriptorFk: the descriptor resource type (used to validate descriptor URI + ResourceKeyId resolution).
 /// Null for scalar/ordinal/parent-key columns.
 /// </param>
 /// <param name="Storage">
 /// Storage/writable semantics for this column. See: key-unification.md.
+/// </param>
+/// <param name="UsesSqlServerIdentityCollation">
+/// True only for generated SQL Server string columns that store or copy identity values. When true,
+/// DDL generation appends <c>COLLATE SQL_Latin1_General_CP1_CI_AS</c> to the base <c>nvarchar(...)</c>
+/// type. Ordinary non-identity string payload columns leave this false and inherit the database
+/// default collation unless another explicit contract applies.
 /// </param>
 public sealed record DbColumnModel(
     DbColumnName ColumnName,
@@ -1277,7 +1336,8 @@ public sealed record DbColumnModel(
     bool IsNullable,
     JsonPathExpression? SourceJsonPath,            // null for derived columns (CollectionKey/ParentKey/Ordinal/MirroredContentVersion/MirroredContentLastModifiedAt)
     QualifiedResourceName? TargetResource,         // for DocumentFk / DescriptorFk
-    ColumnStorage Storage
+    ColumnStorage Storage,
+    bool UsesSqlServerIdentityCollation = false
 );
 
 /// <summary>
@@ -1351,12 +1411,12 @@ public sealed record ReferenceIdentityBinding(
 /// <param name="DescriptorResource">
 /// The descriptor resource type expected at this path (e.g. ("EdFi","GradeLevelDescriptor")).
 /// This is used for:
-/// - write-time validation (descriptor referential id must exist in dms.ReferentialIdentity)
-/// - query-time resolution (descriptor URI → descriptor DocumentId, via referential id)
+/// - write-time validation (descriptor URI + ResourceKeyId must resolve through dms.Descriptor)
+/// - query-time resolution (descriptor URI → descriptor DocumentId through the descriptor probe)
 /// </param>
 /// <param name="IsIdentityComponent">
 /// True when this descriptor value participates in the parent document's identity (the descriptor URI is part of the parent's <c>identityJsonPaths</c>).
-/// Used when projecting identity values from relational storage for referential-id computation (descriptor identity/URI is immutable in this redesign).
+/// Used when projecting identity values from relational storage for natural-key probes (descriptor identity/URI is immutable in this redesign).
 /// </param>
 public sealed record DescriptorEdgeSource(
     bool IsIdentityComponent,
@@ -1544,11 +1604,11 @@ public abstract record WriteValueSource
     /// <summary>
     /// A document reference FK value.
     ///
-    /// With the concrete-path approach (section 5.2.1), the referential id is computed by Core and emitted with concrete JSON location.
+    /// With the concrete-path approach (section 5.2.1), Core emits the reference identity with concrete JSON location.
     /// The backend uses a per-request index keyed by:
     /// - binding inventory index (wildcard path resolved via `ResourceWritePlan.Model.DocumentReferenceBindings[bindingIndex]`)
     /// - the current row's OrdinalPath (array indices from root to the current scope)
-    /// to return the referenced DocumentId without per-row hashing.
+    /// to return the referenced DocumentId without per-row database lookup.
     /// </summary>
     public sealed record DocumentReference(int BindingIndex) : WriteValueSource;
 
@@ -1737,32 +1797,70 @@ public interface IResourceFlattener
 /// <summary>
 /// Per-request resolved lookups used during flattening to populate FK columns without per-row DB queries.
 /// </summary>
-/// <param name="DocumentIdByReferentialId">
-/// Maps a referenced resource’s referential id (UUIDv5) to its DocumentId.
-/// Produced by the ApiSchema-derived natural-key resolver (via `dms.ReferentialIdentity`) and used for document references.
+/// <param name="DocumentReferences">
+/// Resolves a referenced resource's structural natural-key lookup key to its DocumentId.
+/// Produced by the ApiSchema-derived natural-key resolver and used for document references. The map owns
+/// the memberwise comparer required for DocumentIdentity; callers must not provide a raw dictionary keyed
+/// by ReferenceLookupKey.
 /// </param>
 /// <param name="DescriptorIdByKey">
-/// Maps (normalized URI, descriptor resource type) to a descriptor DocumentId.
-/// This is a convenience map derived from Core-extracted descriptor references after referential-id resolution.
-/// Used to populate descriptor FK columns without per-row referential-id hashing.
+/// Maps (raw validated well-formed URI, descriptor resource type) to a descriptor DocumentId, compared ordinally.
+/// This is a convenience map derived from Core-extracted descriptor references after descriptor-probe resolution.
+/// Case-variant spellings remain separate keys that resolve to the same DocumentId (the probe folds in SQL).
+/// Used to populate descriptor FK columns without per-row database work.
 /// </param>
 public sealed record ResolvedReferenceSet(
-    IReadOnlyDictionary<Guid, long> DocumentIdByReferentialId,
+    IResolvedDocumentReferenceMap DocumentReferences,
     IReadOnlyDictionary<DescriptorKey, long> DescriptorIdByKey);
 
 /// <summary>
-/// Key used for resolving descriptor URI strings to descriptor DocumentIds without per-row referential-id hashing.
-/// The URI must be normalized (lowercase) to match DMS canonicalization behavior.
+/// Per-request document-reference lookup map.
+/// Implementations own the same memberwise comparer as the natural-key resolver because DocumentIdentity wraps arrays.
 /// </summary>
-public readonly record struct DescriptorKey(string NormalizedUri, QualifiedResourceName DescriptorResource);
+public interface IResolvedDocumentReferenceMap
+{
+    bool TryGetDocumentId(
+        QualifiedResourceName targetResource,
+        DocumentIdentity documentIdentity,
+        out long documentId);
+}
+
+/// <summary>
+/// Factory for the resolved document-reference map. This is the only allowed construction path and installs
+/// the same structural ReferenceLookupKey comparer used by the natural-key resolver.
+/// </summary>
+public interface IResolvedDocumentReferenceMapFactory
+{
+    IResolvedDocumentReferenceMap Create(IEnumerable<ResolvedDocumentReference> references);
+}
+
+public sealed record ResolvedDocumentReference(
+    QualifiedResourceName TargetResource,
+    DocumentIdentity DocumentIdentity,
+    long DocumentId);
+
+/// <summary>
+/// Internal structural document-reference lookup key used only by IResolvedDocumentReferenceMap implementations.
+/// Default equality for this record struct is not authoritative; the backing dictionary must install the resolver's comparer.
+/// </summary>
+internal readonly record struct ReferenceLookupKey(
+    QualifiedResourceName TargetResource,
+    DocumentIdentity DocumentIdentity);
+
+/// <summary>
+/// Key used for resolving descriptor URI strings to descriptor DocumentIds without per-row database work.
+/// The URI must have passed request validation (well-formed, no NUL) and is carried raw — never lowercased
+/// in the application; the descriptor probe folds it in SQL. Keys compare ordinally.
+/// </summary>
+public readonly record struct DescriptorKey(string RawUri, QualifiedResourceName DescriptorResource);
 
 /// <summary>
 /// Resolves extracted document-reference instances to referenced DocumentIds for a single write request.
 ///
 /// Key idea:
 /// - Core extraction emits each reference instance with a concrete JSONPath including indices.
-/// - Backend resolves ReferentialId → DocumentId in bulk once.
-/// - This index maps the current row's OrdinalPath to the referenced DocumentId without per-row hashing or DB I/O.
+/// - Backend resolves target resource + DocumentIdentity → DocumentId in bulk once.
+/// - This index maps the current row's OrdinalPath to the referenced DocumentId without per-row DB I/O.
 ///
 /// OrdinalPath definition:
 /// - The sequence of array indices from the root to the current table scope.
@@ -1814,7 +1912,7 @@ public sealed class DocumentReferenceInstanceIndex : IDocumentReferenceInstanceI
     /// Builds the per-request index by combining:
     /// - the resource model bindings (to know which FK columns exist)
     /// - the Core-extracted reference instances (to know which reference occurs at which location)
-    /// - the bulk-resolved mapping ReferentialId → DocumentId (to avoid any DB work here)
+    /// - the bulk-resolved mapping structural natural-key lookup key → DocumentId (to avoid any DB work here)
     ///
     /// Required Core enhancement:
     /// - each <c>DocumentReference</c> must carry a concrete JSONPath to the reference object instance (including indices),
@@ -1823,7 +1921,7 @@ public sealed class DocumentReferenceInstanceIndex : IDocumentReferenceInstanceI
     public static DocumentReferenceInstanceIndex Build(
         IReadOnlyList<DocumentReferenceBinding> bindings,
         EdFi.DataManagementService.Core.External.Model.DocumentReferenceArray[] extractedReferenceArrays,
-        IReadOnlyDictionary<Guid, long> documentIdByReferentialId)
+        IResolvedDocumentReferenceMap resolvedDocumentReferences)
     {
         // Map wildcard reference-object path → binding for fast association.
         // The wildcard path is the DocumentReferenceBinding.ReferenceObjectPath (e.g. "$.addresses[*].periods[*].calendarReference").
@@ -1850,7 +1948,18 @@ public sealed class DocumentReferenceInstanceIndex : IDocumentReferenceInstanceI
             foreach (var reference in array.DocumentReferences)
             {
                 var ordinalPath = OrdinalPathParser.Parse(reference.Path.Value);
-                var documentId = documentIdByReferentialId[reference.ReferentialId.Value];
+                if (
+                    !resolvedDocumentReferences.TryGetDocumentId(
+                        binding.TargetResource,
+                        reference.DocumentIdentity,
+                        out var documentId
+                    )
+                )
+                {
+                    throw new InvalidOperationException(
+                        $"Document reference at '{reference.Path.Value}' was not resolved."
+                    );
+                }
                 map.Add(ordinalPath, documentId);
             }
         }
@@ -2050,7 +2159,7 @@ Key points:
 
 ### 7.8 Example: POST/PUT execution (flatten + write)
 
-Assume `EffectiveSchemaHash` is sourced from the selected database’s `dms.EffectiveSchema` fingerprint (cached per connection string; see `transactions-and-concurrency.md`), and is available via a request-scoped context.
+Assume `EffectiveSchemaHash` is sourced from the selected database’s `dms.EffectiveSchema` fingerprint (cached per connection string; see `transactions-and-concurrency.md`), and is available via a request-scoped context. The main path in this sketch is for concrete resources with `StorageKind = RelationalTables`; descriptor resources stored in `SharedDescriptorTable` leave through the descriptor write handler before own-natural-key probing.
 
 ```csharp
 public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
@@ -2058,14 +2167,21 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
     var effectiveSchemaHash = _effectiveSchemaContext.EffectiveSchemaHash;
     var resource = new QualifiedResourceName(request.ResourceInfo.ProjectName.Value, request.ResourceInfo.ResourceName.Value);
 
+    if (_resourceCatalog.GetStorageKind(effectiveSchemaHash, resource) == ResourceStorageKind.SharedDescriptorTable)
+    {
+        await _descriptorWriteHandler.UpsertAsync(request, ct);
+        return;
+    }
+
     // 1) Compile-or-get the write plan for this resource.
     var writePlan = _planProvider.GetWritePlan(effectiveSchemaHash, resource);
 
     await using var connection = await _dataSource.OpenConnectionAsync(ct);
     await using var tx = await connection.BeginTransactionAsync(ct);
 
-    // 2) Resolve identity (insert vs update) and obtain DocumentId.
-    //    (dms.ReferentialIdentity and dms.Document writes are not shown here.)
+    // 2) Resolve identity (insert vs update) with the compiled own-natural-key probe and obtain DocumentId.
+    //    This branch is only for StorageKind=RelationalTables.
+    //    (dms.Document writes are not shown here.)
     var documentId = await _documentIdAllocator.GetOrCreateDocumentIdAsync(request, connection, tx, ct);
 
     // 3) Resolve all FK ids in bulk.
@@ -2076,7 +2192,7 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
     var documentReferences = DocumentReferenceInstanceIndex.Build(
         writePlan.Model.DocumentReferenceBindings,
         request.DocumentInfo.DocumentReferenceArrays,
-        resolved.DocumentIdByReferentialId);
+        resolved.DocumentReferences);
 
     // 4) Load the current persisted rows needed for auth/reconstitution/merge on update flows.
     var currentState = await _currentDocumentLoader.LoadForWriteAsync(
@@ -2103,7 +2219,11 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
         documentReferences,
         resolved);
 
-    // 6) Bind candidates against current sibling sets, reserve any needed CollectionItemIds,
+    // 6) Reject collection duplicates that only become visible after storage resolution.
+    //    See natural-key-resolution.md#collection-duplicate-detection.
+    _storageResolvedDuplicateValidator.Validate(writePlan, candidateSet, resolved);
+
+    // 7) Bind candidates against current sibling sets, reserve any needed CollectionItemIds,
     //    and produce the post-merge write set.
     var writeSet = _mergeBinder.Bind(
         writePlan,
@@ -2115,11 +2235,27 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
         tx,
         ct);
 
-    // 7) Execute root + child table writes in plan order (set-based).
-    await _writer.ExecuteAsync(writePlan, documentId, writeSet, connection, tx, ct);
+    // 8) Rebind CI-equal identity values to stored casing before proposed-value authorization
+    //    and no-op detection. This is active for the SQL Server identity contract and descriptor
+    //    stored-wins writes; PostgreSQL regular-resource writes are already byte-exact.
+    //    See natural-key-resolution.md#how-the-write-path-will-preserve-stored-casing-sql-server.
+    var proposedWriteSet = _storedIdentityRebinder.Rebind(writePlan, writeSet, currentState);
 
-    // ReferentialId maintenance and update tracking are handled in-transaction by generated database triggers
-    // (row-local referential-id recompute + version stamping; identity propagation via provider-specific full-composite FK actions;
+    // 9) Authorize against stored state plus the rebound proposed state before any DML.
+    await _authorizationService.AuthorizeWriteAsync(request, currentState, proposedWriteSet, connection, tx, ct);
+
+    // 10) Apply the guarded no-op fast path using the same rebound rowset the writer would bind.
+    if (await _noOpDetector.IsNoOpAsync(writePlan, documentId, currentState, proposedWriteSet, connection, tx, ct))
+    {
+        await tx.CommitAsync(ct);
+        return;
+    }
+
+    // 11) Execute root + child table writes in plan order (set-based).
+    await _writer.ExecuteAsync(writePlan, documentId, proposedWriteSet, connection, tx, ct);
+
+    // Abstract identity maintenance and update tracking are handled in-transaction by generated database triggers
+    // (abstract-identity rows + version stamping; identity propagation via provider-specific full-composite FK actions;
     // SQL Server pruning follows sql-server-pruning.md).
 
     await tx.CommitAsync(ct);
@@ -2127,7 +2263,9 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
 ```
 
 Notes:
-- `_referenceResolver.ResolveAsync(...)` resolves document and descriptor references to `DocumentId` via `dms.ReferentialIdentity` (`ReferentialId → DocumentId`) for all identities (self-contained, reference-bearing, and polymorphic/abstract via alias rows), and may validate descriptor existence/type via `dms.Descriptor`.
+- `_referenceResolver.ResolveAsync(...)` resolves document and descriptor references to `DocumentId` via generated natural-key probes: concrete `RefKey`, abstract identity `RefKey` plus concrete `ResourceKeyId`, and descriptor lowered-URI + `ResourceKeyId`.
+- `_storageResolvedDuplicateValidator.Validate(...)` is the backend-owned second duplicate boundary from `natural-key-resolution.md`: it uses resolved `DocumentId` / `DescriptorId` values where available and the schema-contract-derived comparer for local string identity members, before merge/no-op/DML can turn invalid input into an unmapped unique-constraint failure.
+- `_storedIdentityRebinder.Rebind(...)` is the stored-casing safeguard from `natural-key-resolution.md`: on SQL Server regular resources and descriptor writes, casing-only identity differences are rebound to persisted values before authorization, no-op comparison, and DML so request casing is not written, cascaded, or stamped.
 - `_writer.ExecuteAsync(...)` uses the compiled `CollectionMergePlan`s, table-local `CollectionKeyPreallocationPlan`s, batched reservations from `dms.CollectionItemIdSequence`, and `IBulkInserter` to avoid N+1 inserts while preserving stable `CollectionItemId`s for matched rows.
 - The sketch omits the explicit profile branches: profile-constrained creates consult `RootResourceCreatable`, non-collection scope behavior comes from `RequestScopeStates` / `StoredScopeStates` using `VisiblePresent`, `VisibleAbsent`, and `Hidden`, and collection merges consume `VisibleRequestCollectionItems` / `VisibleStoredCollectionRows` plus `HiddenMemberPaths`.
 - For separate-table 1:1 scopes (including document-scope `_ext` tables), execution uses `InsertSql` when the scoped row is newly `VisiblePresent`, `UpdateSql` when it already exists, and `DeleteByParentSql` only when the scope state is `VisibleAbsent`; `Hidden` scopes are preserved, and inlined `VisibleAbsent` scopes clear only their visible compiled bindings.
@@ -2189,8 +2327,12 @@ private static long? ResolveDescriptorId(
         return null;
     }
 
-    var normalizedUri = uri.ToLowerInvariant();
-    return resolved.DescriptorIdByKey[new DescriptorKey(normalizedUri, descriptorResource)];
+    // Core validation has already rejected NUL input before relational resolution (an unpaired
+    // surrogate cannot exist in a C# string; STJ rejects it at body parse). Assert the invariant
+    // as defense in depth; never lowercase — case
+    // folding is engine-owned and happens only in the descriptor probe SQL.
+    DescriptorUri.AssertValidatedWellFormedWithoutNul(uri);
+    return resolved.DescriptorIdByKey[new DescriptorKey(uri, descriptorResource)];
 }
 
 private static void ApplyKeyUnificationPlans(

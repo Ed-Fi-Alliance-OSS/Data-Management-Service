@@ -3,7 +3,7 @@
 Status: Draft (planning aid derived from `reference/design/backend-redesign/epics/*`).
 
 Scope:
-- Covers the baseline E00-E15 story inventory below plus the focused E18/E19 addendum. It
+- Covers the baseline E00-E15 story inventory below plus the focused E18-E21 addenda. It
   is not an exhaustive index of every later, deferred, spike-generated, or placeholder
   story file now present under `reference/design/backend-redesign/epics/`.
 - Spike-generated follow-ons are excluded until this index is regenerated, unless a focused
@@ -52,6 +52,7 @@ graph TD
   E18["E18 DocumentCache projection"]
   E19["E19 Relational CDC/Kafka streaming"]
   E20["E20 Partitioned cursor paging"]
+  E21["E21 DMS storage reduction"]
 
   E00 --> E01 --> E02 --> E03 --> E04
 
@@ -62,6 +63,7 @@ graph TD
   E01 --> E05
   E02 --> E05
   E15 --> E05
+  E21 -. MappingSet probe/collation metadata .-> E05
 
   E00 --> E06
   E03 --> E06
@@ -96,6 +98,13 @@ graph TD
   E10 --> E20
   E15 --> E20
 
+  E01 --> E21
+  E02 --> E21
+  E07 --> E21
+  E09 --> E21
+  E10 --> E21
+  E15 --> E21
+
   E14
   E17
 ```
@@ -112,6 +121,11 @@ Notes:
   stable. E14 row-level authorization planning is a reused upstream foundation and compatibility
   input for `E20`, not a blocking edge. E12 benchmarks and E13 parity/E2E infrastructure are soft
   delivery inputs.
+- `E21` is an umbrella for the storage-reduction ideas identified by DMS-1398. Only its natural-key
+  and `dms.ReferentialIdentity` removal workstream is specified locally today; that workstream
+  consumes the E01/E02 model and DDL contracts, E07/E09 write and identity behavior, E10 Change Query
+  behavior, and E15 runtime plan foundations. Add dependencies for the other DMS-1398 workstreams
+  when their Jira children are mirrored locally.
 
 ---
 
@@ -124,7 +138,7 @@ Notes:
 | E02 | [Deterministic DDL Emission](02-ddl-emission/EPIC.md) | E01 | Engine-specific DDL (pgsql/mssql) + deterministic ordering/canonicalization |
 | E03 | [Provisioning Workflow (Create-Only)](03-provisioning-workflow/EPIC.md) | E02 | CLI + provisioning guardrails; enables DB-apply and runtime validation |
 | E04 | [Verification Harness](04-verification-harness/EPIC.md) | E00–E03 | Fixture runner + determinism/snapshot/golden/DB-apply tests |
-| E05 | [Mapping Pack Generation and Consumption (Optional)](05-mpack-generation/EPIC.md) | E00–E02, E15 | `.mpack` build/validate/load; enables AOT mapping distribution |
+| E05 | [Mapping Pack Generation and Consumption (Optional)](05-mpack-generation/EPIC.md) | E00–E02, E15 (soft: E21 — align the pack payload with the compiled `MappingSet` probe/collation metadata before building) | `.mpack` build/validate/load; enables AOT mapping distribution |
 | E06 | [Runtime Schema Validation & Mapping Set Selection](06-runtime-mapping-selection/EPIC.md) | E00, E03, E15 (and E05 optional) | Per-DB fingerprint validation + mapping selection + caching; removes hot reload |
 | E07 | [Relational Write Path (POST/PUT)](07-relational-write-path/EPIC.md) | E06, E01, E02, E15 | End-to-end relational writes; includes write-side current-document reconstitution for profile projection, populates propagated reference identity columns, and relies on DB triggers for stamps/identity maintenance |
 | E08 | [Relational Read Path (GET + Query)](08-relational-read-path/EPIC.md) | E06, E01, E02 | End-to-end relational reads and reconstitution (incl. abstract+descriptor projection) |
@@ -140,6 +154,7 @@ Notes:
 | E18 | [`dms.DocumentCache` Projection](18-document-cache/EPIC.md) | E02, E08, E10, E11 | Projection schema, runtime, verification, utility, and operator work packages |
 | E19 | [Relational CDC/Kafka Streaming](19-cdc-kafka/EPIC.md) | E18 for supported CDC, E16 for local connector registration | Provider, connector, bootstrap, verification, E2E, and operator work packages |
 | E20 | [Partitioned Cursor Paging](20-partitioned-cursor-paging/EPIC.md) | E08, E10, E15 | ODS-compatible cursor GET-many paging, authorized partition boundaries, OpenAPI, parity, and performance evidence |
+| E21 | [DMS Storage Reduction](21-storage-reduction/EPIC.md) | E01, E02, E07, E09, E10, E15 for the known natural-key workstream | High-impact storage reductions from DMS-1398 plus natural-key resolution and `dms.ReferentialIdentity` removal |
 
 ---
 
@@ -442,6 +457,34 @@ remains acyclic.
 | DMS-1391 | [`09-performance-harness-and-baseline.md`](20-partitioned-cursor-paging/09-performance-harness-and-baseline.md) | — | E12, E13 | Cross-provider harness and three-scenario pre-change traditional baseline |
 | DMS-1392 | [`10-performance-and-observability-final-gate.md`](20-partitioned-cursor-paging/10-performance-and-observability-final-gate.md) | DMS-1385–DMS-1391 | E12, E13 | Narrow reused fixture set, final matrix, plans, and thresholds |
 | DMS-1393 | [`12-bounded-cursor-and-partition-telemetry.md`](20-partitioned-cursor-paging/12-bounded-cursor-and-partition-telemetry.md) | DMS-1386, DMS-1387 | E12 | Bounded production paging/partition telemetry and privacy tests |
+
+### E21 — DMS Storage Reduction
+
+Epic: `21-storage-reduction/EPIC.md`
+
+DMS-1402 is the umbrella for the high-impact storage-reduction work identified by DMS-1398. The
+natural-key/`dms.ReferentialIdentity` removal workstream is filed as DMS-1443 through DMS-1456 and
+mirrored under [`21-storage-reduction/`](21-storage-reduction/). The E21 epic retains T1–T14 as
+stable rollout aliases and records the complete graph. Jira carries the same direct `blocks` links.
+The other DMS-1398 implementation stories have not yet been mirrored locally, so this index does not
+invent identifiers or dependency edges for them.
+
+| Jira | Story file | Direct prerequisites | Scope |
+|---|---|---|---|
+| DMS-1443 | [`01-sql-server-identity-collation-contract.md`](21-storage-reduction/01-sql-server-identity-collation-contract.md) | — | SQL Server identity collation and runtime equality contract |
+| DMS-1444 | [`02-document-resource-invariant-and-abstract-resource-key.md`](21-storage-reduction/02-document-resource-invariant-and-abstract-resource-key.md) | DMS-1443 | Document/resource invariant and abstract `ResourceKeyId` |
+| DMS-1445 | [`03-natural-key-probe-metadata.md`](21-storage-reduction/03-natural-key-probe-metadata.md) | DMS-1444 | Compiled natural-key probe metadata |
+| DMS-1446 | [`04-probe-based-duplicate-identity-and-constraint-diagnostics.md`](21-storage-reduction/04-probe-based-duplicate-identity-and-constraint-diagnostics.md) | DMS-1445 | Probe-based duplicate-identity and constraint diagnostics |
+| DMS-1447 | [`05-postgresql-17-and-descriptor-collation-upgrade.md`](21-storage-reduction/05-postgresql-17-and-descriptor-collation-upgrade.md) | — | PostgreSQL floor and descriptor-collation upgrade contract |
+| DMS-1448 | [`06-descriptor-validation-index-and-fk-foundations.md`](21-storage-reduction/06-descriptor-validation-index-and-fk-foundations.md) | DMS-1443, DMS-1444, DMS-1447 | Descriptor validation, index, and FK foundations |
+| DMS-1449 | [`07-natural-key-sql-builders-and-cardinality-contracts.md`](21-storage-reduction/07-natural-key-sql-builders-and-cardinality-contracts.md) | DMS-1445, DMS-1448 | Natural-key SQL builders and cardinality contracts |
+| DMS-1450 | [`08-natural-key-resolver-internal-seam.md`](21-storage-reduction/08-natural-key-resolver-internal-seam.md) | DMS-1449 | Natural-key resolver behind an internal seam |
+| DMS-1451 | [`09-natural-key-resolver-and-core-contract-cutover.md`](21-storage-reduction/09-natural-key-resolver-and-core-contract-cutover.md) | DMS-1446, DMS-1450 | Resolver, Core contract, and raw descriptor URI cutover |
+| DMS-1452 | [`10-post-upsert-natural-key-cutover-and-stored-identity-rebind.md`](21-storage-reduction/10-post-upsert-natural-key-cutover-and-stored-identity-rebind.md) | DMS-1451 | POST upsert cutover and SQL Server stored-identity rebind |
+| DMS-1453 | [`11-collection-duplicate-detection-and-conflict-fallback.md`](21-storage-reduction/11-collection-duplicate-detection-and-conflict-fallback.md) | DMS-1451 | Extended collection duplicate detection and generic conflict fallback |
+| DMS-1454 | [`12-descriptor-write-cutover-and-uuidv5-cleanup.md`](21-storage-reduction/12-descriptor-write-cutover-and-uuidv5-cleanup.md) | DMS-1452, DMS-1453 | Descriptor write cutover and Core UUIDv5 cleanup |
+| DMS-1455 | [`13-change-query-descriptor-identity-cutover.md`](21-storage-reduction/13-change-query-descriptor-identity-cutover.md) | DMS-1445, DMS-1448, DMS-1454 | Change Query descriptor identity cutover |
+| DMS-1456 | [`14-remove-referential-identity-infrastructure.md`](21-storage-reduction/14-remove-referential-identity-infrastructure.md) | DMS-1454, DMS-1455 | Final ReferentialIdentity removal |
 
 ---
 

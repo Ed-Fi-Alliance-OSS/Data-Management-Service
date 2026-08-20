@@ -235,3 +235,19 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `DMS-1391` — Performance Harness and Traditional Baseline — `reference/design/backend-redesign/epics/20-partitioned-cursor-paging/09-performance-harness-and-baseline.md`
   - `DMS-1392` — Performance Final Gate — `reference/design/backend-redesign/epics/20-partitioned-cursor-paging/10-performance-and-observability-final-gate.md`
   - `DMS-1393` — Bounded Cursor and Partition Telemetry — `reference/design/backend-redesign/epics/20-partitioned-cursor-paging/12-bounded-cursor-and-partition-telemetry.md`
+
+- `DMS-1402` — DMS Storage Reduction — `reference/design/backend-redesign/epics/21-storage-reduction/EPIC.md`
+  - `DMS-1443` — Pin the SQL Server Identity Collation and Runtime Equality Contract — `reference/design/backend-redesign/epics/21-storage-reduction/01-sql-server-identity-collation-contract.md`
+  - `DMS-1444` — Add the Document/Resource Invariant and Abstract ResourceKeyId — `reference/design/backend-redesign/epics/21-storage-reduction/02-document-resource-invariant-and-abstract-resource-key.md`
+  - `DMS-1445` — Compile Natural-Key Probe Metadata — `reference/design/backend-redesign/epics/21-storage-reduction/03-natural-key-probe-metadata.md`
+  - `DMS-1446` — Move Duplicate-Identity and Constraint Diagnostics to Compiled Probes — `reference/design/backend-redesign/epics/21-storage-reduction/04-probe-based-duplicate-identity-and-constraint-diagnostics.md`
+  - `DMS-1447` — Raise the PostgreSQL Floor and Publish the Descriptor-Collation Upgrade Contract — `reference/design/backend-redesign/epics/21-storage-reduction/05-postgresql-17-and-descriptor-collation-upgrade.md`
+  - `DMS-1448` — Add Descriptor Validation, Index, and Foreign-Key Foundations — `reference/design/backend-redesign/epics/21-storage-reduction/06-descriptor-validation-index-and-fk-foundations.md`
+  - `DMS-1449` — Implement Natural-Key SQL Builders and Cardinality Contracts — `reference/design/backend-redesign/epics/21-storage-reduction/07-natural-key-sql-builders-and-cardinality-contracts.md`
+  - `DMS-1450` — Implement the Natural-Key Resolver Behind an Internal Seam — `reference/design/backend-redesign/epics/21-storage-reduction/08-natural-key-resolver-internal-seam.md`
+  - `DMS-1451` — Cut Over the Resolver, Core Contracts, and Raw Descriptor URI Handling — `reference/design/backend-redesign/epics/21-storage-reduction/09-natural-key-resolver-and-core-contract-cutover.md`
+  - `DMS-1452` — Cut Over POST Upsert Detection and Rebind SQL Server Stored Identity — `reference/design/backend-redesign/epics/21-storage-reduction/10-post-upsert-natural-key-cutover-and-stored-identity-rebind.md`
+  - `DMS-1453` — Extend Collection Duplicate Detection and Add the Generic Conflict Fallback — `reference/design/backend-redesign/epics/21-storage-reduction/11-collection-duplicate-detection-and-conflict-fallback.md`
+  - `DMS-1454` — Cut Over Descriptor Writes and Remove Core UUIDv5 Contracts — `reference/design/backend-redesign/epics/21-storage-reduction/12-descriptor-write-cutover-and-uuidv5-cleanup.md`
+  - `DMS-1455` — Cut Over Change Query Descriptor Identity Resolution — `reference/design/backend-redesign/epics/21-storage-reduction/13-change-query-descriptor-identity-cutover.md`
+  - `DMS-1456` — Remove ReferentialIdentity Fixtures, Maintenance, and Infrastructure — `reference/design/backend-redesign/epics/21-storage-reduction/14-remove-referential-identity-infrastructure.md`

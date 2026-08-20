@@ -35,7 +35,7 @@ This redesign therefore requires a separate utility (“DDL generation utility�
 The DDL generation utility is responsible for database objects derived from the effective schema:
 
 - Core `dms.*` objects required for correctness, projection support, and update tracking:
-  - `dms.ResourceKey`, `dms.Document`, `dms.ReferentialIdentity`, `dms.Descriptor`
+  - `dms.ResourceKey`, `dms.Document`, `dms.Descriptor`
   - always-provisioned `dms.DataStoreIdentity`, `dms.DocumentCache`,
     `dms.DocumentProjectionWork`, and singleton `dms.DocumentCacheState`; projection
     starts in durable lifecycle state `Disabled`
@@ -47,12 +47,12 @@ The DDL generation utility is responsible for database objects derived from the 
   - schema fingerprinting: `dms.EffectiveSchema`, `dms.SchemaComponent`
 - Project-derived DDL for Change Queries and update tracking (see [change-queries.md](change-queries.md) and [update-tracking.md](update-tracking.md)):
   - per-resource `tracked_changes_<schema>.<resource>` tables and the shared `tracked_changes_edfi.Descriptor`
-  - per-resource `ContentVersion` / `ContentLastModifiedAt` mirror columns on every `StorageKind = RelationalTables` root and on `dms.Descriptor`, with supporting indexes (`IX_<Table>_ContentVersion`, `IX_Descriptor_Discriminator_ContentVersion`, `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId`)
+  - per-resource `ContentVersion` / `ContentLastModifiedAt` mirror columns on every `StorageKind = RelationalTables` root and on `dms.Descriptor`, with supporting indexes (`IX_<Table>_ContentVersion`, `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId`)
   - `*_Stamp` triggers on resource tables and `dms.Descriptor` (extended with `DocumentStamping.ChangeTracking` where applicable), which stamp `dms.Document`, mirror onto `MirrorStampTargetTable`, and populate `tracked_changes_*`
   - ReadChanges authorization views
 - Optional CDC objects:
   - the opt-in physical `dms.CdcHeartbeat` object defined by
-    [data-model.md](data-model.md#8-dmscdcheartbeat-opt-in-cdc-integration-object)
+    [data-model.md](data-model.md#7-dmscdcheartbeat-opt-in-cdc-integration-object)
   - provider-specific enablement and validation defined by
     [Relational CDC and Document Projection](cdc/cdc-streaming.md#schema-and-query-integration)
 - Authorization companion objects required for API authorization (see [auth.md](auth.md)):
@@ -139,7 +139,7 @@ The DDL generator is the authoritative source of dialect-specific SQL text for p
 
 - schemas/tables/sequences/constraints/indexes,
 - abstract identity tables and union views,
-- trigger/function definitions (update tracking stamping, change tracking, and identity maintenance),
+- trigger/function definitions (update tracking stamping, change tracking, and abstract identity maintenance),
 - deterministic seeding and schema-fingerprint recording.
 
 Any SQL called out as “sketch” in design documents must be implemented as generator output and covered by DDL text snapshots and/or golden tests.
@@ -162,7 +162,6 @@ This inventory is the explicit “what exists in the database” contract that t
 
 - `dms.ResourceKey`
 - `dms.Document`
-- `dms.ReferentialIdentity`
 - `dms.Descriptor`
 - `dms.DataStoreIdentity` (singleton source identity stable during ordinary operation)
 - `dms.DocumentCache` (always present; optionally populated/read)
@@ -212,6 +211,24 @@ This inventory is the explicit “what exists in the database” contract that t
   projector-discovery index is emitted
 - Supporting indexes for all FKs (see “FK index policy” below)
 
+**Identity collation and descriptor folding** (normative detail in
+[natural-key-resolution.md](natural-key-resolution.md#sql-server-column-level-identity-collation)):
+
+- SQL Server: every generated string column that stores or copies an identity value (canonical
+  natural-key columns, flattened `RefKey` copies, abstract-identity columns, descriptor `Uri`/
+  `Namespace`/`CodeValue`, tracked-change old/new identity copies, local string members of collection
+  identity constraints) is emitted with an explicit `COLLATE SQL_Latin1_General_CP1_CI_AS`; the
+  database default collation is never the identity contract. Purpose-specific explicit collations
+  (e.g. the `Latin1_General_100_BIN2` lifecycle token) are preserved.
+- Descriptor identity index: PostgreSQL emits the unique expression index
+  `UX_Descriptor_UriLowered_ResourceKeyId ON dms."Descriptor" (lower("Uri" COLLATE "pg_c_utf8"), "ResourceKeyId")`
+  (requires PostgreSQL 17+ and a UTF-8 database; SchemaTools guards both); SQL Server emits the
+  non-persisted computed column `[UriLowered] AS LOWER([Uri])` and a unique index on
+  `([UriLowered], [ResourceKeyId])`. No emitted `lower(...)`/`LOWER(...)` over a descriptor value
+  may rely on the database default collation.
+- No `dms.ReferentialIdentity`, `TR_<R>_ReferentialIdentity`, `dms.uuidv5()`, or DMS-owned
+  `CREATE EXTENSION pgcrypto` object is emitted.
+
 ### 2b) Authorization objects (`auth` schema)
 
 Authorization is enforced at the SQL layer using companion tables/views in the `auth` schema (see [auth.md](auth.md)).
@@ -238,7 +255,7 @@ Authorization is enforced at the SQL layer using companion tables/views in the `
 - Dialect-specific helper constructs used by batched authorization checks (e.g., a PostgreSQL `throw_error` function) are provisioned as part of schema setup.
 
 **SQL Server user-defined table types (TVPs)**
-The authorization design relies on filtering by caller-provided lists (EdOrgIds, namespace prefixes, referential ids, etc.). To avoid SQL Server parameter-count limits, the DDL generator provisions user-defined table types used by authorization queries (see `auth.md` for the rules/thresholds).
+The authorization design relies on filtering by caller-provided lists (EdOrgIds, authorized page `DocumentId`s, namespace prefixes, ownership tokens, etc.). To avoid SQL Server parameter-count limits, the DDL generator provisions user-defined table types used by authorization queries (see `auth.md` for the rules/thresholds). Natural-key reference resolution does not use TVPs.
 
 ### 3) Project objects (per project schema)
 
@@ -313,8 +330,9 @@ See [key-unification.md](key-unification.md) for the normative rules and dialect
 Emit per-table triggers derived from ApiSchema that:
 
 - stamp `dms.Document` representation/identity versions on writes to resource root/child/extension tables (see [update-tracking.md](update-tracking.md)),
-- maintain `dms.ReferentialIdentity` rows transactionally on identity projection changes, and
 - maintain `{schema}.{AbstractResource}Identity` tables from participating concrete root tables.
+
+The DDL generator emits only the surviving derived-maintenance objects: document stamping and abstract identity maintenance. Reference resolution and POST upsert detection use the compiled natural-key probe metadata described in [natural-key-resolution.md](natural-key-resolution.md).
 
 **Indexes**
 
@@ -352,6 +370,12 @@ This policy applies to:
 - document-reference FKs (`..._DocumentId`),
 - descriptor-reference FKs (`..._DescriptorId`),
 - core-table FKs (e.g., `dms.Document(ResourceKeyId) → dms.ResourceKey`).
+
+Exception: the descriptor and abstract identity document/resource invariant FKs
+`(DocumentId, ResourceKeyId) → dms.Document(DocumentId, ResourceKeyId)` do not get duplicate
+child-side helper indexes when the child table already has `DocumentId` as its primary key. That
+primary key is the narrower seek path for parent-row deletes and invariant checks; the composite
+parent key exists only to make the invariant declarative.
 
 ## High-level workflow
 
@@ -462,7 +486,7 @@ Recommended derivation:
 - Build the set of `(ProjectName, ResourceName)` pairs from the effective schema (core + extensions):
   - include all concrete `resourceSchemas[*].resourceName` where `isResourceExtension` is not `true` (including descriptors and non-extension resources from extension projects),
   - exclude `isResourceExtension: true` resource-extension overlays because they compile into `_ext` extension tables on the owning base resource rather than standalone document/resource-key rows,
-  - include all `abstractResources[*]` names (used for polymorphic/superclass alias rows in `dms.ReferentialIdentity`).
+  - include all `abstractResources[*]` names (used by abstract identity tables, union views, and natural-key resolver compatibility checks).
 - Sort pairs by `(ProjectName, ResourceName)` using **ordinal** (culture-invariant) string ordering.
 - Assign `ResourceKeyId` sequentially from 1..N and emit seed inserts (deriving `ResourceVersion` from the owning `projectSchema.projectVersion`):
   - `INSERT INTO dms.ResourceKey(ResourceKeyId, ProjectName, ResourceName, ResourceVersion) VALUES ...`
@@ -525,7 +549,7 @@ Within each phase:
 - **Constraints**: group by kind in fixed order `PK → UNIQUE → FK → CHECK`, then order by constraint name (ordinal).
 - **Indexes**: order by table name, then index name (ordinal).
 - **Views**: order by view name (ordinal).
-  - For abstract union views (`{schema}.{AbstractResource}_View`), order `UNION ALL` arms by concrete `ResourceName` (ordinal), then by `ProjectName` (ordinal) as a tie-breaker, and use a fixed select-list order: `DocumentId`, abstract identity fields in `identityJsonPaths` order, then `Discriminator`.
+  - For abstract union views (`{schema}.{AbstractResource}_View`), order `UNION ALL` arms by concrete `ResourceName` (ordinal), then by `ProjectName` (ordinal) as a tie-breaker, and use a fixed select-list order: `DocumentId`, abstract identity fields in `identityJsonPaths` order, concrete-member `ResourceKeyId`, then `Discriminator`. Each arm projects `ResourceKeyId` from the same compile-time concrete-member metadata used to populate the abstract identity table; it is not derived from `Discriminator`.
 - **Triggers**: order by table name, then trigger name (ordinal).
 - **Functions and grants**: order by schema-qualified object name, then principal and
   permission (ordinal).
