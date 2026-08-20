@@ -134,7 +134,12 @@ exit $ExitCode
                 # Plants a conventional sibling xsd/ directory in the payload WITHOUT declaring it
                 # in the manifest, to exercise manifest-authoritative (no rediscovery) staging.
                 [switch]
-                $PlantUndeclaredXsdDirectory
+                $PlantUndeclaredXsdDirectory,
+
+                # Data Standard version emitted as projectSchema.projectVersion, so tests can
+                # prove a non-5.2 content-derived value lands in schema.dataStandardVersion.
+                [string]
+                $ProjectVersion = "5.2.0"
             )
 
             $nupkgName = "$($PackageId.ToLowerInvariant()).$($Version.ToLowerInvariant()).nupkg"
@@ -182,6 +187,7 @@ exit $ExitCode
                 apiSchemaVersion = "1.0.0"
                 projectSchema    = [ordered]@{
                     projectName         = $ProjectName
+                    projectVersion      = $ProjectVersion
                     projectEndpointName = $ProjectEndpointName
                     isExtensionProject  = $IsExtensionProject
                     resourceSchemas     = [ordered]@{}
@@ -393,6 +399,10 @@ exit $ExitCode
             $manifest.schema.selectionMode | Should -Be "Standard"
             $manifest.schema.selectedExtensions | Should -BeNullOrEmpty
             $manifest.schema.apiSchemaManifestPath | Should -Be "ApiSchema/bootstrap-api-schema-manifest.json"
+            # Recorded from the staged core schema: its Data Standard version
+            # (projectSchema.projectVersion) and ApiSchema format version (apiSchemaVersion).
+            $manifest.schema.dataStandardVersion | Should -Be "5.2.0"
+            $manifest.schema.apiSchemaFormatVersion | Should -Be "1.0.0"
             Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "ApiSchema/schemas/Ed-Fi/ApiSchema.json") |
                 Should -BeTrue
             Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "ApiSchema/bootstrap-api-schema-manifest.json") |
@@ -481,7 +491,8 @@ exit $ExitCode
                     -Version "1.0.333" `
                     -ProjectName "Ed-Fi" `
                     -ProjectEndpointName "ed-fi" `
-                    -IsExtensionProject $false | Out-Null
+                    -IsExtensionProject $false `
+                    -ProjectVersion "6.1.0" | Out-Null
 
                 script:New-FixtureNupkg `
                     -FeedFolder $ds61FeedFolder `
@@ -514,6 +525,9 @@ exit $ExitCode
                 $manifest = script:Get-RootManifest
                 $manifest.schema.selectionMode | Should -Be "Standard"
                 @($manifest.schema.selectedExtensions) | Should -Contain "sample"
+                # Content-derived, not pinned to 5.2: the DS 6.1 core's projectVersion is what
+                # the manifest records.
+                $manifest.schema.dataStandardVersion | Should -Be "6.1.0"
 
                 Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "ApiSchema/schemas/Ed-Fi/ApiSchema.json") |
                     Should -BeTrue

@@ -97,13 +97,24 @@ exit $ExitCode
             $ProjectEndpointName,
 
             [bool]
-            $IsExtensionProject
+            $IsExtensionProject,
+
+            # Data Standard version recorded as projectSchema.projectVersion (contract-required
+            # by JsonSchemaForApiSchema.json). Pass "" to OMIT the field for negative tests.
+            [string]
+            $ProjectVersion = "5.2.0",
+
+            # ApiSchema format version emitted as the top-level apiSchemaVersion
+            # (contract-required). Pass "" to OMIT the field for negative tests.
+            [string]
+            $ApiSchemaVersion = "1.0.0"
         )
 
         $schema = [ordered]@{
-            apiSchemaVersion = "1.0.0"
+            apiSchemaVersion = $ApiSchemaVersion
             projectSchema = [ordered]@{
                 projectName = $ProjectName
+                projectVersion = $ProjectVersion
                 projectEndpointName = $ProjectEndpointName
                 isExtensionProject = $IsExtensionProject
                 resourceSchemas = [ordered]@{}
@@ -113,6 +124,14 @@ exit $ExitCode
                     }
                 }
             }
+        }
+
+        if ([string]::IsNullOrEmpty($ProjectVersion)) {
+            $schema["projectSchema"].Remove("projectVersion")
+        }
+
+        if ([string]::IsNullOrEmpty($ApiSchemaVersion)) {
+            $schema.Remove("apiSchemaVersion")
         }
 
         New-Item -ItemType Directory -Path (Split-Path -Parent $Path) -Force | Out-Null
@@ -374,6 +393,7 @@ exit $ExitCode
             apiSchemaVersion = "1.0.0"
             projectSchema    = [ordered]@{
                 projectName         = $ProjectName
+                projectVersion      = "5.2.0"
                 projectEndpointName = $ProjectEndpointName
                 isExtensionProject  = $IsExtensionProject
                 resourceSchemas     = [ordered]@{}
@@ -492,6 +512,10 @@ exit $ExitCode
                 $manifest.schema.selectedExtensions | Should -BeNullOrEmpty
                 $manifest.schema.effectiveSchemaHash | Should -Be $script:hashA
                 $manifest.schema.apiSchemaManifestPath | Should -Be "ApiSchema/bootstrap-api-schema-manifest.json"
+                # Recorded from the staged core schema: its Data Standard version
+                # (projectSchema.projectVersion) and ApiSchema format version (apiSchemaVersion).
+                $manifest.schema.dataStandardVersion | Should -Be "5.2.0"
+                $manifest.schema.apiSchemaFormatVersion | Should -Be "1.0.0"
             } finally {
                 if (Test-Path -LiteralPath $feedFolder) {
                     Remove-Item -LiteralPath $feedFolder -Recurse -Force
@@ -520,8 +544,38 @@ exit $ExitCode
             $manifest.schema.selectedExtensions | Should -Contain "sample"
             $manifest.schema.effectiveSchemaHash | Should -Be $script:hashA
             $manifest.schema.apiSchemaManifestPath | Should -Be "ApiSchema/bootstrap-api-schema-manifest.json"
+            # Recorded from the staged core schema in expert mode too: the same fields the
+            # database-template restore cross-check reads from the candidate manifest.
+            $manifest.schema.dataStandardVersion | Should -Be "5.2.0"
+            $manifest.schema.apiSchemaFormatVersion | Should -Be "1.0.0"
             # Expert filesystem staging is not package-driven, so no package identity is recorded.
             $manifest.schema.PSObject.Properties['selectedPackages'] | Should -BeNullOrEmpty
+        }
+
+        It "rejects a core schema without projectSchema.projectVersion instead of recording a blank Data Standard version" {
+            $schemaDir = New-TestDirectory
+            New-ApiSchemaFile `
+                -Path (Join-Path $schemaDir "ApiSchema.json") `
+                -ProjectName "Ed-Fi" `
+                -ProjectEndpointName "ed-fi" `
+                -IsExtensionProject $false `
+                -ProjectVersion ""
+
+            { Invoke-PrepareSchema -ApiSchemaPath $schemaDir } |
+                Should -Throw "*missing projectSchema.projectVersion*"
+        }
+
+        It "rejects a core schema without apiSchemaVersion instead of recording a blank format version" {
+            $schemaDir = New-TestDirectory
+            New-ApiSchemaFile `
+                -Path (Join-Path $schemaDir "ApiSchema.json") `
+                -ProjectName "Ed-Fi" `
+                -ProjectEndpointName "ed-fi" `
+                -IsExtensionProject $false `
+                -ApiSchemaVersion ""
+
+            { Invoke-PrepareSchema -ApiSchemaPath $schemaDir } |
+                Should -Throw "*missing apiSchemaVersion*"
         }
 
         It "copies optional schema-adjacent runtime content and preserves schema JSON payloads" {

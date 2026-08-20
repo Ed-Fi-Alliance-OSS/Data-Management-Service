@@ -398,6 +398,225 @@ $failureStatement
             return $scriptPath
         }
 
+        function script:Install-RestoreSequencingStub {
+            # Global recording stubs for every bootstrap-restore function the wrapper's restore
+            # branch calls, plus docker. The sandboxed fixture omits bootstrap-restore.psm1, so
+            # the wrapper's guarded import is skipped and these globals resolve instead - the
+            # same idiom as the docker stubs elsewhere in this file. Each stub appends one line
+            # to the shared call log (a single ordered timeline with the phase-script stubs) and
+            # returns canned data; names listed in -ThrowAt throw AFTER logging.
+            param(
+                [Parameter(Mandatory)]
+                [string]$LogPath,
+
+                [Parameter(Mandatory)]
+                [string]$FixtureRoot,
+
+                [string]$DockerComposeRoot = "",
+
+                [string[]]$ThrowAt = @()
+            )
+
+            $log = $LogPath
+            $root = $FixtureRoot
+            $activeBootstrapRoot = if ([string]::IsNullOrWhiteSpace($DockerComposeRoot)) { "" } else { Join-Path $DockerComposeRoot ".bootstrap" }
+            $throwSet = $ThrowAt
+            $stubThrow = { param($name) if ($throwSet -contains $name) { throw "injected $name failure" } }.GetNewClosure()
+
+            Set-Item function:global:Resolve-RestoreTargetDatabaseName {
+                param($EnvironmentValues, $DatabaseEngine)
+                Add-Content -LiteralPath $log -Value "restore:resolve-target engine=$DatabaseEngine"
+                & $stubThrow "Resolve-RestoreTargetDatabaseName"
+                "edfi_datamanagementservice"
+            }.GetNewClosure()
+            Set-Item function:global:Assert-RestoreTargetDatabaseNameSafe {
+                param($DatabaseEngine, $TargetDatabaseName, [switch]$SeparateConfigDatabase, $EffectiveConfigDatabaseName)
+                Add-Content -LiteralPath $log -Value "restore:name-safety target=$TargetDatabaseName"
+                & $stubThrow "Assert-RestoreTargetDatabaseNameSafe"
+            }.GetNewClosure()
+            Set-Item function:global:Find-RestoreTemplatePackage {
+                param($EnvironmentValues, $RestoreTemplate, $DatabaseEngine, $PackageDirectory)
+                Add-Content -LiteralPath $log -Value "restore:find template=$RestoreTemplate packagedir=[$PackageDirectory]"
+                & $stubThrow "Find-RestoreTemplatePackage"
+                [pscustomobject]@{ PackageId = "Test.Pkg"; PackageVersion = "1.0"; DataStandardVersion = "5.2.0"; PackagePath = "p"; AttestationJson = "{}"; AttestationSource = "s"; DownloadDirectory = $null }
+            }.GetNewClosure()
+            Set-Item function:global:Assert-TrustedRestorePackage {
+                param($Package)
+                Add-Content -LiteralPath $log -Value "restore:trust"
+                & $stubThrow "Assert-TrustedRestorePackage"
+                [pscustomobject]@{ PackageSha256 = ("aa" * 32); Producer = "test-producer" }
+            }.GetNewClosure()
+            Set-Item function:global:Initialize-RestorePackageStage {
+                param($Package, $AuthenticatedPackageSha256, $Producer, $DatabaseEngine, $RestoreTemplate)
+                Add-Content -LiteralPath $log -Value "restore:stage"
+                & $stubThrow "Initialize-RestorePackageStage"
+                [pscustomobject]@{ StageDirectory = (Join-Path $root "stage"); PackagePath = "p"; PackageSha256 = ("aa" * 32); Manifest = [pscustomobject]@{ artifactSha256 = ("aa" * 32) }; ManifestPath = "m"; ArtifactPath = "a"; ArtifactSha256 = ("aa" * 32); Producer = "test-producer" }
+            }.GetNewClosure()
+            Set-Item function:global:New-RestoreCandidateWorkspace {
+                param($EnvironmentFile)
+                Add-Content -LiteralPath $log -Value "restore:candidate"
+                & $stubThrow "New-RestoreCandidateWorkspace"
+                $candidateDirectory = Join-Path $root "restore-candidate"
+                New-Item -ItemType Directory -Path $candidateDirectory -Force | Out-Null
+                [pscustomobject]@{ CandidateDirectory = $candidateDirectory; CandidateManifestPath = (Join-Path $candidateDirectory "bootstrap-manifest.json") }
+            }.GetNewClosure()
+            Set-Item function:global:Invoke-RestoreCandidateCrossCheck {
+                param($Manifest, $CandidateDirectory, $DatabaseEngine, $StageDirectory)
+                Add-Content -LiteralPath $log -Value "restore:crosscheck"
+                & $stubThrow "Invoke-RestoreCandidateCrossCheck"
+                [pscustomobject]@{ EffectiveSchemaHash = "h"; ApiSchemaFormatVersion = "1"; SelectedExtensions = @(); CoreProjectEndpointName = "ed-fi"; SchemaFilePaths = @() }
+            }.GetNewClosure()
+            Set-Item function:global:Assert-DmsComposeProjectStopped {
+                param($ProjectName)
+                Add-Content -LiteralPath $log -Value "restore:stop-proof project=$ProjectName"
+                & $stubThrow "Assert-DmsComposeProjectStopped"
+            }.GetNewClosure()
+            Set-Item function:global:New-RestorePreflightEnvironment {
+                param($EnvironmentFile, $DatabaseEngine, $TargetDatabaseName)
+                Add-Content -LiteralPath $log -Value "restore:preflight-env"
+                & $stubThrow "New-RestorePreflightEnvironment"
+                $preflightEnvironmentPath = Join-Path $root "preflight.env"
+                Set-Content -LiteralPath $preflightEnvironmentPath -Value "POSTGRES_DB_NAME=edfi_dms_restore_preflight_0123456789ab" -Encoding utf8
+                [pscustomobject]@{ EnvironmentFile = $preflightEnvironmentPath; PreflightDatabaseName = "edfi_dms_restore_preflight_0123456789ab"; IsDerived = $true }
+            }.GetNewClosure()
+            Set-Item function:global:Assert-RestoreTargetSafety {
+                param($DatabaseEngine, $TargetDatabaseName, $Manifest, $ContainerName, [switch]$SeparateConfigDatabase, $EffectiveConfigDatabaseName)
+                Add-Content -LiteralPath $log -Value "restore:target-safety"
+                & $stubThrow "Assert-RestoreTargetSafety"
+            }.GetNewClosure()
+            Set-Item function:global:Invoke-RestoreScratchValidation {
+                param($Stage, $CandidateFact, $RestoreTemplate, $DatabaseEngine)
+                Add-Content -LiteralPath $log -Value "restore:scratch template=$RestoreTemplate"
+                & $stubThrow "Invoke-RestoreScratchValidation"
+                [pscustomobject]@{ PackageSourceIdentity = "11111111-1111-1111-1111-111111111111"; ScratchFacts = $null; ProjectSchemaNames = @("edfi") }
+            }.GetNewClosure()
+            Set-Item function:global:Remove-RestorePreflightDatabase {
+                param($DatabaseEngine, $PreflightDatabaseName, $ContainerName)
+                Add-Content -LiteralPath $log -Value "restore:preflight-drop name=[$PreflightDatabaseName]"
+                & $stubThrow "Remove-RestorePreflightDatabase"
+            }.GetNewClosure()
+            Set-Item function:global:Stop-RestoreDatabaseOnlySlice {
+                param($ProjectName, $DatabaseEngine, $EnvironmentFile)
+                # Records the full shape so tests can prove the slice is stopped with the same
+                # compose files/env file it was started with - never a bare compose call.
+                $composeFiles = if ($DatabaseEngine -eq "mssql") { "mssql.yml" } else { "postgresql.yml" }
+                Add-Content -LiteralPath $log -Value "restore:stop-db project=$ProjectName engine=$DatabaseEngine env=[$EnvironmentFile] files=[$composeFiles]"
+                & $stubThrow "Stop-RestoreDatabaseOnlySlice"
+            }.GetNewClosure()
+            Set-Item function:global:Publish-RestoreCandidateWorkspace {
+                param($CandidateDirectory)
+                Add-Content -LiteralPath $log -Value "restore:publish"
+                & $stubThrow "Publish-RestoreCandidateWorkspace"
+                # Model the REAL whole-tree commit: the entire active .bootstrap tree is removed
+                # and the candidate moves into place - so anything the wrapper left inside the
+                # active tree (e.g. a derived env file) is genuinely gone afterwards.
+                if (-not [string]::IsNullOrWhiteSpace($activeBootstrapRoot)) {
+                    if (Test-Path -LiteralPath $activeBootstrapRoot) {
+                        Remove-Item -LiteralPath $activeBootstrapRoot -Recurse -Force
+                    }
+                    if (Test-Path -LiteralPath $CandidateDirectory) {
+                        Move-Item -LiteralPath $CandidateDirectory -Destination $activeBootstrapRoot
+                    }
+                }
+                elseif (Test-Path -LiteralPath $CandidateDirectory) {
+                    Remove-Item -LiteralPath $CandidateDirectory -Recurse -Force
+                }
+                [pscustomobject]@{ Replaced = $true; ActiveBootstrapRoot = $activeBootstrapRoot }
+            }.GetNewClosure()
+            Set-Item function:global:Invoke-RestoreTargetReplacement {
+                param($Stage, $TargetDatabaseName, $PackageSourceIdentity, $DatabaseEngine, $ContainerName, [switch]$SeparateConfigDatabase, $EffectiveConfigDatabaseName)
+                Add-Content -LiteralPath $log -Value "restore:replacement package-identity=$PackageSourceIdentity"
+                & $stubThrow "Invoke-RestoreTargetReplacement"
+                [pscustomobject]@{ TargetDatabaseName = $TargetDatabaseName; RestoredSourceIdentity = "33333333-3333-3333-3333-333333333333" }
+            }.GetNewClosure()
+            Set-Item function:global:Remove-RestorePackageStage {
+                param($StageDirectory)
+                Add-Content -LiteralPath $log -Value "restore:remove-stage"
+                & $stubThrow "Remove-RestorePackageStage"
+            }.GetNewClosure()
+            Set-Item function:global:docker {
+                Add-Content -LiteralPath $log -Value "docker $($args -join ' ')"
+                $global:LASTEXITCODE = 0
+            }.GetNewClosure()
+        }
+
+        function script:Remove-RestoreSequencingStub {
+            foreach ($stubName in @(
+                "Resolve-RestoreTargetDatabaseName", "Assert-RestoreTargetDatabaseNameSafe",
+                "Find-RestoreTemplatePackage", "Assert-TrustedRestorePackage",
+                "Initialize-RestorePackageStage", "New-RestoreCandidateWorkspace",
+                "Invoke-RestoreCandidateCrossCheck", "Assert-DmsComposeProjectStopped",
+                "New-RestorePreflightEnvironment", "Assert-RestoreTargetSafety",
+                "Invoke-RestoreScratchValidation", "Remove-RestorePreflightDatabase",
+                "Stop-RestoreDatabaseOnlySlice",
+                "Publish-RestoreCandidateWorkspace", "Invoke-RestoreTargetReplacement",
+                "Remove-RestorePackageStage", "docker"
+            )) {
+                Remove-Item "function:global:$stubName" -ErrorAction SilentlyContinue
+            }
+        }
+
+        function script:New-RestoreStartScriptStub {
+            # A start-script stub that understands -DbOnly (the shared recording stub predates
+            # it) and records the shape plus the environment file each invocation received.
+            param(
+                [Parameter(Mandatory)]
+                [string]$Directory,
+
+                [Parameter(Mandatory)]
+                [string]$CallLogPath,
+
+                [string]$StartScriptName = "start-local-dms.ps1"
+            )
+
+            $scriptPath = Join-Path $Directory $StartScriptName
+            @"
+param(
+    [switch] `$InfraOnly,
+    [switch] `$DmsOnly,
+    [switch] `$DbOnly,
+    [switch] `$EnableConfig,
+    [string] `$EnvironmentFile,
+    [string] `$IdentityProvider,
+    [string] `$DmsBaseUrl,
+    [string] `$DatabaseEngine,
+    [switch] `$SeparateConfigDatabase,
+    [switch] `$SuppressWrapperContinuationGuidance,
+    [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
+)
+`$label = if (`$DbOnly) { "start-db-only" }
+          elseif (`$InfraOnly) { "start-infra" }
+          elseif (`$DmsOnly) { "start-dms" }
+          else { "start-legacy" }
+if (-not [string]::IsNullOrWhiteSpace(`$EnvironmentFile) -and -not (Test-Path -LiteralPath `$EnvironmentFile)) {
+    throw "start stub: environment file does not exist: `$EnvironmentFile"
+}
+Add-Content -LiteralPath '$CallLogPath' -Value "`$label env=`$EnvironmentFile"
+"@ | Set-Content -LiteralPath $scriptPath -Encoding utf8
+            return $scriptPath
+        }
+
+        function script:Get-RestoreLogIndex {
+            param(
+                [Parameter(Mandatory)]
+                [string[]]$Log,
+
+                [Parameter(Mandatory)]
+                [string]$Pattern,
+
+                [int]$Occurrence = 1
+            )
+
+            $seen = 0
+            for ($lineIndex = 0; $lineIndex -lt $Log.Count; $lineIndex++) {
+                if ($Log[$lineIndex] -like $Pattern) {
+                    $seen++
+                    if ($seen -eq $Occurrence) { return $lineIndex }
+                }
+            }
+            return -1
+        }
+
         function script:Invoke-TeardownDelegation {
             # Drives the wrapper teardown path with every phase stub recording, asserts the run
             # short-circuited to exactly one start-local-dms.ps1 delegation (no staging, configure,
@@ -1355,6 +1574,357 @@ param(
     }
 
     # =========================================================================
+    # DMS-1271 restore-candidate isolation: a non-restore wrapper run resolves
+    # the ACTIVE .bootstrap root everywhere - no phase ever receives a
+    # .bootstrap-restore path in its argv or sees DMS_BOOTSTRAP_ROOT_OVERRIDE.
+    # =========================================================================
+    Context "restore-candidate isolation on non-restore wrapper runs" {
+        BeforeEach {
+            $script:isolationLog = Join-Path $script:repo.RepoRoot "call-log-override-isolation.txt"
+            # Stubs with NO param block: every argument the wrapper passes lands verbatim in
+            # $args, so the recorded line is the full argv - exactly what the isolation claim is
+            # about. The configure stub still returns the result object the wrapper consumes.
+            foreach ($stubName in @(
+                "prepare-dms-schema.ps1",
+                "prepare-dms-claims.ps1",
+                "start-local-dms.ps1",
+                "configure-local-data-store.ps1",
+                "provision-dms-schema.ps1",
+                "load-dms-seed-data.ps1"
+            )) {
+                $resultStatement = if ($stubName -eq "configure-local-data-store.ps1") {
+                    "[pscustomobject]@{ DataStoreIds = [long[]]@([long]42); SelectedDataStoreIds = [long[]]@([long]42); RouteContexts = @(); Tenant = ''; SchoolYears = [int[]]@(); HasRouteQualifiedDataStores = `$false }"
+                }
+                else {
+                    ""
+                }
+                @"
+Add-Content -LiteralPath '$script:isolationLog' -Value "$stubName args=[`$(`$args -join ' ')] override=[`$env:DMS_BOOTSTRAP_ROOT_OVERRIDE]"
+$resultStatement
+"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot $stubName) -Encoding utf8
+            }
+        }
+
+        It "no phase argv references .bootstrap-restore and the override variable is never set, across staging and full runs" {
+            Remove-Item Env:\DMS_BOOTSTRAP_ROOT_OVERRIDE -ErrorAction SilentlyContinue
+
+            # Run 1: fresh checkout - exercises the prepare (staging) phases.
+            & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -InfraOnly
+
+            # Run 2: complete manifest with seed loading - exercises start, configure,
+            # provision, and seed.
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            & $script:repo.WrapperScript `
+                -EnvironmentFile $script:repo.EnvFile `
+                -InfraOnly `
+                -DmsBaseUrl "http://localhost:8080" `
+                -LoadSeedData `
+                -SeedDataPath $script:repo.DockerComposeRoot
+
+            $log = @(Get-Content -LiteralPath $script:isolationLog)
+
+            # Every phase script must have been exercised at least once across the two runs, or
+            # the isolation claim would be vacuous for the missing phase.
+            foreach ($phaseName in @(
+                "prepare-dms-schema.ps1",
+                "prepare-dms-claims.ps1",
+                "start-local-dms.ps1",
+                "configure-local-data-store.ps1",
+                "provision-dms-schema.ps1",
+                "load-dms-seed-data.ps1"
+            )) {
+                $log | Where-Object { $_ -like "$phaseName *" } |
+                    Should -Not -BeNullOrEmpty -Because "phase '$phaseName' must be exercised by the two runs"
+            }
+
+            foreach ($line in $log) {
+                $line.Contains(".bootstrap-restore") | Should -BeFalse -Because "no phase argv may reference a restore-candidate path: $line"
+                $line | Should -BeLike "*override=[[]]" -Because "no phase may run with DMS_BOOTSTRAP_ROOT_OVERRIDE set: $line"
+            }
+        }
+    }
+
+    # =========================================================================
+    # DMS-1271 restore-mode parameter surface (D1): -RestoreTemplate and
+    # -PackageDirectory on both entry wrappers, every exclusion failing before
+    # any phase invocation.
+    # =========================================================================
+    Context "restore-mode parameter surface" {
+        BeforeEach {
+            # Recording stubs for every phase: the exclusion matrix must reject BEFORE any of
+            # these is invoked, so the call log must stay nonexistent.
+            $script:restoreSurfaceLog = Join-Path $script:repo.RepoRoot "call-log-restore-surface.txt"
+            New-RecordingPrepareScripts -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreSurfaceLog
+            New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreSurfaceLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreSurfaceLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreSurfaceLog | Out-Null
+            New-RecordingSeedScript -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreSurfaceLog | Out-Null
+        }
+
+        It "both entry scripts declare -RestoreTemplate and -PackageDirectory with help text" {
+            foreach ($entryScriptName in @("bootstrap-local-dms.ps1", "bootstrap-published-dms.ps1")) {
+                $entryScriptPath = Join-Path $script:sourceDockerComposeRoot $entryScriptName
+                $declaredParameters = Get-DeclaredScriptParameters -Path $entryScriptPath
+                $declaredParameters | Should -Contain "RestoreTemplate" -Because "$entryScriptName must declare -RestoreTemplate"
+                $declaredParameters | Should -Contain "PackageDirectory" -Because "$entryScriptName must declare -PackageDirectory"
+
+                $entryScriptContent = Get-Content -LiteralPath $entryScriptPath -Raw
+                $entryScriptContent.Contains(".PARAMETER RestoreTemplate") | Should -BeTrue -Because "$entryScriptName must document -RestoreTemplate"
+                $entryScriptContent.Contains(".PARAMETER PackageDirectory") | Should -BeTrue -Because "$entryScriptName must document -PackageDirectory"
+            }
+        }
+
+        It "rejects <Name> before any phase invocation" -ForEach @(
+            @{ Name = "-RestoreTemplate with -InfraOnly"; Arguments = @{ RestoreTemplate = "Minimal"; InfraOnly = $true }; Expected = "*-RestoreTemplate is not valid with -InfraOnly*" }
+            @{ Name = "-RestoreTemplate with -NoDataStore"; Arguments = @{ RestoreTemplate = "Minimal"; NoDataStore = $true }; Expected = "*-RestoreTemplate is not valid with -NoDataStore*" }
+            @{ Name = "-RestoreTemplate with -SchoolYearRange"; Arguments = @{ RestoreTemplate = "Populated"; SchoolYearRange = "2024-2025" }; Expected = "*-RestoreTemplate is not valid with -SchoolYearRange*" }
+            @{ Name = "a bare -LoadSeedData with -RestoreTemplate"; Arguments = @{ RestoreTemplate = "Populated"; LoadSeedData = $true }; Expected = "*requires its own seed source*bare -LoadSeedData is ambiguous*" }
+            @{ Name = "-PackageDirectory without -RestoreTemplate"; Arguments = @{ PackageDirectory = "C:\\packages" }; Expected = "*-PackageDirectory requires -RestoreTemplate*" }
+        ) {
+            $invocationArguments = $Arguments
+            { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile @invocationArguments } |
+                Should -Throw $Expected
+
+            $script:restoreSurfaceLog | Should -Not -Exist -Because "every restore-mode exclusion must reject before any phase runs"
+        }
+
+        It "forwards -RestoreTemplate and -PackageDirectory to Invoke-BootstrapWrapper on <_>" -ForEach @("bootstrap-local-dms.ps1", "bootstrap-published-dms.ps1") {
+            # A valid restore request passes every exclusion and runs the restore pipeline with
+            # the forwarded values - proof they arrived at Invoke-BootstrapWrapper.
+            Copy-DockerComposeFile -FileName $_ -Destination $script:repo.DockerComposeRoot
+            $entryScript = Join-Path $script:repo.DockerComposeRoot $_
+            New-RestoreStartScriptStub -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreSurfaceLog -StartScriptName ($_ -replace "^bootstrap-", "start-")
+            Install-RestoreSequencingStub -LogPath $script:restoreSurfaceLog -FixtureRoot $script:repo.RepoRoot
+            try {
+                & $entryScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Minimal -PackageDirectory $script:repo.RepoRoot
+
+                $log = @(Get-Content -LiteralPath $script:restoreSurfaceLog)
+                @($log | Where-Object { $_ -like "restore:find template=Minimal packagedir=[[]$($script:repo.RepoRoot)]" }) |
+                    Should -Not -BeNullOrEmpty -Because "the forwarded restore selection must reach the acquisition step"
+            }
+            finally {
+                Remove-RestoreSequencingStub
+            }
+        }
+    }
+
+    # =========================================================================
+    # DMS-1271 restore-mode sequencing (D12): the authoritative order, provision
+    # skipped, preflight drop before the real-env -InfraOnly, cleanup on failure.
+    # =========================================================================
+    Context "restore-mode sequencing" {
+        BeforeEach {
+            $script:restoreLog = Join-Path $script:repo.RepoRoot "call-log-restore-sequencing.txt"
+            # With bootstrap-manifest present, Get-EffectiveBootstrapEnvFile materializes REAL
+            # derived env files - the production behavior whose survival across the whole-tree
+            # commit these tests pin.
+            Copy-DockerComposeFile -FileName "bootstrap-manifest.psm1" -Destination $script:repo.DockerComposeRoot
+            New-RecordingPrepareScripts -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreLog
+            New-RestoreStartScriptStub -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreLog | Out-Null
+            New-RecordingConfigureScript -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreLog | Out-Null
+            New-RecordingProvisionScript -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreLog | Out-Null
+            @"
+Add-Content -LiteralPath '$script:restoreLog' -Value "seed args=[`$(`$args -join ' ')]"
+"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "load-dms-seed-data.ps1") -Encoding utf8
+        }
+
+        AfterEach {
+            Remove-RestoreSequencingStub
+        }
+
+        It "runs the D12 order: no Docker before the cross-check, both -DbOnly slices on the preflight env, preflight drop before the real-env -InfraOnly, and NO provision" {
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
+
+            & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Minimal
+
+            $log = @(Get-Content -LiteralPath $script:restoreLog)
+
+            # The authoritative order, asserted as strictly increasing indices.
+            $orderedPatterns = @(
+                "restore:name-safety*",
+                "restore:find template=Minimal*",
+                "restore:trust",
+                "restore:stage",
+                "restore:candidate",
+                "restore:crosscheck",
+                "restore:stop-proof project=dms-local",
+                "restore:stop-proof project=dms-published",
+                "start-db-only env=*preflight.env",
+                "restore:target-safety",
+                "restore:scratch template=Minimal",
+                "restore:preflight-drop name=[[]edfi_dms_restore_preflight_*",
+                "restore:stop-db project=dms-local*",
+                "restore:publish",
+                "restore:replacement package-identity=11111111-1111-1111-1111-111111111111",
+                "start-infra env=*",
+                "configure*",
+                "start-dms env=*"
+            )
+            $previousIndex = -1
+            foreach ($pattern in $orderedPatterns) {
+                $currentIndex = Get-RestoreLogIndex -Log $log -Pattern $pattern
+                $currentIndex | Should -BeGreaterThan $previousIndex -Because "'$pattern' must appear after the previous step"
+                $previousIndex = $currentIndex
+            }
+
+            # No Docker activity of any kind before the cross-check completes: nothing in the
+            # log prefix ahead of it may be a start-script invocation, a raw docker call, or the
+            # container-lifecycle steps. Asserted over the slice rather than by first-index, so
+            # the claim holds whether or not such a line exists anywhere at all.
+            $crossCheckIndex = Get-RestoreLogIndex -Log $log -Pattern "restore:crosscheck"
+            $crossCheckIndex | Should -BeGreaterThan -1
+            @($log[0..($crossCheckIndex - 1)] | Where-Object {
+                    $_ -like "start-*" -or $_ -like "docker *" -or $_ -like "restore:stop-db*" -or $_ -like "restore:stop-proof*"
+                }) | Should -BeNullOrEmpty -Because "acquisition, staging, and the cross-check must all complete before any container is touched"
+
+            # Both -DbOnly slices run on the SAME preflight env; the real -InfraOnly does not.
+            $dbOnlyLines = @($log | Where-Object { $_ -like "start-db-only*" })
+            $dbOnlyLines.Count | Should -Be 2
+            foreach ($dbOnlyLine in $dbOnlyLines) { $dbOnlyLine | Should -BeLike "*preflight.env" }
+            # The post-publish phases run on the restore-effective derived env, which lives in
+            # the restore workspace so the whole-tree commit (the publish stub really removes
+            # and replaces active .bootstrap, and the start stub throws on a missing env file)
+            # cannot delete it out from under them.
+            @($log | Where-Object { $_ -like "start-infra *" })[0] | Should -BeLike "*.env.restore-effective"
+
+            # The second -DbOnly slice comes after the publish, the replacement after that, and
+            # the SECOND preflight drop lands between the replacement and the real -InfraOnly.
+            $publishIndex = Get-RestoreLogIndex -Log $log -Pattern "restore:publish"
+            $secondDbOnlyIndex = Get-RestoreLogIndex -Log $log -Pattern "start-db-only*" -Occurrence 2
+            $replacementIndex = Get-RestoreLogIndex -Log $log -Pattern "restore:replacement*"
+            $secondPreflightDropIndex = Get-RestoreLogIndex -Log $log -Pattern "restore:preflight-drop*" -Occurrence 2
+            $infraIndex = Get-RestoreLogIndex -Log $log -Pattern "start-infra *"
+            $secondDbOnlyIndex | Should -BeGreaterThan $publishIndex
+            $replacementIndex | Should -BeGreaterThan $secondDbOnlyIndex
+            $secondPreflightDropIndex | Should -BeGreaterThan $replacementIndex
+            $infraIndex | Should -BeGreaterThan $secondPreflightDropIndex
+
+            # Two stop-proof PAIRS: before the first -DbOnly and again before the commit.
+            @($log | Where-Object { $_ -like "restore:stop-proof*" }).Count | Should -Be 4
+            $secondStopProofPairIndex = Get-RestoreLogIndex -Log $log -Pattern "restore:stop-proof project=dms-local" -Occurrence 2
+            $secondStopProofPairIndex | Should -BeGreaterThan (Get-RestoreLogIndex -Log $log -Pattern "restore:stop-db project=dms-local*")
+            $publishIndex | Should -BeGreaterThan $secondStopProofPairIndex
+
+            # The database-only slice is stopped with the SAME shape it was started with: this
+            # run's project, the preflight env file, and the engine's database-only compose file.
+            # Nothing removes volumes: no "down" and no -v anywhere in the restore branch.
+            $stopDbLine = $log[(Get-RestoreLogIndex -Log $log -Pattern "restore:stop-db*")]
+            $stopDbLine | Should -BeLike "*project=dms-local engine=postgresql*"
+            $stopDbLine | Should -BeLike "*env=[[]*preflight.env]*"
+            $stopDbLine | Should -BeLike "*files=[[]postgresql.yml]*"
+            $wrapperSource = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Raw
+            # No bare compose invocation survives anywhere in the wrapper: every remaining
+            # mention is commentary. (The helper's own argv contract - stop/db only, carrying the
+            # database-only compose files and the preflight env file, never down and never -v -
+            # is pinned by the Stop-RestoreDatabaseOnlySlice unit tests against the real module.)
+            $wrapperSource | Should -Not -Match '(?m)^\s*docker compose'
+            $wrapperSource.Contains("Stop-RestoreDatabaseOnlySlice") | Should -BeTrue
+
+            # Restore mode NEVER provisions, never runs the prepare scripts against the active
+            # workspace, and cleans the package stage in finally.
+            $log | Should -Not -Contain "provision"
+            @($log | Where-Object { $_ -like "prepare-*" }) | Should -BeNullOrEmpty
+            $log | Should -Contain "restore:remove-stage"
+
+            # Both derived transients are one-run state: the preflight env is removed by the
+            # restore branch's finally, the restore-effective env at the end of the run.
+            Test-Path -LiteralPath (Join-Path $script:repo.RepoRoot "preflight.env") | Should -BeFalse
+            Test-Path -LiteralPath (Join-Path $script:repo.DockerComposeRoot ".bootstrap-restore/derived/.env.restore-effective") | Should -BeFalse
+        }
+
+        It "targets the dms-published compose project for the published wrapper" {
+            Copy-DockerComposeFile -FileName "bootstrap-published-dms.ps1" -Destination $script:repo.DockerComposeRoot
+            New-RestoreStartScriptStub -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreLog -StartScriptName "start-published-dms.ps1" | Out-Null
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
+
+            & (Join-Path $script:repo.DockerComposeRoot "bootstrap-published-dms.ps1") -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Minimal
+
+            @(Get-Content -LiteralPath $script:restoreLog) | Where-Object { $_ -like "restore:stop-db project=dms-published *" } |
+                Should -Not -BeNullOrEmpty
+        }
+
+        It "forwards the explicit supplemental seed after the restored stack is up" {
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
+
+            & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Populated -LoadSeedData -SeedTemplate Populated
+
+            $log = @(Get-Content -LiteralPath $script:restoreLog)
+            $seedIndex = Get-RestoreLogIndex -Log $log -Pattern "seed args=*"
+            $seedIndex | Should -BeGreaterThan (Get-RestoreLogIndex -Log $log -Pattern "start-dms env=*")
+            $log[$seedIndex] | Should -BeLike "*-SeedTemplate*Populated*"
+            $log | Should -Not -Contain "provision"
+        }
+
+        It "an injected failure at the target replacement still drops the preflight database (finally) and never reaches -InfraOnly" {
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot -ThrowAt @("Invoke-RestoreTargetReplacement")
+
+            { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Minimal } |
+                Should -Throw "*injected Invoke-RestoreTargetReplacement failure*"
+
+            $log = @(Get-Content -LiteralPath $script:restoreLog)
+            $replacementIndex = Get-RestoreLogIndex -Log $log -Pattern "restore:replacement*"
+            $finalPreflightDropIndex = Get-RestoreLogIndex -Log $log -Pattern "restore:preflight-drop*" -Occurrence 2
+            $finalPreflightDropIndex | Should -BeGreaterThan $replacementIndex -Because "the finally must still drop the preflight database"
+            @($log | Where-Object { $_ -like "start-infra *" }) | Should -BeNullOrEmpty
+            $log | Should -Contain "restore:remove-stage"
+            Test-Path -LiteralPath (Join-Path $script:repo.RepoRoot "preflight.env") | Should -BeFalse
+            Test-Path -LiteralPath (Join-Path $script:repo.DockerComposeRoot ".bootstrap-restore/derived/.env.restore-effective") | Should -BeFalse
+        }
+
+        It "a failure before any Docker activity cleans the stage and runs nothing docker-shaped" {
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot -ThrowAt @("Invoke-RestoreCandidateCrossCheck")
+
+            { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Minimal } |
+                Should -Throw "*injected Invoke-RestoreCandidateCrossCheck failure*"
+
+            $log = @(Get-Content -LiteralPath $script:restoreLog)
+            @($log | Where-Object { $_ -like "start-*" -or $_ -like "docker *" -or $_ -like "restore:stop-proof*" }) | Should -BeNullOrEmpty
+            $log | Should -Contain "restore:remove-stage"
+            # The candidate remnant is removed by the wrapper's finally (the stub created a real
+            # directory the publish step never consumed).
+            Test-Path -LiteralPath (Join-Path $script:repo.RepoRoot "restore-candidate") | Should -BeFalse
+        }
+
+        It "bypasses the stale-workspace fail-fast in restore mode, while non-restore keeps the reworded terminal error" {
+            # A Standard manifest whose recorded packages can never match the effective env.
+            $bootstrapRoot = Join-Path $script:repo.DockerComposeRoot ".bootstrap"
+            New-Item -ItemType Directory -Path $bootstrapRoot -Force | Out-Null
+            [ordered]@{
+                version = 1
+                schema  = [ordered]@{
+                    selectionMode         = "Standard"
+                    selectedExtensions    = @()
+                    selectedPackages      = @("Bogus.Package@0.0.1")
+                    effectiveSchemaHash   = "abc123"
+                    workspaceFingerprint  = ("0" * 64)
+                    apiSchemaManifestPath = "ApiSchema/bootstrap-api-schema-manifest.json"
+                }
+            } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $bootstrapRoot "bootstrap-manifest.json") -Encoding utf8
+
+            { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -InfraOnly } |
+                Should -Throw "*Automatic replacement is intentionally not performed outside restore mode*-RestoreTemplate*"
+            $script:restoreLog | Should -Not -Exist
+
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
+            & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Minimal
+            @(Get-Content -LiteralPath $script:restoreLog) | Where-Object { $_ -like "restore:find*" } |
+                Should -Not -BeNullOrEmpty -Because "restore mode owns guarded replacement and must proceed past the stale workspace"
+        }
+
+        It "does not let a stale ACTIVE expert-mode manifest veto the restore-mode supplemental seed" {
+            # The active workspace is ApiSchemaPath (expert) - about to be REPLACED by a
+            # Standard-mode candidate, so its selectionMode must not reject -SeedTemplate.
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
+
+            & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Populated -LoadSeedData -SeedTemplate Populated
+
+            $log = @(Get-Content -LiteralPath $script:restoreLog)
+            $log | Where-Object { $_ -like "seed args=*-SeedTemplate*Populated*" } | Should -Not -BeNullOrEmpty
+        }
+    }
+
+    # =========================================================================
     # R5 - Wrapper -InfraOnly -DmsBaseUrl: call-graph proof
     #   Story Req 2: first start invocation has -InfraOnly but NOT -DmsBaseUrl;
     #   second (health-wait) start invocation carries -DmsBaseUrl;
@@ -2036,7 +2606,10 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                 # files a teardown must cover: local-config.yml is unconditional in
                 # start-local-dms.ps1's compose set. So it is excluded, like the other
                 # non-compose-shaping options.
-                'SeparateConfigDatabase'
+                'SeparateConfigDatabase',
+                # Restore mode selects what the datastore is restored FROM, never which compose
+                # files a teardown must cover.
+                'RestoreTemplate', 'PackageDirectory'
             )
 
             # Completeness guard: every parameter the entry script declares must be classified here
@@ -2066,6 +2639,8 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                 -NoDataStore `
                 -AddSmokeTestCredentials `
                 -SeparateConfigDatabase `
+                -RestoreTemplate Minimal `
+                -PackageDirectory (Join-Path $script:repo.RepoRoot "packages") `
                 -d
 
             $log = @(Get-Content -LiteralPath $callLog)
@@ -2583,7 +3158,7 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
                 Join-Path $script:sourceRepoRoot "build-dms.ps1"
             ) -Raw
 
-            $buildScript | Should -Match 'StartEnvironment \{ Invoke-Step \{ Start-BootstrapDockerEnvironment -UsePublishedImage:\$UsePublishedImage -SkipDockerBuild:\$SkipDockerBuild -LoadSeedData:\$LoadSeedData -DatabaseEngine \$DatabaseEngine -SeparateConfigDatabase:\$SeparateConfigDatabase -IdentityProvider \$IdentityProvider -DataStandardVersion \$DataStandardVersion -DataStandardVersionSupplied:\$dataStandardVersionSupplied \} \}'
+            $buildScript | Should -Match 'StartEnvironment \{ Invoke-Step \{ Start-BootstrapDockerEnvironment -UsePublishedImage:\$UsePublishedImage -SkipDockerBuild:\$SkipDockerBuild -LoadSeedData:\$LoadSeedData -DatabaseEngine \$DatabaseEngine -SeparateConfigDatabase:\$SeparateConfigDatabase -IdentityProvider \$IdentityProvider -DataStandardVersion \$DataStandardVersion -DataStandardVersionSupplied:\$dataStandardVersionSupplied -RestoreTemplate \$RestoreTemplate -PackageDirectory \$PackageDirectory \} \}'
         }
 
         It "Start-BootstrapDockerEnvironment forwards -SeparateConfigDatabase to the bootstrap wrapper only when requested" {
@@ -2620,6 +3195,117 @@ DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
             ) -Raw
 
             $buildScript | Should -Match '(?s)if \(\$DataStandardVersionSupplied\) \{\s*\$bootstrapArgs\.DataStandardVersion = \$DataStandardVersion\s*\}'
+        }
+
+        It "declares -RestoreTemplate validated to Minimal/Populated and a plain -PackageDirectory" {
+            $buildScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceRepoRoot "build-dms.ps1"
+            ) -Raw
+
+            $buildScript | Should -Match '\[ValidateSet\("Minimal",\s*"Populated"\)\]\s*\$RestoreTemplate,'
+            $buildScript | Should -Match '\[string\]\s*\$PackageDirectory,'
+        }
+
+        It "Start-BootstrapDockerEnvironment forwards -RestoreTemplate and -PackageDirectory to the bootstrap wrapper only when supplied" {
+            $buildScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceRepoRoot "build-dms.ps1"
+            ) -Raw
+
+            $buildScript | Should -Match '(?s)if \(-not \[string\]::IsNullOrWhiteSpace\(\$RestoreTemplate\)\) \{\s*\$bootstrapArgs\.RestoreTemplate = \$RestoreTemplate\s*\}'
+            $buildScript | Should -Match '(?s)if \(-not \[string\]::IsNullOrWhiteSpace\(\$PackageDirectory\)\) \{\s*\$bootstrapArgs\.PackageDirectory = \$PackageDirectory\s*\}'
+        }
+
+        It "skips the pre-wrapper Stop-DockerEnvironment in restore mode, so no volume is deleted before the package is proven" {
+            $buildScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceRepoRoot "build-dms.ps1"
+            ) -Raw
+
+            $functionIndex = $buildScript.IndexOf("function Start-BootstrapDockerEnvironment")
+            $functionIndex | Should -BeGreaterThan -1
+            $functionBody = $buildScript.Substring($functionIndex)
+
+            # The teardown call must be guarded by the restore-mode predicate, not unconditional:
+            # Stop-DockerEnvironment delegates to start-*-dms.ps1 -d -v, which deletes the database
+            # volumes - unacceptable before the restore package is resolved, authenticated, staged,
+            # and cross-checked. The predicate covers BOTH restore inputs, so a mistyped
+            # -PackageDirectory-only request cannot delete data before the wrapper rejects it.
+            $functionBody | Should -Match '(?s)\$restoreModeRequested = \(-not \[string\]::IsNullOrWhiteSpace\(\$RestoreTemplate\)\) -or\s+\(-not \[string\]::IsNullOrWhiteSpace\(\$PackageDirectory\)\)'
+            $functionBody | Should -Match '(?s)if \(-not \$restoreModeRequested\) \{\s*Stop-DockerEnvironment\s'
+
+            # Non-restore StartEnvironment keeps the teardown: the guarded call is the ONLY
+            # Stop-DockerEnvironment invocation in this function, and it still forwards the same
+            # environment file, identity provider, and effective engine.
+            ([regex]::Matches($functionBody.Substring(0, $functionBody.IndexOf("function Initialize-E2EDatabase")), "Stop-DockerEnvironment ``")).Count |
+                Should -Be 1
+            $functionBody | Should -Match '(?s)Stop-DockerEnvironment\s+`\s*-EnvironmentFilePath \$environmentFilePath\s+`\s*-IdentityProvider \$IdentityProvider\s+`\s*-DatabaseEngine \$effectiveDatabaseEngine'
+        }
+
+        It "no restore-shaped invocation invokes Stop-DockerEnvironment, non-restore does (behavioral, AST-extracted)" {
+            # Stronger than a text assertion: extract the real function from build-dms.ps1, define
+            # it in this session with recording stubs for its collaborators, and call it both ways.
+            # Invoke-Execute is stubbed to a no-op so the wrapper invocation itself is skipped -
+            # the only decision under test is whether the volume-deleting teardown runs.
+            $buildScriptPath = Join-Path $script:sourceRepoRoot "build-dms.ps1"
+            $tokens = $null
+            $parseErrors = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($buildScriptPath, [ref]$tokens, [ref]$parseErrors)
+            $parseErrors | Should -BeNullOrEmpty
+            $functionAst = $ast.Find({
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                    $node.Name -eq "Start-BootstrapDockerEnvironment"
+            }, $true)
+            $functionAst | Should -Not -BeNullOrEmpty
+
+            $probePath = Join-Path $script:repo.RepoRoot "start-bootstrap-teardown-probe.ps1"
+            @(
+                "param([string]`$Mode)"
+                "`$EnvironmentFile = 'probe.env'"
+                "function Resolve-E2EEnvironmentFilePath { param([string]`$Path) 'resolved.env' }"
+                "function Stop-DockerEnvironment { param(`$EnvironmentFilePath, `$IdentityProvider, `$DatabaseEngine) Write-Output 'STOP-DOCKER-ENVIRONMENT-CALLED' }"
+                "function Invoke-Step { param(`$Block) Write-Output 'INVOKE-STEP-CALLED' }"
+                "function Invoke-Execute { param(`$Block) Write-Output 'INVOKE-EXECUTE-CALLED' }"
+                $functionAst.Extent.Text
+                "if (`$Mode -eq 'restore') {"
+                "    Start-BootstrapDockerEnvironment -SkipDockerBuild -DatabaseEngine postgresql -RestoreTemplate Minimal"
+                "} elseif (`$Mode -eq 'packagedir') {"
+                "    Start-BootstrapDockerEnvironment -SkipDockerBuild -DatabaseEngine postgresql -PackageDirectory 'C:\packages'"
+                "} else {"
+                "    Start-BootstrapDockerEnvironment -SkipDockerBuild -DatabaseEngine postgresql"
+                "}"
+            ) -join "`n" | Set-Content -LiteralPath $probePath -Encoding utf8
+
+            $restoreOutput = @(& pwsh -NoProfile -NonInteractive -File $probePath -Mode restore 2>&1)
+            $LASTEXITCODE | Should -Be 0
+            $restoreOutput | Should -Not -Contain "STOP-DOCKER-ENVIRONMENT-CALLED" -Because "restore mode must not delete volumes before the package is proven"
+            $restoreOutput | Should -Contain "INVOKE-EXECUTE-CALLED" -Because "restore mode must still reach the wrapper invocation"
+
+            # -PackageDirectory alone is an INVALID restore request, but the wrapper owns that
+            # rejection - so build-dms must still not delete the datastore on the way there.
+            $packageDirectoryOutput = @(& pwsh -NoProfile -NonInteractive -File $probePath -Mode packagedir 2>&1)
+            $LASTEXITCODE | Should -Be 0
+            $packageDirectoryOutput | Should -Not -Contain "STOP-DOCKER-ENVIRONMENT-CALLED" -Because "a mistyped restore request must not delete volumes before the wrapper rejects it"
+            $packageDirectoryOutput | Should -Contain "INVOKE-EXECUTE-CALLED" -Because "the invocation must still reach the wrapper, which owns the rejection"
+
+            $plainOutput = @(& pwsh -NoProfile -NonInteractive -File $probePath -Mode plain 2>&1)
+            $LASTEXITCODE | Should -Be 0
+            $plainOutput | Should -Contain "STOP-DOCKER-ENVIRONMENT-CALLED" -Because "non-restore StartEnvironment keeps its pre-start teardown"
+            $plainOutput | Should -Contain "INVOKE-EXECUTE-CALLED"
+        }
+
+        It "normalizes -PackageDirectory against the caller's CWD before the eng/docker-compose Push-Location" {
+            $buildScript = Get-Content -LiteralPath (
+                Join-Path $script:sourceRepoRoot "build-dms.ps1"
+            ) -Raw
+
+            $functionIndex = $buildScript.IndexOf("function Start-BootstrapDockerEnvironment")
+            $functionIndex | Should -BeGreaterThan -1
+            $functionBody = $buildScript.Substring($functionIndex)
+            $normalizationIndex = $functionBody.IndexOf('$PackageDirectory = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $PackageDirectory))')
+            $pushLocationIndex = $functionBody.IndexOf('Push-Location "$PSScriptRoot/eng/docker-compose"')
+
+            $normalizationIndex | Should -BeGreaterThan -1
+            $pushLocationIndex | Should -BeGreaterThan $normalizationIndex -Because "a relative package source must resolve against the operator's CWD, not eng/docker-compose"
         }
     }
 

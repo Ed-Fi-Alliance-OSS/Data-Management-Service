@@ -133,6 +133,22 @@ param(
     [switch]
     $SeparateConfigDatabase,
 
+    # Restore mode, StartEnvironment only: restores the DMS datastore from a trusted
+    # database-template package of this kind before services start. Forwarded unchanged to the
+    # bootstrap wrapper, which owns every restore-mode preflight and exclusion; build-dms adds
+    # no policy of its own.
+    [string]
+    [ValidateSet("Minimal", "Populated")]
+    $RestoreTemplate,
+
+    # Restore mode, StartEnvironment only: explicit local package source directory (must hold
+    # exactly one matching template .nupkg plus its sibling attestation document). Normalized
+    # against the caller's working directory before the wrapper is invoked from
+    # eng/docker-compose, then forwarded unchanged; the wrapper enforces that it requires
+    # -RestoreTemplate.
+    [string]
+    $PackageDirectory,
+
     # Identity provider type
     [string]
     [ValidateSet("keycloak", "self-contained")]
@@ -952,10 +968,26 @@ function Start-BootstrapDockerEnvironment {
         $DataStandardVersion,
 
         [switch]
-        $DataStandardVersionSupplied
+        $DataStandardVersionSupplied,
+
+        # Restore mode: forwarded to the bootstrap wrapper only when supplied; the wrapper owns
+        # every restore-mode preflight and exclusion (build-dms adds no policy). Plain strings so
+        # forwarding an unset value from the caller does not trip validation.
+        [string]
+        $RestoreTemplate,
+
+        [string]
+        $PackageDirectory
     )
 
     $environmentFilePath = Resolve-E2EEnvironmentFilePath -Path $EnvironmentFile
+
+    # Normalize -PackageDirectory against the CALLER's working directory now: the wrapper is
+    # invoked from eng/docker-compose below, where a relative source path would resolve wrongly.
+    if (-not [string]::IsNullOrWhiteSpace($PackageDirectory) -and -not [System.IO.Path]::IsPathRooted($PackageDirectory)) {
+        $PackageDirectory = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $PackageDirectory))
+    }
+
     $effectiveDatabaseEngine =
         if ([string]::IsNullOrWhiteSpace($DatabaseEngine)) {
             "postgresql"
@@ -968,10 +1000,27 @@ function Start-BootstrapDockerEnvironment {
         Invoke-Step { DockerBuild }
     }
 
-    Stop-DockerEnvironment `
-        -EnvironmentFilePath $environmentFilePath `
-        -IdentityProvider $IdentityProvider `
-        -DatabaseEngine $effectiveDatabaseEngine
+    # A restore-SHAPED invocation must NOT be preceded by this teardown: Stop-DockerEnvironment
+    # delegates to start-*-dms.ps1 -d -v, which deletes the database volumes before the restore
+    # package has been resolved, authenticated, staged, or cross-checked. Destroying data on the
+    # strength of an unproven package is exactly what the restore branch's fail-closed ordering
+    # exists to prevent, so the wrapper's own stop-proof sequence owns that decision instead: it
+    # refuses a running stack without deleting volumes or workspaces.
+    #
+    # EITHER restore input suppresses the teardown, not just -RestoreTemplate. -PackageDirectory
+    # alone is an invalid restore request, but the wrapper is what rejects it ("-PackageDirectory
+    # requires -RestoreTemplate"), and that rejection happens after this point - so gating on
+    # -RestoreTemplate alone still deleted the datastore for a mistyped restore command. Skipping
+    # the teardown for both inputs keeps every restore-mode rule wrapper-owned; build-dms.ps1
+    # stays thin and duplicates no validation.
+    $restoreModeRequested = (-not [string]::IsNullOrWhiteSpace($RestoreTemplate)) -or
+        (-not [string]::IsNullOrWhiteSpace($PackageDirectory))
+    if (-not $restoreModeRequested) {
+        Stop-DockerEnvironment `
+            -EnvironmentFilePath $environmentFilePath `
+            -IdentityProvider $IdentityProvider `
+            -DatabaseEngine $effectiveDatabaseEngine
+    }
 
     Invoke-Execute {
         try {
@@ -998,6 +1047,14 @@ function Start-BootstrapDockerEnvironment {
 
             if ($DataStandardVersionSupplied) {
                 $bootstrapArgs.DataStandardVersion = $DataStandardVersion
+            }
+
+            if (-not [string]::IsNullOrWhiteSpace($RestoreTemplate)) {
+                $bootstrapArgs.RestoreTemplate = $RestoreTemplate
+            }
+
+            if (-not [string]::IsNullOrWhiteSpace($PackageDirectory)) {
+                $bootstrapArgs.PackageDirectory = $PackageDirectory
             }
 
             Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
@@ -1993,7 +2050,7 @@ Invoke-Main {
         DockerBuild { Invoke-Step { DockerBuild } }
         DockerRun { Invoke-Step { DockerRun } }
         Run { Invoke-Step { Run } }
-        StartEnvironment { Invoke-Step { Start-BootstrapDockerEnvironment -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -DatabaseEngine $DatabaseEngine -SeparateConfigDatabase:$SeparateConfigDatabase -IdentityProvider $IdentityProvider -DataStandardVersion $DataStandardVersion -DataStandardVersionSupplied:$dataStandardVersionSupplied } }
+        StartEnvironment { Invoke-Step { Start-BootstrapDockerEnvironment -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -DatabaseEngine $DatabaseEngine -SeparateConfigDatabase:$SeparateConfigDatabase -IdentityProvider $IdentityProvider -DataStandardVersion $DataStandardVersion -DataStandardVersionSupplied:$dataStandardVersionSupplied -RestoreTemplate $RestoreTemplate -PackageDirectory $PackageDirectory } }
         default { throw "Command '$Command' is not recognized" }
     }
 }

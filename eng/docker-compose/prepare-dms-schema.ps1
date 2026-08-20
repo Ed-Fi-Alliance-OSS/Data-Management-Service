@@ -155,6 +155,28 @@ if (-not (Get-Command Read-RequiredJsonBoolean -ErrorAction SilentlyContinue)) {
 
 if (-not (Get-Command Get-BootstrapRoot -ErrorAction SilentlyContinue)) {
     $script:PrepareBootstrapRoot = Join-Path $PSScriptRoot ".bootstrap"
+    # Mirrors the DMS_BOOTSTRAP_ROOT_OVERRIDE seam in bootstrap-manifest.psm1 (see the override
+    # block there for the contract): the restore flow redirects the prepare phases into a
+    # candidate directory that must live strictly inside eng/docker-compose/.bootstrap-restore/.
+    # This fallback only runs when the module is not loaded (extraction-style test contexts) and
+    # must resolve the same root the module would, with the same strict validation.
+    if (-not [string]::IsNullOrWhiteSpace($env:DMS_BOOTSTRAP_ROOT_OVERRIDE)) {
+        $prepareOverrideValue = $env:DMS_BOOTSTRAP_ROOT_OVERRIDE
+        $prepareRestoreRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".bootstrap-restore"))
+        if (-not [System.IO.Path]::IsPathRooted($prepareOverrideValue)) {
+            throw "DMS_BOOTSTRAP_ROOT_OVERRIDE must be an absolute path strictly inside '$(Format-LogSafeText $prepareRestoreRoot)', got relative path '$(Format-LogSafeText $prepareOverrideValue)'."
+        }
+        $prepareOverrideFullPath = [System.IO.Path]::GetFullPath($prepareOverrideValue).TrimEnd(
+            [System.IO.Path]::DirectorySeparatorChar,
+            [System.IO.Path]::AltDirectorySeparatorChar)
+        # Platform-aware containment, in lockstep with bootstrap-manifest.psm1: case-insensitive
+        # only on Windows; on Linux a case-variant sibling is a different, unguarded directory.
+        $prepareOverrideComparison = if ($IsWindows) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+        if (-not $prepareOverrideFullPath.StartsWith($prepareRestoreRoot + [System.IO.Path]::DirectorySeparatorChar, $prepareOverrideComparison)) {
+            throw "DMS_BOOTSTRAP_ROOT_OVERRIDE must point strictly inside '$(Format-LogSafeText $prepareRestoreRoot)' (a restore candidate directory), got '$(Format-LogSafeText $prepareOverrideValue)'."
+        }
+        $script:PrepareBootstrapRoot = $prepareOverrideFullPath
+    }
     $script:PrepareBootstrapManifestPath = Join-Path $script:PrepareBootstrapRoot "bootstrap-manifest.json"
     $script:PrepareWorkspaceMismatchMessage = "Existing staged bootstrap workspace differs from requested inputs, manifest state is incomplete, or files were manually edited (partial prior state). Stop the local stack and remove eng/docker-compose/.bootstrap before retrying. For local Docker, run: pwsh eng/docker-compose/start-local-dms.ps1 -d -v -RemoveBootstrap. E2E teardown wrappers also remove the bootstrap workspace."
     $script:PrepareUtf8NoBom = [System.Text.UTF8Encoding]::new($false)
@@ -433,6 +455,12 @@ function Read-ApiSchemaIdentity {
         -ProjectName $projectName `
         -ProjectEndpointName $projectEndpointName
 
+    # apiSchemaVersion (top-level) and projectSchema.projectVersion are contract-required by
+    # JsonSchemaForApiSchema.json. They are captured leniently here and enforced for the core
+    # project at staging time, where the manifest schema section records them.
+    $apiSchemaVersion = if ($schema.ContainsKey("apiSchemaVersion")) { [string]$schema["apiSchemaVersion"] } else { "" }
+    $projectVersion = if ($projectSchema.ContainsKey("projectVersion")) { [string]$projectSchema["projectVersion"] } else { "" }
+
     return [pscustomobject]@{
         SourcePath = [System.IO.Path]::GetFullPath($Path)
         SourceDirectory = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($Path))
@@ -440,6 +468,8 @@ function Read-ApiSchemaIdentity {
         ProjectEndpointName = $projectEndpointName
         IsExtensionProject = $isExtensionProject
         ProjectDirectoryName = $projectDirectoryName
+        ApiSchemaVersion = $apiSchemaVersion
+        ProjectVersion = $projectVersion
     }
 }
 
@@ -656,6 +686,19 @@ function Invoke-SchemaWorkspaceStaging {
     if ($coreProjects.Count -ne 1) {
         throw "ApiSchemaPath must stage exactly one core schema. Found $($coreProjects.Count)."
     }
+    $coreProject = $coreProjects[0]
+
+    # The manifest schema section records the core schema's Data Standard version
+    # (projectSchema.projectVersion, e.g. 5.2.0) and ApiSchema format version (apiSchemaVersion).
+    # Both are contract-required by JsonSchemaForApiSchema.json, and the database-template restore
+    # flow proves a template package against them, so a core schema without them is an input
+    # defect this stage must reject rather than record blanks for.
+    if ([string]::IsNullOrWhiteSpace($coreProject.ProjectVersion)) {
+        throw "Core ApiSchema file '$(Format-LogSafeText $coreProject.SourcePath)' is missing projectSchema.projectVersion (the Data Standard version, e.g. 5.2.0)."
+    }
+    if ([string]::IsNullOrWhiteSpace($coreProject.ApiSchemaVersion)) {
+        throw "Core ApiSchema file '$(Format-LogSafeText $coreProject.SourcePath)' is missing apiSchemaVersion."
+    }
 
     $extensionProjects = @(
         $schemaProjects |
@@ -798,6 +841,8 @@ function Invoke-SchemaWorkspaceStaging {
             effectiveSchemaHash = $effectiveSchemaHash
             workspaceFingerprint = $workspaceFingerprint
             apiSchemaManifestPath = "ApiSchema/bootstrap-api-schema-manifest.json"
+            dataStandardVersion = $coreProject.ProjectVersion
+            apiSchemaFormatVersion = $coreProject.ApiSchemaVersion
         }
         if ($null -ne $SelectedPackages) {
             $schemaSection.Insert(2, "selectedPackages", @($SelectedPackages))

@@ -554,6 +554,27 @@ Describe "Invoke-DatabaseDump" {
             }
         }
 
+        It "throws immediately when pg_dump fails, and leaves no partial artifact behind" {
+            InModuleScope Template-Management -Parameters @{ backupDir = $TestDrive } {
+                param($backupDir)
+                # pg_dump writes some output and then fails: the redirection has already produced a
+                # partial file, so a missing exit-code check would report "Backup Created" over a
+                # truncated dump and let manifest/packaging/attestation consume it.
+                Mock docker {
+                    "-- partial dump output"
+                    $global:LASTEXITCODE = 1
+                }
+                Mock Write-Host {}
+
+                { Invoke-DatabaseDump -DatabaseEngine postgresql -ContainerName "dms-postgresql" -DatabaseName "edfi_datamanagementservice" -DatabaseSchemas @("dms") -BackupDirectory $backupDir -BackupFileName "failed.sql" } |
+                    Should -Throw "*pg_dump of 'edfi_datamanagementservice' failed in container 'dms-postgresql' with exit code 1*"
+
+                # No "Backup Created" banner, and no partial artifact left for a later step to pick up.
+                Should -Invoke Write-Host -Times 0 -Exactly
+                Test-Path -LiteralPath (Join-Path $backupDir "failed.sql") | Should -BeFalse
+            }
+        }
+
         It "produces byte-identical pg_dump arguments whether or not -DatabaseEngine is supplied" {
             InModuleScope Template-Management -Parameters @{ backupDir = $TestDrive } {
                 param($backupDir)
@@ -835,6 +856,19 @@ IF @@ROWCOUNT <> 1
             ($calls[0][0..9] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c') -join '|')
         }
 
+        It "ignores companion attestation packages when locating the template package" {
+            # After an attested build, "<Id>.Attestation.<version>.nupkg" sits beside the
+            # template package; alphabetically it sorts FIRST here, so without the exclusion
+            # the restore would pick the companion instead of the template.
+            Set-Content -LiteralPath (Join-Path $script:packageDir "A.Template.Attestation.1.0.1.nupkg") -Value "not a template package"
+            New-FakeTemplatePackage -Directory $script:packageDir -ArtifactFileName "dump.sql" -PackageFileName "MyPgTemplate.nupkg" | Out-Null
+
+            Mock docker -ModuleName Template-Management { $global:LASTEXITCODE = 0 }
+
+            $result = Restore-TemplatePackage -PackageDirectory $script:packageDir -DatabaseName "testdb" -DatabaseEngine postgresql -ContainerName "dms-postgresql"
+            $result | Should -Be "MyPgTemplate.nupkg"
+        }
+
         It "produces byte-identical restore arguments whether or not -DatabaseEngine is supplied" {
             $explicitDir = Join-Path $TestDrive ([Guid]::NewGuid().ToString('N'))
             New-Item -ItemType Directory -Path $explicitDir -Force | Out-Null
@@ -1058,8 +1092,12 @@ Describe "Build-TemplateNuGetPackage package identity derivation" {
             Mock Invoke-DatabaseDump {}
             Mock New-DatabaseTemplateCsproj {}
             Mock Build-NuGetPackage {}
+            Mock Get-TemplateSourceCatalogFacts { [pscustomobject]@{} }
+            Mock Assert-DmsOnlyTemplateSource { [pscustomobject]@{ HasAuth = $false; ResourceSchemaNames = [string[]]@(); TrackedChangesProjectNames = [string[]]@(); ProjectSchemaNames = [string[]]@("edfi") } }
+            Mock Write-TemplateRestoreManifest { "restore-manifest.json" }
+            Mock Add-FileToCsProjForNuget {}
 
-            Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion $standardVersion -PackageVersion "1.0.0" -DatabaseEngine $engine
+            Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion $standardVersion -PackageVersion "1.0.0" -TemplateKind $templateType -DatabaseEngine $engine
 
             $expectedId = "EdFi.Api.$templateType.Template.$engineToken.$standardVersion"
             $expectedBackupName = "EdFi.Api.$templateType.Template.$engineToken.$standardVersion.$extension"
@@ -1082,8 +1120,12 @@ Describe "Build-TemplateNuGetPackage package identity derivation" {
             Mock Invoke-DatabaseDump {}
             Mock New-DatabaseTemplateCsproj {}
             Mock Build-NuGetPackage {}
+            Mock Get-TemplateSourceCatalogFacts { [pscustomobject]@{} }
+            Mock Assert-DmsOnlyTemplateSource { [pscustomobject]@{ HasAuth = $false; ResourceSchemaNames = [string[]]@(); TrackedChangesProjectNames = [string[]]@(); ProjectSchemaNames = [string[]]@("edfi") } }
+            Mock Write-TemplateRestoreManifest { "restore-manifest.json" }
+            Mock Add-FileToCsProjForNuget {}
 
-            Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0"
+            Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0" -TemplateKind "Minimal"
 
             Should -Invoke New-DatabaseTemplateCsproj -Times 1 -Exactly -ParameterFilter {
                 $Config.Id -eq 'EdFi.Api.Minimal.Template.PostgreSql.5.2.0' -and
@@ -1092,6 +1134,609 @@ Describe "Build-TemplateNuGetPackage package identity derivation" {
 
             # The dump must also see the default resolved to postgresql, not left blank/unset.
             Should -Invoke Invoke-DatabaseDump -Times 1 -Exactly -ParameterFilter { $DatabaseEngine -eq 'postgresql' }
+        }
+    }
+}
+
+Describe "Get-TemplateSourceCatalogFacts" {
+    BeforeAll {
+        $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Push-Location $script:templatesDir
+        try {
+            Import-Module (Join-Path $script:templatesDir "Template-Management.psm1") -Force
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    It "reads the PostgreSQL manifest facts from the live catalog and scopes the artifact inventory to the dumped schemas plus public" {
+        InModuleScope Template-Management {
+            $calls = [System.Collections.Generic.List[object]]::new()
+            Mock docker {
+                $calls.Add(@($args))
+                $query = [string]$args[-1]
+                $global:LASTEXITCODE = 0
+                if ($query -match 'EffectiveSchema') { return "1.0.0|$('ab' * 32)|42|$('cd' * 32)" }
+                if ($query -match 'server_version') { return '16.8' }
+                if ($query -match 'data_type') { return 'DocumentCache|jsonb' }
+                if ($query -match 'relkind') {
+                    return @(
+                        'dms|Document|table',
+                        'dms|EffectiveSchema|table',
+                        'edfi|School|table',
+                        'tracked_changes_edfi|School|table'
+                    )
+                }
+                if ($query -match 'pg_namespace') { return @('dms', 'edfi', 'public', 'tracked_changes_edfi') }
+            }
+
+            $facts = Get-TemplateSourceCatalogFacts -DatabaseEngine postgresql -DatabaseName "edfi_datamanagementservice" -ArtifactSchemaName @("dms")
+
+            $facts.ApiSchemaFormatVersion | Should -Be "1.0.0"
+            $facts.EffectiveSchemaHash | Should -Be ("ab" * 32)
+            $facts.ResourceKeyCount | Should -Be 42
+            $facts.ResourceKeySeedHashB64 | Should -Be ([System.Convert]::ToBase64String([System.Convert]::FromHexString(("cd" * 32))))
+            $facts.EngineVersion | Should -Be "16.8"
+            $facts.DatabaseCompatibilityLevel | Should -BeNullOrEmpty
+            $facts.DocumentJsonColumnType | Should -Be "jsonb"
+
+            @($facts.FullInventory.schemas).Count | Should -Be 4
+
+            # Artifact scope: dumped schema (dms) plus always-present public, no principals.
+            $artifactSchemaNames = @($facts.ArtifactInventory.schemas | ForEach-Object { $_.schemaName })
+            $artifactSchemaNames | Should -Be @("dms", "public")
+            @($facts.ArtifactInventory.principals).Count | Should -Be 0
+
+            # Transport shape: catalog queries go through the standard psql idiom.
+            $psqlCall = @($calls | Where-Object { $_[2] -eq 'psql' } | Select-Object -First 1)[0]
+            ($psqlCall[0..8] -join '|') | Should -Be (@('exec', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'edfi_datamanagementservice', '-tA', '-c') -join '|')
+        }
+    }
+
+    It "reads the MSSQL manifest facts including compatibility level and principals, with the artifact scoped to the whole database" {
+        InModuleScope Template-Management {
+            $calls = [System.Collections.Generic.List[object]]::new()
+            Mock docker {
+                $calls.Add(@($args))
+                $query = [string]$args[-1]
+                $global:LASTEXITCODE = 0
+                if ($query -match 'EffectiveSchema') { return "1.0.0|$('ab' * 32)|42|$('cd' * 32)" }
+                if ($query -match 'ProductVersion') { return '17.0.900.7' }
+                if ($query -match 'compatibility_level') { return '170' }
+                if ($query -match 'sys\.columns') { return 'DocumentCache|nvarchar' }
+                if ($query -match 'sys\.objects') {
+                    return @('dms|Document|table', 'edfi|School|table', 'tracked_changes_edfi|School|table')
+                }
+                if ($query -match 'sys\.schemas') { return @('dbo', 'dms', 'edfi', 'tracked_changes_edfi') }
+                if ($query -match 'database_principals') { return @() }
+            }
+
+            $facts = Get-TemplateSourceCatalogFacts -DatabaseEngine mssql -DatabaseName "edfi_datamanagementservice"
+
+            $facts.EngineVersion | Should -Be "17.0.900.7"
+            $facts.DatabaseCompatibilityLevel | Should -Be 170
+            $facts.DocumentJsonColumnType | Should -Be "nvarchar"
+
+            # A .bak carries the whole database: artifact scope equals the full inventory,
+            # including the always-present dbo entry and the (empty) principals list.
+            $artifactSchemaNames = @($facts.ArtifactInventory.schemas | ForEach-Object { $_.schemaName })
+            $artifactSchemaNames | Should -Be @('dbo', 'dms', 'edfi', 'tracked_changes_edfi')
+            @($facts.ArtifactInventory.principals).Count | Should -Be 0
+
+            # Transport shape: catalog queries go through the standard sqlcmd idiom.
+            $sqlcmdCall = @($calls | Where-Object { $_[4] -eq '/opt/mssql-tools18/bin/sqlcmd' } | Select-Object -First 1)[0]
+            ($sqlcmdCall[0..15] -join '|') | Should -Be (@('exec', '-e', 'SQLCMDPASSWORD=abcdefgh1!', 'dms-mssql', '/opt/mssql-tools18/bin/sqlcmd', '-S', 'localhost', '-U', 'sa', '-d', 'edfi_datamanagementservice', '-C', '-b', '-h', '-1', '-W') -join '|')
+        }
+    }
+
+    It "requires the artifact schema scope for PostgreSQL" {
+        InModuleScope Template-Management {
+            Mock docker {
+                $query = [string]$args[-1]
+                $global:LASTEXITCODE = 0
+                if ($query -match 'EffectiveSchema') { return "1.0.0|$('ab' * 32)|42|$('cd' * 32)" }
+                if ($query -match 'server_version') { return '16.8' }
+                if ($query -match 'data_type') { return 'DocumentCache|jsonb' }
+                if ($query -match 'relkind') { return @('dms|Document|table') }
+                if ($query -match 'pg_namespace') { return @('dms', 'public') }
+            }
+
+            { Get-TemplateSourceCatalogFacts -DatabaseEngine postgresql -DatabaseName "edfi_datamanagementservice" } |
+                Should -Throw "*ArtifactSchemaName is required for postgresql*"
+        }
+    }
+}
+
+Describe "Build-TemplateNuGetPackage restore gate and manifest" {
+    BeforeAll {
+        $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Push-Location $script:templatesDir
+        try {
+            Import-Module (Join-Path $script:templatesDir "Template-Management.psm1") -Force
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    It "refuses to dump or package when the source fails the DMS-only gate (dmscs contamination)" {
+        InModuleScope Template-Management -Parameters @{ configPath = (Join-Path (Split-Path $PSScriptRoot -Parent) "MinimalTemplateSettings.psd1") } {
+            param($configPath)
+
+            $configPath | Should -Exist
+
+            $contaminatedFacts = [pscustomobject]@{
+                FullInventory = @{
+                    schemas    = @(
+                        @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
+                        @{ schemaName = "dmscs"; objects = @(@{ name = "Application"; type = "table" }) },
+                        @{ schemaName = "public"; objects = @() }
+                    )
+                    principals = @()
+                }
+            }
+
+            Mock Get-TemplateSourceCatalogFacts { $contaminatedFacts }
+            Mock Invoke-DatabaseDump {}
+            Mock Write-TemplateRestoreManifest {}
+            Mock New-DatabaseTemplateCsproj {}
+            Mock Add-FileToCsProjForNuget {}
+            Mock Build-NuGetPackage {}
+
+            { Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0" -TemplateKind "Minimal" } |
+                Should -Throw "*not a dedicated DMS datastore*dmscs*"
+
+            # The gate fires before any dump, manifest, or packaging work.
+            Should -Invoke Invoke-DatabaseDump -Times 0 -Exactly
+            Should -Invoke Write-TemplateRestoreManifest -Times 0 -Exactly
+            Should -Invoke New-DatabaseTemplateCsproj -Times 0 -Exactly
+            Should -Invoke Build-NuGetPackage -Times 0 -Exactly
+        }
+    }
+
+    It "does not write a manifest, pack, or attest after a failed dump" {
+        InModuleScope Template-Management -Parameters @{ configPath = (Join-Path (Split-Path $PSScriptRoot -Parent) "MinimalTemplateSettings.psd1") } {
+            param($configPath)
+
+            $configPath | Should -Exist
+
+            # A clean, gate-passing source; -DumpAllUserSchemas keeps the artifact scope valid, so
+            # the dump failure below is the only thing that can stop the build.
+            $cleanFacts = [pscustomobject]@{
+                FullInventory = @{
+                    schemas    = @(
+                        @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
+                        @{ schemaName = "edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                        @{ schemaName = "tracked_changes_edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                        @{ schemaName = "public"; objects = @() }
+                    )
+                    principals = @()
+                }
+            }
+
+            Mock Get-TemplateSourceCatalogFacts { $cleanFacts }
+            # -DumpAllUserSchemas discovers the dump scope from the live database; the mock keeps
+            # this test off Docker while matching the facts above.
+            Mock Get-UserSchemaNames { @("dms", "edfi", "tracked_changes_edfi") }
+            Mock Invoke-DatabaseDump { throw "pg_dump of 'edfi_datamanagementservice' failed in container 'dms-postgresql' with exit code 1." }
+            Mock Write-TemplateRestoreManifest {}
+            Mock New-DatabaseTemplateCsproj {}
+            Mock Add-FileToCsProjForNuget {}
+            Mock Build-NuGetPackage {}
+            Mock Invoke-TemplatePackageAttestation {}
+
+            { Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0" -TemplateKind "Minimal" -DumpAllUserSchemas } |
+                Should -Throw "*pg_dump*failed*exit code 1*"
+
+            # A failed or partial dump never reaches manifest, packaging, or attestation work.
+            Should -Invoke Write-TemplateRestoreManifest -Times 0 -Exactly
+            Should -Invoke New-DatabaseTemplateCsproj -Times 0 -Exactly
+            Should -Invoke Build-NuGetPackage -Times 0 -Exactly
+            Should -Invoke Invoke-TemplatePackageAttestation -Times 0 -Exactly
+        }
+    }
+
+    It "refuses to build a PostgreSQL restore package whose dms-only artifact would omit the validated resource schemas" {
+        InModuleScope Template-Management -Parameters @{ configPath = (Join-Path (Split-Path $PSScriptRoot -Parent) "MinimalTemplateSettings.psd1") } {
+            param($configPath)
+
+            $configPath | Should -Exist
+
+            # A clean, gate-passing full source whose artifact scope (default dms-only dump,
+            # no -DumpAllUserSchemas) would not contain the declared projects.
+            $cleanFullSourceFacts = [pscustomobject]@{
+                FullInventory = @{
+                    schemas    = @(
+                        @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
+                        @{ schemaName = "edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                        @{ schemaName = "tracked_changes_edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                        @{ schemaName = "public"; objects = @() }
+                    )
+                    principals = @()
+                }
+            }
+
+            Mock Get-TemplateSourceCatalogFacts { $cleanFullSourceFacts }
+            Mock Invoke-DatabaseDump {}
+            Mock Write-TemplateRestoreManifest {}
+            Mock New-DatabaseTemplateCsproj {}
+            Mock Add-FileToCsProjForNuget {}
+            Mock Build-NuGetPackage {}
+
+            { Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0" -TemplateKind "Minimal" } |
+                Should -Throw "*would omit required DMS-owned schemas: edfi, tracked_changes_edfi*"
+
+            # The incomplete artifact is refused before any dump or packaging work.
+            Should -Invoke Invoke-DatabaseDump -Times 0 -Exactly
+            Should -Invoke Write-TemplateRestoreManifest -Times 0 -Exactly
+            Should -Invoke Build-NuGetPackage -Times 0 -Exactly
+        }
+    }
+
+    It "writes a shape-valid restore manifest from the captured facts and the completed artifact and packages it beside the artifact" {
+        $workDir = Join-Path $TestDrive ([Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $workDir -Force | Out-Null
+        Push-Location $workDir
+        try {
+            InModuleScope Template-Management -Parameters @{ configPath = (Join-Path (Split-Path $PSScriptRoot -Parent) "MinimalTemplateSettings.psd1") } {
+                param($configPath)
+
+                $cleanFacts = [pscustomobject]@{
+                    ApiSchemaFormatVersion     = "1.0.0"
+                    EffectiveSchemaHash        = ("ab" * 32)
+                    ResourceKeyCount           = 42
+                    ResourceKeySeedHashB64     = [System.Convert]::ToBase64String([System.Convert]::FromHexString(("cd" * 32)))
+                    EngineVersion              = "16.8"
+                    DatabaseCompatibilityLevel = $null
+                    DocumentJsonColumnType     = "jsonb"
+                    FullInventory              = @{
+                        schemas    = @(
+                            @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }, @{ name = "EffectiveSchema"; type = "table" }) },
+                            @{ schemaName = "edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                            @{ schemaName = "tracked_changes_edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                            @{ schemaName = "public"; objects = @() }
+                        )
+                        principals = @()
+                    }
+                    ArtifactInventory          = @{
+                        schemas    = @(
+                            @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }, @{ name = "EffectiveSchema"; type = "table" }) },
+                            @{ schemaName = "edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                            @{ schemaName = "tracked_changes_edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                            @{ schemaName = "public"; objects = @() }
+                        )
+                        principals = @()
+                    }
+                }
+
+                Mock Get-TemplateSourceCatalogFacts { $cleanFacts }
+                Mock Get-UserSchemaNames { @("dms", "edfi", "tracked_changes_edfi") }
+                Mock Invoke-DatabaseDump {
+                    Set-Content -LiteralPath (Join-Path $BackupDirectory $BackupFileName) -Value "fake artifact bytes"
+                }
+                Mock New-DatabaseTemplateCsproj {}
+                Mock Add-FileToCsProjForNuget {}
+                Mock Build-NuGetPackage {}
+
+                Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.123" -TemplateKind "Minimal" -DumpAllUserSchemas
+
+                # Read-RestoreManifest shape-validates the written manifest as a consumer would.
+                $manifest = Read-RestoreManifest -Path "./restore-manifest.json"
+                $manifest.packageId | Should -Be "EdFi.Api.Minimal.Template.PostgreSql.5.2.0"
+                $manifest.packageVersion | Should -Be "1.0.123"
+                $manifest.databaseEngine | Should -Be "postgresql"
+                $manifest.templateKind | Should -Be "Minimal"
+                $manifest.dataStandardVersion | Should -Be "5.2.0"
+                $manifest.contentProfile | Should -Be "DmsDatastoreOnly"
+                @($manifest.projects) | Should -Be @("edfi")
+                $manifest.effectiveSchemaHash | Should -Be ("ab" * 32)
+                $manifest.relationalMappingVersion | Should -Be "v2"
+                $manifest.documentJsonColumnType | Should -Be "jsonb"
+                $manifest.artifactFileName | Should -Be "EdFi.Api.Minimal.Template.PostgreSql.5.2.0.sql"
+                $manifest.artifactSha256 | Should -Be (Get-FileSha256Hex -Path "./EdFi.Api.Minimal.Template.PostgreSql.5.2.0.sql")
+
+                # The manifest inventory is the artifact scope (here: the complete dumped set).
+                @($manifest.inventory.schemas | ForEach-Object { $_.schemaName }) | Should -Be @("dms", "edfi", "public", "tracked_changes_edfi")
+
+                # The manifest is added to the package csproj beside the artifact.
+                Should -Invoke Add-FileToCsProjForNuget -Times 1 -Exactly -ParameterFilter {
+                    @($SourceTargetPair)[0].source -like "*restore-manifest.json" -and @($SourceTargetPair)[0].target -eq "."
+                }
+            }
+        }
+        finally {
+            Pop-Location
+        }
+    }
+}
+
+Describe "Build-TemplateNuGetPackage attestation" {
+    BeforeAll {
+        $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Push-Location $script:templatesDir
+        try {
+            Import-Module (Join-Path $script:templatesDir "Template-Management.psm1") -Force
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    It "attests the exact packed bytes: sibling document verifies against the trust policy and a later repack invalidates it" {
+        $workDir = Join-Path $TestDrive ([Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $workDir -Force | Out-Null
+        Push-Location $workDir
+        try {
+            InModuleScope Template-Management -Parameters @{
+                configPath = (Join-Path (Split-Path $PSScriptRoot -Parent) "MinimalTemplateSettings.psd1")
+                workDir    = $workDir
+            } {
+                param($configPath, $workDir)
+
+                $signingKey = New-TemplateAttestationSigningKey -PrivateKeyPath (Join-Path $workDir "signer.pem")
+
+                $cleanFacts = [pscustomobject]@{
+                    ApiSchemaFormatVersion     = "1.0.0"
+                    EffectiveSchemaHash        = ("ab" * 32)
+                    ResourceKeyCount           = 42
+                    ResourceKeySeedHashB64     = [System.Convert]::ToBase64String([System.Convert]::FromHexString(("cd" * 32)))
+                    EngineVersion              = "16.8"
+                    DatabaseCompatibilityLevel = $null
+                    DocumentJsonColumnType     = "jsonb"
+                    FullInventory              = @{
+                        schemas    = @(
+                            @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
+                            @{ schemaName = "edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                            @{ schemaName = "tracked_changes_edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                            @{ schemaName = "public"; objects = @() }
+                        )
+                        principals = @()
+                    }
+                    ArtifactInventory          = @{
+                        schemas    = @(
+                            @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
+                            @{ schemaName = "edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                            @{ schemaName = "tracked_changes_edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                            @{ schemaName = "public"; objects = @() }
+                        )
+                        principals = @()
+                    }
+                }
+
+                Mock Get-TemplateSourceCatalogFacts { $cleanFacts }
+                Mock Get-UserSchemaNames { @("dms", "edfi", "tracked_changes_edfi") }
+                Mock Invoke-DatabaseDump {
+                    Set-Content -LiteralPath (Join-Path $BackupDirectory $BackupFileName) -Value "fake artifact bytes"
+                }
+                Mock New-DatabaseTemplateCsproj {}
+                Mock Add-FileToCsProjForNuget {}
+                Mock Build-NuGetPackage {
+                    Set-Content -LiteralPath (Join-Path $BackupDirectory "$($Config.Id).$PackageVersion.nupkg") -Value "fake packed bytes"
+                }
+                Mock Build-TemplateAttestationCompanionPackage { "companion.nupkg" }
+
+                Build-TemplateNuGetPackage `
+                    -ConfigFilePath $configPath `
+                    -StandardVersion "5.2.0" `
+                    -PackageVersion "1.0.123" `
+                    -TemplateKind "Minimal" `
+                    -DumpAllUserSchemas `
+                    -AttestationSignerKeyPath $signingKey.PrivateKeyPath `
+                    -AttestationProducer "local-dev"
+
+                $packagePath = "./EdFi.Api.Minimal.Template.PostgreSql.5.2.0.1.0.123.nupkg"
+                $attestationPath = "./EdFi.Api.Minimal.Template.PostgreSql.5.2.0.1.0.123.nupkg.attestation.json"
+                $attestationPath | Should -Exist
+
+                # Verify the attestation exactly as a restore consumer would.
+                $policyPath = Join-Path $workDir "template-trust-policy.json"
+                [ordered]@{
+                    version   = 1
+                    producers = @(
+                        [ordered]@{
+                            name       = "local-dev"
+                            provider   = "detached-attestation"
+                            publicKeys = @(
+                                [ordered]@{
+                                    keyId            = $signingKey.KeyId
+                                    algorithm        = $signingKey.Algorithm
+                                    publicKeySpkiB64 = $signingKey.PublicKeySpkiB64
+                                }
+                            )
+                        }
+                    )
+                } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $policyPath -Encoding utf8
+                $trustPolicy = Read-TemplateTrustPolicy -TrackedPolicyPath $policyPath
+
+                $verdict = Test-TemplateAttestation `
+                    -AttestationJson (Get-Content -LiteralPath $attestationPath -Raw) `
+                    -PackageSha256 (Get-FileSha256Hex -Path $packagePath) `
+                    -ExpectedPackageId "EdFi.Api.Minimal.Template.PostgreSql.5.2.0" `
+                    -ExpectedPackageVersion "1.0.123" `
+                    -TrustPolicy $trustPolicy
+                $verdict.IsTrusted | Should -BeTrue
+                $verdict.Producer | Should -Be "local-dev"
+
+                # The attestation binds the FINAL bytes: any repack/tamper invalidates it.
+                Add-Content -LiteralPath $packagePath -Value "repacked"
+                $staleVerdict = Test-TemplateAttestation `
+                    -AttestationJson (Get-Content -LiteralPath $attestationPath -Raw) `
+                    -PackageSha256 (Get-FileSha256Hex -Path $packagePath) `
+                    -ExpectedPackageId "EdFi.Api.Minimal.Template.PostgreSql.5.2.0" `
+                    -ExpectedPackageVersion "1.0.123" `
+                    -TrustPolicy $trustPolicy
+                $staleVerdict.IsTrusted | Should -BeFalse
+                $staleVerdict.Reason | Should -BeLike "*does not match the resolved package bytes*"
+
+                # The companion package is built from the exact sibling document.
+                Should -Invoke Build-TemplateAttestationCompanionPackage -Times 1 -Exactly -ParameterFilter {
+                    $AttestationPath -like "*.nupkg.attestation.json" -and $PackageVersion -eq "1.0.123"
+                }
+            }
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    It "builds no attestation artifacts when no signer is supplied" {
+        $workDir = Join-Path $TestDrive ([Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $workDir -Force | Out-Null
+        Push-Location $workDir
+        try {
+            InModuleScope Template-Management -Parameters @{ configPath = (Join-Path (Split-Path $PSScriptRoot -Parent) "MinimalTemplateSettings.psd1") } {
+                param($configPath)
+
+                $cleanFacts = [pscustomobject]@{
+                    ApiSchemaFormatVersion     = "1.0.0"
+                    EffectiveSchemaHash        = ("ab" * 32)
+                    ResourceKeyCount           = 42
+                    ResourceKeySeedHashB64     = [System.Convert]::ToBase64String([System.Convert]::FromHexString(("cd" * 32)))
+                    EngineVersion              = "16.8"
+                    DatabaseCompatibilityLevel = $null
+                    DocumentJsonColumnType     = "jsonb"
+                    FullInventory              = @{
+                        schemas    = @(@{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) }, @{ schemaName = "edfi"; objects = @(@{ name = "School"; type = "table" }) }, @{ schemaName = "tracked_changes_edfi"; objects = @(@{ name = "School"; type = "table" }) }, @{ schemaName = "public"; objects = @() })
+                        principals = @()
+                    }
+                    ArtifactInventory          = @{
+                        schemas    = @(@{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) }, @{ schemaName = "edfi"; objects = @(@{ name = "School"; type = "table" }) }, @{ schemaName = "tracked_changes_edfi"; objects = @(@{ name = "School"; type = "table" }) }, @{ schemaName = "public"; objects = @() })
+                        principals = @()
+                    }
+                }
+
+                Mock Get-TemplateSourceCatalogFacts { $cleanFacts }
+                Mock Get-UserSchemaNames { @("dms", "edfi", "tracked_changes_edfi") }
+                Mock Invoke-DatabaseDump {
+                    Set-Content -LiteralPath (Join-Path $BackupDirectory $BackupFileName) -Value "fake artifact bytes"
+                }
+                Mock New-DatabaseTemplateCsproj {}
+                Mock Add-FileToCsProjForNuget {}
+                Mock Build-NuGetPackage {}
+                Mock Build-TemplateAttestationCompanionPackage {}
+
+                Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.123" -TemplateKind "Minimal" -DumpAllUserSchemas
+
+                @(Get-ChildItem -Path "." -Filter "*.attestation.json").Count | Should -Be 0
+                Should -Invoke Build-TemplateAttestationCompanionPackage -Times 0 -Exactly
+            }
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    It "fails fast on a misconfigured signer before any catalog read or dump work" {
+        InModuleScope Template-Management -Parameters @{ configPath = (Join-Path (Split-Path $PSScriptRoot -Parent) "MinimalTemplateSettings.psd1") } {
+            param($configPath)
+
+            $configPath | Should -Exist
+
+            Mock Get-TemplateSourceCatalogFacts { [pscustomobject]@{} }
+            Mock Invoke-DatabaseDump {}
+            Mock Build-NuGetPackage {}
+
+            { Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0" -TemplateKind "Minimal" -AttestationSignerKeyPath (Join-Path $TestDrive "somekey.pem") } |
+                Should -Throw "*must be supplied together*"
+
+            { Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0" -TemplateKind "Minimal" -AttestationProducer "local-dev" } |
+                Should -Throw "*must be supplied together*"
+
+            { Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0" -TemplateKind "Minimal" -AttestationSignerKeyPath (Join-Path $TestDrive "absent.pem") -AttestationProducer "local-dev" } |
+                Should -Throw "*Signing key was not found*"
+
+            # A key on the wrong curve is refused before any catalog read or dump work: the
+            # ECDSA_P256_SHA256 label must never be emitted for a non-P-256 key.
+            $p384 = [System.Security.Cryptography.ECDsa]::Create([System.Security.Cryptography.ECCurve+NamedCurves]::nistP384)
+            try {
+                $p384Pem = [System.Security.Cryptography.PemEncoding]::WriteString("PRIVATE KEY", $p384.ExportPkcs8PrivateKey())
+            }
+            finally {
+                $p384.Dispose()
+            }
+            $p384KeyPath = Join-Path $TestDrive "p384-signer.pem"
+            Set-Content -LiteralPath $p384KeyPath -Value $p384Pem -Encoding utf8
+            { Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0" -TemplateKind "Minimal" -AttestationSignerKeyPath $p384KeyPath -AttestationProducer "local-dev" } |
+                Should -Throw "*not a NIST P-256 ECDSA key*"
+
+            Should -Invoke Get-TemplateSourceCatalogFacts -Times 0 -Exactly
+            Should -Invoke Invoke-DatabaseDump -Times 0 -Exactly
+        }
+    }
+}
+
+Describe "Build-TemplateAttestationCompanionPackage" {
+    BeforeAll {
+        $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Push-Location $script:templatesDir
+        try {
+            Import-Module (Join-Path $script:templatesDir "Template-Management.psm1") -Force
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    It "packs a same-version companion containing exactly the attestation document" {
+        $workDir = Join-Path $TestDrive ([Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $workDir -Force | Out-Null
+
+        InModuleScope Template-Management -Parameters @{ workDir = $workDir } {
+            param($workDir)
+
+            $attestationPath = Join-Path $workDir "pkg.nupkg.attestation.json"
+            Set-Content -LiteralPath $attestationPath -Value '{"version":1}'
+
+            $dotnetCalls = [System.Collections.Generic.List[object]]::new()
+            Mock dotnet { $dotnetCalls.Add(@($args)); $global:LASTEXITCODE = 0 }
+
+            $companionPath = Build-TemplateAttestationCompanionPackage `
+                -Config @{ Id = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0"; Authors = "Ed-Fi Alliance"; ProjectUrl = "https://www.ed-fi.org"; License = "Apache-2.0" } `
+                -PackageVersion "1.0.123" `
+                -BackupDirectory $workDir `
+                -AttestationPath $attestationPath
+
+            $companionPath | Should -Be (Join-Path $workDir "EdFi.Api.Minimal.Template.PostgreSql.5.2.0.Attestation.1.0.123.nupkg")
+
+            # The companion csproj lives in its own transient workspace and references only
+            # the attestation document.
+            $companionCsprojPath = Join-Path $workDir ".attestation-package/EdFi.Api.Minimal.Template.PostgreSql.5.2.0.Attestation.csproj"
+            $companionCsprojPath | Should -Exist
+            (Get-Content -LiteralPath $companionCsprojPath -Raw) | Should -BeLike "*pkg.nupkg.attestation.json*"
+
+            $dotnetCalls.Count | Should -Be 2
+            $dotnetCalls[0][0] | Should -Be "restore"
+            $packArguments = @($dotnetCalls[1])
+            $packArguments[0] | Should -Be "pack"
+            $packArguments | Should -Contain "--output"
+            # PowerShell mock binding splits "-p:X=y" tokens at the colon, so assert on the
+            # joined argv text (a real dotnet invocation receives them as single arguments).
+            ($packArguments -join ' ') | Should -BeLike "*NoDefaultExcludes=true*"
+            ($packArguments -join ' ') | Should -BeLike "*Version=1.0.123*"
+        }
+    }
+
+    It "fails when the companion pack exits non-zero" {
+        $workDir = Join-Path $TestDrive ([Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $workDir -Force | Out-Null
+
+        InModuleScope Template-Management -Parameters @{ workDir = $workDir } {
+            param($workDir)
+
+            $attestationPath = Join-Path $workDir "pkg.nupkg.attestation.json"
+            Set-Content -LiteralPath $attestationPath -Value '{"version":1}'
+
+            Mock dotnet {
+                if (@($args)[0] -eq "pack") { $global:LASTEXITCODE = 1 } else { $global:LASTEXITCODE = 0 }
+            }
+
+            { Build-TemplateAttestationCompanionPackage `
+                    -Config @{ Id = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0"; Authors = "Ed-Fi Alliance"; ProjectUrl = "https://www.ed-fi.org"; License = "Apache-2.0" } `
+                    -PackageVersion "1.0.123" `
+                    -BackupDirectory $workDir `
+                    -AttestationPath $attestationPath } |
+                Should -Throw "*dotnet pack failed for the attestation companion package*"
         }
     }
 }

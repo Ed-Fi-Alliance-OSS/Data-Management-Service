@@ -194,6 +194,9 @@ jobs:
           # regression a PR failure instead of a silent gap.
           $paths = @(
             "eng/docker-compose/tests/BootstrapPackageResolver.Tests.ps1",
+            "eng/docker-compose/tests/BootstrapTemplateRestore.Tests.ps1",
+            "eng/docker-compose/tests/BootstrapRestoreWorkspace.Tests.ps1",
+            "eng/docker-compose/tests/BootstrapRestoreSmoke.Tests.ps1",
             "eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1",
             "eng/docker-compose/tests/BootstrapSeedDelivery.Tests.ps1",
             "eng/docker-compose/tests/BootstrapStandardSchemaSelection.Tests.ps1",
@@ -225,7 +228,11 @@ jobs:
             "eng/ci/tests/BuildScriptTestGuards.Tests.ps1",
             "eng/ci/tests/Sanitize-E2EArtifacts.Tests.ps1",
             "eng/ci/tests/DmsPullRequestMssqlWorkflow.Tests.ps1",
+            "eng/ci/tests/TemplateWorkflowAttestation.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-Management.Tests.ps1",
+            "eng/DatabaseTemplates/tests/Template-RestoreCore.Tests.ps1",
+            "eng/DatabaseTemplates/tests/Template-RestoreTrust.Tests.ps1",
+            "eng/DatabaseTemplates/tests/Template-DevTrust.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-WorkflowInputs.Tests.ps1",
             "eng/smoke_test/tests/SmokeTest.Tests.ps1",
             "eng/DatabaseTemplates/tests/Smoke-LegSelection.Tests.ps1"

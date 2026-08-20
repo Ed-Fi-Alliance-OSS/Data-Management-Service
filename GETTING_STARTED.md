@@ -150,31 +150,37 @@ Explore the `.env` file you just created to see what configuration options are
 available; however, most of them should not be altered. After editing the
 `.env`, stop and then restart the containers.
 
-## Load Seed Data Using Database Template Package
+## Restore the Datastore from a Database Template Package
 
-To load initial seed data into the database, set the appropriate database
-template package name using the .env variable:
+The supported way to initialize the datastore from a database-template package
+is the bootstrap wrappers' restore mode. Set the template package ID in `.env`
+(and, for feed-based restores, the package's NuGet version):
 
 **Example:**
 
 ```env
 DATABASE_TEMPLATE_PACKAGE=EdFi.Api.Minimal.Template.PostgreSql.5.2.0
+DATABASE_TEMPLATE_NUGET_VERSION=1.0.123
 ```
 
-Then, run the following commands in PowerShell to start the local DMS instance,
-create the data store, and load the seed data. As of DMS-1153,
-`start-local-dms.ps1` no longer accepts `-LoadSeedData`; the database-template
-load is invoked directly from `setup-database-template.psm1`:
+Then run one restore invocation, which authenticates the package against the
+template trust policy, validates it against a freshly prepared workspace and a
+throwaway scratch database, and only then replaces the target datastore before
+starting the stack:
 
 ```powershell
-./start-local-dms.ps1 -EnableConfig
-./configure-local-data-store.ps1
-Import-Module ./setup-database-template.psm1
-LoadSeedData -EnvironmentFile ./.env
+./bootstrap-local-dms.ps1 -RestoreTemplate Minimal
 ```
 
-This will ensure your environment is initialized with the required schema and
-data from the specified template package.
+Use `-PackageDirectory <path>` to restore from a local directory holding the
+template `.nupkg` and its sibling attestation document instead of the feed (no
+NuGet version key needed). See `eng/docker-compose/README.md` for the full
+restore documentation, including the trust-policy setup for locally built
+packages.
+
+The older `setup-database-template.psm1` module remains available as a
+legacy/manual path only, pending its deletion gate; it performs none of the
+restore mode's authentication or validation.
 
 ## Stopping the Containers
 

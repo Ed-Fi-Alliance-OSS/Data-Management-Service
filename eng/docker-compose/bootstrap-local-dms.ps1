@@ -123,6 +123,19 @@
     requested, every year in the range is passed to the seed phase via `-SchoolYear`.
     This is a wrapper/configure-phase input; it is not forwarded to `start-local-dms.ps1`.
 
+.PARAMETER RestoreTemplate
+    Restore mode. Restores the DMS datastore from a trusted database-template package of this
+    kind (Minimal or Populated) before services start, instead of provisioning an empty schema.
+    Mutually exclusive with -InfraOnly, -NoDataStore, and -SchoolYearRange. Combining
+    -LoadSeedData opts into the explicit supplemental seed and requires its own -SeedTemplate
+    or -SeedDataPath.
+
+.PARAMETER PackageDirectory
+    Restore mode. Explicit local package source: a directory holding exactly one matching
+    template .nupkg and its sibling attestation document. Requires -RestoreTemplate. Without
+    it, restore mode resolves the package from the configured NuGet feed using
+    DATABASE_TEMPLATE_PACKAGE / DATABASE_TEMPLATE_NUGET_VERSION.
+
 .PARAMETER InfraOnly
     IDE workflow switch. When set, the wrapper runs infrastructure startup, configure, and
     provision, then stops before any DMS startup. Combine with `-DmsBaseUrl` for the
@@ -268,7 +281,14 @@ param(
     # start-local-dms.ps1 -DataStandardVersion, whose shared .env.ds<NN> overlays carry the
     # E2E/SDK surfaces (Sample/Homograph test extensions).
     [ValidateSet("5.2", "6.1")]
-    [string]$DataStandardVersion = "5.2"
+    [string]$DataStandardVersion = "5.2",
+
+    # Restore mode; see .PARAMETER RestoreTemplate / .PARAMETER PackageDirectory above.
+    # Forwarded to Invoke-BootstrapWrapper, which owns every restore-mode preflight.
+    [ValidateSet("Minimal", "Populated")]
+    [string]$RestoreTemplate,
+
+    [string]$PackageDirectory
 )
 
 $ErrorActionPreference = "Stop"

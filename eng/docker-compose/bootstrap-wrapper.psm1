@@ -40,7 +40,12 @@ function Get-EffectiveBootstrapEnvFile {
     #>
     param(
         [string]$BaseEnvironmentFile,
-        [switch]$LoadSeedDataRequested
+        [switch]$LoadSeedDataRequested,
+
+        # Override for flows that replace the active workspace mid-run (restore mode): the
+        # default target lives inside .bootstrap, which the restore whole-tree commit deletes,
+        # so the derived file must be materialized somewhere that survives the commit.
+        [string]$DerivedTargetPath = ""
     )
 
     $BaseEnvironmentFile = Resolve-WrapperEnvironmentFilePath -BaseEnvironmentFile $BaseEnvironmentFile
@@ -54,7 +59,12 @@ function Get-EffectiveBootstrapEnvFile {
     Import-Module $envUtilityPath -Force
     Import-Module $manifestPath -Force
 
-    $derivedPath = Join-Path (Get-BootstrapRoot) ".env.derived"
+    $derivedPath = if ([string]::IsNullOrWhiteSpace($DerivedTargetPath)) {
+        Join-Path (Get-BootstrapRoot) ".env.derived"
+    }
+    else {
+        $DerivedTargetPath
+    }
     if ($LoadSeedDataRequested) {
         $result = Resolve-BootstrapDerivedEnv `
             -BaseEnvironmentFile $BaseEnvironmentFile `
@@ -565,7 +575,21 @@ function Invoke-BootstrapWrapper {
         # E2E-shaped .env.ds<NN> overlays (which add the Sample/Homograph test extensions) and
         # would override this surface.
         [ValidateSet("5.2", "6.1")]
-        [string]$DataStandardVersion = "5.2"
+        [string]$DataStandardVersion = "5.2",
+
+        # Restore mode: restore the DMS datastore from a trusted database-template package of
+        # this kind (Minimal or Populated) before services start. Mutually exclusive with
+        # -InfraOnly, -NoDataStore, and -SchoolYearRange (one invocation = one route-unqualified
+        # physical target), and combining -LoadSeedData turns it into the explicit supplemental
+        # seed, which requires its own -SeedTemplate or -SeedDataPath.
+        [ValidateSet("Minimal", "Populated")]
+        [string]$RestoreTemplate,
+
+        # Restore mode: explicit local package source - a directory holding exactly one matching
+        # template .nupkg and its sibling attestation document. Requires -RestoreTemplate.
+        # Without it, restore mode resolves the package from the configured NuGet feed using
+        # DATABASE_TEMPLATE_PACKAGE / DATABASE_TEMPLATE_NUGET_VERSION.
+        [string]$PackageDirectory
     )
 
     $ErrorActionPreference = "Stop"
@@ -606,6 +630,28 @@ function Invoke-BootstrapWrapper {
     $seedTemplateSupplied = $PSBoundParameters.ContainsKey('SeedTemplate') -and -not [string]::IsNullOrWhiteSpace($SeedTemplate)
     $seedDataPathSupplied = $PSBoundParameters.ContainsKey('SeedDataPath') -and -not [string]::IsNullOrWhiteSpace($SeedDataPath)
 
+    # Fail fast: restore-mode parameter surface. Every exclusion rejects BEFORE any phase
+    # invocation, so a known-bad restore request never reaches Docker, CMS, or the workspace.
+    $restoreTemplateSupplied = $PSBoundParameters.ContainsKey('RestoreTemplate') -and -not [string]::IsNullOrWhiteSpace($RestoreTemplate)
+    $packageDirectorySupplied = $PSBoundParameters.ContainsKey('PackageDirectory') -and -not [string]::IsNullOrWhiteSpace($PackageDirectory)
+    if ($packageDirectorySupplied -and -not $restoreTemplateSupplied) {
+        throw "-PackageDirectory requires -RestoreTemplate. The directory only selects WHERE the template package comes from; -RestoreTemplate Minimal|Populated selects the restore itself."
+    }
+    if ($restoreTemplateSupplied) {
+        if ($InfraOnly) {
+            throw "-RestoreTemplate is not valid with -InfraOnly. A restore replaces the target datastore and then starts the full stack; the IDE pre-DMS shape is not supported in restore mode."
+        }
+        if ($NoDataStore) {
+            throw "-RestoreTemplate is not valid with -NoDataStore. A restore's entire purpose is the datastore that -NoDataStore asks the configure phase to skip."
+        }
+        if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange)) {
+            throw "-RestoreTemplate is not valid with -SchoolYearRange. One restore invocation replaces exactly one route-unqualified physical target."
+        }
+        if ($LoadSeedData -and -not ($seedTemplateSupplied -or $seedDataPathSupplied)) {
+            throw "-LoadSeedData with -RestoreTemplate is the explicit supplemental seed and requires its own seed source (-SeedTemplate or -SeedDataPath). A bare -LoadSeedData is ambiguous in restore mode: the restored template already carries its data."
+        }
+    }
+
     # Pre-start seed preflights: catch mutually-exclusive seed-source flags and ApiSchemaPath combos
     # here so a known-bad -LoadSeedData invocation doesn't first spin up Docker + CMS state.
     # load-dms-seed-data.ps1's Read-SeedManifest / Assert-SeedSelectionInputs remain the authoritative
@@ -622,7 +668,12 @@ function Invoke-BootstrapWrapper {
         # ALREADY exists (a manual/expert pre-stage flow) do the ApiSchemaPath seed-source rules apply;
         # they are checked here so a known-bad -LoadSeedData invocation fails fast before the start phase.
         $expectedManifest = Join-Path $PSScriptRoot ".bootstrap/bootstrap-manifest.json"
-        if (Test-Path -LiteralPath $expectedManifest -PathType Leaf) {
+        # In restore mode the ACTIVE manifest is stale by definition - the run replaces it with a
+        # candidate the prepare phases build in Standard mode (where both -SeedTemplate and
+        # -SeedDataPath are valid) - so its selectionMode must not veto the supplemental seed.
+        # load-dms-seed-data.ps1 remains the authoritative validator against the workspace that
+        # actually exists when the seed phase runs.
+        if ((Test-Path -LiteralPath $expectedManifest -PathType Leaf) -and -not $restoreTemplateSupplied) {
             # Bare JSON parse keeps the wrapper independent of bootstrap-manifest.psm1 in sandboxed
             # Pester invocations. Malformed/empty manifests defer to load-dms-seed-data.ps1's
             # Read-SeedManifest for the authoritative error rather than throwing here.
@@ -656,6 +707,12 @@ function Invoke-BootstrapWrapper {
     # would otherwise reinterpret the relative path against eng/docker-compose/.
     if ($seedDataPathSupplied -and -not [System.IO.Path]::IsPathRooted($SeedDataPath)) {
         $SeedDataPath = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $SeedDataPath))
+    }
+
+    # Same caller-CWD normalization for -PackageDirectory: the restore package source must
+    # resolve against the directory the operator invoked from, not eng/docker-compose/.
+    if ($packageDirectorySupplied -and -not [System.IO.Path]::IsPathRooted($PackageDirectory)) {
+        $PackageDirectory = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $PackageDirectory))
     }
 
     # Same caller-CWD normalization for -EnvironmentFile: Get-EffectiveBootstrapEnvFile's relative-
@@ -762,9 +819,18 @@ function Invoke-BootstrapWrapper {
 
         # Resolve the effective env file. When seed loading is requested, materialize a derived env
         # with the bootstrap profile so the circuit breaker tolerates the bulk-load failure ratio.
-        $effectiveEnvFile = Get-EffectiveBootstrapEnvFile `
-            -BaseEnvironmentFile $baseEnvFile `
-            -LoadSeedDataRequested:$LoadSeedData
+        # Restore mode redirects the derived file OUT of the active .bootstrap: the whole-tree
+        # commit replaces that tree mid-run, and the post-commit -InfraOnly/configure/-DmsOnly/
+        # seed phases must not be handed a deleted path. The restore workspace is git-ignored
+        # and outlives the commit; the outer finally removes the file at the end of the run.
+        $effectiveEnvArguments = @{
+            BaseEnvironmentFile   = $baseEnvFile
+            LoadSeedDataRequested = $LoadSeedData
+        }
+        if ($restoreTemplateSupplied) {
+            $effectiveEnvArguments.DerivedTargetPath = Join-Path $PSScriptRoot ".bootstrap-restore/derived/.env.restore-effective"
+        }
+        $effectiveEnvFile = Get-EffectiveBootstrapEnvFile @effectiveEnvArguments
 
         # Schema/claims staging phase. The standard happy path needs no manual pre-staging
         # (bootstrap-design.md Section 9.4.1): when no workspace is staged yet, stage standard mode from
@@ -793,6 +859,170 @@ function Invoke-BootstrapWrapper {
         $stagedManifestPath = Join-Path $PSScriptRoot ".bootstrap/bootstrap-manifest.json"
         $stagedManifestPresent = Test-Path -LiteralPath $stagedManifestPath -PathType Leaf
 
+        if ($restoreTemplateSupplied) {
+            # ---- Restore mode (D12): replace the datastore from a trusted template package. ----
+            # The prepare phases still produce the workspace, but into a private CANDIDATE via the
+            # root override - never over a possibly bind-mounted active tree - and the whole-tree
+            # commit replaces .bootstrap only behind stop proofs. The DMS-1255 stale-workspace
+            # fail-fast is therefore bypassed on this branch: restore mode IS the guarded
+            # replacement, regenerating schema, claims, and seed state together.
+            $bootstrapRestoreModulePath = Join-Path $PSScriptRoot "bootstrap-restore.psm1"
+            if (Test-Path -LiteralPath $bootstrapRestoreModulePath) {
+                Import-Module $bootstrapRestoreModulePath -Force
+            }
+            # Sandboxed wrapper fixtures omit the module and provide the restore functions as
+            # global recording stubs, the same idiom the docker stubs use.
+
+            $composeProjectName = if ($StartScriptName -eq "start-published-dms.ps1") { "dms-published" } else { "dms-local" }
+            $restoreEnvironmentValues = ReadValuesFromEnvFile -EnvironmentFile $effectiveEnvFile
+            $restoreTargetDatabaseName = Resolve-RestoreTargetDatabaseName `
+                -EnvironmentValues $restoreEnvironmentValues `
+                -DatabaseEngine $DatabaseEngine
+            $effectiveConfigDatabaseName = ""
+            if ($SeparateConfigDatabase) {
+                $effectiveConfigDatabaseName = Get-ComposeResolvedEnvValue `
+                    -EnvironmentValues $restoreEnvironmentValues `
+                    -Name "DMS_CONFIG_DATABASE_NAME" `
+                    -DefaultValue "edfi_configurationservice"
+            }
+            Assert-RestoreTargetDatabaseNameSafe `
+                -DatabaseEngine $DatabaseEngine `
+                -TargetDatabaseName $restoreTargetDatabaseName `
+                -SeparateConfigDatabase:$SeparateConfigDatabase `
+                -EffectiveConfigDatabaseName $effectiveConfigDatabaseName
+
+            $restoreStage = $null
+            $restoreCandidateDirectory = $null
+            $restorePreflightDatabaseName = ""
+            $restorePreflightEnvironmentPath = ""
+            try {
+                # Acquisition -> exact-bytes authentication -> immutable private staging with
+                # manifest/artifact validation (D3/D4). No Docker activity yet.
+                $findArguments = @{
+                    EnvironmentValues = $restoreEnvironmentValues
+                    RestoreTemplate   = $RestoreTemplate
+                    DatabaseEngine    = $DatabaseEngine
+                }
+                if ($packageDirectorySupplied) { $findArguments.PackageDirectory = $PackageDirectory }
+                $restorePackage = Find-RestoreTemplatePackage @findArguments
+                $restoreTrust = Assert-TrustedRestorePackage -Package $restorePackage
+                $restoreStage = Initialize-RestorePackageStage `
+                    -Package $restorePackage `
+                    -AuthenticatedPackageSha256 $restoreTrust.PackageSha256 `
+                    -Producer $restoreTrust.Producer `
+                    -DatabaseEngine $DatabaseEngine `
+                    -RestoreTemplate $RestoreTemplate
+
+                # Candidate workspace via the prepare phases under the root override (D5), then
+                # the package<->candidate cross-check (D9). Still no Docker activity.
+                $restoreCandidate = New-RestoreCandidateWorkspace -EnvironmentFile $effectiveEnvFile
+                $restoreCandidateDirectory = $restoreCandidate.CandidateDirectory
+                $restoreCandidateFact = Invoke-RestoreCandidateCrossCheck `
+                    -Manifest $restoreStage.Manifest `
+                    -CandidateDirectory $restoreCandidateDirectory `
+                    -DatabaseEngine $DatabaseEngine `
+                    -StageDirectory $restoreStage.StageDirectory
+
+                # Stop proof #1 (D6): no container of either compose project may be running.
+                Assert-DmsComposeProjectStopped -ProjectName "dms-local"
+                Assert-DmsComposeProjectStopped -ProjectName "dms-published"
+
+                # Database-only slice with the preflight env (D7): fresh-volume initialization can
+                # only ever create the generated preflight database, never the selected target.
+                $restorePreflight = New-RestorePreflightEnvironment `
+                    -EnvironmentFile $effectiveEnvFile `
+                    -DatabaseEngine $DatabaseEngine `
+                    -TargetDatabaseName $restoreTargetDatabaseName
+                $restorePreflightDatabaseName = $restorePreflight.PreflightDatabaseName
+                if ($restorePreflight.IsDerived) {
+                    $restorePreflightEnvironmentPath = $restorePreflight.EnvironmentFile
+                }
+
+                $dbOnlyArgs = @{
+                    DbOnly          = $true
+                    EnvironmentFile = $restorePreflight.EnvironmentFile
+                    DatabaseEngine  = $DatabaseEngine
+                }
+                $global:LASTEXITCODE = 0
+                & "$PSScriptRoot/$StartScriptName" @dbOnlyArgs
+                if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+                    throw "$StartScriptName -DbOnly (restore preflight) failed with exit code $LASTEXITCODE."
+                }
+
+                # Live, non-destructive target safety (D11 checks), then the scratch proof (D8).
+                Assert-RestoreTargetSafety `
+                    -DatabaseEngine $DatabaseEngine `
+                    -TargetDatabaseName $restoreTargetDatabaseName `
+                    -Manifest $restoreStage.Manifest `
+                    -SeparateConfigDatabase:$SeparateConfigDatabase `
+                    -EffectiveConfigDatabaseName $effectiveConfigDatabaseName
+                $restoreScratch = Invoke-RestoreScratchValidation `
+                    -Stage $restoreStage `
+                    -CandidateFact $restoreCandidateFact `
+                    -RestoreTemplate $RestoreTemplate `
+                    -DatabaseEngine $DatabaseEngine
+
+                # Drop the preflight database, stop the db-only slice, and re-prove the stop
+                # before the whole-tree workspace commit (D10 precondition).
+                Remove-RestorePreflightDatabase -DatabaseEngine $DatabaseEngine -PreflightDatabaseName $restorePreflightDatabaseName
+                # Stopped with the SAME compose shape that started the slice (database-only
+                # compose files + the preflight env file + this run's project), never a bare
+                # "docker compose -p <project> stop db", and never "down"/-v: nothing is removed.
+                Stop-RestoreDatabaseOnlySlice `
+                    -ProjectName $composeProjectName `
+                    -DatabaseEngine $DatabaseEngine `
+                    -EnvironmentFile $restorePreflight.EnvironmentFile
+                Assert-DmsComposeProjectStopped -ProjectName "dms-local"
+                Assert-DmsComposeProjectStopped -ProjectName "dms-published"
+
+                $null = Publish-RestoreCandidateWorkspace -CandidateDirectory $restoreCandidateDirectory
+                # The commit consumed the candidate (moved into place or discarded as identical);
+                # nothing remains for the finally to clean.
+                $restoreCandidateDirectory = $null
+
+                # Second db-only slice with the SAME preflight env, so compose does not recreate
+                # the container over an env difference; then the guarded destructive step, whose
+                # own first act re-runs the full target-safety gate.
+                $global:LASTEXITCODE = 0
+                & "$PSScriptRoot/$StartScriptName" @dbOnlyArgs
+                if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+                    throw "$StartScriptName -DbOnly (restore replacement) failed with exit code $LASTEXITCODE."
+                }
+                $null = Invoke-RestoreTargetReplacement `
+                    -Stage $restoreStage `
+                    -TargetDatabaseName $restoreTargetDatabaseName `
+                    -PackageSourceIdentity $restoreScratch.PackageSourceIdentity `
+                    -DatabaseEngine $DatabaseEngine `
+                    -SeparateConfigDatabase:$SeparateConfigDatabase `
+                    -EffectiveConfigDatabaseName $effectiveConfigDatabaseName
+
+                # The generated preflight database is dropped BEFORE the real-env -InfraOnly below
+                # (argv-order asserted by tests); the finally repeats the drop best-effort only
+                # when a failure skips this line.
+                Remove-RestorePreflightDatabase -DatabaseEngine $DatabaseEngine -PreflightDatabaseName $restorePreflightDatabaseName
+                $restorePreflightDatabaseName = ""
+            }
+            finally {
+                # Transient restore state never outlives the run: candidate remnants (only when
+                # the commit did not consume them), the staged package, and the preflight
+                # database (best-effort; the helper warns instead of throwing).
+                if ($null -ne $restoreCandidateDirectory -and (Test-Path -LiteralPath $restoreCandidateDirectory)) {
+                    Remove-Item -LiteralPath $restoreCandidateDirectory -Recurse -Force
+                }
+                if ($null -ne $restoreStage) {
+                    Remove-RestorePackageStage -StageDirectory $restoreStage.StageDirectory
+                }
+                if (-not [string]::IsNullOrWhiteSpace($restorePreflightDatabaseName)) {
+                    Remove-RestorePreflightDatabase -DatabaseEngine $DatabaseEngine -PreflightDatabaseName $restorePreflightDatabaseName
+                }
+                # The derived preflight env file is a one-run transient consumed only by the two
+                # -DbOnly slices above; it is removed on success and on every failure path.
+                if (-not [string]::IsNullOrWhiteSpace($restorePreflightEnvironmentPath) -and (Test-Path -LiteralPath $restorePreflightEnvironmentPath)) {
+                    Remove-Item -LiteralPath $restorePreflightEnvironmentPath -Force
+                }
+            }
+        }
+        else {
         # A present Standard-mode manifest is reused only when its recorded full
         # "<packageId>@<version>" set still matches the effective env's SCHEMA_PACKAGES value
         # (Test-WrapperManifestSchemaPackagesCurrent).
@@ -820,11 +1050,11 @@ function Invoke-BootstrapWrapper {
             $effectiveDescription = "effective packages [$($effectivePackages -join ', ')]"
 
             # DMS-1255 intentionally never deletes a workspace that may still be bind-mounted into
-            # a running stack. DMS-1271 owns any future guarded replacement path; it must first prove
-            # the stack is stopped, remove the ENTIRE .bootstrap tree, and regenerate schema, claims,
-            # and seed state together so a Data Standard / extension switch cannot retain stale
-            # authorization metadata.
-            throw "Staged bootstrap schema workspace does not match the effective environment: $stagedDescription vs $effectiveDescription. Automatic replacement is intentionally not performed by DMS-1255. Stop the stack and remove eng/docker-compose/.bootstrap before retrying. For local Docker, run: pwsh eng/docker-compose/bootstrap-local-dms.ps1 -d -v. Guarded replacement is tracked by DMS-1271 and must regenerate schema, claims, and seed state together."
+            # a running stack. Guarded replacement exists only on the restore branch above, which
+            # proves the stack is stopped, removes the ENTIRE .bootstrap tree, and regenerates
+            # schema, claims, and seed state together so a Data Standard / extension switch cannot
+            # retain stale authorization metadata. Non-restore mismatches stay terminal.
+            throw "Staged bootstrap schema workspace does not match the effective environment: $stagedDescription vs $effectiveDescription. Automatic replacement is intentionally not performed outside restore mode. Stop the stack and remove eng/docker-compose/.bootstrap before retrying. For local Docker, run: pwsh eng/docker-compose/bootstrap-local-dms.ps1 -d -v. Guarded replacement is available only via -RestoreTemplate, which regenerates schema, claims, and seed state together."
         }
 
         # Reset the native exit-code sentinel before each prepare invocation (same pattern as the
@@ -851,6 +1081,7 @@ function Invoke-BootstrapWrapper {
             if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
                 throw "prepare-dms-claims.ps1 failed with exit code $LASTEXITCODE."
             }
+        }
         }
 
         Assert-WrapperStagedSchemaWorkspace
@@ -939,6 +1170,12 @@ function Invoke-BootstrapWrapper {
         $configured = $configurationResults[0]
         $configuredDataStoreIds = [long[]]@(Resolve-WrapperSelectedDataStoreIds -ConfigureResult $configured)
 
+        if ($restoreTemplateSupplied) {
+            # Restore mode NEVER provisions: the restored artifact already carries the complete,
+            # scratch-validated schema and data, and ddl provisioning over it would at best be
+            # redundant and at worst mutate a proven datastore.
+        }
+        else {
         $provisionArgs = @{
             EnvironmentFile = $effectiveEnvFile
             DataStoreId = $configuredDataStoreIds
@@ -954,6 +1191,7 @@ function Invoke-BootstrapWrapper {
         & "$PSScriptRoot/provision-dms-schema.ps1" @provisionArgs
         if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
             throw "provision-dms-schema.ps1 failed with exit code $LASTEXITCODE."
+        }
         }
 
         if ($InfraOnly) {
@@ -1100,6 +1338,12 @@ function Invoke-BootstrapWrapper {
         }
     }
     finally {
+        if ($restoreTemplateSupplied) {
+            $restoreEffectiveEnvPath = Join-Path $PSScriptRoot ".bootstrap-restore/derived/.env.restore-effective"
+            if (Test-Path -LiteralPath $restoreEffectiveEnvPath) {
+                Remove-Item -LiteralPath $restoreEffectiveEnvPath -Force
+            }
+        }
         Pop-Location
     }
 }

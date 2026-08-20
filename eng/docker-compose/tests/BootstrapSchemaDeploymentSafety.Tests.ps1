@@ -3173,7 +3173,7 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
                     -SelectedExtensions @("tpdm") | Out-Null
 
                 { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
-                    Should -Throw "*Automatic replacement*DMS-1271*"
+                    Should -Throw "*Automatic replacement*restore mode*-RestoreTemplate*"
 
                 Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
                 Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
@@ -3192,7 +3192,7 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
                     -SelectedPackages @("EdFi.DataStandard61.ApiSchema@1.0.333") | Out-Null
 
                 { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
-                    Should -Throw "*does not match*DMS-1271*"
+                    Should -Throw "*does not match*-RestoreTemplate*"
 
                 Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
                 Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
@@ -3214,7 +3214,7 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
                     ) | Out-Null
 
                 { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
-                    Should -Throw "*does not match*DMS-1271*"
+                    Should -Throw "*does not match*-RestoreTemplate*"
 
                 Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
                 Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
@@ -3230,7 +3230,7 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
                 script:New-StandardModeManifestFile -DockerComposeRoot $fixture.DockerComposeRoot -Malformed | Out-Null
 
                 { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
-                    Should -Throw "*without a complete selectedPackages identity*DMS-1271*"
+                    Should -Throw "*without a complete selectedPackages identity*-RestoreTemplate*"
 
                 Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
                 Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
@@ -3292,7 +3292,7 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
                     -SelectedPackages @("$($corePackage.Id)@0.0.1") | Out-Null
 
                 { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
-                    Should -Throw "*$($corePackage.Id)@$($corePackage.Version)*DMS-1271*"
+                    Should -Throw "*$($corePackage.Id)@$($corePackage.Version)*-RestoreTemplate*"
 
                 Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
                 Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
