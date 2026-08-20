@@ -262,7 +262,10 @@ and has no successor.
 > [!NOTE]
 > A resource that declares a query property literally named `number` can filter
 > on it on its collection GET-many but not on its `/partitions` sibling, where
-> that name is the partition-count parameter. This matches the Ed-Fi ODS/API.
+> that name is the partition-count parameter. This is an intentional difference
+> from Ed-Fi ODS/API 7.3.2: ODS/API applies a single supplied `?number=` as both
+> the partition count and the resource-property filter, while DMS uses it only as
+> the partition count on this route.
 
 ## Related settings
 
