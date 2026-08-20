@@ -18,16 +18,88 @@
             "type": "object",
             "properties": {
                 "resources": {
-                    "$ref": "#/definitions/openApiDocument"
+                    "$ref": "#/definitions/openApiCursorBaseDocument"
                 },
                 "descriptors": {
-                    "$ref": "#/definitions/openApiDocument"
+                    "$ref": "#/definitions/openApiCursorBaseDocument"
                 },
                 "changeQueries": {
                     "$ref": "#/definitions/openApiDocument"
                 }
             },
             "additionalProperties": false
+        },
+        "openApiCursorBaseDocument": {
+            "type": "object",
+            "properties": {
+                "components": {
+                    "$ref": "#/definitions/openApiCursorComponents"
+                },
+                "info": {
+                    "type": "object"
+                },
+                "openapi": {
+                    "type": "string"
+                },
+                "paths": {
+                    "type": "object"
+                },
+                "servers": {
+                    "type": "array"
+                },
+                "tags": {
+                    "type": "array"
+                }
+            },
+            "required": [
+                "components"
+            ],
+            "additionalProperties": false
+        },
+        "openApiCursorComponents": {
+            "type": "object",
+            "properties": {
+                "parameters": {
+                    "$ref": "#/definitions/openApiCursorParameters"
+                }
+            },
+            "required": [
+                "parameters"
+            ]
+        },
+        "openApiCursorParameters": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "$ref": "#/definitions/openApiCursorParameter"
+                },
+                "pageToken": {
+                    "$ref": "#/definitions/openApiCursorParameter"
+                },
+                "pageSize": {
+                    "$ref": "#/definitions/openApiCursorParameter"
+                },
+                "numberOfPartitions": {
+                    "$ref": "#/definitions/openApiCursorParameter"
+                }
+            },
+            "required": [
+                "limit",
+                "pageToken",
+                "pageSize",
+                "numberOfPartitions"
+            ]
+        },
+        "openApiCursorParameter": {
+            "type": "object",
+            "properties": {
+                "schema": {
+                    "type": "object"
+                }
+            },
+            "required": [
+                "schema"
+            ]
         },
         "openApiDocument": {
             "type": "object",

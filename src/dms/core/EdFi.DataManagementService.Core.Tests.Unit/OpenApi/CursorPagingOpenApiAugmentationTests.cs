@@ -34,6 +34,17 @@ public class CursorPagingOpenApiAugmentationTests
     private const string ExpectedPartitionResponseDescription =
         "The requested page tokens were successfully retrieved.";
 
+    private const string ExpectedNumberOfPartitionsDescription =
+        "The number of evenly distributed partitions to provide for client-side parallel processing. If "
+        + "unspecified, the configured default number of partitions for this deployment is used.";
+
+    /// <summary>
+    /// The clause the shipped ApiSchema carries, which promises a count derived from the number of
+    /// accessible items. Assembly publishes a fixed configured default instead, so this must not survive.
+    /// </summary>
+    private const string StalePartitionCountClause =
+        "a reasonable set of partitions will be determined based on the total number of accessible items";
+
     private const string ExpectedNextPageTokenDescription =
         "An opaque token that retrieves the next page of results when supplied as the pageToken parameter "
         + "of this operation. Present only when a further page may exist.";
@@ -315,6 +326,31 @@ public class CursorPagingOpenApiAugmentationTests
         }
 
         [Test]
+        public void It_should_describe_omission_as_the_configured_default()
+        {
+            _resources["components"]!["parameters"]!["numberOfPartitions"]!["description"]!
+                .GetValue<string>()
+                .Should()
+                .Be(ExpectedNumberOfPartitionsDescription);
+        }
+
+        [Test]
+        public void It_should_describe_omission_as_the_configured_default_for_descriptors()
+        {
+            _descriptors["components"]!["parameters"]!["numberOfPartitions"]!["description"]!
+                .GetValue<string>()
+                .Should()
+                .Be(ExpectedNumberOfPartitionsDescription);
+        }
+
+        [Test]
+        public void It_should_not_publish_the_accessible_item_count_promise()
+        {
+            _resources.ToJsonString().Should().NotContain(StalePartitionCountClause);
+            _descriptors.ToJsonString().Should().NotContain(StalePartitionCountClause);
+        }
+
+        [Test]
         public void It_should_publish_the_same_values_in_the_descriptor_document()
         {
             _descriptors["components"]!["parameters"]!["limit"]!["schema"]!["maximum"]!
@@ -473,6 +509,16 @@ public class CursorPagingOpenApiAugmentationTests
                 .GetValue<int>()
                 .Should()
                 .Be(7);
+        }
+
+        [Test]
+        public void It_should_still_describe_omission_as_the_configured_default()
+        {
+            _resources["components"]!["parameters"]!["numberOfPartitions"]!["description"]!
+                .GetValue<string>()
+                .Should()
+                .Be(ExpectedNumberOfPartitionsDescription);
+            _resources.ToJsonString().Should().NotContain(StalePartitionCountClause);
         }
     }
 

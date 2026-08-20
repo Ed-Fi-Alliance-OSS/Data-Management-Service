@@ -63,6 +63,15 @@ internal static class CursorPagingOpenApiAugmenter
     private const string PartitionTokensSchemaDescription =
         "A set of opaque page tokens that partition a resource's accessible items for parallel cursor paging.";
 
+    /// <summary>
+    /// Replaces whatever the base document says about an omitted partition count. The published default is
+    /// the deployment's configured value, so any description promising a count derived from the number of
+    /// accessible items would contradict both the published default and what the request pipeline applies.
+    /// </summary>
+    private const string NumberOfPartitionsDescription =
+        "The number of evenly distributed partitions to provide for client-side parallel processing. If "
+        + "unspecified, the configured default number of partitions for this deployment is used.";
+
     private const string NextPageTokenHeaderDescription =
         "An opaque token that retrieves the next page of results when supplied as the pageToken parameter "
         + "of this operation. Present only when a further page may exist.";
@@ -451,6 +460,11 @@ internal static class CursorPagingOpenApiAugmenter
 
         ComponentSchema(componentParameters, NumberOfPartitionsComponent)["default"] =
             pagingSettings.DefaultPartitionCount;
+
+        RequireObject(
+            componentParameters[NumberOfPartitionsComponent],
+            $"{ParametersPath}.{NumberOfPartitionsComponent}"
+        )["description"] = NumberOfPartitionsDescription;
     }
 
     private static ParameterFacts ResolveParameterFacts(

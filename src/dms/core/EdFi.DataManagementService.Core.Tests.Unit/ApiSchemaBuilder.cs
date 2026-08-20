@@ -812,8 +812,12 @@ public class ApiSchemaBuilder
             },
             ["numberOfPartitions"] = new JsonObject
             {
+                // The shipped ApiSchema description, verbatim, including the stale second sentence that
+                // assembly must replace with the deployment's configured default.
                 ["description"] =
-                    "The number of evenly distributed partitions to provide for client-side parallel processing.",
+                    "The number of evenly distributed partitions to provide for client-side parallel "
+                    + "processing. If unspecified, a reasonable set of partitions will be determined based "
+                    + "on the total number of accessible items.",
                 ["in"] = "query",
                 ["name"] = "number",
                 ["schema"] = new JsonObject

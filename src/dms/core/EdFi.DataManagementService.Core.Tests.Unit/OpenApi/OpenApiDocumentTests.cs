@@ -292,7 +292,7 @@ public class OpenApiDocumentTests
                         }
                       },
                       "numberOfPartitions": {
-                        "description": "The number of evenly distributed partitions to provide for client-side parallel processing.",
+                        "description": "The number of evenly distributed partitions to provide for client-side parallel processing. If unspecified, the configured default number of partitions for this deployment is used.",
                         "in": "query",
                         "name": "number",
                         "schema": {
@@ -419,7 +419,7 @@ public class OpenApiDocumentTests
                         }
                       },
                       "numberOfPartitions": {
-                        "description": "The number of evenly distributed partitions to provide for client-side parallel processing.",
+                        "description": "The number of evenly distributed partitions to provide for client-side parallel processing. If unspecified, the configured default number of partitions for this deployment is used.",
                         "in": "query",
                         "name": "number",
                         "schema": {

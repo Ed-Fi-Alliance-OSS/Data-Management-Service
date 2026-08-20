@@ -1027,8 +1027,24 @@ internal static class ApiSchemaProviderTestFixtures
         var schema = CreateApiSchema(projectName, projectEndpointName, isExtensionProject);
         schema["projectSchema"]!.AsObject()["openApiBaseDocuments"] = new JsonObject
         {
-            ["resources"] = new JsonObject { ["openapi"] = "3.0.1", ["paths"] = new JsonObject() },
-            ["descriptors"] = new JsonObject { ["openapi"] = "3.0.1", ["paths"] = new JsonObject() },
+            ["resources"] = new JsonObject
+            {
+                ["openapi"] = "3.0.1",
+                ["paths"] = new JsonObject(),
+                ["components"] = new JsonObject
+                {
+                    ["parameters"] = ApiSchemaBuilder.CursorPagingParameterComponents(),
+                },
+            },
+            ["descriptors"] = new JsonObject
+            {
+                ["openapi"] = "3.0.1",
+                ["paths"] = new JsonObject(),
+                ["components"] = new JsonObject
+                {
+                    ["parameters"] = ApiSchemaBuilder.CursorPagingParameterComponents(),
+                },
+            },
             ["changeQueries"] = new JsonObject
             {
                 ["openapi"] = "3.0.1",

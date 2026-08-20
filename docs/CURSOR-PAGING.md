@@ -75,6 +75,16 @@ Next-Page-Token: <opaque token>
 [ { "id": "...", "studentUniqueId": "604822", ... } ]
 ```
 
+> [!WARNING]
+> An ordinary request that includes `maxChangeVersion` cannot be relied on to
+> start a cursor walk. Such a request may return a full page with no
+> `Next-Page-Token`, which is indistinguishable from the end of the collection,
+> so a walk started this way can stop early and silently read only part of the
+> window. To extract a bounded change-version window, start from the
+> collection's `/partitions` operation instead — it accepts the same
+> `minChangeVersion`/`maxChangeVersion` window and returns cursor tokens that
+> continue reliably — or omit `maxChangeVersion` and bound the walk another way.
+
 ### 2. Copy the header into the next request
 
 Send the value of `Next-Page-Token` back as the `pageToken` query parameter.
@@ -227,10 +237,12 @@ provide one.
 
 > [!NOTE]
 > Rely on the actual presence of the `Next-Page-Token` header rather than
-> assuming a full page implies a successor. A traditional request that filters on
-> a change-version window with an upper bound orders its page differently and
-> therefore may return no token; such a response ends the walk even if more data
-> matches. This limitation is tracked as DMS-1394.
+> assuming a full page implies a successor. This is also why an ordinary request
+> carrying `maxChangeVersion` cannot be relied on to start a walk: a
+> change-version window with an upper bound orders its page differently, so the
+> response may carry no token even when more data matches, and the walk ends
+> there. Start a bounded window from `/partitions`, whose tokens continue
+> reliably.
 
 ## Parameter reference
 
@@ -242,6 +254,7 @@ provide one.
 | `pageSize` | Optional, and valid **only** alongside `pageToken`. An integer from `0` to the deployment's configured `MaximumPageSize`. Sending it without `pageToken` is rejected. |
 | `limit`, `offset` | Traditional paging. Rejected alongside `pageToken`. |
 | `totalCount` | `totalCount=true` is rejected alongside a valid `pageToken`. Cursor paging does not report a total. |
+| `minChangeVersion`, `maxChangeVersion` | Allowed. A request that includes `maxChangeVersion` cannot be relied on to start a walk, because it may return a full page with no `Next-Page-Token`; start a bounded window from `/partitions` instead. Once a walk is under way, both must be repeated unchanged on every request. |
 
 `pageSize=0` is accepted and returns an empty response with no
 `Next-Page-Token`, because a page that selects nothing has nowhere to continue
