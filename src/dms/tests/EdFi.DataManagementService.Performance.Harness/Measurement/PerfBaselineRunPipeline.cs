@@ -172,29 +172,44 @@ public static class PerfBaselineRunPipeline
         {
             PgsqlPlanCaptureResult capture = await PgsqlPlanCapture.CaptureAsync(
                 replayConnection,
-                cell.PageSelection
+                cell.HydrationBatchSql,
+                cell.PageSelection.ParameterValues
             );
             string planFile = $"{baseName}.explain.json";
             return new PerfCellEvidence(
                 cell,
                 capture.Metrics,
                 planFile,
-                [new PerfArtifactFile(planFile, capture.ExplainJson)]
+                [new PerfArtifactFile(planFile, capture.PlanArtifactJson)]
             );
         }
 
         MssqlPlanCaptureResult mssqlCapture = await MssqlPlanCapture.CaptureAsync(
             replayConnection,
-            cell.PageSelection
+            cell.HydrationBatchSql,
+            cell.PageSelection.ParameterValues
         );
-        string sqlPlanFile = $"{baseName}.sqlplan";
+        List<string> sqlPlanFiles =
+        [
+            .. mssqlCapture.ShowplanXmlDocuments.Select(
+                (_, index) => $"{baseName}.plan{index + 1:D2}.sqlplan"
+            ),
+        ];
+        string statisticsFile = $"{baseName}.stats.txt";
+        string planIndexFile = $"{baseName}.plans.json";
         return new PerfCellEvidence(
             cell,
             mssqlCapture.Metrics,
-            sqlPlanFile,
+            planIndexFile,
             [
-                new PerfArtifactFile(sqlPlanFile, mssqlCapture.ShowplanXml),
-                new PerfArtifactFile($"{baseName}.stats.txt", mssqlCapture.StatisticsText),
+                new PerfArtifactFile(
+                    planIndexFile,
+                    MssqlPlanCapture.PlanIndexJson(sqlPlanFiles, statisticsFile)
+                ),
+                .. sqlPlanFiles.Select(
+                    (path, index) => new PerfArtifactFile(path, mssqlCapture.ShowplanXmlDocuments[index])
+                ),
+                new PerfArtifactFile(statisticsFile, mssqlCapture.StatisticsText),
             ]
         );
     }

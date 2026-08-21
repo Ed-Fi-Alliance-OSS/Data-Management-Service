@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Performance.Harness.Configuration;
 using EdFi.DataManagementService.Performance.Harness.Fixtures;
 using EdFi.DataManagementService.Performance.Harness.Measurement;
@@ -61,12 +62,48 @@ internal static class BaselineRunSmoke
 
         (await File.ReadAllLinesAsync(Path.Combine(runDirectory, "results.csv"))).Should().HaveCount(7);
         File.Exists(Path.Combine(runDirectory, "fixture-manifest.json")).Should().BeTrue();
-        Directory
-            .GetFiles(Path.Combine(runDirectory, "plans"))
-            .Should()
-            .HaveCount(provider == PerfProvider.Postgresql ? 6 : 12);
+        AssertPlanEvidence(runDirectory, provider);
         Directory.GetFiles(Path.Combine(runDirectory, "sql")).Should().HaveCount(3);
 
         await TestContext.Out.WriteLineAsync($"Validated artifacts written to {runDirectory}");
+    }
+
+    /// <summary>
+    /// PostgreSQL writes one self-contained explain document per cell. SQL Server writes one
+    /// plan index per cell; every file the six indexes reference must exist, and together
+    /// with the indexes they must account for the whole plans directory.
+    /// </summary>
+    private static void AssertPlanEvidence(string runDirectory, PerfProvider provider)
+    {
+        string plansDirectory = Path.Combine(runDirectory, "plans");
+        if (provider == PerfProvider.Postgresql)
+        {
+            Directory.GetFiles(plansDirectory, "*.explain.json").Should().HaveCount(6);
+            Directory.GetFiles(plansDirectory).Should().HaveCount(6);
+            return;
+        }
+
+        string[] indexFiles = Directory.GetFiles(plansDirectory, "*.plans.json");
+        indexFiles.Should().HaveCount(6);
+        List<string> referencedPaths = [];
+        foreach (string indexFile in indexFiles)
+        {
+            JsonNode index = JsonNode.Parse(File.ReadAllText(indexFile))!;
+            List<string> planFiles =
+            [
+                .. index["planFiles"]!.AsArray().Select(node => node!.GetValue<string>()),
+            ];
+            planFiles.Should().NotBeEmpty();
+            referencedPaths.AddRange(planFiles);
+            referencedPaths.Add(index["statisticsFile"]!.GetValue<string>());
+        }
+
+        referencedPaths.Should().OnlyHaveUniqueItems();
+        foreach (string referencedPath in referencedPaths)
+        {
+            File.Exists(Path.Combine(runDirectory, referencedPath)).Should().BeTrue(referencedPath);
+        }
+
+        Directory.GetFiles(plansDirectory).Should().HaveCount(indexFiles.Length + referencedPaths.Count);
     }
 }

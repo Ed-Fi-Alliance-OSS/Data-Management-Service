@@ -9,7 +9,7 @@ namespace EdFi.DataManagementService.Performance.Harness.Results;
 /// One measured scenario cell. Deliberately flat so it mirrors one CSV row. The three timing
 /// layers are distinct: <paramref name="LatencyMs" /> is the app-level request wall clock,
 /// <paramref name="DbCommandMs" /> is the driver-observed full database command elapsed time,
-/// and <paramref name="Database" /> holds plan-replay metrics for the page-selection statement.
+/// and <paramref name="Database" /> holds plan-replay metrics for the full hydration batch.
 /// </summary>
 public sealed record PerfScenarioResult(
     string Provider,

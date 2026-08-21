@@ -61,21 +61,50 @@ public class Given_A_Canned_Statistics_Message_Text
 }
 
 [TestFixture]
-public class Given_Multiple_Execution_Times_Blocks
+public class Given_A_Multi_Statement_Batch_Statistics_Text
 {
-    [Test]
-    public void It_uses_the_last_block()
+    // Shaped like a replayed hydration batch: one execution-times block per statement, with
+    // per-table IO lines and a mid-batch parse-and-compile block that must not be counted.
+    private const string BatchText = """
+        Table '#page___000000000012'. Scan count 0, logical reads 26, physical reads 0.
+        Table 'Student'. Scan count 1, logical reads 42, physical reads 1.
+         SQL Server Execution Times:
+           CPU time = 1 ms,  elapsed time = 2 ms.
+        SQL Server parse and compile time:
+           CPU time = 4 ms, elapsed time = 6 ms.
+        Table 'Document'. Scan count 1, logical reads 2058, physical reads 11.
+         SQL Server Execution Times:
+           CPU time = 9 ms,  elapsed time = 11 ms.
+        """;
+
+    private PerfDatabaseMetrics _metrics = null!;
+
+    [SetUp]
+    public void Setup()
     {
-        const string text = """
-            Table 'Document'. Scan count 1, logical reads 10, physical reads 0.
-             SQL Server Execution Times:
-               CPU time = 1 ms,  elapsed time = 1 ms.
-             SQL Server Execution Times:
-               CPU time = 9 ms,  elapsed time = 11 ms.
-            """;
-        PerfDatabaseMetrics metrics = MssqlStatisticsParser.Parse(text);
-        metrics.DbCpuMs.Should().Be(9.0);
-        metrics.DbElapsedMs.Should().Be(11.0);
+        _metrics = MssqlStatisticsParser.Parse(BatchText);
+    }
+
+    [Test]
+    public void It_sums_cpu_and_elapsed_across_all_execution_blocks()
+    {
+        _metrics.DbCpuMs.Should().Be(10.0);
+        _metrics.DbElapsedMs.Should().Be(13.0);
+    }
+
+    [Test]
+    public void It_excludes_parse_and_compile_time_from_the_sums()
+    {
+        // The parse-and-compile block's 4/6 ms must not appear in the totals.
+        _metrics.DbCpuMs.Should().NotBe(14.0);
+        _metrics.DbElapsedMs.Should().NotBe(19.0);
+    }
+
+    [Test]
+    public void It_sums_reads_across_every_statement_and_table()
+    {
+        _metrics.LogicalReads.Should().Be(2126);
+        _metrics.PhysicalReads.Should().Be(12);
     }
 }
 

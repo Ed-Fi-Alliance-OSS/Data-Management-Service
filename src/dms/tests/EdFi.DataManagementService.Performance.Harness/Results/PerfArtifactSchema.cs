@@ -11,5 +11,5 @@ namespace EdFi.DataManagementService.Performance.Harness.Results;
 /// </summary>
 public static class PerfArtifactSchema
 {
-    public const string Version = "1.0.0";
+    public const string Version = "1.1.0";
 }

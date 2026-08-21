@@ -10,10 +10,11 @@ using EdFi.DataManagementService.Performance.Harness.Results;
 namespace EdFi.DataManagementService.Performance.Harness.Measurement;
 
 /// <summary>
-/// Parses the SET STATISTICS IO, TIME message text SQL Server raises through InfoMessage.
-/// Logical and physical reads are summed across the per-table lines, excluding the separately
-/// labeled lob counters; CPU and elapsed time come from the last "SQL Server Execution Times"
-/// block, because the first CPU/elapsed pair belongs to parse-and-compile time.
+/// Parses the SET STATISTICS IO, TIME message text SQL Server raises through InfoMessage for
+/// the replayed hydration batch. Logical and physical reads are summed across every per-table
+/// line, excluding the separately labeled lob counters; CPU and elapsed time are summed
+/// across every "SQL Server Execution Times" block, because the batch emits one block per
+/// statement. Parse-and-compile time carries its own distinct label and is never matched.
 /// </summary>
 public static partial class MssqlStatisticsParser
 {
@@ -39,9 +40,13 @@ public static partial class MssqlStatisticsParser
             throw new PerfObservationException("STATISTICS TIME output carries no execution-times block.");
         }
 
-        Match lastExecution = executionTimes[^1];
-        double cpuMs = double.Parse(lastExecution.Groups[1].Value, CultureInfo.InvariantCulture);
-        double elapsedMs = double.Parse(lastExecution.Groups[2].Value, CultureInfo.InvariantCulture);
+        double cpuMs = 0;
+        double elapsedMs = 0;
+        foreach (Match execution in executionTimes)
+        {
+            cpuMs += double.Parse(execution.Groups[1].Value, CultureInfo.InvariantCulture);
+            elapsedMs += double.Parse(execution.Groups[2].Value, CultureInfo.InvariantCulture);
+        }
 
         return new PerfDatabaseMetrics(
             BuffersHit: null,

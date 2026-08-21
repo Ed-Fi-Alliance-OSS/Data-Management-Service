@@ -80,16 +80,21 @@ worktree of that commit — only new files, never edits:
    set to the harness-source commit. The run manifest records both commits and the dirty
    overlay paths.
 
-## Artifact layout (schema 1.0.0)
+## Artifact layout (schema 1.1.0)
 
 | File | Content |
 | --- | --- |
 | `run-manifest.json` | Run/commit/fixture/iteration identity and the full environment identity |
-| `results.json` | Six scenario rows: app latency, driver-observed command time, replay metrics, plan reference, SQL hash |
+| `results.json` | Six scenario rows: app latency, driver-observed command time, full-batch replay metrics, plan reference, SQL hash |
 | `results.csv` | The same rows in a fixed 29-column order |
 | `fixture-manifest.json` | The verified fixture definition and its analytic values |
-| `plans/` | PostgreSQL `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` documents; SQL Server actual `.sqlplan` XML plus raw `.stats.txt` |
+| `plans/` | Full-hydration-batch replay evidence per cell. PostgreSQL: one `.explain.json` listing every batch statement with the raw `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` document of each DML/SELECT statement. SQL Server: one `.plans.json` index pointing at the per-statement actual `.sqlplan` XML files (arrival order) and the raw `.stats.txt` |
 | `sql/` | The one page-selection text, the one hydration-batch text, and per-cell bound parameter values |
+
+The `database` metrics in `results.json`/`results.csv` come from replaying the full captured
+hydration batch — the one DbCommand the measured request executed — with the same bound
+paging parameters, not from replaying the page-selection statement alone. The page-selection
+text and its SHA-256 are still captured separately for the textual SQL gate.
 
 Notes for comparison work: SQL Server `STATISTICS TIME` reports whole milliseconds, so fast
 cells can legitimately record 0 CPU ms; and the epic's ratio gates assume the final-gate
