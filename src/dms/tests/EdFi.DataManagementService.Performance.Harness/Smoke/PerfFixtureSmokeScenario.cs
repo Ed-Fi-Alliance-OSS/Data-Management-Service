@@ -43,8 +43,10 @@ internal static class PerfFixtureSmokeScenario
         WHERE "DocumentId" = @documentId;
         """;
 
-    private const string ReferentialIdentityCountSql = """
-        SELECT COUNT(*) FROM "dms"."ReferentialIdentity" WHERE "DocumentId" = @documentId;
+    private const string ReferentialIdentityRowsSql = """
+        SELECT "ReferentialId", "ResourceKeyId"
+        FROM "dms"."ReferentialIdentity"
+        WHERE "DocumentId" = @documentId;
         """;
 
     private sealed record DocumentRow(
@@ -116,18 +118,32 @@ internal static class PerfFixtureSmokeScenario
             .Be(loaderFirst.ContentVersion, "the stamp trigger must have mirrored the document version");
         controlStudent.ContentVersion.Should().Be(control.ContentVersion);
 
-        long loaderReferentialIdentities = await CountAsync(
+        // Validate the independent uuidv5 formula against the control row the production
+        // write path produced, then hold loader rows to it.
+        await AssertReferentialIdentityAsync(
             connection,
-            ReferentialIdentityCountSql,
-            loaderFirst.DocumentId
+            control.DocumentId,
+            control.ResourceKeyId,
+            "control-000000001"
         );
-        long controlReferentialIdentities = await CountAsync(
+        await AssertReferentialIdentityAsync(
             connection,
-            ReferentialIdentityCountSql,
-            control.DocumentId
+            loaderFirst.DocumentId,
+            control.ResourceKeyId,
+            PerfFixtureDefinition.StudentUniqueIdFor(1)
         );
-        controlReferentialIdentities.Should().BeGreaterThan(0);
-        loaderReferentialIdentities.Should().Be(controlReferentialIdentities);
+
+        DocumentRow loaderLast = await ReadDocumentRowAsync(
+            connection,
+            PerfFixtureDefinition.DocumentUuidFor(definition.RowCount)
+        );
+        loaderLast.DocumentId.Should().Be(definition.MaxDocumentId);
+        await AssertReferentialIdentityAsync(
+            connection,
+            loaderLast.DocumentId,
+            control.ResourceKeyId,
+            PerfFixtureDefinition.StudentUniqueIdFor(definition.RowCount)
+        );
 
         await AssertFirstPageAsync(harness);
         await AssertDeepPageAsync(harness, definition);
@@ -201,6 +217,43 @@ internal static class PerfFixtureSmokeScenario
         string body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
         return JsonNode.Parse(body)!.AsArray();
+    }
+
+    private static async Task AssertReferentialIdentityAsync(
+        DbConnection connection,
+        long documentId,
+        long expectedResourceKeyId,
+        string studentUniqueId
+    )
+    {
+        await using DbCommand command = connection.CreateCommand();
+        command.CommandText = ReferentialIdentityRowsSql;
+        AddParameter(command, "documentId", documentId);
+
+        List<(Guid ReferentialId, long ResourceKeyId)> rows = [];
+        await using (DbDataReader reader = await command.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                rows.Add(
+                    (
+                        reader.GetGuid(0),
+                        Convert.ToInt64(reader.GetValue(1), System.Globalization.CultureInfo.InvariantCulture)
+                    )
+                );
+            }
+        }
+
+        (Guid referentialId, long resourceKeyId) = rows.Should()
+            .ContainSingle($"document {documentId} must carry exactly one referential identity")
+            .Subject;
+        resourceKeyId.Should().Be(expectedResourceKeyId);
+        referentialId
+            .Should()
+            .Be(
+                ReferentialIdentityDerivation.StudentReferentialId(studentUniqueId),
+                $"the referential id for '{studentUniqueId}' must match the independent uuidv5 derivation"
+            );
     }
 
     private static async Task<long> CountAsync(DbConnection connection, string sql, long? documentId = null)
