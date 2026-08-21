@@ -224,6 +224,29 @@ public class CursorPagingOpenApiAugmentationTests
             schema["properties"]!["pageTokens"]!["items"]!["type"]!.GetValue<string>().Should().Be("string");
         }
 
+        /// <summary>
+        /// The handler emits this member on every 200, so publishing it as optional would tell a client
+        /// generator to model a value that is never absent as nullable.
+        /// </summary>
+        [Test]
+        public void It_should_publish_the_page_tokens_member_as_required()
+        {
+            RequiredMembers(_resources).Should().Equal("pageTokens");
+        }
+
+        [Test]
+        public void It_should_publish_the_page_tokens_member_as_required_for_descriptors()
+        {
+            RequiredMembers(_descriptors).Should().Equal("pageTokens");
+        }
+
+        private static string[] RequiredMembers(JsonNode specification) =>
+            [
+                .. specification["components"]!["schemas"]!["partitionTokens"]!["required"]!
+                    .AsArray()
+                    .Select(member => member!.GetValue<string>()),
+            ];
+
         [Test]
         public void It_should_reference_the_partition_count_parameter_first()
         {

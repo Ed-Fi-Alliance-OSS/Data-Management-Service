@@ -426,6 +426,10 @@ internal static class CursorPagingOpenApiAugmenter
                     ["type"] = "array",
                 },
             },
+            // The handler emits this member on every 200, including when no partition is accessible and
+            // the array is empty, so the published contract states it is always present. The array itself
+            // stays unconstrained, because an empty set of tokens is a real response.
+            ["required"] = new JsonArray { PartitionRequestHandler.PageTokensMember },
             ["type"] = "object",
         };
 

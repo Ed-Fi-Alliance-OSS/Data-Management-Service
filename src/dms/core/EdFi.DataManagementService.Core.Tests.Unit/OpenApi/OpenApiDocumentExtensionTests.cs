@@ -229,6 +229,9 @@ public class OpenApiDocumentExtensionTests
                         "type": "array"
                       }
                     },
+                    "required": [
+                      "pageTokens"
+                    ],
                     "type": "object"
                   }
                 }
@@ -406,6 +409,9 @@ public class OpenApiDocumentExtensionTests
                         "type": "array"
                       }
                     },
+                    "required": [
+                      "pageTokens"
+                    ],
                     "type": "object"
                   }
                 }
