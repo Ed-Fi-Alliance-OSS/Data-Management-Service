@@ -45,14 +45,20 @@ receives nothing from these instruments no matter how it is configured.
 |---|---|---|---|
 | `edfi.dms.collection_paging.requests` | Counter | `{request}` | Every collection read that reached paging validation, including those refused by it |
 | `edfi.dms.collection_paging.duration` | Histogram | `ms` | Every request where backend execution was attempted, so a request refused by parameter validation never contributes a microsecond-scale sample |
-| `edfi.dms.collection_paging.page_size.requested` | Histogram | `{item}` | Collection `GET` requests |
-| `edfi.dms.collection_paging.page_size.returned` | Histogram | `{item}` | Collection `GET` requests that produced a page |
-| `edfi.dms.collection_paging.partition_count.requested` | Histogram | `{partition}` | `partitions` requests |
-| `edfi.dms.collection_paging.partition_count.returned` | Histogram | `{partition}` | `partitions` requests that produced a boundary set |
+| `edfi.dms.collection_paging.page_size.requested` | Histogram | `{item}` | Collection `GET` requests that reached execution |
+| `edfi.dms.collection_paging.page_size.returned` | Histogram | `{item}` | Collection `GET` requests that produced a page, an empty one included |
+| `edfi.dms.collection_paging.partition_count.requested` | Histogram | `{partition}` | `partitions` requests that reached execution |
+| `edfi.dms.collection_paging.partition_count.returned` | Histogram | `{partition}` | `partitions` requests that produced a boundary set, an empty one included |
 
 The page-size instruments are never recorded for a `partitions` request, and the
 partition-count instruments are never recorded for a collection `GET`, so
 neither histogram mixes two units of measure.
+
+A request refused by parameter validation records no size or count on any of the
+four, because the size it asked for may be the value that was refused. It is
+still counted on `requests`. A request that failed records the size it asked for
+but nothing on the returned instruments, so a failure never contributes a zero
+to a distribution of page sizes actually served.
 
 ## Dimensions
 
@@ -145,15 +151,22 @@ measuring how long the client waited before giving up.
   command, so they are fast by construction and pull the percentiles of the
   `page`, `page_with_count`, and `boundary` shapes down if mixed in.
 - **`page_size.requested` vs `page_size.returned`** — compare the two
-  distributions. A persistent gap means pages are being trimmed after
-  selection, either by authorization or by documents deleted between selection
-  and retrieval.
+  distributions, excluding `command_category=none` from both sides as the
+  latency objectives do. A persistent gap in what remains means pages are being
+  trimmed after selection, either by authorization or by documents deleted
+  between selection and retrieval. Left in, the `none` samples manufacture a gap
+  that is not trimming at all: an `early_empty` request reports the page size it
+  asked for against a returned zero, because it answered without selecting
+  anything. It is the only outcome in that category that reaches a returned
+  instrument — failures record no returned size — so the one filter removes
+  exactly the skipped selections.
 - **`partition_count.requested` vs `partition_count.returned`** — compare the
-  two distributions. A persistent gap means the collection is too small to be
-  cut into as many partitions as clients ask for: the requested count is an
-  upper bound, and a minimum partition size reduces it. This is normal for
-  small collections and is only worth investigating if it appears on
-  collections large enough to partition.
+  two distributions, excluding `command_category=none` for the same reason. A
+  persistent gap in what remains means the collection is too small to be cut
+  into as many partitions as clients ask for: the requested count is an upper
+  bound, and a minimum partition size reduces it. This is normal for small
+  collections and is only worth investigating if it appears on collections large
+  enough to partition.
 
 ## What Is Never Recorded
 
