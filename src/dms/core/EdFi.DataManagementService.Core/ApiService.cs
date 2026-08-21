@@ -339,7 +339,12 @@ internal class ApiService : IApiService
             new ValidatePartitionQueryMiddleware(_logger, _appSettings.Value.DefaultPartitionCount),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
-            new PartitionRequestHandler(_logger, _resiliencePipeline, _appSettings.Value.MaximumPageSize),
+            new PartitionRequestHandler(
+                _logger,
+                _resiliencePipeline,
+                _appSettings.Value.MaximumPageSize,
+                _serviceProvider.GetRequiredService<ICollectionPagingTelemetry>()
+            ),
         ]);
 
         return new PipelineProvider(steps);

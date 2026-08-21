@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
+using EdFi.DataManagementService.Core.Telemetry;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -65,7 +66,8 @@ public class PartitionRequestHandlerTests
 
     private static async Task<RequestInfo> Execute(
         Handler partitionQueryHandler,
-        int? requestedPartitionCount = RequestedPartitionCount
+        int? requestedPartitionCount = RequestedPartitionCount,
+        ICollectionPagingTelemetry? collectionPagingTelemetry = null
     )
     {
         var serviceProvider = A.Fake<IServiceProvider>();
@@ -82,7 +84,8 @@ public class PartitionRequestHandlerTests
         await new PartitionRequestHandler(
             NullLogger.Instance,
             ResiliencePipeline.Empty,
-            MaximumPageSize
+            MaximumPageSize,
+            collectionPagingTelemetry ?? NoOpCollectionPagingTelemetry.Instance
         ).Execute(requestInfo, NullNext);
 
         return requestInfo;
