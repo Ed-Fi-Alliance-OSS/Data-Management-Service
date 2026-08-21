@@ -286,6 +286,13 @@ public static class PgsqlPlanCapture
         );
     }
 
+    /// <summary>
+    /// Setup classification is deliberately narrow: only the exact DDL forms the batch
+    /// generator emits (DROP TABLE and a column-defined CREATE TEMP TABLE) execute
+    /// unexplained. Any other DROP/CREATE form — above all CREATE TEMP TABLE ... AS
+    /// SELECT, which does query work — fails loudly rather than being silently excluded
+    /// from the EXPLAIN totals.
+    /// </summary>
     private static PgsqlStatementKind ClassifyStatement(string sql)
     {
         int wordEnd = 0;
@@ -295,12 +302,28 @@ public static class PgsqlPlanCapture
         }
 
         string firstWord = sql[..wordEnd].ToUpperInvariant();
-        return firstWord switch
+        switch (firstWord)
         {
-            "DROP" or "CREATE" => PgsqlStatementKind.Setup,
-            "WITH" or "SELECT" or "INSERT" => PgsqlStatementKind.Explained,
-            _ => throw Unsupported($"a statement starting with '{firstWord}'"),
-        };
+            case "WITH" or "SELECT" or "INSERT":
+                return PgsqlStatementKind.Explained;
+            case "DROP":
+                return Regex.IsMatch(sql, @"^DROP\s+TABLE\b", RegexOptions.IgnoreCase)
+                    ? PgsqlStatementKind.Setup
+                    : throw Unsupported("a DROP statement other than DROP TABLE");
+            case "CREATE":
+                if (!Regex.IsMatch(sql, @"^CREATE\s+TEMP\s+TABLE\b", RegexOptions.IgnoreCase))
+                {
+                    throw Unsupported("a CREATE statement other than CREATE TEMP TABLE");
+                }
+
+                // The splitter has already rejected literals and comments, so any SELECT
+                // here is genuine query text.
+                return Regex.IsMatch(sql, @"\bSELECT\b", RegexOptions.IgnoreCase)
+                    ? throw Unsupported("a CREATE TEMP TABLE statement containing SELECT")
+                    : PgsqlStatementKind.Setup;
+            default:
+                throw Unsupported($"a statement starting with '{firstWord}'");
+        }
     }
 
     private static DbCommand CreateStatementCommand(

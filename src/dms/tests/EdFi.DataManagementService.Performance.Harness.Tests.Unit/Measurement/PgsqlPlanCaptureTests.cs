@@ -117,6 +117,12 @@ public class Given_Unsupported_Hydration_Batch_Constructs
     [TestCase("SELECT 1 /* block */;", "*block comment*")]
     [TestCase("TRUNCATE \"page\"; SELECT 1;", "*starting with 'TRUNCATE'*")]
     [TestCase("SELECT \"unterminated;", "*unterminated quoted identifier*")]
+    [TestCase("DROP INDEX \"i\";", "*a DROP statement other than DROP TABLE*")]
+    [TestCase("CREATE INDEX \"i\" ON \"t\" (\"c\");", "*a CREATE statement other than CREATE TEMP TABLE*")]
+    [TestCase(
+        "CREATE TEMP TABLE \"x\" AS SELECT \"a\" FROM \"y\";",
+        "*a CREATE TEMP TABLE statement containing SELECT*"
+    )]
     public void It_refuses_to_split_or_classify(string batchSql, string expectedMessage)
     {
         FluentActions

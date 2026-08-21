@@ -52,7 +52,10 @@ Available smokes, per provider (`Given_Postgresql_*` / `Given_Mssql_*`):
 
 The entry points are `Runs/Given_<Provider>_TraditionalBaselineRun`, normally invoked through
 `eng/performance/invoke-traditional-baseline.ps1`, which handles the baseline worktree
-overlay, image digest validation, and environment wiring.
+overlay, image digest validation, and environment wiring, and pins the documented
+primary-run iteration plan and deep offset (5 warmups / 30 measured / 450,000) as
+overridable parameters. The wrapper is currently Windows-only: it drives the overlay with
+PowerShell and robocopy.
 
 | Variable | Required | Meaning |
 | --- | --- | --- |

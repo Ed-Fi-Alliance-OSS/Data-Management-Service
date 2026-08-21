@@ -40,9 +40,13 @@ public static class GitIdentity
 
         using Process process =
             Process.Start(startInfo) ?? throw new PerfObservationException("git could not be started.");
-        string output = process.StandardOutput.ReadToEnd();
-        string error = process.StandardError.ReadToEnd();
+        // Both pipes must drain concurrently: reading them to the end one after the other
+        // can deadlock when the process fills the unread pipe's buffer.
+        Task<string> outputTask = process.StandardOutput.ReadToEndAsync();
+        Task<string> errorTask = process.StandardError.ReadToEndAsync();
         process.WaitForExit();
+        string output = outputTask.GetAwaiter().GetResult();
+        string error = errorTask.GetAwaiter().GetResult();
 
         if (process.ExitCode != 0)
         {

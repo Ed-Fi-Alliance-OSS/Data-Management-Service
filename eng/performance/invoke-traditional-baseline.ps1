@@ -45,6 +45,15 @@ param(
 
     [string] $Fixture = 'primary-500k',
 
+    # The documented primary-baseline iteration plan and deep offset, pinned here so the
+    # recorded run provenance does not depend on harness-side defaults. A non-default
+    # -Fixture needs a -DeepOffset that fits inside its row count.
+    [int] $WarmupIterations = 5,
+
+    [int] $MeasuredIterations = 30,
+
+    [long] $DeepOffset = 450000,
+
     [string] $StorageNote = 'local docker volume, not tmpfs',
 
     [switch] $ReuseWorktree
@@ -223,6 +232,9 @@ foreach ($selectedProvider in $Provider) {
     $env:PERF_RESULTS_DIR = $ResultsDirectory
     $env:PERF_RUNNER_COMMIT = $runnerCommit
     $env:PERF_FIXTURE = $Fixture
+    $env:PERF_WARMUP_ITERATIONS = "$WarmupIterations"
+    $env:PERF_MEASURED_ITERATIONS = "$MeasuredIterations"
+    $env:PERF_DEEP_OFFSET = "$DeepOffset"
     $env:PERF_IMAGE_TAG = $identity.Tag
     $env:PERF_IMAGE_DIGEST = $identity.Digest
     $env:PERF_STORAGE_NOTE = $StorageNote
