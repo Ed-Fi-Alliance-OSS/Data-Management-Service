@@ -164,6 +164,12 @@ public class Given_Cells_With_Extra_Bound_Parameters
     }
 
     [Test]
+    public void It_uses_lf_only_newlines()
+    {
+        _boundParametersJson.Should().NotContain("\r");
+    }
+
+    [Test]
     public void It_orders_parameter_keys_deterministically()
     {
         int filterIndex = _boundParametersJson.IndexOf("filter_studentUniqueId", StringComparison.Ordinal);

@@ -121,7 +121,9 @@ public static class PerfBaselineArtifactAssembler
             new(
                 $"sql/{providerName}.bound-parameters.json",
                 boundParameters.ToJsonString(
-                    new System.Text.Json.JsonSerializerOptions { WriteIndented = true }
+                    // LF-only like every other artifact, so runs diff identically across
+                    // platforms.
+                    new System.Text.Json.JsonSerializerOptions { WriteIndented = true, NewLine = "\n" }
                 )
             ),
             .. evidence.SelectMany(item => item.PlanFiles),
