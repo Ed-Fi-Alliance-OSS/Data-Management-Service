@@ -89,12 +89,12 @@ worktree of that commit — only new files, never edits:
    set to the harness-source commit. The run manifest records both commits and the dirty
    overlay paths.
 
-## Artifact layout (schema 1.2.0)
+## Artifact layout (schema 1.3.0)
 
 | File | Content |
 | --- | --- |
 | `run-manifest.json` | Run/commit/fixture/iteration identity and the full environment identity |
-| `results.json` | Six scenario rows: app latency, driver-observed command time, full-batch replay metrics, plan reference, SQL hash |
+| `results.json` | Six scenario rows: app latency, the driver-observed execute interval (diagnostic only), full-batch replay metrics, plan reference, SQL hash |
 | `results.csv` | The same rows in a fixed 29-column order |
 | `fixture-manifest.json` | The verified fixture definition and its analytic values |
 | `plans/` | Full-hydration-batch replay evidence per cell. PostgreSQL: one `.explain.json` listing every batch statement with the raw `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` document of each DML/SELECT statement. SQL Server: one `.plans.json` index pointing at the per-statement actual `.sqlplan` XML files (arrival order) and the raw `.stats.txt` |
@@ -126,9 +126,14 @@ Notes for comparison work: app-level p50/p95 can be dominated by hydration work 
 invariant across page offsets, so a page-selection improvement can be diluted to noise in
 app-level ratios — the final-gate comparison (DMS-1392) must treat the per-statement plan
 metrics, above all the page-selection statement's, as first-class inputs wherever that
-dilution applies. SQL Server `db_cpu_ms`/`db_elapsed_ms` are indicative only, because
-`STATISTICS TIME` reports whole milliseconds per statement and the batch totals sum that
-integer rounding across every planned statement; `db_logical_reads` and the driver-observed
-`db_command_*_ms` are the reliable SQL Server comparison quantities. And the epic's ratio
-gates assume the final-gate runs reuse the same machine and pinned configuration recorded
-in the manifest.
+dilution applies. `driver_execute_*_ms` is the driver-observed execute/dispatch interval
+from provider diagnostics and is diagnostic evidence only: it is not guaranteed to include
+reader/result-set consumption — on SQL Server the diagnostic "after" event fires when
+`ExecuteReader` returns, before the rows and subsequent result sets are consumed — so it
+must not be used as a SQL Server gate quantity. SQL Server `db_cpu_ms`/`db_elapsed_ms` are
+indicative only, because `STATISTICS TIME` reports whole milliseconds per statement and the
+batch totals sum that integer rounding across every planned statement. The reliable SQL
+Server comparison inputs are app-level latency for end-to-end behavior, `db_logical_reads`,
+and the per-statement plan/IO evidence under `plans/`. And the epic's ratio gates assume
+the final-gate runs reuse the same machine and pinned configuration recorded in the
+manifest.

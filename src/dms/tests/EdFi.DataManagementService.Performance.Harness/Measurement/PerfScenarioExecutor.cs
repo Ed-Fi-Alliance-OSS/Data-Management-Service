@@ -26,7 +26,7 @@ public sealed record PerfMeasuredCell(
     int ReturnedRows,
     int CommandCountPerRequest,
     PerfLatencySummary LatencyMs,
-    PerfLatencySummary DbCommandMs,
+    PerfLatencySummary DriverExecuteMs,
     PageSelectionQueryCapture PageSelection,
     string HydrationBatchSql
 );
@@ -98,7 +98,7 @@ public static class PerfScenarioExecutor
 
         using DriverCommandObserver observer = DriverCommandObserver.Start(provider);
         int recorderBaseline = recorder.HydrationKeysets.Count;
-        List<double> dbCommandSamplesMs = [];
+        List<double> driverExecuteSamplesMs = [];
         string? hydrationBatchSql = null;
         int? observedReturnedRows = null;
 
@@ -160,17 +160,21 @@ public static class PerfScenarioExecutor
 
                 if (iteration >= warmupIterations)
                 {
-                    dbCommandSamplesMs.Add(window[0].ElapsedMs);
+                    // The observer's interval ends at the provider's diagnostic "after"
+                    // event, which SqlClient raises when ExecuteReader returns — before the
+                    // rows are consumed. It is a driver execute/dispatch sample, never full
+                    // database command time.
+                    driverExecuteSamplesMs.Add(window[0].ElapsedMs);
                 }
 
                 return Task.CompletedTask;
             }
         );
 
-        if (dbCommandSamplesMs.Count != measuredIterations)
+        if (driverExecuteSamplesMs.Count != measuredIterations)
         {
             throw new PerfObservationException(
-                $"{at}: command timing sample count {dbCommandSamplesMs.Count} must equal "
+                $"{at}: driver execute timing sample count {driverExecuteSamplesMs.Count} must equal "
                     + $"measured iterations {measuredIterations}."
             );
         }
@@ -205,7 +209,7 @@ public static class PerfScenarioExecutor
                 ?? throw new PerfObservationException($"{at}: no returned row count was observed."),
             CommandCountPerRequest: 1,
             latency,
-            PerfLatencyMeasurement.Summarize(dbCommandSamplesMs),
+            PerfLatencyMeasurement.Summarize(driverExecuteSamplesMs),
             capture,
             hydrationBatchSql
                 ?? throw new PerfObservationException($"{at}: no hydration batch SQL was observed.")

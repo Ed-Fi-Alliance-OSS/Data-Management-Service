@@ -11,7 +11,8 @@ using EdFi.DataManagementService.Performance.Harness.Configuration;
 namespace EdFi.DataManagementService.Performance.Harness.Measurement;
 
 /// <summary>
-/// One database command the driver reported: its full text and elapsed milliseconds.
+/// One database command the driver reported: its full text and the driver-observed
+/// execute/dispatch interval in milliseconds.
 /// </summary>
 public sealed record ObservedDbCommand(string CommandText, double ElapsedMs);
 
@@ -22,6 +23,11 @@ public sealed record ObservedDbCommand(string CommandText, double ElapsedMs);
 /// SqlClientDiagnosticListener before/after event pair. Whether the live drivers actually
 /// emit these signals is proven by an explicit probe per provider before any evidence run —
 /// if a probe fails, the harness stops rather than substituting a weaker source.
+/// The recorded interval is driver-event timing: a provider's "after" event marks execute
+/// completion, not full reader consumption. SqlClient in particular fires WriteCommandAfter
+/// when ExecuteReader returns, while the rows and subsequent result sets are consumed
+/// afterward, outside the interval — so this is diagnostic evidence, never a full
+/// database-command-time measurement.
 /// </summary>
 public sealed class DriverCommandObserver : IDisposable
 {

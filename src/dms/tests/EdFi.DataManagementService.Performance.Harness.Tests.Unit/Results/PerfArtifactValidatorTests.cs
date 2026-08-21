@@ -133,7 +133,11 @@ public class Given_Result_Rows_With_Broken_Measurements
         document = ValidatorTestSupport.WithRow(
             document,
             3,
-            row => row with { DbCommandMs = row.DbCommandMs with { P50Ms = row.DbCommandMs.P95Ms + 1 } }
+            row =>
+                row with
+                {
+                    DriverExecuteMs = row.DriverExecuteMs with { P50Ms = row.DriverExecuteMs.P95Ms + 1 },
+                }
         );
         document = ValidatorTestSupport.WithRow(
             document,
@@ -202,7 +206,14 @@ public class Given_Result_Rows_With_Tampered_Summary_Statistics
         document = ValidatorTestSupport.WithRow(
             document,
             1,
-            row => row with { DbCommandMs = row.DbCommandMs with { MeanMs = row.DbCommandMs.MeanMs + 0.001 } }
+            row =>
+                row with
+                {
+                    DriverExecuteMs = row.DriverExecuteMs with
+                    {
+                        MeanMs = row.DriverExecuteMs.MeanMs + 0.001,
+                    },
+                }
         );
         document = ValidatorTestSupport.WithRow(
             document,

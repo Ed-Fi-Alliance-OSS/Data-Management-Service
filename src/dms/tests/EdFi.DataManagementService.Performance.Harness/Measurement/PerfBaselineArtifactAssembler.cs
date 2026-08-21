@@ -75,7 +75,7 @@ public static class PerfBaselineArtifactAssembler
                 warmupIterations,
                 measuredIterations,
                 item.Cell.LatencyMs,
-                item.Cell.DbCommandMs,
+                item.Cell.DriverExecuteMs,
                 item.Metrics,
                 item.PlanFile,
                 item.Cell.PageSelection.Sha256,

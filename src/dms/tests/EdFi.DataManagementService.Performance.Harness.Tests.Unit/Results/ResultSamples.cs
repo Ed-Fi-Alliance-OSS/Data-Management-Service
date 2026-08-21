@@ -46,7 +46,7 @@ internal static class ResultSamples
             WarmupIterations: 5,
             MeasuredIterations: 30,
             LatencyMs: SummaryOf(10.0),
-            DbCommandMs: SummaryOf(7.5),
+            DriverExecuteMs: SummaryOf(7.5),
             Database: new(
                 BuffersHit: 1200,
                 BuffersRead: 34,
@@ -76,7 +76,7 @@ internal static class ResultSamples
             WarmupIterations: 5,
             MeasuredIterations: 30,
             LatencyMs: SummaryOf(11.0),
-            DbCommandMs: SummaryOf(8.5),
+            DriverExecuteMs: SummaryOf(8.5),
             Database: new(
                 BuffersHit: null,
                 BuffersRead: null,

@@ -43,7 +43,7 @@ internal static class ScenarioExecutorSmoke
             cell.Offset.Should()
                 .Be(PerfScenarioExecutor.OffsetFor(cell.ScenarioId, cell.PageSize, deepOffset));
             cell.LatencyMs.SamplesMs.Should().HaveCount(3);
-            cell.DbCommandMs.SamplesMs.Should().HaveCount(3);
+            cell.DriverExecuteMs.SamplesMs.Should().HaveCount(3);
             cell.PageSelection.Sha256.Should().MatchRegex("^[0-9a-f]{64}$");
         }
 

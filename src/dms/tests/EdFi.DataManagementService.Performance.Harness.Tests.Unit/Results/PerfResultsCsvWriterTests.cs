@@ -55,11 +55,19 @@ public class Given_A_Written_Results_Csv
             .Be(
                 "provider,scenario_id,page_size,offset,returned_rows,command_count_per_request,"
                     + "warmup_iterations,measured_iterations,p50_ms,p95_ms,mean_ms,min_ms,max_ms,"
-                    + "db_command_p50_ms,db_command_p95_ms,db_command_mean_ms,db_command_min_ms,"
-                    + "db_command_max_ms,db_execution_ms,db_cpu_ms,db_elapsed_ms,db_logical_reads,"
-                    + "db_physical_reads,db_buffers_hit,db_buffers_read,plan_file,"
-                    + "page_selection_sql_sha256,runner_commit,subject_commit"
+                    + "driver_execute_p50_ms,driver_execute_p95_ms,driver_execute_mean_ms,"
+                    + "driver_execute_min_ms,driver_execute_max_ms,db_execution_ms,db_cpu_ms,"
+                    + "db_elapsed_ms,db_logical_reads,db_physical_reads,db_buffers_hit,"
+                    + "db_buffers_read,plan_file,page_selection_sql_sha256,runner_commit,"
+                    + "subject_commit"
             );
+    }
+
+    [Test]
+    public void It_no_longer_uses_the_db_command_column_names()
+    {
+        _lines[0].Should().NotContain("db_command_");
+        _lines[0].Should().Contain("driver_execute_p50_ms");
     }
 
     [Test]
@@ -86,7 +94,7 @@ public class Given_A_Written_Results_Csv
     public void It_formats_latency_with_three_invariant_decimals()
     {
         CsvTestSupport.Field(_lines[2], "p50_ms").Should().Be("17.000");
-        CsvTestSupport.Field(_lines[2], "db_command_p95_ms").Should().Be("21.500");
+        CsvTestSupport.Field(_lines[2], "driver_execute_p95_ms").Should().Be("21.500");
     }
 
     [Test]

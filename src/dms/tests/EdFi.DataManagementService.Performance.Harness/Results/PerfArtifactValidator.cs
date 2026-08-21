@@ -475,7 +475,7 @@ public static partial class PerfArtifactValidator
         }
 
         ValidateLatency(at, "latency", row.LatencyMs, row.MeasuredIterations, errors);
-        ValidateLatency(at, "db command", row.DbCommandMs, row.MeasuredIterations, errors);
+        ValidateLatency(at, "driver execute", row.DriverExecuteMs, row.MeasuredIterations, errors);
         ValidateCommit(at, "runner commit", row.RunnerCommit, manifest?.Commits?.RunnerCommit, errors);
         ValidateCommit(at, "subject commit", row.SubjectCommit, manifest?.Commits?.SubjectCommit, errors);
 

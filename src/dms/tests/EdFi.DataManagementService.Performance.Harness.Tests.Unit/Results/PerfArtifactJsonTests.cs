@@ -34,9 +34,16 @@ public class Given_A_Serialized_Results_Document
     [Test]
     public void It_uses_camel_case_names()
     {
-        _json.Should().Contain("\"schemaVersion\": \"1.2.0\"");
+        _json.Should().Contain("\"schemaVersion\": \"1.3.0\"");
         _json.Should().Contain("\"p50Ms\"");
         _json.Should().Contain("\"pageSelectionSqlSha256\"");
+    }
+
+    [Test]
+    public void It_names_the_driver_execute_timing_layer()
+    {
+        _json.Should().Contain("\"driverExecuteMs\"");
+        _json.Should().NotContain("dbCommandMs");
     }
 
     [Test]
@@ -78,7 +85,7 @@ public class Given_A_Serialized_Run_Manifest
     [Test]
     public void It_stamps_the_schema_version()
     {
-        _manifest.SchemaVersion.Should().Be("1.2.0");
+        _manifest.SchemaVersion.Should().Be("1.3.0");
     }
 
     [Test]
