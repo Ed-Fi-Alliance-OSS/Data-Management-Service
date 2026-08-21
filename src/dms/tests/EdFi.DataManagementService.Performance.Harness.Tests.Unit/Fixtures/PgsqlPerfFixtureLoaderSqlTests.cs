@@ -70,10 +70,56 @@ public class Given_The_Pgsql_Loader_Sql
         PgsqlPerfFixtureLoaderSql
             .StudentInsertSql.Should()
             .Contain(
-                "\"edfi\".\"Student\" (\"DocumentId\", \"StudentUniqueId\", \"FirstName\", \"LastSurname\", \"BirthDate\")"
+                "\"edfi\".\"Student\" (\"DocumentId\", \"StudentUniqueId\", \"FirstName\", \"LastSurname\", \"BirthDate\", \"BirthSexDescriptor_DescriptorId\")"
             );
         PgsqlPerfFixtureLoaderSql.StudentInsertSql.Should().Contain("'Perf'");
         PgsqlPerfFixtureLoaderSql.StudentInsertSql.Should().Contain("DATE '2010-01-01'");
+        PgsqlPerfFixtureLoaderSql.StudentInsertSql.Should().Contain("@birthSexDescriptorId");
+    }
+
+    [Test]
+    public void It_inserts_one_row_per_student_into_each_child_collection()
+    {
+        PgsqlPerfFixtureLoaderSql.ChildCollectionInsertSqls.Should().HaveCount(4);
+        PgsqlPerfFixtureLoaderSql
+            .ChildCollectionInsertSqls.Should()
+            .AllSatisfy(sql =>
+            {
+                sql.Should().Contain("generate_series(@fromOrdinal, @toOrdinal)");
+                sql.Should().Contain("((n - 1) / 9) * 10 + ((n - 1) % 9) + 2");
+                sql.Should().Contain("\"Ordinal\"", "the production write path assigns explicit ordinals");
+                sql.Should()
+                    .NotContain("CollectionItemId", "the shared sequence default must assign item ids");
+            });
+        PgsqlPerfFixtureLoaderSql
+            .ChildCollectionInsertSqls[0]
+            .Should()
+            .Contain("\"edfi\".\"StudentIdentificationDocument\"");
+        PgsqlPerfFixtureLoaderSql
+            .ChildCollectionInsertSqls[1]
+            .Should()
+            .Contain("\"edfi\".\"StudentOtherName\"");
+        PgsqlPerfFixtureLoaderSql
+            .ChildCollectionInsertSqls[2]
+            .Should()
+            .Contain("\"edfi\".\"StudentPersonalIdentificationDocument\"");
+        PgsqlPerfFixtureLoaderSql.ChildCollectionInsertSqls[3].Should().Contain("\"edfi\".\"StudentVisa\"");
+        PgsqlPerfFixtureLoaderSql.ChildCollectionInsertSqls[3].Should().Contain("@visaDescriptorId");
+    }
+
+    [Test]
+    public void It_writes_the_descriptor_catalog_production_faithfully()
+    {
+        PgsqlPerfFixtureLoaderSql.DescriptorDocumentInsertSql.Should().Contain("OVERRIDING SYSTEM VALUE");
+        PgsqlPerfFixtureLoaderSql.DescriptorDocumentInsertSql.Should().Contain("@descriptorDocumentId");
+        string sql = PgsqlPerfFixtureLoaderSql.DescriptorInsertSql("VisaDescriptor");
+        sql.Should().Contain("'uri://ed-fi.org/VisaDescriptor'");
+        sql.Should().Contain("'uri://ed-fi.org/VisaDescriptor#Perf'");
+        sql.Should().Contain("'VisaDescriptor'");
+        PgsqlPerfFixtureLoaderSql
+            .DescriptorResourceKeyLookupSql("SexDescriptor")
+            .Should()
+            .Contain("'SexDescriptor'");
     }
 
     [Test]
@@ -82,19 +128,27 @@ public class Given_The_Pgsql_Loader_Sql
         PgsqlPerfFixtureLoaderSql
             .ReseedSql(new PerfFixtureDefinition(PerfFixtureKind.Primary500k))
             .Should()
-            .Contain("RESTART WITH 555557");
+            .Contain("RESTART WITH 555562");
         PgsqlPerfFixtureLoaderSql
             .ReseedSql(new PerfFixtureDefinition(PerfFixtureKind.Smoke10k))
             .Should()
-            .Contain("RESTART WITH 11113");
+            .Contain("RESTART WITH 11118");
     }
 
     [Test]
-    public void It_refreshes_statistics_for_both_tables()
+    public void It_refreshes_statistics_for_every_loaded_table()
     {
         PgsqlPerfFixtureLoaderSql
             .StatisticsRefreshSqls.Should()
-            .Equal("""VACUUM (ANALYZE) "dms"."Document";""", """VACUUM (ANALYZE) "edfi"."Student";""");
+            .Equal(
+                """VACUUM (ANALYZE) "dms"."Document";""",
+                """VACUUM (ANALYZE) "edfi"."Student";""",
+                """VACUUM (ANALYZE) "edfi"."StudentIdentificationDocument";""",
+                """VACUUM (ANALYZE) "edfi"."StudentOtherName";""",
+                """VACUUM (ANALYZE) "edfi"."StudentPersonalIdentificationDocument";""",
+                """VACUUM (ANALYZE) "edfi"."StudentVisa";""",
+                """VACUUM (ANALYZE) "dms"."Descriptor";"""
+            );
     }
 
     [Test]
@@ -109,14 +163,40 @@ public class Given_The_Pgsql_Loader_Sql
             .Should()
             .Equal(
                 ("student-row-count", 500_000),
-                ("document-row-count", 500_000),
+                ("student-document-count", 500_000),
                 ("document-student-pairing", 500_000),
                 ("min-document-id", 2),
-                ("max-document-id", 555_556),
+                ("max-student-document-id", 555_556),
+                ("max-document-id", 555_561),
                 ("gap-count", 55_556),
                 ("gap-id-emissions", 0),
-                ("document-id-sum", definition.DocumentIdSum())
+                ("document-id-sum", definition.DocumentIdSum()),
+                ("descriptor-row-count", 5),
+                ("descriptor-document-pairing", 5),
+                ("students-with-birth-sex-descriptor", 500_000),
+                ("student-identification-document-row-count", 500_000),
+                ("student-identification-document-descriptor-bindings", 500_000),
+                ("student-other-name-row-count", 500_000),
+                ("student-personal-identification-document-row-count", 500_000),
+                ("student-visa-row-count", 500_000)
             );
+    }
+
+    [Test]
+    public void It_scopes_the_id_scheme_checks_to_student_documents()
+    {
+        IReadOnlyList<PerfVerificationQuery> queries = PgsqlPerfFixtureLoaderSql.VerificationQueries(
+            new PerfFixtureDefinition(PerfFixtureKind.Primary500k)
+        );
+        foreach (
+            string name in (string[])
+                ["student-document-count", "max-student-document-id", "gap-count", "document-id-sum"]
+        )
+        {
+            queries.Single(query => query.Name == name).Sql.Should().Contain("'Student'");
+        }
+
+        queries.Single(query => query.Name == "max-document-id").Sql.Should().NotContain("'Student'");
     }
 
     [Test]

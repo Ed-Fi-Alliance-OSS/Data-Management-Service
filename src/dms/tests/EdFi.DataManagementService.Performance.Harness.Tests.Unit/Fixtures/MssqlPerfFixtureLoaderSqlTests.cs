@@ -100,33 +100,86 @@ public class Given_The_Mssql_Loader_Sql
         MssqlPerfFixtureLoaderSql
             .StudentInsertSql.Should()
             .Contain(
-                "[edfi].[Student] ([DocumentId], [StudentUniqueId], [FirstName], [LastSurname], [BirthDate])"
+                "[edfi].[Student] ([DocumentId], [StudentUniqueId], [FirstName], [LastSurname], [BirthDate], [BirthSexDescriptor_DescriptorId])"
             );
         MssqlPerfFixtureLoaderSql.StudentInsertSql.Should().Contain("'Perf'");
         MssqlPerfFixtureLoaderSql.StudentInsertSql.Should().Contain("'2010-01-01'");
+        MssqlPerfFixtureLoaderSql.StudentInsertSql.Should().Contain("@birthSexDescriptorId");
+    }
+
+    [Test]
+    public void It_inserts_one_row_per_student_into_each_child_collection()
+    {
+        MssqlPerfFixtureLoaderSql.ChildCollectionInsertSqls.Should().HaveCount(4);
+        MssqlPerfFixtureLoaderSql
+            .ChildCollectionInsertSqls.Should()
+            .AllSatisfy(sql =>
+            {
+                sql.Should().Contain("GENERATE_SERIES(@fromOrdinal, @toOrdinal)");
+                sql.Should().Contain("((s.value - 1) / 9) * 10 + ((s.value - 1) % 9) + 2");
+                sql.Should().Contain("[Ordinal]", "the production write path assigns explicit ordinals");
+                sql.Should()
+                    .NotContain("CollectionItemId", "the shared sequence default must assign item ids");
+            });
+        MssqlPerfFixtureLoaderSql
+            .ChildCollectionInsertSqls[0]
+            .Should()
+            .Contain("[edfi].[StudentIdentificationDocument]");
+        MssqlPerfFixtureLoaderSql.ChildCollectionInsertSqls[1].Should().Contain("[edfi].[StudentOtherName]");
+        MssqlPerfFixtureLoaderSql
+            .ChildCollectionInsertSqls[2]
+            .Should()
+            .Contain("[edfi].[StudentPersonalIdentificationDocument]");
+        MssqlPerfFixtureLoaderSql.ChildCollectionInsertSqls[3].Should().Contain("[edfi].[StudentVisa]");
+        MssqlPerfFixtureLoaderSql.ChildCollectionInsertSqls[3].Should().Contain("@visaDescriptorId");
+    }
+
+    [Test]
+    public void It_writes_the_descriptor_catalog_production_faithfully()
+    {
+        MssqlPerfFixtureLoaderSql
+            .DescriptorDocumentInsertSql.Should()
+            .Contain("SET IDENTITY_INSERT [dms].[Document] ON;");
+        MssqlPerfFixtureLoaderSql.DescriptorDocumentInsertSql.Should().Contain("@descriptorDocumentId");
+        string sql = MssqlPerfFixtureLoaderSql.DescriptorInsertSql("VisaDescriptor");
+        sql.Should().Contain("'uri://ed-fi.org/VisaDescriptor'");
+        sql.Should().Contain("'uri://ed-fi.org/VisaDescriptor#Perf'");
+        sql.Should().Contain("'VisaDescriptor'");
+        MssqlPerfFixtureLoaderSql
+            .DescriptorResourceKeyLookupSql("SexDescriptor")
+            .Should()
+            .Contain("'SexDescriptor'");
     }
 
     [Test]
     public void It_reseeds_so_the_next_id_follows_the_fixture()
     {
         // RESEED takes the current seed, so the next generated identity is the value plus one,
-        // matching the PostgreSQL RESTART WITH MaxDocumentId + 1 form.
+        // matching the PostgreSQL RESTART WITH reseed-target + 1 form.
         MssqlPerfFixtureLoaderSql
             .ReseedSql(new PerfFixtureDefinition(PerfFixtureKind.Primary500k))
             .Should()
-            .Be("DBCC CHECKIDENT ('[dms].[Document]', RESEED, 555556);");
+            .Be("DBCC CHECKIDENT ('[dms].[Document]', RESEED, 555561);");
         MssqlPerfFixtureLoaderSql
             .ReseedSql(new PerfFixtureDefinition(PerfFixtureKind.Smoke10k))
             .Should()
-            .Be("DBCC CHECKIDENT ('[dms].[Document]', RESEED, 11112);");
+            .Be("DBCC CHECKIDENT ('[dms].[Document]', RESEED, 11117);");
     }
 
     [Test]
-    public void It_refreshes_statistics_for_both_tables()
+    public void It_refreshes_statistics_for_every_loaded_table()
     {
         MssqlPerfFixtureLoaderSql
             .StatisticsRefreshSqls.Should()
-            .Equal("UPDATE STATISTICS [dms].[Document];", "UPDATE STATISTICS [edfi].[Student];");
+            .Equal(
+                "UPDATE STATISTICS [dms].[Document];",
+                "UPDATE STATISTICS [edfi].[Student];",
+                "UPDATE STATISTICS [edfi].[StudentIdentificationDocument];",
+                "UPDATE STATISTICS [edfi].[StudentOtherName];",
+                "UPDATE STATISTICS [edfi].[StudentPersonalIdentificationDocument];",
+                "UPDATE STATISTICS [edfi].[StudentVisa];",
+                "UPDATE STATISTICS [dms].[Descriptor];"
+            );
     }
 
     [Test]
@@ -141,13 +194,22 @@ public class Given_The_Mssql_Loader_Sql
             .Should()
             .Equal(
                 ("student-row-count", 10_000),
-                ("document-row-count", 10_000),
+                ("student-document-count", 10_000),
                 ("document-student-pairing", 10_000),
                 ("min-document-id", 2),
-                ("max-document-id", 11_112),
+                ("max-student-document-id", 11_112),
+                ("max-document-id", 11_117),
                 ("gap-count", 1_112),
                 ("gap-id-emissions", 0),
-                ("document-id-sum", definition.DocumentIdSum())
+                ("document-id-sum", definition.DocumentIdSum()),
+                ("descriptor-row-count", 5),
+                ("descriptor-document-pairing", 5),
+                ("students-with-birth-sex-descriptor", 10_000),
+                ("student-identification-document-row-count", 10_000),
+                ("student-identification-document-descriptor-bindings", 10_000),
+                ("student-other-name-row-count", 10_000),
+                ("student-personal-identification-document-row-count", 10_000),
+                ("student-visa-row-count", 10_000)
             );
     }
 

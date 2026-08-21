@@ -14,6 +14,15 @@ public static class PerfFixtureLoaderParameters
     public const string FromOrdinal = "fromOrdinal";
     public const string ToOrdinal = "toOrdinal";
     public const string ResourceKeyId = "resourceKeyId";
+    public const string DescriptorDocumentId = "descriptorDocumentId";
+    public const string DescriptorDocumentUuid = "descriptorDocumentUuid";
+    public const string DescriptorReferentialId = "descriptorReferentialId";
+    public const string BirthSexDescriptorId = "birthSexDescriptorId";
+    public const string OtherNameTypeDescriptorId = "otherNameTypeDescriptorId";
+    public const string IdentificationDocumentUseDescriptorId = "identificationDocumentUseDescriptorId";
+    public const string PersonalInformationVerificationDescriptorId =
+        "personalInformationVerificationDescriptorId";
+    public const string VisaDescriptorId = "visaDescriptorId";
 }
 
 /// <summary>

@@ -23,6 +23,8 @@ public sealed record PerfFixtureManifest(
     long GapCount,
     double GapDensity,
     long DocumentIdSum,
+    int DescriptorCount,
+    int ChildCollectionRowsPerStudent,
     string ResourceEndpoint,
     bool Verified
 )
@@ -38,6 +40,8 @@ public sealed record PerfFixtureManifest(
             definition.GapCount,
             definition.GapDensity,
             definition.DocumentIdSum(),
+            PerfFixtureDefinition.DescriptorCount,
+            PerfFixtureDefinition.ChildCollectionRowsPerStudent,
             PerfFixtureDefinition.ResourceEndpoint,
             Verified: true
         );

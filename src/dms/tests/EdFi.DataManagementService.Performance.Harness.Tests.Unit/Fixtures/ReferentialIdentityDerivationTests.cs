@@ -74,3 +74,38 @@ public class Given_The_Student_Referential_Id_Derivation
             .OnlyHaveUniqueItems();
     }
 }
+
+[TestFixture]
+public class Given_The_Descriptor_Referential_Id_Derivation
+{
+    [Test]
+    public void It_lowercases_the_uri_before_hashing()
+    {
+        ReferentialIdentityDerivation
+            .DescriptorReferentialId("VisaDescriptor", "uri://ed-fi.org/VisaDescriptor#Perf")
+            .Should()
+            .Be(
+                ReferentialIdentityDerivation.DescriptorReferentialId(
+                    "VisaDescriptor",
+                    "uri://ed-fi.org/visadescriptor#perf"
+                )
+            );
+    }
+
+    [Test]
+    public void It_distinguishes_descriptor_resources_sharing_a_code_value()
+    {
+        ReferentialIdentityDerivation
+            .DescriptorReferentialId(
+                "VisaDescriptor",
+                PerfFixtureDefinition.DescriptorUriFor("VisaDescriptor")
+            )
+            .Should()
+            .NotBe(
+                ReferentialIdentityDerivation.DescriptorReferentialId(
+                    "SexDescriptor",
+                    PerfFixtureDefinition.DescriptorUriFor("SexDescriptor")
+                )
+            );
+    }
+}

@@ -12,7 +12,7 @@ Timing values are never judged; only completeness and internal consistency are.
 | Area | Contents |
 | --- | --- |
 | `Configuration/` | `PERF_*` environment binding and validation, provider/fixture/scenario catalogs, evidence-run settings and guardrail configuration |
-| `Fixtures/` | The deterministic 500,000-row fixture definition (with its 10,000-row smoke variant), per-dialect set-based loader SQL, the loader executor, and verification queries |
+| `Fixtures/` | The deterministic 500,000-row fixture definition (with its 10,000-row smoke variant): every student carries one row in each of the four child collection tables plus descriptor-backed values from a fixed descriptor catalog; per-dialect set-based loader SQL, the loader executor, and verification queries |
 | `Measurement/` | Latency measurement, driver command observer, page-selection capture, plan replay per provider, environment capture, the scenario executor, and the full run pipeline |
 | `Results/` | Versioned artifact records, JSON/CSV writers, the artifact validator, and the run-directory writer |
 | `Smoke/` | Explicit live proofs: loader-vs-POST proof gate, instrumentation probes, six-cell executor smoke, and the full-pipeline smoke at 10k scale |
@@ -83,7 +83,7 @@ worktree of that commit — only new files, never edits:
    set to the harness-source commit. The run manifest records both commits and the dirty
    overlay paths.
 
-## Artifact layout (schema 1.1.0)
+## Artifact layout (schema 1.2.0)
 
 | File | Content |
 | --- | --- |
@@ -98,6 +98,13 @@ The `database` metrics in `results.json`/`results.csv` come from replaying the f
 hydration batch — the one DbCommand the measured request executed — with the same bound
 paging parameters, not from replaying the page-selection statement alone. The page-selection
 text and its SHA-256 are still captured separately for the textual SQL gate.
+
+The fixture's one intentionally zero-row hydration statement is the person document-reference
+resolution: the optional `personReference` stays null by design, because a faithful nonzero
+shape would need one Person document per student (doubling `dms.Document` and shifting every
+Document-join measurement) and a shared person would be an unfaithful fan-in. The statement
+still executes and is replayed every run; every collection-hydration and descriptor-URI
+statement does real, uniform work at every offset.
 
 The replay is an out-of-band, one-shot execution on a dedicated connection: on PostgreSQL
 each statement runs under a fresh `EXPLAIN`, which the server plans as a custom plan, while

@@ -31,6 +31,20 @@ public static class ReferentialIdentityDerivation
         );
 
     /// <summary>
+    /// The referential identity of a descriptor document: the production write path keys
+    /// descriptors by the $.descriptor identity path with the URI lowercased, which is how
+    /// descriptor references are resolved during reference validation.
+    /// </summary>
+    public static Guid DescriptorReferentialId(string descriptorResourceName, string uri) =>
+        Uuidv5(
+            EdFiNamespace,
+            PerfFixtureDefinition.ProjectName
+                + descriptorResourceName
+                + "$.descriptor="
+                + uri.ToLowerInvariant()
+        );
+
+    /// <summary>
     /// RFC-4122 version 5: SHA-1 over the big-endian namespace bytes followed by the UTF-8
     /// name, truncated to 16 bytes with the version and variant bits stamped. SHA-1 is the
     /// algorithm the RFC defines for v5; nothing here is a security boundary.

@@ -16,13 +16,22 @@ namespace EdFi.DataManagementService.Performance.Harness.Fixtures;
 /// even when the final block is partial (a trailing gap would leave it fractionally under).
 /// Relative to the row count the gap share is one per nine rows.
 ///
+/// Every student carries one row in each of the four child collection tables and a
+/// birth-sex descriptor, backed by a fixed catalog of descriptor documents at the ids
+/// directly above the student range, so the hydration batch's collection and
+/// descriptor-URI-resolution statements do real, uniform work at every page offset. The
+/// optional person reference stays null by design: a faithful nonzero shape would need one
+/// Person document per student (doubling dms.Document and shifting every Document-join
+/// measurement), and a shared person would be an unfaithful fan-in — so the batch's
+/// reference-resolution statement legitimately returns zero rows.
+///
 /// Every identity derivation here must stay expressible in set-based SQL on both PostgreSQL
 /// and SQL Server, because the loaders generate rows with generate_series/GENERATE_SERIES and
 /// must produce exactly these values.
 /// </summary>
 public sealed record PerfFixtureDefinition(PerfFixtureKind Kind)
 {
-    public const string DefinitionVersion = "1.0.0";
+    public const string DefinitionVersion = "2.0.0";
 
     public const string ResourceEndpoint = "/data/ed-fi/students";
 
@@ -42,11 +51,82 @@ public sealed record PerfFixtureDefinition(PerfFixtureKind Kind)
     /// </summary>
     public const string DocumentUuidPrefix = "8f7a0000-0000-4000-8000-";
 
+    public const string DescriptorCodeValue = "Perf";
+
+    public const string SexDescriptorResource = "SexDescriptor";
+
+    public const string OtherNameTypeDescriptorResource = "OtherNameTypeDescriptor";
+
+    public const string IdentificationDocumentUseDescriptorResource = "IdentificationDocumentUseDescriptor";
+
+    public const string PersonalInformationVerificationDescriptorResource =
+        "PersonalInformationVerificationDescriptor";
+
+    public const string VisaDescriptorResource = "VisaDescriptor";
+
+    /// <summary>
+    /// The fixed descriptor catalog every student's descriptor-backed values point at. The
+    /// list position (1-based) fixes each descriptor's DocumentId directly above the student
+    /// id range, so the student id/gap scheme is untouched.
+    /// </summary>
+    public static readonly IReadOnlyList<string> DescriptorResourceNames =
+    [
+        SexDescriptorResource,
+        OtherNameTypeDescriptorResource,
+        IdentificationDocumentUseDescriptorResource,
+        PersonalInformationVerificationDescriptorResource,
+        VisaDescriptorResource,
+    ];
+
+    public static int DescriptorCount => DescriptorResourceNames.Count;
+
+    /// <summary>
+    /// Rows per student in each of the four child collection tables.
+    /// </summary>
+    public const int ChildCollectionRowsPerStudent = 1;
+
     public long RowCount => Kind.RowCount;
 
     public static long MinDocumentId => DocumentIdFor(1);
 
     public long MaxDocumentId => DocumentIdFor(RowCount);
+
+    /// <summary>
+    /// The highest DocumentId the loader emits: the descriptor catalog sits directly above
+    /// the student range, and the identity reseed hands out the next value after it.
+    /// </summary>
+    public long ReseedTargetDocumentId => MaxDocumentId + DescriptorCount;
+
+    public long DescriptorDocumentIdFor(string resourceName) =>
+        MaxDocumentId + DescriptorPositionOf(resourceName);
+
+    public Guid DescriptorDocumentUuidFor(string resourceName) =>
+        DocumentUuidFor(RowCount + DescriptorPositionOf(resourceName));
+
+    public static string DescriptorNamespaceFor(string resourceName) => "uri://ed-fi.org/" + resourceName;
+
+    public static string DescriptorUriFor(string resourceName) =>
+        DescriptorNamespaceFor(resourceName) + "#" + DescriptorCodeValue;
+
+    private static int DescriptorPositionOf(string resourceName)
+    {
+        int index = -1;
+        for (int candidate = 0; candidate < DescriptorResourceNames.Count; candidate++)
+        {
+            if (DescriptorResourceNames[candidate] == resourceName)
+            {
+                index = candidate;
+                break;
+            }
+        }
+
+        return index >= 0
+            ? index + 1
+            : throw new ArgumentException(
+                $"'{resourceName}' is not in the fixture descriptor catalog.",
+                nameof(resourceName)
+            );
+    }
 
     /// <summary>
     /// Missing ids inside [1, MaxDocumentId], counted analytically.

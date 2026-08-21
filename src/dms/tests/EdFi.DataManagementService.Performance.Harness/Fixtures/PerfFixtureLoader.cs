@@ -11,9 +11,10 @@ namespace EdFi.DataManagementService.Performance.Harness.Fixtures;
 
 /// <summary>
 /// Executes the per-dialect loader SQL against a live database: guard (SQL Server), resource
-/// key lookup, chunked document-then-student inserts, identity reseed, statistics refresh,
-/// and the analytic verification queries. Any verification mismatch throws with every
-/// mismatch listed.
+/// key lookups, the descriptor catalog (loaded first so student rows can reference it),
+/// chunked document-then-student-then-child-collection inserts, identity reseed, statistics
+/// refresh, and the analytic verification queries. Any verification mismatch throws with
+/// every mismatch listed.
 /// </summary>
 public static class PerfFixtureLoader
 {
@@ -54,6 +55,9 @@ public static class PerfFixtureLoader
                 : MssqlPerfFixtureLoaderSql.ResourceKeyLookupSql
         );
 
+        await LoadDescriptorsAsync(connection, provider, definition);
+        IReadOnlyList<(string Name, long Value)> descriptorParameters = DescriptorParameters(definition);
+
         string documentInsertSql =
             provider == PerfProvider.Postgresql
                 ? PgsqlPerfFixtureLoaderSql.DocumentInsertSql
@@ -62,11 +66,25 @@ public static class PerfFixtureLoader
             provider == PerfProvider.Postgresql
                 ? PgsqlPerfFixtureLoaderSql.StudentInsertSql
                 : MssqlPerfFixtureLoaderSql.StudentInsertSql;
+        IReadOnlyList<string> childInsertSqls =
+            provider == PerfProvider.Postgresql
+                ? PgsqlPerfFixtureLoaderSql.ChildCollectionInsertSqls
+                : MssqlPerfFixtureLoaderSql.ChildCollectionInsertSqls;
 
         foreach ((long from, long to) in Chunks(definition.RowCount, chunkSize))
         {
-            await ExecuteInsertAsync(connection, documentInsertSql, from, to, resourceKeyId);
-            await ExecuteInsertAsync(connection, studentInsertSql, from, to, resourceKeyId: null);
+            await ExecuteRangeInsertAsync(
+                connection,
+                documentInsertSql,
+                from,
+                to,
+                [(PerfFixtureLoaderParameters.ResourceKeyId, resourceKeyId)]
+            );
+            await ExecuteRangeInsertAsync(connection, studentInsertSql, from, to, descriptorParameters);
+            foreach (string childInsertSql in childInsertSqls)
+            {
+                await ExecuteRangeInsertAsync(connection, childInsertSql, from, to, descriptorParameters);
+            }
         }
 
         await ExecuteNonQueryAsync(
@@ -123,20 +141,140 @@ public static class PerfFixtureLoader
         }
     }
 
-    private static async Task ExecuteInsertAsync(
+    /// <summary>
+    /// The descriptor-id parameter values student and child inserts bind, keyed by the
+    /// loader parameter names. Ids are analytic: the catalog position above MaxDocumentId.
+    /// </summary>
+    public static IReadOnlyList<(string Name, long Value)> DescriptorParameters(
+        PerfFixtureDefinition definition
+    ) =>
+        [
+            (
+                PerfFixtureLoaderParameters.BirthSexDescriptorId,
+                definition.DescriptorDocumentIdFor(PerfFixtureDefinition.SexDescriptorResource)
+            ),
+            (
+                PerfFixtureLoaderParameters.OtherNameTypeDescriptorId,
+                definition.DescriptorDocumentIdFor(PerfFixtureDefinition.OtherNameTypeDescriptorResource)
+            ),
+            (
+                PerfFixtureLoaderParameters.IdentificationDocumentUseDescriptorId,
+                definition.DescriptorDocumentIdFor(
+                    PerfFixtureDefinition.IdentificationDocumentUseDescriptorResource
+                )
+            ),
+            (
+                PerfFixtureLoaderParameters.PersonalInformationVerificationDescriptorId,
+                definition.DescriptorDocumentIdFor(
+                    PerfFixtureDefinition.PersonalInformationVerificationDescriptorResource
+                )
+            ),
+            (
+                PerfFixtureLoaderParameters.VisaDescriptorId,
+                definition.DescriptorDocumentIdFor(PerfFixtureDefinition.VisaDescriptorResource)
+            ),
+        ];
+
+    private static async Task LoadDescriptorsAsync(
+        DbConnection connection,
+        PerfProvider provider,
+        PerfFixtureDefinition definition
+    )
+    {
+        foreach (string resourceName in PerfFixtureDefinition.DescriptorResourceNames)
+        {
+            long descriptorResourceKeyId = await ExecuteScalarAsync(
+                connection,
+                provider == PerfProvider.Postgresql
+                    ? PgsqlPerfFixtureLoaderSql.DescriptorResourceKeyLookupSql(resourceName)
+                    : MssqlPerfFixtureLoaderSql.DescriptorResourceKeyLookupSql(resourceName)
+            );
+            long documentId = definition.DescriptorDocumentIdFor(resourceName);
+
+            await using (
+                DbCommand documentInsert = CreateCommand(
+                    connection,
+                    provider == PerfProvider.Postgresql
+                        ? PgsqlPerfFixtureLoaderSql.DescriptorDocumentInsertSql
+                        : MssqlPerfFixtureLoaderSql.DescriptorDocumentInsertSql
+                )
+            )
+            {
+                AddParameter(documentInsert, PerfFixtureLoaderParameters.DescriptorDocumentId, documentId);
+                AddObjectParameter(
+                    documentInsert,
+                    PerfFixtureLoaderParameters.DescriptorDocumentUuid,
+                    definition.DescriptorDocumentUuidFor(resourceName)
+                );
+                AddParameter(
+                    documentInsert,
+                    PerfFixtureLoaderParameters.ResourceKeyId,
+                    descriptorResourceKeyId
+                );
+                await documentInsert.ExecuteNonQueryAsync();
+            }
+
+            await using (
+                DbCommand descriptorInsert = CreateCommand(
+                    connection,
+                    provider == PerfProvider.Postgresql
+                        ? PgsqlPerfFixtureLoaderSql.DescriptorInsertSql(resourceName)
+                        : MssqlPerfFixtureLoaderSql.DescriptorInsertSql(resourceName)
+                )
+            )
+            {
+                AddParameter(descriptorInsert, PerfFixtureLoaderParameters.DescriptorDocumentId, documentId);
+                AddParameter(
+                    descriptorInsert,
+                    PerfFixtureLoaderParameters.ResourceKeyId,
+                    descriptorResourceKeyId
+                );
+                await descriptorInsert.ExecuteNonQueryAsync();
+            }
+
+            await using DbCommand referentialInsert = CreateCommand(
+                connection,
+                provider == PerfProvider.Postgresql
+                    ? PgsqlPerfFixtureLoaderSql.DescriptorReferentialIdentityInsertSql
+                    : MssqlPerfFixtureLoaderSql.DescriptorReferentialIdentityInsertSql
+            );
+            AddObjectParameter(
+                referentialInsert,
+                PerfFixtureLoaderParameters.DescriptorReferentialId,
+                ReferentialIdentityDerivation.DescriptorReferentialId(
+                    resourceName,
+                    PerfFixtureDefinition.DescriptorUriFor(resourceName)
+                )
+            );
+            AddParameter(referentialInsert, PerfFixtureLoaderParameters.DescriptorDocumentId, documentId);
+            AddParameter(
+                referentialInsert,
+                PerfFixtureLoaderParameters.ResourceKeyId,
+                descriptorResourceKeyId
+            );
+            await referentialInsert.ExecuteNonQueryAsync();
+        }
+    }
+
+    private static async Task ExecuteRangeInsertAsync(
         DbConnection connection,
         string sql,
         long fromOrdinal,
         long toOrdinal,
-        long? resourceKeyId
+        IReadOnlyList<(string Name, long Value)> extraParameters
     )
     {
         await using DbCommand command = CreateCommand(connection, sql);
         AddParameter(command, PerfFixtureLoaderParameters.FromOrdinal, fromOrdinal);
         AddParameter(command, PerfFixtureLoaderParameters.ToOrdinal, toOrdinal);
-        if (resourceKeyId is not null)
+        foreach ((string name, long value) in extraParameters)
         {
-            AddParameter(command, PerfFixtureLoaderParameters.ResourceKeyId, resourceKeyId.Value);
+            // Bind only the parameters the statement references; an unreferenced named
+            // parameter is a driver error on PostgreSQL.
+            if (sql.Contains("@" + name, StringComparison.Ordinal))
+            {
+                AddParameter(command, name, value);
+            }
         }
 
         await command.ExecuteNonQueryAsync();
@@ -166,6 +304,14 @@ public static class PerfFixtureLoader
     }
 
     private static void AddParameter(DbCommand command, string name, long value)
+    {
+        DbParameter parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.Value = value;
+        command.Parameters.Add(parameter);
+    }
+
+    private static void AddObjectParameter(DbCommand command, string name, object value)
     {
         DbParameter parameter = command.CreateParameter();
         parameter.ParameterName = name;

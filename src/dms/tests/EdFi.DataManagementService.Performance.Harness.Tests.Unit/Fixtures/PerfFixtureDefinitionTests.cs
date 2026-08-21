@@ -261,3 +261,67 @@ public class Given_The_Document_Uuid_Derivation
             .Throw<ArgumentOutOfRangeException>();
     }
 }
+
+[TestFixture]
+public class Given_The_Descriptor_Catalog
+{
+    private readonly PerfFixtureDefinition _definition = new(PerfFixtureKind.Primary500k);
+
+    [Test]
+    public void It_covers_every_descriptor_backed_column_of_the_fixture_shape()
+    {
+        PerfFixtureDefinition
+            .DescriptorResourceNames.Should()
+            .Equal(
+                "SexDescriptor",
+                "OtherNameTypeDescriptor",
+                "IdentificationDocumentUseDescriptor",
+                "PersonalInformationVerificationDescriptor",
+                "VisaDescriptor"
+            );
+        PerfFixtureDefinition.DescriptorCount.Should().Be(5);
+    }
+
+    [Test]
+    public void It_places_descriptor_documents_directly_above_the_student_range()
+    {
+        _definition.DescriptorDocumentIdFor("SexDescriptor").Should().Be(_definition.MaxDocumentId + 1);
+        _definition.DescriptorDocumentIdFor("VisaDescriptor").Should().Be(_definition.MaxDocumentId + 5);
+        _definition.ReseedTargetDocumentId.Should().Be(_definition.MaxDocumentId + 5);
+    }
+
+    [Test]
+    public void It_derives_descriptor_uris_the_way_the_write_path_does()
+    {
+        PerfFixtureDefinition
+            .DescriptorNamespaceFor("VisaDescriptor")
+            .Should()
+            .Be("uri://ed-fi.org/VisaDescriptor");
+        PerfFixtureDefinition
+            .DescriptorUriFor("VisaDescriptor")
+            .Should()
+            .Be("uri://ed-fi.org/VisaDescriptor#Perf");
+    }
+
+    [Test]
+    public void It_gives_each_descriptor_a_unique_deterministic_document_uuid()
+    {
+        PerfFixtureDefinition
+            .DescriptorResourceNames.Select(name => _definition.DescriptorDocumentUuidFor(name))
+            .Should()
+            .OnlyHaveUniqueItems();
+        _definition
+            .DescriptorDocumentUuidFor("SexDescriptor")
+            .Should()
+            .Be(PerfFixtureDefinition.DocumentUuidFor(_definition.RowCount + 1));
+    }
+
+    [Test]
+    public void It_rejects_resources_outside_the_catalog()
+    {
+        FluentActions
+            .Invoking(() => _definition.DescriptorDocumentIdFor("CountryDescriptor"))
+            .Should()
+            .Throw<ArgumentException>();
+    }
+}
