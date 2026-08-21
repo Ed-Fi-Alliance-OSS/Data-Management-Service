@@ -9,8 +9,8 @@ are regenerated only by rerunning the capture, never edited.
 | Field | Value |
 | --- | --- |
 | Subject-under-test commit | `5656477957eb2f18e827b7969e5079b424596ae0` — the parent of the DMS-1385 shared page-selection compiler change; the measured DMS behavior predates DMS-1385/DMS-1386 |
-| Runner commit | `9115c0faf` on branch `DMS-1391` — the harness sources overlaid onto the subject worktree |
-| Runs | `postgresql-primary-500k-20260821030854`, `mssql-primary-500k-20260821031256` (captured 2026-08-21 UTC) |
+| Runner commit | `95e98b475` on branch `DMS-1391` — the harness sources overlaid onto the subject worktree; the capture wrapper refuses to run from dirty harness/wrapper sources, so this commit is exactly the code that ran |
+| Runs | `postgresql-primary-500k-20260821050137`, `mssql-primary-500k-20260821050627` (captured 2026-08-21 UTC) |
 | Fixture | `primary-500k`: 500,000 DS 5.2 students, deterministic sparse `DocumentId`s (gaps ≥ 10% of the id space), loader-verified — see the harness `PerfFixtureDefinition` |
 | Scenarios | Offsets 0 / page-size / 450,000 at page sizes 25 and 500; 5 warmups + 30 measured warm-cache iterations per cell |
 | Environment | Machine fingerprint `92b6869f0fdb8eeb` (developer workstation, Windows 11, local docker volumes — not tmpfs); PostgreSQL 16.8 pinned by digest; SQL Server 2025 (RTM-CU7) 17.0.4065.4 pinned by resolved digest; full identity in each `run-manifest.json` |
@@ -24,17 +24,21 @@ are regenerated only by rerunning the capture, never edited.
   reference points, not gate baselines.
 - `results.json` rows carry `pageSelectionSqlSha256`; the traditional page-selection SQL text
   is expected to be byte-identical post-change (the DMS-1385 textual gate).
+- The `database` metrics and plan evidence come from replaying the full captured hydration
+  batch — the one DbCommand each measured request executed — with the request's bound paging
+  parameters, so buffer/read totals include collection hydration, not just page selection.
 - SQL Server `STATISTICS TIME` reports whole milliseconds; near-zero CPU values on fast cells
   are provider granularity, not missing data.
 
 ## Contents per run directory
 
 `run-manifest.json` (identity, commits, environment), `results.json` / `results.csv` (the six
-scenario rows), `fixture-manifest.json`, `plans/` (PostgreSQL
-`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)`; SQL Server actual `.sqlplan` XML with raw
-`.stats.txt`), and `sql/` (the single page-selection text, the single hydration-batch text,
-and per-cell bound parameter values). Artifact schema `1.0.0`, validated on write and on
-reload by the harness.
+scenario rows), `fixture-manifest.json`, `plans/` (full-hydration-batch replay evidence per
+cell: PostgreSQL one `.explain.json` listing every batch statement with its raw
+`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` document; SQL Server one `.plans.json` index
+pointing at the per-statement actual `.sqlplan` XML files and the raw `.stats.txt`), and
+`sql/` (the single page-selection text, the single hydration-batch text, and per-cell bound
+parameter values). Artifact schema `1.1.0`, validated on write and on reload by the harness.
 
 ## Regeneration
 

@@ -1,0 +1,15 @@
+{
+  "replay": "full hydration batch under SET STATISTICS XML, IO, TIME ON; one actual XML plan per planned statement, in arrival order",
+  "planFiles": [
+    "plans/mssql.traditional-offset-zero.500.plan01.sqlplan",
+    "plans/mssql.traditional-offset-zero.500.plan02.sqlplan",
+    "plans/mssql.traditional-offset-zero.500.plan03.sqlplan",
+    "plans/mssql.traditional-offset-zero.500.plan04.sqlplan",
+    "plans/mssql.traditional-offset-zero.500.plan05.sqlplan",
+    "plans/mssql.traditional-offset-zero.500.plan06.sqlplan",
+    "plans/mssql.traditional-offset-zero.500.plan07.sqlplan",
+    "plans/mssql.traditional-offset-zero.500.plan08.sqlplan",
+    "plans/mssql.traditional-offset-zero.500.plan09.sqlplan"
+  ],
+  "statisticsFile": "plans/mssql.traditional-offset-zero.500.stats.txt"
+}
