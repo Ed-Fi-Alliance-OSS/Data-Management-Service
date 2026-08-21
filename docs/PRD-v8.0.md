@@ -16,7 +16,7 @@ analytics, specialty applications, reporting tools). It is licensed and
 self-hosted by "platform hosts" (state education agencies, districts, or their
 vendors/integrators), who deploy, configure, and operate their own instances.
 The Ed-Fi API (version 8) is a ground-up rewrite of functionality previously
-delivered via the Ed-Fi Data Store/API Platform.
+delivered via the Ed-Fi ODS/API Platform.
 
 This PRD covers the **platform capabilities that are implemented and available
 today in Ed-Fi API v8.0** — the configuration surface, cross-cutting features,
@@ -81,7 +81,7 @@ carried forward into v8.0 will be covered separately in a v8.1 companion PRD.
   to define a Profile restricting which properties and collections it can access
   **so that** the vendor cannot see or persist data outside its intended scope
   (see [[FR-PROF]]).
-- When a state agency must serve multiple independent customer populations from
+- When a platform host must serve multiple independent customer populations from
   one deployment, the Ops Engineer wants multi-tenant and/or multi-environment
   routing **so that** each tenant's, district's, or year's data stays properly
   isolated (see [[FR-INST]], [[FR-TENANT]]).
@@ -159,9 +159,8 @@ graph TB
   that omits them, or supplies values the host doesn't recognize, SHALL receive
   a "not found" response.
 - **FR-INST-4.** Credentials and connection details for each backing data
-  environment SHALL be stored encrypted at rest, except in local development
-  environments, and SHALL be managed through the platform's own administrative
-  service.
+  environment SHALL be stored encrypted at rest and SHALL be managed through the
+  platform's own administrative service.
 - **FR-INST-5.** The system SHALL cache environment-routing information for
   performance, with administrators able to control how quickly changes to that
   information take effect.
@@ -270,12 +269,16 @@ graph TB
 - **FR-AUTHN-6.** The system SHALL support issuing token-based (JWT) access
   tokens, so hosts can adopt a token format their broader security
   infrastructure can validate independently.
-- **FR-AUTHN-7.** The system SHALL support an optional capability for clients to
-  check the current validity and details of a token they hold.
-- **FR-AUTHN-8.** The system SHALL support an alternative, externally-hosted
-  identity provider for organizations that require enterprise identity
-  management or single sign-on, in addition to a built-in, self-contained
-  default.
+- **FR-AUTHN-7.** The system SHALL support a token introspection endpoint that
+  lets a client presenting its own bearer token retrieve "the current validity
+  and full authorization context of that token," including its active/expired
+  status, the namespace prefixes, education organization hierarchy, assigned
+  profiles, and claim set the token is scoped to, and the per-resource
+  operations it is authorized to perform.
+- **FR-AUTHN-8.** The system SHALL support Keycloak as an alternative,
+  externally-hosted identity provider for organizations that require enterprise
+  identity management or single sign-on, in addition to a built-in,
+  self-contained default.
 
 ### 3.6 Authorization (FR-AUTHZ)
 
@@ -358,7 +361,7 @@ graph TB
   (non-inverted) direction for the same resource so a caller can both manage its
   own data and access parent-owned reference data.
 
-### 3.8 Descriptor Authorization — Ownership-Based Variant (FR-DESCOWN)
+### 3.8 Ownership-Based Auhorization (FR-OWNAUTH)
 
 > [!TIP]
 > Ownership-based authorization (assigning a record to the client that created
@@ -367,32 +370,23 @@ graph TB
 > behaves today, for Descriptors specifically, when a host nonetheless
 > configures a claim set to require it.
 
-- **FR-DESCOWN-1.** Hosts SHALL be able to configure the Ownership-based
-  authorization strategy for a Descriptor resource claim and action, using the
-  same claim-set configuration mechanism used for any other resource claim,
-  since the system does not restrict which strategies may be named for a
-  Descriptor claim.
-- **FR-DESCOWN-2.** Because Ownership-based authorization is not yet
-  implemented, the system SHALL NOT silently grant or silently deny a Descriptor
-  request whose effective authorization requires the Ownership-based strategy;
-  it SHALL instead fail closed with an HTTP 501 (Not Implemented) response, so a
-  host is never given a false sense of enforcement.
-- **FR-DESCOWN-3.** This fail-closed 501 behavior SHALL apply uniformly across
-  every Descriptor operation — GET-by-id, GET-many (query), POST, PUT, and
-  DELETE — wherever Ownership-based authorization is part of the effective
-  authorization requirement for that operation.
-- **FR-DESCOWN-4.** The 501 response SHALL identify which authorization
-  strategies are currently supported for Descriptors (at minimum:
-  Namespace-based, No-further-authorization-required, and/or a resolved
-  custom-view-based strategy), so hosts can diagnose and correct the claim-set
-  configuration rather than treat the failure as unexplained.
-- **FR-DESCOWN-5.** When Ownership-based authorization is configured alongside
-  other, supported strategies (such as Namespace-based or a custom view) for the
-  same Descriptor resource claim and action, the system SHALL evaluate and
-  report the outcome of every other configured strategy before surfacing the
-  Ownership-based 501, so that a request which would already fail for a
-  supported reason (e.g., a namespace mismatch) is not masked by the
-  not-implemented failure.
+- **FR-OWNAUTH-1**: Hosts can configure the Ownership-based authorization
+  strategy — or any other recognized-but-unimplemented strategy — for any
+  resource claim and action, since the system doesn't restrict which strategy
+  names may be assigned in claim-set configuration.
+- **FR-OWNAUTH-2**. Because Ownership-based authorization isn't yet implemented,
+  the system SHALL fail closed with an HTTP 501 response rather than silently
+  granting or denying the request, preventing false enforcement assumptions.
+- **FR-OWNAUTH-3**. This fail-closed 501 behavior SHALL apply uniformly across
+  all resource types — including Descriptors and standard Ed-Fi resources — and
+  across all operations (GET-by-id, GET-many, POST, PUT, DELETE).
+- **FR-OWNAUTH-4**. The 501 response must identify which authorization
+  strategies are currently supported for the resource in question, helping hosts
+  diagnose and correct claim-set configuration.
+- **FR-OWNAUTH-5**. When Ownership-based authorization is configured alongside
+  supported strategies (e.g., Namespace-based, Relationship-based), the system
+  evaluates and reports all supported strategies before surfacing the 501,
+  preventing masking of other failure reasons.
 
 ### 3.9 Configuration & Extensibility (FR-CONFIG)
 
@@ -407,14 +401,19 @@ graph TB
 - **FR-CONFIG-4.** Hosts SHALL be able to extend the platform's data model with
   additional resources, properties, or associations, with supporting API
   documentation and database structures generated automatically to stay
-  consistent with the extended model. Applying such an extension SHALL require a
-  restart of the affected service.
-- **FR-CONFIG-5 (Rate limiting).** The system SHALL implement **rate limiting**:
-  it SHALL cap the number of requests a client may make within a host-configured
-  time window, reject requests beyond that cap, and tell the rejected client —
-  using the standard HTTP response for the condition — that it has been rate
-  limited and when it may retry. Hosts SHALL be able to configure the cap and
-  the window, and SHALL be able to turn rate limiting off entirely.
+  consistent with the extended model. Applying such an extension SHALL require
+  both re-provisioning the database against the extension's effective schema and
+  a restart of the affected service; the platform's database provisioning is
+  create-only, with no in-place migration path from one effective schema to
+  another.
+- **FR-CONFIG-5.** The system SHALL implement rate limiting: it SHALL cap the
+  number of requests it will accept for a given request Host within a
+  host-configured time window (a shared cap across all callers of that host)
+  reject requests beyond that cap once any configured queue capacity is also
+  exhausted, and tell the rejected caller using the standard HTTP response for
+  the condition that it has been rate limited. Hosts SHALL be able to configure
+  the cap, the window, and an optional queue depth for excess requests, and
+  SHALL be able to disable rate limiting entirely by omitting its configuration.
 
 > [!NOTE]
 > This capability has no counterpart in the prior-generation platform,
@@ -539,8 +538,11 @@ graph TB
 - **NFR-OPS-1.** Hosts operating multiple backing environments SHALL be able to
   tune how quickly changes to cached environment-routing information take
   effect.
-- **NFR-OPS-2.** Data-model extensions SHALL require a service restart to take
-  effect; the platform does not hot-reload extended schemas.
+- **NFR-OPS-2.** Data-model extensions SHALL require both database
+  re-provisioning (to match the extension's effective schema hash) and a service
+  restart to take effect; the platform does not hot-reload extended schemas, nor
+  does it support in-place migration of an already-provisioned database to a new
+  effective schema — provisioning is create-only.
 
 ### 4.5 Reverse Proxy / Load Balancer Deployment (NFR-PROXY)
 
@@ -626,23 +628,7 @@ graph TB
 
 ## 7. Open Questions
 
-- **OQ-1: FR-RELATIONSHIP-6 / inverted relationship direction — possible
-  documentation bug.** An earlier draft of this requirement stated that the
-  inverted relationship direction authorizes a child-ed-org caller to "read (but
-  not necessarily write)" parent-owned data, implying write access is inherently
-  excluded. A source-code review found this framing inaccurate: the inverted
-  strategies (`RelationshipsWithEdOrgsOnlyInverted`,
-  `RelationshipsWithEdOrgsAndPeopleInverted`) are applied uniformly across read
-  and write operations wherever a host/claim-set configures them, and the
-  platform's E2E test suite exercises the inverted strategy for POST and PUT,
-  not just GET. The requirement text has been revised accordingly, but the
-  underlying question — whether the intended v8.0 design was in fact meant to be
-  read-only for inverted relationships, with the write-capable behavior being
-  unintended — should be confirmed with the resource-authorization design owner
-  before this PRD is finalized.
-- **OQ-2: Unable to Disable Profiles.** The ODS/API allow disabling Profiles,
-  but DMS does not. Was that an oversight to be corrected in the next release,
-  or a purposeful design decision?
+None
 
 ## 8. Glossary
 
