@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Telemetry;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -82,13 +83,20 @@ public class ValidatePartitionQueryMiddlewareTests
         return requestInfo;
     }
 
-    private static async Task<RequestInfo> Execute(params (string Key, string Value)[] queryParameters)
+    private static Task<RequestInfo> Execute(params (string Key, string Value)[] queryParameters) =>
+        Execute(collectionPagingTelemetry: null, queryParameters);
+
+    private static async Task<RequestInfo> Execute(
+        ICollectionPagingTelemetry? collectionPagingTelemetry,
+        params (string Key, string Value)[] queryParameters
+    )
     {
         RequestInfo requestInfo = RequestInfoFor(queryParameters);
 
         IPipelineStep middleware = new ValidatePartitionQueryMiddleware(
             NullLogger.Instance,
-            DefaultPartitionCount
+            DefaultPartitionCount,
+            collectionPagingTelemetry ?? NoOpCollectionPagingTelemetry.Instance
         );
 
         await middleware.Execute(requestInfo, NullNext);
@@ -384,7 +392,11 @@ public class ValidatePartitionQueryMiddlewareTests
             RequestInfo requestInfo = RequestInfoFor(("number", "4"));
             var reachedNext = false;
 
-            await new ValidatePartitionQueryMiddleware(NullLogger.Instance, DefaultPartitionCount).Execute(
+            await new ValidatePartitionQueryMiddleware(
+                NullLogger.Instance,
+                DefaultPartitionCount,
+                NoOpCollectionPagingTelemetry.Instance
+            ).Execute(
                 requestInfo,
                 () =>
                 {

@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
+using EdFi.DataManagementService.Core.Telemetry;
 using EdFi.DataManagementService.Core.Validation;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
@@ -39,7 +40,11 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// the field first keeps this operation's unknown-field behavior identical to GET-many's.
 /// </para>
 /// </remarks>
-internal class ValidatePartitionQueryMiddleware(ILogger _logger, int _defaultPartitionCount) : IPipelineStep
+internal class ValidatePartitionQueryMiddleware(
+    ILogger _logger,
+    int _defaultPartitionCount,
+    ICollectionPagingTelemetry _collectionPagingTelemetry
+) : IPipelineStep
 {
     /// <summary>
     /// The parameter names this operation owns, matched case-sensitively. The five reserved paging
@@ -65,14 +70,19 @@ internal class ValidatePartitionQueryMiddleware(ILogger _logger, int _defaultPar
             requestInfo.FrontendRequest.TraceId.Value
         );
 
-        // Both parameter faults answer with the same shell, so they share one construction. The media
-        // type is not stated here at all; it comes from the FrontendResponse default.
-        FrontendResponse ParameterValidationFailed(string[] errors) =>
-            new(
+        // Both parameter faults answer with the same shell, so they share one construction, and counting
+        // the rejection here covers both for the same reason. The media type is not stated here at all,
+        // because it comes from the FrontendResponse default.
+        FrontendResponse ParameterValidationFailed(string[] errors)
+        {
+            RecordValidationRejected(requestInfo);
+
+            return new(
                 StatusCode: 400,
                 Body: ForParameterValidation(errors, requestInfo.FrontendRequest.TraceId),
                 Headers: []
             );
+        }
 
         ChangeVersionValidationResult changeVersionResult = ChangeVersionParameterValidator.Validate(
             requestInfo.FrontendRequest.QueryParameters
@@ -99,6 +109,8 @@ internal class ValidatePartitionQueryMiddleware(ILogger _logger, int _defaultPar
         switch (filterResult)
         {
             case ResourceQueryFilterResult.UnknownQueryField unknownQueryField:
+                RecordValidationRejected(requestInfo);
+
                 requestInfo.FrontendResponse = new FrontendResponse(
                     StatusCode: 400,
                     Body: ForBadRequest(
@@ -118,6 +130,8 @@ internal class ValidatePartitionQueryMiddleware(ILogger _logger, int _defaultPar
                     "Partition query parameter format error - {TraceId}",
                     requestInfo.FrontendRequest.TraceId.Value
                 );
+
+                RecordValidationRejected(requestInfo);
 
                 requestInfo.FrontendResponse = new FrontendResponse(
                     StatusCode: 400,
@@ -167,4 +181,19 @@ internal class ValidatePartitionQueryMiddleware(ILogger _logger, int _defaultPar
 
         await next();
     }
+
+    /// <summary>
+    /// Counts a request this step answered. The paging mode is the partition literal on every exit:
+    /// this step is composed only into the partitions pipeline, so there is no other mode a request
+    /// reaching it could have.
+    /// </summary>
+    private void RecordValidationRejected(RequestInfo requestInfo) =>
+        _collectionPagingTelemetry.RecordValidationRejected(
+            CollectionPagingTelemetryContext.ForPagingMode(
+                CollectionPagingTelemetryLabel.PartitionPagingMode,
+                CollectionPagingTelemetryLabel.NoCommandCategory,
+                requestInfo.MappingSet?.Key.Dialect,
+                CollectionPagingTelemetryLabel.ValidationRejectedOutcome
+            )
+        );
 }

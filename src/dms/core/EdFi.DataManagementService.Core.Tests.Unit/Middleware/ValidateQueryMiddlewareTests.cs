@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Telemetry;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -27,24 +28,28 @@ public class ValidateQueryMiddlewareTests
     /// <summary>
     /// The live GET-many composition, which recognizes the cursor parameters.
     /// </summary>
-    internal static IPipelineStep Middleware()
+    internal static IPipelineStep Middleware(ICollectionPagingTelemetry? collectionPagingTelemetry = null)
     {
         return new ValidateQueryMiddleware(
             NullLogger.Instance,
             _maxPageSize,
-            _cursorParametersRecognized: true
+            _cursorParametersRecognized: true,
+            collectionPagingTelemetry ?? NoOpCollectionPagingTelemetry.Instance
         );
     }
 
     /// <summary>
-    /// The Change Query composition, which does not recognize the cursor parameters.
+    /// The Change Query composition, which does not recognize the cursor parameters and does not count
+    /// its faults as collection-paging traffic. Both arguments are fixed here rather than defaulted, so
+    /// this factory stays a faithful copy of how CreateGetTrackedChangesPipeline composes the step.
     /// </summary>
     internal static IPipelineStep MiddlewareWithoutCursorRecognition()
     {
         return new ValidateQueryMiddleware(
             NullLogger.Instance,
             _maxPageSize,
-            _cursorParametersRecognized: false
+            _cursorParametersRecognized: false,
+            NoOpCollectionPagingTelemetry.Instance
         );
     }
 
