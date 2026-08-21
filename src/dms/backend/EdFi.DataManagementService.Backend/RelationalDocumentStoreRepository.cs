@@ -1363,6 +1363,9 @@ public sealed class RelationalDocumentStoreRepository(
 
             return new RelationalQueryPreparationResult.Complete(
                 new QueryResult.QuerySuccess([], queryRequest.Paging.IncludesTotalCount ? 0 : null)
+                {
+                    SelectionSkipped = true,
+                }
             );
         }
 
@@ -1417,6 +1420,9 @@ public sealed class RelationalDocumentStoreRepository(
 
                 return new RelationalQueryPreparationResult.Complete(
                     new QueryResult.QuerySuccess([], queryRequest.Paging.IncludesTotalCount ? 0 : null)
+                    {
+                        SelectionSkipped = true,
+                    }
                 );
             }
         }
@@ -1676,7 +1682,7 @@ public sealed class RelationalDocumentStoreRepository(
                 )
                 .ConfigureAwait(false);
 
-            return PartitionComplete(new PartitionResult.PartitionSuccess([]));
+            return PartitionComplete(new PartitionResult.PartitionSuccess([]) { SelectionSkipped = true });
         }
 
         ResourceReadPlan readPlan;
@@ -1723,7 +1729,9 @@ public sealed class RelationalDocumentStoreRepository(
                     )
                     .ConfigureAwait(false);
 
-                return PartitionComplete(new PartitionResult.PartitionSuccess([]));
+                return PartitionComplete(
+                    new PartitionResult.PartitionSuccess([]) { SelectionSkipped = true }
+                );
             }
 
             partitionPlan = new PartitionWindowPlanner(mappingSet.Key.Dialect).Plan(
@@ -2464,7 +2472,7 @@ public sealed class RelationalDocumentStoreRepository(
                     mappingSet,
                     adaptedCustomViewChecks,
                     new QueryAuthorizationResolution.Complete(
-                        new QueryResult.QuerySuccess([], totalCount ? 0 : null)
+                        new QueryResult.QuerySuccess([], totalCount ? 0 : null) { SelectionSkipped = true }
                     ),
                     cancellationToken
                 );

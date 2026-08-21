@@ -981,6 +981,9 @@ internal sealed class DescriptorReadHandler(
 
             return new DescriptorQueryPreparationResult.Complete(
                 new QueryResult.QuerySuccess([], request.Paging.IncludesTotalCount ? 0 : null)
+                {
+                    SelectionSkipped = true,
+                }
             );
         }
 
@@ -1215,7 +1218,7 @@ internal sealed class DescriptorReadHandler(
                 .ConfigureAwait(false);
 
             return new DescriptorPartitionPreparationResult.Complete(
-                new PartitionResult.PartitionSuccess([])
+                new PartitionResult.PartitionSuccess([]) { SelectionSkipped = true }
             );
         }
 
