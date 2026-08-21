@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -12,6 +13,8 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Telemetry;
+using EdFi.DataManagementService.Core.Tests.Unit.Handler;
+using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -407,6 +410,88 @@ public class ValidatePartitionQueryMiddlewareTests
 
             reachedNext.Should().BeTrue();
             requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    /// <summary>
+    /// What a request this step answers contributes to the collection-paging metric.
+    /// </summary>
+    /// <remarks>
+    /// The paging mode is the partition literal on every exit, because this step is composed only into
+    /// the partitions pipeline. Unlike the GET-many validator it has no second construction site to
+    /// isolate.
+    /// </remarks>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Collection_Paging_Telemetry_For_A_Rejection : ValidatePartitionQueryMiddlewareTests
+    {
+        private static async Task<RecordingCollectionPagingTelemetry> ExecuteRecording(
+            params (string Key, string Value)[] queryParameters
+        )
+        {
+            RecordingCollectionPagingTelemetry telemetry = new();
+
+            RequestInfo requestInfo = RequestInfoFor(queryParameters);
+            requestInfo.MappingSet = RelationalWriteSeamFixture
+                .Create()
+                .CreateSupportedMappingSet(SqlDialect.Mssql);
+
+            await new ValidatePartitionQueryMiddleware(
+                NullLogger.Instance,
+                DefaultPartitionCount,
+                telemetry
+            ).Execute(requestInfo, NullNext);
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+
+            return telemetry;
+        }
+
+        private static readonly TestCaseData[] _rejections =
+        [
+            new TestCaseData(new[] { ("number", "0") }).SetName("{m}(partition count fault)"),
+            new TestCaseData(new[] { ("minChangeVersion", "abc") }).SetName("{m}(change-version fault)"),
+            new TestCaseData(new[] { ("notAField", "1") }).SetName("{m}(unknown query field)"),
+            new TestCaseData(new[] { ("schoolId", "not-a-number") }).SetName("{m}(invalid filter value)"),
+        ];
+
+        [TestCaseSource(nameof(_rejections))]
+        public async Task It_counts_every_rejecting_exit_exactly_once(
+            (string Key, string Value)[] queryParameters
+        )
+        {
+            RecordingCollectionPagingTelemetry telemetry = await ExecuteRecording(queryParameters);
+
+            CollectionPagingMeasurement measurement = telemetry.Single;
+
+            measurement.Kind.Should().Be(CollectionPagingMeasurementKind.ValidationRejected);
+            measurement.PagingMode.Should().Be("partition");
+            measurement.CommandCategory.Should().Be("none");
+            measurement.Provider.Should().Be("sqlserver");
+            measurement.Outcome.Should().Be("validation_rejected");
+        }
+
+        // Nothing executed, so a duration sample would report the cost of parsing a query string as a
+        // boundary-command latency.
+        [Test]
+        public async Task It_records_no_duration_or_counts_for_a_rejection()
+        {
+            RecordingCollectionPagingTelemetry telemetry = await ExecuteRecording(("number", "0"));
+
+            telemetry.Single.Duration.Should().BeNull();
+            telemetry.Single.Requested.Should().BeNull();
+            telemetry.Single.Returned.Should().BeNull();
+        }
+
+        [Test]
+        public async Task It_counts_nothing_for_a_request_it_accepts()
+        {
+            RecordingCollectionPagingTelemetry telemetry = new();
+
+            RequestInfo requestInfo = await Execute(telemetry, ("number", "4"));
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            telemetry.Measurements.Should().BeEmpty();
         }
     }
 }

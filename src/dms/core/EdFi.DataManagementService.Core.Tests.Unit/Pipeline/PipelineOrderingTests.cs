@@ -7,6 +7,8 @@ using System.Reflection;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Frontend;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
@@ -14,6 +16,8 @@ using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Telemetry;
+using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using EdFi.DataManagementService.Core.Validation;
 using FakeItEasy;
 using FluentAssertions;
@@ -488,7 +492,16 @@ public class PipelineOrderingTests
     /// Builds a routed-resource pipeline through the real ApiService factory, so the composed sequence
     /// under test is the one production builds.
     /// </summary>
-    private static List<Type> GetRoutedResourcePipelineStepTypes(string factoryMethodName)
+    private static List<Type> GetRoutedResourcePipelineStepTypes(string factoryMethodName) =>
+        GetStepTypes(BuildRoutedResourceApiService(), factoryMethodName);
+
+    /// <summary>
+    /// The real ApiService, with <paramref name="collectionPagingTelemetry" /> registered as the
+    /// telemetry its pipeline factories resolve.
+    /// </summary>
+    private static ApiService BuildRoutedResourceApiService(
+        ICollectionPagingTelemetry? collectionPagingTelemetry = null
+    )
     {
         var services = new ServiceCollection();
 
@@ -521,7 +534,7 @@ public class PipelineOrderingTests
         TestHelper.AddResourceKeyValidationServices(services);
         TestHelper.AddMappingSetResolutionServices(services);
 
-        TestHelper.AddCollectionPagingTelemetry(services);
+        services.AddSingleton(collectionPagingTelemetry ?? NoOpCollectionPagingTelemetry.Instance);
 
         services.AddSingleton<IProfileService>(A.Fake<IProfileService>());
         services.AddTransient<ProfileResolutionMiddleware>();
@@ -537,7 +550,7 @@ public class PipelineOrderingTests
 
         var serviceProvider = services.BuildServiceProvider();
 
-        var apiService = new ApiService(
+        return new ApiService(
             A.Fake<IApiSchemaProvider>(),
             A.Fake<IEffectiveApiSchemaProvider>(),
             A.Fake<IClaimSetProvider>(),
@@ -557,8 +570,76 @@ public class PipelineOrderingTests
             A.Fake<IProfileService>(),
             new CircuitBreakerSettings()
         );
+    }
 
-        return GetStepTypes(apiService, factoryMethodName);
+    /// <summary>
+    /// The query-validation step is the only instrumented type with two construction sites, and the
+    /// Change Query one must stay uncounted: those endpoints do not page by cursor at all, so a
+    /// /deletes?limit=abc fault is not a collection read.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Shared_Query_Validation_Step : PipelineOrderingTests
+    {
+        /// <summary>
+        /// Whether the query-validation step a pipeline factory composed counts its rejections as
+        /// collection-paging traffic.
+        /// </summary>
+        /// <remarks>
+        /// Exercises the instance the real factory produced, which is the only way to see a difference
+        /// that lives entirely in a constructor argument. The step is executed directly rather than
+        /// through the whole pipeline so the assertion depends on nothing before it.
+        /// </remarks>
+        private static async Task<IReadOnlyList<CollectionPagingMeasurement>> RecordRejectionFrom(
+            string factoryMethodName
+        )
+        {
+            RecordingCollectionPagingTelemetry telemetry = new();
+            List<IPipelineStep> steps = GetSteps(BuildRoutedResourceApiService(telemetry), factoryMethodName);
+            IPipelineStep validation = steps.OfType<ValidateQueryMiddleware>().Single();
+
+            FrontendRequest frontendRequest = new(
+                Path: "/ed-fi/academicWeeks",
+                Body: null,
+                Form: null,
+                Headers: [],
+                QueryParameters: new Dictionary<string, string>(StringComparer.Ordinal) { ["limit"] = "-1" },
+                TraceId: new TraceId("pipeline-composition"),
+                RouteQualifiers: []
+            );
+            RequestInfo requestInfo = new(frontendRequest, RequestMethod.GET, No.ServiceProvider);
+
+            await validation.Execute(requestInfo, TestHelper.NullNext);
+
+            // Proves the step really answered the request. Without this an empty recorder could mean
+            // the fault never reached a rejecting exit at all.
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+
+            return telemetry.Measurements;
+        }
+
+        [Test]
+        public async Task It_counts_a_get_many_rejection()
+        {
+            IReadOnlyList<CollectionPagingMeasurement> measurements = await RecordRejectionFrom(
+                "CreateQueryPipeline"
+            );
+
+            measurements.Should().ContainSingle().Which.Outcome.Should().Be("validation_rejected");
+        }
+
+        // The guard against a wiring change at the tracked-changes construction site silently folding
+        // Change Query faults into the collection-paging rejection rate, which would move every
+        // dashboard built on it with no other symptom.
+        [Test]
+        public async Task It_counts_nothing_for_a_change_query_rejection()
+        {
+            IReadOnlyList<CollectionPagingMeasurement> measurements = await RecordRejectionFrom(
+                "CreateGetTrackedChangesPipeline"
+            );
+
+            measurements.Should().BeEmpty();
+        }
     }
 
     [TestFixture]
