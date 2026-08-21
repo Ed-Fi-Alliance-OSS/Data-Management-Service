@@ -106,13 +106,18 @@ graph TB
         CMS["Ed-Fi Configuration<br/>Management Service (CMS)"]
         DMSDB[("DMS Database<br/>(operational/resource data)")]
         CMSDB[("CMS Database<br/>(configuration data)")]
+
+        KeyCloak["Keycloak<br/>(Identity & Access Management)"]
     end
 
+    ClientApp -->|"Authenticate"| CMS
     ClientApp -->|"Transmit & retrieve<br/>student data"| DMS
     AdminUI -->|"Manage configuration:<br/>credentials, claim sets,<br/>Profiles, tenants, environments"| CMS
     DMS -->|"Retrieve & cache<br/>configuration data"| CMS
     DMS --> DMSDB
     CMS --> CMSDB
+
+    CMS -->|"[Optional]<br />Proxy authentication & authorization<br/>requests to Keycloak"| KeyCloak
 ```
 
 - **Client applications** (vendor/integrator systems such as SIS, assessment, or
