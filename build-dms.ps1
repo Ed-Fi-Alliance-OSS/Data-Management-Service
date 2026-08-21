@@ -24,7 +24,7 @@
         * IntegrationTest: executes NUnit test in projects named `*.IntegrationTests`,
           which connect to a database.
         * BuildAndPublish: build and publish with `dotnet publish`
-        * Package: builds pre-release and release NuGet packages for the DMS API application and SchemaTools. Use -PackageTarget to build only one package.
+        * Package: builds NuGet packages. The DMS API application and SchemaTools packages are published by the release workflows; the custom-validation abstractions package is built and verified only, and is deliberately not published yet. Use -PackageTarget to build only one package.
         * Push: uploads a NuGet package to the NuGet feed.
         * DockerBuild: builds a Docker image from source code
         * DockerRun: runs the Docker image that was built from source code
@@ -71,7 +71,7 @@ param(
 
     # Selects which NuGet package(s) the Package command builds.
     [string]
-    [ValidateSet("All", "Api", "SchemaTools")]
+    [ValidateSet("All", "Api", "SchemaTools", "CustomValidation")]
     $PackageTarget = "All",
 
     # When set, `dotnet restore` runs with `--locked-mode`, failing the build if a committed
@@ -165,11 +165,14 @@ $solutionRoot = "$PSScriptRoot/src/dms"
 $defaultSolution = "$solutionRoot/EdFi.DataManagementService.sln"
 $applicationRoot = "$solutionRoot/frontend"
 $clisRoot = "$solutionRoot/clis"
+$coreRoot = "$solutionRoot/core"
 $projectName = "EdFi.DataManagementService.Frontend.AspNetCore"
 $schemaDownloaderProjectName = "EdFi.DataManagementService.ApiSchemaDownloader"
 $schemaToolsProjectName = "EdFi.DataManagementService.SchemaTools"
 $packageName = "EdFi.Api"
 $schemaToolsPackageName = "EdFi.Api.SchemaTools"
+$customValidationPackageName = "EdFi.Api.CustomValidation"
+$customValidationProjectName = "EdFi.DataManagementService.CustomValidation"
 $testResults = "$PSScriptRoot/TestResults"
 #Coverage
 $thresholdCoverage = 58
@@ -1810,17 +1813,45 @@ function BuildSchemaToolsPackage {
     }
 }
 
+function BuildCustomValidationPackage {
+    $projectPath = "$coreRoot/$customValidationProjectName/$customValidationProjectName.csproj"
+    $expectedPackagePath = "$PSScriptRoot/$customValidationPackageName.$DMSVersion.nupkg"
+
+    Write-Info "Building $customValidationPackageName package"
+
+    Invoke-Execute {
+        if (Test-Path $expectedPackagePath) {
+            Remove-Item -LiteralPath $expectedPackagePath -ErrorAction Stop
+        }
+
+        dotnet pack $projectPath `
+            -c $Configuration `
+            --no-build `
+            --no-restore `
+            --output $PSScriptRoot `
+            -p:PackageVersion=$DMSVersion
+
+        if (-not (Test-Path $expectedPackagePath)) {
+            throw "Expected custom-validation package was not created: $expectedPackagePath"
+        }
+    }
+}
+
 function BuildPackage {
     switch ($PackageTarget) {
         "All" {
             BuildApiPackage
             BuildSchemaToolsPackage
+            BuildCustomValidationPackage
         }
         "Api" {
             BuildApiPackage
         }
         "SchemaTools" {
             BuildSchemaToolsPackage
+        }
+        "CustomValidation" {
+            BuildCustomValidationPackage
         }
         default {
             throw "PackageTarget '$PackageTarget' is not recognized"

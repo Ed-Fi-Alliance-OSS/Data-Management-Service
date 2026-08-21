@@ -140,14 +140,20 @@ All three ODS production `IResourceValidator` implementations are compiled in an
 
 ### Validator Contract
 
-Five public top-level types, and no more (`CustomValidationFailure` carries the two nested cases shown below):
+Six public top-level types, and no more (`CustomValidationFailure` carries the two nested cases shown below):
 
 ```csharp
-public sealed record ValidatedResource(ProjectName ProjectName, ResourceName ResourceName);
+public sealed record ValidatedResource(string ProjectName, string ResourceName);
+
+public sealed record ValidatedResourceInfo(
+    string ProjectName,
+    string ResourceName,
+    string ResourceVersion
+);
 
 public sealed record ValidationScope(
     string? Tenant,
-    IReadOnlyDictionary<RouteQualifierName, RouteQualifierValue> RouteQualifiers
+    IReadOnlyDictionary<string, string> RouteQualifiers
 );
 
 public enum CustomValidationOperation
@@ -160,19 +166,30 @@ public interface ICustomResourceValidator
 {
     IReadOnlyList<ValidatedResource> AppliesTo { get; }
 
-    Task<IReadOnlyList<CustomValidationFailure>> Validate(
+    Task<IReadOnlyList<CustomValidationFailure>> ValidateAsync(
         JsonNode document,
-        ResourceInfo resourceInfo,
+        ValidatedResourceInfo resource,
         CustomValidationOperation operation,
         ValidationScope scope,
-        TraceId traceId,
+        string traceId,
         CancellationToken cancellationToken
     );
 }
 ```
 
-`ProjectName`, `ResourceName`, `ResourceInfo`, `TraceId`, `RouteQualifierName`, and `RouteQualifierValue` are existing public types in `EdFi.DataManagementService.Core.External`, reused rather than duplicated.
-Everything `Validate` receives is either a BCL type or a type from that assembly, so nothing in the contract obliges a validator to compile against `Backend.External` or any other host assembly.
+**The contract declares its own inputs.**
+An earlier revision reused `ProjectName`, `ResourceName`, `ResourceInfo`, `TraceId`, `RouteQualifierName`, and `RouteQualifierValue` from `EdFi.DataManagementService.Core.External` rather than duplicating them.
+That is reversed: the contract lives in its own project, `EdFi.DataManagementService.CustomValidation`, and declares `ValidatedResource`, `ValidatedResourceInfo`, and `ValidationScope` itself, with plain `string` members rather than branded types.
+
+The reason is that reuse and a small package are incompatible.
+A published package cannot depend on an unpublished assembly, so a contract that names `Core.External`'s types can only ship by publishing `Core.External` whole, roughly 174 public types under semver so an implementer can name five, or by relocating those types out of it.
+Declaring them here avoids both, and buys something on its own account: DMS's internal model and the published contract stop being the same thing, so adding a field to `ResourceInfo` for an internal reason is no longer a change to a contract other people compile against.
+
+The cost is a projection step where DMS invokes a validator, building `ValidatedResourceInfo` from its own `ResourceInfo`.
+That is the same boundary that already constructs `ValidationScope` from `FrontendRequest` rather than passing the live instance, so it adds a few lines to a mapping that has to happen anyway rather than introducing a new kind of work.
+`Core` takes a project reference on the contract project; `Core.External` neither references it nor is referenced by it.
+
+Everything `ValidateAsync` receives is either a BCL type or a type this contract declares, so nothing in it obliges a validator to compile against `Core.External`, `Backend.External`, or any other host assembly.
 
 There is no registration-hook interface in the contract.
 An earlier revision carried one so a dropped-in assembly could bind its own options during a folder scan; with compiled-in delivery the implementer writes an ordinary `IServiceCollection` extension method and calls `Configure<T>` directly, so a hook interface would add a type without adding a capability (see [Registration and Composition](#registration-and-composition)).
@@ -190,6 +207,11 @@ A typed contract would mean inventing a class hierarchy DMS does not have.
 public abstract record CustomValidationFailure
 {
     private CustomValidationFailure() { }
+
+    // Closes the hierarchy: only a case declared in this assembly can satisfy this, so no
+    // concrete case can be declared outside it. See **Sealing limit** below. Each case below
+    // overrides it with an empty body.
+    private protected abstract void EnsureClosed();
 
     public sealed record OnPath : CustomValidationFailure
     {
@@ -231,16 +253,20 @@ Rejecting `"$."` would leave a document-level `validationErrors` entry inexpress
 The cases are non-positional so that the validating constructor is the only way to build one, and that validation is what stops a malformed path such as `""` or `"$"` from reaching the two-bucket rule.
 A positional record can host the same validation in a property initializer, so this is a choice to keep the surface minimal - no `Deconstruct`, no positional pattern - rather than a limitation of positional records.
 
-**Sealing limit.** The private base constructor closes ordinary construction, but the compiler synthesizes a protected copy constructor on every unsealed record and forbids restricting it (declaring it `private protected` fails with CS8878, probe-verified), so an external record can chain `base(existingFailure)` and compile.
-The guarantee is therefore completed at the consumption point: the fan-in step's switch is exhaustive over `OnPath` and `OnResource` and throws on any other subtype, so a smuggled third case is a loud 500 rather than a silently dropped failure.
-A `null` return from `Validate` is treated the same way and throws, rather than being coerced to an empty list.
+**Sealing limit, and how it was closed.** The private base constructor closes ordinary construction, but the compiler synthesizes a protected copy constructor on every unsealed record and forbids restricting *that constructor* (declaring it `private protected` fails with CS8878, probe-verified), so a private constructor alone does not close the hierarchy.
+An earlier revision of this design concluded the hierarchy therefore could not be closed in-assembly at all.
+That is wrong, and the implementation closes it: an abstract `private protected` member on the base record cannot be overridden from another assembly, so the first concrete external type in any derivation chain fails with CS0534.
+An external *abstract* record chaining the copy constructor still compiles, which is harmless because it can never be instantiated.
+Probe-verified in both directions, with a negative control.
+The consumption point keeps its exhaustive switch over `OnPath` and `OnResource` regardless, now as defense in depth rather than as the primary guarantee.
+A `null` return from `ValidateAsync` is treated the same way and throws, rather than being coerced to an empty list.
 Coercing it would make a validator that mistakenly returns `null` indistinguishable from one that ran and passed, which is the silent-success outcome this design refuses everywhere else.
 This closes the ODS gap where a member-less `ValidationResult` disappears from `validationErrors` entirely (`EdFi.Ods.Api/ExceptionHandling/ErrorTranslator.cs:54-60`).
 
 ### Resource Applicability
 
 `AppliesTo` declares, as data, which resources a validator runs against.
-The fan-in step skips `Validate` entirely when the current request's `(ResourceInfo.ProjectName, ResourceInfo.ResourceName)` pair is absent from the list, so an I/O-bound validator never pays for writes it has nothing to say about.
+The fan-in step skips `ValidateAsync` entirely when the current request's `(ResourceInfo.ProjectName, ResourceInfo.ResourceName)` pair is absent from the list, so an I/O-bound validator never pays for writes it has nothing to say about.
 `AppliesTo` must therefore be cheap, synchronous, and free of I/O; it is read on every write request for every registered validator.
 
 **Matching is exact and ordinal.** `ProjectName` and `ResourceName` are record structs wrapping strings with default equality, so a typo'd or wrong-cased entry never matches and its validator silently never runs.
@@ -351,7 +377,7 @@ The guard is unconditional Core behavior, running whether or not any validator i
 The fan-in step instead resolves `IEnumerable<ICustomResourceValidator>` from `requestInfo.ScopedServiceProvider` (`Pipeline/RequestInfo.cs:193-201`) inside its own `Execute`, the pattern `UpsertHandler` (`Handler/UpsertHandler.cs:32-34`) and `QueryRequestHandler` (`Handler/QueryRequestHandler.cs:31-32`) already use for scoped repositories.
 Two consequences follow.
 A validator must not accumulate mutable instance state across invocations, the same no-object-state convention `Pipeline/IPipelineStep.cs:18` already states.
-And every registered validator's constructor and dependency graph run on every POST and PUT, matching or not, because `AppliesTo` gates `Validate` and not construction, so constructors must stay trivial.
+And every registered validator's constructor and dependency graph run on every POST and PUT, matching or not, because `AppliesTo` gates `ValidateAsync` and not construction, so constructors must stay trivial.
 
 **Constructor injection surface.** Whatever an implementer can construct through the host's `IServiceCollection`, a validator's constructor can take.
 `services.AddHttpClient()` is already called in Core (`DmsCoreServiceExtensions.cs:248`), registering `IHttpClientFactory`, which an existing Core registration already resolves alongside `IOptions<JwtAuthenticationOptions>` to retrieve OIDC metadata over HTTP (`DmsCoreServiceExtensions.cs:251-265`) and which is safe to inject into a component of any lifetime.
@@ -416,7 +442,7 @@ That preference conflicts with the doc comment labelling 200-299 "Schema process
 
 **What the guard guarantees** is constructibility: a dependency the container cannot supply, or a constructor that throws when resolved outside a request.
 That is narrower than "no validator depends on per-request state", and the implementer guide inherits the distinction rather than overclaiming.
-For DMS's current registrations the narrow guarantee happens to suffice in both directions: a constructor reading `IDataStoreSelection` throws in an empty scope (`Configuration/DataStoreSelection.cs:36-42`), while a validator reading it inside `Validate` finds it populated by `ResolveDataStoreMiddleware` (`Middleware/ResolveDataStoreMiddleware.cs:175`) far upstream of the fan-in slot.
+For DMS's current registrations the narrow guarantee happens to suffice in both directions: a constructor reading `IDataStoreSelection` throws in an empty scope (`Configuration/DataStoreSelection.cs:36-42`), while a validator reading it inside `ValidateAsync` finds it populated by `ResolveDataStoreMiddleware` (`Middleware/ResolveDataStoreMiddleware.cs:175`) far upstream of the fan-in slot.
 
 ---
 
@@ -500,37 +526,28 @@ This design does not leave that silent, but the guard's reach over it is partial
 The guard resolves every registered `ICustomResourceValidator` once from a throwaway scope and reads each one's `AppliesTo` to log it (see [Startup Failure Semantics](#startup-failure-semantics)), so a break the CLR resolves at type load, or one reached by executing the constructor or the `AppliesTo` getter, aborts startup before the process serves traffic.
 Adding a member to `ICustomResourceValidator` is in that half: the stale validator no longer implements the interface, and the CLR throws `TypeLoadException` naming the unimplemented member as soon as the type loads.
 
-What the guard does not reach is a member reference reachable only from the `Validate` body, which is not resolved until `Validate` is JIT-compiled, and that happens on the first write whose resource matches that validator's `AppliesTo`.
-Changing `CustomValidationFailure` is in this half: a validator whose `Validate` constructs an `OnPath` against a constructor that the host's newer contract no longer declares constructs cleanly, reports its `AppliesTo` cleanly, and then throws `MissingMethodException` on that first matching write.
+What the guard does not reach is a member reference reachable only from the `ValidateAsync` body, which is not resolved until `ValidateAsync` is JIT-compiled, and that happens on the first write whose resource matches that validator's `AppliesTo`.
+Changing `CustomValidationFailure` is in this half: a validator whose `ValidateAsync` constructs an `OnPath` against a constructor that the host's newer contract no longer declares constructs cleanly, reports its `AppliesTo` cleanly, and then throws `MissingMethodException` on that first matching write.
 Both halves are probe-verified with a two-assembly swap: one validator compiled against an older contract, run unrecompiled against hosts carrying each kind of change.
 The `MissingMethodException` takes the catch-all arm and becomes the logged 500 of [Exceptions and Non-400 Outcomes](#exceptions-and-non-400-outcomes), so that write fails loudly and persists nothing, but the deployment starts clean and stays up until a matching write arrives.
 
 The outcome therefore degrades from a build failure to a loud failure, never to a silent one: a startup abort for the load-time half, and a logged 500 on the first matching write for the rest.
-Forcing `Validate` to JIT at startup would close the remainder; this version accepts it instead, since the escaping case is already loud and depends on a deployment shipping a validator binary it never rebuilt, which is the thing the implementer guide tells it not to do.
+Forcing `ValidateAsync` to JIT at startup would close the remainder; this version accepts it instead, since the escaping case is already loud and depends on a deployment shipping a validator binary it never rebuilt, which is the thing the implementer guide tells it not to do.
 Compiled-in delivery still removes the type-identity and assembly-probing failures the runtime-loading alternative would add.
 
-**Target framework.** A validator is compiled into the host's build and loaded into its runtime, so its target framework must be compatible with the host's; `Core.External` targets `net10.0` (`Core.External/EdFi.DataManagementService.Core.External.csproj:3`).
+**Target framework.** A validator is compiled into the host's build and loaded into its runtime, so its target framework must be compatible with the host's; the contract project targets `net10.0` (`CustomValidation/EdFi.DataManagementService.CustomValidation.csproj:3`).
 A DMS runtime major-version bump therefore changes the set of buildable validators without any package version changing, which the implementer guide states alongside the semver rule.
 
-**Hosting the contract in `Core.External` is deliberate.** That assembly is DMS's public seam, 88 `.cs` files carrying `IApiService`, `FrontendRequest`, the backend result types, and the security contracts, and publishing it places all of that under public semver, not just the new validator types.
-`Core.External.csproj` declares `IsPackable=true`, but nothing packs or publishes it today (`build-dms.ps1:1801-1867` packs only the API package and SchemaTools, and no `Core.External` nuspec exists), so adding the pack-and-publish step is prerequisite work in the contract ticket.
+**Hosting the contract in `Core.External` was reversed.**
+This design originally put the contract in `Core.External` and accepted publishing that assembly, on the reasoning that a separate project was avoidable complexity.
+Two things overturned it.
+Packaging `Core.External` places its whole public seam under semver, 88 `.cs` files carrying `IApiService`, `FrontendRequest`, the backend result types, and the security contracts, so that an implementer can name five validator types.
+And publishing it also publishes its dependency closure: it declares five `PackageReference`s, none carrying `PrivateAssets`, of which `Microsoft.CodeAnalysis` is unused and alone accounts for 16 of the project's 26 lock-file entries, including every Roslyn package, the six `System.Composition.*` packages, and `Humanizer.Core`.
+Left as it was, a district implementing this contract would have taken a compile-and-publish dependency on the Roslyn compiler platform.
 
-**Publishing the assembly also publishes its dependency closure, which is prerequisite work of its own.**
-`Core.External.csproj` declares five `PackageReference`s (`:10-14`), none carrying `PrivateAssets`, and the project declares no `ProjectReference`, so all five become the published package's declared dependencies. `packages.lock.json` lists 26 entries, two of which are the analyzer references covered below; the five declared references resolve to a closure of 24.
-The two analyzer references that `src/dms/Directory.Build.props:14-21` adds to every project are not part of that surface, since both carry `PrivateAssets=all` and therefore do not flow to consumers.
-One of the five is unused: no file in the project references any Roslyn API, and `Microsoft.CodeAnalysis` is declared as an ordinary reference without the `PrivateAssets` scoping the analyzers beside it carry.
-That single reference accounts for 16 of the 26 packages, including every Roslyn package, the six `System.Composition.*` packages, and `Humanizer.Core`, none of which is reachable from any other declared reference.
-Removing it leaves `Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic` (`Model/ReferentialIdFactory.cs:6`), `Sandwych.QuickGraph.Core` (`Model/GraphMLEdge.cs:6`), and the two logging packages, of which only `Microsoft.Extensions.Logging.Abstractions` is actually used: the sole logging symbol in the project is `EventId` (`Logging/RequestLoggingEventIds.cs:15`, `:17`).
-`Microsoft.Extensions.Logging` itself is therefore also unused, and this design deliberately does not remove it in the same story.
-Removing it would drop `Microsoft.Extensions.Options` from the closure, which the documented registration extension needs, so the two changes are only safe together and in that order: declare `Options` explicitly first, then the logging reference becomes removable independently.
-The contract ticket does the first half and asserts the resulting list; retiring `Microsoft.Extensions.Logging` is left as a separate, later cleanup rather than smuggled into a contract story.
-The contract ticket additionally declares `Microsoft.Extensions.Options` and `Microsoft.Extensions.DependencyInjection.Abstractions` explicitly.
-Both arrive transitively today, but not equally safely.
-`Microsoft.Extensions.Options` has exactly one path into the closure, `Microsoft.Extensions.Logging` - the reference just identified as unused - so a later tidy-up would remove the sample's ability to compile without touching anything that mentions it.
-`Microsoft.Extensions.DependencyInjection.Abstractions` also arrives through `Microsoft.Extensions.Logging.Abstractions`, which is used and staying, so declaring it is hygiene rather than a rescue.
-Either way, a dependency the documented usage requires belongs in the package's own declaration rather than inherited from whatever happens to be upstream.
-Removing the Roslyn reference is therefore prerequisite work in the contract ticket alongside the pack-and-publish step, and that ticket asserts the resulting dependency list rather than trusting it.
-Left in place, a district implementing this contract would take a compile-and-publish dependency on the Roslyn compiler platform.
+The contract therefore lives in its own project, `EdFi.DataManagementService.CustomValidation`, packaged as `EdFi.Api.CustomValidation`, declaring its own inputs and no `PackageReference` at all.
+`Core` references it; `Core.External` does not, and is unchanged by this epic.
+Retiring `Core.External`'s unused references remains worth doing, but it is now ordinary cleanup belonging to whoever wants it rather than prerequisite work for this contract.
 
 **Supported versus possible.** A validator is in-process code that can constructor-inject anything the host registers, and `IDocumentStoreRepository` and `IQueryHandler` are public interfaces registered scoped in the host (`Backend.External/RepositoryContracts.cs:13`, `:39`) whose assembly the deployment already references, so an implementer can reach services this contract does not offer.
 Such a validator works and nothing stops it.
@@ -584,7 +601,7 @@ Three ODS behaviors are refused explicitly, each because it converts a defect in
 
 1. **Member-less results vanish.** `ErrorTranslator.cs:54-60` adds model errors only inside `foreach (string memberName in validationResult.MemberNames)`, so a result with no member names never reaches `modelState` and never appears in `validationErrors`, dropping its message while still causing a 400. Refused by `CustomValidationFailure`'s two constructible cases plus the exhaustive consumption switch.
 2. **Module construction and registration-call failures are swallowed.** `OdsStartupBase.cs:379-387` catches, logs, and continues; failures inside a module's deferred `Load` body escape that catch and are not swallowed. Refused by [Startup Failure Semantics](#startup-failure-semantics).
-3. **`ValidationState` is dead code.** `SetValid()`/`SetInvalid()` write only when `ValidationState.Current` is non-null (`EdFi.Ods.Api/Validation/ObjectValidatorBase.cs:22-30`), `Current` reads log4net's `ThreadContext.Properties` (`EdFi.Ods.Common/ValidationState.cs:14-18`), and no production path assigns it: the controllers build a separate local instance for the `PutContext` (`EdFi.Ods.Api/Controllers/DataManagementControllerBase.cs:298`, `:366`) that never reaches the thread context. Even populated it would be last-writer-wins, and the response decision (`:312`, `:399`) consults the aggregated list instead. Refused by having no ambient state at all: `Validate` takes everything as parameters and returns everything as a value.
+3. **`ValidationState` is dead code.** `SetValid()`/`SetInvalid()` write only when `ValidationState.Current` is non-null (`EdFi.Ods.Api/Validation/ObjectValidatorBase.cs:22-30`), `Current` reads log4net's `ThreadContext.Properties` (`EdFi.Ods.Common/ValidationState.cs:14-18`), and no production path assigns it: the controllers build a separate local instance for the `PutContext` (`EdFi.Ods.Api/Controllers/DataManagementControllerBase.cs:298`, `:366`) that never reaches the thread context. Even populated it would be last-writer-wins, and the response decision (`:312`, `:399`) consults the aggregated list instead. Refused by having no ambient state at all: `ValidateAsync` takes everything as parameters and returns everything as a value.
 
 ---
 
@@ -638,7 +655,7 @@ ODS implements that behaviour as two validators, and they land differently here.
 `EnsureUniqueIdAlreadyExistsEntityValidator` (`EdFi.Ods.Features/UniqueIdIntegration/Validation/EnsureUniqueIdAlreadyExistsEntityValidator.cs:22`) checks that an upstream pipeline step already resolved the submitted UniqueId to an internal id; the *kind* of rule is expressible here, though a DMS equivalent is shaped differently because there is no such upstream step and no typed model.
 `UniqueIdNotChangedEntityValidator` (`EdFi.Ods.Features/UniqueIdIntegration/Validation/UniqueIdNotChangedEntityValidator.cs:16`) injects `IPersonUniqueIdToIdCache` and calls `GetUniqueId(objType.Name, objectWithIdentifier.Id)` to fetch the **persisted** UniqueId before comparing it to the submitted one (`:32-45`).
 That rule needs previously-stored state, and this version's contract supplies none, so "a person's UniqueId cannot be modified" is **not expressible on the supported surface**.
-An implementer can still inject their own cache, exactly as ODS does, but two things stop that from closing the gap: nothing in DMS supplies a supported way to populate that cache from DMS's own data, and the cache lookup needs the persisted document's identifier, which `Validate` does not receive (see [Deferred Follow-On Work](#deferred-follow-on-work) for why the body does not supply it either).
+An implementer can still inject their own cache, exactly as ODS does, but two things stop that from closing the gap: nothing in DMS supplies a supported way to populate that cache from DMS's own data, and the cache lookup needs the persisted document's identifier, which `ValidateAsync` does not receive (see [Deferred Follow-On Work](#deferred-follow-on-work) for why the body does not supply it either).
 The honest answer to DMS-1415 is therefore that the not-changed rule is out of scope for this version rather than achievable through documentation alone.
 Whether to close that gap by adding a store-read capability is recorded under [Deferred Follow-On Work](#deferred-follow-on-work) and should be decided with DMS-1414 rather than assumed.
 
@@ -650,13 +667,29 @@ Whether to close that gap by adding a store-read capability is recorded under [D
 - Validation on GET or DELETE.
 - Store reads from a validator. An earlier revision carried a `ICustomValidationStoreReader` facade exposing `Task<JsonNode?> GetDescriptorByUri(...)`; it is cut. The backend's own contracts cannot serve it directly, since `IQueryRequest`/`IGetRequest` demand a mapping set, query elements, authorization evaluators, and paging inputs that a validator does not hold, their concrete implementations are internal to Core, and neither is keyed by descriptor URI. A facade would also have to collapse `QueryResult`'s seven cases (`Core.External/Backend/QueryResult.cs:25-65`) into `JsonNode?`, giving an infrastructure failure and a genuine not-found the same representation, so a database outage would surface as a validator-authored 400 saying the descriptor does not exist. Designing that error contract deserves its own evidence.
 - Implementing any driving scenario.
+- Publishing the contract package. See **Publishing deferral** immediately below.
+
+### Publishing deferral
+
+The abstractions-contract story builds the package but does not publish it.
+`EdFi.Api.CustomValidation` is packed from `EdFi.DataManagementService.CustomValidation`, its contents are asserted, and a scratch consumer is compiled against the produced nupkg, all in the per-PR lane.
+No prerelease pack, SBOM, provenance, or publish job exists, and no release promote step, so nothing reaches a feed.
+This design originally had the contract story publish as well, and every passage below that says so is superseded by this one.
+
+The line is drawn at what can be undone.
+Packing produces an artifact a build throws away, so it costs nothing to be wrong about, and building it now is what proves the csproj metadata, the dependency closure, and the consumer story actually work.
+Publishing burns a package id and a version permanently, and nothing can consume the contract until the fan-in step lands, so a package published now is one no host can run.
+
+Publishing is taken up at the end of the epic, when there is a host that runs validators and an implementer guide to ship inside the package.
+Note also that this epic's delivery mechanism is compiled-in: a deployment adds one call at its own composition root, which means it already builds from source and could reference the contract project directly.
+The package becomes load-bearing under the deferred runtime-loading model, where a validator is built independently of the host and needs a versioned contract to compile against.
 
 ### Deferred Follow-On Work
 
 | Deferred item | Reason |
 | --- | --- |
 | Runtime assembly loading (the plugin spike) | Its own design stream when a deployment needs it; deliberately not pre-filed. Inherits this contract, the fan-in step, the failure surfacing, and the startup guard unchanged; adds a discovery-and-registration path feeding the same collection. |
-| Store-read capability for validators | Additive to the contract surface (a validator obtains it by constructor injection, not as a parameter), so adding it later breaks no signature. Needs its own error-contract design. It is one of two things the ODS UniqueId not-changed rule needs, not the only one: that rule keys on the persisted document's identifier (`EdFi.Ods.Features/UniqueIdIntegration/Validation/UniqueIdNotChangedEntityValidator.cs:39`), and this version's `Validate` exposes neither a `DocumentUuid` nor the route, so DMS-1414 needs a document-identity capability alongside store access. The document body does not stand in for it: an `Upsert` body carries no `id` by construction (`Middleware/RejectResourceIdentifierMiddleware.cs:35-45`), and although an `Update` body must carry one matching the route id (`Validation/MatchingDocumentUuidsValidator.cs:23-27`), a writable profile can strip it from the profile-effective body the validator receives, since an `IncludeOnly` member filter keeps only the members the profile names (`Profile/WritableRequestShaper.cs:661-670`). |
+| Store-read capability for validators | Additive to the contract surface (a validator obtains it by constructor injection, not as a parameter), so adding it later breaks no signature. Needs its own error-contract design. It is one of two things the ODS UniqueId not-changed rule needs, not the only one: that rule keys on the persisted document's identifier (`EdFi.Ods.Features/UniqueIdIntegration/Validation/UniqueIdNotChangedEntityValidator.cs:39`), and this version's `ValidateAsync` exposes neither a `DocumentUuid` nor the route, so DMS-1414 needs a document-identity capability alongside store access. The document body does not stand in for it: an `Upsert` body carries no `id` by construction (`Middleware/RejectResourceIdentifierMiddleware.cs:35-45`), and although an `Update` body must carry one matching the route id (`Validation/MatchingDocumentUuidsValidator.cs:23-27`), a writable profile can strip it from the profile-effective body the validator receives, since an `IncludeOnly` member filter keeps only the members the profile names (`Profile/WritableRequestShaper.cs:661-670`). |
 | A wildcard in `AppliesTo` | Additive to `ValidatedResource`. Only worth adding against a real requirement for breadth, which is arguably a different extension point. |
 | ~~Distinct handling for `OperationCanceledException`~~ | **Closed, not deferred.** Core already rethrows a cancelled request's `OperationCanceledException` ahead of its catch-all (`Middleware/CoreExceptionLoggingMiddleware.cs:52-55`), so a validator's inherits that outcome and there is nothing for the fan-in ticket to decide. |
 | A copy-on-write or read-only `JsonNode` wrapper | Replaces the per-validator deep clone if that cost ever becomes measurable on a bulk-load path. |
@@ -668,7 +701,7 @@ Whether to close that gap by adding a store-read capability is recorded under [D
 **Contract unit tests** (abstractions package):
 
 - `OnPath` throws for a null or empty path, for any path that is not `"$."`-prefixed (including bare `"$"`), and for an empty message; `OnResource` throws for an empty message. A bare `"$."` is accepted and asserted as accepted, since it is DMS's document-level `validationErrors` key.
-- Within the abstractions assembly's own public construction surface, `OnResource` is the only way to express a path-less failure. Asserted reflectively; the expected constructor set is exactly the synthesized copy constructor, since CS8878 forbids restricting it.
+- Within the abstractions assembly's own public construction surface, `OnResource` is the only way to express a path-less failure. Asserted reflectively; the expected constructor set is exactly the synthesized copy constructor, since CS8878 forbids restricting it. Reaching that constructor from another assembly does not yield a usable third case, per **Sealing limit**.
 - A scratch library referencing only the published package compiles a validator and the registration extension exactly as [Registration and Composition](#registration-and-composition) documents it, including the `Action<TOptions>` overload of `Configure`, proving the package's dependency set is sufficient for the documented usage.
 
 **Fan-in step unit tests:**
@@ -684,7 +717,7 @@ Whether to close that gap by adding a store-read capability is recorded under [D
 - `ValidationScope` carries the tenant (including the null single-tenant case) and the route qualifiers, asserted **separately**: a single-tenant routed deployment has a null tenant and non-empty qualifiers, so an implementation populating only `Tenant` would pass a tenant-only test while leaving that shape unable to scope a rule.
 - The scope's qualifier dictionary is a defensive copy, proven by downcasting to `Dictionary<,>`, mutating, and asserting the request is unchanged. Asserting that `IReadOnlyDictionary<,>` has no `Add` proves nothing, since a pass-through would pass it.
 - A validator that throws produces a 500 through the existing catch-all, not a 400 and not an escaping exception.
-- A `CustomValidationFailure` subtype other than the two cases (built via a test-only record chaining the copy constructor) throws at the consumption switch and surfaces as a 500.
+- A concrete `CustomValidationFailure` subtype other than the two cases cannot be declared outside the abstractions assembly at all (CS0534), so this is a compile-time guarantee rather than a runtime one, and there is no external third case left to test. The remaining gap is a third case added *inside* `EdFi.DataManagementService.CustomValidation` without updating the consumption switch. No test in `Core.Tests.Unit` can construct that, the assembly being a separate one with no `InternalsVisibleTo` grant, so the fan-in story chooses between a throwing default arm that no test can reach and relying on the compiler to flag the unhandled case at the switch site. That choice belongs to the fan-in story; this design does not pre-empt it, and it must not be closed by adding a friend grant, which would reopen the hierarchy (see **Sealing limit**).
 - A custom-validator 400 is byte-identical to the core 400 taking the same arm in `detail`, `type`, `title`, and `status`: `detail` against the literals `ValidateDocumentMiddleware` passes on each arm (`Middleware/ValidateDocumentMiddleware.cs:41`, `:50`), and the other three against the arm's factory (`Response/FailureResponse.cs:83-85` for `ForDataValidation`, `:99-101` for `ForBadRequest`). Asserting `detail` alone would not catch a hand-built body, since `CreateBaseJsonObject` serializes `type` and `title` into every 400 and the two factories differ in both. The comparison is against those literals rather than against a produced core schema-validation 400, since `DocumentValidator` always returns an empty `errors` array (`Validation/DocumentValidator.cs:94`) and so never produces an `errors`-arm 400.
 - The document is the profile-shaped body under a writable profile and `ParsedBody` otherwise.
 - A validator returning failures produces a log record naming that validator against the request's `TraceId`, and that record contains no failure message text.
@@ -712,7 +745,7 @@ Adding the property without assigning it would leave every validator on `Cancell
 Medium.
 Four implementation surfaces, in dependency order. They do not map one-to-one onto the five ticket drafts: surface 3 covers drafts 03 and 04, which are separate stories because the guide depends on all three preceding ones. See README.md "## Ticket Drafts" for the authoritative work-item list.
 
-1. **Abstractions package** - five public top-level types in `Core.External`, plus the pack-and-publish path that does not exist today (a `build-dms.ps1` package target, prerelease pack/push jobs, and a release promote step).
+1. **Abstractions contract** - six public top-level types in their own project, `EdFi.DataManagementService.CustomValidation`, plus the pack-and-verify path in the per-PR lane. The prerelease pack/SBOM/provenance/push jobs and the release promote step are deferred out of this surface; see **Publishing deferral**.
 2. **Fan-in pipeline step** - the `internal` step, the `validationErrors`/`errors` merge, per-request resolution from the request scope, the observability records, and extending the two write entry points with the optional `CancellationToken` parameter `Get` already carries so `RequestInfo.RequestCancellationToken` is populated on writes.
 3. **Composition seam, startup guard, and implementer guide** - the Core extension that registers the guard and captures the collection, the unconditional startup guard itself, the documented registration call at the composition root, and the guide packaged with the abstractions package.
 4. **End-to-end proof** - a fixture validator registered through the documented seam and driven over real HTTP.

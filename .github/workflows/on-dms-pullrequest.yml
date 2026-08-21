@@ -48,6 +48,7 @@ concurrency:
 
 env:
   CONFIGURATION: "Release"
+  CUSTOM_VALIDATION_PACKAGE_NAME: "EdFi.Api.CustomValidation"
   MSSQL_IMAGE: "mcr.microsoft.com/mssql/server:2025-latest"
   MSSQL_CONTAINER_MEMORY: "10g"
   MSSQL_MEMORY_LIMIT_MB: "4096"
@@ -268,8 +269,8 @@ jobs:
       - name: Restore with locked mode
         run: dotnet restore ./src/dms/EdFi.DataManagementService.sln --locked-mode
 
-  verify-schematools-package:
-    name: Verify SchemaTools Package
+  verify-dms-packages:
+    name: Verify DMS Packages
     needs: detect-fresh-build-changes
     if: >-
       github.event_name != 'pull_request' ||
@@ -352,6 +353,39 @@ jobs:
 
           # Backend.Ddl stack: effective-schema-set build -> DDL generation (both dialects) -> file emission.
           api-schema-tools ddl emit --schema $fixture --output "$env:RUNNER_TEMP/ddl-verify" --dialect both
+
+      - name: Create Custom Validation NuGet Package
+        run: |
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+
+          ./build-dms.ps1 Package `
+            -DMSVersion $packageVersion `
+            -Configuration ${{ env.CONFIGURATION }} `
+            -PackageTarget CustomValidation
+
+      - name: Assert Custom Validation Package Contents
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+
+          # Asserts on what is inside the artifact, not that a file appeared. The package is not
+          # published yet, so this is the only thing standing between a broken csproj and a broken
+          # first release.
+          ./eng/verification/Assert-CustomValidationPackage.ps1 `
+            -PackageFile "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}.$packageVersion.nupkg" `
+            -ExtractTo (Join-Path $env:RUNNER_TEMP "custom-validation-nupkg") `
+            -PackageId "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}"
+
+      - name: Compile Scratch Consumer
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+
+          ./eng/verification/Invoke-CustomValidationConsumerCheck.ps1 `
+            -PackageVersion $packageVersion `
+            -NuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-custom-validation")
 
   run-unit-tests:
     name: Run Unit Tests
@@ -3161,7 +3195,7 @@ jobs:
     needs:
       [
         verify-lock-files,
-        verify-schematools-package,
+        verify-dms-packages,
         run-unit-tests,
         run-e2e-tests,
         run-e2e-tests-mssql,
@@ -3209,7 +3243,7 @@ jobs:
       - scan-actions-bidi
       - run-bootstrap-pester-tests
       - verify-lock-files
-      - verify-schematools-package
+      - verify-dms-packages
       - run-unit-tests
       - build-integration-test-assemblies
       - build-ci-docker-images
