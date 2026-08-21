@@ -13,7 +13,7 @@ are regenerated only by rerunning the capture, never edited.
 | Runs | `postgresql-primary-500k-20260821050137`, `mssql-primary-500k-20260821050627` (captured 2026-08-21 UTC) |
 | Fixture | `primary-500k`: 500,000 DS 5.2 students, deterministic sparse `DocumentId`s (gaps ≥ 10% of the id space), loader-verified — see the harness `PerfFixtureDefinition` |
 | Scenarios | Offsets 0 / page-size / 450,000 at page sizes 25 and 500; 5 warmups + 30 measured warm-cache iterations per cell |
-| Environment | Machine fingerprint `92b6869f0fdb8eeb` (developer workstation, Windows 11, local docker volumes — not tmpfs); PostgreSQL 16.8 pinned by digest; SQL Server 2025 (RTM-CU7) 17.0.4065.4 pinned by resolved digest; full identity in each `run-manifest.json` |
+| Environment | Machine fingerprint `92b6869f0fdb8eeb` — a pseudonym of the machine name, meaningful only together with the OS/CPU/core/memory/.NET facts recorded beside it (developer workstation, Windows 11, local docker volumes — not tmpfs); PostgreSQL 16.8 pinned by digest; SQL Server 2025 (RTM-CU7) 17.0.4065.4 pinned by resolved digest; full identity in each `run-manifest.json` |
 | Worktree state | Clean at the subject commit apart from the harness overlay directory, as recorded in each manifest's `worktreeDirtyPaths` |
 
 ## Comparison constraints for DMS-1392
@@ -27,6 +27,13 @@ are regenerated only by rerunning the capture, never edited.
 - The `database` metrics and plan evidence come from replaying the full captured hydration
   batch — the one DbCommand each measured request executed — with the request's bound paging
   parameters, so buffer/read totals include collection hydration, not just page selection.
+- The replay is an out-of-band one-shot `EXPLAIN` on a dedicated connection, which PostgreSQL
+  plans as a custom plan. The measured requests run through the application's pooled Npgsql
+  connections with auto-prepare enabled (the DMS data-source cache sets
+  `AutoPrepareMinUsages=3` / `MaxAutoPrepare=256` in code, on top of the configured
+  connection string), so warm requests may execute server-prepared plans the replay does not
+  reproduce. The plan evidence proves plan shape and work volume, not the measured requests'
+  exact plan-caching regime.
 - SQL Server `STATISTICS TIME` reports whole milliseconds; near-zero CPU values on fast cells
   are provider granularity, not missing data.
 

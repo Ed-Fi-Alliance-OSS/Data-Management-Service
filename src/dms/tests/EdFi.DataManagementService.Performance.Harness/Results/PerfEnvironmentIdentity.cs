@@ -13,8 +13,9 @@ public sealed record PerfSetting(string Name, string Value);
 
 /// <summary>
 /// Identity of the measured database server: version, pinned image, storage caveats, the
-/// connection-string shape (pooling and prepare settings with every secret redacted), and the
-/// settings snapshot that shapes plans and timing.
+/// connection-string shape (the explicitly configured keys with every secret redacted —
+/// options the application's data-source code adds on top are recorded as settings), and
+/// the settings snapshot that shapes plans and timing.
 /// </summary>
 public sealed record PerfServerIdentity(
     string ServerVersion,
@@ -49,8 +50,9 @@ public sealed record PerfServerIdentity(
 
 /// <summary>
 /// Identity of the machine and runtime that produced the measurement. The machine fingerprint
-/// is a stable pseudonym rather than a hostname, so committed artifacts can prove two runs
-/// shared an environment without publishing the environment itself.
+/// is a stable pseudonym of the machine name rather than a hostname or hardware identity, so
+/// committed artifacts can prove two runs shared an environment without publishing the
+/// environment itself; it is meaningful only alongside the other host facts recorded here.
 /// </summary>
 public sealed record PerfHostIdentity(
     string OsDescription,

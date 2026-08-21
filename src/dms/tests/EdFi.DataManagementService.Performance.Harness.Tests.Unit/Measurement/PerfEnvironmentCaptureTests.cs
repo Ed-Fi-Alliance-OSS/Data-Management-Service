@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Performance.Harness.Measurement;
+using EdFi.DataManagementService.Performance.Harness.Results;
 using FluentAssertions;
 
 namespace EdFi.DataManagementService.Performance.Harness.Tests.Unit.Measurement;
@@ -40,6 +41,30 @@ public class Given_Connection_Strings_To_Redact
         );
         shape.Should().ContainEquivalentOf("integrated security=true");
         shape.Should().NotContain("REDACTED");
+    }
+}
+
+[TestFixture]
+public class Given_The_Measured_Npgsql_Data_Source
+{
+    [Test]
+    public void It_reads_the_effective_auto_prepare_settings_from_the_production_code_path()
+    {
+        // The raw connection string sets no auto-prepare keys; the values must come from
+        // the data source the production NpgsqlDataSourceCache builds. These assertions
+        // pin the plan-caching regime the baseline manifests record — if the production
+        // cache tunes auto-prepare, the recorded baseline environment story changes and
+        // must be revisited.
+        IReadOnlyList<PerfSetting> settings = PerfEnvironmentCapture.CaptureNpgsqlAutoPrepareSettings(
+            "host=localhost;port=5435;username=postgres;password=x;database=perf"
+        );
+
+        settings
+            .Should()
+            .BeEquivalentTo([
+                new PerfSetting("npgsql_auto_prepare_min_usages", "3"),
+                new PerfSetting("npgsql_max_auto_prepare", "256"),
+            ]);
     }
 }
 

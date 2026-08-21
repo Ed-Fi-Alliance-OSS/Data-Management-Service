@@ -4,21 +4,27 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Globalization;
 using System.Reflection;
 using System.Runtime;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Performance.Harness.Configuration;
 using EdFi.DataManagementService.Performance.Harness.Results;
+using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
 
 namespace EdFi.DataManagementService.Performance.Harness.Measurement;
 
 /// <summary>
 /// Captures the run manifest's environment identity: server version and settings from the
 /// live database, driver identity from the connection's assembly, and host facts from the
-/// runtime. The machine fingerprint is a pseudonym (hash prefix of the machine name), so
-/// committed artifacts can prove two runs shared an environment without publishing it.
+/// runtime. The machine fingerprint is a pseudonym of Environment.MachineName (a hash
+/// prefix), so committed artifacts can prove two runs shared an environment without
+/// publishing it — it is not a hardware identity and is meaningful only alongside the
+/// recorded OS/CPU/core/memory/.NET facts.
 /// </summary>
 public static class PerfEnvironmentCapture
 {
@@ -58,6 +64,13 @@ public static class PerfEnvironmentCapture
             {
                 settings.Add(new PerfSetting(reader.GetString(0), reader.GetString(1)));
             }
+
+            if (settings.Count == 0)
+            {
+                throw new PerfObservationException("No server settings could be captured.");
+            }
+
+            settings.AddRange(CaptureNpgsqlAutoPrepareSettings(rawConnectionString));
         }
         else
         {
@@ -98,11 +111,6 @@ public static class PerfEnvironmentCapture
             }
         }
 
-        if (settings.Count == 0)
-        {
-            throw new PerfObservationException("No server settings could be captured.");
-        }
-
         Assembly driverAssembly = connection.GetType().Assembly;
         AssemblyName driver = driverAssembly.GetName();
         string driverLabel = driver.Name ?? "driver";
@@ -134,8 +142,36 @@ public static class PerfEnvironmentCapture
     }
 
     /// <summary>
-    /// Replaces every password/pwd value in the connection string with REDACTED, preserving
-    /// the rest of the shape (pooling, prepare, and timeout settings are plan-relevant).
+    /// The effective Npgsql plan-caching settings of the measured application's
+    /// connections. The production NpgsqlDataSourceCache rewrites the configured
+    /// connection string in code (auto-prepare above all), so the raw connection string
+    /// cannot prove these values; they are read back from a data source built by that same
+    /// production code path from the same leased connection string.
+    /// </summary>
+    public static IReadOnlyList<PerfSetting> CaptureNpgsqlAutoPrepareSettings(string leasedConnectionString)
+    {
+        using NpgsqlDataSourceCache cache = new(NullLogger<NpgsqlDataSourceCache>.Instance);
+        NpgsqlConnectionStringBuilder effective = new(
+            cache.GetOrCreate(leasedConnectionString).ConnectionString
+        );
+        return
+        [
+            new PerfSetting(
+                "npgsql_auto_prepare_min_usages",
+                effective.AutoPrepareMinUsages.ToString(CultureInfo.InvariantCulture)
+            ),
+            new PerfSetting(
+                "npgsql_max_auto_prepare",
+                effective.MaxAutoPrepare.ToString(CultureInfo.InvariantCulture)
+            ),
+        ];
+    }
+
+    /// <summary>
+    /// Replaces every password/pwd value in the connection string with REDACTED. Only the
+    /// explicitly configured keys survive, normalized by DbConnectionStringBuilder; options
+    /// the application's data-source code sets on top of this string (such as Npgsql
+    /// auto-prepare) are not visible here and are captured as settings instead.
     /// </summary>
     public static string RedactConnectionString(string rawConnectionString)
     {
@@ -177,6 +213,11 @@ public static class PerfEnvironmentCapture
     private static string MachineFingerprint() =>
         Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(Environment.MachineName)))[..16];
 
+    /// <summary>
+    /// The processor identity string: PROCESSOR_IDENTIFIER on Windows, which names the
+    /// family/model/stepping rather than the marketing model name, or the /proc/cpuinfo
+    /// model name elsewhere.
+    /// </summary>
     private static string ResolveCpuModel()
     {
         string? fromEnvironment = Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER");

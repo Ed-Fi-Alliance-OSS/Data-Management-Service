@@ -99,6 +99,16 @@ hydration batch — the one DbCommand the measured request executed — with the
 paging parameters, not from replaying the page-selection statement alone. The page-selection
 text and its SHA-256 are still captured separately for the textual SQL gate.
 
+The replay is an out-of-band, one-shot execution on a dedicated connection: on PostgreSQL
+each statement runs under a fresh `EXPLAIN`, which the server plans as a custom plan, while
+the measured requests run through the application's pooled Npgsql connections with
+auto-prepare enabled — the effective `npgsql_auto_prepare_min_usages` /
+`npgsql_max_auto_prepare` values, read from a data source built by the production
+`NpgsqlDataSourceCache` code path, are recorded in the run manifest's settings. Warm
+measured requests may therefore execute server-prepared (possibly generic) plans the replay
+does not reproduce: the replay evidences plan shape and work volume, not the measured
+requests' exact plan-caching regime.
+
 Notes for comparison work: SQL Server `STATISTICS TIME` reports whole milliseconds, so fast
 cells can legitimately record 0 CPU ms; and the epic's ratio gates assume the final-gate
 runs reuse the same machine and pinned configuration recorded in the manifest.
