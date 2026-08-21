@@ -215,7 +215,11 @@ public static class PgsqlPerfFixtureLoaderSql
             ),
             new(
                 "gap-id-emissions",
-                """SELECT COUNT(*) FROM "dms"."Document" WHERE "DocumentId" % 10 = 1;""",
+                // Scoped to student documents: the primary fixture's descriptor block above
+                // the student range can legitimately occupy ids congruent to 1 modulo 10.
+                $"""
+                SELECT COUNT(*) FROM "dms"."Document" WHERE "DocumentId" % 10 = 1 AND {StudentResourceKeyFilter};
+                """,
                 0
             ),
             new(

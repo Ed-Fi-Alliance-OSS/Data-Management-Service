@@ -232,7 +232,13 @@ public static class MssqlPerfFixtureLoaderSql
                 $"SELECT MAX([DocumentId]) - COUNT(*) FROM [dms].[Document] WHERE {StudentResourceKeyFilter};",
                 definition.GapCount
             ),
-            new("gap-id-emissions", "SELECT COUNT(*) FROM [dms].[Document] WHERE [DocumentId] % 10 = 1;", 0),
+            new(
+                "gap-id-emissions",
+                // Scoped to student documents: the primary fixture's descriptor block above
+                // the student range can legitimately occupy ids congruent to 1 modulo 10.
+                $"SELECT COUNT(*) FROM [dms].[Document] WHERE [DocumentId] % 10 = 1 AND {StudentResourceKeyFilter};",
+                0
+            ),
             new(
                 "document-id-sum",
                 $"SELECT SUM([DocumentId]) FROM [dms].[Document] WHERE {StudentResourceKeyFilter};",

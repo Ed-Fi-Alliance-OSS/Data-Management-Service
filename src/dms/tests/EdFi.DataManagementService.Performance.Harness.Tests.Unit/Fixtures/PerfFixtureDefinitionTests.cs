@@ -291,6 +291,19 @@ public class Given_The_Descriptor_Catalog
     }
 
     [Test]
+    public void Its_primary_descriptor_block_occupies_a_student_gap_pattern_id()
+    {
+        // 555561 % 10 == 1: descriptor ids can land on the student gap pattern, so the
+        // gap-id-emissions verification must stay scoped to student documents. This pins
+        // the collision analytically — a 500k live run is not needed to see it.
+        PerfFixtureDefinition
+            .DescriptorResourceNames.Select(name => _definition.DescriptorDocumentIdFor(name))
+            .Should()
+            .Contain(id => id % 10 == 1);
+        _definition.DescriptorDocumentIdFor("VisaDescriptor").Should().Be(555_561);
+    }
+
+    [Test]
     public void It_derives_descriptor_uris_the_way_the_write_path_does()
     {
         PerfFixtureDefinition

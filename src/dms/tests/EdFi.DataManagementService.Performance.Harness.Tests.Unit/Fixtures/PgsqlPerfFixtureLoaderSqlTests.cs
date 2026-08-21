@@ -190,7 +190,13 @@ public class Given_The_Pgsql_Loader_Sql
         );
         foreach (
             string name in (string[])
-                ["student-document-count", "max-student-document-id", "gap-count", "document-id-sum"]
+                [
+                    "student-document-count",
+                    "max-student-document-id",
+                    "gap-count",
+                    "gap-id-emissions",
+                    "document-id-sum",
+                ]
         )
         {
             queries.Single(query => query.Name == name).Sql.Should().Contain("'Student'");

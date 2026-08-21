@@ -230,6 +230,29 @@ public class Given_The_Mssql_Loader_Sql
     }
 
     [Test]
+    public void It_scopes_the_id_scheme_checks_to_student_documents()
+    {
+        IReadOnlyList<PerfVerificationQuery> queries = MssqlPerfFixtureLoaderSql.VerificationQueries(
+            new PerfFixtureDefinition(PerfFixtureKind.Primary500k)
+        );
+        foreach (
+            string name in (string[])
+                [
+                    "student-document-count",
+                    "max-student-document-id",
+                    "gap-count",
+                    "gap-id-emissions",
+                    "document-id-sum",
+                ]
+        )
+        {
+            queries.Single(query => query.Name == name).Sql.Should().Contain("'Student'");
+        }
+
+        queries.Single(query => query.Name == "max-document-id").Sql.Should().NotContain("'Student'");
+    }
+
+    [Test]
     public void It_matches_the_pgsql_verification_expectations()
     {
         PerfFixtureDefinition definition = new(PerfFixtureKind.Primary500k);
