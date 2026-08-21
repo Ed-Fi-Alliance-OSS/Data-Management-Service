@@ -36,6 +36,11 @@ how it might be useful in the DMS platform. The article references the Project
 Meadowlark application stack, but is equally applicable here: [What Is Open
 Telemetry?](https://github.com/Ed-Fi-Exchange-OSS/Meadowlark/blob/main/docs/design/open-telemetry/README.md)
 
+For the metrics the Ed-Fi API publishes for collection reads — traditional
+paging, cursor paging, and partition planning — including the instrument names,
+units, dimensions, and what collecting them requires of the host, see
+[Collection Paging Telemetry](./PAGING-TELEMETRY.md).
+
 ## Security
 
 ### Transport Encryption
