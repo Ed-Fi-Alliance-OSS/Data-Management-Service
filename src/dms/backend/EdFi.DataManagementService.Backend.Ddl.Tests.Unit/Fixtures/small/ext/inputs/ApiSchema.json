@@ -5,6 +5,10 @@
     "projectEndpointName": "ed-fi",
     "projectVersion": "1.0.0",
     "isExtensionProject": false,
+    "openApiBaseDocuments": {
+      "resources": { "paths": {}, "components": { "schemas": {}, "parameters": { "limit": { "name": "limit", "in": "query", "schema": {} }, "pageToken": { "name": "pageToken", "in": "query", "schema": {} }, "pageSize": { "name": "pageSize", "in": "query", "schema": {} }, "numberOfPartitions": { "name": "number", "in": "query", "schema": {} } } } },
+      "descriptors": { "paths": {}, "components": { "schemas": {}, "parameters": { "limit": { "name": "limit", "in": "query", "schema": {} }, "pageToken": { "name": "pageToken", "in": "query", "schema": {} }, "pageSize": { "name": "pageSize", "in": "query", "schema": {} }, "numberOfPartitions": { "name": "number", "in": "query", "schema": {} } } } }
+    },
     "description": "Ext fixture core project for DDL golden tests",
     "abstractResources": {},
     "caseInsensitiveEndpointNameMapping": {

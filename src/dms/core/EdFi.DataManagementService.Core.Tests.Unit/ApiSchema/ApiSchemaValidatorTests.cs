@@ -71,47 +71,21 @@ public class ApiSchemaValidatorTests
             response.Count.Should().Be(1);
             response[0].Should().NotBeNull();
 
-            response[0].FailureMessages.Count.Should().Be(1);
-            response[0].FailureMessages[0].Should().Contain("Required properties");
-            response[0].FailureMessages[0].Should().Contain("abstractResources");
-            response[0].FailureMessages[0].Should().Contain("caseInsensitiveEndpointNameMapping");
-            response[0].FailureMessages[0].Should().Contain("educationOrganizationHierarchy");
-            response[0].FailureMessages[0].Should().Contain("educationOrganizationTypes");
-        }
-    }
-
-    [TestFixture]
-    [Parallelizable]
-    public class Given_A_ProjectSchema_With_Missing_OpenApi_Core_Properties : ApiSchemaValidatorTests
-    {
-        private readonly JsonNode _apiSchemaRootNode =
-            JsonNode.Parse(
-                """
-                {
-                  "apiSchemaVersion": "1.0.0",
-                  "projectSchema": {
-                    "caseInsensitiveEndpointNameMapping": {},
-                    "abstractResources": {},
-                    "description": "The Ed-Fi Data Standard v5.0",
-                    "educationOrganizationHierarchy": {},
-                    "educationOrganizationTypes": [],
-                    "isExtensionProject": false,
-                    "projectName": "ed-fi",
-                    "projectEndpointName": "ed-fi",
-                    "projectVersion": "5.0.0",
-                    "resourceNameMapping": {},
-                    "resourceSchemas": {}
-                  }
-                }
-                """
-            ) ?? new JsonObject();
-
-        [Test]
-        public void It_has_no_validation_errors()
-        {
-            var response = _validator!.Validate(_apiSchemaRootNode);
-            response.Should().NotBeNull();
-            response.Count.Should().Be(0);
+            // The unconditional required properties and the core-only base-document requirement both
+            // report against the project schema, so both land on this one path.
+            response[0].FailureMessages.Count.Should().Be(2);
+            response[0]
+                .FailureMessages.Should()
+                .ContainSingle(message =>
+                    message.Contains("Required properties")
+                    && message.Contains("abstractResources")
+                    && message.Contains("caseInsensitiveEndpointNameMapping")
+                    && message.Contains("educationOrganizationHierarchy")
+                    && message.Contains("educationOrganizationTypes")
+                );
+            response[0]
+                .FailureMessages.Should()
+                .ContainSingle(message => message.Contains("openApiBaseDocuments"));
         }
     }
 
@@ -490,9 +464,46 @@ public class ApiSchemaValidatorTests
     }
 
     /// <summary>
+    /// An extension contributes fragments rather than a base document, so it is held to neither the
+    /// cursor-component shape nor the presence of the base documents themselves.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Extension_Project_Schema_Without_Base_Documents : ApiSchemaValidatorTests
+    {
+        private readonly JsonNode _apiSchemaRootNode =
+            JsonNode.Parse(
+                """
+                {
+                  "apiSchemaVersion": "1.0.0",
+                  "projectSchema": {
+                    "caseInsensitiveEndpointNameMapping": {},
+                    "abstractResources": {},
+                    "description": "Sample Extension",
+                    "educationOrganizationHierarchy": {},
+                    "educationOrganizationTypes": [],
+                    "isExtensionProject": true,
+                    "projectName": "sample-extension",
+                    "projectEndpointName": "sample-extension",
+                    "projectVersion": "1.0.0",
+                    "resourceNameMapping": {},
+                    "resourceSchemas": {}
+                  }
+                }
+                """
+            ) ?? new JsonObject();
+
+        [Test]
+        public void It_has_no_validation_errors()
+        {
+            _validator!.Validate(_apiSchemaRootNode).Count.Should().Be(0);
+        }
+    }
+
+    /// <summary>
     /// Builds an ApiSchema whose resource and descriptor base documents declare the cursor-paging
-    /// parameter components, optionally omitting one component or one component's schema so a single
-    /// precondition can be tested at a time.
+    /// parameter components, optionally omitting one component, one component's schema, one base document,
+    /// or the base documents entirely, so a single precondition can be tested at a time.
     /// </summary>
     private static JsonNode ApiSchemaWithCursorComponents(
         string? omittedComponent = null,
@@ -503,7 +514,9 @@ public class ApiSchemaValidatorTests
         string? componentWithoutLocation = null,
         string? componentWithWrongLocation = null,
         bool omitPaths = false,
-        bool omitComponentSchemas = false
+        bool omitComponentSchemas = false,
+        bool omitBaseDocuments = false,
+        string? omittedBaseDocument = null
     )
     {
         JsonObject BuildBaseDocument()
@@ -564,30 +577,41 @@ public class ApiSchemaValidatorTests
             return baseDocument;
         }
 
-        return new JsonObject
+        JsonObject projectSchema = new()
         {
-            ["apiSchemaVersion"] = "1.0.0",
-            ["projectSchema"] = new JsonObject
-            {
-                ["abstractResources"] = new JsonObject(),
-                ["caseInsensitiveEndpointNameMapping"] = new JsonObject(),
-                ["description"] = "The Ed-Fi Data Standard v5.0",
-                ["educationOrganizationHierarchy"] = new JsonObject(),
-                ["educationOrganizationTypes"] = new JsonArray(),
-                ["isExtensionProject"] = false,
-                ["openApiBaseDocuments"] = new JsonObject
-                {
-                    ["resources"] = BuildBaseDocument(),
-                    ["descriptors"] = BuildBaseDocument(),
-                },
-                ["projectName"] = "ed-fi",
-                ["projectEndpointName"] = "ed-fi",
-                ["projectVersion"] = "5.0.0",
-                ["resourceNameMapping"] = new JsonObject(),
-                ["resourceSchemas"] = new JsonObject(),
-            },
+            ["abstractResources"] = new JsonObject(),
+            ["caseInsensitiveEndpointNameMapping"] = new JsonObject(),
+            ["description"] = "The Ed-Fi Data Standard v5.0",
+            ["educationOrganizationHierarchy"] = new JsonObject(),
+            ["educationOrganizationTypes"] = new JsonArray(),
+            ["isExtensionProject"] = false,
+            ["projectName"] = "ed-fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "5.0.0",
+            ["resourceNameMapping"] = new JsonObject(),
+            ["resourceSchemas"] = new JsonObject(),
         };
+
+        if (!omitBaseDocuments)
+        {
+            JsonObject baseDocuments = new();
+
+            foreach (string documentName in BaseDocumentNames.Where(name => name != omittedBaseDocument))
+            {
+                baseDocuments[documentName] = BuildBaseDocument();
+            }
+
+            projectSchema["openApiBaseDocuments"] = baseDocuments;
+        }
+
+        return new JsonObject { ["apiSchemaVersion"] = "1.0.0", ["projectSchema"] = projectSchema };
     }
+
+    /// <summary>
+    /// The base documents a core project is assembled from. <c>changeQueries</c> is deliberately absent:
+    /// it is outside the cursor contract and stays optional.
+    /// </summary>
+    private static readonly string[] BaseDocumentNames = ["resources", "descriptors"];
 
     /// <summary>
     /// Each required parameter component and the query name it must publish. The partition count is the
@@ -654,6 +678,86 @@ public class ApiSchemaValidatorTests
                 .SelectMany(failure => failure.FailureMessages)
                 .Should()
                 .Contain(message => message.Contains(_omittedComponent));
+        }
+    }
+
+    /// <summary>
+    /// The resource and descriptor base documents are the first thing assembly reads, before it considers
+    /// any component or collection. A core package omitting them entirely is as deficient as one whose
+    /// components are wrong, and has to fail in the same place.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Core_ApiSchema_Omitting_Its_Base_Documents : ApiSchemaValidatorTests
+    {
+        private List<SchemaValidationFailure> _failures = [];
+
+        [SetUp]
+        public void Arrange()
+        {
+            _failures = _validator!.Validate(ApiSchemaWithCursorComponents(omitBaseDocuments: true));
+        }
+
+        [Test]
+        public void It_has_validation_errors()
+        {
+            _failures.Should().NotBeEmpty();
+        }
+
+        [Test]
+        public void It_names_the_project_schema_location()
+        {
+            _failures.Select(failure => failure.FailurePath.Value).Should().Contain("$.projectSchema");
+        }
+
+        [Test]
+        public void It_names_the_omitted_member()
+        {
+            _failures
+                .SelectMany(failure => failure.FailureMessages)
+                .Should()
+                .Contain(message => message.Contains("openApiBaseDocuments"));
+        }
+    }
+
+    [TestFixture("resources")]
+    [TestFixture("descriptors")]
+    [Parallelizable]
+    public class Given_A_Core_ApiSchema_Omitting_One_Base_Document(string _omittedBaseDocument)
+        : ApiSchemaValidatorTests
+    {
+        private List<SchemaValidationFailure> _failures = [];
+
+        [SetUp]
+        public void Arrange()
+        {
+            _failures = _validator!.Validate(
+                ApiSchemaWithCursorComponents(omittedBaseDocument: _omittedBaseDocument)
+            );
+        }
+
+        [Test]
+        public void It_has_validation_errors()
+        {
+            _failures.Should().NotBeEmpty();
+        }
+
+        [Test]
+        public void It_names_the_base_documents_location()
+        {
+            _failures
+                .Select(failure => failure.FailurePath.Value)
+                .Should()
+                .Contain("$.projectSchema.openApiBaseDocuments");
+        }
+
+        [Test]
+        public void It_names_the_omitted_base_document()
+        {
+            _failures
+                .SelectMany(failure => failure.FailureMessages)
+                .Should()
+                .Contain(message => message.Contains(_omittedBaseDocument));
         }
     }
 

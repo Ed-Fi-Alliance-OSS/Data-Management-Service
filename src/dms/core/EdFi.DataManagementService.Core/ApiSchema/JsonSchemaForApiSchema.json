@@ -42,6 +42,10 @@
                     "$ref": "#/definitions/openApiDocument"
                 }
             },
+            "required": [
+                "resources",
+                "descriptors"
+            ],
             "additionalProperties": false
         },
         "openApiCursorBaseDocument": {
@@ -371,7 +375,10 @@
                             "openApiBaseDocuments": {
                                 "$ref": "#/definitions/coreOpenApiBaseDocuments"
                             }
-                        }
+                        },
+                        "required": [
+                            "openApiBaseDocuments"
+                        ]
                     }
                 }
             ]

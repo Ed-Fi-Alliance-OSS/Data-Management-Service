@@ -996,25 +996,34 @@ internal static class ApiSchemaProviderTestFixtures
         bool isExtensionProject
     )
     {
-        return new JsonObject
+        JsonObject projectSchema = new()
         {
-            ["apiSchemaVersion"] = "1.0.0",
-            ["projectSchema"] = new JsonObject
-            {
-                ["abstractResources"] = new JsonObject(),
-                ["caseInsensitiveEndpointNameMapping"] = new JsonObject(),
-                ["description"] = $"{projectName} description",
-                ["educationOrganizationHierarchy"] = new JsonObject(),
-                ["educationOrganizationTypes"] = new JsonArray(),
-                ["domains"] = new JsonArray(),
-                ["isExtensionProject"] = isExtensionProject,
-                ["projectName"] = projectName,
-                ["projectVersion"] = "1.0.0",
-                ["projectEndpointName"] = projectEndpointName,
-                ["resourceNameMapping"] = new JsonObject(),
-                ["resourceSchemas"] = new JsonObject(),
-            },
+            ["abstractResources"] = new JsonObject(),
+            ["caseInsensitiveEndpointNameMapping"] = new JsonObject(),
+            ["description"] = $"{projectName} description",
+            ["educationOrganizationHierarchy"] = new JsonObject(),
+            ["educationOrganizationTypes"] = new JsonArray(),
+            ["domains"] = new JsonArray(),
+            ["isExtensionProject"] = isExtensionProject,
+            ["projectName"] = projectName,
+            ["projectVersion"] = "1.0.0",
+            ["projectEndpointName"] = projectEndpointName,
+            ["resourceNameMapping"] = new JsonObject(),
+            ["resourceSchemas"] = new JsonObject(),
         };
+
+        // A core project's resource and descriptor base documents are what the metadata documents are
+        // assembled from, so a core project without them is not a valid schema.
+        if (!isExtensionProject)
+        {
+            projectSchema["openApiBaseDocuments"] = new JsonObject
+            {
+                ["resources"] = BaseDocument(isExtensionProject),
+                ["descriptors"] = BaseDocument(isExtensionProject),
+            };
+        }
+
+        return new JsonObject { ["apiSchemaVersion"] = "1.0.0", ["projectSchema"] = projectSchema };
     }
 
     public static JsonNode CreateApiSchemaWithChangeQueriesOpenApiBaseDocument(
