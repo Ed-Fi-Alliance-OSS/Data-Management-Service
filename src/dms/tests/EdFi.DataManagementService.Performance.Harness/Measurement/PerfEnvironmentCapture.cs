@@ -103,7 +103,9 @@ public static class PerfEnvironmentCapture
             throw new PerfObservationException("No server settings could be captured.");
         }
 
-        AssemblyName driver = connection.GetType().Assembly.GetName();
+        Assembly driverAssembly = connection.GetType().Assembly;
+        AssemblyName driver = driverAssembly.GetName();
+        string driverLabel = driver.Name ?? "driver";
 
         return PerfEnvironmentIdentity.Create(
             PerfServerIdentity.Create(
@@ -124,7 +126,10 @@ public static class PerfEnvironmentCapture
                 GCSettings.IsServerGC,
                 MachineFingerprint()
             ),
-            [new PerfSetting(driver.Name ?? "driver", driver.Version?.ToString() ?? "unknown")]
+            [
+                new PerfSetting(driverLabel, DriverPackageVersionOf(driverAssembly)),
+                new PerfSetting(driverLabel + "-assembly", driver.Version?.ToString() ?? "unknown"),
+            ]
         );
     }
 
@@ -145,6 +150,28 @@ public static class PerfEnvironmentCapture
         }
 
         return builder.ConnectionString;
+    }
+
+    /// <summary>
+    /// The driver's NuGet package version, taken from the informational version attribute
+    /// (with build metadata stripped). The assembly version alone is too coarse for the
+    /// final gate's driver-parity check: SqlClient ships assembly version 6.0.0.0 across
+    /// several package versions.
+    /// </summary>
+    public static string DriverPackageVersionOf(Assembly assembly) =>
+        NormalizePackageVersion(
+            assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion,
+            assembly.GetName().Version
+        );
+
+    public static string NormalizePackageVersion(string? informationalVersion, Version? assemblyVersion)
+    {
+        if (!string.IsNullOrWhiteSpace(informationalVersion))
+        {
+            return informationalVersion.Split('+')[0].Trim();
+        }
+
+        return assemblyVersion?.ToString() ?? "unknown";
     }
 
     private static string MachineFingerprint() =>

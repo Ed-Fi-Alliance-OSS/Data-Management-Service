@@ -42,3 +42,43 @@ public class Given_Connection_Strings_To_Redact
         shape.Should().NotContain("REDACTED");
     }
 }
+
+[TestFixture]
+public class Given_Driver_Version_Sources
+{
+    [Test]
+    public void It_prefers_the_informational_version_and_strips_build_metadata()
+    {
+        PerfEnvironmentCapture
+            .NormalizePackageVersion("6.1.4+9d3ab5cf6c", new Version(6, 0, 0, 0))
+            .Should()
+            .Be("6.1.4");
+    }
+
+    [Test]
+    public void It_falls_back_to_the_assembly_version()
+    {
+        PerfEnvironmentCapture.NormalizePackageVersion(null, new Version(8, 0, 4, 0)).Should().Be("8.0.4.0");
+    }
+
+    [Test]
+    public void It_reports_unknown_when_no_source_exists()
+    {
+        PerfEnvironmentCapture.NormalizePackageVersion(" ", null).Should().Be("unknown");
+    }
+
+    [Test]
+    public void It_reads_the_real_sqlclient_package_version()
+    {
+        string packageVersion = PerfEnvironmentCapture.DriverPackageVersionOf(
+            typeof(Microsoft.Data.SqlClient.SqlConnection).Assembly
+        );
+        packageVersion.Should().MatchRegex(@"^\d+\.\d+\.\d+");
+        packageVersion
+            .Should()
+            .NotBe(
+                typeof(Microsoft.Data.SqlClient.SqlConnection).Assembly.GetName().Version!.ToString(),
+                "the package version must be finer-grained than the assembly version"
+            );
+    }
+}
