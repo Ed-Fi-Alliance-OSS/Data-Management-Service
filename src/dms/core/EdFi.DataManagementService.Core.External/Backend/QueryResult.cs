@@ -42,6 +42,17 @@ public record QueryResult
         /// ContentVersion anchor in later work.
         /// </remarks>
         public bool AllowsDocumentIdContinuation { get; init; } = true;
+
+        /// <summary>
+        /// No candidate selection command was issued; this empty success is a short-circuit.
+        /// </summary>
+        /// <remarks>
+        /// Defaults to false, so every site that actually selected is already correct — including the
+        /// executed pages that legitimately return nothing. Only the deliberate short-circuits set it
+        /// true. Without it, an empty success from a real selection is indistinguishable from one where
+        /// no command ran at all, and the two are different facts about the request.
+        /// </remarks>
+        public bool SelectionSkipped { get; init; }
     }
 
     /// <summary>
