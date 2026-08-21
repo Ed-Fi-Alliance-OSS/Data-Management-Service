@@ -29,10 +29,12 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 /// The strategies covered are those the production read path actually compiles into the candidate
 /// relation. <c>OwnershipBased</c> is not among them for any operation, GET-many included: it is
 /// recognized but not enabled, so the request fails closed before a candidate relation exists, and
-/// enabling it for read-many is work this matrix does not cover. Descriptor coverage is limited to the
-/// no-further and namespace strategies; descriptors expose no education-organization or person
-/// securable elements, so relationship strategies cannot apply to them, and descriptor custom views are
-/// excluded from this matrix.
+/// enabling it for read-many is work this matrix does not cover. Descriptor coverage spans the
+/// no-further, namespace, and custom-view strategies; relationship strategies are the descriptor
+/// exclusion, because descriptors expose no education-organization or person securable elements for one
+/// to range over. A descriptor custom view is not excluded: the descriptor read path plans custom-view
+/// checks into the same authorization spec for pages and for boundaries, which is exactly the agreement
+/// this matrix exists to prove.
 /// </para>
 /// </summary>
 internal static class CursorPartitionAuthorizationMatrixScenario
@@ -161,6 +163,24 @@ internal static class CursorPartitionAuthorizationMatrixScenario
         ArgumentNullException.ThrowIfNull(harness);
 
         var seeded = await SeedAcademicSubjectDescriptorsAsync(harness, MatrixAccessibility.Namespace);
+
+        await RunMatrixAsync(harness, AcademicSubjectDescriptorsEndpoint, seeded);
+    }
+
+    /// <summary>
+    /// The descriptor carrier read through a custom view. The descriptor read path plans custom-view checks
+    /// into the authorization spec that both the page relation and the boundary relation are compiled from,
+    /// so this is the descriptor row where the two surfaces could disagree for an authorization reason.
+    /// Every seeded descriptor is identical apart from the code value the view selects on.
+    /// </summary>
+    public static async Task It_agrees_on_the_descriptor_candidate_set_under_view_based_authorization(
+        ApiIntegrationHarness harness
+    )
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+
+        var seeded = await SeedAcademicSubjectDescriptorsAsync(harness, MatrixAccessibility.Identity);
+        await CreateDescriptorMatrixCustomViewAsync(harness);
 
         await RunMatrixAsync(harness, AcademicSubjectDescriptorsEndpoint, seeded);
     }

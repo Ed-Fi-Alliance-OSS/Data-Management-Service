@@ -58,6 +58,14 @@ internal static class CursorPartitionAuthorizationMatrixSupport
     public const string CustomViewStrategyName =
         RelationshipAuthorizationCrudTestSupport.NamespaceResourceName + "WithCursorPartitionMatrix";
 
+    /// <summary>
+    /// The descriptor counterpart of <see cref="CustomViewStrategyName"/>. The basis resource is the
+    /// seeded descriptor, and the name carries a single "With" so the strategy classifier resolves that
+    /// resource rather than rejecting the name as ambiguous.
+    /// </summary>
+    public const string DescriptorCustomViewStrategyName =
+        AcademicSubjectDescriptorResourceName + "WithCursorPartitionMatrix";
+
     public const string NamespaceResourcesEndpoint = "/data/authz/authorizationNamespaceResources";
     public const string AcademicSubjectDescriptorsEndpoint = "/data/ed-fi/academicSubjectDescriptors";
 
@@ -110,6 +118,15 @@ internal static class CursorPartitionAuthorizationMatrixSupport
     private const int InaccessibleIdentityFloor = 2000;
 
     private const int AccessibleIdentityFloor = 1000;
+
+    /// <summary>
+    /// The name and code-value prefix an accessible seeded document carries. The descriptor auth view
+    /// selects on it, so it is a constant both the seed and the view read rather than a literal repeated
+    /// in each.
+    /// </summary>
+    private const string AccessibleNamePrefix = "matrix-accessible-";
+
+    private const string InaccessibleNamePrefix = "matrix-denied-";
 
     /// <summary>How a seeded document is made inaccessible to the row's principal.</summary>
     public enum MatrixAccessibility
@@ -191,6 +208,13 @@ internal static class CursorPartitionAuthorizationMatrixSupport
             fixture,
             [new RelationshipReadResource(EdFiProjectName, AcademicSubjectDescriptorResourceName)],
             AuthorizationStrategyNameConstants.NamespaceBased
+        );
+
+    public static IClaimSetProvider CreateDescriptorCustomViewReadClaimSetProvider(FixtureContext fixture) =>
+        CreateClaimSetProvider(
+            fixture,
+            [new RelationshipReadResource(EdFiProjectName, AcademicSubjectDescriptorResourceName)],
+            DescriptorCustomViewStrategyName
         );
 
     /// <summary>
@@ -371,6 +395,35 @@ internal static class CursorPartitionAuthorizationMatrixSupport
     }
 
     /// <summary>
+    /// Creates the auth view the descriptor custom-view row is configured against. It selects from
+    /// <c>dms.Descriptor</c>, which is the relation the descriptor page and boundary subqueries both root
+    /// on, so the view intersects the candidate relation on the same alias production uses.
+    /// </summary>
+    public static async Task CreateDescriptorMatrixCustomViewAsync(ApiIntegrationHarness harness)
+    {
+        bool isMssql = IsMssql(harness.DbConnection);
+
+        // Compared as a fixed-length prefix rather than matched with LIKE: the seeded prefix holds no
+        // pattern metacharacters today, and an equality test cannot silently widen the view if a later
+        // rename introduces one.
+        string sql = isMssql
+            ? $"""
+                CREATE VIEW [auth].[{EscapeSqlServerIdentifier(DescriptorCustomViewStrategyName)}] AS
+                SELECT [DocumentId]
+                FROM [dms].[Descriptor]
+                WHERE LEFT([CodeValue], {AccessibleNamePrefix.Length}) = '{AccessibleNamePrefix}';
+                """
+            : $"""
+                CREATE VIEW "auth"."{EscapePostgresqlIdentifier(DescriptorCustomViewStrategyName)}" AS
+                SELECT "DocumentId"
+                FROM "dms"."Descriptor"
+                WHERE LEFT("CodeValue", {AccessibleNamePrefix.Length}) = '{AccessibleNamePrefix}';
+                """;
+
+        await ExecuteNonQueryAsync(harness.DbConnection, sql);
+    }
+
+    /// <summary>
     /// The database identities behind a set of public identifiers, read straight from the document table.
     /// This is an identity lookup rather than an authorization decision, which is what makes it usable as
     /// the yardstick for the partition starting identifiers.
@@ -467,7 +520,7 @@ internal static class CursorPartitionAuthorizationMatrixSupport
     private static string DocumentName(bool accessible, int index) =>
         string.Create(
             CultureInfo.InvariantCulture,
-            $"matrix-{(accessible ? "accessible" : "denied")}-{index:D2}"
+            $"{(accessible ? AccessibleNamePrefix : InaccessibleNamePrefix)}{index:D2}"
         );
 
     private static string DocumentNamespace(MatrixAccessibility accessibility, bool accessible, int index) =>

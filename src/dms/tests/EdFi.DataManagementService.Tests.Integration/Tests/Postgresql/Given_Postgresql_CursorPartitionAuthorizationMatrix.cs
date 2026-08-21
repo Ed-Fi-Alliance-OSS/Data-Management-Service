@@ -141,6 +141,23 @@ public sealed class Given_Postgresql_CursorPartitionAuthorizationMatrix_Descript
 }
 
 /// <summary>
+/// The descriptor carrier behind a real auth view, which the descriptor read path compiles into the same
+/// authorization spec for pages and for boundaries.
+/// </summary>
+public sealed class Given_Postgresql_CursorPartitionAuthorizationMatrix_DescriptorViewBasedAuthorization
+    : PostgresqlCursorPartitionAuthorizationMatrixTestBase
+{
+    protected override IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
+        CursorPartitionAuthorizationMatrixSupport.CreateDescriptorCustomViewReadClaimSetProvider(fixture);
+
+    [Test]
+    public Task It_agrees_on_the_descriptor_candidate_set_under_view_based_authorization() =>
+        CursorPartitionAuthorizationMatrixScenario.It_agrees_on_the_descriptor_candidate_set_under_view_based_authorization(
+            Harness
+        );
+}
+
+/// <summary>
 /// The caller holds an education organization claim that reaches nothing, because no hierarchy edge was
 /// inserted for it.
 /// </summary>
