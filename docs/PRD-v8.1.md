@@ -49,6 +49,10 @@ already covered in the v8.0 companion PRD.
   are ecosystem-interoperability capabilities: vendors and hosts who built
   workflows around them in the prior generation have no migration path until
   these are restored.
+- **Event streaming (Kafka/CDC)** is a data-integration capability: hosts and
+  vendors who built downstream systems around a near-real-time change feed in
+  the prior generation have no equivalent way to consume data changes from
+  v8.0 without polling the API.
 - Closing this gap is a prerequisite for hosts currently on the prior-generation
   platform to migrate to v8.0 without a regression in capability.
 
@@ -106,11 +110,29 @@ already covered in the v8.0 companion PRD.
 - When a source system needs to correct a previously reported identifying value,
   the Vendor wants to update the existing record **so that** it and its related
   data don't need to be deleted and recreated from scratch (see [[FR-KEY]]).
+- When a downstream system needs near-real-time notice of data changes rather
+  than polling the API, the Vendor wants the platform to publish those changes
+  as a stream of events **so that** integrations can react to changes as they
+  happen (see [[FR-STREAM]]).
 
 ## 2. Enterprise / System Context
 
 There are no changes to the enterprise context relative to the prior product
-requirements document.
+requirements document, aside from the addition of the event streaming data
+flow introduced by [[FR-STREAM]]:
+
+```mermaid
+graph TB
+
+    subgraph Platform["Ed-Fi API Platform (Host-Operated)"]
+        DMS["Ed-Fi API Service<br/>(DMS)"]
+        DMSDB[("DMS Database<br/>(operational/resource data)")]
+        Debezium -->|read| DMSDB
+    end
+
+    DMS -->|write| DMSDB
+    Debezium -->|write| Kafka
+```
 
 ## 3. Functional Requirements
 
@@ -376,6 +398,25 @@ host-configurable limits on token lifetime or concurrency.
 - **FR-AUTHN-10.** Hosts SHALL be able to limit how many active tokens a single
   client may hold at once.
 
+### 3.15 Event Streaming (FR-STREAM)
+
+- **FR-STREAM-1.** The system SHALL support streaming data changes to
+  downstream consumers using Apache Kafka, so vendors and hosts can react to
+  changes without polling the API.
+- **FR-STREAM-2.** This streaming capability SHALL use Debezium for change
+  data capture (CDC), reading the database's change/transaction log from
+  either PostgreSQL or Microsoft SQL Server, depending on which database
+  engine the host has deployed as its operational data store.
+- **FR-STREAM-3.** The CDC configuration SHALL be set up to capture the
+  serialized resource representation defined in [[FR-SERIAL]] (FR-SERIAL-1)
+  along with its associated self-contained metadata (FR-SERIAL-3), so a
+  downstream consumer receives a complete, self-describing record of each
+  change without needing to query the API for additional context.
+- **FR-STREAM-4.** Because this capability depends on the serialized
+  representation and metadata produced under FR-SERIAL, a host that disables
+  serialization (FR-SERIAL-2) SHALL NOT be able to use this CDC-based
+  streaming capability in its current form.
+
 ## 4. Non-Functional Requirements
 
 ### Compatibility
@@ -440,6 +481,7 @@ host-configurable limits on token lifetime or concurrency.
 | Custom extensions (optional) | Host-supplied configuration/secret sources, custom access rules, identity-system integrations, or wholly new capabilities | Would be the platform's primary supported way for hosts to extend behavior without forking core code |
 | External secret-management system (optional) | Alternative source for sensitive configuration such as data-store credentials | Alternative/supplement to the administrative service's own encrypted storage |
 | Operational data store derivative(s) | Read-only replica and/or point-in-time snapshot copies of the primary operational data store | Would extend the operational data store described in the v8.0 companion PRD |
+| Event streaming pipeline (Kafka + Debezium CDC connector) | Publishes data changes captured via CDC as a Kafka event stream for downstream consumers | Reads directly from the database's change log (PostgreSQL or SQL Server); depends on the serialized resource representation and metadata from FR-SERIAL |
 
 ## 6. Out of Scope and Known Limitations
 
@@ -461,6 +503,10 @@ host-configurable limits on token lifetime or concurrency.
 - **Sandbox/demo administration portal and the legacy administrative UI**, both
   discontinued in v8.0, are not proposed for revival as part of this PRD; they
   are noted here only for completeness.
+- **Kafka topic schema/versioning design, broker/cluster operational tuning,
+  and consumer-side integration patterns** are not specified by this PRD; only
+  the platform's requirement to produce a CDC-based event stream ([[FR-STREAM]])
+  is in scope.
 
 ## 7. Open Questions and Decision Log
 
@@ -497,6 +543,11 @@ host-configurable limits on token lifetime or concurrency.
   must-have for the next release versus longer-term backlog? This PRD
   intentionally does not sequence or prioritize — that decision belongs to
   product/engineering leadership informed by host and vendor migration pressure.
+- **Event streaming non-functional requirements:** this PRD defines the
+  functional requirement to stream changes via Kafka/Debezium CDC
+  ([[FR-STREAM]]), but has not yet defined delivery-ordering guarantees,
+  message retention, or topic-level access control. Needs follow-up before
+  this capability is build-ready.
 
 ## 8. Glossary
 
@@ -512,3 +563,12 @@ host-configurable limits on token lifetime or concurrency.
 - **Ownership:** An access-control concept where a record is associated with the
   client that created it, used by ownership-based authorization to grant access
   based on who created a record rather than organizational hierarchy.
+- **Change Data Capture (CDC):** A technique for capturing row-level insert,
+  update, and delete events directly from a database's change/transaction log,
+  used here to detect changes to serialized resource data for downstream
+  streaming.
+- **Kafka:** An open-source distributed event-streaming platform used by the
+  system to publish captured data changes to downstream consumers.
+- **Debezium:** An open-source CDC connector platform used to read database
+  change logs (from PostgreSQL or Microsoft SQL Server) and publish the
+  resulting change events to Kafka.
