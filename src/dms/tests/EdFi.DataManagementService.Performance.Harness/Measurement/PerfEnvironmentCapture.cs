@@ -71,6 +71,19 @@ public static class PerfEnvironmentCapture
                     )
                 )
             );
+            settings.Add(
+                new PerfSetting(
+                    "is_read_committed_snapshot_on",
+                    await ScalarStringAsync(
+                        connection,
+                        """
+                        SELECT CAST(is_read_committed_snapshot_on AS nvarchar(5))
+                        FROM sys.databases
+                        WHERE name = DB_NAME();
+                        """
+                    )
+                )
+            );
             await using DbCommand command = connection.CreateCommand();
             command.CommandText = """
                 SELECT name, CAST(value_in_use AS nvarchar(64))

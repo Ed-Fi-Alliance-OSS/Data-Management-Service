@@ -84,16 +84,32 @@ public static class PerfBaselineArtifactAssembler
             )),
         ];
 
+        // The full captured dictionary is retained, not just the paging values: the planner
+        // can bind filter, change-version, and authorization values, and the replay is only
+        // reproducible with all of them. Keys are sorted for deterministic artifacts.
         JsonArray boundParameters = [];
         foreach (PerfCellEvidence item in evidence)
         {
+            JsonObject parameters = new();
+            foreach (
+                (string name, object? value) in item.Cell.PageSelection.ParameterValues.OrderBy(
+                    pair => pair.Key,
+                    StringComparer.Ordinal
+                )
+            )
+            {
+                parameters[name] = value is null
+                    ? null
+                    : System.Text.Json.JsonSerializer.SerializeToNode(value);
+            }
+
             boundParameters.Add(
                 new JsonObject
                 {
                     ["scenarioId"] = item.Cell.ScenarioId,
                     ["pageSize"] = item.Cell.PageSize,
                     ["offset"] = item.Cell.Offset,
-                    ["limit"] = item.Cell.PageSize,
+                    ["parameters"] = parameters,
                 }
             );
         }

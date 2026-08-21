@@ -18,7 +18,12 @@ internal static class AssemblerSamples
     public const string HydrationBatchSql = "WITH page_ids AS (SELECT 1) INSERT INTO page SELECT 1;";
     public const long DeepOffset = 9_000;
 
-    public static PerfMeasuredCell Cell(string scenarioId, int pageSize, string? batchSql = null) =>
+    public static PerfMeasuredCell Cell(
+        string scenarioId,
+        int pageSize,
+        string? batchSql = null,
+        IReadOnlyDictionary<string, object?>? parameterValues = null
+    ) =>
         new(
             scenarioId,
             pageSize,
@@ -29,7 +34,7 @@ internal static class AssemblerSamples
             PerfLatencyMeasurement.Summarize([.. Enumerable.Range(1, 30).Select(value => value * 0.5)]),
             new PageSelectionQueryCapture(
                 PageSelectionSql,
-                new Dictionary<string, object?>(),
+                parameterValues ?? new Dictionary<string, object?>(),
                 PageSelectionCapture.Sha256Lowercase(PageSelectionSql)
             ),
             batchSql ?? HydrationBatchSql
@@ -116,6 +121,66 @@ public class Given_An_Assembled_Run
         _assembled.FixtureManifest.FixtureId.Should().Be("smoke-10k");
         _assembled.FixtureManifest.GapCount.Should().Be(1_112);
         _assembled.FixtureManifest.Verified.Should().BeTrue();
+    }
+}
+
+[TestFixture]
+public class Given_Cells_With_Extra_Bound_Parameters
+{
+    private string _boundParametersJson = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        Dictionary<string, object?> parameterValues = new()
+        {
+            ["offset"] = 0L,
+            ["limit"] = 25L,
+            ["filter_studentUniqueId"] = "perf-000000001",
+            ["minChangeVersion"] = 42L,
+        };
+        List<PerfCellEvidence> evidence = [.. AssemblerSamples.Evidence()];
+        PerfCellEvidence first = evidence[0];
+        evidence[0] = first with
+        {
+            Cell = AssemblerSamples.Cell(
+                first.Cell.ScenarioId,
+                first.Cell.PageSize,
+                parameterValues: parameterValues
+            ),
+        };
+
+        PerfAssembledRun assembled = AssemblerSamples.Assemble(evidence);
+        _boundParametersJson = assembled
+            .AuxiliaryFiles.Single(file => file.RelativePath == "sql/postgresql.bound-parameters.json")
+            .Content;
+    }
+
+    [Test]
+    public void It_preserves_non_paging_parameters()
+    {
+        _boundParametersJson.Should().Contain("\"filter_studentUniqueId\": \"perf-000000001\"");
+        _boundParametersJson.Should().Contain("\"minChangeVersion\": 42");
+    }
+
+    [Test]
+    public void It_orders_parameter_keys_deterministically()
+    {
+        int filterIndex = _boundParametersJson.IndexOf("filter_studentUniqueId", StringComparison.Ordinal);
+        int limitIndex = _boundParametersJson.IndexOf("\"limit\"", StringComparison.Ordinal);
+        int minChangeVersionIndex = _boundParametersJson.IndexOf(
+            "minChangeVersion",
+            StringComparison.Ordinal
+        );
+        int offsetIndexInParameters = _boundParametersJson.IndexOf(
+            "\"offset\"",
+            filterIndex,
+            StringComparison.Ordinal
+        );
+        filterIndex.Should().BeGreaterThan(0);
+        limitIndex.Should().BeGreaterThan(filterIndex);
+        minChangeVersionIndex.Should().BeGreaterThan(limitIndex);
+        offsetIndexInParameters.Should().BeGreaterThan(minChangeVersionIndex);
     }
 }
 
