@@ -26,7 +26,11 @@ Feature: Live resource endpoints filter by change version.
              Then it should respond with 201
              When a GET request is made to "/changeQueries/v1/availableChangeVersions"
              Then it should respond with 200
-              And the response body path "newestChangeVersion" is stored in request variable "liveMidVersion"
+              And the response body path "newestChangeVersion" is stored in request variable "liveProgramAVersion"
+             When a GET request is made to "/ed-fi/programs?minChangeVersion={liveProgramAVersion}&totalCount=true"
+             Then it should respond with 200
+              And total of records should be 1
+              And the response body path "0.programName" should have value "Live Filter Program A"
              When a POST request is made to "/ed-fi/programs" with
                   """
                   {
@@ -36,7 +40,10 @@ Feature: Live resource endpoints filter by change version.
                   }
                   """
              Then it should respond with 201
-             When a GET request is made to "/ed-fi/programs?minChangeVersion={liveMidVersion}&totalCount=true"
+             When a GET request is made to "/changeQueries/v1/availableChangeVersions"
+             Then it should respond with 200
+              And the response body path "newestChangeVersion" is stored in request variable "liveProgramBVersion"
+             When a GET request is made to "/ed-fi/programs?minChangeVersion={liveProgramBVersion}&totalCount=true"
              Then it should respond with 200
               And total of records should be 1
               And the response body path "0.programName" should have value "Live Filter Program B"
@@ -78,9 +85,19 @@ Feature: Live resource endpoints filter by change version.
         @e2e-ci-shard-3
         @reset-data-before-scenario
         Scenario: 03 Live programs collection filters by a change version window
-             # The window relies on the ContentVersion-advances-per-write invariant: each write gets a
-             # strictly greater newestChangeVersion, so afterA < B's version <= afterB and the
-             # (afterA, afterB] window contains only Program B.
+             # The window relies on one ContentVersion allocation per write. Guard programs before and
+             # after the captured bounds prove the range is exact: liveWindowAfterA includes Program A
+             # at the inclusive lower bound, and liveWindowAfterB includes Program B at the inclusive
+             # upper bound, while the guard writes fall outside the range.
+             When a POST request is made to "/ed-fi/programs" with
+                  """
+                  {
+                    "programName": "Live Window Program Before",
+                    "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Bilingual",
+                    "educationOrganizationReference": { "educationOrganizationId": 920100001 }
+                  }
+                  """
+             Then it should respond with 201
              When a POST request is made to "/ed-fi/programs" with
                   """
                   {
@@ -105,10 +122,20 @@ Feature: Live resource endpoints filter by change version.
              When a GET request is made to "/changeQueries/v1/availableChangeVersions"
              Then it should respond with 200
               And the response body path "newestChangeVersion" is stored in request variable "liveWindowAfterB"
+             When a POST request is made to "/ed-fi/programs" with
+                  """
+                  {
+                    "programName": "Live Window Program After",
+                    "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Bilingual",
+                    "educationOrganizationReference": { "educationOrganizationId": 920100001 }
+                  }
+                  """
+             Then it should respond with 201
              When a GET request is made to "/ed-fi/programs?minChangeVersion={liveWindowAfterA}&maxChangeVersion={liveWindowAfterB}&totalCount=true"
              Then it should respond with 200
-              And total of records should be 1
-              And the response body path "0.programName" should have value "Live Window Program B"
+              And total of records should be 2
+              And the response body path "0.programName" should have value "Live Window Program A"
+              And the response body path "1.programName" should have value "Live Window Program B"
 
         @e2e-ci-shard-3
         @reset-data-before-scenario

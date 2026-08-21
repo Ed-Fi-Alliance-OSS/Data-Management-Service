@@ -107,13 +107,12 @@ Source documents:
 
 ### Update tracking additions (unified design)
 
-`reference/design/backend-redesign/design-docs/update-tracking.md` adds representation-sensitive metadata using write-time stamping, with indirect impacts realized via retained native FK-cascade updates to canonical stored identity columns that back local reference-identity bindings:
+`reference/design/backend-redesign/design-docs/update-tracking.md` adds representation-sensitive metadata using write-time stamping, with indirect impacts realized via retained native FK-cascade updates to canonical stored identity columns that back local reference-identity bindings. Identity projection changes do not allocate a separate document-level stamp; they are reflected through the same content stamp when they change the stored representation:
 
 - Global sequence: `dms.ChangeVersionSequence` (`bigint`).
 - `dms.Document` token columns:
-  - `ContentVersion` (global monotonic stamp for representation changes; also serves as `ChangeVersion`).
-  - `IdentityVersion` (global monotonic stamp for identity projection changes).
-  - `ContentLastModifiedAt`, `IdentityLastModifiedAt`.
+  - `ContentVersion` (global monotonic stamp for representation changes and identity-projection changes; also serves as `ChangeVersion`).
+  - `ContentLastModifiedAt`. Identity-projection changes are captured by the same content stamps because they change the stored representation.
 - Change Queries surface (see [change-queries.md](change-queries.md)):
   - per-resource `ContentVersion` / `ContentLastModifiedAt` mirror on every `StorageKind = RelationalTables` root and on `dms.Descriptor`; backs resource and descriptor `?minChangeVersion=X&maxChangeVersion=Y` reads as a single-table range filter.
   - per-resource `tracked_changes_<schema>.<resource>` tables and shared `tracked_changes_edfi.Descriptor`; back `/deletes` and `/keyChanges`. Populated by the same `*_Stamp` triggers extended with `DocumentStamping.ChangeTracking`.
@@ -233,7 +232,7 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
 
 6. **Update tracking (stored metadata + tracked-change rows)**
    - Any representation-affecting change (including cascaded updates to canonical stored identity columns backing local bindings) bumps `dms.Document.ContentVersion/ContentLastModifiedAt`.
-   - Identity projection changes additionally bump `dms.Document.IdentityVersion/IdentityLastModifiedAt`.
+   - Identity projection changes are captured by the same content stamps because they change the stored representation.
    - The `*_Stamp` triggers mirror the new `ContentVersion`/`ContentLastModifiedAt` onto the resource root (or `dms.Descriptor`) and append tombstone/key-change rows to the corresponding `tracked_changes_*` table when applicable (see [change-queries.md](change-queries.md)).
 
 ## Read path (GET by id / query)

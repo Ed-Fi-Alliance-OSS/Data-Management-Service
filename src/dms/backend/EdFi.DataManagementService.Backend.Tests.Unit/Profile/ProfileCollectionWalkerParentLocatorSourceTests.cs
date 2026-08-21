@@ -275,9 +275,7 @@ internal static class ParentLocatorSourceBuilders
                 DocumentId: documentId,
                 DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
                 ContentVersion: 1L,
-                IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
                 ResourceKeyId: 1
             ),
             [
@@ -576,9 +574,7 @@ internal static class ParentLocatorSourceBuilders
                 DocumentId: documentId,
                 DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
                 ContentVersion: 1L,
-                IdentityVersion: 1L,
                 ContentLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
-                IdentityLastModifiedAt: new DateTimeOffset(2026, 4, 27, 12, 0, 0, TimeSpan.Zero),
                 ResourceKeyId: 1
             ),
             [

@@ -194,9 +194,7 @@ public static class DocumentReferenceLookupPageFixture
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "IdentityVersion" bigint NOT NULL DEFAULT 1,
                 "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "CreatedAt" timestamptz NOT NULL DEFAULT now()
             );
 
@@ -294,9 +292,7 @@ public static class DocumentReferenceLookupPageFixture
                 [DocumentUuid] uniqueidentifier NOT NULL,
                 [ResourceKeyId] smallint NOT NULL DEFAULT 0,
                 [ContentVersion] bigint NOT NULL DEFAULT 1,
-                [IdentityVersion] bigint NOT NULL DEFAULT 1,
                 [ContentLastModifiedAt] datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                [IdentityLastModifiedAt] datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
                 [CreatedAt] datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
             );
 

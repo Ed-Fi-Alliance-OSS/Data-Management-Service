@@ -822,7 +822,7 @@ preservation must be explicit. Three pieces will be added, all in the shared wri
    every referrer; and the stamping trigger's identity diff is deliberately **binary** (string
    columns compared as `varbinary(max)`; see ["Trigger value-diffs stay byte-level on SQL
    Server"](#trigger-value-diffs-stay-byte-level-on-sql-server)), so an unrebated recase would bump
-   `IdentityVersion` and record a key change in the tracked-change tables. After the rebind, none of
+   `ContentVersion` and record a key change in the tracked-change tables. After the rebind, none of
    that machinery will see a change — no suppression logic will be needed anywhere downstream.
 3. **No-op detection will come free.** After the rebind, a casing-only re-POST with an otherwise
    identical payload will be row-for-row equal to current state and will land on the existing
@@ -931,7 +931,7 @@ identity-propagation trigger row here would contradict that pruning contract.
 | Surviving trigger family | What the binary diff gates | Why it must stay byte-level |
 |---|---|---|
 | Document stamping — content stamp (resource roots, child scopes, and `dms.Descriptor`) | `ContentVersion` / `ContentLastModifiedAt` bumps | Non-identity fields stay request-wins under this contract: a case-only or trailing-space-only edit changes the served bytes, so the ETag must change and change queries must resurface the document. A collation diff would leave the ETag stale while the body changed. |
-| Document stamping — identity stamp + key-change workset | `IdentityVersion` bump + the key-change tracked-change row | The fail-closed comparer residue: a byte-different-but-collation-equal key change (e.g. `Straße` → `Strasse`) is deliberately allowed through as a real key change, and its cascade rewrites referrer bytes; only a byte-level diff records any of it. |
+| Document stamping — key-change workset | Whether the key-change tracked-change row is emitted | The fail-closed comparer residue: a byte-different-but-collation-equal key change (e.g. `Straße` → `Strasse`) is deliberately allowed through as a real key change, and its cascade rewrites referrer bytes; only a byte-level diff records any of it. |
 | Abstract identity maintenance | Whether concrete identity changes propagate into the `<Abstract>Identity` tables | These tables will become the *only* resolution path for abstract references, and PostgreSQL matches them case-sensitively — byte drift between a concrete root and its abstract copy would become user-visible. |
 
 (Non-string columns are never cast — the byte comparison exists only where collation equality and
@@ -1387,7 +1387,7 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
 - **Behavior pins**:
   - Case-variant natural-key POST/PUT suites asserting the ODS-parity contract on SQL Server (200,
     stored casing served back, true no-op on identical payload, no referrer rewrite / key-change
-    row / `IdentityVersion` bump; casing-only PUT is not a key change; a mixed PUT cascades only the
+    row / `ContentVersion` bump; casing-only PUT is not a key change; a mixed PUT cascades only the
     genuinely changed column) and the PostgreSQL second-document behavior.
   - Descriptor stored-wins pins per engine (POST preserves stored casing and no-ops on casing-only
     re-POST; case-only descriptor PUT returns 200 with stored identity intact).

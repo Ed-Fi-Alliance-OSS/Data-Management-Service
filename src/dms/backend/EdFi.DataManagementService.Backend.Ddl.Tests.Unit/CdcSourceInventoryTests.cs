@@ -87,12 +87,10 @@ public class Given_CoreDdlMetadata_For_CdcSourceInventory(SqlDialect dialect)
                 "ResourceKeyId",
                 "CreatedByOwnershipTokenId",
                 "ContentVersion",
-                "IdentityVersion",
                 "ContentLastModifiedAt",
-                "IdentityLastModifiedAt",
                 "CreatedAt"
             );
-        document.Columns.Select(column => column.Ordinal).Should().Equal(Enumerable.Range(1, 9));
+        document.Columns.Select(column => column.Ordinal).Should().Equal(Enumerable.Range(1, 7));
         document
             .Columns.Single(column => column.ColumnName.Value == "CreatedByOwnershipTokenId")
             .IsNullable.Should()

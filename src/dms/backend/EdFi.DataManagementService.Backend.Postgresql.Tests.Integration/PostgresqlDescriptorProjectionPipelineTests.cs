@@ -149,9 +149,7 @@ internal static class DescriptorProjectionPipelineFixture
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "IdentityVersion" bigint NOT NULL DEFAULT 1,
                 "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "CreatedAt" timestamptz NOT NULL DEFAULT now()
             );
 
@@ -203,9 +201,9 @@ internal static class DescriptorProjectionPipelineFixture
             DELETE FROM dms."Document"
             WHERE "DocumentId" IN ({DocumentId810}, {DocumentId811});
 
-            INSERT INTO dms."Document" ("DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion", "IdentityVersion") VALUES
-                ({DocumentId810}, '81000000-0000-0000-0000-000000000810', 0, 1, 1),
-                ({DocumentId811}, '81100000-0000-0000-0000-000000000811', 0, 1, 1);
+            INSERT INTO dms."Document" ("DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion") VALUES
+                ({DocumentId810}, '81000000-0000-0000-0000-000000000810', 0, 1),
+                ({DocumentId811}, '81100000-0000-0000-0000-000000000811', 0, 1);
 
             INSERT INTO dms."Descriptor" ("DocumentId", "Namespace", "CodeValue", "ShortDescription", "Discriminator", "Uri") VALUES
                 ({DescriptorId910}, 'uri://ed-fi.org/AcademicSubjectDescriptor', 'English Language Arts', 'English Language Arts', 'edfi.AcademicSubjectDescriptor', '{Uri910}'),

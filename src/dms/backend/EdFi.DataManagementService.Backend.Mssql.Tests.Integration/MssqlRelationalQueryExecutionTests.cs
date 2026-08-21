@@ -536,7 +536,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
             totalCount: true,
             traceId: "mssql-query-change-version-composed-match",
             changeVersionRange: new ChangeVersionRange(
-                _persistedSchoolsInDocumentOrder[0].ContentVersion,
+                _persistedSchoolsInDocumentOrder[0].ContentVersion - 1,
                 _persistedSchoolsInDocumentOrder[^1].ContentVersion
             )
         );

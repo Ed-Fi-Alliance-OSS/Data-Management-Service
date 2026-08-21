@@ -978,7 +978,7 @@ Pack producers and consumers MUST validate the following invariants at build/loa
 Adding proto fields is wire-compatible and does not require bumping `PackFormatVersion`. However, key unification is a
 semantic change to mapping behavior and MUST be gated by `RelationalMappingVersion`:
 
-- Producers MUST bump `RelationalMappingVersion` when key unification semantics are enabled in emitted artifacts.
+- The release that enables key unification semantics in emitted artifacts MUST carry a `RelationalMappingVersion` bump.
 - Consumers MUST reject mapping packs whose `relational_mapping_version` does not match the runtime’s expected value,
   including older artifacts that omit storage/unification metadata.
 - If backward compatibility for older artifacts is required, it MUST be explicit:
@@ -1891,10 +1891,11 @@ Implementation guidance (dialect-neutral semantics):
 - Fire on `INSERT`, `UPDATE`, and `DELETE` for each schema-derived table (as described in `update-tracking.md`).
 - Compute `affectedDocumentIds` from `inserted ∪ deleted` (dedupe).
 - Always bump **Content** stamps for `affectedDocumentIds` (representation changed).
-- Compute `identityChangedDocumentIds` by diffing the document’s identity projection values between `inserted` and
-  `deleted` (null-safe comparison). For unified members, diff the **presence-gated canonical expression** above (not
-  the alias column name).
-- Bump **Identity** stamps only for `identityChangedDocumentIds`.
+- Record key-change rows for documents whose persisted identity projection values differ between `inserted` and
+  `deleted` under the ODS-compatible canonical storage semantics described in
+  [change-queries.md](change-queries.md). This key-change workset is intentionally separate from the
+  presence-gated identity-propagation compare set above.
+- Representation-changing identity propagation still follows the content-stamp rules for `affectedDocumentIds`.
 
 #### `TriggerKindParameters.AbstractIdentityMaintenance`
 

@@ -268,7 +268,7 @@ public abstract record TriggerKindParameters
     private TriggerKindParameters() { }
 
     /// <summary>
-    /// Parameters for triggers that stamp document representation/identity versions.
+    /// Parameters for triggers that stamp document content-tracking columns.
     /// </summary>
     /// <param name="ChangeTracking">
     /// The change-tracking attachment when this stamping trigger also populates a tracked-change table
@@ -377,8 +377,8 @@ public sealed record TriggerColumnMapping(DbColumnName SourceColumn, DbColumnNam
 /// <param name="KeyColumns">Key columns used to identify the affected <c>DocumentId</c>.</param>
 /// <param name="IdentityProjectionColumns">
 /// Columns whose change affects the resource identity projection. For
-/// <see cref="TriggerKindParameters.DocumentStamping"/> triggers on root tables, these are the columns
-/// that should additionally bump <c>IdentityVersion</c>. For
+/// <see cref="TriggerKindParameters.DocumentStamping"/> triggers on root tables, these determine
+/// key-change eligibility for Resource tracked-change attachments. For
 /// <see cref="TriggerKindParameters.ReferentialIdentityMaintenance"/> and
 /// <see cref="TriggerKindParameters.AbstractIdentityMaintenance"/> triggers, these are the columns that
 /// trigger recomputation. Empty for child/extension table stamping triggers.

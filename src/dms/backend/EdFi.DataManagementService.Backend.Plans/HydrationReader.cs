@@ -84,8 +84,8 @@ public static class HydrationReader
     /// </summary>
     /// <remarks>
     /// Expects columns at fixed ordinals aligned to <see cref="DocumentMetadataColumns"/>:
-    /// 0=DocumentId, 1=DocumentUuid, 2=ContentVersion, 3=IdentityVersion,
-    /// 4=ContentLastModifiedAt, 5=IdentityLastModifiedAt, 6=ResourceKeyId.
+    /// 0=DocumentId, 1=DocumentUuid, 2=ContentVersion, 3=ContentLastModifiedAt,
+    /// 4=ResourceKeyId.
     /// </remarks>
     /// <param name="reader">The data reader positioned at the document metadata result set.</param>
     /// <param name="ct">Cancellation token.</param>
@@ -116,10 +116,8 @@ public static class HydrationReader
                     DocumentId: reader.GetInt64(0),
                     DocumentUuid: reader.GetGuid(1),
                     ContentVersion: reader.GetInt64(2),
-                    IdentityVersion: reader.GetInt64(3),
-                    ContentLastModifiedAt: ReadDateTimeOffset(reader, 4),
-                    IdentityLastModifiedAt: ReadDateTimeOffset(reader, 5),
-                    ResourceKeyId: reader.GetInt16(6)
+                    ContentLastModifiedAt: ReadDateTimeOffset(reader, 3),
+                    ResourceKeyId: reader.GetInt16(4)
                 )
             );
         }

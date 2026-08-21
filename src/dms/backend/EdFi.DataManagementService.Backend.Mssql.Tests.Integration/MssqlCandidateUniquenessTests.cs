@@ -100,8 +100,9 @@ public class Given_A_Mssql_Compiled_Candidate_Relation
     private static readonly long[] _allDocumentIds = [10L, 20L, 30L, 40L, 50L];
 
     /// <summary>
-    /// The root <c>DocumentId</c>s inside the change-version window the planner probes request. A strict
-    /// subset of <see cref="_allDocumentIds" />, so a planner that dropped the window would be caught.
+    /// The root <c>DocumentId</c>s inside the inclusive-minimum change-version window the planner probes
+    /// request. A strict subset of <see cref="_allDocumentIds" />, including the row exactly at the lower
+    /// bound, so a planner that dropped the window or made the lower bound exclusive would be caught.
     /// </summary>
     private static readonly long[] _documentIdsInChangeVersionWindow = [30L, 40L, 50L];
 

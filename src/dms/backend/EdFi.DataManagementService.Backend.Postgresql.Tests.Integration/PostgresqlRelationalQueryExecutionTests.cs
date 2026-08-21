@@ -404,7 +404,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
     public async Task It_returns_resources_at_or_above_min_change_version_and_excludes_older_resources()
     {
         var currentSchools = await ReadPersistedSchoolsInDocumentOrderAsync();
-        var newestSchool = currentSchools.OrderBy(s => s.ContentVersion).Last();
+        var middleSchool = currentSchools.OrderBy(s => s.ContentVersion).ElementAt(1);
 
         var result = await ExecuteQueryAsync(
             [],
@@ -412,14 +412,20 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
             offset: 0,
             totalCount: true,
             traceId: "pg-query-change-version-min-only",
-            changeVersionRange: new ChangeVersionRange(newestSchool.ContentVersion, null)
+            changeVersionRange: new ChangeVersionRange(middleSchool.ContentVersion, null)
         );
 
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
 
-        success.TotalCount.Should().Be(1);
-        success.EdfiDocs.Should().HaveCount(1);
-        success.EdfiDocs[0]!["id"]!.GetValue<string>().Should().Be(newestSchool.DocumentUuid.ToString());
+        success.TotalCount.Should().Be(2);
+        success.EdfiDocs.Should().HaveCount(2);
+        success
+            .EdfiDocs.Select(document => document!["id"]!.GetValue<string>())
+            .Should()
+            .BeEquivalentTo(
+                middleSchool.DocumentUuid.ToString(),
+                currentSchools.OrderBy(s => s.ContentVersion).Last().DocumentUuid.ToString()
+            );
     }
 
     [Test]
@@ -450,7 +456,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         // query keeps the filter but shrinks the window below the match, proving both predicates apply.
         var middleSchool = _persistedSchoolsInDocumentOrder[1];
         var allVersionsWindow = new ChangeVersionRange(
-            _persistedSchoolsInDocumentOrder[0].ContentVersion,
+            _persistedSchoolsInDocumentOrder[0].ContentVersion - 1,
             _persistedSchoolsInDocumentOrder[^1].ContentVersion
         );
 

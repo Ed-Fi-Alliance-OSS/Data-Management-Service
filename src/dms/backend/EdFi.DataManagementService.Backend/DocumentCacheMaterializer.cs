@@ -326,8 +326,6 @@ internal sealed class DocumentCacheMaterializer(
             source.DocumentId,
             source.DocumentUuid.Value,
             source.ContentVersion,
-            source.ContentVersion,
-            source.ContentLastModifiedAt,
             source.ContentLastModifiedAt,
             source.ResourceKeyId
         );

@@ -13,17 +13,13 @@ namespace EdFi.DataManagementService.Backend.External;
 /// <param name="DocumentId">The internal document identity.</param>
 /// <param name="DocumentUuid">The public document UUID exposed as <c>id</c> in API responses.</param>
 /// <param name="ContentVersion">Stored content-change version stamp.</param>
-/// <param name="IdentityVersion">Stored identity-change version stamp.</param>
 /// <param name="ContentLastModifiedAt">Timestamp of the last content change.</param>
-/// <param name="IdentityLastModifiedAt">Timestamp of the last identity change.</param>
 /// <param name="ResourceKeyId">Stored resource identity.</param>
 public sealed record DocumentMetadataRow(
     long DocumentId,
     Guid DocumentUuid,
     long ContentVersion,
-    long IdentityVersion,
     DateTimeOffset ContentLastModifiedAt,
-    DateTimeOffset IdentityLastModifiedAt,
     short ResourceKeyId
 );
 

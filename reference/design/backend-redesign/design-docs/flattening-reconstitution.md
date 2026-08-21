@@ -844,9 +844,7 @@ SELECT
   d.DocumentId,
   d.DocumentUuid,
   d.ContentVersion,
-  d.IdentityVersion,
   d.ContentLastModifiedAt,
-  d.IdentityLastModifiedAt,
   d.ResourceKeyId
 FROM dms.Document d
 JOIN page p ON p.DocumentId = d.DocumentId;
@@ -879,9 +877,7 @@ SELECT
   d.DocumentId,
   d.DocumentUuid,
   d.ContentVersion,
-  d.IdentityVersion,
   d.ContentLastModifiedAt,
-  d.IdentityLastModifiedAt,
   d.ResourceKeyId
 FROM dms.Document d
 WHERE d.DocumentId = @DocumentId
@@ -927,10 +923,10 @@ TotalCount
 **Result set 2 (`dms.Document` joined to the `page` keyset)**
 
 ```text
-DocumentId | DocumentUuid                           | ContentVersion | IdentityVersion | ContentLastModifiedAt       | IdentityLastModifiedAt
----------- | -------------------------------------- | -------------- | -------------- | --------------------------- | ---------------------------
-2001       | 7c5a4c7e-1b2c-4b3d-9f2e-6d0c8c0f8a11   | 14             | 14             | 2026-01-06T18:22:41Z        | 2026-01-06T18:22:41Z
-2002       | 1a2b3c4d-5e6f-7081-9201-aabbccddeeff   |  2             |  2             | 2026-01-05T09:10:00Z        | 2026-01-05T09:10:00Z
+DocumentId | DocumentUuid                           | ContentVersion | ContentLastModifiedAt
+---------- | -------------------------------------- | -------------- | ------------------------
+2001       | 7c5a4c7e-1b2c-4b3d-9f2e-6d0c8c0f8a11   | 14             | 2026-01-06T18:22:41Z
+2002       | 1a2b3c4d-5e6f-7081-9201-aabbccddeeff   |  2             | 2026-01-05T09:10:00Z
 ```
 
 **Result set 3 (root rows: `edfi.School`)**

@@ -840,9 +840,7 @@ public class Given_MssqlCdcProviderArtifacts
                 "ResourceKeyId",
                 "CreatedByOwnershipTokenId",
                 "ContentVersion",
-                "IdentityVersion",
                 "ContentLastModifiedAt",
-                "IdentityLastModifiedAt",
                 "CreatedAt",
             ]
         );
