@@ -43,6 +43,31 @@ public class Given_The_Offset_Policy
 }
 
 [TestFixture]
+public class Given_A_GetMany_Response_Body
+{
+    [Test]
+    public void It_counts_the_returned_rows_from_the_observed_body()
+    {
+        PerfScenarioExecutor.CountReturnedRows("""[{"id":"a"},{"id":"b"},{"id":"c"}]""").Should().Be(3);
+    }
+
+    [Test]
+    public void It_counts_an_empty_page_as_zero()
+    {
+        PerfScenarioExecutor.CountReturnedRows("[]").Should().Be(0);
+    }
+
+    [Test]
+    public void It_rejects_a_non_array_body()
+    {
+        FluentActions
+            .Invoking(() => PerfScenarioExecutor.CountReturnedRows("""{"error":"not a page"}"""))
+            .Should()
+            .Throw<PerfObservationException>();
+    }
+}
+
+[TestFixture]
 public class Given_The_Cell_Execution_Order
 {
     private IReadOnlyList<PerfExecutedCell> _cells = null!;

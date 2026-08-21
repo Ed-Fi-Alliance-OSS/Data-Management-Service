@@ -140,6 +140,96 @@ public class Given_A_Measured_Operation
 }
 
 [TestFixture]
+public class Given_A_Measured_Operation_With_Iteration_Hooks
+{
+    private List<string> _events = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        _events = [];
+        await PerfLatencyMeasurement.MeasureAsync(
+            iteration =>
+            {
+                _events.Add($"operation:{iteration}");
+                return Task.CompletedTask;
+            },
+            warmupIterations: 1,
+            measuredIterations: 2,
+            beforeIterationAsync: iteration =>
+            {
+                _events.Add($"before:{iteration}");
+                return Task.CompletedTask;
+            },
+            afterIterationAsync: iteration =>
+            {
+                _events.Add($"after:{iteration}");
+                return Task.CompletedTask;
+            }
+        );
+    }
+
+    [Test]
+    public void It_wraps_every_iteration_including_warmups_with_the_hooks()
+    {
+        _events
+            .Should()
+            .Equal(
+                "before:0",
+                "operation:0",
+                "after:0",
+                "before:1",
+                "operation:1",
+                "after:1",
+                "before:2",
+                "operation:2",
+                "after:2"
+            );
+    }
+}
+
+[TestFixture]
+public class Given_Slow_Iteration_Hooks
+{
+    [Test]
+    public async Task It_keeps_the_hook_time_out_of_the_samples()
+    {
+        PerfLatencySummary summary = await PerfLatencyMeasurement.MeasureAsync(
+            _ => Task.CompletedTask,
+            warmupIterations: 0,
+            measuredIterations: 2,
+            beforeIterationAsync: _ => Task.Delay(300),
+            afterIterationAsync: _ => Task.Delay(300)
+        );
+
+        // The timed operation is a no-op; the 300 ms hooks must not appear in the samples.
+        // The wide margin keeps scheduler noise from ever flaking this.
+        summary.SamplesMs.Should().OnlyContain(sample => sample < 250.0);
+    }
+}
+
+[TestFixture]
+public class Given_A_Failing_After_Iteration_Hook
+{
+    [Test]
+    public async Task It_propagates_the_failure()
+    {
+        await FluentActions
+            .Invoking(() =>
+                PerfLatencyMeasurement.MeasureAsync(
+                    _ => Task.CompletedTask,
+                    warmupIterations: 0,
+                    measuredIterations: 1,
+                    afterIterationAsync: _ => throw new InvalidOperationException("guardrail failed")
+                )
+            )
+            .Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("guardrail failed");
+    }
+}
+
+[TestFixture]
 public class Given_A_Failing_Operation
 {
     [Test]

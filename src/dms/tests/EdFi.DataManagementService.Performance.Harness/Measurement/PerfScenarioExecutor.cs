@@ -37,6 +37,8 @@ public sealed record PerfMeasuredCell(
 /// exactly one database command and exactly the requested row count, and every request in a
 /// cell must compile the same page-selection SQL text with the cell's bound offset and page
 /// size. Any deviation throws — a cell that did not do the expected work is not evidence.
+/// The timed window covers only the HTTP request and response content read; all of that
+/// verification runs outside it, after each sample is taken.
 /// </summary>
 public static class PerfScenarioExecutor
 {
@@ -98,12 +100,46 @@ public static class PerfScenarioExecutor
         int recorderBaseline = recorder.HydrationKeysets.Count;
         List<double> dbCommandSamplesMs = [];
         string? hydrationBatchSql = null;
+        int? observedReturnedRows = null;
+
+        int commandBaseline = 0;
+        HttpStatusCode responseStatus = default;
+        string responseBody = string.Empty;
 
         PerfLatencySummary latency = await PerfLatencyMeasurement.MeasureAsync(
-            async iteration =>
+            async _ =>
             {
-                int commandBaseline = observer.Commands.Count;
-                await ExecuteRequestAsync(harness, url, cell, at, iteration);
+                using HttpResponseMessage response = await harness.HttpClient.GetAsync(url);
+                responseStatus = response.StatusCode;
+                responseBody = await response.Content.ReadAsStringAsync();
+            },
+            warmupIterations,
+            measuredIterations,
+            beforeIterationAsync: _ =>
+            {
+                commandBaseline = observer.Commands.Count;
+                return Task.CompletedTask;
+            },
+            afterIterationAsync: iteration =>
+            {
+                if (responseStatus != HttpStatusCode.OK)
+                {
+                    throw new PerfObservationException(
+                        $"{at} iteration {iteration}: HTTP {(int)responseStatus}: "
+                            + responseBody[..Math.Min(responseBody.Length, 500)]
+                    );
+                }
+
+                int returnedRows = CountReturnedRows(responseBody);
+                if (returnedRows != cell.PageSize)
+                {
+                    throw new PerfObservationException(
+                        $"{at} iteration {iteration}: returned rows {returnedRows} must equal "
+                            + $"page size {cell.PageSize}."
+                    );
+                }
+
+                observedReturnedRows ??= returnedRows;
 
                 IReadOnlyList<ObservedDbCommand> window = [.. observer.Commands.Skip(commandBaseline)];
                 if (window.Count != 1)
@@ -126,9 +162,9 @@ public static class PerfScenarioExecutor
                 {
                     dbCommandSamplesMs.Add(window[0].ElapsedMs);
                 }
-            },
-            warmupIterations,
-            measuredIterations
+
+                return Task.CompletedTask;
+            }
         );
 
         if (dbCommandSamplesMs.Count != measuredIterations)
@@ -165,7 +201,8 @@ public static class PerfScenarioExecutor
             cell.ScenarioId,
             cell.PageSize,
             cell.Offset,
-            cell.PageSize,
+            observedReturnedRows
+                ?? throw new PerfObservationException($"{at}: no returned row count was observed."),
             CommandCountPerRequest: 1,
             latency,
             PerfLatencyMeasurement.Summarize(dbCommandSamplesMs),
@@ -175,32 +212,14 @@ public static class PerfScenarioExecutor
         );
     }
 
-    private static async Task ExecuteRequestAsync(
-        ApiIntegrationHarness harness,
-        string url,
-        PerfExecutedCell cell,
-        string at,
-        int iteration
-    )
-    {
-        using HttpResponseMessage response = await harness.HttpClient.GetAsync(url);
-        string body = await response.Content.ReadAsStringAsync();
-        if (response.StatusCode != HttpStatusCode.OK)
-        {
-            throw new PerfObservationException(
-                $"{at} iteration {iteration}: HTTP {(int)response.StatusCode}: "
-                    + body[..Math.Min(body.Length, 500)]
-            );
-        }
-
-        int returnedRows = JsonNode.Parse(body)!.AsArray().Count;
-        if (returnedRows != cell.PageSize)
-        {
-            throw new PerfObservationException(
-                $"{at} iteration {iteration}: returned rows {returnedRows} must equal page size {cell.PageSize}."
-            );
-        }
-    }
+    /// <summary>
+    /// The number of items in a GET-many response body, read from the observed response
+    /// rather than assumed from the requested page size.
+    /// </summary>
+    public static int CountReturnedRows(string responseBody) =>
+        JsonNode.Parse(responseBody) is JsonArray items
+            ? items.Count
+            : throw new PerfObservationException("The GET-many response body is not a JSON array.");
 
     private static void VerifyBoundValue(
         PageSelectionQueryCapture capture,

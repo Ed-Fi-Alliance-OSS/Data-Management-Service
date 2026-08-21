@@ -17,10 +17,18 @@ namespace EdFi.DataManagementService.Performance.Harness.Measurement;
 /// </summary>
 public static class PerfLatencyMeasurement
 {
+    /// <summary>
+    /// The optional hooks run outside the timed window on every iteration, warmup or
+    /// measured: harness-only work (observation baselines before, guardrail verification
+    /// after) must not contribute to the samples, which represent the operation alone.
+    /// A hook failure aborts the measurement like an operation failure does.
+    /// </summary>
     public static async Task<PerfLatencySummary> MeasureAsync(
         Func<int, Task> operationAsync,
         int warmupIterations,
-        int measuredIterations
+        int measuredIterations,
+        Func<int, Task>? beforeIterationAsync = null,
+        Func<int, Task>? afterIterationAsync = null
     )
     {
         ArgumentOutOfRangeException.ThrowIfNegative(warmupIterations);
@@ -28,17 +36,36 @@ public static class PerfLatencyMeasurement
 
         for (int iteration = 0; iteration < warmupIterations; iteration++)
         {
+            if (beforeIterationAsync is not null)
+            {
+                await beforeIterationAsync(iteration);
+            }
+
             await operationAsync(iteration);
+            if (afterIterationAsync is not null)
+            {
+                await afterIterationAsync(iteration);
+            }
         }
 
         double[] samplesMs = new double[measuredIterations];
         Stopwatch stopwatch = new();
         for (int iteration = 0; iteration < measuredIterations; iteration++)
         {
+            int absoluteIteration = warmupIterations + iteration;
+            if (beforeIterationAsync is not null)
+            {
+                await beforeIterationAsync(absoluteIteration);
+            }
+
             stopwatch.Restart();
-            await operationAsync(warmupIterations + iteration);
+            await operationAsync(absoluteIteration);
             stopwatch.Stop();
             samplesMs[iteration] = stopwatch.Elapsed.TotalMilliseconds;
+            if (afterIterationAsync is not null)
+            {
+                await afterIterationAsync(absoluteIteration);
+            }
         }
 
         return Summarize(samplesMs);
