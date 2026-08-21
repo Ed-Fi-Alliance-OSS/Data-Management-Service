@@ -257,11 +257,7 @@ internal sealed class NoOpCollectionPagingTelemetry : ICollectionPagingTelemetry
         ArgumentNullException.ThrowIfNull(context);
         CollectionPagingTelemetry.RequireNonNegativeMilliseconds(duration);
         CollectionPagingTelemetry.RequireNonNegativeCount(requested, nameof(requested));
-
-        if (returned is { } returnedCount)
-        {
-            CollectionPagingTelemetry.RequireNonNegativeCount(returnedCount, nameof(returned));
-        }
+        CollectionPagingTelemetry.RequireNonNegativeCount(returned, nameof(returned));
     }
 }
 
@@ -333,10 +329,14 @@ internal sealed class CollectionPagingTelemetry : ICollectionPagingTelemetry
         int? returnedPageSize
     )
     {
+        // Every argument is validated before the first instrument is touched: a fault discovered halfway
+        // through would leave the request counter incremented for a measurement set that was never
+        // completed, which is worse than the bad call it reports.
         ArgumentNullException.ThrowIfNull(context);
 
         double milliseconds = RequireNonNegativeMilliseconds(duration);
         RequireNonNegativeCount(requestedPageSize, nameof(requestedPageSize));
+        RequireNonNegativeCount(returnedPageSize, nameof(returnedPageSize));
 
         TagList tags = context.ToTags();
 
@@ -346,7 +346,6 @@ internal sealed class CollectionPagingTelemetry : ICollectionPagingTelemetry
 
         if (returnedPageSize is { } returned)
         {
-            RequireNonNegativeCount(returned, nameof(returnedPageSize));
             _returnedPageSize.Record(returned, tags);
         }
 
@@ -364,6 +363,7 @@ internal sealed class CollectionPagingTelemetry : ICollectionPagingTelemetry
 
         double milliseconds = RequireNonNegativeMilliseconds(duration);
         RequireNonNegativeCount(requestedPartitionCount, nameof(requestedPartitionCount));
+        RequireNonNegativeCount(returnedPartitionCount, nameof(returnedPartitionCount));
 
         TagList tags = context.ToTags();
 
@@ -373,7 +373,6 @@ internal sealed class CollectionPagingTelemetry : ICollectionPagingTelemetry
 
         if (returnedPartitionCount is { } returned)
         {
-            RequireNonNegativeCount(returned, nameof(returnedPartitionCount));
             _returnedPartitionCount.Record(returned, tags);
         }
 
@@ -424,6 +423,18 @@ internal sealed class CollectionPagingTelemetry : ICollectionPagingTelemetry
         if (count < 0)
         {
             throw new ArgumentOutOfRangeException(parameterName, count, "Count must be nonnegative.");
+        }
+    }
+
+    /// <summary>
+    /// Validates an optional count. Null means the measurement is not recorded, which is a legitimate
+    /// state rather than a missing argument.
+    /// </summary>
+    internal static void RequireNonNegativeCount(int? count, string parameterName)
+    {
+        if (count is { } value)
+        {
+            RequireNonNegativeCount(value, parameterName);
         }
     }
 }
