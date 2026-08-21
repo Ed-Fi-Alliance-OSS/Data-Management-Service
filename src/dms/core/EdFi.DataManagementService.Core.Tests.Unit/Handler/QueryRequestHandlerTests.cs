@@ -1790,5 +1790,51 @@ public class QueryRequestHandlerTests
             DecodeNextPageToken(requestInfo).Should().Be(new CursorRange(2510, long.MaxValue));
             telemetry.Single.Outcome.Should().Be("success");
         }
+
+        // The other half of "instrumentation must not participate": recording runs after the response is
+        // assembled, so a measurement callback that throws would discard a page the request had already
+        // earned and answer a system error instead.
+        [Test]
+        public async Task It_serves_the_page_when_recording_throws()
+        {
+            RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
+            requestInfo.CollectionPaging = _traditionalPaging;
+
+            var (queryHandler, serviceProvider) = Handler(
+                new Repository(new QueryResult.QuerySuccess(Documents(2), null, 2509L)),
+                collectionPagingTelemetry: new ThrowingCollectionPagingTelemetry()
+            );
+            requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await queryHandler.Execute(requestInfo, NullNext);
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(200);
+            requestInfo.FrontendResponse.Body!.AsArray().Should().HaveCount(2);
+            DecodeNextPageToken(requestInfo).Should().Be(new CursorRange(2510, long.MaxValue));
+        }
+
+        // The execution-exception emission runs from inside a catch that is about to rethrow. A telemetry
+        // fault there would replace the fault being reported, which is exactly the diagnosis that catch
+        // exists to preserve.
+        [Test]
+        public async Task It_propagates_the_execution_fault_when_recording_throws()
+        {
+            InvalidOperationException executionFault = new("A configured custom view is not conforming.");
+
+            RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
+            requestInfo.CollectionPaging = _traditionalPaging;
+
+            var (queryHandler, serviceProvider) = Handler(
+                new ThrowingRepository(executionFault),
+                collectionPagingTelemetry: new ThrowingCollectionPagingTelemetry()
+            );
+            requestInfo.ScopedServiceProvider = serviceProvider;
+
+            Func<Task> execute = () => queryHandler.Execute(requestInfo, NullNext);
+
+            (await execute.Should().ThrowAsync<InvalidOperationException>())
+                .Which.Should()
+                .BeSameAs(executionFault);
+        }
     }
 }

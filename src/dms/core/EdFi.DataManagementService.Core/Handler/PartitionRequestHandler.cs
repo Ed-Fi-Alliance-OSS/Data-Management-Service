@@ -210,6 +210,23 @@ internal class PartitionRequestHandler(
         );
     }
 
+    /// <summary>
+    /// Emits one measurement set, and never lets a telemetry fault reach the client.
+    /// </summary>
+    /// <remarks>
+    /// Instrumentation observes; it must not participate. Every call arrives after the response has been
+    /// assembled, and the execution-exception call arrives from inside a catch that is about to rethrow,
+    /// so an escaping throw would either replace a served response with a system error or replace the
+    /// fault it was trying to report — the same reason the requested count above is resolved before
+    /// timing starts rather than from inside that catch. Recording is not free of throwing code: label
+    /// derivation rejects a request state the bounded dimension set cannot describe, and an instrument
+    /// invokes whatever measurement callbacks the host has subscribed, which is third-party code on this
+    /// thread.
+    /// <para>
+    /// Validation on the recording side stays fail-fast: it can only report a defect in this handler,
+    /// and the tests are what catch those.
+    /// </para>
+    /// </remarks>
     private void RecordOutcome(
         RequestInfo requestInfo,
         TimeSpan duration,
@@ -217,18 +234,32 @@ internal class PartitionRequestHandler(
         string commandCategory,
         string outcome,
         int? returnedPartitionCount
-    ) =>
-        _collectionPagingTelemetry.RecordPartitions(
-            CollectionPagingTelemetryContext.ForPagingMode(
-                CollectionPagingTelemetryLabel.PartitionPagingMode,
-                commandCategory,
-                requestInfo.MappingSet?.Key.Dialect,
-                outcome
-            ),
-            duration,
-            requestedPartitionCount,
-            returnedPartitionCount
-        );
+    )
+    {
+        try
+        {
+            _collectionPagingTelemetry.RecordPartitions(
+                CollectionPagingTelemetryContext.ForPagingMode(
+                    CollectionPagingTelemetryLabel.PartitionPagingMode,
+                    commandCategory,
+                    requestInfo.MappingSet?.Key.Dialect,
+                    outcome
+                ),
+                duration,
+                requestedPartitionCount,
+                returnedPartitionCount
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Collection paging telemetry was not recorded for outcome {Outcome} - {TraceId}",
+                outcome,
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+        }
+    }
 
     /// <summary>
     /// Every failure carries no command category. Core cannot prove, for most of them, whether the

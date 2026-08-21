@@ -493,5 +493,19 @@ public class ValidatePartitionQueryMiddlewareTests
             requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
             telemetry.Measurements.Should().BeEmpty();
         }
+
+        // Counting runs ahead of the rejection this step answers with, so a measurement callback that
+        // throws would replace a 400 naming the bad parameter with a system error naming nothing.
+        [Test]
+        public async Task It_still_answers_the_rejection_when_recording_throws()
+        {
+            RequestInfo requestInfo = await Execute(new ThrowingCollectionPagingTelemetry(), ("number", "0"));
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            requestInfo
+                .FrontendResponse.Body!.ToJsonString()
+                .Should()
+                .Contain("Number of partitions must be between 1 and 200.");
+        }
     }
 }

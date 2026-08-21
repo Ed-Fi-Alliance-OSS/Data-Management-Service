@@ -187,13 +187,33 @@ internal class ValidatePartitionQueryMiddleware(
     /// this step is composed only into the partitions pipeline, so there is no other mode a request
     /// reaching it could have.
     /// </summary>
-    private void RecordValidationRejected(RequestInfo requestInfo) =>
-        _collectionPagingTelemetry.RecordValidationRejected(
-            CollectionPagingTelemetryContext.ForPagingMode(
-                CollectionPagingTelemetryLabel.PartitionPagingMode,
-                CollectionPagingTelemetryLabel.NoCommandCategory,
-                requestInfo.MappingSet?.Key.Dialect,
-                CollectionPagingTelemetryLabel.ValidationRejectedOutcome
-            )
-        );
+    /// <remarks>
+    /// A telemetry fault never reaches the client. Counting runs ahead of the rejection this step is
+    /// about to answer with, so an escaping throw would replace a 400 that names what the client got
+    /// wrong with a system error that names nothing. Recording is not free of throwing code: an
+    /// instrument invokes whatever measurement callbacks the host has subscribed, which is third-party
+    /// code on this thread.
+    /// </remarks>
+    private void RecordValidationRejected(RequestInfo requestInfo)
+    {
+        try
+        {
+            _collectionPagingTelemetry.RecordValidationRejected(
+                CollectionPagingTelemetryContext.ForPagingMode(
+                    CollectionPagingTelemetryLabel.PartitionPagingMode,
+                    CollectionPagingTelemetryLabel.NoCommandCategory,
+                    requestInfo.MappingSet?.Key.Dialect,
+                    CollectionPagingTelemetryLabel.ValidationRejectedOutcome
+                )
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Collection paging telemetry was not recorded for a validation rejection - {TraceId}",
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+        }
+    }
 }

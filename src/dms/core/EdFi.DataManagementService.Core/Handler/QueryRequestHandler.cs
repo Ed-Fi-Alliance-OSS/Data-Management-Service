@@ -173,25 +173,61 @@ internal class QueryRequestHandler(
             _ => FailureClassification(CollectionPagingTelemetryLabel.UnknownFailureOutcome),
         };
 
-        _collectionPagingTelemetry.RecordPage(
-            CreateContext(requestInfo, commandCategory, outcome),
-            duration,
-            RequestedPageSize(requestInfo.CollectionPaging),
-            returnedPageSize
-        );
+        Record(requestInfo, duration, commandCategory, outcome, returnedPageSize);
     }
 
     private void RecordExecutionException(RequestInfo requestInfo, TimeSpan duration) =>
-        _collectionPagingTelemetry.RecordPage(
-            CreateContext(
-                requestInfo,
-                CollectionPagingTelemetryLabel.NoCommandCategory,
-                CollectionPagingTelemetryLabel.ExecutionExceptionOutcome
-            ),
+        Record(
+            requestInfo,
             duration,
-            RequestedPageSize(requestInfo.CollectionPaging),
+            CollectionPagingTelemetryLabel.NoCommandCategory,
+            CollectionPagingTelemetryLabel.ExecutionExceptionOutcome,
             returnedPageSize: null
         );
+
+    /// <summary>
+    /// Emits one measurement set, and never lets a telemetry fault reach the client.
+    /// </summary>
+    /// <remarks>
+    /// Instrumentation observes; it must not participate. Every call arrives after the response has been
+    /// assembled, and the execution-exception call arrives from inside a catch that is about to rethrow,
+    /// so an escaping throw would either replace a served response with a system error or replace the
+    /// fault it was trying to report. Recording is not free of throwing code: label derivation rejects a
+    /// request state the bounded dimension set cannot describe, and an instrument invokes whatever
+    /// measurement callbacks the host has subscribed, which is third-party code on this thread.
+    /// <para>
+    /// The guard covers the derivations as well as the instruments, because the derivations run as
+    /// arguments to them. Validation on the recording side stays fail-fast: it can only report a defect
+    /// in this handler, and the tests are what catch those.
+    /// </para>
+    /// </remarks>
+    private void Record(
+        RequestInfo requestInfo,
+        TimeSpan duration,
+        string commandCategory,
+        string outcome,
+        int? returnedPageSize
+    )
+    {
+        try
+        {
+            _collectionPagingTelemetry.RecordPage(
+                CreateContext(requestInfo, commandCategory, outcome),
+                duration,
+                RequestedPageSize(requestInfo.CollectionPaging),
+                returnedPageSize
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Collection paging telemetry was not recorded for outcome {Outcome} - {TraceId}",
+                outcome,
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+        }
+    }
 
     private static CollectionPagingTelemetryContext CreateContext(
         RequestInfo requestInfo,

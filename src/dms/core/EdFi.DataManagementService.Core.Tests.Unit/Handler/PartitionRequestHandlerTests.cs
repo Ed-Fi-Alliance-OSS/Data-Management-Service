@@ -591,5 +591,55 @@ public class PartitionRequestHandlerTests
             requestInfo.FrontendResponse.Headers.Should().BeEmpty();
             telemetry.Single.Outcome.Should().Be("success");
         }
+
+        // The other half of "instrumentation must not participate": recording runs after the response is
+        // assembled, so a measurement callback that throws would discard a boundary set the request had
+        // already earned and answer a system error instead.
+        [Test]
+        public async Task It_serves_the_boundary_set_when_recording_throws()
+        {
+            RequestInfo requestInfo = await Execute(
+                new Handler(
+                    new PartitionResult.PartitionSuccess([
+                        new CursorRange(1, 99),
+                        new CursorRange(100, long.MaxValue),
+                    ])
+                ),
+                RequestedPartitionCount,
+                new ThrowingCollectionPagingTelemetry()
+            );
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(200);
+            requestInfo.FrontendResponse.Body!["pageTokens"]!.AsArray().Should().HaveCount(2);
+        }
+
+        // The execution-exception emission runs from inside a catch that is about to rethrow. A telemetry
+        // fault there would replace the fault being reported, which is exactly the diagnosis that catch
+        // exists to preserve.
+        [Test]
+        public async Task It_propagates_the_execution_fault_when_recording_throws()
+        {
+            InvalidOperationException executionFault = new("A configured custom view is not conforming.");
+
+            var serviceProvider = A.Fake<IServiceProvider>();
+            A.CallTo(() => serviceProvider.GetService(typeof(IPartitionQueryHandler)))
+                .Returns(new ThrowingHandler(executionFault));
+
+            RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            requestInfo.RequestedPartitionCount = RequestedPartitionCount;
+
+            Func<Task> execute = () =>
+                new PartitionRequestHandler(
+                    NullLogger.Instance,
+                    ResiliencePipeline.Empty,
+                    MaximumPageSize,
+                    new ThrowingCollectionPagingTelemetry()
+                ).Execute(requestInfo, NullNext);
+
+            (await execute.Should().ThrowAsync<InvalidOperationException>())
+                .Which.Should()
+                .BeSameAs(executionFault);
+        }
     }
 }

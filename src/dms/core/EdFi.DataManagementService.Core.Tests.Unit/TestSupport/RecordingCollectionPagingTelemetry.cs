@@ -107,3 +107,39 @@ internal sealed class RecordingCollectionPagingTelemetry : ICollectionPagingTele
             )
         );
 }
+
+/// <summary>
+/// Fails every recording call, standing in for a measurement callback the host subscribed that throws.
+/// </summary>
+/// <remarks>
+/// A .NET instrument invokes its listeners' callbacks synchronously on the recording thread, and the
+/// operator guidance for these metrics asks for exactly such a listener to be registered in the API
+/// host. So third-party code that can throw sits between an emission site and the meter, and every
+/// emission site has to survive it without changing what the client receives.
+/// </remarks>
+internal sealed class ThrowingCollectionPagingTelemetry : ICollectionPagingTelemetry
+{
+    /// <summary>
+    /// The single fault every call raises, stated once so the message names the cause being simulated
+    /// rather than reading as three unrelated test artifacts.
+    /// </summary>
+    private static readonly InvalidOperationException _fault = new(
+        "A subscribed measurement callback failed."
+    );
+
+    public void RecordPage(
+        CollectionPagingTelemetryContext context,
+        TimeSpan duration,
+        int requestedPageSize,
+        int? returnedPageSize
+    ) => throw _fault;
+
+    public void RecordPartitions(
+        CollectionPagingTelemetryContext context,
+        TimeSpan duration,
+        int requestedPartitionCount,
+        int? returnedPartitionCount
+    ) => throw _fault;
+
+    public void RecordValidationRejected(CollectionPagingTelemetryContext context) => throw _fault;
+}

@@ -595,5 +595,23 @@ public class ValidateQueryMiddlewareCursorTests
             requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
             telemetry.Measurements.Should().BeEmpty();
         }
+
+        // Counting runs ahead of the rejection this step answers with, so a measurement callback that
+        // throws would replace a 400 naming the bad parameter with a system error naming nothing.
+        [Test]
+        public async Task It_still_answers_the_rejection_when_recording_throws()
+        {
+            RequestInfo requestInfo = RequestInfoFor(("limit", "-1"));
+
+            await ValidateQueryMiddlewareTests
+                .Middleware(new ThrowingCollectionPagingTelemetry())
+                .Execute(requestInfo, NullNext);
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            requestInfo
+                .FrontendResponse.Body!.ToJsonString()
+                .Should()
+                .Contain("Limit must be omitted or set to a numeric value between 0 and");
+        }
     }
 }
