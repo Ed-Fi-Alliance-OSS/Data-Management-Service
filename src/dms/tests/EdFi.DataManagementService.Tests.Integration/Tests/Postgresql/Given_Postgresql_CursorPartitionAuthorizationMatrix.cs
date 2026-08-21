@@ -114,6 +114,26 @@ public sealed class Given_Postgresql_CursorPartitionAuthorizationMatrix_SeveralM
         );
 }
 
+/// <summary>
+/// A people strategy whose securable element is reached through a reference, so the compiled predicate
+/// anchors on the root row's reference column and nests a subquery inside the auth view membership test.
+/// </summary>
+public sealed class Given_Postgresql_CursorPartitionAuthorizationMatrix_TransitivePersonAuthorization
+    : PostgresqlCursorPartitionAuthorizationMatrixTestBase
+{
+    protected override IReadOnlyList<long> ClientEducationOrganizationIds =>
+        [CursorPartitionAuthorizationMatrixSupport.ClaimEducationOrganizationId];
+
+    protected override IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
+        CursorPartitionAuthorizationMatrixSupport.CreateTransitivePersonReadClaimSetProvider(fixture);
+
+    [Test]
+    public Task It_agrees_on_the_candidate_set_under_transitive_person_authorization() =>
+        CursorPartitionAuthorizationMatrixScenario.It_agrees_on_the_candidate_set_under_transitive_person_authorization(
+            Harness
+        );
+}
+
 public sealed class Given_Postgresql_CursorPartitionAuthorizationMatrix_DescriptorNoFurtherAuthorization
     : PostgresqlCursorPartitionAuthorizationMatrixTestBase
 {

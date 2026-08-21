@@ -27,9 +27,13 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 ///
 /// <para>
 /// The strategies covered are those the production read path actually compiles into the candidate
-/// relation. <c>OwnershipBased</c> is not among them for any operation, GET-many included: it is
-/// recognized but not enabled, so the request fails closed before a candidate relation exists, and
-/// enabling it for read-many is work this matrix does not cover. Descriptor coverage spans the
+/// relation. Relationship coverage spans both subject kinds the page and boundary relations can carry,
+/// the education-organization subject and the person subject, because those are the two the compiler
+/// emits different predicate shapes for; the named strategies within a kind differ upstream of the point
+/// the two surfaces share, and are covered where that difference lives. <c>OwnershipBased</c> is not
+/// among them for any operation, GET-many included: it is recognized but not enabled, so the request
+/// fails closed before a candidate relation exists, and enabling it for read-many is work this matrix
+/// does not cover. Descriptor coverage spans the
 /// no-further, namespace, and custom-view strategies; relationship strategies are the descriptor
 /// exclusion, because descriptors expose no education-organization or person securable elements for one
 /// to range over. A descriptor custom view is not excluded: the descriptor read path plans custom-view
@@ -145,6 +149,28 @@ internal static class CursorPartitionAuthorizationMatrixScenario
         );
 
         await RunMatrixAsync(harness, NamespaceResourcesEndpoint, seeded);
+    }
+
+    /// <summary>
+    /// A people strategy over a carrier whose person is reached through a reference to another resource.
+    /// The predicate compiled for it is anchored on the root row's reference column rather than on its
+    /// DocumentId, and nests a subquery over the referenced table inside the auth view membership test, so
+    /// the candidate relation the two surfaces share has a shape no other row in the matrix produces.
+    /// </summary>
+    public static async Task It_agrees_on_the_candidate_set_under_transitive_person_authorization(
+        ApiIntegrationHarness harness
+    )
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+
+        var seeded = await SeedTransitivePersonResourcesAsync(harness, MatrixAccessibility.Person);
+        await PeopleRelationshipGetManyScenarioHelpers.InsertAuthEdgeAsync(
+            harness,
+            ClaimEducationOrganizationId,
+            AuthorizedSchoolId
+        );
+
+        await RunMatrixAsync(harness, StudentAcademicRecordResourcesEndpoint, seeded);
     }
 
     public static async Task It_agrees_on_the_descriptor_candidate_set_under_no_further_authorization(

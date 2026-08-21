@@ -68,15 +68,35 @@ internal static class CursorPartitionAuthorizationMatrixSupport
 
     public const string NamespaceResourcesEndpoint = "/data/authz/authorizationNamespaceResources";
     public const string AcademicSubjectDescriptorsEndpoint = "/data/ed-fi/academicSubjectDescriptors";
+    public const string StudentAcademicRecordResourcesEndpoint =
+        "/data/authz/authorizationStudentAcademicRecordResources";
 
     private const string SchoolsEndpoint = "/data/ed-fi/schools";
     private const string EducationOrganizationCategoryDescriptorsEndpoint =
         "/data/ed-fi/educationOrganizationCategoryDescriptors";
     private const string GradeLevelDescriptorsEndpoint = "/data/ed-fi/gradeLevelDescriptors";
+    private const string TermDescriptorsEndpoint = "/data/ed-fi/termDescriptors";
+    private const string StudentsEndpoint = "/data/ed-fi/students";
+    private const string StudentSchoolAssociationsEndpoint = "/data/ed-fi/studentSchoolAssociations";
+    private const string SchoolYearTypesEndpoint = "/data/ed-fi/schoolYearTypes";
+    private const string StudentAcademicRecordsEndpoint = "/data/ed-fi/studentAcademicRecords";
 
     private const string SchoolCategoryDescriptor =
         "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School";
     private const string GradeLevelDescriptor = "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade";
+    private const string TermDescriptorNamespace = "uri://ed-fi.org/TermDescriptor";
+    private const string TermDescriptor = $"{TermDescriptorNamespace}#Fall Semester";
+
+    /// <summary>
+    /// The two people the transitive row's academic records belong to. Only the first is enrolled at a
+    /// school the caller reaches, so which record a carrier document references is the only thing that
+    /// decides whether the caller may read it.
+    /// </summary>
+    private const string AuthorizedStudentUniqueId = "matrix-student-auth";
+
+    private const string UnauthorizedStudentUniqueId = "matrix-student-denied";
+
+    private const int StudentAcademicRecordSchoolYear = 2026;
 
     private const string EdFiProjectName = "Ed-Fi";
     private const string AuthzProjectName = "Authz";
@@ -141,6 +161,13 @@ internal static class CursorPartitionAuthorizationMatrixSupport
         Namespace,
 
         /// <summary>
+        /// The inaccessible documents reference a person the caller has no relationship to. The reference
+        /// is the carrier's only securable element, so the person reached through it is the whole of the
+        /// authorization decision.
+        /// </summary>
+        Person,
+
+        /// <summary>
         /// The inaccessible documents differ only by identity, which is the column the matrix auth view
         /// selects on. Everything else about them is identical to an accessible document, so nothing but
         /// the view can be what excludes them.
@@ -201,6 +228,26 @@ internal static class CursorPartitionAuthorizationMatrixSupport
                 ),
             ],
             CustomViewStrategyName
+        );
+
+    /// <summary>
+    /// A people strategy over the carrier whose only securable element is reached through a reference to
+    /// another resource. The planner compiles that into a transitive person predicate: the root row's
+    /// reference column is tested against a subquery over the referenced table, which in turn tests the
+    /// person column against the people auth view. Every other row in the matrix authorizes on a column
+    /// the root row itself carries, so this is the one that puts a nested subquery into the candidate
+    /// relation both surfaces are compiled from.
+    /// </summary>
+    public static IClaimSetProvider CreateTransitivePersonReadClaimSetProvider(FixtureContext fixture) =>
+        CreateClaimSetProvider(
+            fixture,
+            [
+                new RelationshipReadResource(
+                    AuthzProjectName,
+                    RelationshipAuthorizationCrudTestSupport.StudentAcademicRecordResourceName
+                ),
+            ],
+            AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
         );
 
     public static IClaimSetProvider CreateDescriptorNamespaceReadClaimSetProvider(FixtureContext fixture) =>
@@ -309,6 +356,117 @@ internal static class CursorPartitionAuthorizationMatrixSupport
         }
 
         return new SeededMatrix(accessibleIds, inaccessibleIds, filterQuery, filterMatchedId);
+    }
+
+    /// <summary>
+    /// Seeds the transitive person carrier: two academic records belonging to two students, and documents
+    /// that reference one or the other. Both records sit behind the same reference shape, so a document is
+    /// inaccessible only because the record it points at belongs to a student the caller cannot reach.
+    /// </summary>
+    /// <remarks>
+    /// Two students and two records serve all twenty-eight documents. Seeding a person per document would
+    /// spread the accessible set over many auth view rows and let a candidate relation that lost the
+    /// person predicate still return a plausible subset; sharing one record per accessibility means a lost
+    /// predicate returns the whole collection.
+    /// </remarks>
+    public static async Task<SeededMatrix> SeedTransitivePersonResourcesAsync(
+        ApiIntegrationHarness harness,
+        MatrixAccessibility accessibility
+    )
+    {
+        await SeedRegularReferenceDataAsync(harness);
+        await CreateDescriptorAsync(
+            harness,
+            TermDescriptorsEndpoint,
+            TermDescriptorNamespace,
+            "Fall Semester"
+        );
+        await CreateSchoolYearTypeAsync(harness, SchoolYearTypesEndpoint, StudentAcademicRecordSchoolYear);
+
+        await SeedStudentAcademicRecordAsync(harness, AuthorizedStudentUniqueId, AuthorizedSchoolId, "Auth");
+        await SeedStudentAcademicRecordAsync(
+            harness,
+            UnauthorizedStudentUniqueId,
+            UnauthorizedSchoolId,
+            "Denied"
+        );
+
+        List<string> accessibleIds = [];
+        List<string> inaccessibleIds = [];
+        string filterQuery = string.Empty;
+        string filterMatchedId = string.Empty;
+
+        for (var index = 0; index < SeededDocumentCount; index++)
+        {
+            bool accessible = IsAccessible(accessibility, index);
+            string name = DocumentName(accessible, index);
+
+            var payload = new JsonObject
+            {
+                ["authorizationStudentAcademicRecordId"] = Identity(accessible, index),
+                ["name"] = name,
+                ["studentAcademicRecordReference"] = new JsonObject
+                {
+                    ["studentUniqueId"] = accessible
+                        ? AuthorizedStudentUniqueId
+                        : UnauthorizedStudentUniqueId,
+                    ["educationOrganizationId"] = accessible ? AuthorizedSchoolId : UnauthorizedSchoolId,
+                    ["schoolYear"] = StudentAcademicRecordSchoolYear,
+                    ["termDescriptor"] = TermDescriptor,
+                },
+            };
+
+            string documentId = await CreateDocumentAsync(
+                harness,
+                StudentAcademicRecordResourcesEndpoint,
+                payload
+            );
+
+            if (accessible)
+            {
+                accessibleIds.Add(documentId);
+                if (filterQuery.Length == 0)
+                {
+                    filterQuery = $"name={Uri.EscapeDataString(name)}";
+                    filterMatchedId = documentId;
+                }
+            }
+            else
+            {
+                inaccessibleIds.Add(documentId);
+            }
+        }
+
+        return new SeededMatrix(accessibleIds, inaccessibleIds, filterQuery, filterMatchedId);
+    }
+
+    /// <summary>
+    /// Creates one student, the enrollment that decides which education organizations reach it, and the
+    /// academic record the carrier documents reference.
+    /// </summary>
+    private static async Task SeedStudentAcademicRecordAsync(
+        ApiIntegrationHarness harness,
+        string studentUniqueId,
+        long schoolId,
+        string nameSuffix
+    )
+    {
+        await CreateStudentAsync(harness, StudentsEndpoint, studentUniqueId, nameSuffix);
+        await CreateStudentSchoolAssociationAsync(
+            harness,
+            StudentSchoolAssociationsEndpoint,
+            studentUniqueId,
+            schoolId,
+            GradeLevelDescriptor
+        );
+        await CreateStudentAcademicRecordAsync(
+            harness,
+            StudentAcademicRecordsEndpoint,
+            studentUniqueId,
+            schoolId,
+            StudentAcademicRecordSchoolYear,
+            TermDescriptor
+        );
     }
 
     /// <summary>
