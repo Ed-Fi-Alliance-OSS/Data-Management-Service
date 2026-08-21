@@ -55,6 +55,31 @@ public class Given_The_Primary_Fixture_Definition
     {
         _definition.GapDensity.Should().BeLessThan(0.101);
     }
+
+    [Test]
+    public void It_sums_document_ids_to_the_closed_form()
+    {
+        _definition.DocumentIdSum().Should().Be(ClosedFormDocumentIdSum(_definition.RowCount));
+    }
+
+    [Test]
+    public void It_pins_the_resource_identity_constants()
+    {
+        PerfFixtureDefinition.ProjectName.Should().Be("Ed-Fi");
+        PerfFixtureDefinition.ResourceName.Should().Be("Student");
+        PerfFixtureDefinition.ResourceEndpoint.Should().Be("/data/ed-fi/students");
+    }
+
+    // Independent of DocumentIdFor: each complete block b of nine rows holds ids
+    // 10b+2..10b+10 summing to 90b+54; a partial final block of r rows starts at 10F+2.
+    internal static long ClosedFormDocumentIdSum(long rowCount)
+    {
+        long fullBlocks = rowCount / 9;
+        long remainder = rowCount % 9;
+        long fullBlockSum = (90 * fullBlocks * (fullBlocks - 1) / 2) + (54 * fullBlocks);
+        long remainderSum = (remainder * ((10 * fullBlocks) + 2)) + (remainder * (remainder - 1) / 2);
+        return fullBlockSum + remainderSum;
+    }
 }
 
 [TestFixture]
@@ -90,6 +115,15 @@ public class Given_The_Smoke_Fixture_Definition
     public void It_meets_the_ten_percent_gap_density_floor()
     {
         _definition.GapDensity.Should().BeGreaterThanOrEqualTo(0.10);
+    }
+
+    [Test]
+    public void It_sums_document_ids_to_the_closed_form()
+    {
+        _definition
+            .DocumentIdSum()
+            .Should()
+            .Be(Given_The_Primary_Fixture_Definition.ClosedFormDocumentIdSum(_definition.RowCount));
     }
 }
 

@@ -26,6 +26,16 @@ public sealed record PerfFixtureDefinition(PerfFixtureKind Kind)
 
     public const string ResourceEndpoint = "/data/ed-fi/students";
 
+    public const string ProjectName = "Ed-Fi";
+
+    public const string ResourceName = "Student";
+
+    public const string FirstName = "Perf";
+
+    public const string LastSurname = "Student";
+
+    public const string BirthDateIso = "2010-01-01";
+
     /// <summary>
     /// Fixed prefix of every fixture DocumentUuid; the final twelve hex digits are the row
     /// ordinal. The '4' and '8' nibbles keep the value RFC-4122-shaped.
@@ -47,6 +57,21 @@ public sealed record PerfFixtureDefinition(PerfFixtureKind Kind)
     /// Gap share of the id space [1, MaxDocumentId].
     /// </summary>
     public double GapDensity => (double)GapCount / MaxDocumentId;
+
+    /// <summary>
+    /// Sum of every generated DocumentId, used as a cross-provider parity checksum by the
+    /// loader verification queries.
+    /// </summary>
+    public long DocumentIdSum()
+    {
+        long sum = 0;
+        for (long ordinal = 1; ordinal <= RowCount; ordinal++)
+        {
+            sum += DocumentIdFor(ordinal);
+        }
+
+        return sum;
+    }
 
     public static long DocumentIdFor(long ordinal)
     {
