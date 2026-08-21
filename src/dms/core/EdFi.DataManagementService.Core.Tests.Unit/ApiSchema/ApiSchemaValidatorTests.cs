@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.OpenApi;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -138,8 +139,8 @@ public class ApiSchemaValidatorTests
                     "educationOrganizationTypes": [],
                     "isExtensionProject": false,
                     "openApiBaseDocuments": {
-                      "resources": { "components": { "parameters": { "limit": { "schema": {} }, "pageToken": { "schema": {} }, "pageSize": { "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
-                      "descriptors": { "components": { "parameters": { "limit": { "schema": {} }, "pageToken": { "schema": {} }, "pageSize": { "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
+                      "resources": { "components": { "schemas": {}, "parameters": { "limit": { "schema": {} }, "pageToken": { "name": "pageToken", "schema": {} }, "pageSize": { "name": "pageSize", "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                      "descriptors": { "components": { "schemas": {}, "parameters": { "limit": { "schema": {} }, "pageToken": { "name": "pageToken", "schema": {} }, "pageSize": { "name": "pageSize", "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
                     },
                     "projectName": "ed-fi",
                     "projectEndpointName": "ed-fi",
@@ -185,8 +186,8 @@ public class ApiSchemaValidatorTests
                     "educationOrganizationTypes": [],
                     "isExtensionProject": false,
                     "openApiBaseDocuments": {
-                      "resources": { "components": { "parameters": { "limit": { "schema": {} }, "pageToken": { "schema": {} }, "pageSize": { "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
-                      "descriptors": { "components": { "parameters": { "limit": { "schema": {} }, "pageToken": { "schema": {} }, "pageSize": { "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                      "resources": { "components": { "schemas": {}, "parameters": { "limit": { "schema": {} }, "pageToken": { "name": "pageToken", "schema": {} }, "pageSize": { "name": "pageSize", "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                      "descriptors": { "components": { "schemas": {}, "parameters": { "limit": { "schema": {} }, "pageToken": { "name": "pageToken", "schema": {} }, "pageSize": { "name": "pageSize", "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
                       "changeQueries": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
                     },
                     "projectName": "ed-fi",
@@ -225,8 +226,8 @@ public class ApiSchemaValidatorTests
                     "educationOrganizationTypes": [],
                     "isExtensionProject": false,
                     "openApiBaseDocuments": {
-                      "resources": { "components": { "parameters": { "limit": { "schema": {} }, "pageToken": { "schema": {} }, "pageSize": { "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
-                      "descriptors": { "components": { "parameters": { "limit": { "schema": {} }, "pageToken": { "schema": {} }, "pageSize": { "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
+                      "resources": { "components": { "schemas": {}, "parameters": { "limit": { "schema": {} }, "pageToken": { "name": "pageToken", "schema": {} }, "pageSize": { "name": "pageSize", "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                      "descriptors": { "components": { "schemas": {}, "parameters": { "limit": { "schema": {} }, "pageToken": { "name": "pageToken", "schema": {} }, "pageSize": { "name": "pageSize", "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
                     },
                     "projectName": "ed-fi",
                     "projectEndpointName": "ed-fi",
@@ -281,8 +282,8 @@ public class ApiSchemaValidatorTests
                     "educationOrganizationTypes": [],
                     "isExtensionProject": false,
                     "openApiBaseDocuments": {
-                      "resources": { "components": { "parameters": { "limit": { "schema": {} }, "pageToken": { "schema": {} }, "pageSize": { "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
-                      "descriptors": { "components": { "parameters": { "limit": { "schema": {} }, "pageToken": { "schema": {} }, "pageSize": { "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
+                      "resources": { "components": { "schemas": {}, "parameters": { "limit": { "schema": {} }, "pageToken": { "name": "pageToken", "schema": {} }, "pageSize": { "name": "pageSize", "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                      "descriptors": { "components": { "schemas": {}, "parameters": { "limit": { "schema": {} }, "pageToken": { "name": "pageToken", "schema": {} }, "pageSize": { "name": "pageSize", "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
                     },
                     "projectName": "ed-fi",
                     "projectEndpointName": "ed-fi",
@@ -342,8 +343,8 @@ public class ApiSchemaValidatorTests
                     "educationOrganizationTypes": [],
                     "isExtensionProject": false,
                     "openApiBaseDocuments": {
-                      "resources": { "components": { "parameters": { "limit": { "schema": {} }, "pageToken": { "schema": {} }, "pageSize": { "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
-                      "descriptors": { "components": { "parameters": { "limit": { "schema": {} }, "pageToken": { "schema": {} }, "pageSize": { "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
+                      "resources": { "components": { "schemas": {}, "parameters": { "limit": { "schema": {} }, "pageToken": { "name": "pageToken", "schema": {} }, "pageSize": { "name": "pageSize", "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                      "descriptors": { "components": { "schemas": {}, "parameters": { "limit": { "schema": {} }, "pageToken": { "name": "pageToken", "schema": {} }, "pageSize": { "name": "pageSize", "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
                     },
                     "projectName": "ed-fi",
                     "projectEndpointName": "ed-fi",
@@ -399,8 +400,8 @@ public class ApiSchemaValidatorTests
                     "educationOrganizationTypes": [],
                     "isExtensionProject": false,
                     "openApiBaseDocuments": {
-                      "resources": { "components": { "parameters": { "limit": { "schema": {} }, "pageToken": { "schema": {} }, "pageSize": { "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
-                      "descriptors": { "components": { "parameters": { "limit": { "schema": {} }, "pageToken": { "schema": {} }, "pageSize": { "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
+                      "resources": { "components": { "schemas": {}, "parameters": { "limit": { "schema": {} }, "pageToken": { "name": "pageToken", "schema": {} }, "pageSize": { "name": "pageSize", "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                      "descriptors": { "components": { "schemas": {}, "parameters": { "limit": { "schema": {} }, "pageToken": { "name": "pageToken", "schema": {} }, "pageSize": { "name": "pageSize", "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
                     },
                     "projectName": "ed-fi",
                     "projectEndpointName": "ed-fi",
@@ -495,7 +496,11 @@ public class ApiSchemaValidatorTests
     /// </summary>
     private static JsonNode ApiSchemaWithCursorComponents(
         string? omittedComponent = null,
-        string? componentWithoutSchema = null
+        string? componentWithoutSchema = null,
+        string? componentWithoutName = null,
+        string? componentWithBlankName = null,
+        bool omitPaths = false,
+        bool omitComponentSchemas = false
     )
     {
         JsonObject BuildBaseDocument()
@@ -509,24 +514,41 @@ public class ApiSchemaValidatorTests
                     continue;
                 }
 
-                parameters[componentName] =
-                    componentName == componentWithoutSchema
-                        ? new JsonObject { ["in"] = "query", ["name"] = componentName }
-                        : new JsonObject
-                        {
-                            ["in"] = "query",
-                            ["name"] = componentName,
-                            ["schema"] = new JsonObject { ["type"] = "string" },
-                        };
+                JsonObject component = new() { ["in"] = "query" };
+
+                if (componentName != componentWithoutName)
+                {
+                    component["name"] = componentName == componentWithBlankName ? "   " : componentName;
+                }
+
+                if (componentName != componentWithoutSchema)
+                {
+                    component["schema"] = new JsonObject { ["type"] = "string" };
+                }
+
+                parameters[componentName] = component;
             }
 
-            return new JsonObject
+            JsonObject components = new() { ["parameters"] = parameters };
+
+            if (!omitComponentSchemas)
+            {
+                components["schemas"] = new JsonObject();
+            }
+
+            JsonObject baseDocument = new()
             {
                 ["openapi"] = "3.0.1",
                 ["info"] = new JsonObject(),
-                ["paths"] = new JsonObject(),
-                ["components"] = new JsonObject { ["parameters"] = parameters },
+                ["components"] = components,
             };
+
+            if (!omitPaths)
+            {
+                baseDocument["paths"] = new JsonObject();
+            }
+
+            return baseDocument;
         }
 
         return new JsonObject
@@ -656,6 +678,172 @@ public class ApiSchemaValidatorTests
         }
     }
 
+    /// <summary>
+    /// Cursor assembly reads the merged document's paths before it considers whether any collection is
+    /// eligible, so a core base document without them fails assembly on first metadata access. It also
+    /// silently discards every fragment's paths, because the fragment merge is guarded on the target
+    /// already having a paths object.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Core_Base_Document_Without_Paths : ApiSchemaValidatorTests
+    {
+        private List<SchemaValidationFailure> _failures = [];
+
+        [SetUp]
+        public void Arrange()
+        {
+            _failures = _validator!.Validate(ApiSchemaWithCursorComponents(omitPaths: true));
+        }
+
+        [Test]
+        public void It_has_validation_errors()
+        {
+            _failures.Should().NotBeEmpty();
+        }
+
+        [Test]
+        public void It_names_both_base_documents()
+        {
+            _failures
+                .Select(failure => failure.FailurePath.Value)
+                .Should()
+                .Contain("$.projectSchema.openApiBaseDocuments.resources")
+                .And.Contain("$.projectSchema.openApiBaseDocuments.descriptors");
+        }
+
+        [Test]
+        public void It_reports_the_missing_paths()
+        {
+            _failures
+                .SelectMany(failure => failure.FailureMessages)
+                .Should()
+                .Contain(message => message.Contains("paths"));
+        }
+    }
+
+    /// <summary>
+    /// Cursor assembly reads the merged component schemas unconditionally. A fragment merge creates that
+    /// section when some merged fragment carries one, so whether an accepted document assembles would
+    /// otherwise depend on unrelated content rather than on the document itself.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Core_Base_Document_Without_Component_Schemas : ApiSchemaValidatorTests
+    {
+        private List<SchemaValidationFailure> _failures = [];
+
+        [SetUp]
+        public void Arrange()
+        {
+            _failures = _validator!.Validate(ApiSchemaWithCursorComponents(omitComponentSchemas: true));
+        }
+
+        [Test]
+        public void It_has_validation_errors()
+        {
+            _failures.Should().NotBeEmpty();
+        }
+
+        [Test]
+        public void It_names_both_component_sections()
+        {
+            _failures
+                .Select(failure => failure.FailurePath.Value)
+                .Should()
+                .Contain("$.projectSchema.openApiBaseDocuments.resources.components")
+                .And.Contain("$.projectSchema.openApiBaseDocuments.descriptors.components");
+        }
+
+        [Test]
+        public void It_reports_the_missing_schemas()
+        {
+            _failures
+                .SelectMany(failure => failure.FailureMessages)
+                .Should()
+                .Contain(message => message.Contains("schemas"));
+        }
+    }
+
+    /// <summary>
+    /// The published query name of pageToken and pageSize is read from the component rather than from a
+    /// second copy of the spelling, so assembly cannot proceed without it.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Core_Base_Document_Whose_PageToken_Has_No_Name : ApiSchemaValidatorTests
+    {
+        private List<SchemaValidationFailure> _failures = [];
+
+        [SetUp]
+        public void Arrange()
+        {
+            _failures = _validator!.Validate(
+                ApiSchemaWithCursorComponents(componentWithoutName: "pageToken")
+            );
+        }
+
+        [Test]
+        public void It_has_validation_errors()
+        {
+            _failures.Should().NotBeEmpty();
+        }
+
+        [Test]
+        public void It_names_the_component_missing_its_name()
+        {
+            _failures
+                .Select(failure => failure.FailurePath.Value)
+                .Should()
+                .Contain("$.projectSchema.openApiBaseDocuments.resources.components.parameters.pageToken");
+        }
+
+        [Test]
+        public void It_reports_the_missing_name()
+        {
+            _failures
+                .SelectMany(failure => failure.FailureMessages)
+                .Should()
+                .Contain(message => message.Contains("name"));
+        }
+    }
+
+    /// <summary>
+    /// A whitespace-only name is rejected by the production check, so a length bound alone would leave
+    /// this shape accepted by validation and failing at assembly.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Core_Base_Document_Whose_PageSize_Name_Is_Blank : ApiSchemaValidatorTests
+    {
+        private List<SchemaValidationFailure> _failures = [];
+
+        [SetUp]
+        public void Arrange()
+        {
+            _failures = _validator!.Validate(
+                ApiSchemaWithCursorComponents(componentWithBlankName: "pageSize")
+            );
+        }
+
+        [Test]
+        public void It_has_validation_errors()
+        {
+            _failures.Should().NotBeEmpty();
+        }
+
+        [Test]
+        public void It_names_the_blank_name()
+        {
+            _failures
+                .Select(failure => failure.FailurePath.Value)
+                .Should()
+                .Contain(
+                    "$.projectSchema.openApiBaseDocuments.resources.components.parameters.pageSize.name"
+                );
+        }
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_A_Base_Document_Declaring_Every_Cursor_Parameter_Component : ApiSchemaValidatorTests
@@ -664,6 +852,57 @@ public class ApiSchemaValidatorTests
         public void It_has_no_validation_errors()
         {
             _validator!.Validate(ApiSchemaWithCursorComponents()).Count.Should().Be(0);
+        }
+    }
+
+    /// <summary>
+    /// The pairing that keeps validation and assembly from disagreeing: the smallest core ApiSchema this
+    /// validator accepts must also assemble. Assembly's unconditional prologue runs before any collection
+    /// is considered, so this minimum — no resources, no paths, no schemas to fall back on — is the shape
+    /// that exposes any requirement the schema fails to state.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Minimum_Accepted_Core_ApiSchema : ApiSchemaValidatorTests
+    {
+        private readonly JsonNode _apiSchemaRootNode = ApiSchemaWithCursorComponents();
+
+        [Test]
+        public void It_is_accepted_by_validation()
+        {
+            _validator!.Validate(_apiSchemaRootNode).Count.Should().Be(0);
+        }
+
+        [Test]
+        public void It_assembles_the_resource_document()
+        {
+            Action assemble = () => CreateDocument(OpenApiDocument.OpenApiDocumentType.Resource);
+
+            assemble.Should().NotThrow();
+        }
+
+        [Test]
+        public void It_assembles_the_descriptor_document()
+        {
+            Action assemble = () => CreateDocument(OpenApiDocument.OpenApiDocumentType.Descriptor);
+
+            assemble.Should().NotThrow();
+        }
+
+        /// <summary>
+        /// Assembly mutates the nodes it is given, so each pass reads its own copy of the input.
+        /// </summary>
+        private void CreateDocument(OpenApiDocument.OpenApiDocumentType documentType)
+        {
+            OpenApiDocument openApiDocument = new(
+                NullLogger.Instance,
+                pagingSettings: OpenApiPagingSettings.Default
+            );
+
+            openApiDocument.CreateDocument(
+                new ApiSchemaDocumentNodes(_apiSchemaRootNode.DeepClone(), []),
+                documentType
+            );
         }
     }
 

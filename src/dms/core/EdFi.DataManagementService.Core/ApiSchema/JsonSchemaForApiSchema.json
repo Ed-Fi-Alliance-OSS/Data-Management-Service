@@ -67,7 +67,8 @@
                 }
             },
             "required": [
-                "components"
+                "components",
+                "paths"
             ],
             "additionalProperties": false
         },
@@ -76,10 +77,14 @@
             "properties": {
                 "parameters": {
                     "$ref": "#/definitions/openApiCursorParameters"
+                },
+                "schemas": {
+                    "type": "object"
                 }
             },
             "required": [
-                "parameters"
+                "parameters",
+                "schemas"
             ]
         },
         "openApiCursorParameters": {
@@ -89,10 +94,10 @@
                     "$ref": "#/definitions/openApiCursorParameter"
                 },
                 "pageToken": {
-                    "$ref": "#/definitions/openApiCursorParameter"
+                    "$ref": "#/definitions/openApiNamedCursorParameter"
                 },
                 "pageSize": {
-                    "$ref": "#/definitions/openApiCursorParameter"
+                    "$ref": "#/definitions/openApiNamedCursorParameter"
                 },
                 "numberOfPartitions": {
                     "$ref": "#/definitions/openApiCursorParameter"
@@ -113,6 +118,22 @@
                 }
             },
             "required": [
+                "schema"
+            ]
+        },
+        "openApiNamedCursorParameter": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "pattern": "\\S"
+                },
+                "schema": {
+                    "type": "object"
+                }
+            },
+            "required": [
+                "name",
                 "schema"
             ]
         },

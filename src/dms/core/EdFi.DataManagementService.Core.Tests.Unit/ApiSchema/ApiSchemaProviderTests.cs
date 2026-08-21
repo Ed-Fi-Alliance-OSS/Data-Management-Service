@@ -1058,6 +1058,7 @@ internal static class ApiSchemaProviderTestFixtures
             baseDocument["components"] = new JsonObject
             {
                 ["parameters"] = ApiSchemaBuilder.CursorPagingParameterComponents(),
+                ["schemas"] = new JsonObject(),
             };
         }
 
