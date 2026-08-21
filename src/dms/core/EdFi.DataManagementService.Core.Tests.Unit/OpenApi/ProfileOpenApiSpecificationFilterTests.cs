@@ -184,6 +184,97 @@ public class ProfileOpenApiSpecificationFilterTests
         return specification;
     }
 
+    /// <summary>
+    /// The base specification plus the cursor-paging metadata OpenAPI assembly publishes: cursor
+    /// parameter components, cursor parameter references on each collection GET, a shared partitionTokens
+    /// schema, and a generated partitions path per collection. Schools has no profile coverage in these
+    /// fixtures, so its partitions path proves the unprofiled case.
+    /// </summary>
+    private static JsonNode GetBaseSpecWithPartitionPaths()
+    {
+        JsonNode specification = GetBaseSpec();
+        JsonObject paths = specification["paths"]!.AsObject();
+        JsonObject components = specification["components"]!.AsObject();
+
+        components["parameters"] = new JsonObject
+        {
+            ["limit"] = ComponentParameter("limit", "integer"),
+            ["numberOfPartitions"] = ComponentParameter("number", "integer"),
+            ["pageSize"] = ComponentParameter("pageSize", "integer"),
+            ["pageToken"] = ComponentParameter("pageToken", "string"),
+        };
+
+        components["schemas"]!.AsObject()["partitionTokens"] = SchemaWithProperties("partitionTokens");
+
+        foreach (
+            (string collectionPath, string tagName) in new[]
+            {
+                ("/ed-fi/students", "students"),
+                ("/ed-fi/schools", "schools"),
+            }
+        )
+        {
+            paths[collectionPath]!["get"]!.AsObject()["parameters"] = new JsonArray(
+                ParameterReference("limit"),
+                ParameterReference("pageToken"),
+                ParameterReference("pageSize")
+            );
+            paths[$"{collectionPath}/partitions"] = PartitionPath(tagName);
+        }
+
+        return specification;
+    }
+
+    private static JsonObject ComponentParameter(string parameterName, string type)
+    {
+        return new JsonObject
+        {
+            ["description"] = $"{parameterName} description",
+            ["in"] = "query",
+            ["name"] = parameterName,
+            ["schema"] = new JsonObject { ["type"] = type },
+        };
+    }
+
+    private static JsonObject ParameterReference(string componentName)
+    {
+        return new JsonObject { ["$ref"] = $"#/components/parameters/{componentName}" };
+    }
+
+    /// <summary>
+    /// A generated partitions operation, shaped as the augmenter writes it: the partition count parameter,
+    /// and a 200 response referencing the shared unsuffixed partitionTokens schema directly.
+    /// </summary>
+    private static JsonObject PartitionPath(string tagName)
+    {
+        return new JsonObject
+        {
+            ["get"] = new JsonObject
+            {
+                ["operationId"] = $"get{tagName}Partitions",
+                ["parameters"] = new JsonArray(ParameterReference("numberOfPartitions")),
+                ["responses"] = new JsonObject
+                {
+                    ["200"] = new JsonObject
+                    {
+                        ["content"] = new JsonObject
+                        {
+                            ["application/json"] = new JsonObject
+                            {
+                                ["schema"] = new JsonObject
+                                {
+                                    ["$ref"] = "#/components/schemas/partitionTokens",
+                                },
+                            },
+                        },
+                        ["description"] = "The requested page tokens were successfully retrieved.",
+                    },
+                },
+                ["tags"] = new JsonArray(tagName),
+            },
+        };
+    }
+
     private static JsonObject QueryParameter(string parameterName)
     {
         return new JsonObject
@@ -1310,6 +1401,228 @@ public class ProfileOpenApiSpecificationFilterTests
             EdFi.DataManagementService.Core.Utilities.ServerGeneratedFieldNames.Contains("ID")
                 .Should()
                 .BeFalse();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Readable_Profile_With_Partition_Paths : ProfileOpenApiSpecificationFilterTests
+    {
+        private const string StudentReadableContentType =
+            "application/vnd.ed-fi.student.studentpartitionsprofile.readable+json";
+
+        private JsonNode result = null!;
+
+        private static ProfileDefinition CreateReadableStudentProfile()
+        {
+            return new ProfileDefinition(
+                "StudentPartitionsProfile",
+                [
+                    new ResourceProfile(
+                        "Student",
+                        null,
+                        new ContentTypeDefinition(
+                            MemberSelection.IncludeOnly,
+                            [new PropertyRule("firstName"), new PropertyRule("lastName")],
+                            [],
+                            [],
+                            []
+                        ),
+                        null
+                    ),
+                ]
+            );
+        }
+
+        private static JsonObject ComponentParameters(JsonNode specification)
+        {
+            return specification["components"]!["parameters"]!.AsObject();
+        }
+
+        [SetUp]
+        public void Setup()
+        {
+            var filter = CreateFilter();
+            result = filter.CreateProfileSpecification(
+                GetBaseSpecWithPartitionPaths(),
+                CreateReadableStudentProfile()
+            );
+        }
+
+        [Test]
+        public void It_retains_the_partition_path_for_a_readable_resource()
+        {
+            Paths(result).Should().ContainKey("/ed-fi/students/partitions");
+        }
+
+        [Test]
+        public void It_keeps_the_partition_response_as_application_json()
+        {
+            JsonObject responseContent = result["paths"]!["/ed-fi/students/partitions"]!["get"]![
+                "responses"
+            ]!["200"]!["content"]!.AsObject();
+
+            responseContent.Should().ContainKey("application/json");
+            responseContent.Should().NotContainKey(StudentReadableContentType);
+        }
+
+        [Test]
+        public void It_keeps_the_partition_response_referencing_the_unsuffixed_shared_schema()
+        {
+            result["paths"]!["/ed-fi/students/partitions"]!["get"]!["responses"]!["200"]!["content"]![
+                "application/json"
+            ]!["schema"]!["$ref"]!
+                .GetValue<string>()
+                .Should()
+                .Be("#/components/schemas/partitionTokens");
+        }
+
+        [Test]
+        public void It_does_not_create_a_profile_suffixed_partition_tokens_schema()
+        {
+            JsonObject schemas = result["components"]!["schemas"]!.AsObject();
+
+            schemas.Should().ContainKey("partitionTokens");
+            schemas.Should().NotContainKey("partitionTokens_readable");
+            schemas.Should().NotContainKey("partitionTokens_writable");
+        }
+
+        [Test]
+        public void It_retains_the_cursor_component_parameters()
+        {
+            ComponentParameters(result)
+                .Should()
+                .ContainKey("pageToken")
+                .And.ContainKey("pageSize")
+                .And.ContainKey("numberOfPartitions");
+        }
+
+        [Test]
+        public void It_still_rewrites_the_base_collection_get_to_the_profile_media_type()
+        {
+            JsonObject responseContent = result["paths"]!["/ed-fi/students"]!["get"]!["responses"]!["200"]![
+                "content"
+            ]!.AsObject();
+
+            responseContent.Should().ContainKey(StudentReadableContentType);
+            responseContent.Should().NotContainKey("application/json");
+            responseContent[StudentReadableContentType]!["schema"]!["$ref"]!
+                .GetValue<string>()
+                .Should()
+                .Be("#/components/schemas/EdFi_Student_readable");
+        }
+
+        [Test]
+        public void It_removes_the_partition_path_for_a_resource_absent_from_the_profile()
+        {
+            JsonObject paths = Paths(result);
+
+            paths.Should().NotContainKey("/ed-fi/schools");
+            paths.Should().NotContainKey("/ed-fi/schools/partitions");
+        }
+    }
+
+    [TestFixture]
+    public class Given_WriteOnly_Profile_With_Partition_Paths : ProfileOpenApiSpecificationFilterTests
+    {
+        private JsonNode result = null!;
+
+        private static ProfileDefinition CreateWriteOnlyStudentProfile()
+        {
+            return new ProfileDefinition(
+                "WriteOnlyStudentPartitionsProfile",
+                [
+                    new ResourceProfile(
+                        "Student",
+                        null,
+                        null,
+                        new ContentTypeDefinition(MemberSelection.IncludeAll, [], [], [], [])
+                    ),
+                ]
+            );
+        }
+
+        [SetUp]
+        public void Setup()
+        {
+            var filter = CreateFilter();
+            result = filter.CreateProfileSpecification(
+                GetBaseSpecWithPartitionPaths(),
+                CreateWriteOnlyStudentProfile()
+            );
+        }
+
+        [Test]
+        public void It_removes_the_partition_path_for_an_unreadable_resource()
+        {
+            JsonObject paths = Paths(result);
+
+            paths.Should().ContainKey("/ed-fi/students");
+            paths.Should().NotContainKey("/ed-fi/students/partitions");
+        }
+
+        [Test]
+        public void It_prunes_the_partition_count_parameter_with_the_partition_path()
+        {
+            result["components"]!["parameters"]!.AsObject().Should().NotContainKey("numberOfPartitions");
+        }
+    }
+
+    /// <summary>
+    /// Partition paths and change-query paths are separate derived-path families sharing one base
+    /// collection. Recognizing partitions must not disturb the narrower change-query concern that keeps
+    /// tracked-change response schemas unprofiled.
+    /// </summary>
+    [TestFixture]
+    public class Given_Readable_Profile_With_Partition_And_Change_Query_Paths
+        : ProfileOpenApiSpecificationFilterTests
+    {
+        private JsonNode result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            JsonNode baseSpec = GetBaseSpecWithChangeQueryPaths();
+            JsonObject paths = baseSpec["paths"]!.AsObject();
+            baseSpec["components"]!.AsObject()["parameters"] = new JsonObject
+            {
+                ["numberOfPartitions"] = ComponentParameter("number", "integer"),
+            };
+            baseSpec["components"]!["schemas"]!.AsObject()["partitionTokens"] = SchemaWithProperties(
+                "partitionTokens"
+            );
+            paths["/ed-fi/students/partitions"] = PartitionPath("students");
+
+            var filter = CreateFilter();
+            result = filter.CreateProfileSpecification(
+                baseSpec,
+                Given_Profile_With_Change_Query_Paths.CreateReadableStudentProfile()
+            );
+        }
+
+        [Test]
+        public void It_retains_all_three_derived_paths_for_a_readable_resource()
+        {
+            JsonObject paths = Paths(result);
+
+            paths.Should().ContainKey("/ed-fi/students/partitions");
+            paths.Should().ContainKey("/ed-fi/students/deletes");
+            paths.Should().ContainKey("/ed-fi/students/keyChanges");
+        }
+
+        [Test]
+        public void It_leaves_the_tracked_change_schemas_unprofiled()
+        {
+            JsonObject schemas = result["components"]!["schemas"]!.AsObject();
+
+            schemas.Should().ContainKey("EdFi_StudentKeyChange");
+            schemas.Should().NotContainKey("EdFi_StudentKeyChange_readable");
+            schemas["EdFi_StudentKeyChange"]!["properties"]!.AsObject().Should().ContainKey("notInProfile");
+        }
+
+        [Test]
+        public void It_does_not_include_the_standalone_available_change_versions_path()
+        {
+            Paths(result).Should().NotContainKey("/availableChangeVersions");
         }
     }
 }

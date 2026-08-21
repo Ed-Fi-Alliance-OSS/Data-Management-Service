@@ -79,7 +79,39 @@ public class OpenApiDocumentExtensionTests
                   },
                   "/tpdm/credentials": {
                     "get": {
-                      "description": "credential get"
+                      "description": "credential get",
+                      "operationId": "get_TPDMCredentials",
+                      "responses": {
+                        "200": {
+                          "content": {
+                            "application/json": {
+                              "schema": {
+                                "items": {
+                                  "$ref": "#/components/schemas/TPDM_Credential"
+                                },
+                                "type": "array"
+                              }
+                            }
+                          },
+                          "description": "The requested resource was successfully retrieved.",
+                          "headers": {
+                            "Next-Page-Token": {
+                              "description": "An opaque token that retrieves the next page of results when supplied as the pageToken parameter of this operation. Present only when a further page may exist.",
+                              "schema": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "parameters": [
+                        {
+                          "$ref": "#/components/parameters/pageToken"
+                        },
+                        {
+                          "$ref": "#/components/parameters/pageSize"
+                        }
+                      ]
                     },
                     "post": {
                       "description": "credential post"
@@ -91,6 +123,33 @@ public class OpenApiDocumentExtensionTests
                     },
                     "delete": {
                       "description": "candidate delete"
+                    }
+                  },
+                  "/tpdm/credentials/partitions": {
+                    "get": {
+                      "description": "This GET operation returns a set of opaque page tokens that divide the accessible items of this resource into ranges that can be retrieved in parallel using the pageToken parameter of the collection GET operation. Boundaries are calculated after the same filters and authorization the collection GET applies, so the same filters must be repeated on every request. The response may contain fewer tokens than requested, including none when no item is accessible, and never contains more.",
+                      "operationId": "get_TPDMCredentialsPartitions",
+                      "parameters": [
+                        {
+                          "$ref": "#/components/parameters/numberOfPartitions"
+                        }
+                      ],
+                      "responses": {
+                        "200": {
+                          "content": {
+                            "application/json": {
+                              "schema": {
+                                "$ref": "#/components/schemas/partitionTokens"
+                              }
+                            }
+                          },
+                          "description": "The requested page tokens were successfully retrieved."
+                        },
+                        "501": {
+                          "description": "Not Implemented. Partitioned cursor paging is not available for this resource."
+                        }
+                      },
+                      "summary": "Retrieves the page tokens that partition this resource for parallel cursor paging."
                     }
                   }
                 }
@@ -162,6 +221,21 @@ public class OpenApiDocumentExtensionTests
                   "TPDM_Candidate": {
                     "description": "TPDM candidate description",
                     "type": "string"
+                  },
+                  "partitionTokens": {
+                    "description": "A set of opaque page tokens that partition a resource\u0027s accessible items for parallel cursor paging.",
+                    "properties": {
+                      "pageTokens": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "pageTokens"
+                    ],
+                    "type": "object"
                   }
                 }
                 """;
@@ -219,7 +293,39 @@ public class OpenApiDocumentExtensionTests
                   },
                   "/tpdm/credentialDescriptor": {
                     "get": {
-                      "description": "credential descriptor get"
+                      "description": "credential descriptor get",
+                      "operationId": "get_TPDMCredentialDescriptors",
+                      "responses": {
+                        "200": {
+                          "content": {
+                            "application/json": {
+                              "schema": {
+                                "items": {
+                                  "$ref": "#/components/schemas/TPDM_CredentialDescriptor"
+                                },
+                                "type": "array"
+                              }
+                            }
+                          },
+                          "description": "The requested resource was successfully retrieved.",
+                          "headers": {
+                            "Next-Page-Token": {
+                              "description": "An opaque token that retrieves the next page of results when supplied as the pageToken parameter of this operation. Present only when a further page may exist.",
+                              "schema": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "parameters": [
+                        {
+                          "$ref": "#/components/parameters/pageToken"
+                        },
+                        {
+                          "$ref": "#/components/parameters/pageSize"
+                        }
+                      ]
                     },
                     "post": {
                       "description": "credential descriptor post"
@@ -231,6 +337,33 @@ public class OpenApiDocumentExtensionTests
                     },
                     "delete": {
                       "description": "candidate descriptor delete"
+                    }
+                  },
+                  "/tpdm/credentialDescriptor/partitions": {
+                    "get": {
+                      "description": "This GET operation returns a set of opaque page tokens that divide the accessible items of this resource into ranges that can be retrieved in parallel using the pageToken parameter of the collection GET operation. Boundaries are calculated after the same filters and authorization the collection GET applies, so the same filters must be repeated on every request. The response may contain fewer tokens than requested, including none when no item is accessible, and never contains more.",
+                      "operationId": "get_TPDMCredentialDescriptorsPartitions",
+                      "parameters": [
+                        {
+                          "$ref": "#/components/parameters/numberOfPartitions"
+                        }
+                      ],
+                      "responses": {
+                        "200": {
+                          "content": {
+                            "application/json": {
+                              "schema": {
+                                "$ref": "#/components/schemas/partitionTokens"
+                              }
+                            }
+                          },
+                          "description": "The requested page tokens were successfully retrieved."
+                        },
+                        "501": {
+                          "description": "Not Implemented. Partitioned cursor paging is not available for this resource."
+                        }
+                      },
+                      "summary": "Retrieves the page tokens that partition this resource for parallel cursor paging."
                     }
                   }
                 }
@@ -271,6 +404,21 @@ public class OpenApiDocumentExtensionTests
                   "TPDM_CandidateDescriptor": {
                     "description": "TPDM candidate descriptor description",
                     "type": "string"
+                  },
+                  "partitionTokens": {
+                    "description": "A set of opaque page tokens that partition a resource\u0027s accessible items for parallel cursor paging.",
+                    "properties": {
+                      "pageTokens": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "pageTokens"
+                    ],
+                    "type": "object"
                   }
                 }
                 """;

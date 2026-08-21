@@ -29,6 +29,167 @@
             },
             "additionalProperties": false
         },
+        "coreOpenApiBaseDocuments": {
+            "type": "object",
+            "properties": {
+                "resources": {
+                    "$ref": "#/definitions/openApiCursorBaseDocument"
+                },
+                "descriptors": {
+                    "$ref": "#/definitions/openApiCursorBaseDocument"
+                },
+                "changeQueries": {
+                    "$ref": "#/definitions/openApiDocument"
+                }
+            },
+            "required": [
+                "resources",
+                "descriptors"
+            ],
+            "additionalProperties": false
+        },
+        "openApiCursorBaseDocument": {
+            "type": "object",
+            "properties": {
+                "components": {
+                    "$ref": "#/definitions/openApiCursorComponents"
+                },
+                "info": {
+                    "type": "object"
+                },
+                "openapi": {
+                    "type": "string"
+                },
+                "paths": {
+                    "type": "object"
+                },
+                "servers": {
+                    "type": "array"
+                },
+                "tags": {
+                    "type": "array"
+                }
+            },
+            "required": [
+                "components",
+                "paths"
+            ],
+            "additionalProperties": false
+        },
+        "openApiCursorComponents": {
+            "type": "object",
+            "properties": {
+                "parameters": {
+                    "$ref": "#/definitions/openApiCursorParameters"
+                },
+                "schemas": {
+                    "type": "object"
+                }
+            },
+            "required": [
+                "parameters",
+                "schemas"
+            ]
+        },
+        "openApiCursorParameters": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "$ref": "#/definitions/openApiLimitParameter"
+                },
+                "pageToken": {
+                    "$ref": "#/definitions/openApiPageTokenParameter"
+                },
+                "pageSize": {
+                    "$ref": "#/definitions/openApiPageSizeParameter"
+                },
+                "numberOfPartitions": {
+                    "$ref": "#/definitions/openApiNumberOfPartitionsParameter"
+                }
+            },
+            "required": [
+                "limit",
+                "pageToken",
+                "pageSize",
+                "numberOfPartitions"
+            ]
+        },
+        "openApiLimitParameter": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "const": "limit"
+                },
+                "in": {
+                    "const": "query"
+                },
+                "schema": {
+                    "type": "object"
+                }
+            },
+            "required": [
+                "name",
+                "in",
+                "schema"
+            ]
+        },
+        "openApiPageTokenParameter": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "const": "pageToken"
+                },
+                "in": {
+                    "const": "query"
+                },
+                "schema": {
+                    "type": "object"
+                }
+            },
+            "required": [
+                "name",
+                "in",
+                "schema"
+            ]
+        },
+        "openApiPageSizeParameter": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "const": "pageSize"
+                },
+                "in": {
+                    "const": "query"
+                },
+                "schema": {
+                    "type": "object"
+                }
+            },
+            "required": [
+                "name",
+                "in",
+                "schema"
+            ]
+        },
+        "openApiNumberOfPartitionsParameter": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "const": "number"
+                },
+                "in": {
+                    "const": "query"
+                },
+                "schema": {
+                    "type": "object"
+                }
+            },
+            "required": [
+                "name",
+                "in",
+                "schema"
+            ]
+        },
         "openApiDocument": {
             "type": "object",
             "properties": {
@@ -196,7 +357,31 @@
                 "resourceNameMapping",
                 "resourceSchemas"
             ],
-            "additionalProperties": false
+            "additionalProperties": false,
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "isExtensionProject": {
+                                "const": false
+                            }
+                        },
+                        "required": [
+                            "isExtensionProject"
+                        ]
+                    },
+                    "then": {
+                        "properties": {
+                            "openApiBaseDocuments": {
+                                "$ref": "#/definitions/coreOpenApiBaseDocuments"
+                            }
+                        },
+                        "required": [
+                            "openApiBaseDocuments"
+                        ]
+                    }
+                }
+            ]
         },
         "JsonPaths": {
             "type": "array",

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Frozen;
 using System.Reflection;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
@@ -48,6 +49,42 @@ internal class ApiSchemaValidator(ILogger<ApiSchemaValidator> _logger) : IApiSch
     });
 
     /// <summary>
+    /// The JSON Schema keyword that selects a branch rather than asserting anything about the document.
+    /// </summary>
+    private const string ConditionSelectorKeyword = "if";
+
+    /// <summary>
+    /// The keywords whose following evaluation-path segment is a name the schema author chose rather than
+    /// another keyword. A property or definition named <c>if</c> is reached through one of these, and its
+    /// failures assert something about the document.
+    /// </summary>
+    private static readonly FrozenSet<string> _authoredNameKeywords = FrozenSet.ToFrozenSet(
+        ["properties", "patternProperties", "dependentSchemas", "$defs", "definitions"],
+        StringComparer.Ordinal
+    );
+
+    /// <summary>
+    /// Whether an evaluation result came from inside a condition selector. Such a result reports which
+    /// branch was chosen, not whether the document is valid: a failing <c>if</c> means the <c>then</c>
+    /// branch does not apply, and the assertions that do apply are reported by the selected branch. List
+    /// output flattens every evaluated node, so these have to be excluded by evaluation path rather than
+    /// by overall validity, and only a segment in keyword position counts — a <c>then</c> or <c>else</c>
+    /// result, an instance path that happens to contain the same text, or a schema property named for the
+    /// keyword, is a real failure.
+    /// </summary>
+    private static bool IsConditionSelectorResult(EvaluationResults detail)
+    {
+        string[] segments = [.. detail.EvaluationPath.Select(segment => segment.ToString())];
+
+        return segments
+            .Select((segment, index) => (segment, index))
+            .Any(evaluated =>
+                string.Equals(evaluated.segment, ConditionSelectorKeyword, StringComparison.Ordinal)
+                && (evaluated.index == 0 || !_authoredNameKeywords.Contains(segments[evaluated.index - 1]))
+            );
+    }
+
+    /// <summary>
     /// Converts JSON Schema evaluation results into a list of validation failures with property paths and error messages
     /// </summary>
     private static List<SchemaValidationFailure> ValidationErrorsFrom(EvaluationResults results)
@@ -56,6 +93,11 @@ internal class ApiSchemaValidator(ILogger<ApiSchemaValidator> _logger) : IApiSch
 
         foreach (var detail in results.Details)
         {
+            if (IsConditionSelectorResult(detail))
+            {
+                continue;
+            }
+
             string propertyPathAndName = "$.";
 
             if (detail.InstanceLocation.Count != 0)
@@ -79,15 +121,35 @@ internal class ApiSchemaValidator(ILogger<ApiSchemaValidator> _logger) : IApiSch
             }
         }
 
-        List<SchemaValidationFailure> validationErrors = [];
-        validationErrors.AddRange(
-            validationErrorsByPath.Select(kvp => new SchemaValidationFailure(
-                new JsonPath(kvp.Key),
-                kvp.Value
-            ))
-        );
+        if (validationErrorsByPath.Count != 0)
+        {
+            return
+            [
+                .. validationErrorsByPath.Select(kvp => new SchemaValidationFailure(
+                    new JsonPath(kvp.Key),
+                    kvp.Value
+                )),
+            ];
+        }
 
-        return validationErrors;
+        // Callers read an empty list as "valid", so an exclusion that over-matches would turn a rejected
+        // document into an accepted one silently. Overall validity is the independent signal that cannot
+        // be emptied by a path-shaped filter, so disagreement between the two fails closed.
+        if (!results.IsValid)
+        {
+            return
+            [
+                new(
+                    new("$."),
+                    [
+                        "ApiSchema validation failed but reported no specific failure; a schema "
+                            + "condition-selector exclusion is over-matching.",
+                    ]
+                ),
+            ];
+        }
+
+        return [];
     }
 
     /// <summary>

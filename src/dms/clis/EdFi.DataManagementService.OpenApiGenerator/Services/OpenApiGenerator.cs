@@ -40,7 +40,11 @@ public class OpenApiGenerator(ILogger<OpenApiGenerator> _logger)
         }
 
         _logger.LogDebug("Combining core and extension schemas.");
-        OpenApiDocument openApiDocument = new(_logger);
+
+        // This CLI has no runtime configuration source, so the shipped appsettings defaults are the
+        // paging contract it publishes. Passed explicitly rather than relying on the parameter default,
+        // so that a change to the shipped values is a visible change here too.
+        OpenApiDocument openApiDocument = new(_logger, pagingSettings: OpenApiPagingSettings.Default);
         JsonNode combinedSchema = openApiDocument.CreateDocument(
             new(coreSchema, extensionSchemas),
             OpenApiDocument.OpenApiDocumentType.Resource

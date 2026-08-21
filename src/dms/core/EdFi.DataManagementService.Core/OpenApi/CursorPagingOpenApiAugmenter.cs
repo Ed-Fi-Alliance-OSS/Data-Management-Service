@@ -1,0 +1,762 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Collections.Frozen;
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ChangeQueries;
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.Handler;
+using EdFi.DataManagementService.Core.Paging;
+using EdFi.DataManagementService.Core.Utilities;
+
+namespace EdFi.DataManagementService.Core.OpenApi;
+
+/// <summary>
+/// Publishes the cursor-paging contract onto an assembled OpenAPI document: the pageToken and pageSize
+/// parameter references plus the Next-Page-Token response header on every eligible collection GET, and a
+/// sibling partitions operation for each of those collections. Runs after all core, abstract, and
+/// extension fragments are merged and before domain and profile filtering.
+/// </summary>
+/// <remarks>
+/// Every published name, response member, and reserved-parameter set is spelled from the constants the
+/// request pipeline reads, so published metadata cannot drift from runtime enforcement. Only collection
+/// paths proven to come from an endpoint-owning resource schema for the document type being assembled are
+/// augmented, and any malformed part of such an operation's contract fails assembly rather than
+/// publishing a partial or dangling contract.
+/// </remarks>
+internal static class CursorPagingOpenApiAugmenter
+{
+    private const string PathsPath = "$.paths";
+    private const string ComponentsPath = "$.components";
+    private const string SchemasPath = "$.components.schemas";
+    private const string ParametersPath = "$.components.parameters";
+    private const string ParameterComponentRefPrefix = "#/components/parameters/";
+    private const string SchemaComponentRefPrefix = "#/components/schemas/";
+
+    private const string LimitComponent = "limit";
+    private const string PageTokenComponent = "pageToken";
+    private const string PageSizeComponent = "pageSize";
+    private const string NumberOfPartitionsComponent = "numberOfPartitions";
+
+    private const string PartitionTokensSchemaName = "partitionTokens";
+    private const string PartitionsPathSuffix = "/partitions";
+    private const string PartitionOperationIdSuffix = "Partitions";
+    private const string ApplicationJsonContentType = "application/json";
+    private const string SuccessResponseKey = "200";
+    private const string NotModifiedResponseKey = "304";
+    private const string NotImplementedResponseKey = "501";
+    private const string QueryParameterLocation = "query";
+    private const string DomainsExtensionKey = "x-Ed-Fi-domains";
+
+    private const string PartitionOperationSummary =
+        "Retrieves the page tokens that partition this resource for parallel cursor paging.";
+
+    private const string PartitionOperationDescription =
+        "This GET operation returns a set of opaque page tokens that divide the accessible items of this "
+        + "resource into ranges that can be retrieved in parallel using the pageToken parameter of the "
+        + "collection GET operation. Boundaries are calculated after the same filters and authorization the "
+        + "collection GET applies, so the same filters must be repeated on every request. The response may "
+        + "contain fewer tokens than requested, including none when no item is accessible, and never "
+        + "contains more.";
+
+    private const string PartitionSuccessResponseDescription =
+        "The requested page tokens were successfully retrieved.";
+
+    /// <summary>
+    /// The one status the partitions operation answers that its collection GET does not, so the one
+    /// response it declares rather than inherits.
+    /// </summary>
+    private const string PartitionNotImplementedResponseDescription =
+        "Not Implemented. Partitioned cursor paging is not available for this resource.";
+
+    private const string PartitionTokensSchemaDescription =
+        "A set of opaque page tokens that partition a resource's accessible items for parallel cursor paging.";
+
+    /// <summary>
+    /// Replaces whatever the base document says about an omitted partition count. The published default is
+    /// the deployment's configured value, so any description promising a count derived from the number of
+    /// accessible items would contradict both the published default and what the request pipeline applies.
+    /// </summary>
+    private const string NumberOfPartitionsDescription =
+        "The number of evenly distributed partitions to provide for client-side parallel processing. If "
+        + "unspecified, the configured default number of partitions for this deployment is used.";
+
+    private const string NextPageTokenHeaderDescription =
+        "An opaque token that retrieves the next page of results when supplied as the pageToken parameter "
+        + "of this operation. Present only when a further page may exist.";
+
+    /// <summary>
+    /// The parameter components every assembled resource and descriptor document must declare, because the
+    /// published contract references all of them and a dangling reference invalidates the whole document.
+    /// </summary>
+    private static readonly string[] _requiredParameterComponents =
+    [
+        LimitComponent,
+        PageTokenComponent,
+        PageSizeComponent,
+        NumberOfPartitionsComponent,
+    ];
+
+    /// <summary>
+    /// The query name each required component must publish, spelled from the request-pipeline validators
+    /// rather than from a second copy. A published reference to a component naming anything else would
+    /// advertise a query parameter the pipeline does not honor, which is worse than publishing nothing.
+    /// Note that the component key and the query name differ for the partition count: the component is
+    /// <c>numberOfPartitions</c> and the parameter it publishes is <c>number</c>.
+    /// </summary>
+    private static readonly FrozenDictionary<string, string> _requiredParameterComponentNames =
+        BuildRequiredParameterComponentNames();
+
+    /// <summary>
+    /// The parameter components whose published default and maximum are the runtime maximum page size.
+    /// </summary>
+    private static readonly string[] _pageSizeBoundedComponents = [LimitComponent, PageSizeComponent];
+
+    /// <summary>
+    /// The only referenced filters the partitions operation carries over from its collection GET. An
+    /// allowlist rather than a denylist because the contract enumerates exactly these two.
+    /// </summary>
+    private static readonly FrozenSet<string> _changeVersionParameterNames =
+        BuildChangeVersionParameterNames();
+
+    /// <summary>
+    /// The query names the partitions operation refuses to filter on, copied out of the request-pipeline
+    /// validator into an immutable set. Copying a resource filter named for the partition count would also
+    /// produce two query parameters of the same name on one operation.
+    /// </summary>
+    private static readonly FrozenSet<string> _partitionExcludedParameterNames =
+        BuildPartitionExcludedParameterNames();
+
+    /// <summary>
+    /// Adds the collection paths a resource fragment owns to the eligible set. Called only for
+    /// endpoint-owning resource schemas of the document type being assembled, so membership is proof that
+    /// a path belongs to a regular resource or descriptor rather than to a discovery, management, or
+    /// base-document path.
+    /// </summary>
+    internal static void CollectEligibleCollectionPaths(
+        JsonObject fragmentPaths,
+        HashSet<string> eligibleCollectionPaths
+    )
+    {
+        foreach (
+            string pathKey in fragmentPaths.Select(fragmentPath => fragmentPath.Key).Where(IsCollectionPath)
+        )
+        {
+            eligibleCollectionPaths.Add(pathKey);
+        }
+    }
+
+    /// <summary>
+    /// A collection path is a two-segment, non-templated path. The shape excludes the item path declared
+    /// beside it in the same fragment, and excludes derived siblings such as a change-query or partitions
+    /// path, which carry a third segment.
+    /// </summary>
+    private static bool IsCollectionPath(string pathKey)
+    {
+        if (pathKey.Contains('{') || pathKey.Contains('}'))
+        {
+            return false;
+        }
+
+        return pathKey.Split('/', StringSplitOptions.RemoveEmptyEntries).Length == 2;
+    }
+
+    /// <summary>
+    /// Publishes the cursor-paging contract onto the merged document.
+    /// </summary>
+    internal static void Augment(
+        JsonNode openApiSpecification,
+        IReadOnlySet<string> eligibleCollectionPaths,
+        OpenApiPagingSettings pagingSettings
+    )
+    {
+        JsonObject paths = RequireObject(openApiSpecification["paths"], PathsPath);
+        JsonObject components = RequireObject(openApiSpecification["components"], ComponentsPath);
+        JsonObject componentSchemas = RequireObject(components["schemas"], SchemasPath);
+        JsonObject componentParameters = RequireObject(components["parameters"], ParametersPath);
+
+        ValidateRequiredParameterComponents(componentParameters);
+        PublishRuntimePagingValues(componentParameters, pagingSettings);
+
+        string pageTokenName = ComponentEffectiveName(componentParameters, PageTokenComponent);
+        string pageSizeName = ComponentEffectiveName(componentParameters, PageSizeComponent);
+
+        List<string> collectionPathKeys = paths
+            .Where(path => eligibleCollectionPaths.Contains(path.Key))
+            .Select(path => path.Key)
+            .ToList();
+
+        foreach (string pathKey in collectionPathKeys)
+        {
+            AugmentCollection(
+                paths,
+                componentParameters,
+                componentSchemas,
+                pathKey,
+                pageTokenName,
+                pageSizeName
+            );
+        }
+    }
+
+    private static void AugmentCollection(
+        JsonObject paths,
+        JsonObject componentParameters,
+        JsonObject componentSchemas,
+        string pathKey,
+        string pageTokenName,
+        string pageSizeName
+    )
+    {
+        string partitionPathKey = pathKey + PartitionsPathSuffix;
+
+        // Unlike the parameter reference, response header, and shared schema below, a pre-existing path is
+        // refused outright rather than accepted when structurally identical. A partitions operation states
+        // what this service implements — its operation identifier, its inherited failure contract, and the
+        // filters its request pipeline reads — so a path item authored elsewhere is a contract this service
+        // has not agreed to serve, whatever it contains.
+        if (paths.ContainsKey(partitionPathKey))
+        {
+            throw new InvalidOperationException(
+                $"Path '{Sanitize(partitionPathKey)}' is already present in the OpenAPI specification. "
+                    + "Cursor-paging assembly will not replace an existing partitions operation."
+            );
+        }
+
+        JsonObject pathItem = RequireObject(paths[pathKey], PathDiagnostic(pathKey));
+        JsonObject getOperation = RequireObject(pathItem["get"], $"{PathDiagnostic(pathKey)}.get");
+        string operationId = RequireOperationId(getOperation, pathKey);
+        JsonArray collectionParameters = RequireParameters(getOperation, pathKey);
+        JsonObject collectionResponses = RequireResponses(getOperation, pathKey);
+        JsonObject successResponse = RequireSuccessResponse(collectionResponses, pathKey);
+
+        JsonObject partitionOperation = BuildPartitionOperation(
+            getOperation,
+            collectionParameters,
+            componentParameters,
+            collectionResponses,
+            operationId,
+            pathKey
+        );
+
+        AppendParameterReference(
+            collectionParameters,
+            componentParameters,
+            PageTokenComponent,
+            pageTokenName,
+            pathKey
+        );
+        AppendParameterReference(
+            collectionParameters,
+            componentParameters,
+            PageSizeComponent,
+            pageSizeName,
+            pathKey
+        );
+        AddNextPageTokenHeader(successResponse, pathKey);
+        EnsurePartitionTokensSchema(componentSchemas);
+
+        JsonObject partitionPathItem = new() { ["get"] = partitionOperation };
+
+        if (pathItem[DomainsExtensionKey] is JsonNode domains)
+        {
+            partitionPathItem[DomainsExtensionKey] = domains.DeepClone();
+        }
+
+        paths[partitionPathKey] = partitionPathItem;
+    }
+
+    private static JsonObject BuildPartitionOperation(
+        JsonObject getOperation,
+        JsonArray collectionParameters,
+        JsonObject componentParameters,
+        JsonObject collectionResponses,
+        string operationId,
+        string pathKey
+    )
+    {
+        JsonArray partitionParameters = [ParameterReference(NumberOfPartitionsComponent)];
+
+        for (int index = 0; index < collectionParameters.Count; index += 1)
+        {
+            ParameterFacts facts = ResolveParameterFacts(
+                collectionParameters[index],
+                componentParameters,
+                pathKey,
+                index
+            );
+
+            if (ShouldCopyToPartitionOperation(facts))
+            {
+                partitionParameters.Add(collectionParameters[index]!.DeepClone());
+            }
+        }
+
+        JsonObject partitionOperation = new()
+        {
+            ["description"] = PartitionOperationDescription,
+            ["operationId"] = operationId + PartitionOperationIdSuffix,
+            ["parameters"] = partitionParameters,
+            ["responses"] = BuildPartitionResponses(collectionResponses),
+        };
+
+        if (getOperation["security"] is JsonNode security)
+        {
+            partitionOperation["security"] = security.DeepClone();
+        }
+
+        partitionOperation["summary"] = PartitionOperationSummary;
+
+        if (getOperation["tags"] is JsonNode tags)
+        {
+            partitionOperation["tags"] = tags.DeepClone();
+        }
+
+        return partitionOperation;
+    }
+
+    /// <summary>
+    /// Declares the partition token set as the success shape and inherits every failure the collection GET
+    /// publishes. The two operations share the authentication, authorization, and request-validation
+    /// middleware that answer those statuses, so inheriting them keeps the published failure contract from
+    /// drifting from the collection's. Not-modified is left behind because only a document read negotiates
+    /// an ETag, and not-implemented is added because the partitions handler alone answers it.
+    /// </summary>
+    private static JsonObject BuildPartitionResponses(JsonObject collectionResponses)
+    {
+        JsonObject partitionResponses = new()
+        {
+            [SuccessResponseKey] = new JsonObject
+            {
+                ["content"] = new JsonObject
+                {
+                    [ApplicationJsonContentType] = new JsonObject
+                    {
+                        ["schema"] = new JsonObject
+                        {
+                            ["$ref"] = SchemaComponentRefPrefix + PartitionTokensSchemaName,
+                        },
+                    },
+                },
+                ["description"] = PartitionSuccessResponseDescription,
+            },
+        };
+
+        foreach (
+            (string statusCode, JsonNode? response) in collectionResponses.Where(inherited =>
+                inherited.Value is not null
+                && inherited.Key is not (SuccessResponseKey or NotModifiedResponseKey)
+            )
+        )
+        {
+            partitionResponses[statusCode] = response!.DeepClone();
+        }
+
+        partitionResponses[NotImplementedResponseKey] = new JsonObject
+        {
+            ["description"] = PartitionNotImplementedResponseDescription,
+        };
+
+        return partitionResponses;
+    }
+
+    /// <summary>
+    /// A referenced filter is carried over only when it is one of the two live change-version filters. An
+    /// inline filter is carried over when it is not one the partitions operation refuses. Either way the
+    /// parameter must be carried in the query string, because that is the only place the partitions
+    /// request pipeline reads a filter from.
+    /// </summary>
+    private static bool ShouldCopyToPartitionOperation(ParameterFacts facts)
+    {
+        if (!string.Equals(facts.Location, QueryParameterLocation, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (facts.IsReference)
+        {
+            return _changeVersionParameterNames.Contains(facts.EffectiveName);
+        }
+
+        return !_partitionExcludedParameterNames.Contains(facts.EffectiveName);
+    }
+
+    /// <summary>
+    /// Appends the cursor parameter reference, tolerating one already present in the identical shape and
+    /// refusing any other parameter publishing the same query name. The refusal is deliberate even though
+    /// the request pipeline is silent about the same collision: a resource declaring a query field spelled
+    /// like a cursor parameter simply cannot filter on it, and publishing the cursor meaning over the top
+    /// would advertise a contract the package did not author. Failing assembly is what surfaces the
+    /// collision instead of resolving it on the package author's behalf.
+    /// </summary>
+    private static void AppendParameterReference(
+        JsonArray collectionParameters,
+        JsonObject componentParameters,
+        string componentName,
+        string effectiveName,
+        string pathKey
+    )
+    {
+        JsonObject expected = ParameterReference(componentName);
+
+        for (int index = 0; index < collectionParameters.Count; index += 1)
+        {
+            ParameterFacts facts = ResolveParameterFacts(
+                collectionParameters[index],
+                componentParameters,
+                pathKey,
+                index
+            );
+
+            if (!string.Equals(facts.EffectiveName, effectiveName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (JsonNode.DeepEquals(collectionParameters[index], expected))
+            {
+                return;
+            }
+
+            throw new InvalidOperationException(
+                $"The GET operation at path '{Sanitize(pathKey)}' already declares a "
+                    + $"'{Sanitize(effectiveName)}' parameter that differs from the cursor-paging parameter "
+                    + "reference. Cursor-paging assembly will not replace a conflicting parameter."
+            );
+        }
+
+        collectionParameters.Add(expected);
+    }
+
+    private static void AddNextPageTokenHeader(JsonObject successResponse, string pathKey)
+    {
+        JsonObject expected = new()
+        {
+            ["description"] = NextPageTokenHeaderDescription,
+            ["schema"] = new JsonObject { ["type"] = "string" },
+        };
+
+        // A sibling of $ref is ignored by the consumers of a 3.0 document, so writing the header beside one
+        // would publish a collection whose response contract silently omits it. Refusing is what keeps the
+        // published contract either complete or absent rather than quietly wrong.
+        if (successResponse["$ref"] is not null)
+        {
+            throw new InvalidOperationException(
+                $"The GET operation at path '{Sanitize(pathKey)}' declares its success response by "
+                    + "reference, so the cursor-paging response header cannot be published on it."
+            );
+        }
+
+        if (successResponse["headers"] is null)
+        {
+            successResponse["headers"] = new JsonObject
+            {
+                [QueryRequestHandler.NextPageTokenHeaderName] = expected,
+            };
+            return;
+        }
+
+        JsonObject headers = RequireObject(
+            successResponse["headers"],
+            $"{PathDiagnostic(pathKey)}.get.responses.{SuccessResponseKey}.headers"
+        );
+
+        if (headers[QueryRequestHandler.NextPageTokenHeaderName] is null)
+        {
+            headers[QueryRequestHandler.NextPageTokenHeaderName] = expected;
+            return;
+        }
+
+        if (JsonNode.DeepEquals(headers[QueryRequestHandler.NextPageTokenHeaderName], expected))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"The GET operation at path '{Sanitize(pathKey)}' already declares a "
+                + $"'{QueryRequestHandler.NextPageTokenHeaderName}' response header that differs from the "
+                + "cursor-paging header. Cursor-paging assembly will not replace a conflicting header."
+        );
+    }
+
+    /// <summary>
+    /// Adds the shared partition response schema on first use, so a document with no partitions operation
+    /// gains no unreferenced schema.
+    /// </summary>
+    private static void EnsurePartitionTokensSchema(JsonObject componentSchemas)
+    {
+        JsonObject expected = new()
+        {
+            ["description"] = PartitionTokensSchemaDescription,
+            ["properties"] = new JsonObject
+            {
+                [PartitionRequestHandler.PageTokensMember] = new JsonObject
+                {
+                    ["items"] = new JsonObject { ["type"] = "string" },
+                    ["type"] = "array",
+                },
+            },
+            // The handler emits this member on every 200, including when no partition is accessible and
+            // the array is empty, so the published contract states it is always present. The array itself
+            // stays unconstrained, because an empty set of tokens is a real response.
+            ["required"] = new JsonArray { PartitionRequestHandler.PageTokensMember },
+            ["type"] = "object",
+        };
+
+        if (componentSchemas[PartitionTokensSchemaName] is null)
+        {
+            componentSchemas[PartitionTokensSchemaName] = expected;
+            return;
+        }
+
+        if (JsonNode.DeepEquals(componentSchemas[PartitionTokensSchemaName], expected))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Schema '{PartitionTokensSchemaName}' is already present in the OpenAPI specification with "
+                + "different content. Cursor-paging assembly will not replace a conflicting schema."
+        );
+    }
+
+    private static void ValidateRequiredParameterComponents(JsonObject componentParameters)
+    {
+        foreach (string componentName in _requiredParameterComponents)
+        {
+            string componentPath = $"{ParametersPath}.{componentName}";
+            JsonObject component = RequireObject(componentParameters[componentName], componentPath);
+            RequireObject(component["schema"], $"{componentPath}.schema");
+
+            string expectedName = _requiredParameterComponentNames[componentName];
+            string publishedName = RequireName(component["name"], componentPath);
+
+            if (!string.Equals(publishedName, expectedName, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Parameter component at '{componentPath}' publishes the query name "
+                        + $"'{Sanitize(publishedName)}', but the request pipeline reads '{expectedName}'. "
+                        + "Cursor-paging assembly will not publish a parameter the pipeline does not honor."
+                );
+            }
+
+            string? location = StringValue(component["in"]);
+
+            if (!string.Equals(location, QueryParameterLocation, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Parameter component at '{componentPath}' is carried in "
+                        + $"'{Sanitize(location ?? "(none)")}', but the request pipeline reads it from the "
+                        + $"'{QueryParameterLocation}' location."
+                );
+            }
+        }
+    }
+
+    /// <summary>
+    /// Replaces the base document's hand-maintained paging values with the ones the request pipeline
+    /// enforces: the configured page size ceiling, the configured partition-count default, and the
+    /// partition-count range the partition request validator measures a request against. Publishing a
+    /// separately authored bound would let the served contract disagree with what the pipeline accepts.
+    /// </summary>
+    private static void PublishRuntimePagingValues(
+        JsonObject componentParameters,
+        OpenApiPagingSettings pagingSettings
+    )
+    {
+        foreach (string componentName in _pageSizeBoundedComponents)
+        {
+            JsonObject schema = ComponentSchema(componentParameters, componentName);
+            schema["default"] = pagingSettings.MaximumPageSize;
+            schema["maximum"] = pagingSettings.MaximumPageSize;
+        }
+
+        JsonObject partitionCountSchema = ComponentSchema(componentParameters, NumberOfPartitionsComponent);
+        partitionCountSchema["default"] = pagingSettings.DefaultPartitionCount;
+        partitionCountSchema["minimum"] = AppSettingsValidator.MinimumDefaultPartitionCount;
+        partitionCountSchema["maximum"] = AppSettingsValidator.MaximumDefaultPartitionCount;
+
+        RequireObject(
+            componentParameters[NumberOfPartitionsComponent],
+            $"{ParametersPath}.{NumberOfPartitionsComponent}"
+        )["description"] = NumberOfPartitionsDescription;
+    }
+
+    private static ParameterFacts ResolveParameterFacts(
+        JsonNode? parameterEntry,
+        JsonObject componentParameters,
+        string pathKey,
+        int index
+    )
+    {
+        string parameterDiagnostic = $"{PathDiagnostic(pathKey)}.get.parameters[{index}]";
+        JsonObject parameterObject = RequireObject(parameterEntry, parameterDiagnostic);
+        string? reference = StringValue(parameterObject["$ref"]);
+
+        if (reference is null)
+        {
+            return new ParameterFacts(
+                IsReference: false,
+                EffectiveName: RequireName(parameterObject["name"], parameterDiagnostic),
+                Location: StringValue(parameterObject["in"])
+            );
+        }
+
+        if (!reference.StartsWith(ParameterComponentRefPrefix, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Parameter at '{parameterDiagnostic}' references '{Sanitize(reference)}', which is not a "
+                    + "parameter component reference."
+            );
+        }
+
+        string componentName = reference[ParameterComponentRefPrefix.Length..];
+        string componentDiagnostic = $"{ParametersPath}.{Sanitize(componentName)}";
+        JsonObject component = RequireObject(componentParameters[componentName], componentDiagnostic);
+
+        return new ParameterFacts(
+            IsReference: true,
+            EffectiveName: RequireName(component["name"], componentDiagnostic),
+            Location: StringValue(component["in"])
+        );
+    }
+
+    private static JsonObject ComponentSchema(JsonObject componentParameters, string componentName) =>
+        RequireObject(
+            componentParameters[componentName]?["schema"],
+            $"{ParametersPath}.{componentName}.schema"
+        );
+
+    private static string ComponentEffectiveName(JsonObject componentParameters, string componentName) =>
+        RequireName(componentParameters[componentName]?["name"], $"{ParametersPath}.{componentName}");
+
+    private static string RequireOperationId(JsonObject getOperation, string pathKey)
+    {
+        string? operationId = StringValue(getOperation["operationId"]);
+
+        if (string.IsNullOrWhiteSpace(operationId))
+        {
+            throw new InvalidOperationException(
+                $"The GET operation at path '{Sanitize(pathKey)}' has no operationId. A partitions operation "
+                    + "identifier is derived from it, so the collection contract is incomplete."
+            );
+        }
+
+        return operationId;
+    }
+
+    private static JsonArray RequireParameters(JsonObject getOperation, string pathKey)
+    {
+        if (getOperation["parameters"] is null)
+        {
+            JsonArray created = [];
+            getOperation["parameters"] = created;
+            return created;
+        }
+
+        if (getOperation["parameters"] is not JsonArray parameters)
+        {
+            throw new InvalidOperationException(
+                $"Node at path '{PathDiagnostic(pathKey)}.get.parameters' is not a JSON array"
+            );
+        }
+
+        return parameters;
+    }
+
+    private static JsonObject RequireResponses(JsonObject getOperation, string pathKey) =>
+        RequireObject(getOperation["responses"], $"{PathDiagnostic(pathKey)}.get.responses");
+
+    private static JsonObject RequireSuccessResponse(JsonObject responses, string pathKey) =>
+        RequireObject(
+            responses[SuccessResponseKey],
+            $"{PathDiagnostic(pathKey)}.get.responses.{SuccessResponseKey}"
+        );
+
+    private static JsonObject ParameterReference(string componentName) =>
+        new() { ["$ref"] = ParameterComponentRefPrefix + componentName };
+
+    private static JsonObject RequireObject(JsonNode? node, string diagnosticPath)
+    {
+        if (node is null)
+        {
+            throw new InvalidOperationException($"Node at path '{diagnosticPath}' not found");
+        }
+
+        if (node is not JsonObject nodeObject)
+        {
+            throw new InvalidOperationException($"Node at path '{diagnosticPath}' is not a JSON object");
+        }
+
+        return nodeObject;
+    }
+
+    private static string RequireName(JsonNode? node, string diagnosticPath)
+    {
+        string? name = StringValue(node);
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new InvalidOperationException(
+                $"Parameter at '{diagnosticPath}' has no name, so its published query name cannot be "
+                    + "determined."
+            );
+        }
+
+        return name;
+    }
+
+    private static string? StringValue(JsonNode? node) =>
+        node is JsonValue value && value.TryGetValue(out string? text) ? text : null;
+
+    /// <summary>
+    /// A diagnostic path whose only untrusted fragment, the path key, is sanitized. The surrounding
+    /// JSONPath scaffolding is this file's own text and must survive intact to stay readable.
+    /// </summary>
+    private static string PathDiagnostic(string pathKey) => $"{PathsPath}['{Sanitize(pathKey)}']";
+
+    private static string Sanitize(string value) => LoggingSanitizer.SanitizeForLogging(value);
+
+    private static FrozenSet<string> BuildChangeVersionParameterNames()
+    {
+        string[] changeVersionNames =
+        [
+            ChangeVersionParameterValidator.MinChangeVersion,
+            ChangeVersionParameterValidator.MaxChangeVersion,
+        ];
+
+        return changeVersionNames.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static FrozenDictionary<string, string> BuildRequiredParameterComponentNames()
+    {
+        Dictionary<string, string> componentNames = new(StringComparer.Ordinal)
+        {
+            [LimitComponent] = CursorRequestValidator.LimitParameter,
+            [PageTokenComponent] = CursorRequestValidator.PageTokenParameter,
+            [PageSizeComponent] = CursorRequestValidator.PageSizeParameter,
+            [NumberOfPartitionsComponent] = PartitionRequestValidator.NumberParameter,
+        };
+
+        return componentNames.ToFrozenDictionary(StringComparer.Ordinal);
+    }
+
+    private static FrozenSet<string> BuildPartitionExcludedParameterNames()
+    {
+        string[] excludedNames =
+        [
+            .. PartitionRequestValidator.ReservedParameters,
+            PartitionRequestValidator.NumberParameter,
+        ];
+
+        return excludedNames.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// What assembly needs to know about one parameter entry: whether it arrived as a component reference,
+    /// the query name it publishes, and where it is carried.
+    /// </summary>
+    private readonly record struct ParameterFacts(bool IsReference, string EffectiveName, string? Location);
+}

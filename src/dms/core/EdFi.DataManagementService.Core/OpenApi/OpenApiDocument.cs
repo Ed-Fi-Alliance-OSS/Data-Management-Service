@@ -14,9 +14,19 @@ namespace EdFi.DataManagementService.Core.OpenApi;
 /// <summary>
 /// Provides information from a loaded ApiSchema.json document
 /// </summary>
-public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
+public class OpenApiDocument(
+    ILogger _logger,
+    string[]? excludedDomains = null,
+    OpenApiPagingSettings? pagingSettings = null
+)
 {
     private readonly string[] _excludedDomains = excludedDomains ?? [];
+
+    /// <summary>
+    /// The paging values published into the assembled document. Callers with no runtime configuration
+    /// source of their own publish the shipped defaults.
+    /// </summary>
+    private readonly OpenApiPagingSettings _pagingSettings = pagingSettings ?? OpenApiPagingSettings.Default;
 
     // Public branding for the served OpenAPI document (DMS-1192). The cloned ApiSchema base document
     // carries the upstream "Ed-Fi Data Management Service API" title and a data-standard version,
@@ -1702,7 +1712,8 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
         ApiSchemaDocumentNodes apiSchemas,
         OpenApiDocumentType documentType,
         JsonNode targetDocument,
-        bool isExtensionProject
+        bool isExtensionProject,
+        HashSet<string> eligibleCollectionPaths
     )
     {
         ProjectSchema projectSchema = new(apiSchemas.CoreApiSchemaRootNode["projectSchema"]!, _logger);
@@ -1739,10 +1750,19 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
             {
                 InsertExts(exts, targetDocument, projectSchema.ProjectName.Value.ToLower());
             }
-            // For non-resource-extensions, merge the fragment directly
+            // For non-resource-extensions, merge the fragment directly. Only an endpoint-owning resource
+            // schema contributes eligible collection paths, so a resource extension can never make one.
             else if (!resourceSchema.IsResourceExtension)
             {
                 MergeOpenApiFragments(fragment, targetDocument);
+
+                if (fragment["paths"] is JsonObject fragmentPaths)
+                {
+                    CursorPagingOpenApiAugmenter.CollectEligibleCollectionPaths(
+                        fragmentPaths,
+                        eligibleCollectionPaths
+                    );
+                }
             }
         }
     }
@@ -1815,8 +1835,18 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
             info["version"] = OpenApiInfoVersion;
         }
 
+        // The collection paths eligible for cursor-paging augmentation, collected from the endpoint-owning
+        // resource schemas whose fragments are merged below.
+        HashSet<string> eligibleCollectionPaths = new(StringComparer.Ordinal);
+
         // Collect fragments from core project resource schemas
-        CollectFragmentsFromResourceSchemas(apiSchemas, openApiDocumentType, openApiSpecification, false);
+        CollectFragmentsFromResourceSchemas(
+            apiSchemas,
+            openApiDocumentType,
+            openApiSpecification,
+            false,
+            eligibleCollectionPaths
+        );
 
         // Collect abstract resource fragments (only for resources document)
         CollectAbstractResourceFragments(apiSchemas, openApiDocumentType, openApiSpecification);
@@ -1860,6 +1890,14 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
                         if (fragment["paths"] is JsonObject paths)
                         {
                             InsertNewPaths(paths, openApiSpecification);
+
+                            if (!resourceSchema.IsResourceExtension)
+                            {
+                                CursorPagingOpenApiAugmenter.CollectEligibleCollectionPaths(
+                                    paths,
+                                    eligibleCollectionPaths
+                                );
+                            }
                         }
 
                         // Process schemas if present (located under components)
@@ -1928,6 +1966,10 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
                 }
             }
         }
+
+        // Publish the cursor-paging contract after every fragment is merged and before domain filtering, so
+        // a generated partitions path is filtered by the same domain rules as its collection.
+        CursorPagingOpenApiAugmenter.Augment(openApiSpecification, eligibleCollectionPaths, _pagingSettings);
 
         // Apply domain filtering to exclude specified domains from the OpenAPI specification
         if (openApiSpecification["paths"] is JsonObject specificationPaths)

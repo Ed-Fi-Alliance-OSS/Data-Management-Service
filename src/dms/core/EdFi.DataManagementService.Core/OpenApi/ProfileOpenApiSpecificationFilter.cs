@@ -23,6 +23,23 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
     /// </summary>
     private static readonly string[] _identityFieldSuffixes = ["Reference", "UniqueId"];
 
+    /// <summary>
+    /// Path suffixes that make a path derived from a base collection rather than a resource of its own.
+    /// A derived path is associated with its base collection resource, and is retained only when that
+    /// resource is readable under the profile.
+    /// </summary>
+    private static readonly string[] _derivedResourcePathSuffixes =
+    [
+        "/deletes",
+        "/keyChanges",
+        "/partitions",
+    ];
+
+    /// <summary>
+    /// The subset of derived paths whose responses reference the unprofiled resource schema graph, so
+    /// that graph must survive profile schema replacement. A partitions response references only the
+    /// shared partition-token schema, so it is deliberately absent here.
+    /// </summary>
     private static readonly string[] _changeQueryPathSuffixes = ["/deletes", "/keyChanges"];
 
     private static readonly string[] _httpMethodNames =
@@ -140,9 +157,11 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
                 continue;
             }
 
+            // A derived path carries no resource schema of its own, so profile schema creation and
+            // response-media rewriting must leave it alone.
             if (
                 IsStandaloneChangeQueriesPath(pathKey)
-                || TryGetChangeQueryBasePath(pathKey, resourceNamesByBasePath, out string _)
+                || TryGetDerivedResourceBasePath(pathKey, resourceNamesByBasePath, out string _)
             )
             {
                 continue;
@@ -571,15 +590,15 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
                 continue;
             }
 
-            if (TryGetChangeQueryBasePath(pathKey, resourceNamesByBasePath, out string basePath))
+            if (TryGetDerivedResourceBasePath(pathKey, resourceNamesByBasePath, out string basePath))
             {
                 if (
-                    !resourceNamesByBasePath.TryGetValue(basePath, out string? changeQueryResourceName)
+                    !resourceNamesByBasePath.TryGetValue(basePath, out string? derivedResourceName)
                     || !resourceProfilesByName.TryGetValue(
-                        changeQueryResourceName.ToLowerInvariant(),
-                        out ResourceProfile? changeQueryResourceProfile
+                        derivedResourceName.ToLowerInvariant(),
+                        out ResourceProfile? derivedResourceProfile
                     )
-                    || changeQueryResourceProfile.ReadContentType is null
+                    || derivedResourceProfile.ReadContentType is null
                 )
                 {
                     pathsToRemove.Add(pathKey);
@@ -644,29 +663,40 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
             }
         }
 
-        var nonChangeQueryResourceNamesByBasePath = new Dictionary<string, string>(
-            StringComparer.OrdinalIgnoreCase
-        );
+        var baseResourceNamesByBasePath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         foreach ((string pathKey, string resourceName) in resourceNamesByBasePath)
         {
-            if (!TryGetChangeQueryBasePath(pathKey, resourceNamesByBasePath, out string _))
+            if (!TryGetDerivedResourceBasePath(pathKey, resourceNamesByBasePath, out string _))
             {
-                nonChangeQueryResourceNamesByBasePath[pathKey] = resourceName;
+                baseResourceNamesByBasePath[pathKey] = resourceName;
             }
         }
 
-        return nonChangeQueryResourceNamesByBasePath;
+        return baseResourceNamesByBasePath;
     }
+
+    private static bool TryGetDerivedResourceBasePath(
+        string pathKey,
+        IReadOnlyDictionary<string, string> resourceNamesByBasePath,
+        out string basePath
+    ) => TryGetBasePathBySuffix(pathKey, _derivedResourcePathSuffixes, resourceNamesByBasePath, out basePath);
 
     private static bool TryGetChangeQueryBasePath(
         string pathKey,
         IReadOnlyDictionary<string, string> resourceNamesByBasePath,
         out string basePath
+    ) => TryGetBasePathBySuffix(pathKey, _changeQueryPathSuffixes, resourceNamesByBasePath, out basePath);
+
+    private static bool TryGetBasePathBySuffix(
+        string pathKey,
+        string[] pathSuffixes,
+        IReadOnlyDictionary<string, string> resourceNamesByBasePath,
+        out string basePath
     )
     {
         string? suffix = Array.Find(
-            _changeQueryPathSuffixes,
+            pathSuffixes,
             suffix => pathKey.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
         );
 

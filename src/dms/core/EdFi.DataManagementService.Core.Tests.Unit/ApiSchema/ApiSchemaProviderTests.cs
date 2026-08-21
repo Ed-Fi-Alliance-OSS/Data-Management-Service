@@ -996,25 +996,34 @@ internal static class ApiSchemaProviderTestFixtures
         bool isExtensionProject
     )
     {
-        return new JsonObject
+        JsonObject projectSchema = new()
         {
-            ["apiSchemaVersion"] = "1.0.0",
-            ["projectSchema"] = new JsonObject
-            {
-                ["abstractResources"] = new JsonObject(),
-                ["caseInsensitiveEndpointNameMapping"] = new JsonObject(),
-                ["description"] = $"{projectName} description",
-                ["educationOrganizationHierarchy"] = new JsonObject(),
-                ["educationOrganizationTypes"] = new JsonArray(),
-                ["domains"] = new JsonArray(),
-                ["isExtensionProject"] = isExtensionProject,
-                ["projectName"] = projectName,
-                ["projectVersion"] = "1.0.0",
-                ["projectEndpointName"] = projectEndpointName,
-                ["resourceNameMapping"] = new JsonObject(),
-                ["resourceSchemas"] = new JsonObject(),
-            },
+            ["abstractResources"] = new JsonObject(),
+            ["caseInsensitiveEndpointNameMapping"] = new JsonObject(),
+            ["description"] = $"{projectName} description",
+            ["educationOrganizationHierarchy"] = new JsonObject(),
+            ["educationOrganizationTypes"] = new JsonArray(),
+            ["domains"] = new JsonArray(),
+            ["isExtensionProject"] = isExtensionProject,
+            ["projectName"] = projectName,
+            ["projectVersion"] = "1.0.0",
+            ["projectEndpointName"] = projectEndpointName,
+            ["resourceNameMapping"] = new JsonObject(),
+            ["resourceSchemas"] = new JsonObject(),
         };
+
+        // A core project's resource and descriptor base documents are what the metadata documents are
+        // assembled from, so a core project without them is not a valid schema.
+        if (!isExtensionProject)
+        {
+            projectSchema["openApiBaseDocuments"] = new JsonObject
+            {
+                ["resources"] = BaseDocument(isExtensionProject),
+                ["descriptors"] = BaseDocument(isExtensionProject),
+            };
+        }
+
+        return new JsonObject { ["apiSchemaVersion"] = "1.0.0", ["projectSchema"] = projectSchema };
     }
 
     public static JsonNode CreateApiSchemaWithChangeQueriesOpenApiBaseDocument(
@@ -1027,8 +1036,8 @@ internal static class ApiSchemaProviderTestFixtures
         var schema = CreateApiSchema(projectName, projectEndpointName, isExtensionProject);
         schema["projectSchema"]!.AsObject()["openApiBaseDocuments"] = new JsonObject
         {
-            ["resources"] = new JsonObject { ["openapi"] = "3.0.1", ["paths"] = new JsonObject() },
-            ["descriptors"] = new JsonObject { ["openapi"] = "3.0.1", ["paths"] = new JsonObject() },
+            ["resources"] = BaseDocument(isExtensionProject),
+            ["descriptors"] = BaseDocument(isExtensionProject),
             ["changeQueries"] = new JsonObject
             {
                 ["openapi"] = "3.0.1",
@@ -1043,6 +1052,26 @@ internal static class ApiSchemaProviderTestFixtures
         };
 
         return schema;
+    }
+
+    /// <summary>
+    /// Only a core project's resource and descriptor base documents are assembled, so only a core project
+    /// is required to declare the cursor-paging parameter components. An extension keeps the minimal shape.
+    /// </summary>
+    private static JsonObject BaseDocument(bool isExtensionProject)
+    {
+        JsonObject baseDocument = new() { ["openapi"] = "3.0.1", ["paths"] = new JsonObject() };
+
+        if (!isExtensionProject)
+        {
+            baseDocument["components"] = new JsonObject
+            {
+                ["parameters"] = ApiSchemaBuilder.CursorPagingParameterComponents(),
+                ["schemas"] = new JsonObject(),
+            };
+        }
+
+        return baseDocument;
     }
 
     public static string GetCoreEndpointName(ApiSchemaDocumentNodes nodes)

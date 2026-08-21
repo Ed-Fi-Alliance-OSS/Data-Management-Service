@@ -60,6 +60,10 @@ public class Given_A_Host_Using_The_Relational_Backend
             "educationOrganizationHierarchy": {},
             "educationOrganizationTypes": [],
             "domains": [],
+            "openApiBaseDocuments": {
+              "resources": { "paths": {}, "components": { "schemas": {}, "parameters": { "limit": { "name": "limit", "in": "query", "schema": {} }, "pageToken": { "name": "pageToken", "in": "query", "schema": {} }, "pageSize": { "name": "pageSize", "in": "query", "schema": {} }, "numberOfPartitions": { "name": "number", "in": "query", "schema": {} } } } },
+              "descriptors": { "paths": {}, "components": { "schemas": {}, "parameters": { "limit": { "name": "limit", "in": "query", "schema": {} }, "pageToken": { "name": "pageToken", "in": "query", "schema": {} }, "pageSize": { "name": "pageSize", "in": "query", "schema": {} }, "numberOfPartitions": { "name": "number", "in": "query", "schema": {} } } } }
+            },
             "resourceSchemas": {
               "widgets": {
                 "resourceName": "Widget",

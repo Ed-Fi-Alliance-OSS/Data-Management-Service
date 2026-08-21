@@ -5,6 +5,10 @@
     "projectEndpointName": "ed-fi",
     "projectVersion": "1.0.0",
     "isExtensionProject": false,
+    "openApiBaseDocuments": {
+      "resources": { "paths": {}, "components": { "schemas": {}, "parameters": { "limit": { "name": "limit", "in": "query", "schema": {} }, "pageToken": { "name": "pageToken", "in": "query", "schema": {} }, "pageSize": { "name": "pageSize", "in": "query", "schema": {} }, "numberOfPartitions": { "name": "number", "in": "query", "schema": {} } } } },
+      "descriptors": { "paths": {}, "components": { "schemas": {}, "parameters": { "limit": { "name": "limit", "in": "query", "schema": {} }, "pageToken": { "name": "pageToken", "in": "query", "schema": {} }, "pageSize": { "name": "pageSize", "in": "query", "schema": {} }, "numberOfPartitions": { "name": "number", "in": "query", "schema": {} } } } }
+    },
     "description": "Profile separate-table merge fixture: exercises root-attached _ext row under a writable profile that hides/shows specific bindings on the separate table. Also contributes the SchoolTypeDescriptor referenced by the Sample extension's hidden-descriptor FK binding.",
     "abstractResources": {},
     "caseInsensitiveEndpointNameMapping": {

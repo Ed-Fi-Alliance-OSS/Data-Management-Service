@@ -5,6 +5,10 @@
     "projectEndpointName": "ed-fi",
     "projectVersion": "5.0.0",
     "isExtensionProject": false,
+    "openApiBaseDocuments": {
+      "resources": { "paths": {}, "components": { "schemas": {}, "parameters": { "limit": { "name": "limit", "in": "query", "schema": {} }, "pageToken": { "name": "pageToken", "in": "query", "schema": {} }, "pageSize": { "name": "pageSize", "in": "query", "schema": {} }, "numberOfPartitions": { "name": "number", "in": "query", "schema": {} } } } },
+      "descriptors": { "paths": {}, "components": { "schemas": {}, "parameters": { "limit": { "name": "limit", "in": "query", "schema": {} }, "pageToken": { "name": "pageToken", "in": "query", "schema": {} }, "pageSize": { "name": "pageSize", "in": "query", "schema": {} }, "numberOfPartitions": { "name": "number", "in": "query", "schema": {} } } } }
+    },
     "description": "Profile root-only merge fixture: exercises inlined nested scope, hidden document reference, hidden descriptor, key-unification hidden contribution/disagreement, and synthetic presence preservation on a single-table resource.",
     "abstractResources": {},
     "caseInsensitiveEndpointNameMapping": {

@@ -201,6 +201,44 @@ public static class OpenApiDocumentTestBase
         return builder.WithEndProject().AsSingleApiSchemaRootNode();
     }
 
+    /// <summary>
+    /// A collection GET operation shaped like a published resource fragment: an operationId and a 200
+    /// response, both of which OpenAPI assembly requires of an endpoint-owning collection path.
+    /// </summary>
+    private static JsonObject CollectionGetOperation(
+        string description,
+        string operationId,
+        string responseSchemaName
+    )
+    {
+        return new JsonObject
+        {
+            ["description"] = description,
+            ["operationId"] = operationId,
+            ["responses"] = new JsonObject
+            {
+                ["200"] = new JsonObject
+                {
+                    ["content"] = new JsonObject
+                    {
+                        ["application/json"] = new JsonObject
+                        {
+                            ["schema"] = new JsonObject
+                            {
+                                ["items"] = new JsonObject
+                                {
+                                    ["$ref"] = $"#/components/schemas/{responseSchemaName}",
+                                },
+                                ["type"] = "array",
+                            },
+                        },
+                    },
+                    ["description"] = "The requested resource was successfully retrieved.",
+                },
+            },
+        };
+    }
+
     public static JsonNode FirstExtensionSchemaRootNode()
     {
         JsonObject exts = new()
@@ -216,7 +254,7 @@ public static class OpenApiDocumentTestBase
         {
             ["/tpdm/credentials"] = new JsonObject
             {
-                ["get"] = new JsonObject { ["description"] = "credential get" },
+                ["get"] = CollectionGetOperation("credential get", "get_TPDMCredentials", "TPDM_Credential"),
                 ["post"] = new JsonObject { ["description"] = "credential post" },
             },
         };
@@ -225,7 +263,11 @@ public static class OpenApiDocumentTestBase
         {
             ["/tpdm/credentialDescriptor"] = new JsonObject
             {
-                ["get"] = new JsonObject { ["description"] = "credential descriptor get" },
+                ["get"] = CollectionGetOperation(
+                    "credential descriptor get",
+                    "get_TPDMCredentialDescriptors",
+                    "TPDM_CredentialDescriptor"
+                ),
                 ["post"] = new JsonObject { ["description"] = "credential descriptor post" },
             },
         };

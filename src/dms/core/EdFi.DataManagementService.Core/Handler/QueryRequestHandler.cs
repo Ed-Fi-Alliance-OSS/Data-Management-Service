@@ -24,10 +24,10 @@ namespace EdFi.DataManagementService.Core.Handler;
 internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resiliencePipeline) : IPipelineStep
 {
     /// <summary>
-    /// The response header carrying the token for the page after this one, as published by the Ed-Fi
-    /// cursor-paging client contract.
+    /// The response header carrying the token for the page after this one. Internal so OpenAPI assembly
+    /// publishes the header this handler emits rather than a second spelling of it.
     /// </summary>
-    private const string NextPageTokenHeaderName = "Next-Page-Token";
+    internal const string NextPageTokenHeaderName = "Next-Page-Token";
 
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
