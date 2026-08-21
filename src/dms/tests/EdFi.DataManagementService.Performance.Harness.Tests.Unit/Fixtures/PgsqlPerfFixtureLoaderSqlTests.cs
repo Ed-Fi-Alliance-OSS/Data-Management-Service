@@ -113,7 +113,25 @@ public class Given_The_Pgsql_Loader_Sql
                 ("document-student-pairing", 500_000),
                 ("min-document-id", 2),
                 ("max-document-id", 555_556),
+                ("gap-count", 55_556),
+                ("gap-id-emissions", 0),
                 ("document-id-sum", definition.DocumentIdSum())
             );
+    }
+
+    [Test]
+    public void It_measures_the_gaps_in_the_loaded_database()
+    {
+        IReadOnlyList<PerfVerificationQuery> queries = PgsqlPerfFixtureLoaderSql.VerificationQueries(
+            new PerfFixtureDefinition(PerfFixtureKind.Primary500k)
+        );
+        queries
+            .Single(query => query.Name == "gap-count")
+            .Sql.Should()
+            .Contain("MAX(\"DocumentId\") - COUNT(*)");
+        queries
+            .Single(query => query.Name == "gap-id-emissions")
+            .Sql.Should()
+            .Contain("\"DocumentId\" % 10 = 1");
     }
 }

@@ -145,8 +145,26 @@ public class Given_The_Mssql_Loader_Sql
                 ("document-student-pairing", 10_000),
                 ("min-document-id", 2),
                 ("max-document-id", 11_112),
+                ("gap-count", 1_112),
+                ("gap-id-emissions", 0),
                 ("document-id-sum", definition.DocumentIdSum())
             );
+    }
+
+    [Test]
+    public void It_measures_the_gaps_in_the_loaded_database()
+    {
+        IReadOnlyList<PerfVerificationQuery> queries = MssqlPerfFixtureLoaderSql.VerificationQueries(
+            new PerfFixtureDefinition(PerfFixtureKind.Smoke10k)
+        );
+        queries
+            .Single(query => query.Name == "gap-count")
+            .Sql.Should()
+            .Contain("MAX([DocumentId]) - COUNT(*)");
+        queries
+            .Single(query => query.Name == "gap-id-emissions")
+            .Sql.Should()
+            .Contain("[DocumentId] % 10 = 1");
     }
 
     [Test]

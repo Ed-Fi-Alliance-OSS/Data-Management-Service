@@ -91,6 +91,16 @@ public static class PgsqlPerfFixtureLoaderSql
                 definition.MaxDocumentId
             ),
             new(
+                "gap-count",
+                """SELECT MAX("DocumentId") - COUNT(*) FROM "dms"."Document";""",
+                definition.GapCount
+            ),
+            new(
+                "gap-id-emissions",
+                """SELECT COUNT(*) FROM "dms"."Document" WHERE "DocumentId" % 10 = 1;""",
+                0
+            ),
+            new(
                 "document-id-sum",
                 """SELECT SUM("DocumentId")::bigint FROM "dms"."Document";""",
                 definition.DocumentIdSum()
