@@ -3515,7 +3515,7 @@ public class Given_A_Mssql_Relational_Query_Authorization_With_The_Authoritative
             totalCount: true
         );
 
-        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0));
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0) { SelectionSkipped = true });
         _context.AssertNoHydration();
     }
 
@@ -4806,7 +4806,7 @@ public class Given_A_Mssql_Relational_Query_Authorization_With_Anchored_Person_P
             RelationshipAuthorizationCrudTestSupport.StudentsOnlyStrategyNames
         );
 
-        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0));
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0) { SelectionSkipped = true });
         _context.AssertNoHydration();
     }
 
