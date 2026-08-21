@@ -9,8 +9,8 @@ are regenerated only by rerunning the capture, never edited.
 | Field | Value |
 | --- | --- |
 | Subject-under-test commit | `5656477957eb2f18e827b7969e5079b424596ae0` — the parent of the DMS-1385 shared page-selection compiler change; the measured DMS behavior predates DMS-1385/DMS-1386 |
-| Runner commit | `cfc0a4514` on branch `DMS-1391` — the harness sources overlaid onto the subject worktree |
-| Runs | `postgresql-primary-500k-20260821025010`, `mssql-primary-500k-20260821025517` (captured 2026-08-21 UTC) |
+| Runner commit | `9115c0faf` on branch `DMS-1391` — the harness sources overlaid onto the subject worktree |
+| Runs | `postgresql-primary-500k-20260821030854`, `mssql-primary-500k-20260821031256` (captured 2026-08-21 UTC) |
 | Fixture | `primary-500k`: 500,000 DS 5.2 students, deterministic sparse `DocumentId`s (gaps ≥ 10% of the id space), loader-verified — see the harness `PerfFixtureDefinition` |
 | Scenarios | Offsets 0 / page-size / 450,000 at page sizes 25 and 500; 5 warmups + 30 measured warm-cache iterations per cell |
 | Environment | Machine fingerprint `92b6869f0fdb8eeb` (developer workstation, Windows 11, local docker volumes — not tmpfs); PostgreSQL 16.8 pinned by digest; SQL Server 2025 (RTM-CU7) 17.0.4065.4 pinned by resolved digest; full identity in each `run-manifest.json` |

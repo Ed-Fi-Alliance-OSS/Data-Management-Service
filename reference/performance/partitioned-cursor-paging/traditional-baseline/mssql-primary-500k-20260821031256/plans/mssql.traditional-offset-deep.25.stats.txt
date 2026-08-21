@@ -3,4 +3,4 @@ SQL Server parse and compile time:
 Table 'Student'. Scan count 1, logical reads 9426, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
 
  SQL Server Execution Times:
-   CPU time = 56 ms,  elapsed time = 56 ms.
+   CPU time = 48 ms,  elapsed time = 48 ms.
