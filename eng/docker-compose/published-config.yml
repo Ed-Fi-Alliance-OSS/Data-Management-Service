@@ -68,6 +68,11 @@ services:
       timeout: 10s
       retries: 50
     hostname: ed-fi-api-config
+    logging:
+      driver: json-file
+      options:
+        max-size: "${DOCKER_LOG_MAX_SIZE:-50m}"
+        max-file: "${DOCKER_LOG_MAX_FILE:-5}"
 
 networks:
   dms:

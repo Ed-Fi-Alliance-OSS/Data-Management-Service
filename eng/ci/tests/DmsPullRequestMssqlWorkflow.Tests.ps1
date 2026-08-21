@@ -236,3 +236,27 @@ Describe "on-dms-pullrequest.yml SQL Server E2E lane secret-safety guardrails" {
         }
     }
 }
+
+Describe "on-dms-pullrequest.yml bootstrap Pester registry" {
+    BeforeAll {
+        $script:workflowPath = [System.IO.Path]::GetFullPath(
+            (Join-Path $PSScriptRoot "../../../.github/workflows/on-dms-pullrequest.yml")
+        )
+        $script:content = Get-Content -LiteralPath $script:workflowPath -Raw
+
+        $pathListMatch = [regex]::Match($script:content, '(?ms)^\s+\$paths\s*=\s*@\(\s*(?<body>.*?)^\s+\)\s*$')
+        if (-not $pathListMatch.Success) {
+            throw "The run-bootstrap-pester-tests `$paths array was not found in $script:workflowPath."
+        }
+
+        $script:pesterPaths = @(
+            [regex]::Matches($pathListMatch.Groups["body"].Value, '"(?<path>[^"]+\.Tests\.ps1)"') |
+                ForEach-Object { $_.Groups["path"].Value }
+        )
+    }
+
+    It "runs the Docker Compose logging guard in the pull request Pester lane" {
+        $script:pesterPaths | Should -Contain "eng/docker-compose/tests/DockerComposeLogging.Tests.ps1" `
+            -Because "the DMS-1407 compose logging guard must run on every DMS-relevant pull request"
+    }
+}
