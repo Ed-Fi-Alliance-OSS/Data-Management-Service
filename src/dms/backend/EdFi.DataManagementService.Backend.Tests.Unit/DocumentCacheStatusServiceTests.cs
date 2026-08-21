@@ -1845,7 +1845,8 @@ public class Given_DocumentCacheStatusService
 
         public void RecordStatusObservation(
             DocumentCacheTargetObservation targetObservation,
-            DocumentCacheStatusTarget statusTarget
+            DocumentCacheStatusTarget statusTarget,
+            TimeSpan? providerObservationDuration
         )
         {
             ArgumentNullException.ThrowIfNull(targetObservation);

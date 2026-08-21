@@ -23,7 +23,8 @@ internal interface IDocumentCacheStatusTelemetry
 {
     void RecordStatusObservation(
         DocumentCacheTargetObservation targetObservation,
-        DocumentCacheStatusTarget statusTarget
+        DocumentCacheStatusTarget statusTarget,
+        TimeSpan? providerObservationDuration
     );
 
     void RecordProviderObservation(
@@ -45,11 +46,20 @@ internal sealed class NoOpDocumentCacheStatusTelemetry : IDocumentCacheStatusTel
 
     public void RecordStatusObservation(
         DocumentCacheTargetObservation targetObservation,
-        DocumentCacheStatusTarget statusTarget
+        DocumentCacheStatusTarget statusTarget,
+        TimeSpan? providerObservationDuration
     )
     {
         ArgumentNullException.ThrowIfNull(targetObservation);
         ArgumentNullException.ThrowIfNull(statusTarget);
+        if (providerObservationDuration is { } duration && duration < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(providerObservationDuration),
+                providerObservationDuration,
+                "Provider-observation duration must be nonnegative."
+            );
+        }
     }
 
     public void RecordProviderObservation(
@@ -145,7 +155,8 @@ internal sealed class DocumentCacheStatusTelemetry : IDocumentCacheStatusTelemet
 
     public void RecordStatusObservation(
         DocumentCacheTargetObservation targetObservation,
-        DocumentCacheStatusTarget statusTarget
+        DocumentCacheStatusTarget statusTarget,
+        TimeSpan? providerObservationDuration
     )
     {
         ArgumentNullException.ThrowIfNull(targetObservation);
@@ -171,8 +182,12 @@ internal sealed class DocumentCacheStatusTelemetry : IDocumentCacheStatusTelemet
 
         _statusObservationCounter.Add(1, tags);
 
+        double? providerObservationDurationSeconds = providerObservationDuration is null
+            ? null
+            : ClampToNonNegativeSeconds(providerObservationDuration.Value);
+
         _logger.LogInformation(
-            "DocumentCacheStatusObserved provider {Provider} target {Target} operationalHealthStatus {OperationalHealthStatus} operationalHealthReason {OperationalHealthReason} caughtUpStatus {CaughtUpStatus} caughtUpReason {CaughtUpReason} lifecycle {Lifecycle} queuePresence {QueuePresence}",
+            "DocumentCacheStatusObserved provider {Provider} target {Target} operationalHealthStatus {OperationalHealthStatus} operationalHealthReason {OperationalHealthReason} caughtUpStatus {CaughtUpStatus} caughtUpReason {CaughtUpReason} lifecycle {Lifecycle} queuePresence {QueuePresence} durationSeconds {DurationSeconds} oldestWorkAgeSeconds {OldestWorkAgeSeconds}",
             ProviderLabel(statusTarget.Provider ?? targetObservation.ProviderToken?.Value),
             DocumentCacheTelemetryTargetLabel.FromTargetKey(targetObservation.TargetKey),
             DocumentCacheTelemetryLabel.LowerCamel(statusTarget.OperationalHealth.Status),
@@ -180,7 +195,9 @@ internal sealed class DocumentCacheStatusTelemetry : IDocumentCacheStatusTelemet
             DocumentCacheTelemetryLabel.LowerCamel(statusTarget.CaughtUp.Status),
             DocumentCacheTelemetryLabel.LowerCamel(statusTarget.CaughtUp.Reason),
             DocumentCacheTelemetryLabel.LowerCamel(statusTarget.Lifecycle.State),
-            DocumentCacheTelemetryLabel.LowerCamel(statusTarget.QueueSummary.Presence)
+            DocumentCacheTelemetryLabel.LowerCamel(statusTarget.QueueSummary.Presence),
+            providerObservationDurationSeconds,
+            statusTarget.QueueSummary.OldestWorkAgeSeconds
         );
     }
 

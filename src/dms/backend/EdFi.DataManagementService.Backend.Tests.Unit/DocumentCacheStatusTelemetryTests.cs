@@ -30,7 +30,7 @@ public class Given_DocumentCacheStatusTelemetry
         DocumentCacheStatusTelemetry telemetry = collector.CreateTelemetry(logger);
         DocumentCacheTargetObservation targetObservation = ResolvedTarget();
 
-        telemetry.RecordStatusObservation(targetObservation, StatusTarget());
+        telemetry.RecordStatusObservation(targetObservation, StatusTarget(), TimeSpan.FromMilliseconds(1250));
 
         MetricMeasurement observation = collector
             .MeasurementsFor(DocumentCacheStatusTelemetry.StatusObservationCounterName)
@@ -50,6 +50,8 @@ public class Given_DocumentCacheStatusTelemetry
         CapturedLogEntry logEntry = logger.Entries.Should().ContainSingle().Which;
         logEntry.Message.Should().Contain("DocumentCacheStatusObserved");
         logEntry.Properties["Target"].Should().Be(TargetLabel);
+        logEntry.Properties["DurationSeconds"].Should().Be(1.25);
+        logEntry.Properties["OldestWorkAgeSeconds"].Should().Be(42);
         logEntry.Properties.Values.OfType<string>().Should().NotContain(TargetKey.ToString());
     }
 

@@ -29,6 +29,11 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         EndpointTimeout = 2,
     }
 
+    private sealed record ObservedDurableStatus(
+        DocumentCacheStatusDurableObservation DurableObservation,
+        TimeSpan? ProviderObservationDuration
+    );
+
     private static readonly ImmutableArray<DocumentCacheEnqueueFailureCategory> EnqueueFailureCategoryOrder =
     [
         DocumentCacheEnqueueFailureCategory.StateMissingOrInvalid,
@@ -209,7 +214,7 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             );
         }
 
-        DocumentCacheStatusDurableObservation durableObservation = await ObserveDurableStatusAsync(
+        ObservedDurableStatus observedDurableStatus = await ObserveDurableStatusAsync(
                 targetObservation,
                 runtimeSnapshot,
                 endpointCancellationToken,
@@ -220,7 +225,7 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         DocumentCacheStatusClassificationResult classification = DocumentCacheStatusClassifier.Classify(
             targetObservation,
             runtimeObservation,
-            durableObservation
+            observedDurableStatus.DurableObservation
         );
 
         return BuildStatusTarget(
@@ -229,11 +234,12 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             processObservedAt,
             projectionSnapshot,
             targetHealth,
-            classification
+            classification,
+            observedDurableStatus.ProviderObservationDuration
         );
     }
 
-    private async Task<DocumentCacheStatusDurableObservation> ObserveDurableStatusAsync(
+    private async Task<ObservedDurableStatus> ObserveDurableStatusAsync(
         DocumentCacheTargetObservation targetObservation,
         DocumentCacheTargetRuntimeSnapshot runtimeSnapshot,
         CancellationToken endpointCancellationToken,
@@ -249,8 +255,11 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             )
         )
         {
-            return DocumentCacheStatusDurableObservation.ProviderObservationFailed(
-                observerSelectionFailureMessage
+            return new ObservedDurableStatus(
+                DocumentCacheStatusDurableObservation.ProviderObservationFailed(
+                    observerSelectionFailureMessage
+                ),
+                ProviderObservationDuration: null
             );
         }
 
@@ -272,8 +281,11 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
 
         if (executionContext is null)
         {
-            return DocumentCacheStatusDurableObservation.ProviderObservationFailed(
-                "DocumentCache target execution context is not available for status observation."
+            return new ObservedDurableStatus(
+                DocumentCacheStatusDurableObservation.ProviderObservationFailed(
+                    "DocumentCache target execution context is not available for status observation."
+                ),
+                ProviderObservationDuration: null
             );
         }
 
@@ -356,47 +368,66 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             }
 
             ProviderObservationCancellationSource cancellationSource = GetFirstCancellationSource();
+            TimeSpan providerObservationDuration = DocumentCacheProjectionTelemetry.GetElapsedTime(
+                providerObservationStartedAt
+            );
 
             RecordProviderObservationTelemetry(
                 targetObservation.TargetKey,
                 providerToken,
                 result,
                 cancellationSource,
-                DocumentCacheProjectionTelemetry.GetElapsedTime(providerObservationStartedAt)
+                providerObservationDuration
             );
 
-            return ToDurableObservation(result, callerCancellationToken, cancellationSource);
+            return new ObservedDurableStatus(
+                ToDurableObservation(result, callerCancellationToken, cancellationSource),
+                providerObservationDuration
+            );
         }
         catch (OperationCanceledException)
         {
             callerCancellationToken.ThrowIfCancellationRequested();
 
             ProviderObservationCancellationSource cancellationSource = GetFirstCancellationSource();
+            TimeSpan providerObservationDuration = DocumentCacheProjectionTelemetry.GetElapsedTime(
+                providerObservationStartedAt
+            );
 
             _statusTelemetry.RecordProviderObservation(
                 targetObservation.TargetKey,
                 providerToken,
                 DocumentCacheStatusProviderObservationTelemetryOutcome.TimedOut,
                 CreateTimedOutReason(cancellationSource),
-                DocumentCacheProjectionTelemetry.GetElapsedTime(providerObservationStartedAt),
+                providerObservationDuration,
                 lifecycleState: null,
                 oldestWorkAgeSeconds: null
             );
-            return CreateTimedOutObservation(cancellationSource);
+            return new ObservedDurableStatus(
+                CreateTimedOutObservation(cancellationSource),
+                providerObservationDuration
+            );
         }
         catch
         {
+            TimeSpan providerObservationDuration = DocumentCacheProjectionTelemetry.GetElapsedTime(
+                providerObservationStartedAt
+            );
+
             _statusTelemetry.RecordProviderObservation(
                 targetObservation.TargetKey,
                 providerToken,
                 DocumentCacheStatusProviderObservationTelemetryOutcome.Failed,
                 DocumentCacheStatusReason.ProviderObservationFailed,
-                DocumentCacheProjectionTelemetry.GetElapsedTime(providerObservationStartedAt),
+                providerObservationDuration,
                 lifecycleState: null,
                 oldestWorkAgeSeconds: null
             );
-            return DocumentCacheStatusDurableObservation.ProviderObservationFailed(
-                "DocumentCache status current-source observer failed."
+            return new ObservedDurableStatus(
+                DocumentCacheStatusDurableObservation.ProviderObservationFailed(
+                    "DocumentCache status current-source observer failed."
+                ),
+                providerObservationDuration
             );
         }
     }
@@ -613,7 +644,8 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         DateTimeOffset processObservedAt,
         DocumentCacheProjectionObservationSnapshot projectionSnapshot,
         DocumentCacheProjectionTargetHealthSnapshot? targetHealth,
-        DocumentCacheStatusClassificationResult classification
+        DocumentCacheStatusClassificationResult classification,
+        TimeSpan? providerObservationDuration = null
     )
     {
         DocumentCacheStatusTarget statusTarget = new(
@@ -648,7 +680,11 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             ToEnqueueFailures(targetObservation.TargetKey)
         );
 
-        _statusTelemetry.RecordStatusObservation(targetObservation, statusTarget);
+        _statusTelemetry.RecordStatusObservation(
+            targetObservation,
+            statusTarget,
+            providerObservationDuration
+        );
         return statusTarget;
     }
 
