@@ -32,14 +32,27 @@ public class AuthoritativeApiSchemaAssemblyTests
 
     private JsonNode _resources = null!;
     private JsonNode _descriptors = null!;
+    private string _apiSchemaBeforeAssembly = null!;
+    private string _apiSchemaAfterAssembly = null!;
 
     [OneTimeSetUp]
     public void Assemble()
     {
-        string apiSchemaJson = File.ReadAllText(LocateAuthoritativeApiSchema(), Encoding.UTF8);
+        JsonNode apiSchemaRootNode =
+            JsonNode.Parse(File.ReadAllText(LocateAuthoritativeApiSchema(), Encoding.UTF8))
+            ?? throw new InvalidOperationException("The authoritative ApiSchema did not parse.");
 
-        _resources = CreateDocument(apiSchemaJson, OpenApiDocument.OpenApiDocumentType.Resource);
-        _descriptors = CreateDocument(apiSchemaJson, OpenApiDocument.OpenApiDocumentType.Descriptor);
+        // Both documents are assembled from one parse, as the service assembles them: ApiService passes
+        // the provider's cached nodes to each. Assembling from separate parses here would hide a mutation
+        // that the service would suffer.
+        ApiSchemaDocumentNodes apiSchemaNodes = new(apiSchemaRootNode, []);
+
+        _apiSchemaBeforeAssembly = apiSchemaRootNode.ToJsonString();
+
+        _resources = CreateDocument(apiSchemaNodes, OpenApiDocument.OpenApiDocumentType.Resource);
+        _descriptors = CreateDocument(apiSchemaNodes, OpenApiDocument.OpenApiDocumentType.Descriptor);
+
+        _apiSchemaAfterAssembly = apiSchemaRootNode.ToJsonString();
     }
 
     [Test]
@@ -78,27 +91,31 @@ public class AuthoritativeApiSchemaAssemblyTests
     }
 
     /// <summary>
-    /// Assembly mutates the nodes it is given, so each document is assembled from its own parse of the
-    /// input rather than from a shared one.
+    /// Assembly reads the ApiSchema and writes only into the document it builds. The service depends on
+    /// that: one cached node graph backs both assembled documents and request-time validation, so a node
+    /// written during assembly would reach every later reader. This branch is the first to write into an
+    /// assembled document's paths, parameters, and responses, which is what makes the cloning that merges
+    /// already performed load-bearing rather than incidental.
     /// </summary>
+    [Test]
+    public void It_should_not_mutate_the_api_schema_nodes_it_assembles_from()
+    {
+        string.Equals(_apiSchemaAfterAssembly, _apiSchemaBeforeAssembly, StringComparison.Ordinal)
+            .Should()
+            .BeTrue("assembling both documents must leave the input ApiSchema unchanged");
+    }
+
     private static JsonNode CreateDocument(
-        string apiSchemaJson,
+        ApiSchemaDocumentNodes apiSchemaNodes,
         OpenApiDocument.OpenApiDocumentType documentType
     )
     {
-        JsonNode apiSchemaRootNode =
-            JsonNode.Parse(apiSchemaJson)
-            ?? throw new InvalidOperationException("The authoritative ApiSchema did not parse.");
-
         OpenApiDocument openApiDocument = new(
             NullLogger.Instance,
             pagingSettings: OpenApiPagingSettings.Default
         );
 
-        return openApiDocument.CreateDocument(
-            new ApiSchemaDocumentNodes(apiSchemaRootNode, []),
-            documentType
-        );
+        return openApiDocument.CreateDocument(apiSchemaNodes, documentType);
     }
 
     /// <summary>
