@@ -416,6 +416,46 @@ host-configurable limits on token lifetime or concurrency.
   representation and metadata produced under FR-SERIAL, a host that disables
   serialization (FR-SERIAL-2) SHALL NOT be able to use this CDC-based
   streaming capability in its current form.
+- **FR-STREAM-5.** Each event on the stream SHALL be keyed by the affected
+  resource's document identifier, and that key SHALL remain the same across
+  every event concerning that document (create, update, and delete), so a
+  consumer can correlate a document's full history by key.
+- **FR-STREAM-6.** A deleted resource SHALL be represented on the stream as a
+  single tombstone (null-valued) message keyed by its document identifier,
+  rather than as a message carrying delete metadata; no more than one
+  tombstone SHALL be published per deletion.
+- **FR-STREAM-7.** A created or updated resource SHALL be represented on the
+  stream as a message whose value is a plain JSON object — not wrapped in any
+  serialization-framework envelope — containing, at minimum: an explicit
+  contract/schema version; the resource's document identifier; the identity of
+  the Ed-Fi resource type and version (project name, resource name, resource
+  version); an incrementing content-version number for the document; a
+  normalized last-modified timestamp; and the full resource document (per
+  [[FR-SERIAL]]) including its ETag. This message SHALL NOT include internal
+  source-system metadata unrelated to the resource itself, so a consumer can
+  read and interpret it using only standard JSON tooling.
+- **FR-STREAM-8.** Regardless of which supported database engine produced the
+  change, timestamps and document identifiers on the stream SHALL be presented
+  in a single normalized format (UTC timestamps; lowercase canonical UUIDs),
+  so consuming code does not need to special-case the source database.
+- **FR-STREAM-9.** The stream SHALL preserve the numeric and structural
+  fidelity of the resource document: decimal/numeric values SHALL appear as
+  exact JSON numbers, never as strings or lossy floating point, and properties
+  absent from the source SHALL be omitted rather than represented as null.
+- **FR-STREAM-10.** The stream SHALL preserve the relative order of events for
+  any single document, so a consumer never observes that document's changes
+  out of the order they actually occurred.
+- **FR-STREAM-11.** Bulk administrative operations that are not themselves a
+  meaningful create, update, or delete of a specific resource (e.g., table
+  truncation) SHALL NOT produce document events on the stream.
+- **FR-STREAM-12.** When a consumer begins reading the stream from the
+  beginning, it SHALL receive an upsert event for every resource that
+  currently exists, so a new consumer can build a complete view of current
+  data without a separate bulk-export mechanism.
+- **FR-STREAM-13.** A progress/heartbeat signal SHALL be available to
+  consumers separately from document events, so it is possible to distinguish
+  "no data has changed" from "the stream has stopped delivering," without that
+  signal ever being mistaken for an actual document change.
 
 ## 4. Non-Functional Requirements
 
@@ -545,9 +585,9 @@ host-configurable limits on token lifetime or concurrency.
   product/engineering leadership informed by host and vendor migration pressure.
 - **Event streaming non-functional requirements:** this PRD defines the
   functional requirement to stream changes via Kafka/Debezium CDC
-  ([[FR-STREAM]]), but has not yet defined delivery-ordering guarantees,
-  message retention, or topic-level access control. Needs follow-up before
-  this capability is build-ready.
+  ([[FR-STREAM]]), including per-document delivery ordering, but has not yet
+  defined message retention or topic-level access control. Needs follow-up
+  before this capability is build-ready.
 
 ## 8. Glossary
 
@@ -572,3 +612,8 @@ host-configurable limits on token lifetime or concurrency.
 - **Debezium:** An open-source CDC connector platform used to read database
   change logs (from PostgreSQL or Microsoft SQL Server) and publish the
   resulting change events to Kafka.
+- **Tombstone:** A Kafka message with a null value, used on the event stream
+  to signal that a previously published resource has been deleted.
+- **Content Version:** An incrementing, per-document version number included
+  in each stream event, letting a consumer detect duplicate or out-of-order
+  delivery of the same document state.
