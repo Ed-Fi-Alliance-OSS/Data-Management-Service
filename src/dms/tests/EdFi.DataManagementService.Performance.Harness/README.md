@@ -1,0 +1,96 @@
+# DMS Performance Harness — Traditional Paging Baseline
+
+Reproducible cross-provider measurement of traditional `limit`/`offset` GET-many paging,
+capturing the pre-change baseline that the performance final gate compares against. The
+harness drives the real DMS pipeline in-process (the API integration harness boot), measures
+the epic's fixed six-cell matrix, replays plans on a dedicated connection, and writes
+machine-readable artifacts that fail loudly whenever the run did not do the expected work.
+Timing values are never judged; only completeness and internal consistency are.
+
+## Layout
+
+| Area | Contents |
+| --- | --- |
+| `Configuration/` | `PERF_*` environment binding and validation, provider/fixture/scenario catalogs, evidence-run settings and guardrail configuration |
+| `Fixtures/` | The deterministic 500,000-row fixture definition (with its 10,000-row smoke variant), per-dialect set-based loader SQL, the loader executor, and verification queries |
+| `Measurement/` | Latency measurement, driver command observer, page-selection capture, plan replay per provider, environment capture, the scenario executor, and the full run pipeline |
+| `Results/` | Versioned artifact records, JSON/CSV writers, the artifact validator, and the run-directory writer |
+| `Smoke/` | Explicit live proofs: loader-vs-POST proof gate, instrumentation probes, six-cell executor smoke, and the full-pipeline smoke at 10k scale |
+| `Runs/` | The evidence-run entry points, configured entirely through `PERF_*` variables |
+
+The project name deliberately does not match the CI test-discovery globs: CI compiles it via
+the solution but never executes it. All executable fixtures here are `[Explicit]`. The
+CI-run smoke tests live in `EdFi.DataManagementService.Performance.Harness.Tests.Unit`.
+
+## Prerequisites
+
+- A local PostgreSQL reachable through `ConnectionStrings__DatabaseConnection` (the compose
+  container `dms-postgresql`, host port 5435, pinned `postgres:16.8-alpine`).
+- A local SQL Server 2025 reachable through `ConnectionStrings__MssqlAdmin` (the
+  `dms-mssql-integration-2025` container, host port 14333). `GENERATE_SERIES` requires
+  SQL Server 2022+ at database compatibility level 160+; the loader guards this.
+- Databases must not run on tmpfs for evidence runs.
+
+## Running the smokes
+
+Each smoke leases a fresh DS 5.2 database, so runs are isolated and repeatable.
+
+```powershell
+dotnet test src/dms/tests/EdFi.DataManagementService.Performance.Harness -c Release `
+    --filter "FullyQualifiedName~Given_Postgresql_BaselineRunSmoke"
+```
+
+Available smokes, per provider (`Given_Postgresql_*` / `Given_Mssql_*`):
+
+- `PerfFixtureLoaderSmoke` — loads 10k rows and runs the loader-vs-POST proof gate across
+  `dms.Document`, `edfi.Student`, `dms.ReferentialIdentity`, and tracked-change side effects.
+- `ObserverProbe` — the instrumentation checkpoint: recorder and driver observer signals.
+- `ScenarioExecutorSmoke` — the six-cell matrix with per-request guardrails.
+- `BaselineRunSmoke` — the full pipeline writing validated artifacts to a temp directory.
+
+## Evidence runs
+
+The entry points are `Runs/Given_<Provider>_TraditionalBaselineRun`, normally invoked through
+`eng/performance/invoke-traditional-baseline.ps1`, which handles the baseline worktree
+overlay, image digest validation, and environment wiring.
+
+| Variable | Required | Meaning |
+| --- | --- | --- |
+| `PERF_RESULTS_DIR` | yes | Fully qualified base directory; each run writes into a run-id subdirectory |
+| `PERF_RUNNER_COMMIT` | yes | 40-hex commit of the harness sources (the subject commit is read from the worktree's git HEAD) |
+| `PERF_FIXTURE` | yes | `primary-500k` or `smoke-10k` |
+| `PERF_IMAGE_TAG` / `PERF_IMAGE_DIGEST` | yes | The validated image pin recorded in the manifest |
+| `PERF_STORAGE_NOTE` | yes | Storage caveat, for example `local docker volume, not tmpfs` |
+| `PERF_WARMUP_ITERATIONS` / `PERF_MEASURED_ITERATIONS` | no | Default 5 / 30; may be raised, never lowered |
+| `PERF_DEEP_OFFSET` | no | Default 90% of the fixture row count (450,000 for the primary fixture) |
+| `PERF_ALLOW_CI` | no | Default `false`: runs refuse GitHub Actions because its databases run on tmpfs |
+| `PERF_ALLOW_DIRTY_PREFIXES` | no | Semicolon-separated allowlist for dirty worktree paths; defaults to the harness overlay directory. A single empty entry allows anything (smoke use only) |
+
+Guardrails run before any measurement: a CI environment or a dirty path outside the
+allowlist aborts the run, so baseline evidence cannot be produced from a contaminated tree.
+
+## Baseline capture (overlay procedure)
+
+The subject-under-test commit predates this harness, so the harness is overlaid onto a
+worktree of that commit — only new files, never edits:
+
+1. `git worktree add <path> 5656477957eb2f18e827b7969e5079b424596ae0`
+2. Copy this project directory (without `bin`/`obj`) into the same relative path.
+3. Build the harness csproj there and run the evidence fixtures with `PERF_RUNNER_COMMIT`
+   set to the harness-source commit. The run manifest records both commits and the dirty
+   overlay paths.
+
+## Artifact layout (schema 1.0.0)
+
+| File | Content |
+| --- | --- |
+| `run-manifest.json` | Run/commit/fixture/iteration identity and the full environment identity |
+| `results.json` | Six scenario rows: app latency, driver-observed command time, replay metrics, plan reference, SQL hash |
+| `results.csv` | The same rows in a fixed 29-column order |
+| `fixture-manifest.json` | The verified fixture definition and its analytic values |
+| `plans/` | PostgreSQL `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` documents; SQL Server actual `.sqlplan` XML plus raw `.stats.txt` |
+| `sql/` | The one page-selection text, the one hydration-batch text, and per-cell bound parameter values |
+
+Notes for comparison work: SQL Server `STATISTICS TIME` reports whole milliseconds, so fast
+cells can legitimately record 0 CPU ms; and the epic's ratio gates assume the final-gate
+runs reuse the same machine and pinned configuration recorded in the manifest.
