@@ -121,15 +121,35 @@ internal class ApiSchemaValidator(ILogger<ApiSchemaValidator> _logger) : IApiSch
             }
         }
 
-        List<SchemaValidationFailure> validationErrors = [];
-        validationErrors.AddRange(
-            validationErrorsByPath.Select(kvp => new SchemaValidationFailure(
-                new JsonPath(kvp.Key),
-                kvp.Value
-            ))
-        );
+        if (validationErrorsByPath.Count != 0)
+        {
+            return
+            [
+                .. validationErrorsByPath.Select(kvp => new SchemaValidationFailure(
+                    new JsonPath(kvp.Key),
+                    kvp.Value
+                )),
+            ];
+        }
 
-        return validationErrors;
+        // Callers read an empty list as "valid", so an exclusion that over-matches would turn a rejected
+        // document into an accepted one silently. Overall validity is the independent signal that cannot
+        // be emptied by a path-shaped filter, so disagreement between the two fails closed.
+        if (!results.IsValid)
+        {
+            return
+            [
+                new(
+                    new("$."),
+                    [
+                        "ApiSchema validation failed but reported no specific failure; a schema "
+                            + "condition-selector exclusion is over-matching.",
+                    ]
+                ),
+            ];
+        }
+
+        return [];
     }
 
     /// <summary>
