@@ -22,6 +22,14 @@ are regenerated only by rerunning the capture, never edited.
   the machine identified by the fingerprint above, with the same pinned images and recorded
   configuration. Results from a different environment make these artifacts provisional
   reference points, not gate baselines.
+- **App-level p50/p95 can be diluted by invariant hydration work.** On PostgreSQL
+  especially, most of a request's database work is collection hydration that costs the same
+  at offset 0 and offset 450,000, so a page-selection improvement can shrink to noise in
+  app-level latency ratios. DMS-1391's role is fixed: it captures the representative full
+  hydration-batch baseline. DMS-1392 must treat the per-statement evidence — the
+  page-selection statement's plan metrics and the per-statement documents under `plans/` —
+  as first-class gate inputs wherever app-level p50/p95 is diluted, not as supporting
+  detail.
 - `results.json` rows carry `pageSelectionSqlSha256`; the traditional page-selection SQL text
   is expected to be byte-identical post-change (the DMS-1385 textual gate).
 - The `database` metrics and plan evidence come from replaying the full captured hydration
@@ -34,8 +42,11 @@ are regenerated only by rerunning the capture, never edited.
   connection string), so warm requests may execute server-prepared plans the replay does not
   reproduce. The plan evidence proves plan shape and work volume, not the measured requests'
   exact plan-caching regime.
-- SQL Server `STATISTICS TIME` reports whole milliseconds; near-zero CPU values on fast cells
-  are provider granularity, not missing data.
+- SQL Server `db_cpu_ms`/`db_elapsed_ms` are **indicative only**: `STATISTICS TIME` reports
+  whole milliseconds per statement, and the batch totals sum that integer rounding across
+  every planned statement, so small values carry accumulated quantization error rather than
+  precision. `db_logical_reads` and the driver-observed `db_command_p50_ms`/`db_command_p95_ms`
+  are the reliable SQL Server comparison quantities.
 
 ## Contents per run directory
 

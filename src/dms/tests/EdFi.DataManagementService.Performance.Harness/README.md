@@ -116,6 +116,13 @@ measured requests may therefore execute server-prepared (possibly generic) plans
 does not reproduce: the replay evidences plan shape and work volume, not the measured
 requests' exact plan-caching regime.
 
-Notes for comparison work: SQL Server `STATISTICS TIME` reports whole milliseconds, so fast
-cells can legitimately record 0 CPU ms; and the epic's ratio gates assume the final-gate
-runs reuse the same machine and pinned configuration recorded in the manifest.
+Notes for comparison work: app-level p50/p95 can be dominated by hydration work that is
+invariant across page offsets, so a page-selection improvement can be diluted to noise in
+app-level ratios — the final-gate comparison (DMS-1392) must treat the per-statement plan
+metrics, above all the page-selection statement's, as first-class inputs wherever that
+dilution applies. SQL Server `db_cpu_ms`/`db_elapsed_ms` are indicative only, because
+`STATISTICS TIME` reports whole milliseconds per statement and the batch totals sum that
+integer rounding across every planned statement; `db_logical_reads` and the driver-observed
+`db_command_*_ms` are the reliable SQL Server comparison quantities. And the epic's ratio
+gates assume the final-gate runs reuse the same machine and pinned configuration recorded
+in the manifest.
