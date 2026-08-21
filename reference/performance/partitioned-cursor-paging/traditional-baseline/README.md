@@ -9,8 +9,8 @@ are regenerated only by rerunning the capture, never edited.
 | Field | Value |
 | --- | --- |
 | Subject-under-test commit | `5656477957eb2f18e827b7969e5079b424596ae0` — the parent of the DMS-1385 shared page-selection compiler change; the measured DMS behavior predates DMS-1385/DMS-1386 |
-| Runner commit | `95e98b475` on branch `DMS-1391` — the harness sources overlaid onto the subject worktree; the capture wrapper refuses to run from dirty harness/wrapper sources, so this commit is exactly the code that ran |
-| Runs | `postgresql-primary-500k-20260821050137`, `mssql-primary-500k-20260821050627` (captured 2026-08-21 UTC) |
+| Runner commit | `8822f55e8` on branch `DMS-1391` — the harness sources overlaid onto the subject worktree; the capture wrapper refuses to run from dirty harness/wrapper sources, so this commit is exactly the code that ran |
+| Runs | `postgresql-primary-500k-20260821194858`, `mssql-primary-500k-20260821195929` (captured 2026-08-21 UTC) |
 | Fixture | `primary-500k`: 500,000 DS 5.2 students with deterministic sparse `DocumentId`s (gaps ≥ 10% of the id space), each carrying one row in all four child collection tables (identification documents, other names, personal identification documents, visas) and descriptor-backed values from a fixed five-descriptor catalog, loader-verified — see the harness `PerfFixtureDefinition`. The optional person reference stays null by design (a faithful nonzero shape would double `dms.Document` with one Person per student; a shared person would be unfaithful fan-in), so the batch's person-reference-resolution statement is the one intentionally zero-row statement |
 | Scenarios | Offsets 0 / page-size / 450,000 at page sizes 25 and 500; 5 warmups + 30 measured warm-cache iterations per cell |
 | Environment | Machine fingerprint `92b6869f0fdb8eeb` — a pseudonym of the machine name, meaningful only together with the OS/CPU/core/memory/.NET facts recorded beside it (developer workstation, Windows 11, local docker volumes — not tmpfs); PostgreSQL 16.8 pinned by digest; SQL Server 2025 (RTM-CU7) 17.0.4065.4 pinned by resolved digest; full identity in each `run-manifest.json` |
@@ -35,11 +35,16 @@ are regenerated only by rerunning the capture, never edited.
 - The `database` metrics and plan evidence come from replaying the full captured hydration
   batch — the one DbCommand each measured request executed — with the request's bound paging
   parameters, so buffer/read totals include collection hydration, not just page selection.
+  The per-statement evidence shows nonzero rows and reads for all four child-collection
+  statements and the descriptor-URI-resolution statement on both providers; the
+  person-reference-resolution statement is the one intentionally zero-row statement (see
+  the fixture row above).
 - The replay is an out-of-band one-shot `EXPLAIN` on a dedicated connection, which PostgreSQL
   plans as a custom plan. The measured requests run through the application's pooled Npgsql
-  connections with auto-prepare enabled (the DMS data-source cache sets
-  `AutoPrepareMinUsages=3` / `MaxAutoPrepare=256` in code, on top of the configured
-  connection string), so warm requests may execute server-prepared plans the replay does not
+  connections with auto-prepare enabled — the effective values are recorded in each
+  run-manifest's settings (`npgsql_auto_prepare_min_usages=3`, `npgsql_max_auto_prepare=256`,
+  read back through the production data-source code path rather than inferred from the raw
+  connection string) — so warm requests may execute server-prepared plans the replay does not
   reproduce. The plan evidence proves plan shape and work volume, not the measured requests'
   exact plan-caching regime.
 - SQL Server `db_cpu_ms`/`db_elapsed_ms` are **indicative only**: `STATISTICS TIME` reports
@@ -56,7 +61,7 @@ cell: PostgreSQL one `.explain.json` listing every batch statement with its raw
 `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` document; SQL Server one `.plans.json` index
 pointing at the per-statement actual `.sqlplan` XML files and the raw `.stats.txt`), and
 `sql/` (the single page-selection text, the single hydration-batch text, and per-cell bound
-parameter values). Artifact schema `1.1.0`, validated on write and on reload by the harness.
+parameter values). Artifact schema `1.2.0`, validated on write and on reload by the harness.
 
 ## Regeneration
 
