@@ -655,7 +655,7 @@ public class Given_A_Manifest_With_Null_Required_Strings
     [Test]
     public void It_rejects_the_missing_provider()
     {
-        _errors.Should().Contain(error => error.Contains("unknown provider"));
+        _errors.Should().Contain(error => error.Contains("canonical 'postgresql' or 'mssql'"));
     }
 
     [Test]
@@ -747,5 +747,169 @@ public class Given_Null_Artifacts
     public void It_requires_the_results_document()
     {
         _errors.Should().Contain("results: results document is required.");
+    }
+}
+
+[TestFixture]
+public class Given_Mixed_Case_Providers_On_Both_Sides
+{
+    private IReadOnlyList<string> _errors = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // "PostgreSQL" on both sides slips past the row-vs-manifest equality check and past
+        // the exact-lowercase metric-side rules; the canonical-name rule must catch it.
+        PerfRunManifest manifest = ResultSamples.Manifest();
+        manifest = manifest with { Run = manifest.Run with { Provider = "PostgreSQL" } };
+        PerfResultsDocument document = ResultSamples.PostgresqlDocument();
+        document = document with
+        {
+            Results = [.. document.Results.Select(row => row with { Provider = "PostgreSQL" })],
+        };
+        _errors = PerfArtifactValidator.Validate(manifest, document);
+    }
+
+    [Test]
+    public void It_rejects_the_manifest_provider()
+    {
+        _errors
+            .Should()
+            .Contain(error => error.StartsWith("manifest:") && error.Contains("canonical 'postgresql'"));
+    }
+
+    [Test]
+    public void It_rejects_every_row_provider()
+    {
+        _errors
+            .Should()
+            .Contain(error => error.StartsWith("results[0]") && error.Contains("canonical 'postgresql'"));
+        _errors
+            .Should()
+            .Contain(error => error.StartsWith("results[5]") && error.Contains("canonical 'postgresql'"));
+    }
+}
+
+[TestFixture]
+public class Given_An_Unknown_Row_Provider
+{
+    private IReadOnlyList<string> _errors = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        PerfResultsDocument document = ValidatorTestSupport.WithRow(
+            ResultSamples.PostgresqlDocument(),
+            0,
+            row => row with { Provider = "sqlite" }
+        );
+        _errors = PerfArtifactValidator.Validate(ResultSamples.Manifest(), document);
+    }
+
+    [Test]
+    public void It_rejects_the_non_canonical_provider()
+    {
+        _errors
+            .Should()
+            .Contain(error => error.StartsWith("results[0]") && error.Contains("canonical 'postgresql'"));
+    }
+
+    [Test]
+    public void It_still_reports_the_run_provider_mismatch()
+    {
+        _errors
+            .Should()
+            .Contain(error =>
+                error.StartsWith("results[0]") && error.Contains("must match the run provider")
+            );
+    }
+}
+
+[TestFixture]
+public class Given_A_Manifest_With_An_Incomplete_Environment_Identity
+{
+    private IReadOnlyList<string> _errors = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        PerfRunManifest manifest = ResultSamples.Manifest();
+        manifest = manifest with
+        {
+            Environment = manifest.Environment with
+            {
+                Server = manifest.Environment.Server with { StorageNote = " ", Settings = [] },
+                Host = manifest.Environment.Host with
+                {
+                    OsDescription = "",
+                    ProcessArchitecture = " ",
+                    DotnetVersion = "",
+                },
+            },
+        };
+        _errors = PerfArtifactValidator.Validate(manifest, ResultSamples.PostgresqlDocument());
+    }
+
+    [Test]
+    public void It_requires_the_storage_note()
+    {
+        _errors.Should().Contain("manifest: storage note is required.");
+    }
+
+    [Test]
+    public void It_requires_server_settings()
+    {
+        _errors.Should().Contain("manifest: at least one server setting is required.");
+    }
+
+    [Test]
+    public void It_requires_the_os_description()
+    {
+        _errors.Should().Contain("manifest: os description is required.");
+    }
+
+    [Test]
+    public void It_requires_the_process_architecture()
+    {
+        _errors.Should().Contain("manifest: process architecture is required.");
+    }
+
+    [Test]
+    public void It_requires_the_dotnet_version()
+    {
+        _errors.Should().Contain("manifest: dotnet version is required.");
+    }
+}
+
+[TestFixture]
+public class Given_A_Manifest_With_Blank_Setting_Entries
+{
+    private IReadOnlyList<string> _errors = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        PerfRunManifest manifest = ResultSamples.Manifest();
+        manifest = manifest with
+        {
+            Environment = manifest.Environment with
+            {
+                Server = manifest.Environment.Server with { Settings = [new PerfSetting("", "128MB")] },
+                DriverVersions = [new PerfSetting("Npgsql", " ")],
+            },
+        };
+        _errors = PerfArtifactValidator.Validate(manifest, ResultSamples.PostgresqlDocument());
+    }
+
+    [Test]
+    public void It_rejects_the_blank_server_setting_name()
+    {
+        _errors.Should().Contain("manifest: server setting entries must have non-blank names and values.");
+    }
+
+    [Test]
+    public void It_rejects_the_blank_driver_version_value()
+    {
+        _errors.Should().Contain("manifest: driver version entries must have non-blank names and values.");
     }
 }

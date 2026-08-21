@@ -80,9 +80,9 @@ public static partial class PerfArtifactValidator
             errors.Add("manifest: run id is required.");
         }
 
-        if (!IsKnownProvider(run.Provider))
+        if (!IsCanonicalProvider(run.Provider))
         {
-            errors.Add($"manifest: unknown provider '{run.Provider}'.");
+            errors.Add($"manifest: provider '{run.Provider}' must be the canonical 'postgresql' or 'mssql'.");
         }
 
         bool parsable =
@@ -266,6 +266,24 @@ public static partial class PerfArtifactValidator
                         + "every password value must read REDACTED."
                 );
             }
+
+            if (string.IsNullOrWhiteSpace(server.StorageNote))
+            {
+                errors.Add("manifest: storage note is required.");
+            }
+
+            if (server.Settings is null || server.Settings.Count == 0)
+            {
+                errors.Add("manifest: at least one server setting is required.");
+            }
+            else
+            {
+                ValidateSettingEntries(
+                    "manifest: server setting entries must have non-blank names and values.",
+                    server.Settings,
+                    errors
+                );
+            }
         }
 
         PerfHostIdentity? host = environment.Host;
@@ -275,6 +293,21 @@ public static partial class PerfArtifactValidator
         }
         else
         {
+            if (string.IsNullOrWhiteSpace(host.OsDescription))
+            {
+                errors.Add("manifest: os description is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(host.ProcessArchitecture))
+            {
+                errors.Add("manifest: process architecture is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(host.DotnetVersion))
+            {
+                errors.Add("manifest: dotnet version is required.");
+            }
+
             if (string.IsNullOrWhiteSpace(host.CpuModel))
             {
                 errors.Add("manifest: cpu model is required.");
@@ -299,6 +332,31 @@ public static partial class PerfArtifactValidator
         if (environment.DriverVersions is null || environment.DriverVersions.Count == 0)
         {
             errors.Add("manifest: at least one driver version is required.");
+        }
+        else
+        {
+            ValidateSettingEntries(
+                "manifest: driver version entries must have non-blank names and values.",
+                environment.DriverVersions,
+                errors
+            );
+        }
+    }
+
+    private static void ValidateSettingEntries(
+        string message,
+        IReadOnlyList<PerfSetting> settings,
+        List<string> errors
+    )
+    {
+        bool anyInvalid = settings.Any(setting =>
+            setting is null
+            || string.IsNullOrWhiteSpace(setting.Name)
+            || string.IsNullOrWhiteSpace(setting.Value)
+        );
+        if (anyInvalid)
+        {
+            errors.Add(message);
         }
     }
 
@@ -350,6 +408,11 @@ public static partial class PerfArtifactValidator
     )
     {
         string at = $"results[{index}]";
+
+        if (!IsCanonicalProvider(row.Provider))
+        {
+            errors.Add($"{at}: provider '{row.Provider}' must be the canonical 'postgresql' or 'mssql'.");
+        }
 
         PerfRunIdentity? run = manifest?.Run;
         if (run is not null && row.Provider != run.Provider)
@@ -579,18 +642,17 @@ public static partial class PerfArtifactValidator
             _ => null,
         };
 
-    private static bool IsKnownProvider(string providerName)
-    {
-        try
-        {
-            PerfProviders.Parse(providerName ?? string.Empty);
-            return true;
-        }
-        catch (ArgumentException)
-        {
-            return false;
-        }
-    }
+    private static readonly string[] _canonicalProviders =
+    [
+        PerfProviders.ArtifactName(PerfProvider.Postgresql),
+        PerfProviders.ArtifactName(PerfProvider.Mssql),
+    ];
+
+    // Canonical lowercase artifact names are required rather than anything PerfProviders.Parse
+    // accepts, because the metric-side rules and cross-artifact comparisons match on exact
+    // strings; a mixed-case name would sail past both without an error.
+    private static bool IsCanonicalProvider(string? providerName) =>
+        providerName is not null && _canonicalProviders.Contains(providerName);
 
     private static bool HasUnredactedSecret(string connectionStringShape) =>
         SecretValueRegex()
