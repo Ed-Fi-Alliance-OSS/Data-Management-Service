@@ -56,7 +56,7 @@ internal static class ResultSamples
                 DbCpuMs: null,
                 DbElapsedMs: null
             ),
-            PlanFile: $"plans/pg.{scenarioId}.{pageSize}.explain.json",
+            PlanFile: $"plans/postgresql.{scenarioId}.{pageSize}.explain.json",
             PageSelectionSqlSha256: Sha256,
             RunnerCommit: RunnerCommit,
             SubjectCommit: SubjectCommit
@@ -86,7 +86,7 @@ internal static class ResultSamples
                 DbCpuMs: 5.0,
                 DbElapsedMs: 7.75
             ),
-            PlanFile: $"plans/mssql.{scenarioId}.{pageSize}.sqlplan",
+            PlanFile: $"plans/mssql.{scenarioId}.{pageSize}.plans.json",
             PageSelectionSqlSha256: Sha256,
             RunnerCommit: RunnerCommit,
             SubjectCommit: SubjectCommit
