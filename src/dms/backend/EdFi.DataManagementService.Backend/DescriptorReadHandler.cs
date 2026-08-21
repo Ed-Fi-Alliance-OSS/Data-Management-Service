@@ -580,6 +580,18 @@ internal sealed class DescriptorReadHandler(
 
         var rowsPage = (DescriptorQueryCandidateSelectionReadResult.CandidatePage)candidateReadResult;
 
+        // Resolved ahead of the empty check so both branches report the same continuation facts. A
+        // selection that returned nothing is still a selection that ran under an ordering, and a
+        // traditional page over a max-bearing change-version window cannot anchor a DocumentId
+        // continuation whether or not it selected rows. Deriving it in only the non-empty branch would
+        // leave the empty one on the permissive default and answer the same request differently from
+        // the regular-resource path.
+        var continuationBoundary = PageContinuationBoundary.For(
+            request.Paging,
+            _orderingPolicy.ResolveForLiveQuery(request.ChangeVersionRange),
+            SelectedMaximumOf(rowsPage.Page.Rows)
+        );
+
         if (rowsPage.Page.Rows.Count == 0)
         {
             QueryResult.QuerySuccess relationalSuccess = new(
@@ -590,19 +602,19 @@ internal sealed class DescriptorReadHandler(
                         rowsPage.Page.TotalCount,
                         "descriptor query"
                     )
-                    : null
-            );
+                    : null,
+                continuationBoundary.SelectedMaximum
+            )
+            {
+                AllowsDocumentIdContinuation = continuationBoundary.AllowsDocumentIdContinuation,
+            };
 
             return new DocumentCacheReadAccelerationQuerySelectionResult.Complete(relationalSuccess);
         }
 
         var candidatePage = CreateDescriptorReadAccelerationCandidatePage(
             rowsPage.Page,
-            PageContinuationBoundary.For(
-                request.Paging,
-                _orderingPolicy.ResolveForLiveQuery(request.ChangeVersionRange),
-                SelectedMaximumOf(rowsPage.Page.Rows)
-            ),
+            continuationBoundary,
             request.Paging.IncludesTotalCount
         );
 

@@ -2056,6 +2056,78 @@ public partial class Given_DescriptorReadHandler
             .Be(new PageContinuationBoundary(205L, AllowsDocumentIdContinuation: false));
     }
 
+    // An accelerated selection that returned no rows still ran under an ordering, so it answers the
+    // continuation question the same way a non-empty one does. Left on the permissive default, an empty
+    // windowed page would tell Core a walk had ended that could never have been continued at all.
+    [Test]
+    public async Task It_withholds_continuation_from_an_empty_windowed_descriptor_candidate_selection()
+    {
+        var capturedSuccess = await SelectEmptyDescriptorCandidatePageAsync(
+            new ChangeVersionRange(null, 900L)
+        );
+
+        capturedSuccess.EdfiDocs.Should().BeEmpty();
+        capturedSuccess.HighestSelectedDocumentId.Should().BeNull();
+        capturedSuccess.AllowsDocumentIdContinuation.Should().BeFalse();
+    }
+
+    // The unwindowed page really is ordered by DocumentId, so an empty selection there ends the walk.
+    // Withholding continuation from every empty page would erase that distinction.
+    [Test]
+    public async Task It_keeps_continuation_for_an_empty_unwindowed_descriptor_candidate_selection()
+    {
+        var capturedSuccess = await SelectEmptyDescriptorCandidatePageAsync(changeVersionRange: null);
+
+        capturedSuccess.EdfiDocs.Should().BeEmpty();
+        capturedSuccess.HighestSelectedDocumentId.Should().BeNull();
+        capturedSuccess.AllowsDocumentIdContinuation.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Drives the read-acceleration path to a candidate selection that returns no rows and hands back
+    /// the short-circuit success the selection completed with.
+    /// </summary>
+    private static async Task<QueryResult.QuerySuccess> SelectEmptyDescriptorCandidatePageAsync(
+        ChangeVersionRange? changeVersionRange
+    )
+    {
+        var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
+        ]);
+        QueryResult.QuerySuccess capturedSuccess = null!;
+
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(async call =>
+            {
+                var request = call.GetArgument<DocumentCacheReadAccelerationQueryRequest>(0)!;
+                var selectionResult = await request
+                    .SelectAuthorizedCandidatePage(call.GetArgument<CancellationToken>(1))
+                    .ConfigureAwait(false);
+                capturedSuccess = selectionResult
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.Complete>()
+                    .Which.Result.Should()
+                    .BeOfType<QueryResult.QuerySuccess>()
+                    .Subject;
+
+                return capturedSuccess;
+            });
+
+        var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
+
+        await sut.HandleQueryAsync(
+            CreateQueryRequest(SqlDialect.Pgsql, changeVersionRange: changeVersionRange)
+        );
+
+        return capturedSuccess;
+    }
+
     [Test]
     public async Task It_wraps_a_provider_error_raised_by_descriptor_custom_view_selected_page_fallback()
     {

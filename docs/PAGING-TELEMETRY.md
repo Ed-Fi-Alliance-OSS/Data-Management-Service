@@ -44,7 +44,7 @@ receives nothing from these instruments no matter how it is configured.
 | Instrument | Type | Unit | Recorded for |
 |---|---|---|---|
 | `edfi.dms.collection_paging.requests` | Counter | `{request}` | Every classified request, including those refused by parameter validation |
-| `edfi.dms.collection_paging.duration` | Histogram | `ms` | Requests that reached the database, so a refused request never contributes a microsecond-scale sample |
+| `edfi.dms.collection_paging.duration` | Histogram | `ms` | Every request where backend execution was attempted, so a request refused by parameter validation never contributes a microsecond-scale sample |
 | `edfi.dms.collection_paging.page_size.requested` | Histogram | `{item}` | Collection `GET` requests |
 | `edfi.dms.collection_paging.page_size.returned` | Histogram | `{item}` | Collection `GET` requests that produced a page |
 | `edfi.dms.collection_paging.partition_count.requested` | Histogram | `{partition}` | `partitions` requests |
@@ -100,7 +100,7 @@ is `unknown` only when the request was answered before the engine was resolved.
 |---|---|
 | `success` | A page or a boundary set was produced. Also covers a page served with documents that carries no continuation token, and a `partitions` request whose boundary command ran and found no ranges. |
 | `terminal_page` | A collection `GET` that **ends a cursor walk**: a continuation was possible for this page and none could be produced, so nothing follows it. Never reported for `partitions`, which has no successor to offer. |
-| `early_empty` | An empty result the API answered without issuing any selection command, so no database work was done. |
+| `early_empty` | An empty result the API answered without issuing any selection command. Selection is the work this skips; a request that also validates a custom view still issues that command first. |
 | `validation_rejected` | Parameter validation answered the request: a paging, partition-count, change-version, or resource-filter parameter was refused. |
 | `not_authorized` | Namespace authorization denied the request. |
 | `not_implemented` | The operation is intentionally unavailable for that resource. |
@@ -132,7 +132,10 @@ measuring how long the client waited before giving up.
 - **`duration`** — p50, p95, and p99, sliced by `paging_mode` and
   `command_category`. Keep `page_with_count` in its own bucket: requesting a
   total count is expected to be the slow shape, and averaging it together with
-  plain pages hides both.
+  plain pages hides both. Exclude `command_category=none` from read-latency
+  objectives: those samples time a backend attempt that issued no selection
+  command, so they are fast by construction and pull the percentiles of the
+  `page`, `page_with_count`, and `boundary` shapes down if mixed in.
 - **`page_size.requested` vs `page_size.returned`** — compare the two
   distributions. A persistent gap means pages are being trimmed after
   selection, either by authorization or by documents deleted between selection
