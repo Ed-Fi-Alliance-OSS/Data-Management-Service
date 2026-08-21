@@ -352,15 +352,13 @@ public class DataStoreModuleTests
             var response = await client.PutAsync(
                 "/v3/dataStores/1",
                 new StringContent(
-                    JsonSerializer.Serialize(
-                        new DataStoreUpdateCommand
-                        {
-                            // Id omitted - defaults to 0
-                            DataStoreType = "Production",
-                            Name = "Test Instance",
-                            ConnectionString = "Server=localhost;Database=TestDb;",
-                        }
-                    ),
+                    """
+                    {
+                        "dataStoreType": "Production",
+                        "name": "Test Instance",
+                        "connectionString": "Server=localhost;Database=TestDb;"
+                    }
+                    """,
                     Encoding.UTF8,
                     "application/json"
                 )
