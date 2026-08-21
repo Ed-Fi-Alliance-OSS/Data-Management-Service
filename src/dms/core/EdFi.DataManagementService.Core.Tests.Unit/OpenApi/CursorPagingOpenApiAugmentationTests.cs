@@ -967,6 +967,27 @@ public class CursorPagingOpenApiAugmentationTests
                 .WithMessage("*.get.responses.200' is not a JSON object*");
         }
 
+        /// <summary>
+        /// A header written beside a <c>$ref</c> is ignored by the consumers of a 3.0 document, so the
+        /// alternative to refusing is publishing a collection whose response contract silently omits the
+        /// cursor header.
+        /// </summary>
+        [Test]
+        public void It_should_refuse_a_referenced_success_response()
+        {
+            ApiSchemaDocumentNodes apiSchemaNodes = ApiSchemaNodes();
+            CoreCollectionGetFragment(apiSchemaNodes)["responses"]!.AsObject()["200"] = ResponseReference(
+                "AcademicWeeksCollection"
+            );
+
+            Action assemble = () => Assemble(apiSchemaNodes);
+
+            assemble
+                .Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage("*declares its success response by reference*");
+        }
+
         [Test]
         public void It_should_refuse_parameters_that_are_not_an_array()
         {

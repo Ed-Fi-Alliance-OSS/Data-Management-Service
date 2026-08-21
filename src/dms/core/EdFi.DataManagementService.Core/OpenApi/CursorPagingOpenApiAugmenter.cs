@@ -212,6 +212,11 @@ internal static class CursorPagingOpenApiAugmenter
     {
         string partitionPathKey = pathKey + PartitionsPathSuffix;
 
+        // Unlike the parameter reference, response header, and shared schema below, a pre-existing path is
+        // refused outright rather than accepted when structurally identical. A partitions operation states
+        // what this service implements — its operation identifier, its inherited failure contract, and the
+        // filters its request pipeline reads — so a path item authored elsewhere is a contract this service
+        // has not agreed to serve, whatever it contains.
         if (paths.ContainsKey(partitionPathKey))
         {
             throw new InvalidOperationException(
@@ -378,6 +383,14 @@ internal static class CursorPagingOpenApiAugmenter
         return !_partitionExcludedParameterNames.Contains(facts.EffectiveName);
     }
 
+    /// <summary>
+    /// Appends the cursor parameter reference, tolerating one already present in the identical shape and
+    /// refusing any other parameter publishing the same query name. The refusal is deliberate even though
+    /// the request pipeline is silent about the same collision: a resource declaring a query field spelled
+    /// like a cursor parameter simply cannot filter on it, and publishing the cursor meaning over the top
+    /// would advertise a contract the package did not author. Failing assembly is what surfaces the
+    /// collision instead of resolving it on the package author's behalf.
+    /// </summary>
     private static void AppendParameterReference(
         JsonArray collectionParameters,
         JsonObject componentParameters,
@@ -424,6 +437,17 @@ internal static class CursorPagingOpenApiAugmenter
             ["description"] = NextPageTokenHeaderDescription,
             ["schema"] = new JsonObject { ["type"] = "string" },
         };
+
+        // A sibling of $ref is ignored by the consumers of a 3.0 document, so writing the header beside one
+        // would publish a collection whose response contract silently omits it. Refusing is what keeps the
+        // published contract either complete or absent rather than quietly wrong.
+        if (successResponse["$ref"] is not null)
+        {
+            throw new InvalidOperationException(
+                $"The GET operation at path '{Sanitize(pathKey)}' declares its success response by "
+                    + "reference, so the cursor-paging response header cannot be published on it."
+            );
+        }
 
         if (successResponse["headers"] is null)
         {
