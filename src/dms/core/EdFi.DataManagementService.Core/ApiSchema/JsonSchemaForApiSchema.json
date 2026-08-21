@@ -18,6 +18,21 @@
             "type": "object",
             "properties": {
                 "resources": {
+                    "$ref": "#/definitions/openApiDocument"
+                },
+                "descriptors": {
+                    "$ref": "#/definitions/openApiDocument"
+                },
+                "changeQueries": {
+                    "$ref": "#/definitions/openApiDocument"
+                }
+            },
+            "additionalProperties": false
+        },
+        "coreOpenApiBaseDocuments": {
+            "type": "object",
+            "properties": {
+                "resources": {
                     "$ref": "#/definitions/openApiCursorBaseDocument"
                 },
                 "descriptors": {
@@ -268,7 +283,28 @@
                 "resourceNameMapping",
                 "resourceSchemas"
             ],
-            "additionalProperties": false
+            "additionalProperties": false,
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "isExtensionProject": {
+                                "const": false
+                            }
+                        },
+                        "required": [
+                            "isExtensionProject"
+                        ]
+                    },
+                    "then": {
+                        "properties": {
+                            "openApiBaseDocuments": {
+                                "$ref": "#/definitions/coreOpenApiBaseDocuments"
+                            }
+                        }
+                    }
+                }
+            ]
         },
         "JsonPaths": {
             "type": "array",

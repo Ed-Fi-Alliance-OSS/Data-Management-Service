@@ -48,6 +48,24 @@ internal class ApiSchemaValidator(ILogger<ApiSchemaValidator> _logger) : IApiSch
     });
 
     /// <summary>
+    /// The JSON Schema keyword that selects a branch rather than asserting anything about the document.
+    /// </summary>
+    private const string ConditionSelectorKeyword = "if";
+
+    /// <summary>
+    /// Whether an evaluation result came from inside a condition selector. Such a result reports which
+    /// branch was chosen, not whether the document is valid: a failing <c>if</c> means the <c>then</c>
+    /// branch does not apply, and the assertions that do apply are reported by the selected branch. List
+    /// output flattens every evaluated node, so these have to be excluded by evaluation path rather than
+    /// by overall validity, and only the exact keyword segment counts — a <c>then</c> or <c>else</c>
+    /// result, or an instance path that happens to contain the same text, is a real failure.
+    /// </summary>
+    private static bool IsConditionSelectorResult(EvaluationResults detail) =>
+        detail.EvaluationPath.Any(segment =>
+            string.Equals(segment.ToString(), ConditionSelectorKeyword, StringComparison.Ordinal)
+        );
+
+    /// <summary>
     /// Converts JSON Schema evaluation results into a list of validation failures with property paths and error messages
     /// </summary>
     private static List<SchemaValidationFailure> ValidationErrorsFrom(EvaluationResults results)
@@ -56,6 +74,11 @@ internal class ApiSchemaValidator(ILogger<ApiSchemaValidator> _logger) : IApiSch
 
         foreach (var detail in results.Details)
         {
+            if (IsConditionSelectorResult(detail))
+            {
+                continue;
+            }
+
             string propertyPathAndName = "$.";
 
             if (detail.InstanceLocation.Count != 0)

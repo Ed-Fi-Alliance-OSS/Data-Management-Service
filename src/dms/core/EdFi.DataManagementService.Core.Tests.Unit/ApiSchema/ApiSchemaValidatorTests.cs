@@ -468,8 +468,8 @@ public class ApiSchemaValidatorTests
                     "educationOrganizationTypes": [],
                     "isExtensionProject": true,
                     "openApiBaseDocuments": {
-                      "resources": { "components": { "parameters": { "limit": { "schema": {} }, "pageToken": { "schema": {} }, "pageSize": { "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
-                      "descriptors": { "components": { "parameters": { "limit": { "schema": {} }, "pageToken": { "schema": {} }, "pageSize": { "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
+                      "resources": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                      "descriptors": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
                     },
                     "projectName": "sample-extension",
                     "projectEndpointName": "sample-extension",
@@ -664,6 +664,98 @@ public class ApiSchemaValidatorTests
         public void It_has_no_validation_errors()
         {
             _validator!.Validate(ApiSchemaWithCursorComponents()).Count.Should().Be(0);
+        }
+    }
+
+    /// <summary>
+    /// Only the core project's resource and descriptor base documents are assembled; an extension reaches
+    /// assembly through its fragments, and its own base documents are never read. Holding an extension to
+    /// the cursor-paging requirements would refuse startup over content nothing consumes.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Extension_Project_Whose_Base_Documents_Omit_Components : ApiSchemaValidatorTests
+    {
+        private readonly JsonNode _apiSchemaRootNode =
+            JsonNode.Parse(
+                """
+                {
+                  "apiSchemaVersion": "1.0.0",
+                  "projectSchema": {
+                    "caseInsensitiveEndpointNameMapping": {},
+                    "abstractResources": {},
+                    "description": "Sample Extension",
+                    "educationOrganizationHierarchy": {},
+                    "educationOrganizationTypes": [],
+                    "isExtensionProject": true,
+                    "openApiBaseDocuments": {
+                      "resources": { "openapi": "3.0.0", "paths": {} },
+                      "descriptors": { "openapi": "3.0.0", "paths": {} }
+                    },
+                    "projectName": "sample-extension",
+                    "projectEndpointName": "sample-extension",
+                    "projectVersion": "1.0.0",
+                    "resourceNameMapping": {},
+                    "resourceSchemas": {}
+                  }
+                }
+                """
+            ) ?? new JsonObject();
+
+        [Test]
+        public void It_has_no_validation_errors()
+        {
+            _validator!.Validate(_apiSchemaRootNode).Count.Should().Be(0);
+        }
+    }
+
+    /// <summary>
+    /// Excluding the condition selector's own result must not turn an extension into an unvalidated
+    /// document: every assertion outside that selector still applies to it.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Extension_Project_With_An_Invalid_Identity_Json_Path : ApiSchemaValidatorTests
+    {
+        private readonly JsonNode _apiSchemaRootNode =
+            JsonNode.Parse(
+                """
+                {
+                  "apiSchemaVersion": "1.0.0",
+                  "projectSchema": {
+                    "caseInsensitiveEndpointNameMapping": {},
+                    "abstractResources": {
+                      "educationOrg": {
+                        "identityJsonPaths": [
+                          "educationOrganizationId"
+                        ],
+                        "openApiFragment": {}
+                      }
+                    },
+                    "description": "Sample Extension",
+                    "educationOrganizationHierarchy": {},
+                    "educationOrganizationTypes": [],
+                    "isExtensionProject": true,
+                    "openApiBaseDocuments": {
+                      "resources": { "openapi": "3.0.0", "paths": {} },
+                      "descriptors": { "openapi": "3.0.0", "paths": {} }
+                    },
+                    "projectName": "sample-extension",
+                    "projectEndpointName": "sample-extension",
+                    "projectVersion": "1.0.0",
+                    "resourceNameMapping": {},
+                    "resourceSchemas": {}
+                  }
+                }
+                """
+            ) ?? new JsonObject();
+
+        [Test]
+        public void It_has_validation_errors()
+        {
+            var response = _validator!.Validate(_apiSchemaRootNode);
+            response.Count.Should().Be(1);
+            response[0].FailurePath.Value.Should().Contain("educationOrg.identityJsonPaths");
         }
     }
 

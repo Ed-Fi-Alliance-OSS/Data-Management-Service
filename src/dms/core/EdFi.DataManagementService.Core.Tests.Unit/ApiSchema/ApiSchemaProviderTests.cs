@@ -1027,24 +1027,8 @@ internal static class ApiSchemaProviderTestFixtures
         var schema = CreateApiSchema(projectName, projectEndpointName, isExtensionProject);
         schema["projectSchema"]!.AsObject()["openApiBaseDocuments"] = new JsonObject
         {
-            ["resources"] = new JsonObject
-            {
-                ["openapi"] = "3.0.1",
-                ["paths"] = new JsonObject(),
-                ["components"] = new JsonObject
-                {
-                    ["parameters"] = ApiSchemaBuilder.CursorPagingParameterComponents(),
-                },
-            },
-            ["descriptors"] = new JsonObject
-            {
-                ["openapi"] = "3.0.1",
-                ["paths"] = new JsonObject(),
-                ["components"] = new JsonObject
-                {
-                    ["parameters"] = ApiSchemaBuilder.CursorPagingParameterComponents(),
-                },
-            },
+            ["resources"] = BaseDocument(isExtensionProject),
+            ["descriptors"] = BaseDocument(isExtensionProject),
             ["changeQueries"] = new JsonObject
             {
                 ["openapi"] = "3.0.1",
@@ -1059,6 +1043,25 @@ internal static class ApiSchemaProviderTestFixtures
         };
 
         return schema;
+    }
+
+    /// <summary>
+    /// Only a core project's resource and descriptor base documents are assembled, so only a core project
+    /// is required to declare the cursor-paging parameter components. An extension keeps the minimal shape.
+    /// </summary>
+    private static JsonObject BaseDocument(bool isExtensionProject)
+    {
+        JsonObject baseDocument = new() { ["openapi"] = "3.0.1", ["paths"] = new JsonObject() };
+
+        if (!isExtensionProject)
+        {
+            baseDocument["components"] = new JsonObject
+            {
+                ["parameters"] = ApiSchemaBuilder.CursorPagingParameterComponents(),
+            };
+        }
+
+        return baseDocument;
     }
 
     public static string GetCoreEndpointName(ApiSchemaDocumentNodes nodes)
