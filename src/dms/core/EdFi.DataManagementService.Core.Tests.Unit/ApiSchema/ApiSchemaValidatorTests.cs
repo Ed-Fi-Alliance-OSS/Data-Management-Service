@@ -139,8 +139,8 @@ public class ApiSchemaValidatorTests
                     "educationOrganizationTypes": [],
                     "isExtensionProject": false,
                     "openApiBaseDocuments": {
-                      "resources": { "components": { "schemas": {}, "parameters": { "limit": { "schema": {} }, "pageToken": { "name": "pageToken", "schema": {} }, "pageSize": { "name": "pageSize", "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
-                      "descriptors": { "components": { "schemas": {}, "parameters": { "limit": { "schema": {} }, "pageToken": { "name": "pageToken", "schema": {} }, "pageSize": { "name": "pageSize", "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
+                      "resources": { "components": { "schemas": {}, "parameters": { "limit": { "name": "limit", "in": "query", "schema": {} }, "pageToken": { "name": "pageToken", "in": "query", "schema": {} }, "pageSize": { "name": "pageSize", "in": "query", "schema": {} }, "numberOfPartitions": { "name": "number", "in": "query", "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                      "descriptors": { "components": { "schemas": {}, "parameters": { "limit": { "name": "limit", "in": "query", "schema": {} }, "pageToken": { "name": "pageToken", "in": "query", "schema": {} }, "pageSize": { "name": "pageSize", "in": "query", "schema": {} }, "numberOfPartitions": { "name": "number", "in": "query", "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
                     },
                     "projectName": "ed-fi",
                     "projectEndpointName": "ed-fi",
@@ -186,8 +186,8 @@ public class ApiSchemaValidatorTests
                     "educationOrganizationTypes": [],
                     "isExtensionProject": false,
                     "openApiBaseDocuments": {
-                      "resources": { "components": { "schemas": {}, "parameters": { "limit": { "schema": {} }, "pageToken": { "name": "pageToken", "schema": {} }, "pageSize": { "name": "pageSize", "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
-                      "descriptors": { "components": { "schemas": {}, "parameters": { "limit": { "schema": {} }, "pageToken": { "name": "pageToken", "schema": {} }, "pageSize": { "name": "pageSize", "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                      "resources": { "components": { "schemas": {}, "parameters": { "limit": { "name": "limit", "in": "query", "schema": {} }, "pageToken": { "name": "pageToken", "in": "query", "schema": {} }, "pageSize": { "name": "pageSize", "in": "query", "schema": {} }, "numberOfPartitions": { "name": "number", "in": "query", "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                      "descriptors": { "components": { "schemas": {}, "parameters": { "limit": { "name": "limit", "in": "query", "schema": {} }, "pageToken": { "name": "pageToken", "in": "query", "schema": {} }, "pageSize": { "name": "pageSize", "in": "query", "schema": {} }, "numberOfPartitions": { "name": "number", "in": "query", "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
                       "changeQueries": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
                     },
                     "projectName": "ed-fi",
@@ -226,8 +226,8 @@ public class ApiSchemaValidatorTests
                     "educationOrganizationTypes": [],
                     "isExtensionProject": false,
                     "openApiBaseDocuments": {
-                      "resources": { "components": { "schemas": {}, "parameters": { "limit": { "schema": {} }, "pageToken": { "name": "pageToken", "schema": {} }, "pageSize": { "name": "pageSize", "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
-                      "descriptors": { "components": { "schemas": {}, "parameters": { "limit": { "schema": {} }, "pageToken": { "name": "pageToken", "schema": {} }, "pageSize": { "name": "pageSize", "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
+                      "resources": { "components": { "schemas": {}, "parameters": { "limit": { "name": "limit", "in": "query", "schema": {} }, "pageToken": { "name": "pageToken", "in": "query", "schema": {} }, "pageSize": { "name": "pageSize", "in": "query", "schema": {} }, "numberOfPartitions": { "name": "number", "in": "query", "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                      "descriptors": { "components": { "schemas": {}, "parameters": { "limit": { "name": "limit", "in": "query", "schema": {} }, "pageToken": { "name": "pageToken", "in": "query", "schema": {} }, "pageSize": { "name": "pageSize", "in": "query", "schema": {} }, "numberOfPartitions": { "name": "number", "in": "query", "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
                     },
                     "projectName": "ed-fi",
                     "projectEndpointName": "ed-fi",
@@ -282,8 +282,8 @@ public class ApiSchemaValidatorTests
                     "educationOrganizationTypes": [],
                     "isExtensionProject": false,
                     "openApiBaseDocuments": {
-                      "resources": { "components": { "schemas": {}, "parameters": { "limit": { "schema": {} }, "pageToken": { "name": "pageToken", "schema": {} }, "pageSize": { "name": "pageSize", "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
-                      "descriptors": { "components": { "schemas": {}, "parameters": { "limit": { "schema": {} }, "pageToken": { "name": "pageToken", "schema": {} }, "pageSize": { "name": "pageSize", "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
+                      "resources": { "components": { "schemas": {}, "parameters": { "limit": { "name": "limit", "in": "query", "schema": {} }, "pageToken": { "name": "pageToken", "in": "query", "schema": {} }, "pageSize": { "name": "pageSize", "in": "query", "schema": {} }, "numberOfPartitions": { "name": "number", "in": "query", "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                      "descriptors": { "components": { "schemas": {}, "parameters": { "limit": { "name": "limit", "in": "query", "schema": {} }, "pageToken": { "name": "pageToken", "in": "query", "schema": {} }, "pageSize": { "name": "pageSize", "in": "query", "schema": {} }, "numberOfPartitions": { "name": "number", "in": "query", "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
                     },
                     "projectName": "ed-fi",
                     "projectEndpointName": "ed-fi",
@@ -343,8 +343,8 @@ public class ApiSchemaValidatorTests
                     "educationOrganizationTypes": [],
                     "isExtensionProject": false,
                     "openApiBaseDocuments": {
-                      "resources": { "components": { "schemas": {}, "parameters": { "limit": { "schema": {} }, "pageToken": { "name": "pageToken", "schema": {} }, "pageSize": { "name": "pageSize", "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
-                      "descriptors": { "components": { "schemas": {}, "parameters": { "limit": { "schema": {} }, "pageToken": { "name": "pageToken", "schema": {} }, "pageSize": { "name": "pageSize", "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
+                      "resources": { "components": { "schemas": {}, "parameters": { "limit": { "name": "limit", "in": "query", "schema": {} }, "pageToken": { "name": "pageToken", "in": "query", "schema": {} }, "pageSize": { "name": "pageSize", "in": "query", "schema": {} }, "numberOfPartitions": { "name": "number", "in": "query", "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                      "descriptors": { "components": { "schemas": {}, "parameters": { "limit": { "name": "limit", "in": "query", "schema": {} }, "pageToken": { "name": "pageToken", "in": "query", "schema": {} }, "pageSize": { "name": "pageSize", "in": "query", "schema": {} }, "numberOfPartitions": { "name": "number", "in": "query", "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
                     },
                     "projectName": "ed-fi",
                     "projectEndpointName": "ed-fi",
@@ -400,8 +400,8 @@ public class ApiSchemaValidatorTests
                     "educationOrganizationTypes": [],
                     "isExtensionProject": false,
                     "openApiBaseDocuments": {
-                      "resources": { "components": { "schemas": {}, "parameters": { "limit": { "schema": {} }, "pageToken": { "name": "pageToken", "schema": {} }, "pageSize": { "name": "pageSize", "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
-                      "descriptors": { "components": { "schemas": {}, "parameters": { "limit": { "schema": {} }, "pageToken": { "name": "pageToken", "schema": {} }, "pageSize": { "name": "pageSize", "schema": {} }, "numberOfPartitions": { "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
+                      "resources": { "components": { "schemas": {}, "parameters": { "limit": { "name": "limit", "in": "query", "schema": {} }, "pageToken": { "name": "pageToken", "in": "query", "schema": {} }, "pageSize": { "name": "pageSize", "in": "query", "schema": {} }, "numberOfPartitions": { "name": "number", "in": "query", "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                      "descriptors": { "components": { "schemas": {}, "parameters": { "limit": { "name": "limit", "in": "query", "schema": {} }, "pageToken": { "name": "pageToken", "in": "query", "schema": {} }, "pageSize": { "name": "pageSize", "in": "query", "schema": {} }, "numberOfPartitions": { "name": "number", "in": "query", "schema": {} } } }, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
                     },
                     "projectName": "ed-fi",
                     "projectEndpointName": "ed-fi",
@@ -499,6 +499,9 @@ public class ApiSchemaValidatorTests
         string? componentWithoutSchema = null,
         string? componentWithoutName = null,
         string? componentWithBlankName = null,
+        string? componentWithWrongName = null,
+        string? componentWithoutLocation = null,
+        string? componentWithWrongLocation = null,
         bool omitPaths = false,
         bool omitComponentSchemas = false
     )
@@ -507,18 +510,28 @@ public class ApiSchemaValidatorTests
         {
             JsonObject parameters = new();
 
-            foreach (string componentName in CursorParameterComponentNames)
+            foreach ((string componentName, string publishedName) in CursorParameterQueryNames)
             {
                 if (componentName == omittedComponent)
                 {
                     continue;
                 }
 
-                JsonObject component = new() { ["in"] = "query" };
+                JsonObject component = new();
+
+                if (componentName != componentWithoutLocation)
+                {
+                    component["in"] = componentName == componentWithWrongLocation ? "header" : "query";
+                }
 
                 if (componentName != componentWithoutName)
                 {
-                    component["name"] = componentName == componentWithBlankName ? "   " : componentName;
+                    component["name"] = componentName switch
+                    {
+                        _ when componentName == componentWithBlankName => "   ",
+                        _ when componentName == componentWithWrongName => componentName + "Renamed",
+                        _ => publishedName,
+                    };
                 }
 
                 if (componentName != componentWithoutSchema)
@@ -576,12 +589,17 @@ public class ApiSchemaValidatorTests
         };
     }
 
-    private static readonly string[] CursorParameterComponentNames =
+    /// <summary>
+    /// Each required parameter component and the query name it must publish. The partition count is the
+    /// one whose component key and query name differ, which is what makes naming a component after its
+    /// key an easy mistake to ship.
+    /// </summary>
+    private static readonly (string ComponentName, string PublishedName)[] CursorParameterQueryNames =
     [
-        "limit",
-        "pageToken",
-        "pageSize",
-        "numberOfPartitions",
+        ("limit", "limit"),
+        ("pageToken", "pageToken"),
+        ("pageSize", "pageSize"),
+        ("numberOfPartitions", "number"),
     ];
 
     /// <summary>
@@ -841,6 +859,139 @@ public class ApiSchemaValidatorTests
                 .Contain(
                     "$.projectSchema.openApiBaseDocuments.resources.components.parameters.pageSize.name"
                 );
+        }
+    }
+
+    /// <summary>
+    /// Assembly publishes a reference to each of these components, so a component naming anything other
+    /// than the query name the request pipeline reads advertises a parameter the service will ignore.
+    /// Wrong metadata on the published contract is worse than absent metadata, because a generated client
+    /// sends the advertised query string and silently gets a different result set.
+    /// </summary>
+    [TestFixture("limit")]
+    [TestFixture("pageToken")]
+    [TestFixture("pageSize")]
+    [TestFixture("numberOfPartitions")]
+    [Parallelizable]
+    public class Given_A_Cursor_Parameter_Component_With_The_Wrong_Query_Name(string _componentName)
+        : ApiSchemaValidatorTests
+    {
+        private List<SchemaValidationFailure> _failures = [];
+
+        [SetUp]
+        public void Arrange()
+        {
+            _failures = _validator!.Validate(
+                ApiSchemaWithCursorComponents(componentWithWrongName: _componentName)
+            );
+        }
+
+        [Test]
+        public void It_has_validation_errors()
+        {
+            _failures.Should().NotBeEmpty();
+        }
+
+        [Test]
+        public void It_names_the_offending_component()
+        {
+            _failures
+                .Select(failure => failure.FailurePath.Value)
+                .Should()
+                .Contain(
+                    $"$.projectSchema.openApiBaseDocuments.resources.components.parameters.{_componentName}.name"
+                );
+        }
+    }
+
+    /// <summary>
+    /// The component key is numberOfPartitions but the query name is number, so naming the component
+    /// after its own key is the plausible mistake this control exists to reject.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Partition_Count_Component_Named_After_Its_Key : ApiSchemaValidatorTests
+    {
+        [Test]
+        public void It_has_validation_errors()
+        {
+            JsonNode apiSchemaRootNode = ApiSchemaWithCursorComponents();
+            apiSchemaRootNode["projectSchema"]!["openApiBaseDocuments"]!["resources"]!["components"]![
+                "parameters"
+            ]!["numberOfPartitions"]!["name"] = "numberOfPartitions";
+
+            _validator!.Validate(apiSchemaRootNode).Should().NotBeEmpty();
+        }
+    }
+
+    /// <summary>
+    /// Every published cursor parameter is a query parameter. A component with no location, or one
+    /// carried somewhere else, assembles into an invalid or misleading OpenAPI Parameter Object.
+    /// </summary>
+    [TestFixture("limit")]
+    [TestFixture("pageToken")]
+    [TestFixture("pageSize")]
+    [TestFixture("numberOfPartitions")]
+    [Parallelizable]
+    public class Given_A_Cursor_Parameter_Component_Without_A_Location(string _componentName)
+        : ApiSchemaValidatorTests
+    {
+        private List<SchemaValidationFailure> _failures = [];
+
+        [SetUp]
+        public void Arrange()
+        {
+            _failures = _validator!.Validate(
+                ApiSchemaWithCursorComponents(componentWithoutLocation: _componentName)
+            );
+        }
+
+        [Test]
+        public void It_has_validation_errors()
+        {
+            _failures.Should().NotBeEmpty();
+        }
+
+        [Test]
+        public void It_names_the_offending_component()
+        {
+            _failures
+                .Select(failure => failure.FailurePath.Value)
+                .Should()
+                .Contain(
+                    $"$.projectSchema.openApiBaseDocuments.resources.components.parameters.{_componentName}"
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Cursor_Parameter_Component_Carried_Somewhere_Other_Than_The_Query
+        : ApiSchemaValidatorTests
+    {
+        private List<SchemaValidationFailure> _failures = [];
+
+        [SetUp]
+        public void Arrange()
+        {
+            _failures = _validator!.Validate(
+                ApiSchemaWithCursorComponents(componentWithWrongLocation: "pageToken")
+            );
+        }
+
+        [Test]
+        public void It_has_validation_errors()
+        {
+            _failures.Should().NotBeEmpty();
+        }
+
+        [Test]
+        public void It_names_the_location()
+        {
+            _failures
+                .Select(failure => failure.FailurePath.Value)
+                .Should()
+                .Contain("$.projectSchema.openApiBaseDocuments.resources.components.parameters.pageToken.in");
         }
     }
 

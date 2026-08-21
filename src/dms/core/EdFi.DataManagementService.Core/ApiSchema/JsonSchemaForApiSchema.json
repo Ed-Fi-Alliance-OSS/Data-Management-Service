@@ -91,16 +91,16 @@
             "type": "object",
             "properties": {
                 "limit": {
-                    "$ref": "#/definitions/openApiCursorParameter"
+                    "$ref": "#/definitions/openApiLimitParameter"
                 },
                 "pageToken": {
-                    "$ref": "#/definitions/openApiNamedCursorParameter"
+                    "$ref": "#/definitions/openApiPageTokenParameter"
                 },
                 "pageSize": {
-                    "$ref": "#/definitions/openApiNamedCursorParameter"
+                    "$ref": "#/definitions/openApiPageSizeParameter"
                 },
                 "numberOfPartitions": {
-                    "$ref": "#/definitions/openApiCursorParameter"
+                    "$ref": "#/definitions/openApiNumberOfPartitionsParameter"
                 }
             },
             "required": [
@@ -110,23 +110,14 @@
                 "numberOfPartitions"
             ]
         },
-        "openApiCursorParameter": {
-            "type": "object",
-            "properties": {
-                "schema": {
-                    "type": "object"
-                }
-            },
-            "required": [
-                "schema"
-            ]
-        },
-        "openApiNamedCursorParameter": {
+        "openApiLimitParameter": {
             "type": "object",
             "properties": {
                 "name": {
-                    "type": "string",
-                    "pattern": "\\S"
+                    "const": "limit"
+                },
+                "in": {
+                    "const": "query"
                 },
                 "schema": {
                     "type": "object"
@@ -134,6 +125,64 @@
             },
             "required": [
                 "name",
+                "in",
+                "schema"
+            ]
+        },
+        "openApiPageTokenParameter": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "const": "pageToken"
+                },
+                "in": {
+                    "const": "query"
+                },
+                "schema": {
+                    "type": "object"
+                }
+            },
+            "required": [
+                "name",
+                "in",
+                "schema"
+            ]
+        },
+        "openApiPageSizeParameter": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "const": "pageSize"
+                },
+                "in": {
+                    "const": "query"
+                },
+                "schema": {
+                    "type": "object"
+                }
+            },
+            "required": [
+                "name",
+                "in",
+                "schema"
+            ]
+        },
+        "openApiNumberOfPartitionsParameter": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "const": "number"
+                },
+                "in": {
+                    "const": "query"
+                },
+                "schema": {
+                    "type": "object"
+                }
+            },
+            "required": [
+                "name",
+                "in",
                 "schema"
             ]
         },

@@ -674,6 +674,86 @@ public class CursorPagingOpenApiAugmentationTests
                 .WithMessage($"*$.components.parameters.{componentName}' not found*");
         }
 
+        /// <summary>
+        /// The CLI generator builds this same object with no ApiSchema validation in front of it, so
+        /// assembly has to reject a parameter contract the request pipeline would not honor rather than
+        /// publish it.
+        /// </summary>
+        [TestCase("limit", "limit")]
+        [TestCase("pageToken", "pageToken")]
+        [TestCase("pageSize", "pageSize")]
+        [TestCase("numberOfPartitions", "number")]
+        public void It_should_refuse_a_parameter_component_with_the_wrong_query_name(
+            string componentName,
+            string publishedName
+        )
+        {
+            ApiSchemaDocumentNodes apiSchemaNodes = ApiSchemaNodes();
+            ResourcesBaseDocument(apiSchemaNodes)["components"]!["parameters"]![componentName]!["name"] =
+                publishedName + "Renamed";
+
+            Action assemble = () => Assemble(apiSchemaNodes);
+
+            assemble
+                .Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage($"*publishes the query name*but the request pipeline reads '{publishedName}'*");
+        }
+
+        /// <summary>
+        /// The partition count component is keyed numberOfPartitions and published as number, so naming
+        /// it after its own key is the plausible authoring mistake.
+        /// </summary>
+        [Test]
+        public void It_should_refuse_the_partition_count_named_after_its_component_key()
+        {
+            ApiSchemaDocumentNodes apiSchemaNodes = ApiSchemaNodes();
+            ResourcesBaseDocument(apiSchemaNodes)["components"]!["parameters"]!["numberOfPartitions"]![
+                "name"
+            ] = "numberOfPartitions";
+
+            Action assemble = () => Assemble(apiSchemaNodes);
+
+            assemble
+                .Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage("*but the request pipeline reads 'number'*");
+        }
+
+        [TestCase("limit")]
+        [TestCase("pageToken")]
+        [TestCase("pageSize")]
+        [TestCase("numberOfPartitions")]
+        public void It_should_refuse_a_parameter_component_without_a_location(string componentName)
+        {
+            ApiSchemaDocumentNodes apiSchemaNodes = ApiSchemaNodes();
+            ResourcesBaseDocument(apiSchemaNodes)["components"]!["parameters"]![componentName]!
+                .AsObject()
+                .Remove("in");
+
+            Action assemble = () => Assemble(apiSchemaNodes);
+
+            assemble
+                .Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage($"*$.components.parameters.{componentName}' is carried in*");
+        }
+
+        [Test]
+        public void It_should_refuse_a_parameter_component_carried_outside_the_query()
+        {
+            ApiSchemaDocumentNodes apiSchemaNodes = ApiSchemaNodes();
+            ResourcesBaseDocument(apiSchemaNodes)["components"]!["parameters"]!["pageToken"]!["in"] =
+                "header";
+
+            Action assemble = () => Assemble(apiSchemaNodes);
+
+            assemble
+                .Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage("*is carried in 'header'*reads it from the 'query' location*");
+        }
+
         [Test]
         public void It_should_refuse_a_parameter_component_without_a_schema()
         {

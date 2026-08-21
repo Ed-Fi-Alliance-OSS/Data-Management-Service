@@ -89,6 +89,16 @@ internal static class CursorPagingOpenApiAugmenter
     ];
 
     /// <summary>
+    /// The query name each required component must publish, spelled from the request-pipeline validators
+    /// rather than from a second copy. A published reference to a component naming anything else would
+    /// advertise a query parameter the pipeline does not honor, which is worse than publishing nothing.
+    /// Note that the component key and the query name differ for the partition count: the component is
+    /// <c>numberOfPartitions</c> and the parameter it publishes is <c>number</c>.
+    /// </summary>
+    private static readonly FrozenDictionary<string, string> _requiredParameterComponentNames =
+        BuildRequiredParameterComponentNames();
+
+    /// <summary>
     /// The parameter components whose published default and maximum are the runtime maximum page size.
     /// </summary>
     private static readonly string[] _pageSizeBoundedComponents = [LimitComponent, PageSizeComponent];
@@ -443,6 +453,29 @@ internal static class CursorPagingOpenApiAugmenter
             string componentPath = $"{ParametersPath}.{componentName}";
             JsonObject component = RequireObject(componentParameters[componentName], componentPath);
             RequireObject(component["schema"], $"{componentPath}.schema");
+
+            string expectedName = _requiredParameterComponentNames[componentName];
+            string publishedName = RequireName(component["name"], componentPath);
+
+            if (!string.Equals(publishedName, expectedName, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Parameter component at '{componentPath}' publishes the query name "
+                        + $"'{Sanitize(publishedName)}', but the request pipeline reads '{expectedName}'. "
+                        + "Cursor-paging assembly will not publish a parameter the pipeline does not honor."
+                );
+            }
+
+            string? location = StringValue(component["in"]);
+
+            if (!string.Equals(location, QueryParameterLocation, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Parameter component at '{componentPath}' is carried in "
+                        + $"'{Sanitize(location ?? "(none)")}', but the request pipeline reads it from the "
+                        + $"'{QueryParameterLocation}' location."
+                );
+            }
         }
     }
 
@@ -615,6 +648,19 @@ internal static class CursorPagingOpenApiAugmenter
         ];
 
         return changeVersionNames.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static FrozenDictionary<string, string> BuildRequiredParameterComponentNames()
+    {
+        Dictionary<string, string> componentNames = new(StringComparer.Ordinal)
+        {
+            [LimitComponent] = CursorRequestValidator.LimitParameter,
+            [PageTokenComponent] = CursorRequestValidator.PageTokenParameter,
+            [PageSizeComponent] = CursorRequestValidator.PageSizeParameter,
+            [NumberOfPartitionsComponent] = PartitionRequestValidator.NumberParameter,
+        };
+
+        return componentNames.ToFrozenDictionary(StringComparer.Ordinal);
     }
 
     private static FrozenSet<string> BuildPartitionExcludedParameterNames()
