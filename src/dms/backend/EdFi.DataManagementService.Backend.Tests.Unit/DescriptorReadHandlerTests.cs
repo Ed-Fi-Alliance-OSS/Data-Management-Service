@@ -1451,6 +1451,7 @@ public partial class Given_DescriptorReadHandler
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
         success.EdfiDocs.Should().BeEmpty();
         success.TotalCount.Should().Be(totalCount ? 0 : null);
+        success.SelectionSkipped.Should().BeTrue();
         selectionResult.Should().BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.Complete>();
         commandExecutor.Commands.Should().BeEmpty();
         A.CallTo(() =>
@@ -1510,6 +1511,10 @@ public partial class Given_DescriptorReadHandler
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
         success.EdfiDocs.Should().BeEmpty();
         success.TotalCount.Should().Be(totalCount ? 7 : null);
+
+        // The candidate command executed and selected nothing. An empty body alone must never be read as
+        // a skipped selection, or a normal empty page would be reported as costing no database work.
+        success.SelectionSkipped.Should().BeFalse();
         selectionResult.Should().BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.Complete>();
         RelationalCommand command = commandExecutor.Commands.Should().ContainSingle().Subject;
         AssertDescriptorCandidateCommandOmitsBodyColumns(command);
@@ -1629,6 +1634,7 @@ public partial class Given_DescriptorReadHandler
 
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
         success.EdfiDocs.Should().BeEmpty();
+        success.SelectionSkipped.Should().BeTrue();
         commandExecutor
             .Commands.Select(command => command.CommandText)
             .Should()

@@ -217,6 +217,10 @@ public class Given_DocumentCacheReadResponseShaper
         success.TotalCount.Should().Be(7);
         success.HighestSelectedDocumentId.Should().Be(346);
         success.AllowsDocumentIdContinuation.Should().BeTrue();
+
+        // A page answered from cache still selected its candidates with a command, so it reports the same
+        // selection fact the relational path would.
+        success.SelectionSkipped.Should().BeFalse();
         success
             .EdfiDocs.Select(document => document!["name"]!.GetValue<string>())
             .Should()
