@@ -1557,7 +1557,6 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
 
         triggerBody.Should().NotContain("IdentityVersion");
         triggerBody.Should().NotContain("IdentityLastModifiedAt");
-        triggerBody.Should().NotContain("UPDATE(");
     }
 
     [Test]
@@ -1668,10 +1667,14 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
     /// <see cref="Given_RelationalModelDdlEmitter_With_TrackedChange_Attached_Resource_Mssql.It_should_place_tombstone_branch_after_mirror_update_block"/>.
     /// </summary>
     [Test]
-    public void It_should_keep_the_mirror_guard_and_identity_stamp_in_order_after_the_guard()
+    public void It_should_keep_the_mirror_guard_after_the_content_stamp_guard()
     {
         var triggerBody = GetSchoolStampTriggerBody();
 
+        var contentGuardStart = triggerBody.IndexOf(
+            "IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE(",
+            StringComparison.Ordinal
+        );
         var mirrorGuardStart = triggerBody.IndexOf(
             "IF EXISTS (SELECT 1 FROM @stamped)",
             StringComparison.Ordinal
@@ -1681,8 +1684,10 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
             StringComparison.Ordinal
         );
 
+        contentGuardStart.Should().BeGreaterOrEqualTo(0);
         mirrorGuardStart.Should().BeGreaterThan(0);
-        identityStampStart.Should().BeGreaterThan(mirrorGuardStart);
+        mirrorGuardStart.Should().BeGreaterThan(contentGuardStart);
+        identityStampStart.Should().Be(-1, "document-level identity stamps are no longer emitted");
     }
 
     [Test]
@@ -4119,7 +4124,6 @@ public class Given_RelationalModelDdlEmitter_With_TrackedChange_Attached_Resourc
             .Should()
             .NotContain("OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs");
         triggerBody.Should().NotContain("IdentityVersion");
-        triggerBody.Should().NotContain("UPDATE(");
     }
 
     private string GetAttachedResourceTriggerBody()
@@ -4187,7 +4191,8 @@ public class Given_RelationalModelDdlEmitter_With_TrackedChange_ConcreteAbstract
                     : "INSERT INTO [tracked_changes_edfi]."
             );
 
-        ddl.Should().NotContain("UPDATE(");
+        ddl.Should().NotContain("@identityChangedDocs");
+        ddl.Should().NotContain("IdentityVersion");
     }
 }
 
