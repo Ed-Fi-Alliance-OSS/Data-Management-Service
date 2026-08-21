@@ -12,15 +12,17 @@ namespace EdFi.DataManagementService.Performance.Harness.Configuration;
 /// pin, the storage caveat, and the guardrails — whether CI execution is permitted (its tmpfs
 /// databases invalidate I/O measurement) and which dirty worktree paths are allowed (the
 /// overlay itself and nothing else, so a contaminated subject tree cannot produce baseline
-/// artifacts). A single empty prefix deliberately allows any dirty path, for smoke runs on a
-/// development tree.
+/// artifacts). <paramref name="AllowAnyDirtyPath" /> disables the dirty-path guard for smoke
+/// runs on a development tree; it is deliberately settable only in code, never through the
+/// environment, so no malformed variable can widen the guard.
 /// </summary>
 public sealed partial record PerfEvidenceRunSettings(
     string ImageTag,
     string ImageDigest,
     string StorageNote,
     bool AllowCi,
-    IReadOnlyList<string> AllowedDirtyPrefixes
+    IReadOnlyList<string> AllowedDirtyPrefixes,
+    bool AllowAnyDirtyPath = false
 )
 {
     public const string DefaultAllowedDirtyPrefix =
@@ -80,7 +82,19 @@ public sealed partial record PerfEvidenceRunSettings(
         string? prefixesText = readVariable(PerfEnvironmentVariables.AllowedDirtyPrefixes);
         if (!string.IsNullOrWhiteSpace(prefixesText))
         {
-            allowedDirtyPrefixes = [.. prefixesText.Split(';').Select(prefix => prefix.Trim())];
+            List<string> prefixes = [.. prefixesText.Split(';').Select(prefix => prefix.Trim())];
+            if (prefixes.Exists(string.IsNullOrEmpty))
+            {
+                // An empty prefix would match every path; a stray trailing semicolon must
+                // not silently disable the contamination guard.
+                errors.Add(
+                    $"{PerfEnvironmentVariables.AllowedDirtyPrefixes} must not contain empty entries."
+                );
+            }
+            else
+            {
+                allowedDirtyPrefixes = prefixes;
+            }
         }
 
         if (errors.Count > 0)

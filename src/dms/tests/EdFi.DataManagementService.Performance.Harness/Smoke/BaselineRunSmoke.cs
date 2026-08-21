@@ -54,7 +54,8 @@ internal static class BaselineRunSmoke
                 imageDigest,
                 storageNote,
                 AllowCi: true,
-                AllowedDirtyPrefixes: [""]
+                AllowedDirtyPrefixes: [PerfEvidenceRunSettings.DefaultAllowedDirtyPrefix],
+                AllowAnyDirtyPath: true
             )
         );
 

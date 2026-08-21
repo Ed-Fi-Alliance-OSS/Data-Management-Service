@@ -104,8 +104,9 @@ function Assert-CleanOverlay {
     $violationList = @()
     foreach ($line in $statusLines) {
         if ([string]::IsNullOrWhiteSpace($line)) { continue }
-        $path = $line.Substring(3).Trim()
-        if (-not $path.StartsWith($overlayPrefix)) {
+        $path = ($line.Substring(3).Trim() -replace '\\', '/').TrimEnd('/')
+        # Segment-boundary match: a sibling directory sharing the prefix text must not pass.
+        if (-not ($path -eq $overlayPrefix -or $path.StartsWith($overlayPrefix + '/'))) {
             $violationList += $path
         }
     }
@@ -149,8 +150,20 @@ if ($worktreeHead -ne $BaselineCommit) {
     throw "The worktree at '$WorktreePath' is at $worktreeHead, not the expected baseline $BaselineCommit."
 }
 
+$worktreeResolved = (Resolve-Path $WorktreePath).Path
 $sourceHarness = Join-Path $sourceRoot ($overlayPrefix -replace '/', [IO.Path]::DirectorySeparatorChar)
-$targetHarness = Join-Path $WorktreePath ($overlayPrefix -replace '/', [IO.Path]::DirectorySeparatorChar)
+$targetHarness = Join-Path $worktreeResolved ($overlayPrefix -replace '/', [IO.Path]::DirectorySeparatorChar)
+
+# The overlay must be exact: a reused worktree may hold stale harness files that robocopy /E
+# would leave in place. Deleting first is safe only after proving the target sits inside the
+# worktree.
+if (-not $targetHarness.StartsWith($worktreeResolved + [IO.Path]::DirectorySeparatorChar)) {
+    throw "Refusing to delete '$targetHarness': it is not inside the worktree '$worktreeResolved'."
+}
+if (Test-Path $targetHarness) {
+    Remove-Item -LiteralPath $targetHarness -Recurse -Force
+}
+
 robocopy $sourceHarness $targetHarness /E /XD bin obj /NFL /NDL /NJH /NJS | Out-Null
 if ($LASTEXITCODE -ge 8) {
     throw "Copying the harness overlay failed with robocopy exit code $LASTEXITCODE."

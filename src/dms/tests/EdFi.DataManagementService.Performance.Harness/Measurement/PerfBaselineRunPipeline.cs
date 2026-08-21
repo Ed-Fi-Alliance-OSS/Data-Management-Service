@@ -38,7 +38,10 @@ public static class PerfBaselineRunPipeline
         GuardCiEnvironment(settings.AllowCi, Environment.GetEnvironmentVariable("GITHUB_ACTIONS"));
         string subjectCommit = GitIdentity.HeadCommit(AppContext.BaseDirectory);
         IReadOnlyList<string> dirtyPaths = GitIdentity.DirtyPaths(AppContext.BaseDirectory);
-        GuardDirtyPaths(dirtyPaths, settings.AllowedDirtyPrefixes);
+        if (!settings.AllowAnyDirtyPath)
+        {
+            GuardDirtyPaths(dirtyPaths, settings.AllowedDirtyPrefixes);
+        }
 
         await PerfFixtureLoader.LoadAndVerifyAsync(harness.DbConnection, provider, definition);
 
@@ -123,17 +126,32 @@ public static class PerfBaselineRunPipeline
         }
     }
 
+    /// <summary>
+    /// A dirty path is allowed only when it equals an allowed prefix or sits below it across
+    /// a path-segment boundary. A raw prefix match would accept sibling directories that
+    /// merely share the prefix text, such as the Tests.Unit project beside the harness.
+    /// </summary>
     public static void GuardDirtyPaths(
         IReadOnlyList<string> dirtyPaths,
         IReadOnlyList<string> allowedPrefixes
     )
     {
-        List<string> violations =
-        [
-            .. dirtyPaths.Where(path =>
-                !allowedPrefixes.Any(prefix => path.StartsWith(prefix, StringComparison.Ordinal))
-            ),
-        ];
+        List<string> violations = [];
+        foreach (string dirtyPath in dirtyPaths)
+        {
+            string normalizedPath = dirtyPath.Replace('\\', '/').TrimEnd('/');
+            bool allowed = allowedPrefixes.Any(prefix =>
+            {
+                string normalizedPrefix = prefix.Replace('\\', '/').TrimEnd('/');
+                return normalizedPath == normalizedPrefix
+                    || normalizedPath.StartsWith(normalizedPrefix + "/", StringComparison.Ordinal);
+            });
+            if (!allowed)
+            {
+                violations.Add(dirtyPath);
+            }
+        }
+
         if (violations.Count > 0)
         {
             throw new PerfObservationException(

@@ -20,8 +20,38 @@ public class Given_The_Dirty_Worktree_Guardrail
                 PerfBaselineRunPipeline.GuardDirtyPaths(
                     [
                         "src/dms/tests/EdFi.DataManagementService.Performance.Harness/Foo.cs",
-                        "src/dms/tests/EdFi.DataManagementService.Performance.Harness.Tests.Unit/Bar.cs",
+                        "src/dms/tests/EdFi.DataManagementService.Performance.Harness/",
+                        "src/dms/tests/EdFi.DataManagementService.Performance.Harness",
                     ],
+                    [PerfEvidenceRunSettings.DefaultAllowedDirtyPrefix]
+                )
+            )
+            .Should()
+            .NotThrow();
+    }
+
+    [Test]
+    public void It_rejects_a_sibling_directory_sharing_the_prefix_text()
+    {
+        FluentActions
+            .Invoking(() =>
+                PerfBaselineRunPipeline.GuardDirtyPaths(
+                    ["src/dms/tests/EdFi.DataManagementService.Performance.Harness.Tests.Unit/Bar.cs"],
+                    [PerfEvidenceRunSettings.DefaultAllowedDirtyPrefix]
+                )
+            )
+            .Should()
+            .Throw<PerfObservationException>()
+            .WithMessage("*Tests.Unit*");
+    }
+
+    [Test]
+    public void It_normalizes_backslash_paths()
+    {
+        FluentActions
+            .Invoking(() =>
+                PerfBaselineRunPipeline.GuardDirtyPaths(
+                    [@"src\dms\tests\EdFi.DataManagementService.Performance.Harness\Foo.cs"],
                     [PerfEvidenceRunSettings.DefaultAllowedDirtyPrefix]
                 )
             )
@@ -59,12 +89,13 @@ public class Given_The_Dirty_Worktree_Guardrail
     }
 
     [Test]
-    public void It_allows_everything_for_the_empty_prefix()
+    public void It_does_not_treat_an_empty_prefix_as_allow_all()
     {
+        // Allow-all is an explicit in-code setting (AllowAnyDirtyPath), never a prefix form.
         FluentActions
             .Invoking(() => PerfBaselineRunPipeline.GuardDirtyPaths(["anything/at/all.cs"], [""]))
             .Should()
-            .NotThrow();
+            .Throw<PerfObservationException>();
     }
 }
 

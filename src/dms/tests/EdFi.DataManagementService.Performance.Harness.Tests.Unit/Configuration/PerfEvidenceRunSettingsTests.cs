@@ -114,4 +114,24 @@ public class Given_Explicit_Guardrail_Overrides
             .AllowedDirtyPrefixes.Should()
             .Equal("src/a", "src/b");
     }
+
+    [Test]
+    public void It_rejects_empty_prefix_entries()
+    {
+        Dictionary<string, string?> values = EvidenceSettingsTestValues.Valid();
+        values[PerfEnvironmentVariables.AllowedDirtyPrefixes] = "src/a;";
+        PerfConfigurationException exception = Assert.Throws<PerfConfigurationException>(() =>
+            PerfEvidenceRunSettings.Load(EvidenceSettingsTestValues.ReaderFor(values))
+        );
+        exception.Errors.Should().ContainSingle(error => error.Contains("empty entries"));
+    }
+
+    [Test]
+    public void It_never_enables_allow_any_from_the_environment()
+    {
+        PerfEvidenceRunSettings
+            .Load(EvidenceSettingsTestValues.ReaderFor(EvidenceSettingsTestValues.Valid()))
+            .AllowAnyDirtyPath.Should()
+            .BeFalse();
+    }
 }
