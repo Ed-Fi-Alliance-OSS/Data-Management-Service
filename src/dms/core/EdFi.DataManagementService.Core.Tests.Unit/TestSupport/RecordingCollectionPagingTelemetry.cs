@@ -51,6 +51,12 @@ internal sealed record CollectionPagingMeasurement(
 /// telemetry component's own tests. What is under test here is the classification each call site
 /// chose, so recording the arguments directly keeps these assertions readable and keeps a meter
 /// listener out of handler tests.
+/// <para>
+/// Every method validates through <see cref="NoOpCollectionPagingTelemetry" /> before capturing.
+/// That type exists to validate exactly as the recording implementation does, and this is the double
+/// every handler and middleware test runs against — so accepting a call production would reject
+/// would make these tests the place an argument fault goes unnoticed.
+/// </para>
 /// </remarks>
 internal sealed class RecordingCollectionPagingTelemetry : ICollectionPagingTelemetry
 {
@@ -69,7 +75,15 @@ internal sealed class RecordingCollectionPagingTelemetry : ICollectionPagingTele
         TimeSpan duration,
         int requestedPageSize,
         int? returnedPageSize
-    ) =>
+    )
+    {
+        NoOpCollectionPagingTelemetry.Instance.RecordPage(
+            context,
+            duration,
+            requestedPageSize,
+            returnedPageSize
+        );
+
         _measurements.Add(
             new CollectionPagingMeasurement(
                 CollectionPagingMeasurementKind.Page,
@@ -79,13 +93,22 @@ internal sealed class RecordingCollectionPagingTelemetry : ICollectionPagingTele
                 returnedPageSize
             )
         );
+    }
 
     public void RecordPartitions(
         CollectionPagingTelemetryContext context,
         TimeSpan duration,
         int requestedPartitionCount,
         int? returnedPartitionCount
-    ) =>
+    )
+    {
+        NoOpCollectionPagingTelemetry.Instance.RecordPartitions(
+            context,
+            duration,
+            requestedPartitionCount,
+            returnedPartitionCount
+        );
+
         _measurements.Add(
             new CollectionPagingMeasurement(
                 CollectionPagingMeasurementKind.Partitions,
@@ -95,8 +118,12 @@ internal sealed class RecordingCollectionPagingTelemetry : ICollectionPagingTele
                 returnedPartitionCount
             )
         );
+    }
 
-    public void RecordValidationRejected(CollectionPagingTelemetryContext context) =>
+    public void RecordValidationRejected(CollectionPagingTelemetryContext context)
+    {
+        NoOpCollectionPagingTelemetry.Instance.RecordValidationRejected(context);
+
         _measurements.Add(
             new CollectionPagingMeasurement(
                 CollectionPagingMeasurementKind.ValidationRejected,
@@ -106,6 +133,7 @@ internal sealed class RecordingCollectionPagingTelemetry : ICollectionPagingTele
                 Returned: null
             )
         );
+    }
 }
 
 /// <summary>

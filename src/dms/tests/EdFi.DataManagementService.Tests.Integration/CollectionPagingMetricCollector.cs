@@ -14,12 +14,19 @@ namespace EdFi.DataManagementService.Tests.Integration;
 /// One measurement the host published on the collection-paging meter, reduced to what the metric
 /// contract actually promises: an instrument name, a value, and the four bounded dimensions.
 /// </summary>
+/// <param name="Instrument">
+/// The instrument object the measurement arrived on, not just its name. Each host builds its own
+/// instruments on the process-static meter, so this is what distinguishes two hosts publishing the same
+/// instrument name from one host publishing it twice.
+/// </param>
 internal sealed record CollectionPagingMeasurement(
-    string InstrumentName,
+    Instrument Instrument,
     double Value,
     IReadOnlyDictionary<string, string> Tags
 )
 {
+    public string InstrumentName => Instrument.Name;
+
     public string PagingMode => Tag("paging_mode");
 
     public string CommandCategory => Tag("command_category");
@@ -46,6 +53,13 @@ internal sealed record CollectionPagingMeasurement(
 /// listener the only way to prove these measurements end to end. The meter is process-static, so a
 /// collector observes whichever host is currently serving; the fixtures in this suite run one host at a
 /// time, and <see cref="Clear" /> before each asserted request keeps a window to that request alone.
+/// <para>
+/// That one-host-at-a-time assumption is checked rather than merely relied on. Each host builds its own
+/// instruments on the shared meter, so <see cref="Single" /> can tell a second host publishing the same
+/// instrument name from one host publishing twice, and says which it saw. A fixture that leaves an
+/// earlier host serving therefore fails with its own cause named instead of looking like the telemetry
+/// contract emitting more than one measurement set per request.
+/// </para>
 /// </remarks>
 internal sealed class CollectionPagingMetricCollector : IDisposable
 {
@@ -259,6 +273,20 @@ internal sealed class CollectionPagingMetricCollector : IDisposable
             )
             .ToList();
 
+        // Checked ahead of the count, because it is the one cause of a duplicate here that is not a
+        // defect in an emission site. This collector observes the whole process, so a second host still
+        // serving would deliver its own instrument under the same name and be counted too. Left to the
+        // count assertion below, that would read as the telemetry contract emitting twice per request.
+        recorded
+            .DistinctBy(measurement => measurement.Instrument)
+            .Should()
+            .HaveCountLessThanOrEqualTo(
+                1,
+                $"'{instrumentName}' must reach this collector from one host: the meter is "
+                    + "process-static, so a fixture that left an earlier host serving is observed here "
+                    + "as well and this is a fixture-lifetime fault rather than a metric one"
+            );
+
         recorded
             .Should()
             .ContainSingle(
@@ -310,7 +338,7 @@ internal sealed class CollectionPagingMetricCollector : IDisposable
         {
             _measurements.Add(
                 new CollectionPagingMeasurement(
-                    instrument.Name,
+                    instrument,
                     Convert.ToDouble(measurement, CultureInfo.InvariantCulture),
                     tagValues
                 )
