@@ -18,6 +18,9 @@ Describe "Docker Compose logging defaults (DMS-1407)" {
             $Content
         )
 
+        # This is a narrow repository-contract scan for the shipped Compose files below. If these
+        # files move to more complex YAML shapes, prefer validating rendered output from
+        # `docker compose config` rather than expanding this into a general YAML parser.
         $servicesMatch = [regex]::Match($Content, '(?ms)^services:\s*\r?\n(?<body>.*?)(?=^[A-Za-z0-9_-]+:\s*$|\z)')
         if (-not $servicesMatch.Success) {
             return @()
