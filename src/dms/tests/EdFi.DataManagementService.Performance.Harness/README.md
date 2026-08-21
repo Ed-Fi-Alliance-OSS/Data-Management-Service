@@ -29,6 +29,11 @@ CI-run smoke tests live in `EdFi.DataManagementService.Performance.Harness.Tests
 - A local SQL Server 2025 reachable through `ConnectionStrings__MssqlAdmin` (the
   `dms-mssql-integration-2025` container, host port 14333). `GENERATE_SERIES` requires
   SQL Server 2022+ at database compatibility level 160+; the loader guards this.
+- For evidence runs through the capture wrapper, these connection strings are
+  credential/option templates only: the wrapper rewrites their endpoint (host/port for
+  PostgreSQL, data source for SQL Server) to the digest-validated container's published
+  port binding, and refuses to run when the container does not publish the expected port —
+  so the measured run cannot lease from a different server than the pinned container.
 - Databases must not run on tmpfs for evidence runs.
 
 ## Running the smokes
@@ -52,7 +57,8 @@ Available smokes, per provider (`Given_Postgresql_*` / `Given_Mssql_*`):
 
 The entry points are `Runs/Given_<Provider>_TraditionalBaselineRun`, normally invoked through
 `eng/performance/invoke-traditional-baseline.ps1`, which handles the baseline worktree
-overlay, image digest validation, and environment wiring, and pins the documented
+overlay, image digest validation, binding the connection-string endpoint to the validated
+container's published port, and environment wiring, and pins the documented
 primary-run iteration plan and deep offset (5 warmups / 30 measured / 450,000) as
 overridable parameters. The wrapper is currently Windows-only: it drives the overlay with
 PowerShell and robocopy.

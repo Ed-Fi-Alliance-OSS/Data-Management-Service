@@ -16,7 +16,12 @@
     commit, so a dirty overlay source would produce artifacts claiming a commit that does
     not match the code that ran. Connection strings must already be set:
     ConnectionStrings__DatabaseConnection always, and ConnectionStrings__MssqlAdmin when
-    the mssql provider is selected.
+    the mssql provider is selected. They serve as credential/option templates only: before
+    each provider's run the script inspects the digest-validated container's published
+    port (5432/tcp for PostgreSQL, 1433/tcp for SQL Server) and rewrites the template's
+    endpoint to that host binding, so the measured process can only lease from the pinned
+    container. The run refuses to proceed when the expected container port is not
+    published or cannot be resolved.
 
 .EXAMPLE
     ./eng/performance/invoke-traditional-baseline.ps1 -Provider postgresql,mssql `
@@ -108,6 +113,96 @@ function Assert-ExpectedDigest {
     if ($ActualDigest -ne $ExpectedDigest) {
         throw "Container '$ContainerName' runs digest $ActualDigest but $ExpectedDigest is expected. Refusing to capture evidence on an unpinned image."
     }
+}
+
+function Resolve-ContainerEndpointFromPortBindingJson {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string] $PortBindingJson,
+        [Parameter(Mandatory = $true)][string] $ContainerPort,
+        [Parameter(Mandatory = $true)][string] $ContainerName
+    )
+    if ([string]::IsNullOrWhiteSpace($PortBindingJson) -or $PortBindingJson.Trim() -eq 'null') {
+        throw "Container '$ContainerName' reports no port bindings; cannot resolve its published $ContainerPort endpoint."
+    }
+    $portMap = $PortBindingJson | ConvertFrom-Json
+    $portProperty = $portMap.PSObject.Properties[$ContainerPort]
+    if ($null -eq $portProperty -or $null -eq $portProperty.Value -or @($portProperty.Value).Count -eq 0) {
+        throw "Container '$ContainerName' does not publish $ContainerPort to the host; refusing to run against an unreachable pinned container."
+    }
+    $binding = @($portProperty.Value)[0]
+    $bindingHost = ([string]$binding.HostIp).Trim()
+    # Wildcard and blank bindings are reachable on the loopback name; anything else (for
+    # example an explicit 127.0.0.1 bind) is used verbatim.
+    if ($bindingHost -eq '' -or $bindingHost -eq '0.0.0.0' -or $bindingHost -eq '::') {
+        $bindingHost = 'localhost'
+    }
+    $portValue = 0
+    if (-not [int]::TryParse(([string]$binding.HostPort).Trim(), [ref] $portValue) -or $portValue -lt 1 -or $portValue -gt 65535) {
+        throw "Container '$ContainerName' publishes $ContainerPort with an unusable host port '$($binding.HostPort)'."
+    }
+    return [pscustomobject]@{ Host = $bindingHost; Port = $portValue }
+}
+
+function Resolve-ContainerPublishedEndpoint {
+    param(
+        [Parameter(Mandatory = $true)][string] $ContainerName,
+        [Parameter(Mandatory = $true)][string] $ContainerPort
+    )
+    $portBindingJson = (docker inspect $ContainerName --format '{{json .NetworkSettings.Ports}}') -join ''
+    if ($LASTEXITCODE -ne 0) {
+        throw "Cannot inspect the port bindings of container '$ContainerName'. Is it running?"
+    }
+    return Resolve-ContainerEndpointFromPortBindingJson -PortBindingJson $portBindingJson `
+        -ContainerPort $ContainerPort -ContainerName $ContainerName
+}
+
+function ConvertTo-PostgresEndpointPinnedConnectionString {
+    param(
+        [Parameter(Mandatory = $true)][string] $ConnectionString,
+        [Parameter(Mandatory = $true)][string] $EndpointHost,
+        [Parameter(Mandatory = $true)][int] $EndpointPort
+    )
+    $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+    try {
+        # PSBase reaches the real ConnectionString property: PowerShell adapts this type
+        # through its type descriptor, which exposes keywords as properties instead.
+        $builder.PSBase.ConnectionString = $ConnectionString
+    }
+    catch {
+        throw "The PostgreSQL connection-string template could not be parsed: $($_.Exception.Message)"
+    }
+    # Npgsql accepts Server as an alias of Host; every endpoint synonym must go so the
+    # template cannot override the pinned endpoint.
+    foreach ($endpointKey in @('host', 'server', 'port')) {
+        [void]$builder.Remove($endpointKey)
+    }
+    $builder['host'] = $EndpointHost
+    $builder['port'] = [string]$EndpointPort
+    return $builder.PSBase.ConnectionString
+}
+
+function ConvertTo-MssqlEndpointPinnedConnectionString {
+    param(
+        [Parameter(Mandatory = $true)][string] $ConnectionString,
+        [Parameter(Mandatory = $true)][string] $EndpointHost,
+        [Parameter(Mandatory = $true)][int] $EndpointPort
+    )
+    $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+    try {
+        # PSBase reaches the real ConnectionString property: PowerShell adapts this type
+        # through its type descriptor, which exposes keywords as properties instead.
+        $builder.PSBase.ConnectionString = $ConnectionString
+    }
+    catch {
+        throw "The SQL Server connection-string template could not be parsed: $($_.Exception.Message)"
+    }
+    # SqlClient's Data Source synonyms; every one must go so the template cannot override
+    # the pinned endpoint.
+    foreach ($endpointKey in @('data source', 'server', 'address', 'addr', 'network address')) {
+        [void]$builder.Remove($endpointKey)
+    }
+    $builder['data source'] = "$EndpointHost,$EndpointPort"
+    return $builder.PSBase.ConnectionString
 }
 
 function Assert-CleanOverlay {
@@ -215,19 +310,34 @@ if ($LASTEXITCODE -ne 0) {
     throw 'Building the harness in the baseline worktree failed.'
 }
 
+# The digest pins which image runs; the endpoint rewrite pins which server is measured.
+# The ambient connection strings contribute credentials and options only: their endpoint
+# is replaced with the inspected container's published host binding, so the run cannot
+# lease from a different database than the digest-validated container.
 foreach ($selectedProvider in $Provider) {
     if ($selectedProvider -eq 'postgresql') {
         $identity = Resolve-ContainerImageIdentity -ContainerName $PostgresContainerName
         Assert-ExpectedDigest -ContainerName $PostgresContainerName -ActualDigest $identity.Digest -ExpectedDigest $ExpectedPostgresDigest
+        $endpoint = Resolve-ContainerPublishedEndpoint -ContainerName $PostgresContainerName -ContainerPort '5432/tcp'
+        $env:ConnectionStrings__DatabaseConnection = ConvertTo-PostgresEndpointPinnedConnectionString `
+            -ConnectionString $env:ConnectionStrings__DatabaseConnection `
+            -EndpointHost $endpoint.Host -EndpointPort $endpoint.Port
+        $endpointVariableName = 'ConnectionStrings__DatabaseConnection'
         $fixtureFilter = 'FullyQualifiedName~Given_Postgresql_TraditionalBaselineRun'
     }
     else {
         $identity = Resolve-ContainerImageIdentity -ContainerName $MssqlContainerName
         Assert-ExpectedDigest -ContainerName $MssqlContainerName -ActualDigest $identity.Digest -ExpectedDigest $ExpectedMssqlDigest
+        $endpoint = Resolve-ContainerPublishedEndpoint -ContainerName $MssqlContainerName -ContainerPort '1433/tcp'
+        $env:ConnectionStrings__MssqlAdmin = ConvertTo-MssqlEndpointPinnedConnectionString `
+            -ConnectionString $env:ConnectionStrings__MssqlAdmin `
+            -EndpointHost $endpoint.Host -EndpointPort $endpoint.Port
+        $endpointVariableName = 'ConnectionStrings__MssqlAdmin'
         $fixtureFilter = 'FullyQualifiedName~Given_Mssql_TraditionalBaselineRun'
     }
 
     Write-Output "Provider $selectedProvider on image $($identity.Tag) @ $($identity.Digest)"
+    Write-Output "Measured endpoint $($endpoint.Host):$($endpoint.Port) rewritten into $endpointVariableName"
 
     $env:PERF_RESULTS_DIR = $ResultsDirectory
     $env:PERF_RUNNER_COMMIT = $runnerCommit
