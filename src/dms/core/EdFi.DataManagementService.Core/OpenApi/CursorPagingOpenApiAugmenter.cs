@@ -6,6 +6,7 @@
 using System.Collections.Frozen;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ChangeQueries;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Utilities;
@@ -44,6 +45,8 @@ internal static class CursorPagingOpenApiAugmenter
     private const string PartitionOperationIdSuffix = "Partitions";
     private const string ApplicationJsonContentType = "application/json";
     private const string SuccessResponseKey = "200";
+    private const string NotModifiedResponseKey = "304";
+    private const string NotImplementedResponseKey = "501";
     private const string QueryParameterLocation = "query";
     private const string DomainsExtensionKey = "x-Ed-Fi-domains";
 
@@ -55,10 +58,18 @@ internal static class CursorPagingOpenApiAugmenter
         + "resource into ranges that can be retrieved in parallel using the pageToken parameter of the "
         + "collection GET operation. Boundaries are calculated after the same filters and authorization the "
         + "collection GET applies, so the same filters must be repeated on every request. The response may "
-        + "contain fewer tokens than requested and never contains more.";
+        + "contain fewer tokens than requested, including none when no item is accessible, and never "
+        + "contains more.";
 
     private const string PartitionSuccessResponseDescription =
         "The requested page tokens were successfully retrieved.";
+
+    /// <summary>
+    /// The one status the partitions operation answers that its collection GET does not, so the one
+    /// response it declares rather than inherits.
+    /// </summary>
+    private const string PartitionNotImplementedResponseDescription =
+        "Not Implemented. Partitioned cursor paging is not available for this resource.";
 
     private const string PartitionTokensSchemaDescription =
         "A set of opaque page tokens that partition a resource's accessible items for parallel cursor paging.";
@@ -213,12 +224,14 @@ internal static class CursorPagingOpenApiAugmenter
         JsonObject getOperation = RequireObject(pathItem["get"], $"{PathDiagnostic(pathKey)}.get");
         string operationId = RequireOperationId(getOperation, pathKey);
         JsonArray collectionParameters = RequireParameters(getOperation, pathKey);
-        JsonObject successResponse = RequireSuccessResponse(getOperation, pathKey);
+        JsonObject collectionResponses = RequireResponses(getOperation, pathKey);
+        JsonObject successResponse = RequireSuccessResponse(collectionResponses, pathKey);
 
         JsonObject partitionOperation = BuildPartitionOperation(
             getOperation,
             collectionParameters,
             componentParameters,
+            collectionResponses,
             operationId,
             pathKey
         );
@@ -254,6 +267,7 @@ internal static class CursorPagingOpenApiAugmenter
         JsonObject getOperation,
         JsonArray collectionParameters,
         JsonObject componentParameters,
+        JsonObject collectionResponses,
         string operationId,
         string pathKey
     )
@@ -280,23 +294,7 @@ internal static class CursorPagingOpenApiAugmenter
             ["description"] = PartitionOperationDescription,
             ["operationId"] = operationId + PartitionOperationIdSuffix,
             ["parameters"] = partitionParameters,
-            ["responses"] = new JsonObject
-            {
-                [SuccessResponseKey] = new JsonObject
-                {
-                    ["content"] = new JsonObject
-                    {
-                        [ApplicationJsonContentType] = new JsonObject
-                        {
-                            ["schema"] = new JsonObject
-                            {
-                                ["$ref"] = SchemaComponentRefPrefix + PartitionTokensSchemaName,
-                            },
-                        },
-                    },
-                    ["description"] = PartitionSuccessResponseDescription,
-                },
-            },
+            ["responses"] = BuildPartitionResponses(collectionResponses),
         };
 
         if (getOperation["security"] is JsonNode security)
@@ -315,19 +313,69 @@ internal static class CursorPagingOpenApiAugmenter
     }
 
     /// <summary>
+    /// Declares the partition token set as the success shape and inherits every failure the collection GET
+    /// publishes. The two operations share the authentication, authorization, and request-validation
+    /// middleware that answer those statuses, so inheriting them keeps the published failure contract from
+    /// drifting from the collection's. Not-modified is left behind because only a document read negotiates
+    /// an ETag, and not-implemented is added because the partitions handler alone answers it.
+    /// </summary>
+    private static JsonObject BuildPartitionResponses(JsonObject collectionResponses)
+    {
+        JsonObject partitionResponses = new()
+        {
+            [SuccessResponseKey] = new JsonObject
+            {
+                ["content"] = new JsonObject
+                {
+                    [ApplicationJsonContentType] = new JsonObject
+                    {
+                        ["schema"] = new JsonObject
+                        {
+                            ["$ref"] = SchemaComponentRefPrefix + PartitionTokensSchemaName,
+                        },
+                    },
+                },
+                ["description"] = PartitionSuccessResponseDescription,
+            },
+        };
+
+        foreach (
+            (string statusCode, JsonNode? response) in collectionResponses.Where(inherited =>
+                inherited.Value is not null
+                && inherited.Key is not (SuccessResponseKey or NotModifiedResponseKey)
+            )
+        )
+        {
+            partitionResponses[statusCode] = response!.DeepClone();
+        }
+
+        partitionResponses[NotImplementedResponseKey] = new JsonObject
+        {
+            ["description"] = PartitionNotImplementedResponseDescription,
+        };
+
+        return partitionResponses;
+    }
+
+    /// <summary>
     /// A referenced filter is carried over only when it is one of the two live change-version filters. An
-    /// inline filter is carried over when it is a query parameter the partitions operation will actually
-    /// filter on.
+    /// inline filter is carried over when it is not one the partitions operation refuses. Either way the
+    /// parameter must be carried in the query string, because that is the only place the partitions
+    /// request pipeline reads a filter from.
     /// </summary>
     private static bool ShouldCopyToPartitionOperation(ParameterFacts facts)
     {
+        if (!string.Equals(facts.Location, QueryParameterLocation, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
         if (facts.IsReference)
         {
             return _changeVersionParameterNames.Contains(facts.EffectiveName);
         }
 
-        return string.Equals(facts.Location, QueryParameterLocation, StringComparison.Ordinal)
-            && !_partitionExcludedParameterNames.Contains(facts.EffectiveName);
+        return !_partitionExcludedParameterNames.Contains(facts.EffectiveName);
     }
 
     private static void AppendParameterReference(
@@ -483,6 +531,12 @@ internal static class CursorPagingOpenApiAugmenter
         }
     }
 
+    /// <summary>
+    /// Replaces the base document's hand-maintained paging values with the ones the request pipeline
+    /// enforces: the configured page size ceiling, the configured partition-count default, and the
+    /// partition-count range the partition request validator measures a request against. Publishing a
+    /// separately authored bound would let the served contract disagree with what the pipeline accepts.
+    /// </summary>
     private static void PublishRuntimePagingValues(
         JsonObject componentParameters,
         OpenApiPagingSettings pagingSettings
@@ -495,8 +549,10 @@ internal static class CursorPagingOpenApiAugmenter
             schema["maximum"] = pagingSettings.MaximumPageSize;
         }
 
-        ComponentSchema(componentParameters, NumberOfPartitionsComponent)["default"] =
-            pagingSettings.DefaultPartitionCount;
+        JsonObject partitionCountSchema = ComponentSchema(componentParameters, NumberOfPartitionsComponent);
+        partitionCountSchema["default"] = pagingSettings.DefaultPartitionCount;
+        partitionCountSchema["minimum"] = AppSettingsValidator.MinimumDefaultPartitionCount;
+        partitionCountSchema["maximum"] = AppSettingsValidator.MaximumDefaultPartitionCount;
 
         RequireObject(
             componentParameters[NumberOfPartitionsComponent],
@@ -586,18 +642,14 @@ internal static class CursorPagingOpenApiAugmenter
         return parameters;
     }
 
-    private static JsonObject RequireSuccessResponse(JsonObject getOperation, string pathKey)
-    {
-        JsonObject responses = RequireObject(
-            getOperation["responses"],
-            $"{PathDiagnostic(pathKey)}.get.responses"
-        );
+    private static JsonObject RequireResponses(JsonObject getOperation, string pathKey) =>
+        RequireObject(getOperation["responses"], $"{PathDiagnostic(pathKey)}.get.responses");
 
-        return RequireObject(
+    private static JsonObject RequireSuccessResponse(JsonObject responses, string pathKey) =>
+        RequireObject(
             responses[SuccessResponseKey],
             $"{PathDiagnostic(pathKey)}.get.responses.{SuccessResponseKey}"
         );
-    }
 
     private static JsonObject ParameterReference(string componentName) =>
         new() { ["$ref"] = ParameterComponentRefPrefix + componentName };

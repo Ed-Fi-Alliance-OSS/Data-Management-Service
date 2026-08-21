@@ -38,10 +38,9 @@ internal class PartitionRequestHandler(
     int _maximumPageSize
 ) : IPipelineStep
 {
-    /// <summary>The response member carrying one token per partition.</summary>
     /// <summary>
-    /// The response body member name. Internal so OpenAPI assembly publishes the member this handler
-    /// writes rather than a second spelling of it.
+    /// The response body member carrying one token per partition. Internal so OpenAPI assembly publishes
+    /// the member this handler writes rather than a second spelling of it.
     /// </summary>
     internal const string PageTokensMember = "pageTokens";
 

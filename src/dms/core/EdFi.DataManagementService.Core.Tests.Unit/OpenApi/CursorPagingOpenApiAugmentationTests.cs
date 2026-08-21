@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.OpenApi;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -29,10 +30,14 @@ public class CursorPagingOpenApiAugmentationTests
         + "resource into ranges that can be retrieved in parallel using the pageToken parameter of the "
         + "collection GET operation. Boundaries are calculated after the same filters and authorization the "
         + "collection GET applies, so the same filters must be repeated on every request. The response may "
-        + "contain fewer tokens than requested and never contains more.";
+        + "contain fewer tokens than requested, including none when no item is accessible, and never "
+        + "contains more.";
 
     private const string ExpectedPartitionResponseDescription =
         "The requested page tokens were successfully retrieved.";
+
+    private const string ExpectedPartitionNotImplementedDescription =
+        "Not Implemented. Partitioned cursor paging is not available for this resource.";
 
     private const string ExpectedNumberOfPartitionsDescription =
         "The number of evenly distributed partitions to provide for client-side parallel processing. If "
@@ -215,6 +220,52 @@ public class CursorPagingOpenApiAugmentationTests
         }
 
         [Test]
+        public void It_should_inherit_the_collection_failure_responses()
+        {
+            JsonObject partitionResponses = Operation(_resources, CorePartitionPath)["responses"]!.AsObject();
+
+            partitionResponses.Should().ContainKeys("400", "401", "403", "404", "500");
+            JsonNode
+                .DeepEquals(
+                    partitionResponses["400"],
+                    Operation(_resources, CoreCollectionPath)["responses"]!["400"]
+                )
+                .Should()
+                .BeTrue();
+        }
+
+        /// <summary>
+        /// Only a document read negotiates an ETag, so a partitions operation that advertised a
+        /// conditional response would describe an exchange it never performs.
+        /// </summary>
+        [Test]
+        public void It_should_not_inherit_the_not_modified_response()
+        {
+            Operation(_resources, CorePartitionPath)["responses"]!.AsObject().Should().NotContainKey("304");
+        }
+
+        [Test]
+        public void It_should_declare_the_not_implemented_response()
+        {
+            Operation(_resources, CorePartitionPath)["responses"]!["501"]!["description"]!
+                .GetValue<string>()
+                .Should()
+                .Be(ExpectedPartitionNotImplementedDescription);
+        }
+
+        [Test]
+        public void It_should_not_alias_the_inherited_failure_responses()
+        {
+            Operation(_resources, CorePartitionPath)["responses"]!["400"]!.AsObject()["description"] =
+                "mutated";
+
+            Operation(_resources, CoreCollectionPath)["responses"]!["400"]!
+                .AsObject()
+                .Should()
+                .NotContainKey("description");
+        }
+
+        [Test]
         public void It_should_declare_the_shared_page_token_schema()
         {
             JsonNode schema = _resources["components"]!["schemas"]!["partitionTokens"]!;
@@ -344,8 +395,8 @@ public class CursorPagingOpenApiAugmentationTests
             JsonNode schema = _resources["components"]!["parameters"]!["numberOfPartitions"]!["schema"]!;
 
             schema["default"]!.GetValue<int>().Should().Be(10);
-            schema["minimum"]!.GetValue<int>().Should().Be(1);
-            schema["maximum"]!.GetValue<int>().Should().Be(200);
+            schema["minimum"]!.GetValue<int>().Should().Be(AppSettingsValidator.MinimumDefaultPartitionCount);
+            schema["maximum"]!.GetValue<int>().Should().Be(AppSettingsValidator.MaximumDefaultPartitionCount);
         }
 
         [Test]
@@ -1005,5 +1056,122 @@ public class CursorPagingOpenApiAugmentationTests
                 .Should()
                 .NotContain(reference => reference == PageTokenReference);
         }
+    }
+
+    /// <summary>
+    /// A collection GET declaring no parameters at all is well formed, so assembly establishes the array
+    /// it appends the cursor references to rather than refusing the operation.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Collection_Get_Without_Parameters : CursorPagingOpenApiAugmentationTests
+    {
+        private JsonNode _resources = new JsonObject();
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocumentNodes apiSchemaNodes = ApiSchemaNodes();
+            CoreCollectionGetFragment(apiSchemaNodes).Remove("parameters");
+
+            _resources = Assemble(apiSchemaNodes);
+        }
+
+        [Test]
+        public void It_should_publish_the_cursor_parameters_on_the_collection_operation()
+        {
+            ParameterReferences(_resources, CoreCollectionPath)
+                .Should()
+                .Equal(PageTokenReference, PageSizeReference);
+        }
+
+        [Test]
+        public void It_should_generate_the_partition_operation()
+        {
+            ParameterReferences(_resources, CorePartitionPath).Should().Equal(NumberOfPartitionsReference);
+        }
+    }
+
+    /// <summary>
+    /// The change-version filters are the only references carried onto the partitions operation, and the
+    /// partitions request pipeline reads a filter from the query string only.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Change_Version_Component_Outside_The_Query : CursorPagingOpenApiAugmentationTests
+    {
+        private JsonNode _resources = new JsonObject();
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocumentNodes apiSchemaNodes = ApiSchemaNodes();
+            ResourcesBaseDocument(apiSchemaNodes)["components"]!["parameters"]!["MinChangeVersion"]!["in"] =
+                "header";
+
+            _resources = Assemble(apiSchemaNodes);
+        }
+
+        [Test]
+        public void It_should_not_copy_the_header_carried_reference()
+        {
+            ParameterReferences(_resources, CorePartitionPath)
+                .Should()
+                .Equal(NumberOfPartitionsReference, "#/components/parameters/MaxChangeVersion");
+        }
+
+        [Test]
+        public void It_should_leave_the_collection_reference_in_place()
+        {
+            ParameterReferences(_resources, CoreCollectionPath)
+                .Should()
+                .Contain("#/components/parameters/MinChangeVersion");
+        }
+    }
+
+    /// <summary>
+    /// The published partition-count range is the range the partition request validator enforces, not a
+    /// bound the base document happens to carry.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Base_Document_With_Drifted_Partition_Bounds : CursorPagingOpenApiAugmentationTests
+    {
+        private JsonNode _resources = new JsonObject();
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocumentNodes apiSchemaNodes = ApiSchemaNodes();
+            JsonObject partitionCountSchema = ResourcesBaseDocument(apiSchemaNodes)["components"]![
+                "parameters"
+            ]!["numberOfPartitions"]!["schema"]!.AsObject();
+
+            partitionCountSchema["minimum"] = AppSettingsValidator.MinimumDefaultPartitionCount + 1;
+            partitionCountSchema["maximum"] = AppSettingsValidator.MaximumDefaultPartitionCount - 1;
+
+            _resources = Assemble(apiSchemaNodes);
+        }
+
+        [Test]
+        public void It_should_publish_the_enforced_minimum()
+        {
+            PublishedPartitionCountSchema()["minimum"]!
+                .GetValue<int>()
+                .Should()
+                .Be(AppSettingsValidator.MinimumDefaultPartitionCount);
+        }
+
+        [Test]
+        public void It_should_publish_the_enforced_maximum()
+        {
+            PublishedPartitionCountSchema()["maximum"]!
+                .GetValue<int>()
+                .Should()
+                .Be(AppSettingsValidator.MaximumDefaultPartitionCount);
+        }
+
+        private JsonNode PublishedPartitionCountSchema() =>
+            _resources["components"]!["parameters"]!["numberOfPartitions"]!["schema"]!;
     }
 }

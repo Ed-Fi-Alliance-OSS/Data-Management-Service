@@ -201,7 +201,7 @@ internal static class CursorPagingOpenApiTestBase
     /// <summary>
     /// A collection GET shaped like a published resource fragment: referenced traditional-paging, filter,
     /// and projection parameters, inline resource filters including one named for the partition count,
-    /// security, tags, and a 200 response.
+    /// security, tags, and the success and referenced failure responses a published collection declares.
     /// </summary>
     internal static JsonObject CollectionGet(string operationId, string tagName, string responseSchemaName)
     {
@@ -241,6 +241,12 @@ internal static class CursorPagingOpenApiTestBase
                     },
                     ["description"] = "The requested resource was successfully retrieved.",
                 },
+                ["304"] = ResponseReference("NotModified"),
+                ["400"] = ResponseReference("BadRequest"),
+                ["401"] = ResponseReference("Unauthorized"),
+                ["403"] = ResponseReference("Forbidden"),
+                ["404"] = ResponseReference("NotFoundUseSnapshot"),
+                ["500"] = ResponseReference("Error"),
             },
             ["security"] = new JsonArray(new JsonObject { ["oauth2_client_credentials"] = new JsonArray() }),
             ["summary"] = $"Retrieves specific {tagName}.",
@@ -250,6 +256,9 @@ internal static class CursorPagingOpenApiTestBase
 
     internal static JsonObject ParameterReference(string componentName) =>
         new() { ["$ref"] = $"#/components/parameters/{componentName}" };
+
+    internal static JsonObject ResponseReference(string componentName) =>
+        new() { ["$ref"] = $"#/components/responses/{componentName}" };
 
     internal static JsonObject InlineFilter(string name) =>
         new()
@@ -311,6 +320,7 @@ internal static class CursorPagingOpenApiTestBase
             ["components"] = new JsonObject
             {
                 ["parameters"] = ParameterComponents(),
+                ["responses"] = ResponseComponents(),
                 ["schemas"] = new JsonObject(),
             },
             ["tags"] = new JsonArray(),
@@ -331,6 +341,31 @@ internal static class CursorPagingOpenApiTestBase
         parameters["fields"] = QueryComponent("fields", "string");
         parameters["queryExpression"] = QueryComponent("q", "string");
         return parameters;
+    }
+
+    /// <summary>
+    /// The response components a published base document declares and every collection GET references.
+    /// </summary>
+    private static JsonObject ResponseComponents()
+    {
+        JsonObject responses = new();
+
+        foreach (
+            string componentName in new[]
+            {
+                "NotModified",
+                "BadRequest",
+                "Unauthorized",
+                "Forbidden",
+                "NotFoundUseSnapshot",
+                "Error",
+            }
+        )
+        {
+            responses[componentName] = new JsonObject { ["description"] = $"{componentName} response" };
+        }
+
+        return responses;
     }
 
     private static JsonObject QueryComponent(string name, string type) =>

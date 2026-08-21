@@ -127,7 +127,7 @@ public class OpenApiDocumentExtensionTests
                   },
                   "/tpdm/credentials/partitions": {
                     "get": {
-                      "description": "This GET operation returns a set of opaque page tokens that divide the accessible items of this resource into ranges that can be retrieved in parallel using the pageToken parameter of the collection GET operation. Boundaries are calculated after the same filters and authorization the collection GET applies, so the same filters must be repeated on every request. The response may contain fewer tokens than requested and never contains more.",
+                      "description": "This GET operation returns a set of opaque page tokens that divide the accessible items of this resource into ranges that can be retrieved in parallel using the pageToken parameter of the collection GET operation. Boundaries are calculated after the same filters and authorization the collection GET applies, so the same filters must be repeated on every request. The response may contain fewer tokens than requested, including none when no item is accessible, and never contains more.",
                       "operationId": "get_TPDMCredentialsPartitions",
                       "parameters": [
                         {
@@ -144,6 +144,9 @@ public class OpenApiDocumentExtensionTests
                             }
                           },
                           "description": "The requested page tokens were successfully retrieved."
+                        },
+                        "501": {
+                          "description": "Not Implemented. Partitioned cursor paging is not available for this resource."
                         }
                       },
                       "summary": "Retrieves the page tokens that partition this resource for parallel cursor paging."
@@ -338,7 +341,7 @@ public class OpenApiDocumentExtensionTests
                   },
                   "/tpdm/credentialDescriptor/partitions": {
                     "get": {
-                      "description": "This GET operation returns a set of opaque page tokens that divide the accessible items of this resource into ranges that can be retrieved in parallel using the pageToken parameter of the collection GET operation. Boundaries are calculated after the same filters and authorization the collection GET applies, so the same filters must be repeated on every request. The response may contain fewer tokens than requested and never contains more.",
+                      "description": "This GET operation returns a set of opaque page tokens that divide the accessible items of this resource into ranges that can be retrieved in parallel using the pageToken parameter of the collection GET operation. Boundaries are calculated after the same filters and authorization the collection GET applies, so the same filters must be repeated on every request. The response may contain fewer tokens than requested, including none when no item is accessible, and never contains more.",
                       "operationId": "get_TPDMCredentialDescriptorsPartitions",
                       "parameters": [
                         {
@@ -355,6 +358,9 @@ public class OpenApiDocumentExtensionTests
                             }
                           },
                           "description": "The requested page tokens were successfully retrieved."
+                        },
+                        "501": {
+                          "description": "Not Implemented. Partitioned cursor paging is not available for this resource."
                         }
                       },
                       "summary": "Retrieves the page tokens that partition this resource for parallel cursor paging."

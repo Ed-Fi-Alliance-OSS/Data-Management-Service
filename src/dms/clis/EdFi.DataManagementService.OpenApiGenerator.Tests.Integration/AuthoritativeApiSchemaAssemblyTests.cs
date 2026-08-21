@@ -62,6 +62,22 @@ public class AuthoritativeApiSchemaAssemblyTests
     }
 
     /// <summary>
+    /// The generated operation inherits the failure responses its collection GET publishes, so at full
+    /// scale it must carry the shipped fragment's statuses rather than only its own success shape. The
+    /// reference-resolution tests above prove the inherited references are not left dangling.
+    /// </summary>
+    [Test]
+    public void It_should_publish_the_partition_failure_contract_at_full_scale()
+    {
+        JsonObject partitionResponses = _resources["paths"]!["/ed-fi/students/partitions"]!["get"]![
+            "responses"
+        ]!.AsObject();
+
+        partitionResponses.Should().ContainKeys("200", "400", "401", "403", "404", "500", "501");
+        partitionResponses.Should().NotContainKey("304");
+    }
+
+    /// <summary>
     /// Assembly mutates the nodes it is given, so each document is assembled from its own parse of the
     /// input rather than from a shared one.
     /// </summary>

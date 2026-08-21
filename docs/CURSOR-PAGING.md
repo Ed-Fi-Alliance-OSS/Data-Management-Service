@@ -164,9 +164,9 @@ Content-Type: application/json
 
 `number` is optional; omitting it uses the deployment's configured default. The
 response never contains more tokens than requested and **may contain fewer** —
-including a single token — because the API will not cut a collection into
-segments smaller than it is worth coordinating. Treat the returned count as the
-answer, not the requested count.
+including a single token, or none at all when no item is accessible — because the
+API will not cut a collection into segments smaller than it is worth
+coordinating. Treat the returned count as the answer, not the requested count.
 
 Apply the same filters to the partitions request that you intend to use for the
 walks. Filters and authorization are reapplied on every subsequent request
