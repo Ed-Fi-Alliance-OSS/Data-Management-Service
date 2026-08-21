@@ -17,6 +17,7 @@ using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
+using EdFi.DataManagementService.Core.Telemetry;
 using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using FakeItEasy;
 using FluentAssertions;
@@ -35,13 +36,18 @@ public class QueryRequestHandlerTests
 {
     internal static (IPipelineStep handler, IServiceProvider serviceProvider) Handler(
         IQueryHandler queryHandler,
-        ILogger? logger = null
+        ILogger? logger = null,
+        ICollectionPagingTelemetry? collectionPagingTelemetry = null
     )
     {
         var serviceProvider = A.Fake<IServiceProvider>();
         A.CallTo(() => serviceProvider.GetService(typeof(IQueryHandler))).Returns(queryHandler);
 
-        var handler = new QueryRequestHandler(logger ?? NullLogger.Instance, ResiliencePipeline.Empty);
+        var handler = new QueryRequestHandler(
+            logger ?? NullLogger.Instance,
+            ResiliencePipeline.Empty,
+            collectionPagingTelemetry ?? NoOpCollectionPagingTelemetry.Instance
+        );
 
         return (handler, serviceProvider);
     }

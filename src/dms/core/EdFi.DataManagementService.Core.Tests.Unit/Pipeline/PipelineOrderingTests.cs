@@ -100,6 +100,8 @@ public class PipelineOrderingTests
 
             TestHelper.AddMappingSetResolutionServices(services);
 
+            TestHelper.AddCollectionPagingTelemetry(services);
+
             services.AddSingleton<IProfileService>(A.Fake<IProfileService>());
             services.AddTransient<ProfileResolutionMiddleware>();
             services.AddTransient<ILogger<ProfileResolutionMiddleware>>(_ =>
@@ -380,6 +382,8 @@ public class PipelineOrderingTests
 
             TestHelper.AddMappingSetResolutionServices(services);
 
+            TestHelper.AddCollectionPagingTelemetry(services);
+
             var serviceProvider = services.BuildServiceProvider();
 
             var apiService = new ApiService(
@@ -516,6 +520,8 @@ public class PipelineOrderingTests
 
         TestHelper.AddResourceKeyValidationServices(services);
         TestHelper.AddMappingSetResolutionServices(services);
+
+        TestHelper.AddCollectionPagingTelemetry(services);
 
         services.AddSingleton<IProfileService>(A.Fake<IProfileService>());
         services.AddTransient<ProfileResolutionMiddleware>();

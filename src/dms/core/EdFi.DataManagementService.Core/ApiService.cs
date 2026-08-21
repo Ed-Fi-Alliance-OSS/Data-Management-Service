@@ -18,6 +18,7 @@ using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Telemetry;
 using EdFi.DataManagementService.Core.Validation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -302,7 +303,11 @@ internal class ApiService : IApiService
             ),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
-            new QueryRequestHandler(_logger, _resiliencePipeline),
+            new QueryRequestHandler(
+                _logger,
+                _resiliencePipeline,
+                _serviceProvider.GetRequiredService<ICollectionPagingTelemetry>()
+            ),
         ]);
 
         return new PipelineProvider(steps);

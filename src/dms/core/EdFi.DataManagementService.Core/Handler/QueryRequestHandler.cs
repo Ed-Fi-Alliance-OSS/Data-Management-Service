@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Backend;
@@ -13,6 +14,7 @@ using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
+using EdFi.DataManagementService.Core.Telemetry;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
@@ -21,7 +23,11 @@ using static EdFi.DataManagementService.Core.Handler.Utility;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
-internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resiliencePipeline) : IPipelineStep
+internal class QueryRequestHandler(
+    ILogger _logger,
+    ResiliencePipeline _resiliencePipeline,
+    ICollectionPagingTelemetry _collectionPagingTelemetry
+) : IPipelineStep
 {
     /// <summary>
     /// The response header carrying the token for the page after this one, as published by the Ed-Fi
@@ -39,25 +45,52 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
         // Resolve query handler from the per-request scoped service provider
         var queryHandler = requestInfo.ScopedServiceProvider.GetRequiredService<IQueryHandler>();
 
-        var queryResult = await ExecuteWithRetryLogging(
-            _resiliencePipeline,
-            _logger,
-            "query",
-            requestInfo.FrontendRequest.TraceId,
-            r => IsRetryableResult(r),
-            r => r is QuerySuccess,
-            async ct => await queryHandler.QueryDocuments(CreateQueryRequest(requestInfo), ct),
-            requestInfo
-        );
+        long startTimestamp = Stopwatch.GetTimestamp();
+        QueryResult queryResult;
+
+        try
+        {
+            queryResult = await ExecuteWithRetryLogging(
+                _resiliencePipeline,
+                _logger,
+                "query",
+                requestInfo.FrontendRequest.TraceId,
+                r => IsRetryableResult(r),
+                r => r is QuerySuccess,
+                async ct => await queryHandler.QueryDocuments(CreateQueryRequest(requestInfo), ct),
+                requestInfo
+            );
+        }
+        catch (OperationCanceledException) when (requestInfo.RequestCancellationToken.IsCancellationRequested)
+        {
+            // A disconnected client is the absence of a completed collection read, not a kind of one.
+            // Counting it would report client disconnects as backend execution failures, and its
+            // duration would measure how long the client waited rather than how long a read took. The
+            // same filter guards the logging middlewares this pipeline already runs through.
+            throw;
+        }
+        catch
+        {
+            // CustomViewAuthorizationValidationException escapes execution as an exception rather than a
+            // result, so without this the one fault that proves a configured view is broken would be the
+            // one outcome the metric never saw.
+            RecordExecutionException(requestInfo, Stopwatch.GetElapsedTime(startTimestamp));
+            throw;
+        }
+
+        TimeSpan duration = Stopwatch.GetElapsedTime(startTimestamp);
+
         _logger.LogDebug(
             "QueryHandler returned {QueryResult}- {TraceId}",
             queryResult.GetType().FullName,
             requestInfo.FrontendRequest.TraceId.Value
         );
 
+        bool nextPageTokenProduced = false;
+
         requestInfo.FrontendResponse = queryResult switch
         {
-            QuerySuccess success => CreateSuccessResponse(requestInfo, success),
+            QuerySuccess success => CreateSuccessResponse(requestInfo, success, out nextPageTokenProduced),
             QueryFailureNotImplemented failure => new FrontendResponse(
                 StatusCode: 501,
                 Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
@@ -98,9 +131,144 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
                 Headers: []
             ),
         };
+
+        RecordOutcome(requestInfo, queryResult, duration, nextPageTokenProduced);
     }
 
-    private static FrontendResponse CreateSuccessResponse(RequestInfo requestInfo, QuerySuccess success)
+    /// <summary>
+    /// Records the one measurement set this request contributes, classified from what the backend
+    /// returned.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="nextPageTokenProduced" /> is reported by response shaping rather than re-derived
+    /// here, and the response header is never read: two independent derivations of the same fact would
+    /// eventually disagree, and the header is absent for a reason that is not always terminal.
+    /// </remarks>
+    private void RecordOutcome(
+        RequestInfo requestInfo,
+        QueryResult queryResult,
+        TimeSpan duration,
+        bool nextPageTokenProduced
+    )
+    {
+        (string commandCategory, string outcome, int? returnedPageSize) = queryResult switch
+        {
+            QuerySuccess success => ClassifySuccess(requestInfo, success, nextPageTokenProduced),
+            QueryFailureNotImplemented => FailureClassification(
+                CollectionPagingTelemetryLabel.NotImplementedOutcome
+            ),
+            QueryFailureSecurityConfiguration => FailureClassification(
+                CollectionPagingTelemetryLabel.SecurityConfigurationOutcome
+            ),
+            QueryFailureNamespaceNotAuthorized => FailureClassification(
+                CollectionPagingTelemetryLabel.NotAuthorizedOutcome
+            ),
+            QueryFailureRetryable => FailureClassification(
+                CollectionPagingTelemetryLabel.RetryExhaustedOutcome
+            ),
+            // A known error reports query terms that evaded validation, and the bounded outcome set has
+            // no value of its own for it. It is counted as an unclassified backend failure rather than
+            // as validation_rejected, which names the middleware rejections operators watch as a share
+            // of traffic and would be diluted by backend faults.
+            _ => FailureClassification(CollectionPagingTelemetryLabel.UnknownFailureOutcome),
+        };
+
+        _collectionPagingTelemetry.RecordPage(
+            CreateContext(requestInfo, commandCategory, outcome),
+            duration,
+            RequestedPageSize(requestInfo.CollectionPaging),
+            returnedPageSize
+        );
+    }
+
+    private void RecordExecutionException(RequestInfo requestInfo, TimeSpan duration) =>
+        _collectionPagingTelemetry.RecordPage(
+            CreateContext(
+                requestInfo,
+                CollectionPagingTelemetryLabel.NoCommandCategory,
+                CollectionPagingTelemetryLabel.ExecutionExceptionOutcome
+            ),
+            duration,
+            RequestedPageSize(requestInfo.CollectionPaging),
+            returnedPageSize: null
+        );
+
+    private static CollectionPagingTelemetryContext CreateContext(
+        RequestInfo requestInfo,
+        string commandCategory,
+        string outcome
+    ) =>
+        CollectionPagingTelemetryContext.ForPaging(
+            requestInfo.CollectionPaging,
+            commandCategory,
+            requestInfo.MappingSet?.Key.Dialect,
+            outcome
+        );
+
+    /// <summary>
+    /// The success classification, in precedence order: early-empty, then terminal page, then success.
+    /// </summary>
+    /// <remarks>
+    /// A page that cannot anchor a DocumentId continuation is <c>success</c>, never
+    /// <c>terminal_page</c>. That is a traditional page over a max-bearing change-version window: it is
+    /// ordered by ContentVersion, is served with rows, and the client keeps paging it with limit and
+    /// offset, so reporting it as an ended walk would tell operators a healthy walk had stopped.
+    /// </remarks>
+    private static (string CommandCategory, string Outcome, int? ReturnedPageSize) ClassifySuccess(
+        RequestInfo requestInfo,
+        QuerySuccess success,
+        bool nextPageTokenProduced
+    )
+    {
+        int returnedPageSize = success.EdfiDocs.Count;
+
+        if (success.SelectionSkipped)
+        {
+            return (
+                CollectionPagingTelemetryLabel.NoCommandCategory,
+                CollectionPagingTelemetryLabel.EarlyEmptyOutcome,
+                returnedPageSize
+            );
+        }
+
+        string commandCategory = requestInfo.CollectionPaging.IncludesTotalCount
+            ? CollectionPagingTelemetryLabel.PageWithCountCommandCategory
+            : CollectionPagingTelemetryLabel.PageCommandCategory;
+        string outcome =
+            success.AllowsDocumentIdContinuation && !nextPageTokenProduced
+                ? CollectionPagingTelemetryLabel.TerminalPageOutcome
+                : CollectionPagingTelemetryLabel.SuccessOutcome;
+
+        return (commandCategory, outcome, returnedPageSize);
+    }
+
+    /// <summary>
+    /// Every failure carries no command category. Core cannot prove, for most of them, whether a
+    /// selection command ran, and attributing a command shape — and therefore a duration — to a request
+    /// that may never have issued that command is the failure mode the dimension exists to avoid.
+    /// </summary>
+    private static (string CommandCategory, string Outcome, int? ReturnedPageSize) FailureClassification(
+        string outcome
+    ) => (CollectionPagingTelemetryLabel.NoCommandCategory, outcome, null);
+
+    private static int RequestedPageSize(CollectionPaging paging) =>
+        paging switch
+        {
+            CollectionPaging.Cursor cursor => cursor.PageSize.Value,
+            CollectionPaging.Traditional traditional => traditional.Parameters.Limit
+                ?? traditional.Parameters.MaximumPageSize,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(paging),
+                paging,
+                "Unsupported collection paging mode."
+            ),
+        };
+
+    private static FrontendResponse CreateSuccessResponse(
+        RequestInfo requestInfo,
+        QuerySuccess success,
+        out bool nextPageTokenProduced
+    )
     {
         var contentType = requestInfo.ProfileContext?.ResourceProfile.ReadContentType is not null
             ? ProfileHeaderParser.BuildProfileContentType(
@@ -114,8 +282,11 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
             ? new() { { "Total-Count", (success.TotalCount ?? 0).ToString() } }
             : [];
 
+        nextPageTokenProduced = false;
+
         if (TryCreateNextPageToken(requestInfo, success, out var nextPageToken))
         {
+            nextPageTokenProduced = true;
             headers.Add(NextPageTokenHeaderName, nextPageToken);
         }
 
