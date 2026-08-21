@@ -15,6 +15,7 @@ using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Startup;
+using EdFi.DataManagementService.Core.Telemetry;
 using EdFi.DataManagementService.Core.Validation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -130,7 +131,9 @@ public static class DmsCoreServiceExtensions
             .AddTransient<ProfileWritePipelineMiddleware>()
             .AddSingleton<ITokenInfoRelationalMappingSetResolver, TokenInfoRelationalMappingSetResolver>()
             .AddSingleton<GetTokenInfoHandler>()
-            .AddSingleton<AvailableChangeVersionsHandler>();
+            .AddSingleton<AvailableChangeVersionsHandler>()
+            // Collection-read observability
+            .AddSingleton<ICollectionPagingTelemetry, CollectionPagingTelemetry>();
 
         return services;
 
