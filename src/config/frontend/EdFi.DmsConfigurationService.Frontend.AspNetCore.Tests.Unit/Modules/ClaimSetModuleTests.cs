@@ -710,7 +710,7 @@ public class ClaimSetModuleTests
         }
 
         [Test]
-        public async Task Should_return_bad_request_mismatch_id()
+        public async Task Should_return_bad_request_when_claimset_body_id_does_not_match_route_id()
         {
             //Arrange
             using var client = SetUpClient();
@@ -723,6 +723,44 @@ public class ClaimSetModuleTests
                     """
                     {
                         "id": 2,
+                        "claimSetName": "Test-11",
+                        "resourceClaims": [
+                            {
+                                "name": "Test ResourceClaim",
+                                "actions": [
+                                  {
+                                    "name": "Create",
+                                    "enabled": true
+                                  }
+                                ]
+                            }
+                        ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            //Assert
+            string updateResponseContent = await updateResponse.Content.ReadAsStringAsync();
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            updateResponseContent.Should().Contain("Request body id must match the id in the url.");
+        }
+
+        [Test]
+        public async Task Should_return_bad_request_when_claimset_body_id_is_omitted()
+        {
+            //Arrange
+            using var client = SetUpClient();
+            A.CallTo(() => _dataProvider.GetActions()).Returns(["Create", "Read", "Update", "Delete"]);
+
+            //Act
+            var updateResponse = await client.PutAsync(
+                "/v3/claimSets/1",
+                new StringContent(
+                    """
+                    {
                         "claimSetName": "Test-11",
                         "resourceClaims": [
                             {

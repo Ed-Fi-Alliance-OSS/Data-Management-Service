@@ -10,7 +10,7 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
 
 public class ApiClientUpdateCommand
 {
-    public required int Id { get; set; }
+    public int Id { get; set; }
     public required int ApplicationId { get; set; }
     public required string Name { get; set; } = "";
     public required bool IsApproved { get; set; }
@@ -27,7 +27,7 @@ public class ApiClientUpdateCommand
     {
         public Validator()
         {
-            RuleFor(a => a.Id).NotEmpty().GreaterThan(0);
+            RuleFor(a => a.Id).GreaterThan(0).WithMessage("Id must be greater than 0.");
             RuleFor(a => a.ApplicationId).NotEmpty().GreaterThan(0);
             RuleFor(a => a.Name).NotEmpty().MaximumLength(50);
             RuleFor(a => a.DataStoreIds)

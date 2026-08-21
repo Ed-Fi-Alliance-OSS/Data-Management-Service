@@ -333,14 +333,9 @@ public class ApplicationModule : IEndpointModule
         ILogger<ApplicationModule> logger
     )
     {
-        await validator.GuardAsync(command);
+        PutGuards.GuardRouteIdMatchesBodyId(id, command.Id);
 
-        if (command.Id != id)
-        {
-            throw new ValidationException([
-                new ValidationFailure("Id", "Request body id must match the id in the url."),
-            ]);
-        }
+        await validator.GuardAsync(command);
 
         // Every read this workflow relies on happens under the aggregate lock, so acquisition
         // precedes them all; invalid input above never consumes a lock.

@@ -116,14 +116,9 @@ public class DataStoreContextModule : IEndpointModule
     )
     {
         logger.LogDebug("Entering DataStoreContext Update for id: {Id}", id);
-        await validator.GuardAsync(command);
+        PutGuards.GuardRouteIdMatchesBodyId(id, command.Id);
 
-        if (command.Id != id)
-        {
-            throw new ValidationException(
-                new[] { new ValidationFailure("Id", "Request body id must match the id in the url.") }
-            );
-        }
+        await validator.GuardAsync(command);
 
         var updateResult = await dataStoreContextRepository.UpdateDataStoreContext(command);
 

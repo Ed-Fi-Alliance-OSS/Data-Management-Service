@@ -2318,6 +2318,63 @@ public class ApiClientModuleTests
             _dependencyCalls.Should().BeEmpty();
     }
 
+    [TestFixture]
+    public class Given_an_api_client_update_with_omitted_body_id : ApiClientModuleTests
+    {
+        private List<string> _dependencyCalls = null!;
+        private HttpResponseMessage _updateResponse = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _dependencyCalls = [];
+            A.CallTo(_apiClientRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_applicationRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_vendorRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_dataStoreRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_identityProviderRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+
+            using var client = SetUpClient();
+            _updateResponse = await client.PutAsync(
+                "/v3/apiClients/1",
+                new StringContent(
+                    """
+                    {
+                      "applicationId": 1,
+                      "name": "Test Client",
+                      "isApproved": true,
+                      "dataStoreIds": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+        }
+
+        [TearDown]
+        public void TearDownResponse() => _updateResponse?.Dispose();
+
+        [Test]
+        public async Task It_returns_bad_request_when_apiclient_body_id_is_omitted()
+        {
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            _updateResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+            string responseBody = await _updateResponse.Content.ReadAsStringAsync();
+            JsonNode actualResponse = JsonNode.Parse(responseBody)!;
+            string correlationId = actualResponse["correlationId"]!.GetValue<string>();
+            correlationId.Should().NotBeNullOrWhiteSpace();
+            actualResponse["validationErrors"]!["Id"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be("Request body id must match the id in the url.");
+        }
+
+        [Test]
+        public void It_calls_no_repository_or_identity_provider_dependency() =>
+            _dependencyCalls.Should().BeEmpty();
+    }
+
     public abstract class DeleteWorkflowTestBase : ApiClientModuleTests
     {
         protected Guid _providerClientUuid;

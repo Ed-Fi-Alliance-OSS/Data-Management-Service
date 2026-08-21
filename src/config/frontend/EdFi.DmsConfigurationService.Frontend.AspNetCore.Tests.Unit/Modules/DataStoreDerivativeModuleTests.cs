@@ -239,4 +239,51 @@ public class DataStoreDerivativeModuleTests
             _body["errors"]!.AsArray().Count.Should().Be(0);
         }
     }
+
+    [TestFixture]
+    public class Given_a_data_store_derivative_update_with_invalid_body_id : DataStoreDerivativeModuleTests
+    {
+        [Test]
+        public async Task It_returns_bad_request_when_body_id_does_not_match_route_id()
+        {
+            using var client = SetUpClient();
+            using var content = new StringContent(
+                """{"id":999,"dataStoreId":1,"derivativeType":"ReadReplica"}""",
+                Encoding.UTF8,
+                "application/json"
+            );
+            var response = await client.PutAsync("/v3/dataStoreDerivatives/1", content);
+
+            var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            actualResponse!["validationErrors"]!["Id"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Contain("Request body id must match the id in the url");
+        }
+
+        [Test]
+        public async Task It_returns_bad_request_when_body_id_is_omitted()
+        {
+            using var client = SetUpClient();
+            var response = await client.PutAsync(
+                "/v3/dataStoreDerivatives/1",
+                new StringContent(
+                    """
+                    {
+                        "dataStoreId": 1,
+                        "derivativeType": "ReadReplica"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            string responseContent = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            responseContent.Should().Contain("Request body id must match the id in the url.");
+        }
+    }
 }

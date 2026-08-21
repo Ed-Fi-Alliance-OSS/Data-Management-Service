@@ -220,4 +220,64 @@ public class DataStoreContextModuleTests
             JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
         }
     }
+
+    [TestFixture]
+    public class Given_a_data_store_context_update_with_invalid_body_id : DataStoreContextModuleTests
+    {
+        [SetUp]
+        public void SetUp()
+        {
+            A.CallTo(() => _repository.UpdateDataStoreContext(A<DataStoreContextUpdateCommand>.Ignored))
+                .Returns(new DataStoreContextUpdateResult.Success());
+        }
+
+        [Test]
+        public async Task Should_return_bad_request_when_datastorecontext_body_id_does_not_match_route_id()
+        {
+            using var client = SetUpClient();
+            var response = await client.PutAsync(
+                "/v3/dataStoreContexts/1",
+                new StringContent(
+                    """
+                    {
+                        "id": 2,
+                        "dataStoreId": 1,
+                        "contextKey": "schoolYear",
+                        "contextValue": "2023"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            string content = await response.Content.ReadAsStringAsync();
+            content.Should().Contain("Request body id must match the id in the url.");
+        }
+
+        [Test]
+        public async Task Should_return_bad_request_when_datastorecontext_body_id_is_omitted()
+        {
+            using var client = SetUpClient();
+            var response = await client.PutAsync(
+                "/v3/dataStoreContexts/1",
+                new StringContent(
+                    """
+                    {
+                        "dataStoreId": 1,
+                        "contextKey": "schoolYear",
+                        "contextValue": "2023"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            string content = await response.Content.ReadAsStringAsync();
+            content.Should().Contain("Request body id must match the id in the url.");
+        }
+    }
 }

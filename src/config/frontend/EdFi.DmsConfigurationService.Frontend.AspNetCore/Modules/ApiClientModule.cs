@@ -15,8 +15,6 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
-using FluentValidation;
-using FluentValidation.Results;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
@@ -286,14 +284,9 @@ public class ApiClientModule : IEndpointModule
     {
         logger.LogDebug("Entering UpdateApiClient for id: {Id}", SanitizeForLog(id.ToString()));
 
-        await validator.GuardAsync(command);
+        PutGuards.GuardRouteIdMatchesBodyId(id, command.Id);
 
-        if (command.Id != id)
-        {
-            throw new ValidationException([
-                new ValidationFailure("Id", "Request body id must match the id in the url."),
-            ]);
-        }
+        await validator.GuardAsync(command);
 
         // A parent move must hold both aggregate locks; the helper acquires them in ascending
         // application id order and rereads the client under the locks.

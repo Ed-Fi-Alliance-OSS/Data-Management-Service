@@ -428,6 +428,33 @@ public class ProfileModuleTests
     }
 
     [Test]
+    public async Task Should_return_bad_request_when_profile_body_id_is_omitted()
+    {
+        // Arrange
+        using var client = SetUpClient();
+
+        // Act: PUT with route id=1, body omits "id" (defaults to 0)
+        var response = await client.PutAsync(
+            "/v3/profiles/1",
+            new StringContent(
+                """
+                {
+                    "name": "UpdatedProfile",
+                    "definition": "<Profile name=\"UpdatedProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>"
+                }
+                """,
+                Encoding.UTF8,
+                "application/json"
+            )
+        );
+
+        // Assert
+        string responseContent = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        responseContent.Should().Contain("Request body id must match the id in the url.");
+    }
+
+    [Test]
     public async Task UpdateProfile_DuplicateName_ShouldReturnBadRequest()
     {
         var updateProfile = new
