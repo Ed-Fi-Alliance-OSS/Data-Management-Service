@@ -27,7 +27,8 @@ public sealed record PerfMeasuredCell(
     int CommandCountPerRequest,
     PerfLatencySummary LatencyMs,
     PerfLatencySummary DbCommandMs,
-    PageSelectionQueryCapture PageSelection
+    PageSelectionQueryCapture PageSelection,
+    string HydrationBatchSql
 );
 
 /// <summary>
@@ -96,6 +97,7 @@ public static class PerfScenarioExecutor
         using DriverCommandObserver observer = DriverCommandObserver.Start(provider);
         int recorderBaseline = recorder.HydrationKeysets.Count;
         List<double> dbCommandSamplesMs = [];
+        string? hydrationBatchSql = null;
 
         PerfLatencySummary latency = await PerfLatencyMeasurement.MeasureAsync(
             async iteration =>
@@ -109,6 +111,14 @@ public static class PerfScenarioExecutor
                     throw new PerfObservationException(
                         $"{at} iteration {iteration}: expected exactly one database command per request; "
                             + $"observed {window.Count}."
+                    );
+                }
+
+                hydrationBatchSql ??= window[0].CommandText;
+                if (window[0].CommandText != hydrationBatchSql)
+                {
+                    throw new PerfObservationException(
+                        $"{at} iteration {iteration}: hydration batch SQL text changed within the cell."
                     );
                 }
 
@@ -159,7 +169,9 @@ public static class PerfScenarioExecutor
             CommandCountPerRequest: 1,
             latency,
             PerfLatencyMeasurement.Summarize(dbCommandSamplesMs),
-            capture
+            capture,
+            hydrationBatchSql
+                ?? throw new PerfObservationException($"{at}: no hydration batch SQL was observed.")
         );
     }
 
