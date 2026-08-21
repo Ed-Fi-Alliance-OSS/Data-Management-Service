@@ -94,12 +94,14 @@ public static class PerfRunConfigurationLoader
         );
 
         long deepOffset = 0;
+        bool deepOffsetResolved = false;
         string? deepOffsetText = Read(PerfEnvironmentVariables.DeepOffset);
         if (deepOffsetText is null)
         {
             if (fixture is not null)
             {
-                deepOffset = fixture.RowCount * 9 / 10;
+                deepOffset = DefaultDeepOffset(fixture);
+                deepOffsetResolved = true;
             }
         }
         else if (
@@ -110,11 +112,19 @@ public static class PerfRunConfigurationLoader
                 $"{PerfEnvironmentVariables.DeepOffset} must be a non-negative integer; got '{deepOffsetText}'."
             );
         }
-        else if (fixture is not null && deepOffset > fixture.RowCount - PerfScenarios.MaximumPageSize)
+        else
+        {
+            deepOffsetResolved = true;
+        }
+
+        // The computed default flows through the same bound check as an explicit value: a
+        // fixture too small for its own default must fail loudly rather than measure a
+        // deep offset the fixture cannot serve a full page from.
+        if (deepOffsetResolved && fixture is not null && !IsWithinDeepOffsetBounds(fixture, deepOffset))
         {
             errors.Add(
                 $"{PerfEnvironmentVariables.DeepOffset} must be between 0 and "
-                    + $"{fixture.RowCount - PerfScenarios.MaximumPageSize} for fixture '{fixture.Id}'; got {deepOffset}."
+                    + $"{MaximumDeepOffset(fixture)} for fixture '{fixture.Id}'; got {deepOffset}."
             );
         }
 
@@ -132,6 +142,21 @@ public static class PerfRunConfigurationLoader
             deepOffset
         );
     }
+
+    /// <summary>
+    /// The default deep offset when PERF_DEEP_OFFSET is not set: 90% of the fixture's rows.
+    /// </summary>
+    public static long DefaultDeepOffset(PerfFixtureKind fixture) => fixture.RowCount * 9 / 10;
+
+    /// <summary>
+    /// The largest deep offset that still leaves a full page of the largest measured page
+    /// size within the fixture.
+    /// </summary>
+    public static long MaximumDeepOffset(PerfFixtureKind fixture) =>
+        fixture.RowCount - PerfScenarios.MaximumPageSize;
+
+    public static bool IsWithinDeepOffsetBounds(PerfFixtureKind fixture, long deepOffset) =>
+        deepOffset >= 0 && deepOffset <= MaximumDeepOffset(fixture);
 
     private static int ReadIterations(
         string variableName,

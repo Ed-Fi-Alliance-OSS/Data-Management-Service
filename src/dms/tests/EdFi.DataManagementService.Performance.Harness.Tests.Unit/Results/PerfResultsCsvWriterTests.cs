@@ -85,8 +85,8 @@ public class Given_A_Written_Results_Csv
     [Test]
     public void It_formats_latency_with_three_invariant_decimals()
     {
-        CsvTestSupport.Field(_lines[2], "p50_ms").Should().Be("12.500");
-        CsvTestSupport.Field(_lines[2], "db_command_p95_ms").Should().Be("15.000");
+        CsvTestSupport.Field(_lines[2], "p50_ms").Should().Be("17.000");
+        CsvTestSupport.Field(_lines[2], "db_command_p95_ms").Should().Be("21.500");
     }
 
     [Test]
@@ -155,7 +155,7 @@ public class Given_A_Comma_Decimal_Current_Culture
     public void It_still_formats_with_invariant_decimal_points()
     {
         string row = CsvTestSupport.Lines(_csv)[1];
-        CsvTestSupport.Field(row, "p50_ms").Should().Be("12.500");
+        CsvTestSupport.Field(row, "p50_ms").Should().Be("17.000");
         CsvTestSupport.Field(row, "db_execution_ms").Should().Be("6.250");
     }
 }

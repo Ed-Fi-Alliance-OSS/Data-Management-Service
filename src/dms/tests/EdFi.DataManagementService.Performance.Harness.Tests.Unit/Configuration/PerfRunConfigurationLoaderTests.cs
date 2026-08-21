@@ -490,3 +490,36 @@ public class Given_The_Last_Valid_Deep_Offset
         _configuration.DeepOffset.Should().Be(499_500);
     }
 }
+
+[TestFixture]
+public class Given_A_Fixture_Too_Small_For_Its_Default_Deep_Offset
+{
+    // Synthetic: no catalog fixture is this small, but the computed default must flow
+    // through the same bound check an explicit value gets, so the failure mode stays
+    // reachable and tested.
+    private static readonly PerfFixtureKind _tiny = new("tiny-100", 100);
+
+    [Test]
+    public void Its_computed_default_fails_the_shared_bound_check()
+    {
+        long defaultDeepOffset = PerfRunConfigurationLoader.DefaultDeepOffset(_tiny);
+        defaultDeepOffset.Should().Be(90);
+        PerfRunConfigurationLoader.IsWithinDeepOffsetBounds(_tiny, defaultDeepOffset).Should().BeFalse();
+    }
+}
+
+[TestFixture]
+public class Given_The_Catalog_Fixtures
+{
+    [Test]
+    public void Every_computed_default_deep_offset_is_within_bounds()
+    {
+        foreach (PerfFixtureKind fixture in PerfFixtureKind.All)
+        {
+            PerfRunConfigurationLoader
+                .IsWithinDeepOffsetBounds(fixture, PerfRunConfigurationLoader.DefaultDeepOffset(fixture))
+                .Should()
+                .BeTrue(fixture.Id);
+        }
+    }
+}

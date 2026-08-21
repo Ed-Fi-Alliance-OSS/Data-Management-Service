@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Performance.Harness.Configuration;
+using EdFi.DataManagementService.Performance.Harness.Measurement;
 using EdFi.DataManagementService.Performance.Harness.Results;
 
 namespace EdFi.DataManagementService.Performance.Harness.Tests.Unit.Results;
@@ -23,8 +24,13 @@ internal static class ResultSamples
             _ => DeepOffset,
         };
 
-    private static IReadOnlyList<double> ThirtySamples(double baseMs) =>
-        [.. Enumerable.Range(0, 30).Select(i => baseMs + (i * 0.5))];
+    /// <summary>
+    /// A thirty-sample latency summary whose statistics genuinely derive from its samples:
+    /// the validator recomputes every summary statistic from the retained samples, so
+    /// hand-authored statistics would be rejected.
+    /// </summary>
+    private static PerfLatencySummary SummaryOf(double baseMs) =>
+        PerfLatencyMeasurement.Summarize([.. Enumerable.Range(0, 30).Select(i => baseMs + (i * 0.5))]);
 
     public static PerfScenarioResult Postgresql(
         string scenarioId = PerfScenarios.TraditionalOffsetZero,
@@ -39,8 +45,8 @@ internal static class ResultSamples
             CommandCountPerRequest: 1,
             WarmupIterations: 5,
             MeasuredIterations: 30,
-            LatencyMs: new(12.5, 20.25, 14.125, 10.0, 22.5, ThirtySamples(10.0)),
-            DbCommandMs: new(8.5, 15.0, 10.0, 7.5, 16.0, ThirtySamples(7.5)),
+            LatencyMs: SummaryOf(10.0),
+            DbCommandMs: SummaryOf(7.5),
             Database: new(
                 BuffersHit: 1200,
                 BuffersRead: 34,
@@ -69,8 +75,8 @@ internal static class ResultSamples
             CommandCountPerRequest: 1,
             WarmupIterations: 5,
             MeasuredIterations: 30,
-            LatencyMs: new(13.5, 21.25, 15.125, 11.0, 23.5, ThirtySamples(11.0)),
-            DbCommandMs: new(9.5, 16.0, 11.0, 8.5, 17.0, ThirtySamples(8.5)),
+            LatencyMs: SummaryOf(11.0),
+            DbCommandMs: SummaryOf(8.5),
             Database: new(
                 BuffersHit: null,
                 BuffersRead: null,

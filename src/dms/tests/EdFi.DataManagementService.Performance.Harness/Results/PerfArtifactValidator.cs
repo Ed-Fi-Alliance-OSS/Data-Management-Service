@@ -6,6 +6,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Performance.Harness.Configuration;
+using EdFi.DataManagementService.Performance.Harness.Measurement;
 
 namespace EdFi.DataManagementService.Performance.Harness.Results;
 
@@ -160,11 +161,11 @@ public static partial class PerfArtifactValidator
             );
         }
 
-        long maximumDeepOffset = kind.RowCount - PerfScenarios.MaximumPageSize;
-        if (fixture.DeepOffset < 0 || fixture.DeepOffset > maximumDeepOffset)
+        if (!PerfRunConfigurationLoader.IsWithinDeepOffsetBounds(kind, fixture.DeepOffset))
         {
             errors.Add(
-                $"manifest: deep offset {fixture.DeepOffset} must be between 0 and {maximumDeepOffset}."
+                $"manifest: deep offset {fixture.DeepOffset} must be between 0 and "
+                    + $"{PerfRunConfigurationLoader.MaximumDeepOffset(kind)}."
             );
         }
     }
@@ -520,6 +521,38 @@ public static partial class PerfArtifactValidator
         if (!ordered)
         {
             errors.Add($"{at}: {layer} percentiles must satisfy min <= p50 <= p95 <= max.");
+        }
+
+        // The summary statistics must be reproducible from the retained samples with the
+        // same nearest-rank semantics that produced them; a summary the samples cannot
+        // explain is not evidence. The relative tolerance is pure guard band against
+        // floating-point round-trip and summation-order noise — any real tamper is orders
+        // of magnitude larger.
+        if (latency.SamplesMs is { Count: > 0 } samples)
+        {
+            PerfLatencySummary recomputed = PerfLatencyMeasurement.Summarize(samples);
+            AddIfNotRecomputable(at, layer, "min", latency.MinMs, recomputed.MinMs, errors);
+            AddIfNotRecomputable(at, layer, "max", latency.MaxMs, recomputed.MaxMs, errors);
+            AddIfNotRecomputable(at, layer, "p50", latency.P50Ms, recomputed.P50Ms, errors);
+            AddIfNotRecomputable(at, layer, "p95", latency.P95Ms, recomputed.P95Ms, errors);
+            AddIfNotRecomputable(at, layer, "mean", latency.MeanMs, recomputed.MeanMs, errors);
+        }
+    }
+
+    private static void AddIfNotRecomputable(
+        string at,
+        string layer,
+        string statistic,
+        double stored,
+        double recomputed,
+        List<string> errors
+    )
+    {
+        if (Math.Abs(stored - recomputed) > Math.Abs(recomputed) * 1e-9)
+        {
+            errors.Add(
+                $"{at}: {layer} {statistic} {stored} must match {recomputed} recomputed from the samples."
+            );
         }
     }
 

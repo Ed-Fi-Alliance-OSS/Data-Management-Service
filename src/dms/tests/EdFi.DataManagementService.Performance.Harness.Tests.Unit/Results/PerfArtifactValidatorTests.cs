@@ -186,6 +186,86 @@ public class Given_Result_Rows_With_Broken_Measurements
 }
 
 [TestFixture]
+public class Given_Result_Rows_With_Tampered_Summary_Statistics
+{
+    private IReadOnlyList<string> _errors = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        PerfResultsDocument document = ResultSamples.PostgresqlDocument();
+        document = ValidatorTestSupport.WithRow(
+            document,
+            0,
+            row => row with { LatencyMs = row.LatencyMs with { P50Ms = row.LatencyMs.P50Ms + 0.25 } }
+        );
+        document = ValidatorTestSupport.WithRow(
+            document,
+            1,
+            row => row with { DbCommandMs = row.DbCommandMs with { MeanMs = row.DbCommandMs.MeanMs + 0.001 } }
+        );
+        document = ValidatorTestSupport.WithRow(
+            document,
+            2,
+            row => row with { LatencyMs = row.LatencyMs with { MaxMs = row.LatencyMs.MaxMs + 1.0 } }
+        );
+        _errors = PerfArtifactValidator.Validate(ResultSamples.Manifest(), document);
+    }
+
+    [Test]
+    public void It_rejects_a_p50_the_samples_cannot_explain()
+    {
+        _errors
+            .Should()
+            .Contain(error =>
+                error.StartsWith("results[0]") && error.Contains("p50") && error.Contains("recomputed")
+            );
+    }
+
+    [Test]
+    public void It_rejects_a_mean_the_samples_cannot_explain()
+    {
+        _errors
+            .Should()
+            .Contain(error =>
+                error.StartsWith("results[1]") && error.Contains("mean") && error.Contains("recomputed")
+            );
+    }
+
+    [Test]
+    public void It_rejects_a_max_the_samples_cannot_explain()
+    {
+        _errors
+            .Should()
+            .Contain(error =>
+                error.StartsWith("results[2]") && error.Contains("max") && error.Contains("recomputed")
+            );
+    }
+
+    [Test]
+    public void It_leaves_untampered_rows_clean()
+    {
+        _errors.Should().NotContain(error => error.StartsWith("results[3]"));
+    }
+}
+
+[TestFixture]
+public class Given_A_Mean_Within_Floating_Point_Tolerance
+{
+    [Test]
+    public void It_accepts_summation_order_noise()
+    {
+        PerfResultsDocument document = ValidatorTestSupport.WithRow(
+            ResultSamples.PostgresqlDocument(),
+            0,
+            row => row with { LatencyMs = row.LatencyMs with { MeanMs = row.LatencyMs.MeanMs + 1e-12 } }
+        );
+
+        PerfArtifactValidator.Validate(ResultSamples.Manifest(), document).Should().BeEmpty();
+    }
+}
+
+[TestFixture]
 public class Given_Result_Rows_With_Commit_Problems
 {
     private IReadOnlyList<string> _errors = null!;
