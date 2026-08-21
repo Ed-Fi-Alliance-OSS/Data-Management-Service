@@ -64,7 +64,7 @@ overlay, image digest validation, and environment wiring.
 | `PERF_WARMUP_ITERATIONS` / `PERF_MEASURED_ITERATIONS` | no | Default 5 / 30; may be raised, never lowered |
 | `PERF_DEEP_OFFSET` | no | Default 90% of the fixture row count (450,000 for the primary fixture) |
 | `PERF_ALLOW_CI` | no | Default `false`: runs refuse GitHub Actions because its databases run on tmpfs |
-| `PERF_ALLOW_DIRTY_PREFIXES` | no | Semicolon-separated allowlist for dirty worktree paths; defaults to the harness overlay directory. A single empty entry allows anything (smoke use only) |
+| `PERF_ALLOW_DIRTY_PREFIXES` | no | Semicolon-separated allowlist for dirty worktree paths, matched on path-segment boundaries; defaults to the harness overlay directory. Empty entries are invalid — allow-all exists only as the in-code `AllowAnyDirtyPath` setting the smokes use, never through the environment |
 
 Guardrails run before any measurement: a CI environment or a dirty path outside the
 allowlist aborts the run, so baseline evidence cannot be produced from a contaminated tree.
