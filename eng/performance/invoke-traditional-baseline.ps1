@@ -11,7 +11,10 @@
     Overlays the performance harness onto a worktree of the pre-change subject commit,
     verifies the worktree is clean apart from the overlay, validates the running database
     container images against the expected digests, builds the harness, and runs the
-    evidence fixtures. Connection strings must already be set:
+    evidence fixtures. The source harness directory and this script must be committed
+    clean before anything is copied: the manifests record the source HEAD as the runner
+    commit, so a dirty overlay source would produce artifacts claiming a commit that does
+    not match the code that ran. Connection strings must already be set:
     ConnectionStrings__DatabaseConnection always, and ConnectionStrings__MssqlAdmin when
     the mssql provider is selected.
 
@@ -115,6 +118,26 @@ function Assert-CleanOverlay {
     }
 }
 
+function Assert-CleanSourceState {
+    param(
+        [Parameter(Mandatory = $true)][string] $Repository,
+        [Parameter(Mandatory = $true)][string[]] $PathSpec
+    )
+    # --untracked-files=all lists files inside untracked directories individually, so the
+    # failure names every offending file rather than a bare directory.
+    $statusLines = @(Invoke-Git -Repository $Repository -ArgumentList (
+            @('status', '--porcelain', '--untracked-files=all', '--') + $PathSpec))
+    $dirtyList = @()
+    foreach ($line in $statusLines) {
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        $dirtyList += ($line.Substring(3).Trim() -replace '\\', '/')
+    }
+    if ($dirtyList.Count -gt 0) {
+        throw ("The source harness/wrapper files are dirty or untracked; commit them first so the " +
+            "recorded runner commit matches the copied sources: $($dirtyList -join ', ')")
+    }
+}
+
 function Assert-EnvironmentVariable {
     param([Parameter(Mandatory = $true)][string] $Name)
     $value = [Environment]::GetEnvironmentVariable($Name)
@@ -131,6 +154,12 @@ Assert-EnvironmentVariable -Name 'ConnectionStrings__DatabaseConnection'
 if ($Provider -contains 'mssql') {
     Assert-EnvironmentVariable -Name 'ConnectionStrings__MssqlAdmin'
 }
+
+# The manifests record HEAD as the runner commit while the overlay copies working-tree
+# files, so evidence capture refuses dirty/untracked harness or wrapper sources. Unrelated
+# dirty paths elsewhere in the repository stay allowed.
+$wrapperRelativePath = [IO.Path]::GetRelativePath($sourceRoot, $PSCommandPath) -replace '\\', '/'
+Assert-CleanSourceState -Repository $sourceRoot -PathSpec @($overlayPrefix, $wrapperRelativePath)
 
 $runnerCommit = (Invoke-Git -Repository $sourceRoot -ArgumentList @('rev-parse', 'HEAD')).Trim()
 Write-Output "Runner commit:  $runnerCommit"
