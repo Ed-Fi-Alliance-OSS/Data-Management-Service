@@ -62,7 +62,14 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.QueryPartitions(partitionRequest);
 
-        result.Should().BeOfType<PartitionResult.PartitionSuccess>().Which.Ranges.Should().BeEmpty();
+        var success = result.Should().BeOfType<PartitionResult.PartitionSuccess>().Subject;
+
+        success.Ranges.Should().BeEmpty();
+
+        // The boundary command ran and found no starts, so this empty result is executed rather than
+        // short-circuited. Classifying it by shape alone would report a real boundary calculation as
+        // having done no database work.
+        success.SelectionSkipped.Should().BeFalse();
         _capturedPartitionCommands.Should().ContainSingle();
     }
 
@@ -229,7 +236,39 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.QueryPartitions(partitionRequest);
 
-        result.Should().BeOfType<PartitionResult.PartitionSuccess>().Which.Ranges.Should().BeEmpty();
+        var success = result.Should().BeOfType<PartitionResult.PartitionSuccess>().Subject;
+
+        success.Ranges.Should().BeEmpty();
+        success.SelectionSkipped.Should().BeTrue();
+        _capturedPartitionCommands.Should().BeEmpty();
+    }
+
+    // Preprocessing proves an id filter cannot name a document before planning is even reached, which is
+    // the earliest of the partition short-circuits. It must cost no command and report as skipped.
+    [Test]
+    public async Task It_returns_no_ranges_without_a_command_when_preprocessing_proves_the_id_filter_matches_nothing()
+    {
+        var partitionRequest = CreatePartitionRequest(
+            CreateQuerySupportedMappingSet(
+                _schoolResourceInfo,
+                CreateSupportedQueryField(
+                    "id",
+                    "$.id",
+                    "string",
+                    new RelationalQueryFieldTarget.DocumentUuid()
+                )
+            ),
+            queryElements: [CreateQueryElement("id", "$.id", "not-a-guid", "string")]
+        );
+
+        StubPartitionBoundaryStarts();
+
+        var result = await _sut.QueryPartitions(partitionRequest);
+
+        var success = result.Should().BeOfType<PartitionResult.PartitionSuccess>().Subject;
+
+        success.Ranges.Should().BeEmpty();
+        success.SelectionSkipped.Should().BeTrue();
         _capturedPartitionCommands.Should().BeEmpty();
     }
 
@@ -254,7 +293,13 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.QueryPartitions(partitionRequest);
 
-        result.Should().BeOfType<PartitionResult.PartitionSuccess>().Which.Ranges.Should().BeEmpty();
+        var success = result.Should().BeOfType<PartitionResult.PartitionSuccess>().Subject;
+
+        success.Ranges.Should().BeEmpty();
+
+        // The skip happens inside the shared authorization resolution, which answers in QueryResult, so
+        // this also proves the flag survives the query-to-partition restatement.
+        success.SelectionSkipped.Should().BeTrue();
         _capturedPartitionCommands.Should().BeEmpty();
     }
 

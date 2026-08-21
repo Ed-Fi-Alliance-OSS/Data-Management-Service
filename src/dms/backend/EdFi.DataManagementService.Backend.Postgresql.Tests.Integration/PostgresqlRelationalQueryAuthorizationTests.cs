@@ -2930,7 +2930,7 @@ public class Given_A_Postgresql_Relational_Query_Authorization_With_The_Authorit
             totalCount: true
         );
 
-        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0));
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0) { SelectionSkipped = true });
         _context.AssertNoHydration();
     }
 
@@ -4041,7 +4041,7 @@ public class Given_A_Postgresql_Relational_Query_Authorization_With_Anchored_Per
             RelationshipAuthorizationCrudTestSupport.StudentsOnlyStrategyNames
         );
 
-        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0));
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0) { SelectionSkipped = true });
         _context.AssertNoHydration();
     }
 

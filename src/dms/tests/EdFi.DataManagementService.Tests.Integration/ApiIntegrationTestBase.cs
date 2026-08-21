@@ -247,6 +247,7 @@ public abstract class ApiIntegrationTestBase
                 {
                     services.AddSingleton(queryRecorder);
                     services.ReplaceDocumentHydratorWithRecorder();
+                    services.ReplaceRelationalCommandExecutorWithRecorder();
                 }
             });
         });

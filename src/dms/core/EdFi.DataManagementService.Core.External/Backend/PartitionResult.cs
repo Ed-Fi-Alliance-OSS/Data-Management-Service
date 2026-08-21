@@ -35,7 +35,18 @@ public abstract record PartitionResult
     /// The inclusive DocumentId ranges a client can walk independently. Every range but the last is
     /// bounded above, so a later insert cannot move into a completed partition.
     /// </param>
-    public sealed record PartitionSuccess(IReadOnlyList<CursorRange> Ranges) : PartitionResult;
+    public sealed record PartitionSuccess(IReadOnlyList<CursorRange> Ranges) : PartitionResult
+    {
+        /// <summary>
+        /// No candidate selection command was issued; this empty success is a short-circuit.
+        /// </summary>
+        /// <remarks>
+        /// Defaults to false, so a boundary command that executed and found no starts stays correct
+        /// without edits. Only the deliberate short-circuits set it true, which is what separates
+        /// "no database work was done" from "the command ran and matched nothing".
+        /// </remarks>
+        public bool SelectionSkipped { get; init; }
+    }
 
     /// <summary>
     /// A failure because the requested partition operation is intentionally not implemented, for

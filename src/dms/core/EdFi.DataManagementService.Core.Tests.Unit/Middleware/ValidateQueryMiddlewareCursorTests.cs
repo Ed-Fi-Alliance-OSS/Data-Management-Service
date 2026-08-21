@@ -4,12 +4,15 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Tests.Unit.Handler;
+using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using FluentAssertions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
@@ -477,6 +480,138 @@ public class ValidateQueryMiddlewareCursorTests
             requestInfo
                 .CollectionPaging.Should()
                 .Be(new CollectionPaging.Traditional(requestInfo.PaginationParameters));
+        }
+    }
+
+    /// <summary>
+    /// What a request this step answers contributes to the collection-paging metric.
+    /// </summary>
+    /// <remarks>
+    /// Every rejecting exit is covered here rather than split across the two GET-many test files,
+    /// because this step answers a cursor fault, a traditional fault, a change-version fault, and a
+    /// filter fault with the same measurement — and it is the difference between them, in one place,
+    /// that shows the coverage is complete.
+    /// </remarks>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Collection_Paging_Telemetry_For_A_Rejection : ValidateQueryMiddlewareCursorTests
+    {
+        /// <summary>
+        /// The live GET-many composition, recording what it counted. A mapping set is resolved onto the
+        /// request because ResolveMappingSetMiddleware runs ahead of this step in that pipeline, so the
+        /// provider a rejection reports is a real one.
+        /// </summary>
+        private static async Task<RecordingCollectionPagingTelemetry> ExecuteRecording(
+            params (string Key, string Value)[] queryParameters
+        )
+        {
+            RecordingCollectionPagingTelemetry telemetry = new();
+
+            RequestInfo requestInfo = RequestInfoFor(queryParameters);
+            requestInfo.MappingSet = RelationalWriteSeamFixture
+                .Create()
+                .CreateSupportedMappingSet(SqlDialect.Pgsql);
+
+            await ValidateQueryMiddlewareTests.Middleware(telemetry).Execute(requestInfo, NullNext);
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+
+            return telemetry;
+        }
+
+        // A rejected cursor request must report cursor. RequestInfo.CollectionPaging is assigned only at
+        // the accepting exit, so reading paging mode from request state would report every rejected
+        // cursor request as traditional traffic.
+        [TestCase("!!!", TestName = "{m}(undecodable token)")]
+        [TestCase("", TestName = "{m}(empty token)")]
+        public async Task It_reports_a_rejected_cursor_request_as_cursor(string pageToken)
+        {
+            RecordingCollectionPagingTelemetry telemetry = await ExecuteRecording(("pageToken", pageToken));
+
+            CollectionPagingMeasurement measurement = telemetry.Single;
+
+            measurement.Kind.Should().Be(CollectionPagingMeasurementKind.ValidationRejected);
+            measurement.PagingMode.Should().Be("cursor");
+            measurement.CommandCategory.Should().Be("none");
+            measurement.Provider.Should().Be("postgresql");
+            measurement.Outcome.Should().Be("validation_rejected");
+        }
+
+        // A request carrying pageSize alone is a cursor request too: it is rejected for naming no token,
+        // and it must not be counted as traditional traffic either.
+        [Test]
+        public async Task It_reports_a_page_size_without_a_token_as_cursor()
+        {
+            RecordingCollectionPagingTelemetry telemetry = await ExecuteRecording(("pageSize", "5"));
+
+            telemetry.Single.PagingMode.Should().Be("cursor");
+        }
+
+        private static readonly TestCaseData[] _traditionalRejections =
+        [
+            new TestCaseData(new[] { ("limit", "-1") }).SetName("{m}(paging fault)"),
+            new TestCaseData(new[] { ("minChangeVersion", "abc") }).SetName("{m}(change-version fault)"),
+            new TestCaseData(new[] { ("notAField", "1") }).SetName("{m}(unknown query field)"),
+            new TestCaseData(new[] { ("schoolId", "not-a-number") }).SetName("{m}(invalid filter value)"),
+        ];
+
+        // Every rejecting exit of this step counts, not only the paging ones: the ticket says
+        // "validation rejection" without narrowing it to paging faults.
+        [TestCaseSource(nameof(_traditionalRejections))]
+        public async Task It_counts_every_rejecting_exit_exactly_once(
+            (string Key, string Value)[] queryParameters
+        )
+        {
+            RecordingCollectionPagingTelemetry telemetry = await ExecuteRecording(queryParameters);
+
+            CollectionPagingMeasurement measurement = telemetry.Single;
+
+            measurement.Kind.Should().Be(CollectionPagingMeasurementKind.ValidationRejected);
+            measurement.PagingMode.Should().Be("traditional");
+            measurement.CommandCategory.Should().Be("none");
+            measurement.Outcome.Should().Be("validation_rejected");
+        }
+
+        // Nothing executed, so a duration sample would report the cost of parsing a query string as a
+        // read latency. The recording method that carries no duration is the one that must be called.
+        [Test]
+        public async Task It_records_no_duration_for_a_rejection()
+        {
+            RecordingCollectionPagingTelemetry telemetry = await ExecuteRecording(("limit", "-1"));
+
+            telemetry.Single.Duration.Should().BeNull();
+            telemetry.Single.Requested.Should().BeNull();
+            telemetry.Single.Returned.Should().BeNull();
+        }
+
+        [Test]
+        public async Task It_counts_nothing_for_a_request_it_accepts()
+        {
+            RecordingCollectionPagingTelemetry telemetry = new();
+            RequestInfo requestInfo = RequestInfoFor(("schoolId", "1"), ("limit", "25"));
+
+            await ValidateQueryMiddlewareTests.Middleware(telemetry).Execute(requestInfo, NullNext);
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            telemetry.Measurements.Should().BeEmpty();
+        }
+
+        // Counting runs ahead of the rejection this step answers with, so a measurement callback that
+        // throws would replace a 400 naming the bad parameter with a system error naming nothing.
+        [Test]
+        public async Task It_still_answers_the_rejection_when_recording_throws()
+        {
+            RequestInfo requestInfo = RequestInfoFor(("limit", "-1"));
+
+            await ValidateQueryMiddlewareTests
+                .Middleware(new ThrowingCollectionPagingTelemetry())
+                .Execute(requestInfo, NullNext);
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            requestInfo
+                .FrontendResponse.Body!.ToJsonString()
+                .Should()
+                .Contain("Limit must be omitted or set to a numeric value between 0 and");
         }
     }
 }

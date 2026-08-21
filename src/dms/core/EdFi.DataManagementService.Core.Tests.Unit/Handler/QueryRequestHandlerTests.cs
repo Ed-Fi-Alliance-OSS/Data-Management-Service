@@ -17,6 +17,7 @@ using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
+using EdFi.DataManagementService.Core.Telemetry;
 using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using FakeItEasy;
 using FluentAssertions;
@@ -35,13 +36,18 @@ public class QueryRequestHandlerTests
 {
     internal static (IPipelineStep handler, IServiceProvider serviceProvider) Handler(
         IQueryHandler queryHandler,
-        ILogger? logger = null
+        ILogger? logger = null,
+        ICollectionPagingTelemetry? collectionPagingTelemetry = null
     )
     {
         var serviceProvider = A.Fake<IServiceProvider>();
         A.CallTo(() => serviceProvider.GetService(typeof(IQueryHandler))).Returns(queryHandler);
 
-        var handler = new QueryRequestHandler(logger ?? NullLogger.Instance, ResiliencePipeline.Empty);
+        var handler = new QueryRequestHandler(
+            logger ?? NullLogger.Instance,
+            ResiliencePipeline.Empty,
+            collectionPagingTelemetry ?? NoOpCollectionPagingTelemetry.Instance
+        );
 
         return (handler, serviceProvider);
     }
@@ -1366,6 +1372,469 @@ public class QueryRequestHandlerTests
         {
             _repository.CapturedRequest.Should().NotBeNull();
             _repository.CapturedRequest!.ChangeVersionRange.Should().Be(ChangeVersionRange.None);
+        }
+    }
+
+    /// <summary>
+    /// What each GET-many outcome contributes to the collection-paging metric.
+    /// </summary>
+    /// <remarks>
+    /// One request contributes exactly one measurement set, which every test here asserts by reading
+    /// <see cref="RecordingCollectionPagingTelemetry.Single" />. Instrument names, units, and tag-set
+    /// cardinality are pinned in the telemetry component's own tests; what is under test here is which
+    /// outcome and command category this handler chose for a given backend result.
+    /// </remarks>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Collection_Paging_Telemetry_For_A_Query : QueryRequestHandlerTests
+    {
+        private sealed class Repository(QueryResult result) : NotImplementedDocumentStoreRepository
+        {
+            public override Task<QueryResult> QueryDocuments(
+                IQueryRequest queryRequest,
+                CancellationToken cancellationToken = default
+            ) => Task.FromResult(result);
+        }
+
+        private sealed class ThrowingRepository(Exception fault) : NotImplementedDocumentStoreRepository
+        {
+            public override Task<QueryResult> QueryDocuments(
+                IQueryRequest queryRequest,
+                CancellationToken cancellationToken = default
+            ) => throw fault;
+        }
+
+        private static readonly CollectionPaging _traditionalPaging = new CollectionPaging.Traditional(
+            new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+        );
+
+        private static readonly CollectionPaging _cursorPaging = new CollectionPaging.Cursor(
+            new CursorRange(7, 4200),
+            new PageSize(64)
+        );
+
+        private static JsonArray Documents(int count) =>
+            [.. Enumerable.Range(0, count).Select(index => (JsonNode)new JsonObject { ["i"] = index })];
+
+        private static async Task<(
+            RequestInfo RequestInfo,
+            RecordingCollectionPagingTelemetry Telemetry
+        )> ExecuteAsync(QueryResult result, CollectionPaging? paging = null, RequestInfo? requestInfo = null)
+        {
+            RecordingCollectionPagingTelemetry telemetry = new();
+
+            requestInfo ??= RequestInfoWithRelationalMappingSet();
+            requestInfo.CollectionPaging = paging ?? _traditionalPaging;
+
+            var (queryHandler, serviceProvider) = Handler(
+                new Repository(result),
+                collectionPagingTelemetry: telemetry
+            );
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            await queryHandler.Execute(requestInfo, NullNext);
+
+            return (requestInfo, telemetry);
+        }
+
+        private static async Task<(
+            Exception? Fault,
+            RecordingCollectionPagingTelemetry Telemetry
+        )> ExecuteThrowingAsync(Exception fault, CancellationToken requestCancellationToken = default)
+        {
+            RecordingCollectionPagingTelemetry telemetry = new();
+
+            RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
+            requestInfo.CollectionPaging = _traditionalPaging;
+            requestInfo.RequestCancellationToken = requestCancellationToken;
+
+            var (queryHandler, serviceProvider) = Handler(
+                new ThrowingRepository(fault),
+                collectionPagingTelemetry: telemetry
+            );
+            requestInfo.ScopedServiceProvider = serviceProvider;
+
+            try
+            {
+                await queryHandler.Execute(requestInfo, NullNext);
+                return (null, telemetry);
+            }
+            catch (Exception caught)
+            {
+                return (caught, telemetry);
+            }
+        }
+
+        [Test]
+        public async Task It_records_a_served_page_that_can_be_walked_from()
+        {
+            var (_, telemetry) = await ExecuteAsync(new QueryResult.QuerySuccess(Documents(3), null, 2509L));
+
+            CollectionPagingMeasurement measurement = telemetry.Single;
+
+            measurement.Kind.Should().Be(CollectionPagingMeasurementKind.Page);
+            measurement.PagingMode.Should().Be("traditional");
+            measurement.CommandCategory.Should().Be("page");
+            measurement.Provider.Should().Be("postgresql");
+            measurement.Outcome.Should().Be("success");
+            measurement.Requested.Should().Be(25);
+            measurement.Returned.Should().Be(3);
+            measurement.Duration.Should().NotBeNull().And.BeGreaterThanOrEqualTo(TimeSpan.Zero);
+        }
+
+        // The total count is compiled into the same selection command, which is the command-shape
+        // difference the category exists to separate.
+        [Test]
+        public async Task It_records_page_with_count_when_the_request_asked_for_a_total_count()
+        {
+            var (_, telemetry) = await ExecuteAsync(
+                new QueryResult.QuerySuccess(Documents(2), 7, 2509L),
+                new CollectionPaging.Traditional(
+                    new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+                )
+            );
+
+            telemetry.Single.CommandCategory.Should().Be("page_with_count");
+            telemetry.Single.Outcome.Should().Be("success");
+        }
+
+        // First of the three terminal-page boundaries: selection chose nothing, so there is nothing
+        // after it.
+        [Test]
+        public async Task It_records_terminal_page_when_selection_chose_nothing()
+        {
+            var (_, telemetry) = await ExecuteAsync(new QueryResult.QuerySuccess([], null));
+
+            telemetry.Single.Outcome.Should().Be("terminal_page");
+            telemetry.Single.CommandCategory.Should().Be("page");
+            telemetry.Single.Returned.Should().Be(0);
+        }
+
+        // Second: the codec cannot advance past Int64.MaxValue, so no next range can be named.
+        [Test]
+        public async Task It_records_terminal_page_at_the_maximum_document_id()
+        {
+            var (_, telemetry) = await ExecuteAsync(
+                new QueryResult.QuerySuccess(Documents(1), null, long.MaxValue)
+            );
+
+            telemetry.Single.Outcome.Should().Be("terminal_page");
+        }
+
+        // Third, and the regression guard: a traditional page over a max-bearing change-version window
+        // is ordered by ContentVersion, is served with rows, and the client keeps paging it with limit
+        // and offset. It withholds a token without ending a walk, so reporting it as terminal would tell
+        // operators a healthy walk had stopped.
+        [Test]
+        public async Task It_records_success_for_a_page_that_cannot_anchor_a_continuation()
+        {
+            var (requestInfo, telemetry) = await ExecuteAsync(
+                new QueryResult.QuerySuccess(Documents(4), null, 2509L)
+                {
+                    AllowsDocumentIdContinuation = false,
+                }
+            );
+
+            requestInfo.FrontendResponse.Headers.Should().NotContainKey("Next-Page-Token");
+            telemetry.Single.Outcome.Should().Be("success");
+            telemetry.Single.Returned.Should().Be(4);
+        }
+
+        // Early-empty outranks the terminal-page question: no command was issued, so no command shape
+        // can be attributed to it.
+        [Test]
+        public async Task It_records_early_empty_ahead_of_terminal_page_for_a_skipped_selection()
+        {
+            var (_, telemetry) = await ExecuteAsync(
+                new QueryResult.QuerySuccess([], null) { SelectionSkipped = true }
+            );
+
+            telemetry.Single.Outcome.Should().Be("early_empty");
+            telemetry.Single.CommandCategory.Should().Be("none");
+            telemetry.Single.Returned.Should().Be(0);
+        }
+
+        private static readonly TestCaseData[] _failureOutcomes =
+        [
+            new TestCaseData(
+                new QueryResult.QueryFailureNotImplemented("not implemented"),
+                "not_implemented"
+            ).SetName("{m}(not_implemented)"),
+            new TestCaseData(
+                new QueryResult.QueryFailureSecurityConfiguration(["invalid metadata"]),
+                "security_configuration"
+            ).SetName("{m}(security_configuration)"),
+            new TestCaseData(
+                new QueryResult.QueryFailureNamespaceNotAuthorized(
+                    Given_A_Repository_That_Returns_Namespace_Not_Authorized.Failure
+                ),
+                "not_authorized"
+            ).SetName("{m}(not_authorized)"),
+            new TestCaseData(new QueryResult.QueryFailureRetryable(), "retry_exhausted").SetName(
+                "{m}(retry_exhausted)"
+            ),
+            new TestCaseData(new QueryResult.UnknownFailure("unknown"), "unknown_failure").SetName(
+                "{m}(unknown_failure)"
+            ),
+            // A known error reports query terms that evaded validation. The bounded outcome set has no
+            // value of its own for it, and counting it as validation_rejected would dilute the
+            // middleware-rejection rate operators watch, so it is an unclassified backend failure.
+            new TestCaseData(
+                new QueryResult.QueryFailureKnownError("invalid query terms"),
+                "unknown_failure"
+            ).SetName("{m}(known_error)"),
+        ];
+
+        [TestCaseSource(nameof(_failureOutcomes))]
+        public async Task It_records_every_failure_with_no_command_category(
+            QueryResult failure,
+            string expectedOutcome
+        )
+        {
+            var (_, telemetry) = await ExecuteAsync(failure);
+
+            CollectionPagingMeasurement measurement = telemetry.Single;
+
+            measurement.Outcome.Should().Be(expectedOutcome);
+            measurement.CommandCategory.Should().Be("none");
+
+            // No page was produced, so nothing may be contributed to the returned-size histogram: a zero
+            // there would be indistinguishable from a successful empty page.
+            measurement.Returned.Should().BeNull();
+        }
+
+        [Test]
+        public async Task It_records_an_execution_exception_and_still_propagates_it()
+        {
+            InvalidOperationException fault = new("custom view is not conforming");
+
+            var (caught, telemetry) = await ExecuteThrowingAsync(fault);
+
+            caught.Should().BeSameAs(fault);
+            telemetry.Single.Outcome.Should().Be("execution_exception");
+            telemetry.Single.CommandCategory.Should().Be("none");
+            telemetry.Single.Returned.Should().BeNull();
+        }
+
+        // A disconnected client is the absence of a completed read, not a kind of one, and its duration
+        // would measure how long the client waited rather than how long a read took.
+        [Test]
+        public async Task It_records_nothing_when_the_request_token_was_cancelled()
+        {
+            using CancellationTokenSource cancellationSource = new();
+            await cancellationSource.CancelAsync();
+
+            var (caught, telemetry) = await ExecuteThrowingAsync(
+                new OperationCanceledException(cancellationSource.Token),
+                cancellationSource.Token
+            );
+
+            caught.Should().BeOfType<OperationCanceledException>();
+            telemetry.Measurements.Should().BeEmpty();
+        }
+
+        // The companion to the test above: the filter narrows the case to a client disconnect rather
+        // than opening a hole for every cancellation. A cancellation the request did not ask for is a
+        // genuine internal fault.
+        [Test]
+        public async Task It_records_an_execution_exception_for_a_cancellation_the_request_did_not_ask_for()
+        {
+            var (caught, telemetry) = await ExecuteThrowingAsync(new OperationCanceledException());
+
+            caught.Should().BeOfType<OperationCanceledException>();
+            telemetry.Single.Outcome.Should().Be("execution_exception");
+        }
+
+        [Test]
+        public async Task It_records_the_cursor_page_size_as_requested()
+        {
+            var (_, telemetry) = await ExecuteAsync(
+                new QueryResult.QuerySuccess(Documents(1), null, 21L),
+                _cursorPaging
+            );
+
+            telemetry.Single.PagingMode.Should().Be("cursor");
+            telemetry.Single.Requested.Should().Be(64);
+        }
+
+        // A traditional request that named no limit will be served at most the configured maximum, so
+        // that is the size it asked for.
+        [Test]
+        public async Task It_records_the_configured_maximum_when_traditional_paging_named_no_limit()
+        {
+            var (_, telemetry) = await ExecuteAsync(
+                new QueryResult.QuerySuccess(Documents(1), null, 21L),
+                new CollectionPaging.Traditional(
+                    new PaginationParameters(Limit: null, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+                )
+            );
+
+            telemetry.Single.Requested.Should().Be(500);
+        }
+
+        [TestCase(SqlDialect.Pgsql, "postgresql")]
+        [TestCase(SqlDialect.Mssql, "sqlserver")]
+        public async Task It_reports_the_provider_of_the_resolved_mapping_set(
+            SqlDialect dialect,
+            string expectedProvider
+        )
+        {
+            RequestInfo requestInfo = No.RequestInfo();
+            requestInfo.MappingSet = RelationalWriteSeamFixture.Create().CreateSupportedMappingSet(dialect);
+
+            var (_, telemetry) = await ExecuteAsync(
+                new QueryResult.QuerySuccess(Documents(2), null, 2509L),
+                requestInfo: requestInfo
+            );
+
+            CollectionPagingMeasurement measurement = telemetry.Single;
+
+            measurement.Provider.Should().Be(expectedProvider);
+
+            // Only the provider differs across dialects. Everything else about the same operation has to
+            // match, or an operator could not compare the two engines on one dashboard.
+            measurement.PagingMode.Should().Be("traditional");
+            measurement.CommandCategory.Should().Be("page");
+            measurement.Outcome.Should().Be("success");
+            measurement.Requested.Should().Be(25);
+            measurement.Returned.Should().Be(2);
+        }
+
+        // The metric describes traffic shape, never who asked or what they asked for. Sentinels stand in
+        // for every request-derived value the emission site can reach.
+        [Test]
+        public async Task It_carries_no_request_data_into_any_label()
+        {
+            const string ResourceNameSentinel = "SentinelResourceName";
+            const string TenantSentinel = "SentinelTenantKey";
+            const string NamespaceSentinel = "uri://sentinel-namespace.org";
+            const string ClientSentinel = "SentinelClientId";
+            const string FilterValueSentinel = "SentinelFilterValue";
+            const string PageTokenSentinel = "SentinelPageToken";
+
+            RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
+            requestInfo.ResourceInfo = requestInfo.ResourceInfo with
+            {
+                ResourceName = new ResourceName(ResourceNameSentinel),
+            };
+            requestInfo.FrontendRequest = requestInfo.FrontendRequest with
+            {
+                Tenant = TenantSentinel,
+                QueryParameters = new Dictionary<string, string>
+                {
+                    ["pageToken"] = PageTokenSentinel,
+                    ["name"] = FilterValueSentinel,
+                },
+            };
+            requestInfo.ClientAuthorizations = new ClientAuthorizations(
+                ClientId: ClientSentinel,
+                TokenId: "sentinel-token",
+                ClaimSetName: "SentinelClaimSet",
+                EducationOrganizationIds: [],
+                NamespacePrefixes: [new NamespacePrefix(NamespaceSentinel)],
+                DataStoreIds: []
+            );
+            requestInfo.QueryElements =
+            [
+                new QueryElement("name", [new JsonPath("$.name")], FilterValueSentinel, "string"),
+            ];
+
+            var (_, telemetry) = await ExecuteAsync(
+                new QueryResult.QuerySuccess(Documents(1), null, 21L),
+                requestInfo: requestInfo
+            );
+
+            string[] sentinels =
+            [
+                ResourceNameSentinel,
+                TenantSentinel,
+                NamespaceSentinel,
+                ClientSentinel,
+                FilterValueSentinel,
+                PageTokenSentinel,
+            ];
+            CollectionPagingMeasurement measurement = telemetry.Single;
+            string[] labels =
+            [
+                measurement.PagingMode,
+                measurement.CommandCategory,
+                measurement.Provider,
+                measurement.Outcome,
+            ];
+
+            foreach (string label in labels)
+            {
+                foreach (string sentinel in sentinels)
+                {
+                    label.Should().NotContain(sentinel);
+                }
+            }
+        }
+
+        // Instrumentation observes; it must not participate. The full response contract is asserted
+        // alongside an emission so a change that recorded a measurement by altering a header or a body
+        // could not pass.
+        [Test]
+        public async Task It_leaves_the_response_exactly_as_it_would_be_without_instrumentation()
+        {
+            var (requestInfo, telemetry) = await ExecuteAsync(
+                new QueryResult.QuerySuccess(Documents(2), 7, 2509L),
+                new CollectionPaging.Traditional(
+                    new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+                )
+            );
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(200);
+            requestInfo.FrontendResponse.ContentType.Should().Be("application/json");
+            requestInfo.FrontendResponse.Body!.AsArray().Should().HaveCount(2);
+            requestInfo.FrontendResponse.Headers["Total-Count"].Should().Be("7");
+            DecodeNextPageToken(requestInfo).Should().Be(new CursorRange(2510, long.MaxValue));
+            telemetry.Single.Outcome.Should().Be("success");
+        }
+
+        // The other half of "instrumentation must not participate": recording runs after the response is
+        // assembled, so a measurement callback that throws would discard a page the request had already
+        // earned and answer a system error instead.
+        [Test]
+        public async Task It_serves_the_page_when_recording_throws()
+        {
+            RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
+            requestInfo.CollectionPaging = _traditionalPaging;
+
+            var (queryHandler, serviceProvider) = Handler(
+                new Repository(new QueryResult.QuerySuccess(Documents(2), null, 2509L)),
+                collectionPagingTelemetry: new ThrowingCollectionPagingTelemetry()
+            );
+            requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await queryHandler.Execute(requestInfo, NullNext);
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(200);
+            requestInfo.FrontendResponse.Body!.AsArray().Should().HaveCount(2);
+            DecodeNextPageToken(requestInfo).Should().Be(new CursorRange(2510, long.MaxValue));
+        }
+
+        // The execution-exception emission runs from inside a catch that is about to rethrow. A telemetry
+        // fault there would replace the fault being reported, which is exactly the diagnosis that catch
+        // exists to preserve.
+        [Test]
+        public async Task It_propagates_the_execution_fault_when_recording_throws()
+        {
+            InvalidOperationException executionFault = new("A configured custom view is not conforming.");
+
+            RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
+            requestInfo.CollectionPaging = _traditionalPaging;
+
+            var (queryHandler, serviceProvider) = Handler(
+                new ThrowingRepository(executionFault),
+                collectionPagingTelemetry: new ThrowingCollectionPagingTelemetry()
+            );
+            requestInfo.ScopedServiceProvider = serviceProvider;
+
+            Func<Task> execute = () => queryHandler.Execute(requestInfo, NullNext);
+
+            (await execute.Should().ThrowAsync<InvalidOperationException>())
+                .Which.Should()
+                .BeSameAs(executionFault);
         }
     }
 }

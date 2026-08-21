@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.Telemetry;
 using FluentAssertions;
 
 namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
@@ -57,6 +58,27 @@ internal static class PartitionEndpointScenario
     /// runs across separate ranges rather than inside one.
     /// </summary>
     private const int SeededDocumentCount = 25;
+
+    /// <summary>
+    /// The database commands one <c>/partitions</c> request is allowed to cost.
+    /// </summary>
+    /// <remarks>
+    /// An absolute literal from the design rather than a figure captured from a run: a baseline captured
+    /// from this same build would carry whatever extra command the instrumentation added, so both sides
+    /// would move together and the assertion could never fail for the reason it exists. The design fixes
+    /// it instead — the endpoint performs exactly one database command for its boundary selection,
+    /// returns identifiers only, and hydrates nothing. The fixtures binding this scenario grant
+    /// <c>NoFurtherAuthorizationRequired</c>, so the design's one documented exception — a view-based
+    /// authorization strategy whose custom-view validation probe runs first as a second command — does
+    /// not apply, and raising this number is a visible, deliberate edit in review.
+    /// </remarks>
+    private const int PartitionsDatabaseCommands = 1;
+
+    /// <summary>
+    /// The partition count the telemetry cases request. Stated rather than omitted so the requested-count
+    /// measurement is a property of the request instead of a property of the host's configured default.
+    /// </summary>
+    private const int RequestedPartitionCount = 3;
 
     public static async Task It_covers_a_regular_resource_collection_across_its_partitions(
         ApiIntegrationHarness harness
@@ -288,6 +310,114 @@ internal static class PartitionEndpointScenario
         );
 
         fourthSegment.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    /// <summary>
+    /// What the collection-paging metric reports for a real boundary request, and what that request is
+    /// allowed to cost. The provider dimension is proven from a live connection rather than from a
+    /// dialect literal, which is the only place it can be: nothing in Core can tell which engine actually
+    /// answered.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Both resource kinds are read, because the seam that carries the single command differs between
+    /// them — a descriptor boundary command goes through the command executor while a regular-resource
+    /// one does not hydrate at all — and the quantity the design constrains is the total, not the split.
+    /// On this endpoint the hydration count is always zero, which is exactly why counting hydrations
+    /// alone would prove nothing here.
+    /// </para>
+    /// <para>
+    /// The command counters are snapshotted immediately around each asserted request, so the seeding
+    /// traffic above is excluded. That is request isolation, not a baseline: the expected value is the
+    /// design literal and is never read from a run.
+    /// </para>
+    /// </remarks>
+    public static async Task It_emits_bounded_telemetry_for_partition_requests(
+        ApiIntegrationHarness harness,
+        string expectedProvider
+    )
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedProvider);
+
+        ApiIntegrationQueryRecorder recorder =
+            harness.QueryRecorder
+            ?? throw new InvalidOperationException(
+                "This scenario counts database commands and requires CaptureQueryPlans."
+            );
+
+        await SeedMergeItemsAsync(harness, "telemetry");
+        await SeedDescriptorsAsync(harness, "telemetry");
+
+        using var metrics = CollectionPagingMetricCollector.Start();
+
+        // A boundary request over a regular resource, asserted on the raw response so the instrumentation
+        // is shown to change nothing a client can observe: a boundary set is still plain JSON with no
+        // paging headers.
+        metrics.Clear();
+        int commandsBefore = recorder.DatabaseCommands;
+
+        using (
+            HttpResponseMessage response = await harness.HttpClient.GetAsync(
+                $"{MergeItemsPartitionsEndpoint}?number={RequestedPartitionCount}"
+            )
+        )
+        {
+            string body = await response.Content.ReadAsStringAsync();
+            int databaseCommands = recorder.DatabaseCommands - commandsBefore;
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            response.Content.Headers.ContentType!.MediaType.Should().Be(StandardJsonContentType);
+            response.Headers.Contains("Total-Count").Should().BeFalse();
+            response.Headers.Contains("Next-Page-Token").Should().BeFalse();
+
+            int returnedPartitionCount = JsonNode.Parse(body)!["pageTokens"]!.AsArray().Count;
+            returnedPartitionCount
+                .Should()
+                .BeGreaterThan(
+                    1,
+                    "the seed exceeds the minimum partition size, so the returned-count measurement "
+                        + "below describes a real multi-partition plan"
+                );
+
+            databaseCommands
+                .Should()
+                .Be(
+                    PartitionsDatabaseCommands,
+                    "the partitions endpoint performs exactly one boundary command and hydrates "
+                        + "nothing, and the metric describing it must not be answered with an extra query"
+                );
+
+            metrics.AssertSinglePartitions(
+                expectedProvider,
+                CollectionPagingTelemetryLabel.BoundaryCommandCategory,
+                CollectionPagingTelemetryLabel.SuccessOutcome,
+                RequestedPartitionCount,
+                returnedPartitionCount
+            );
+        }
+
+        // A candidate set a filter emptied is a boundary command that ran and found nothing, not a
+        // selection that was skipped: the command is still issued, so the outcome is success with a
+        // returned count of zero rather than early_empty.
+        metrics.Clear();
+        commandsBefore = recorder.DatabaseCommands;
+
+        var emptyPageTokens = await ReadPageTokensAsync(
+            harness,
+            $"{DescriptorPartitionsEndpoint}?number={RequestedPartitionCount}"
+                + $"&codeValue=Partitions-telemetry-none-{Guid.NewGuid():N}"
+        );
+
+        (recorder.DatabaseCommands - commandsBefore).Should().Be(PartitionsDatabaseCommands);
+        emptyPageTokens.Should().BeEmpty();
+        metrics.AssertSinglePartitions(
+            expectedProvider,
+            CollectionPagingTelemetryLabel.BoundaryCommandCategory,
+            CollectionPagingTelemetryLabel.SuccessOutcome,
+            RequestedPartitionCount,
+            expectedReturnedPartitionCount: 0
+        );
     }
 
     private static async Task AssertMethodNotAllowedAsync(HttpResponseMessage response)

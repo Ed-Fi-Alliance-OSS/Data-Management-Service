@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
+using EdFi.DataManagementService.Core.Telemetry;
 using EdFi.DataManagementService.Core.Validation;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
@@ -24,10 +25,17 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// Recognition is a property of pipeline composition rather than something inferred at run time, so
 /// a reader can see at the composition site which operations page by cursor.
 /// </param>
+/// <param name="_collectionPagingTelemetry">
+/// Where a rejection is counted. Required rather than defaulted to the no-op because this step is
+/// composed into the Change Query pipeline as well, whose endpoints do not page by cursor and whose
+/// faults are therefore not collection-paging events. A required parameter makes that second site a
+/// compile error that forces an explicit choice, where a default would quietly pick one.
+/// </param>
 internal class ValidateQueryMiddleware(
     ILogger _logger,
     int _maximumPageSize,
-    bool _cursorParametersRecognized
+    bool _cursorParametersRecognized,
+    ICollectionPagingTelemetry _collectionPagingTelemetry
 ) : IPipelineStep
 {
     /// <summary>
@@ -118,14 +126,19 @@ internal class ValidateQueryMiddleware(
 
         // All three parameter faults below - cursor, traditional pagination, and change-version -
         // answer with the same shell, so they share one construction rather than three copies that
-        // have to be kept in step. The media type is not stated here at all; it comes from the
-        // FrontendResponse default.
-        FrontendResponse ParameterValidationFailed(string[] errors) =>
-            new(
+        // have to be kept in step, and counting the rejection here covers all three for the same
+        // reason. The media type is not stated here at all, because it comes from the FrontendResponse
+        // default.
+        FrontendResponse ParameterValidationFailed(string[] errors)
+        {
+            RecordValidationRejected(requestInfo);
+
+            return new(
                 StatusCode: 400,
                 Body: ForParameterValidation(errors, requestInfo.FrontendRequest.TraceId),
                 Headers: []
             );
+        }
 
         // A request that supplied either cursor parameter is validated by the cursor precedence.
         // Everything else keeps the traditional parsing and its existing messages. Both paths answer
@@ -214,6 +227,8 @@ internal class ValidateQueryMiddleware(
         switch (filterResult)
         {
             case ResourceQueryFilterResult.UnknownQueryField unknownQueryField:
+                RecordValidationRejected(requestInfo);
+
                 requestInfo.FrontendResponse = new FrontendResponse(
                     StatusCode: 400,
                     Body: FailureResponse.ForBadRequest(
@@ -233,6 +248,8 @@ internal class ValidateQueryMiddleware(
                     "Query parameter format error - {TraceId}",
                     requestInfo.FrontendRequest.TraceId.Value
                 );
+
+                RecordValidationRejected(requestInfo);
 
                 requestInfo.FrontendResponse = new FrontendResponse(
                     StatusCode: 400,
@@ -260,4 +277,55 @@ internal class ValidateQueryMiddleware(
                 );
         }
     }
+
+    /// <summary>
+    /// Counts a request this step answered. No duration is recorded: nothing executed.
+    /// </summary>
+    /// <remarks>
+    /// A telemetry fault never reaches the client. Counting runs ahead of the rejection this step is
+    /// about to answer with, so an escaping throw would replace a 400 that names what the client got
+    /// wrong with a system error that names nothing. Recording is not free of throwing code: an
+    /// instrument invokes whatever measurement callbacks the host has subscribed, which is third-party
+    /// code on this thread.
+    /// </remarks>
+    private void RecordValidationRejected(RequestInfo requestInfo)
+    {
+        try
+        {
+            _collectionPagingTelemetry.RecordValidationRejected(
+                CollectionPagingTelemetryContext.ForPagingMode(
+                    RejectedPagingMode(requestInfo),
+                    CollectionPagingTelemetryLabel.NoCommandCategory,
+                    requestInfo.MappingSet?.Key.Dialect,
+                    CollectionPagingTelemetryLabel.ValidationRejectedOutcome
+                )
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Collection paging telemetry was not recorded for a validation rejection - {TraceId}",
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+        }
+    }
+
+    /// <summary>
+    /// The paging mode of a request this step is rejecting, read from the query string rather than from
+    /// request state.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="RequestInfo.CollectionPaging" /> is assigned only at the accepting exit, so a rejected
+    /// cursor request still carries the traditional default and would be counted as traditional traffic.
+    /// The same constant array the cursor validator reads is used here, so the two cannot disagree about
+    /// what makes a request a cursor request.
+    /// </remarks>
+    private static string RejectedPagingMode(RequestInfo requestInfo) =>
+        Array.Exists(
+            CursorRequestValidator.CursorParameters,
+            requestInfo.FrontendRequest.QueryParameters.ContainsKey
+        )
+            ? CollectionPagingTelemetryLabel.CursorPagingMode
+            : CollectionPagingTelemetryLabel.TraditionalPagingMode;
 }

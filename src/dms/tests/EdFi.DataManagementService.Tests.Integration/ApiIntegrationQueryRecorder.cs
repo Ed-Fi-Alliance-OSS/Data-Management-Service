@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using FluentAssertions;
@@ -14,6 +15,7 @@ public sealed class ApiIntegrationQueryRecorder
 {
     private readonly object _sync = new();
     private readonly List<PageKeysetSpec> _hydrationKeysets = [];
+    private int _relationalCommandExecutions;
 
     public IReadOnlyList<PageKeysetSpec> HydrationKeysets
     {
@@ -26,12 +28,44 @@ public sealed class ApiIntegrationQueryRecorder
         }
     }
 
+    /// <summary>Number of page hydrations observed so far.</summary>
+    public int HydrationCount
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _hydrationKeysets.Count;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Number of commands issued through <see cref="IRelationalCommandExecutor"/> so far. This is the
+    /// seam the partition boundary command, the descriptor read, and the custom-view validation probe
+    /// use, none of which are visible as a hydration.
+    /// </summary>
+    public int RelationalCommandExecutions => Volatile.Read(ref _relationalCommandExecutions);
+
+    /// <summary>
+    /// Total database commands observed so far: hydrations plus command-executor commands. The two
+    /// seams are disjoint - a document hydrator opens its own connection and runs through
+    /// <c>HydrationExecutor</c>, never through <see cref="IRelationalCommandExecutor"/> - so the sum
+    /// double-counts nothing. Snapshot it before and after a single request and assert on the delta.
+    /// </summary>
+    public int DatabaseCommands => HydrationCount + RelationalCommandExecutions;
+
     internal void Record(PageKeysetSpec keyset)
     {
         lock (_sync)
         {
             _hydrationKeysets.Add(keyset);
         }
+    }
+
+    internal void RecordRelationalCommandExecution()
+    {
+        Interlocked.Increment(ref _relationalCommandExecutions);
     }
 
     public PageKeysetSpec.Query AssertSingleQueryHydration()
@@ -65,52 +99,96 @@ internal sealed class RecordingDocumentHydrator(IDocumentHydrator inner, ApiInte
     }
 }
 
+internal sealed class RecordingRelationalCommandExecutor(
+    IRelationalCommandExecutor inner,
+    ApiIntegrationQueryRecorder recorder
+) : IRelationalCommandExecutor
+{
+    private readonly IRelationalCommandExecutor _inner =
+        inner ?? throw new ArgumentNullException(nameof(inner));
+    private readonly ApiIntegrationQueryRecorder _recorder =
+        recorder ?? throw new ArgumentNullException(nameof(recorder));
+
+    public SqlDialect Dialect => _inner.Dialect;
+
+    public Task<TResult> ExecuteReaderAsync<TResult>(
+        RelationalCommand command,
+        Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _recorder.RecordRelationalCommandExecution();
+
+        return _inner.ExecuteReaderAsync(command, readAsync, cancellationToken);
+    }
+}
+
 internal static class ApiIntegrationQueryRecordingServiceCollectionExtensions
 {
     public static void ReplaceDocumentHydratorWithRecorder(this IServiceCollection services)
     {
+        services.ReplaceWithRecorder<IDocumentHydrator>(
+            static (inner, recorder) => new RecordingDocumentHydrator(inner, recorder)
+        );
+    }
+
+    public static void ReplaceRelationalCommandExecutorWithRecorder(this IServiceCollection services)
+    {
+        services.ReplaceWithRecorder<IRelationalCommandExecutor>(
+            static (inner, recorder) => new RecordingRelationalCommandExecutor(inner, recorder)
+        );
+    }
+
+    private static void ReplaceWithRecorder<TService>(
+        this IServiceCollection services,
+        Func<TService, ApiIntegrationQueryRecorder, TService> createRecordingDecorator
+    )
+        where TService : class
+    {
         var descriptor =
-            services.LastOrDefault(static service => service.ServiceType == typeof(IDocumentHydrator))
+            services.LastOrDefault(static service => service.ServiceType == typeof(TService))
             ?? throw new InvalidOperationException(
-                $"{nameof(IDocumentHydrator)} must be registered before query recording can wrap it."
+                $"{typeof(TService).Name} must be registered before query recording can wrap it."
             );
 
         services.Remove(descriptor);
         services.Add(
             ServiceDescriptor.Describe(
-                typeof(IDocumentHydrator),
-                serviceProvider => new RecordingDocumentHydrator(
-                    CreateInnerDocumentHydrator(serviceProvider, descriptor),
-                    serviceProvider.GetRequiredService<ApiIntegrationQueryRecorder>()
-                ),
+                typeof(TService),
+                serviceProvider =>
+                    createRecordingDecorator(
+                        CreateInner<TService>(serviceProvider, descriptor),
+                        serviceProvider.GetRequiredService<ApiIntegrationQueryRecorder>()
+                    ),
                 descriptor.Lifetime
             )
         );
     }
 
-    private static IDocumentHydrator CreateInnerDocumentHydrator(
+    private static TService CreateInner<TService>(
         IServiceProvider serviceProvider,
         ServiceDescriptor descriptor
     )
+        where TService : class
     {
-        if (descriptor.ImplementationInstance is IDocumentHydrator instance)
+        if (descriptor.ImplementationInstance is TService instance)
         {
             return instance;
         }
 
         if (descriptor.ImplementationFactory is not null)
         {
-            return (IDocumentHydrator)descriptor.ImplementationFactory(serviceProvider)!;
+            return (TService)descriptor.ImplementationFactory(serviceProvider)!;
         }
 
         if (descriptor.ImplementationType is not null)
         {
-            return (IDocumentHydrator)
+            return (TService)
                 ActivatorUtilities.CreateInstance(serviceProvider, descriptor.ImplementationType);
         }
 
         throw new InvalidOperationException(
-            $"{nameof(IDocumentHydrator)} registration does not have an implementation."
+            $"{typeof(TService).Name} registration does not have an implementation."
         );
     }
 }
