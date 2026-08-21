@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.Telemetry;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using EdFi.DataManagementService.Tests.Integration.Postgresql;
 using EdFi.DataManagementService.Tests.Integration.Scenarios;
@@ -28,6 +29,12 @@ public sealed class Given_Postgresql_PartitionEndpoint : PostgresqlApiIntegratio
     /// without ever crossing a range boundary.
     /// </summary>
     protected override int? MaximumPageSizeOverride => PartitionEndpointScenario.HostMaximumPageSize;
+
+    /// <summary>
+    /// Counts the database commands a read really issued, which is what the telemetry case below asserts
+    /// against the design's per-operation literal.
+    /// </summary>
+    protected override bool CaptureQueryPlans => true;
 
     [Test]
     public Task It_covers_a_regular_resource_collection_across_its_partitions() =>
@@ -68,4 +75,11 @@ public sealed class Given_Postgresql_PartitionEndpoint : PostgresqlApiIntegratio
     [Test]
     public Task It_leaves_the_neighbouring_route_shapes_unchanged() =>
         PartitionEndpointScenario.It_leaves_the_neighbouring_route_shapes_unchanged(Harness);
+
+    [Test]
+    public Task It_emits_bounded_telemetry_for_partition_requests() =>
+        PartitionEndpointScenario.It_emits_bounded_telemetry_for_partition_requests(
+            Harness,
+            CollectionPagingTelemetryLabel.PostgresqlProvider
+        );
 }
