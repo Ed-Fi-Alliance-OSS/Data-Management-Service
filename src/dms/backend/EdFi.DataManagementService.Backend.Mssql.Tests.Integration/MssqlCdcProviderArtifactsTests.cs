@@ -844,11 +844,6 @@ public class Given_MssqlCdcProviderArtifacts
                 "CreatedAt",
             ]
         );
-        captures[DocumentCaptureInstanceName]
-            .Select(row => row.ColumnName)
-            .Should()
-            .NotContain("IdentityVersion")
-            .And.NotContain("IdentityLastModifiedAt");
         AssertCapture(
             captures[HeartbeatCaptureInstanceName],
             sourceName: "CdcHeartbeat",

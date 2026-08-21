@@ -1896,7 +1896,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             // ContentVersion/ContentLastModifiedAt: deleted is non-empty there, so EXISTS alone
             // cannot exclude it, but no stored column appears in that SET clause.
             //
-            // UPDATE(col) is a performance pre-filter only, exactly as in the IdentityVersion stamp
+            // UPDATE(col) is a performance pre-filter only, exactly as in the identity-change workset
             // below: it reports that a column appeared in a SET clause, not that its value changed.
             // The null-safe value diff inside affectedDocs stays authoritative, so the guard can
             // only skip statements whose workset would have been empty. The disjunction covers

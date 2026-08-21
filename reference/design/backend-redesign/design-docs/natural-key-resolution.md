@@ -931,7 +931,7 @@ identity-propagation trigger row here would contradict that pruning contract.
 | Surviving trigger family | What the binary diff gates | Why it must stay byte-level |
 |---|---|---|
 | Document stamping — content stamp (resource roots, child scopes, and `dms.Descriptor`) | `ContentVersion` / `ContentLastModifiedAt` bumps | Non-identity fields stay request-wins under this contract: a case-only or trailing-space-only edit changes the served bytes, so the ETag must change and change queries must resurface the document. A collation diff would leave the ETag stale while the body changed. |
-| Document stamping — key-change workset | `ContentVersion` bump + the key-change tracked-change row | The fail-closed comparer residue: a byte-different-but-collation-equal key change (e.g. `Straße` → `Strasse`) is deliberately allowed through as a real key change, and its cascade rewrites referrer bytes; only a byte-level diff records any of it. |
+| Document stamping — key-change workset | Whether the key-change tracked-change row is emitted | The fail-closed comparer residue: a byte-different-but-collation-equal key change (e.g. `Straße` → `Strasse`) is deliberately allowed through as a real key change, and its cascade rewrites referrer bytes; only a byte-level diff records any of it. |
 | Abstract identity maintenance | Whether concrete identity changes propagate into the `<Abstract>Identity` tables | These tables will become the *only* resolution path for abstract references, and PostgreSQL matches them case-sensitively — byte drift between a concrete root and its abstract copy would become user-visible. |
 
 (Non-string columns are never cast — the byte comparison exists only where collation equality and

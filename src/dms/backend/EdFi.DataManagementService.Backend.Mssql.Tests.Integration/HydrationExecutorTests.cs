@@ -830,9 +830,7 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
                 DocumentUuid uniqueidentifier NOT NULL,
                 ResourceKeyId smallint NOT NULL DEFAULT 0,
                 ContentVersion bigint NOT NULL DEFAULT 1,
-                IdentityVersion bigint NOT NULL DEFAULT 1,
                 ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
                 CreatedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
             );
 
@@ -869,16 +867,16 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
         await ExecuteSql(
             connection,
             """
-            INSERT INTO dms.Document (DocumentId, DocumentUuid, ResourceKeyId, ContentVersion, IdentityVersion)
+            INSERT INTO dms.Document (DocumentId, DocumentUuid, ResourceKeyId, ContentVersion)
             VALUES
-                (10001, '00000000-0000-0000-0000-000000010001', 1, 11, 11),
-                (10002, '00000000-0000-0000-0000-000000010002', 1, 12, 12),
-                (11001, '00000000-0000-0000-0000-000000011001', 2, 1, 1),
-                (11002, '00000000-0000-0000-0000-000000011002', 3, 1, 1),
-                (11003, '00000000-0000-0000-0000-000000011003', 4, 1, 1),
-                (12001, '00000000-0000-0000-0000-000000012001', 5, 1, 1),
-                (12002, '00000000-0000-0000-0000-000000012002', 6, 1, 1),
-                (12003, '00000000-0000-0000-0000-000000012003', 7, 1, 1);
+                (10001, '00000000-0000-0000-0000-000000010001', 1, 11),
+                (10002, '00000000-0000-0000-0000-000000010002', 1, 12),
+                (11001, '00000000-0000-0000-0000-000000011001', 2, 1),
+                (11002, '00000000-0000-0000-0000-000000011002', 3, 1),
+                (11003, '00000000-0000-0000-0000-000000011003', 4, 1),
+                (12001, '00000000-0000-0000-0000-000000012001', 5, 1),
+                (12002, '00000000-0000-0000-0000-000000012002', 6, 1),
+                (12003, '00000000-0000-0000-0000-000000012003', 7, 1);
 
             INSERT INTO dms.Descriptor (DocumentId, Namespace, CodeValue, ShortDescription, Discriminator, Uri)
             VALUES
