@@ -21,7 +21,7 @@ internal enum DocumentCacheReadAccelerationOperation
 
 internal static class DocumentCacheReadTelemetryLabel
 {
-    public const string Unknown = "unknown";
+    public const string Unknown = DocumentCacheTelemetryLabel.Unknown;
     public const string Primary = "Primary";
     public const string GetByIdOperation = "getById";
     public const string QueryOperation = "query";
@@ -96,7 +96,7 @@ internal sealed record DocumentCacheReadTelemetryContext
 
         return new(
             targetContext.ProviderToken.Value,
-            targetContext.TargetKey.ToString(),
+            DocumentCacheTelemetryTargetLabel.FromTargetKey(targetContext.TargetKey),
             DocumentCacheReadTelemetryLabel.Primary,
             OperationLabel(operation),
             ResourceKindLabel(resourceKind),
@@ -127,7 +127,7 @@ internal sealed record DocumentCacheReadTelemetryContext
         return
         [
             new("provider", Provider),
-            new("target_key", TargetKey),
+            new("target", TargetKey),
             new("effective_target_kind", EffectiveTargetKind),
             new("operation", Operation),
             new("resource_kind", ResourceKind),

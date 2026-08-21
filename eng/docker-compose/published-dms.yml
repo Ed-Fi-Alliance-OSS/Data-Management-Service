@@ -68,7 +68,7 @@ services:
       JwtAuthentication__Audience: ${DMS_JWT_AUDIENCE:-}
       JwtAuthentication__MetadataAddress: ${DMS_JWT_METADATA_ADDRESS:-}
       JwtAuthentication__RequireHttpsMetadata: ${DMS_JWT_REQUIRE_HTTPS_METADATA:-false}
-      JwtAuthentication__RoleClaimType: ${DMS_JWT_ROLE_CLAIM_TYPE:-}
+      JwtAuthentication__RoleClaimType: ${DMS_JWT_ROLE_CLAIM_TYPE:-http://schemas.microsoft.com/ws/2008/06/identity/claims/role}
       JwtAuthentication__ClientRole: ${DMS_JWT_CLIENT_ROLE:-}
       JwtAuthentication__ClockSkewSeconds: ${DMS_JWT_CLOCK_SKEW_SECONDS:-30}
       JwtAuthentication__RefreshIntervalMinutes: ${DMS_JWT_REFRESH_INTERVAL_MINUTES:-60}

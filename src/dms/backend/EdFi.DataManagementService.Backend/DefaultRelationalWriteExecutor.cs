@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Profile;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -34,9 +35,12 @@ internal sealed class DefaultRelationalWriteExecutor(
     ILoggerFactory? loggerFactory = null,
     IDocumentCacheWriterTelemetry? documentCacheWriterTelemetry = null,
     IDataStoreSelection? dataStoreSelection = null,
+    IDocumentCacheEnqueueTelemetry? documentCacheEnqueueTelemetry = null,
+    IDocumentCacheTargetRegistry? documentCacheTargetRegistry = null,
     IRelationalWriteFirstPhase? writeFirstPhase = null,
     IRelationalWriteSecondCommandPhase? secondCommandPhase = null,
-    IRelationalCommandExecutor? customViewValidationCommandExecutor = null
+    IRelationalCommandExecutor? customViewValidationCommandExecutor = null,
+    IDocumentCacheProviderCommandTimeoutClassifier? documentCacheProviderCommandTimeoutClassifier = null
 ) : IRelationalWriteExecutor
 {
     private readonly IRelationalWriteSessionFactory _writeSessionFactory =
@@ -52,6 +56,18 @@ internal sealed class DefaultRelationalWriteExecutor(
         documentCacheWriterTelemetry ?? NoOpDocumentCacheWriterTelemetry.Instance;
 
     private readonly IDataStoreSelection? _dataStoreSelection = dataStoreSelection;
+
+    private readonly IDocumentCacheEnqueueTelemetry _documentCacheEnqueueTelemetry =
+        documentCacheEnqueueTelemetry ?? NoOpDocumentCacheEnqueueTelemetry.Instance;
+
+    private readonly IDocumentCacheTargetRegistry? _documentCacheTargetRegistry = documentCacheTargetRegistry;
+
+    private readonly IDocumentCacheProviderCommandTimeoutClassifier _documentCacheProviderCommandTimeoutClassifier =
+        documentCacheProviderCommandTimeoutClassifier
+        ?? NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance;
+
+    private readonly ILogger<DefaultRelationalWriteExecutor> _logger =
+        logger ?? NullLogger<DefaultRelationalWriteExecutor>.Instance;
 
     /// <summary>
     /// The composite first phase: target capture and lock, stored authorization, reference
@@ -120,6 +136,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         // the commit succeeds. Carrying it out of the try is what lets the commit itself sit outside
         // every handler that rolls back.
         RelationalWriteExecutorResult? committedResult = null;
+        RelationalWritePersistResult? committedPersistResult = null;
 
         IRelationalWriteSession createdSession;
         try
@@ -388,6 +405,7 @@ internal sealed class DefaultRelationalWriteExecutor(
                     ?? throw new InvalidOperationException(
                         "The second command ran in DML mode but returned no persisted target."
                     );
+                committedPersistResult = persistedTarget;
 
                 RecordCanonicalWriterWait(
                     executionRequest,
@@ -508,9 +526,11 @@ internal sealed class DefaultRelationalWriteExecutor(
 
             if (isMappedWriteFailure)
             {
+                RecordEnqueueFailureIfClassified(executionRequest, ex);
                 return writeFailureResult!;
             }
 
+            RecordEnqueueFailureIfClassified(executionRequest, ex);
             throw;
         }
         catch
@@ -540,6 +560,8 @@ internal sealed class DefaultRelationalWriteExecutor(
 
             throw;
         }
+
+        RecordEnqueueSuccessIfApplicable(executionRequest!, committedResult!, committedPersistResult);
 
         return committedResult!;
     }
@@ -606,7 +628,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         _documentCacheWriterTelemetry.RecordSameDocumentWait(
             DocumentCacheWriterMetricContext.ForCanonicalWriter(
                 request.MappingSet.Key.Dialect,
-                _dataStoreSelection,
+                DocumentCacheTelemetryTargetKeyResolver.Resolve(_dataStoreSelection, request.TenantKey),
                 DocumentCacheWriterTelemetryLabel.CanonicalWrite,
                 outcome
             ),
@@ -615,4 +637,61 @@ internal sealed class DefaultRelationalWriteExecutor(
             DocumentCacheWriterTelemetry.GetElapsedTime(startTimestamp)
         );
     }
+
+    private void RecordEnqueueSuccessIfApplicable(
+        RelationalWriteExecutorRequest request,
+        RelationalWriteExecutorResult result,
+        RelationalWritePersistResult? persistedTarget
+    )
+    {
+        if (
+            result.AttemptOutcome is not RelationalWriteExecutorAttemptOutcome.AppliedWrite
+            || persistedTarget is null
+        )
+        {
+            return;
+        }
+
+        DocumentCacheEnqueueTelemetryWriteBoundary.RecordSuccessIfEnqueueSucceededBestEffort(
+            _documentCacheEnqueueTelemetry,
+            _dataStoreSelection,
+            _documentCacheTargetRegistry,
+            request.TenantKey,
+            request.MappingSet.Key.Dialect,
+            persistedTarget.DocumentCacheEnqueueOutcome,
+            ToCanonicalOperation(request),
+            DocumentCacheEnqueueTelemetryResourceKind.Resource,
+            _logger
+        );
+    }
+
+    private void RecordEnqueueFailureIfClassified(
+        RelationalWriteExecutorRequest request,
+        DbException exception
+    )
+    {
+        DocumentCacheEnqueueTelemetryWriteBoundary.RecordFailureIfClassifiedBestEffort(
+            _documentCacheEnqueueTelemetry,
+            _documentCacheProviderCommandTimeoutClassifier,
+            _dataStoreSelection,
+            _documentCacheTargetRegistry,
+            request.TenantKey,
+            request.MappingSet.Key.Dialect,
+            ToCanonicalOperation(request),
+            DocumentCacheEnqueueTelemetryResourceKind.Resource,
+            exception,
+            _logger
+        );
+    }
+
+    private static DocumentCacheEnqueueTelemetryCanonicalOperation ToCanonicalOperation(
+        RelationalWriteExecutorRequest request
+    ) =>
+        request.OperationKind switch
+        {
+            RelationalWriteOperationKind.Post
+                when request.TargetContext is RelationalWriteTargetContext.CreateNew =>
+                DocumentCacheEnqueueTelemetryCanonicalOperation.Insert,
+            _ => DocumentCacheEnqueueTelemetryCanonicalOperation.Update,
+        };
 }

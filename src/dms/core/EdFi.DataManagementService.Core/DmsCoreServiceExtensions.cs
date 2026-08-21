@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Handler;
@@ -280,6 +281,10 @@ public static class DmsCoreServiceExtensions
         });
 
         services.AddSingleton<IJwtValidationService, JwtValidationService>();
+        services.AddSingleton<
+            IDocumentCacheStatusAuthorizationService,
+            DocumentCacheStatusAuthorizationService
+        >();
         services.AddTransient<JwtAuthenticationMiddleware>();
         services.AddTransient<JwtRoleAuthenticationMiddleware>();
 

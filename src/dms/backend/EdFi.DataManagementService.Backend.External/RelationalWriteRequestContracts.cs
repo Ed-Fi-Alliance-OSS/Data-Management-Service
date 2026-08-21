@@ -85,6 +85,12 @@ public interface IUpdateRequest : IWriteRequest
     TraceId TraceId { get; }
 
     /// <summary>
+    /// The normalized request tenant key used for target-scoped write telemetry.
+    /// Empty string identifies the default/non-tenant target.
+    /// </summary>
+    string TenantKey { get; }
+
+    /// <summary>
     /// The DocumentUuid of the document.
     /// </summary>
     DocumentUuid DocumentUuid { get; }

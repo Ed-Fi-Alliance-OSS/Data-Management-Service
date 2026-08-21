@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Utilities;
@@ -31,7 +32,10 @@ internal sealed class DescriptorWriteHandler(
         null,
     IDocumentCacheWriterTelemetry? documentCacheWriterTelemetry = null,
     IDataStoreSelection? dataStoreSelection = null,
-    IRelationalCommandExecutor? customViewValidationCommandExecutor = null
+    IDocumentCacheEnqueueTelemetry? documentCacheEnqueueTelemetry = null,
+    IDocumentCacheTargetRegistry? documentCacheTargetRegistry = null,
+    IRelationalCommandExecutor? customViewValidationCommandExecutor = null,
+    IDocumentCacheProviderCommandTimeoutClassifier? documentCacheProviderCommandTimeoutClassifier = null
 ) : IDescriptorWriteHandler
 {
     private readonly IRelationalWriteTargetLookupService _targetLookupService =
@@ -61,6 +65,14 @@ internal sealed class DescriptorWriteHandler(
     private readonly IDocumentCacheWriterTelemetry _documentCacheWriterTelemetry =
         documentCacheWriterTelemetry ?? NoOpDocumentCacheWriterTelemetry.Instance;
     private readonly IDataStoreSelection? _dataStoreSelection = dataStoreSelection;
+    private readonly IDocumentCacheEnqueueTelemetry _documentCacheEnqueueTelemetry =
+        documentCacheEnqueueTelemetry ?? NoOpDocumentCacheEnqueueTelemetry.Instance;
+    private readonly IDocumentCacheTargetRegistry? _documentCacheTargetRegistry = documentCacheTargetRegistry;
+    private readonly IDocumentCacheProviderCommandTimeoutClassifier _documentCacheProviderCommandTimeoutClassifier =
+        documentCacheProviderCommandTimeoutClassifier
+        ?? NoOpDocumentCacheProviderCommandTimeoutClassifier.Instance;
+    private const string EnqueueOutcomeNoWorkQueuedParameterName = "@enqueueOutcomeNoWorkQueued";
+    private const string EnqueueOutcomeAlreadySatisfiedParameterName = "@enqueueOutcomeAlreadySatisfied";
 
     public async Task<UpsertResult> HandlePostAsync(
         DescriptorWriteRequest request,
@@ -252,7 +264,12 @@ internal sealed class DescriptorWriteHandler(
                             .ConfigureAwait(false);
 
                         await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
-                        return insertResult;
+                        RecordDescriptorEnqueueSuccessIfApplicable(
+                            request,
+                            DocumentCacheEnqueueTelemetryCanonicalOperation.Insert,
+                            insertResult.DocumentCacheEnqueueOutcome
+                        );
+                        return insertResult.Result;
                     }
 
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -2594,7 +2611,7 @@ internal sealed class DescriptorWriteHandler(
         }
     }
 
-    private async Task<UpsertResult> InsertDescriptorAsync(
+    private async Task<DescriptorWriteAppliedResult<UpsertResult>> InsertDescriptorAsync(
         DescriptorWriteRequest request,
         ExtractedDescriptorBody body,
         DocumentUuid documentUuid,
@@ -2629,29 +2646,33 @@ internal sealed class DescriptorWriteHandler(
             ),
         };
 
-        var persistedContentVersion = await ExecuteDescriptorWriteReturningContentVersionWithTelemetryAsync(
+        var persistedWrite = await ExecuteDescriptorWriteReturningContentVersionWithTelemetryAsync(
                 request,
                 commandExecutor,
                 command,
+                DocumentCacheEnqueueTelemetryCanonicalOperation.Insert,
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        return new UpsertResult.InsertSuccess(
-            documentUuid,
-            _servedEtagComposer.Compose(
-                new ServedEtagContext(
-                    request.MappingSet.Key.EffectiveSchemaHash,
-                    ResponseFormat.Json,
-                    request.ProfileName,
-                    LinksEnabled: false,
-                    persistedContentVersion
+        return new DescriptorWriteAppliedResult<UpsertResult>(
+            new UpsertResult.InsertSuccess(
+                documentUuid,
+                _servedEtagComposer.Compose(
+                    new ServedEtagContext(
+                        request.MappingSet.Key.EffectiveSchemaHash,
+                        ResponseFormat.Json,
+                        request.ProfileName,
+                        LinksEnabled: false,
+                        persistedWrite.ContentVersion
+                    )
                 )
-            )
+            ),
+            persistedWrite.DocumentCacheEnqueueOutcome
         );
     }
 
-    private async Task<UpsertResult> UpdateDescriptorForUpsertAsync(
+    private async Task<DescriptorWriteAppliedResult<UpsertResult>> UpdateDescriptorForUpsertAsync(
         DescriptorWriteRequest request,
         ExtractedDescriptorBody body,
         long documentId,
@@ -2687,25 +2708,29 @@ internal sealed class DescriptorWriteHandler(
             ),
         };
 
-        var persistedContentVersion = await ExecuteDescriptorWriteReturningContentVersionWithTelemetryAsync(
+        var persistedWrite = await ExecuteDescriptorWriteReturningContentVersionWithTelemetryAsync(
                 request,
                 commandExecutor,
                 command,
+                DocumentCacheEnqueueTelemetryCanonicalOperation.Update,
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        return new UpsertResult.UpdateSuccess(
-            existingDocumentUuid,
-            _servedEtagComposer.Compose(
-                new ServedEtagContext(
-                    request.MappingSet.Key.EffectiveSchemaHash,
-                    ResponseFormat.Json,
-                    request.ProfileName,
-                    LinksEnabled: false,
-                    persistedContentVersion
+        return new DescriptorWriteAppliedResult<UpsertResult>(
+            new UpsertResult.UpdateSuccess(
+                existingDocumentUuid,
+                _servedEtagComposer.Compose(
+                    new ServedEtagContext(
+                        request.MappingSet.Key.EffectiveSchemaHash,
+                        ResponseFormat.Json,
+                        request.ProfileName,
+                        LinksEnabled: false,
+                        persistedWrite.ContentVersion
+                    )
                 )
-            )
+            ),
+            persistedWrite.DocumentCacheEnqueueOutcome
         );
     }
 
@@ -2746,7 +2771,12 @@ internal sealed class DescriptorWriteHandler(
             .ConfigureAwait(false);
 
         await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
-        return upsertResult;
+        RecordDescriptorEnqueueSuccessIfApplicable(
+            request,
+            DocumentCacheEnqueueTelemetryCanonicalOperation.Update,
+            upsertResult.DocumentCacheEnqueueOutcome
+        );
+        return upsertResult.Result;
     }
 
     private async Task<UpdateResult> ApplyLockedDescriptorPutAsync(
@@ -2798,15 +2828,21 @@ internal sealed class DescriptorWriteHandler(
             ),
         };
 
-        var persistedContentVersion = await ExecuteDescriptorWriteReturningContentVersionWithTelemetryAsync(
+        var persistedWrite = await ExecuteDescriptorWriteReturningContentVersionWithTelemetryAsync(
                 request,
                 writeSession.CreateCommandExecutor(),
                 command,
+                DocumentCacheEnqueueTelemetryCanonicalOperation.Update,
                 cancellationToken
             )
             .ConfigureAwait(false);
 
         await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
+        RecordDescriptorEnqueueSuccessIfApplicable(
+            request,
+            DocumentCacheEnqueueTelemetryCanonicalOperation.Update,
+            persistedWrite.DocumentCacheEnqueueOutcome
+        );
 
         return new UpdateResult.UpdateSuccess(
             documentUuid,
@@ -2816,7 +2852,7 @@ internal sealed class DescriptorWriteHandler(
                     ResponseFormat.Json,
                     request.ProfileName,
                     LinksEnabled: false,
-                    persistedContentVersion
+                    persistedWrite.ContentVersion
                 )
             )
         );
@@ -3196,7 +3232,12 @@ internal sealed class DescriptorWriteHandler(
                 .ConfigureAwait(false);
 
             await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return insertResult;
+            RecordDescriptorEnqueueSuccessIfApplicable(
+                request,
+                DocumentCacheEnqueueTelemetryCanonicalOperation.Insert,
+                insertResult.DocumentCacheEnqueueOutcome
+            );
+            return insertResult.Result;
         }
         catch
         {
@@ -3267,17 +3308,18 @@ internal sealed class DescriptorWriteHandler(
     /// Executes a descriptor write and records canonical writer wait telemetry for the applied or
     /// failed outcome.
     /// </summary>
-    private async Task<long> ExecuteDescriptorWriteReturningContentVersionWithTelemetryAsync(
+    private async Task<DescriptorWritePersistResult> ExecuteDescriptorWriteReturningContentVersionWithTelemetryAsync(
         DescriptorWriteRequest request,
         IRelationalCommandExecutor commandExecutor,
         RelationalCommand command,
+        DocumentCacheEnqueueTelemetryCanonicalOperation canonicalOperation,
         CancellationToken cancellationToken
     )
     {
         long canonicalPersistStartTimestamp = Stopwatch.GetTimestamp();
         try
         {
-            var contentVersion = await ExecuteWriteReturningContentVersionAsync(
+            var persistedWrite = await ExecuteWriteReturningPersistResultAsync(
                     commandExecutor,
                     command,
                     cancellationToken
@@ -3290,7 +3332,18 @@ internal sealed class DescriptorWriteHandler(
                 canonicalPersistStartTimestamp
             );
 
-            return contentVersion;
+            return persistedWrite;
+        }
+        catch (DbException ex)
+        {
+            RecordDescriptorCanonicalWriterWait(
+                request,
+                DocumentCacheWriterTelemetryLabel.Failed,
+                canonicalPersistStartTimestamp
+            );
+
+            RecordDescriptorEnqueueFailureIfClassified(request, canonicalOperation, ex);
+            throw;
         }
         catch
         {
@@ -3304,6 +3357,45 @@ internal sealed class DescriptorWriteHandler(
         }
     }
 
+    private void RecordDescriptorEnqueueSuccessIfApplicable(
+        DescriptorWriteRequest request,
+        DocumentCacheEnqueueTelemetryCanonicalOperation canonicalOperation,
+        DocumentCacheEnqueueOutcome enqueueOutcome
+    )
+    {
+        DocumentCacheEnqueueTelemetryWriteBoundary.RecordSuccessIfEnqueueSucceededBestEffort(
+            _documentCacheEnqueueTelemetry,
+            _dataStoreSelection,
+            _documentCacheTargetRegistry,
+            request.TenantKey,
+            request.MappingSet.Key.Dialect,
+            enqueueOutcome,
+            canonicalOperation,
+            DocumentCacheEnqueueTelemetryResourceKind.Descriptor,
+            _logger
+        );
+    }
+
+    private void RecordDescriptorEnqueueFailureIfClassified(
+        DescriptorWriteRequest request,
+        DocumentCacheEnqueueTelemetryCanonicalOperation canonicalOperation,
+        DbException exception
+    )
+    {
+        DocumentCacheEnqueueTelemetryWriteBoundary.RecordFailureIfClassifiedBestEffort(
+            _documentCacheEnqueueTelemetry,
+            _documentCacheProviderCommandTimeoutClassifier,
+            _dataStoreSelection,
+            _documentCacheTargetRegistry,
+            request.TenantKey,
+            request.MappingSet.Key.Dialect,
+            canonicalOperation,
+            DocumentCacheEnqueueTelemetryResourceKind.Descriptor,
+            exception,
+            _logger
+        );
+    }
+
     private void RecordDescriptorCanonicalWriterWait(
         DescriptorWriteRequest request,
         string outcome,
@@ -3313,7 +3405,7 @@ internal sealed class DescriptorWriteHandler(
         _documentCacheWriterTelemetry.RecordSameDocumentWait(
             DocumentCacheWriterMetricContext.ForCanonicalWriter(
                 request.MappingSet.Key.Dialect,
-                _dataStoreSelection,
+                DocumentCacheTelemetryTargetKeyResolver.Resolve(_dataStoreSelection, request.TenantKey),
                 DocumentCacheWriterTelemetryLabel.CanonicalWrite,
                 outcome
             ),
@@ -3330,7 +3422,7 @@ internal sealed class DescriptorWriteHandler(
     /// the INSERT returns the insert-time value (the stamp trigger only mirrors it on descriptor
     /// insert), and each UPDATE re-selects the post-trigger bumped value that a later GET reads.
     /// </summary>
-    private static Task<long> ExecuteWriteReturningContentVersionAsync(
+    private static Task<DescriptorWritePersistResult> ExecuteWriteReturningPersistResultAsync(
         IRelationalCommandExecutor commandExecutor,
         RelationalCommand command,
         CancellationToken cancellationToken
@@ -3349,7 +3441,12 @@ internal sealed class DescriptorWriteHandler(
                 {
                     if (await reader.ReadAsync(ct).ConfigureAwait(false))
                     {
-                        return reader.GetRequiredFieldValue<long>("ContentVersion");
+                        return new DescriptorWritePersistResult(
+                            reader.GetRequiredFieldValue<long>("ContentVersion"),
+                            DocumentCacheEnqueueOutcomeConversion.FromDescriptorWrite(
+                                reader.GetRequiredFieldValue<int>("DocumentCacheEnqueueOutcome")
+                            )
+                        );
                     }
                 } while (await reader.NextResultAsync(ct).ConfigureAwait(false));
 
@@ -3360,6 +3457,16 @@ internal sealed class DescriptorWriteHandler(
             cancellationToken
         );
 
+    private sealed record DescriptorWritePersistResult(
+        long ContentVersion,
+        DocumentCacheEnqueueOutcome DocumentCacheEnqueueOutcome
+    );
+
+    private sealed record DescriptorWriteAppliedResult<TResult>(
+        TResult Result,
+        DocumentCacheEnqueueOutcome DocumentCacheEnqueueOutcome
+    );
+
     // ── PostgreSQL SQL builders ──────────────────────────────────────────
 
     private static RelationalCommand BuildPostgresqlInsertCommand(
@@ -3369,15 +3476,13 @@ internal sealed class DescriptorWriteHandler(
         ReferentialId referentialId
     )
     {
-        // The Document CTE surfaces the insert-time ContentVersion (the descriptor stamp trigger only
-        // mirrors that value on INSERT and does not bump it), so the final SELECT returns exactly what
-        // a later GET reads. The ReferentialIdentity insert is wrapped in its own data-modifying CTE so
-        // it still executes even though the primary query reads only ContentVersion.
+        // The data-modifying CTE performs the insert graph, then a separate statement reads the inserted
+        // document and projection work row so PostgreSQL observes trigger side effects in this transaction.
         const string Sql = """
             WITH new_doc AS (
                 INSERT INTO dms."Document" ("DocumentUuid", "ResourceKeyId")
                 VALUES (@documentUuid, @resourceKeyId)
-                RETURNING "DocumentId", "ContentVersion"
+                RETURNING "DocumentId"
             )
             , new_descriptor AS (
                 INSERT INTO dms."Descriptor" (
@@ -3396,7 +3501,22 @@ internal sealed class DescriptorWriteHandler(
                 SELECT @referentialId, "DocumentId", @resourceKeyId
                 FROM new_doc
             )
-            SELECT "ContentVersion" FROM new_doc;
+            SELECT 1 WHERE false;
+
+            SELECT
+                document."ContentVersion" AS "ContentVersion",
+                CASE
+                    WHEN EXISTS (
+                        SELECT 1
+                        FROM dms."DocumentProjectionWork" work
+                        WHERE work."DocumentId" = document."DocumentId"
+                          AND work."RequiredContentVersion" >= document."ContentVersion"
+                    )
+                    THEN @enqueueOutcomeAlreadySatisfied
+                    ELSE @enqueueOutcomeNoWorkQueued
+                END AS "DocumentCacheEnqueueOutcome"
+            FROM dms."Document" document
+            WHERE document."DocumentUuid" = @documentUuid;
             """;
 
         return new RelationalCommand(
@@ -3443,7 +3563,19 @@ internal sealed class DescriptorWriteHandler(
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
             VALUES (@referentialId, @newDocumentId, @resourceKeyId);
 
-            SELECT [ContentVersion] FROM @insertedContentVersion;
+            SELECT
+                inserted.[ContentVersion],
+                CAST(CASE
+                    WHEN EXISTS (
+                        SELECT TOP (1) 1
+                        FROM [dms].[DocumentProjectionWork] work
+                        WHERE work.[DocumentId] = @newDocumentId
+                          AND work.[RequiredContentVersion] >= inserted.[ContentVersion]
+                    )
+                    THEN @enqueueOutcomeAlreadySatisfied
+                    ELSE @enqueueOutcomeNoWorkQueued
+                END AS int) AS [DocumentCacheEnqueueOutcome]
+            FROM @insertedContentVersion inserted;
             """;
 
         return new RelationalCommand(
@@ -3472,7 +3604,20 @@ internal sealed class DescriptorWriteHandler(
                 "Uri" = @uri
             WHERE "DocumentId" = @documentId;
 
-            SELECT "ContentVersion" FROM dms."Document" WHERE "DocumentId" = @documentId;
+            SELECT
+                document."ContentVersion" AS "ContentVersion",
+                CASE
+                    WHEN EXISTS (
+                        SELECT 1
+                        FROM dms."DocumentProjectionWork" work
+                        WHERE work."DocumentId" = document."DocumentId"
+                          AND work."RequiredContentVersion" >= document."ContentVersion"
+                    )
+                    THEN @enqueueOutcomeAlreadySatisfied
+                    ELSE @enqueueOutcomeNoWorkQueued
+                END AS "DocumentCacheEnqueueOutcome"
+            FROM dms."Document" document
+            WHERE document."DocumentId" = @documentId;
             """;
 
         return new RelationalCommand(Sql, BuildUpdateParameters(body, documentId));
@@ -3494,7 +3639,20 @@ internal sealed class DescriptorWriteHandler(
                 [Uri] = @uri
             WHERE [DocumentId] = @documentId;
 
-            SELECT [ContentVersion] FROM [dms].[Document] WHERE [DocumentId] = @documentId;
+            SELECT
+                document.[ContentVersion] AS [ContentVersion],
+                CAST(CASE
+                    WHEN EXISTS (
+                        SELECT TOP (1) 1
+                        FROM [dms].[DocumentProjectionWork] work
+                        WHERE work.[DocumentId] = document.[DocumentId]
+                          AND work.[RequiredContentVersion] >= document.[ContentVersion]
+                    )
+                    THEN @enqueueOutcomeAlreadySatisfied
+                    ELSE @enqueueOutcomeNoWorkQueued
+                END AS int) AS [DocumentCacheEnqueueOutcome]
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """;
 
         return new RelationalCommand(Sql, BuildUpdateParameters(body, documentId));
@@ -3528,7 +3686,20 @@ internal sealed class DescriptorWriteHandler(
             SET "DocumentId" = EXCLUDED."DocumentId",
                 "ResourceKeyId" = EXCLUDED."ResourceKeyId";
 
-            SELECT "ContentVersion" FROM dms."Document" WHERE "DocumentId" = @documentId;
+            SELECT
+                document."ContentVersion" AS "ContentVersion",
+                CASE
+                    WHEN EXISTS (
+                        SELECT 1
+                        FROM dms."DocumentProjectionWork" work
+                        WHERE work."DocumentId" = document."DocumentId"
+                          AND work."RequiredContentVersion" >= document."ContentVersion"
+                    )
+                    THEN @enqueueOutcomeAlreadySatisfied
+                    ELSE @enqueueOutcomeNoWorkQueued
+                END AS "DocumentCacheEnqueueOutcome"
+            FROM dms."Document" document
+            WHERE document."DocumentId" = @documentId;
             """;
 
         return new RelationalCommand(
@@ -3569,7 +3740,20 @@ internal sealed class DescriptorWriteHandler(
                 INSERT ([ReferentialId], [DocumentId], [ResourceKeyId])
                 VALUES (source.[ReferentialId], source.[DocumentId], source.[ResourceKeyId]);
 
-            SELECT [ContentVersion] FROM [dms].[Document] WHERE [DocumentId] = @documentId;
+            SELECT
+                document.[ContentVersion] AS [ContentVersion],
+                CAST(CASE
+                    WHEN EXISTS (
+                        SELECT TOP (1) 1
+                        FROM [dms].[DocumentProjectionWork] work
+                        WHERE work.[DocumentId] = document.[DocumentId]
+                          AND work.[RequiredContentVersion] >= document.[ContentVersion]
+                    )
+                    THEN @enqueueOutcomeAlreadySatisfied
+                    ELSE @enqueueOutcomeNoWorkQueued
+                END AS int) AS [DocumentCacheEnqueueOutcome]
+            FROM [dms].[Document] document
+            WHERE document.[DocumentId] = @documentId;
             """;
 
         return new RelationalCommand(
@@ -3835,6 +4019,7 @@ internal sealed class DescriptorWriteHandler(
         parameters.Add(new RelationalParameter("@documentUuid", documentUuid.Value));
         parameters.Add(new RelationalParameter("@resourceKeyId", resourceKeyId));
         parameters.Add(new RelationalParameter("@referentialId", referentialId.Value));
+        AddEnqueueOutcomeParameters(parameters);
         return parameters;
     }
 
@@ -3845,6 +4030,7 @@ internal sealed class DescriptorWriteHandler(
     {
         var parameters = BuildCommonFieldParameters(body);
         parameters.Add(new RelationalParameter("@documentId", documentId));
+        AddEnqueueOutcomeParameters(parameters);
         return parameters;
     }
 
@@ -3859,7 +4045,24 @@ internal sealed class DescriptorWriteHandler(
         parameters.Add(new RelationalParameter("@documentId", documentId));
         parameters.Add(new RelationalParameter("@resourceKeyId", resourceKeyId));
         parameters.Add(new RelationalParameter("@referentialId", referentialId.Value));
+        AddEnqueueOutcomeParameters(parameters);
         return parameters;
+    }
+
+    private static void AddEnqueueOutcomeParameters(List<RelationalParameter> parameters)
+    {
+        parameters.Add(
+            new RelationalParameter(
+                EnqueueOutcomeNoWorkQueuedParameterName,
+                (int)DocumentCacheEnqueueOutcome.NoWorkQueued
+            )
+        );
+        parameters.Add(
+            new RelationalParameter(
+                EnqueueOutcomeAlreadySatisfiedParameterName,
+                (int)DocumentCacheEnqueueOutcome.AlreadySatisfied
+            )
+        );
     }
 
     private static List<RelationalParameter> BuildCommonFieldParameters(ExtractedDescriptorBody body)

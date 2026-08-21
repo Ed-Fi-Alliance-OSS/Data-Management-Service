@@ -26,6 +26,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_DocumentCacheWriterTelemetry
 {
     private static readonly DocumentCacheProjectionTargetKey TargetKey = new("tenant-a", new DataStoreId(7));
+    private const string TargetLabel = "t1_5da94bdd25fe3bd6fe2e4b0e";
 
     [Test]
     public void It_records_one_counter_measurement_for_each_bounded_writer_outcome()
@@ -57,7 +58,7 @@ public class Given_DocumentCacheWriterTelemetry
             .Should()
             .BeEquivalentTo(Enum.GetNames<DocumentCacheWriterOutcome>());
         records.Should().OnlyContain(record => (string)record.Tags["provider"]! == "postgresql");
-        records.Should().OnlyContain(record => (string)record.Tags["target_key"]! == "tenant-a:7");
+        records.Should().OnlyContain(record => (string)record.Tags["target"]! == TargetLabel);
         records
             .Should()
             .OnlyContain(record =>
@@ -124,7 +125,7 @@ public class Given_DocumentCacheWriterTelemetry
         telemetry.RecordSameDocumentWait(
             DocumentCacheWriterMetricContext.ForCanonicalWriter(
                 RelationalProviderToken.SqlServer,
-                dataStoreId: 99,
+                DocumentCacheTargetKey.Create("tenant-a", 7),
                 DocumentCacheWriterTelemetryLabel.CanonicalWrite,
                 DocumentCacheWriterTelemetryLabel.AppliedWrite
             ),
@@ -139,7 +140,7 @@ public class Given_DocumentCacheWriterTelemetry
             .ContainSingle()
             .Which;
         sameDocumentWait.Tags["provider"].Should().Be("sqlserver");
-        sameDocumentWait.Tags["target_key"].Should().Be("selected:99");
+        sameDocumentWait.Tags["target"].Should().Be(TargetLabel);
         sameDocumentWait.Tags["purpose"].Should().Be(DocumentCacheWriterTelemetryLabel.CanonicalWrite);
         sameDocumentWait.Tags["lifecycle"].Should().Be(DocumentCacheWriterTelemetryLabel.Unknown);
         sameDocumentWait.Tags["outcome"].Should().Be(DocumentCacheWriterTelemetryLabel.AppliedWrite);
@@ -148,11 +149,11 @@ public class Given_DocumentCacheWriterTelemetry
     }
 
     [Test]
-    public void It_builds_canonical_writer_context_from_dialect_and_selected_data_store()
+    public void It_builds_canonical_writer_context_from_dialect_with_unknown_target()
     {
         DocumentCacheWriterMetricContext context = DocumentCacheWriterMetricContext.ForCanonicalWriter(
             SqlDialect.Mssql,
-            CreateSelectedDataStoreSelection(),
+            targetKey: null,
             DocumentCacheWriterTelemetryLabel.CanonicalWrite,
             DocumentCacheWriterTelemetryLabel.AppliedWrite
         );
@@ -160,7 +161,7 @@ public class Given_DocumentCacheWriterTelemetry
         var tags = context.ToTags();
 
         tags.First(tag => tag.Key == "provider").Value.Should().Be("sqlserver");
-        tags.First(tag => tag.Key == "target_key").Value.Should().Be("selected:99");
+        tags.First(tag => tag.Key == "target").Value.Should().Be(DocumentCacheWriterTelemetryLabel.Unknown);
         tags.First(tag => tag.Key == "purpose")
             .Value.Should()
             .Be(DocumentCacheWriterTelemetryLabel.CanonicalWrite);
@@ -222,11 +223,12 @@ public class Given_DocumentCacheWriterTelemetry
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var targetLookupService = new StubRelationalWriteTargetLookupService();
         var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        DataStoreSelection dataStoreSelection = CreateDataStoreSelection();
         var sut = CreateDescriptorWriteHandler(
             targetLookupService,
             sessionFactory,
             collector.CreateTelemetry(),
-            CreateSelectedDataStoreSelection()
+            dataStoreSelection
         );
         var mappingSet = CreateDescriptorMappingSet(SqlDialect.Pgsql);
 
@@ -290,7 +292,7 @@ public class Given_DocumentCacheWriterTelemetry
             .ContainSingle()
             .Which;
         sameDocumentWait.Tags["provider"].Should().Be("postgresql");
-        sameDocumentWait.Tags["target_key"].Should().Be("selected:99");
+        sameDocumentWait.Tags["target"].Should().Be(TargetLabel);
         sameDocumentWait.Tags["purpose"].Should().Be(DocumentCacheWriterTelemetryLabel.CanonicalWrite);
         sameDocumentWait.Tags["lifecycle"].Should().Be(DocumentCacheWriterTelemetryLabel.Unknown);
         sameDocumentWait.Tags["outcome"].Should().Be(DocumentCacheWriterTelemetryLabel.AppliedWrite);
@@ -314,8 +316,7 @@ public class Given_DocumentCacheWriterTelemetry
         var sut = CreateDescriptorWriteHandler(
             targetLookupService,
             sessionFactory,
-            collector.CreateTelemetry(),
-            CreateSelectedDataStoreSelection()
+            collector.CreateTelemetry()
         );
 
         await sut.HandlePutAsync(
@@ -414,7 +415,7 @@ public class Given_DocumentCacheWriterTelemetry
         IRelationalWriteTargetLookupService targetLookupService,
         IRelationalWriteSessionFactory writeSessionFactory,
         IDocumentCacheWriterTelemetry telemetry,
-        IDataStoreSelection dataStoreSelection
+        IDataStoreSelection? dataStoreSelection = null
     )
     {
         return new DescriptorWriteHandler(
@@ -429,21 +430,13 @@ public class Given_DocumentCacheWriterTelemetry
         );
     }
 
-    private static IDataStoreSelection CreateSelectedDataStoreSelection()
+    private static DataStoreSelection CreateDataStoreSelection()
     {
-        var selection = new DataStoreSelection();
-        selection.SetSelectedDataStore(
-            new DataStore(
-                99,
-                "postgresql",
-                "telemetry-test",
-                "Host=localhost;Database=telemetry-test",
-                [],
-                RelationalProviderToken.Postgresql
-            )
+        DataStoreSelection dataStoreSelection = new();
+        dataStoreSelection.SetSelectedDataStore(
+            new DataStore(7, "document", "Writer telemetry", "Host=localhost", [])
         );
-
-        return selection;
+        return dataStoreSelection;
     }
 
     private static DescriptorWriteRequest CreatePostDescriptorWriteRequest(
@@ -458,7 +451,8 @@ public class Given_DocumentCacheWriterTelemetry
             CreateDescriptorRequestBody(description),
             documentUuid,
             new ReferentialId(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
-            new TraceId("descriptor-post-telemetry")
+            new TraceId("descriptor-post-telemetry"),
+            tenantKey: "tenant-a"
         );
     }
 
@@ -474,7 +468,8 @@ public class Given_DocumentCacheWriterTelemetry
             CreateDescriptorRequestBody(description),
             documentUuid,
             null,
-            new TraceId("descriptor-put-telemetry")
+            new TraceId("descriptor-put-telemetry"),
+            tenantKey: "tenant-a"
         );
     }
 
@@ -495,7 +490,11 @@ public class Given_DocumentCacheWriterTelemetry
 
     private static InMemoryRelationalResultSet CreateContentVersionResultSet(long contentVersion) =>
         InMemoryRelationalResultSet.Create(
-            new Dictionary<string, object?> { ["ContentVersion"] = contentVersion }
+            new Dictionary<string, object?>
+            {
+                ["ContentVersion"] = contentVersion,
+                ["DocumentCacheEnqueueOutcome"] = (int)DocumentCacheEnqueueOutcome.AlreadySatisfied,
+            }
         );
 
     private static InMemoryRelationalResultSet CreatePersistedDescriptorResultSet(

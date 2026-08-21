@@ -23,6 +23,7 @@ public class Given_DocumentCacheProjectionTelemetry
 {
     private static readonly DateTimeOffset ObservedAt = new(2026, 8, 1, 12, 0, 0, TimeSpan.Zero);
     private static readonly DocumentCacheTargetKey TargetKey = DocumentCacheTargetKey.Create("Tenant-A", 7);
+    private const string TargetLabel = "t1_5da94bdd25fe3bd6fe2e4b0e";
     private static readonly DocumentCacheTargetContextGeneration Generation = new(3);
     private static readonly DocumentCachePhysicalSourceFingerprint Fingerprint = new(
         "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -91,7 +92,7 @@ public class Given_DocumentCacheProjectionTelemetry
             .Which;
         targetState.LongValue.Should().Be(1);
         targetState.Tags["provider"].Should().Be("postgresql");
-        targetState.Tags["target_key"].Should().Be("Tenant-A:7");
+        targetState.Tags["target"].Should().Be(TargetLabel);
         targetState.Tags["outcome"].Should().Be(DocumentCacheProjectionTelemetryLabel.Active);
         targetState.Tags["lifecycle"].Should().Be(nameof(DocumentCacheLifecycleState.Tracking));
 
@@ -400,7 +401,7 @@ public class Given_DocumentCacheProjectionTelemetry
     {
         measurement
             .Tags.Keys.Should()
-            .BeSubsetOf(["provider", "target_key", "outcome", "category", "lifecycle", "command", "phase"]);
+            .BeSubsetOf(["provider", "target", "outcome", "category", "lifecycle", "command", "phase"]);
     }
 
     private static DocumentCacheProjectionTargetRuntimeContext RuntimeContext()

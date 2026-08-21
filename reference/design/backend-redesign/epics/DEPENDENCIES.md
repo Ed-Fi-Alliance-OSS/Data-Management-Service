@@ -174,6 +174,7 @@ epics and is not repeated here.
 | 18-06 | 18-00, 18-01, 18-04, and 18-05 |
 | 18-07 | 18-00 through 18-06 |
 | 18-08 | E10, queue-capable 18-00, lifecycle validation from 18-01, 18-02, administrative serialization from 18-04, and queue/status evidence from 18-06 |
+| 18-09 (recommended follow-on) | 18-01, 18-04, 18-06, and 18-07; coordinate command naming and bootstrap integration with 19-04/19-07 |
 
 | `19-cdc-kafka` story | Implementation dependency |
 | --- | --- |

@@ -599,6 +599,94 @@ public class JwtValidationServiceTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Valid_Token_With_A_Default_Role_Claim_Validated_Repeatedly
+        : JwtValidationServiceTests
+    {
+        private JwtValidationService _service = null!;
+        private ClaimsPrincipal? _firstPrincipal = null;
+        private ClaimsPrincipal? _secondPrincipal = null;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var fakeTimeProvider = new FakeTimeProvider(
+                new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero)
+            );
+            var (service, configurationManager, options, _, tokenHandler, signingKey) = CreateService(
+                o =>
+                {
+                    o.ClockSkewSeconds = 0;
+                    o.ValidatedTokenCacheMaxEntries = 4;
+                    o.RoleClaimType = "role";
+                },
+                fakeTimeProvider
+            );
+            _service = service;
+            signingKey.KeyId = "key-1";
+
+            var oidcConfig = new OpenIdConnectConfiguration
+            {
+                Issuer = "https://keycloak.example.com/realms/edfi",
+            };
+            oidcConfig.SigningKeys.Add(signingKey);
+
+            A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+                .Returns(Task.FromResult(oidcConfig));
+
+            string token = CreateTestToken(
+                [new Claim("jti", "role-cache-token-id"), new Claim("role", "service")],
+                oidcConfig.Issuer,
+                options.Value.Audience,
+                signingKey,
+                tokenHandler,
+                nowUtc: fakeTimeProvider.GetUtcNow().UtcDateTime
+            );
+            string authorizationHeader = $"Bearer {token}";
+
+            (_firstPrincipal, _) = await service.ValidateAndExtractClientAuthorizationsAsync(
+                authorizationHeader,
+                "Bearer ".Length,
+                CancellationToken.None
+            );
+            (_secondPrincipal, _) = await service.ValidateAndExtractClientAuthorizationsAsync(
+                authorizationHeader,
+                "Bearer ".Length,
+                CancellationToken.None
+            );
+        }
+
+        [Test]
+        public void It_preserves_the_json_role_claim_type_on_initial_validation()
+        {
+            _firstPrincipal!.Claims.Should().ContainSingle(c => c.Type == "role" && c.Value == "service");
+            _firstPrincipal.Claims.Should().NotContain(c => c.Type == ClaimTypes.Role);
+            _firstPrincipal.IsInRole("service").Should().BeTrue();
+        }
+
+        [Test]
+        public void It_preserves_the_identity_role_claim_type_on_initial_validation()
+        {
+            _firstPrincipal!.Identities.Should().ContainSingle(identity => identity.RoleClaimType == "role");
+        }
+
+        [Test]
+        public void It_preserves_the_json_role_claim_type_on_cache_hit()
+        {
+            _secondPrincipal!.Claims.Should().ContainSingle(c => c.Type == "role" && c.Value == "service");
+            _secondPrincipal.Claims.Should().NotContain(c => c.Type == ClaimTypes.Role);
+            _secondPrincipal.IsInRole("service").Should().BeTrue();
+        }
+
+        [Test]
+        public void It_replays_the_cached_principal_from_the_validated_token_cache()
+        {
+            _service.ValidatedTokenCacheCount.Should().Be(1);
+            _secondPrincipal.Should().NotBeSameAs(_firstPrincipal);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_An_Invalid_Token_With_Caching_Enabled : JwtValidationServiceTests
     {
         private JwtValidationService _service = null!;

@@ -98,6 +98,132 @@ public class Given_DocumentCacheProjectionFailureBackoff
     }
 
     [Test]
+    public void It_records_retry_scheduled_events_when_failures_enter_backoff()
+    {
+        DocumentCacheProjectionFailureBackoffState state = new(capacity: 2);
+
+        state.RecordFailure(
+            101,
+            DocumentCacheProjectionDocumentDiagnosticCategory.WorkAnomaly,
+            "first work anomaly",
+            ObservedAt,
+            TimeSpan.FromSeconds(10)
+        );
+        state.RecordFailure(
+            102,
+            DocumentCacheProjectionDocumentDiagnosticCategory.ProviderFailure,
+            "second provider failure",
+            ObservedAt.AddSeconds(1),
+            TimeSpan.FromSeconds(20)
+        );
+        state.RecordFailure(
+            103,
+            DocumentCacheProjectionDocumentDiagnosticCategory.WriterOutcome,
+            "third writer outcome",
+            ObservedAt.AddSeconds(2),
+            TimeSpan.FromSeconds(30)
+        );
+
+        DocumentCacheProjectionPoisonTraversalSnapshot snapshot = state.CreatePoisonTraversalSnapshot();
+
+        snapshot.DiagnosticEvents.Select(diagnostic => diagnostic.DocumentId).Should().Equal(102, 103);
+        snapshot
+            .DiagnosticEvents.Select(diagnostic => diagnostic.Category)
+            .Should()
+            .AllBeEquivalentTo(DocumentCacheProjectionPoisonTraversalDiagnosticCategory.RetryScheduled);
+        snapshot
+            .DiagnosticEvents.Select(diagnostic => diagnostic.ObservedAt)
+            .Should()
+            .Equal(ObservedAt.AddSeconds(1), ObservedAt.AddSeconds(2));
+        snapshot
+            .DiagnosticEvents.Select(diagnostic => diagnostic.NextRetryAt)
+            .Should()
+            .Equal(ObservedAt.AddSeconds(21), ObservedAt.AddSeconds(32));
+        snapshot.DiagnosticEventEvictionCount.Should().Be(1);
+    }
+
+    [Test]
+    public void It_records_suppressed_traversal_diagnostics_once_per_retry_episode()
+    {
+        DocumentCacheProjectionFailureBackoffState state = new(capacity: 3);
+        state.RecordFailure(
+            101,
+            DocumentCacheProjectionDocumentDiagnosticCategory.WorkAnomaly,
+            "work anomaly",
+            ObservedAt,
+            TimeSpan.FromSeconds(10)
+        );
+
+        state.RecordSuppressedTraversal([101], ObservedAt.AddSeconds(1), pageCapacityExhausted: true);
+        state.RecordSuppressedTraversal([101], ObservedAt.AddSeconds(2), pageCapacityExhausted: true);
+
+        DocumentCacheProjectionPoisonTraversalSnapshot snapshot = state.CreatePoisonTraversalSnapshot();
+
+        snapshot
+            .DiagnosticEvents.Select(diagnostic => diagnostic.Category)
+            .Should()
+            .Equal(
+                DocumentCacheProjectionPoisonTraversalDiagnosticCategory.RetryScheduled,
+                DocumentCacheProjectionPoisonTraversalDiagnosticCategory.SkippedUntilRetry,
+                DocumentCacheProjectionPoisonTraversalDiagnosticCategory.PageCapacityExhausted
+            );
+        snapshot
+            .DiagnosticEvents.Select(diagnostic => diagnostic.ObservedAt)
+            .Should()
+            .Equal(ObservedAt, ObservedAt.AddSeconds(1), ObservedAt.AddSeconds(1));
+        snapshot.DiagnosticEventEvictionCount.Should().Be(0);
+    }
+
+    [Test]
+    public void It_records_suppressed_traversal_diagnostics_again_when_a_new_retry_is_scheduled()
+    {
+        DocumentCacheProjectionFailureBackoffState state = new(capacity: 6);
+        state.RecordFailure(
+            101,
+            DocumentCacheProjectionDocumentDiagnosticCategory.WorkAnomaly,
+            "first work anomaly",
+            ObservedAt,
+            TimeSpan.FromSeconds(10)
+        );
+        state.RecordSuppressedTraversal([101], ObservedAt.AddSeconds(1), pageCapacityExhausted: true);
+
+        state.RecordFailure(
+            101,
+            DocumentCacheProjectionDocumentDiagnosticCategory.WorkAnomaly,
+            "second work anomaly",
+            ObservedAt.AddSeconds(10),
+            TimeSpan.FromSeconds(20)
+        );
+        state.RecordSuppressedTraversal([101], ObservedAt.AddSeconds(11), pageCapacityExhausted: true);
+
+        DocumentCacheProjectionPoisonTraversalSnapshot snapshot = state.CreatePoisonTraversalSnapshot();
+
+        snapshot
+            .DiagnosticEvents.Select(diagnostic => diagnostic.Category)
+            .Should()
+            .Equal(
+                DocumentCacheProjectionPoisonTraversalDiagnosticCategory.RetryScheduled,
+                DocumentCacheProjectionPoisonTraversalDiagnosticCategory.SkippedUntilRetry,
+                DocumentCacheProjectionPoisonTraversalDiagnosticCategory.PageCapacityExhausted,
+                DocumentCacheProjectionPoisonTraversalDiagnosticCategory.RetryScheduled,
+                DocumentCacheProjectionPoisonTraversalDiagnosticCategory.SkippedUntilRetry,
+                DocumentCacheProjectionPoisonTraversalDiagnosticCategory.PageCapacityExhausted
+            );
+        snapshot
+            .DiagnosticEvents.Select(diagnostic => diagnostic.NextRetryAt)
+            .Should()
+            .Equal(
+                ObservedAt.AddSeconds(10),
+                ObservedAt.AddSeconds(10),
+                ObservedAt.AddSeconds(10),
+                ObservedAt.AddSeconds(30),
+                ObservedAt.AddSeconds(30),
+                ObservedAt.AddSeconds(30)
+            );
+        snapshot.DiagnosticEventEvictionCount.Should().Be(0);
+    }
+
+    [Test]
     public void It_clears_failure_state_for_a_document_success()
     {
         DocumentCacheProjectionFailureBackoffState state = new(capacity: 3);
@@ -164,6 +290,155 @@ public class Given_DocumentCacheProjectionFailureBackoff
         snapshot.PoisonTraversal.SuppressedDocumentCount.Should().Be(1);
         snapshot.PoisonTraversal.EarliestRetryAt.Should().Be(ObservedAt.AddSeconds(10));
         snapshot.PoisonTraversal.SuppressedDocumentIds.Should().Equal(101);
+        snapshot
+            .PoisonTraversal.DiagnosticEvents.Select(diagnostic => diagnostic.Category)
+            .Should()
+            .Equal(
+                DocumentCacheProjectionPoisonTraversalDiagnosticCategory.RetryScheduled,
+                DocumentCacheProjectionPoisonTraversalDiagnosticCategory.SkippedUntilRetry
+            );
+        snapshot
+            .PoisonTraversal.DiagnosticEvents.Select(diagnostic => diagnostic.DocumentId)
+            .Should()
+            .Equal(101, 101);
+        snapshot.PoisonTraversal.DiagnosticEventEvictionCount.Should().Be(0);
+        snapshot
+            .PoisonTraversal.DiagnosticEvents.Should()
+            .NotContain(diagnostic =>
+                diagnostic.Category
+                == DocumentCacheProjectionPoisonTraversalDiagnosticCategory.PageCapacityExhausted
+            );
+    }
+
+    [Test]
+    public async Task It_records_page_capacity_exhausted_only_when_suppressed_rows_fill_a_page()
+    {
+        RecordingObservationSink observationSink = new();
+        ScriptedWorkPager pager = new(
+            RelationalProviderToken.Postgresql,
+            [
+                Page(
+                    WorkItem(101, requiredContentVersion: 10, FirstEnqueuedAt),
+                    WorkItem(102, requiredContentVersion: 11, LaterEnqueuedAt),
+                    WorkItem(103, requiredContentVersion: 12, LaterEnqueuedAt.AddSeconds(1))
+                ),
+                Page(WorkItem(201, requiredContentVersion: 20, FirstEnqueuedAt)),
+            ]
+        );
+        DocumentCacheProjectionDrainPageProcessor sut = CreateProcessor(pager);
+        DocumentCacheProjectionTargetRuntimeContext targetContext = RuntimeContext(
+            RelationalProviderToken.Postgresql,
+            observationSink: observationSink
+        );
+        targetContext.FailureBackoffState.RecordFailure(
+            101,
+            DocumentCacheProjectionDocumentDiagnosticCategory.WorkAnomaly,
+            "work anomaly",
+            ObservedAt,
+            TimeSpan.FromSeconds(10)
+        );
+        targetContext.FailureBackoffState.RecordFailure(
+            102,
+            DocumentCacheProjectionDocumentDiagnosticCategory.WorkAnomaly,
+            "work anomaly",
+            ObservedAt,
+            TimeSpan.FromSeconds(20)
+        );
+
+        DocumentCacheProjectionDrainPageResult fullPageResult = await sut.ProcessPageAsync(
+            new DocumentCacheProjectionDrainPageRequest(
+                targetContext,
+                DocumentCacheProjectionDrainInvocationKind.Ordinary
+            )
+        );
+        DocumentCacheProjectionDrainPageResult partialPageResult = await sut.ProcessPageAsync(
+            new DocumentCacheProjectionDrainPageRequest(
+                targetContext,
+                DocumentCacheProjectionDrainInvocationKind.Ordinary
+            )
+        );
+
+        fullPageResult.Outcome.Should().Be(DocumentCacheProjectionDrainPageOutcome.PageProcessed);
+        fullPageResult.ProcessedItemCount.Should().Be(1);
+        partialPageResult.Outcome.Should().Be(DocumentCacheProjectionDrainPageOutcome.PageProcessed);
+
+        DocumentCacheProjectionPoisonTraversalSnapshot firstSnapshot = observationSink
+            .TargetSnapshots[0]
+            .PoisonTraversal;
+        firstSnapshot
+            .DiagnosticEvents.Select(diagnostic => diagnostic.Category)
+            .Should()
+            .Equal(
+                DocumentCacheProjectionPoisonTraversalDiagnosticCategory.SkippedUntilRetry,
+                DocumentCacheProjectionPoisonTraversalDiagnosticCategory.SkippedUntilRetry,
+                DocumentCacheProjectionPoisonTraversalDiagnosticCategory.PageCapacityExhausted
+            );
+        firstSnapshot
+            .DiagnosticEvents.Select(diagnostic => diagnostic.DocumentId)
+            .Should()
+            .Equal(101, 102, 102);
+        firstSnapshot.DiagnosticEventEvictionCount.Should().Be(2);
+
+        DocumentCacheProjectionPoisonTraversalSnapshot secondSnapshot = observationSink
+            .TargetSnapshots[1]
+            .PoisonTraversal;
+        secondSnapshot
+            .DiagnosticEvents.Should()
+            .NotContain(diagnostic =>
+                diagnostic.DocumentId == 201
+                && diagnostic.Category
+                    == DocumentCacheProjectionPoisonTraversalDiagnosticCategory.PageCapacityExhausted
+            );
+    }
+
+    [Test]
+    public async Task It_does_not_record_page_capacity_exhausted_when_a_full_page_exits_early_on_an_administrative_failure()
+    {
+        RecordingObservationSink observationSink = new();
+        ScriptedWorkPager pager = new(
+            RelationalProviderToken.Postgresql,
+            [
+                Page(
+                    WorkItem(101, requiredContentVersion: 10, FirstEnqueuedAt),
+                    WorkItem(102, requiredContentVersion: 11, LaterEnqueuedAt),
+                    WorkItem(103, requiredContentVersion: 12, LaterEnqueuedAt.AddSeconds(1))
+                ),
+            ]
+        );
+        DocumentCacheProjectionDrainPageProcessor sut = new(
+            pager,
+            new AdministrativeFailureItemProcessor(),
+            NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
+            new FixedTimeProvider(ObservedAt)
+        );
+        DocumentCacheProjectionTargetRuntimeContext targetContext = RuntimeContext(
+            RelationalProviderToken.Postgresql,
+            observationSink: observationSink
+        );
+        targetContext.FailureBackoffState.RecordFailure(
+            101,
+            DocumentCacheProjectionDocumentDiagnosticCategory.WorkAnomaly,
+            "work anomaly",
+            ObservedAt,
+            TimeSpan.FromSeconds(10)
+        );
+
+        DocumentCacheProjectionDrainPageResult result = await sut.ProcessPageAsync(
+            new DocumentCacheProjectionDrainPageRequest(
+                targetContext,
+                DocumentCacheProjectionDrainInvocationKind.Administrative
+            )
+        );
+
+        result.Outcome.Should().Be(DocumentCacheProjectionDrainPageOutcome.AdministrativeFailure);
+        observationSink
+            .TargetSnapshots.Should()
+            .ContainSingle()
+            .Subject.PoisonTraversal.DiagnosticEvents.Should()
+            .NotContain(diagnostic =>
+                diagnostic.Category
+                == DocumentCacheProjectionPoisonTraversalDiagnosticCategory.PageCapacityExhausted
+            );
     }
 
     [Test]
@@ -360,6 +635,30 @@ public class Given_DocumentCacheProjectionFailureBackoff
             cancellationToken.ThrowIfCancellationRequested();
             request.TargetContext.FailureBackoffState.ClearFailure(request.WorkItem.DocumentId);
             return Task.FromResult(DocumentCacheProjectionItemProcessResult.Continue);
+        }
+    }
+
+    private sealed class AdministrativeFailureItemProcessor : IDocumentCacheProjectionItemProcessor
+    {
+        public Task<DocumentCacheProjectionItemProcessResult> ProcessItemAsync(
+            DocumentCacheProjectionItemProcessRequest request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult(
+                DocumentCacheProjectionItemProcessResult.FromAdministrativeFailure(
+                    new DocumentCacheAdministrativeDrainFailure(
+                        DocumentCacheAdministrativeCommandStatus.FailedNoMutation,
+                        DocumentCacheAdministrativeCommandClassification.ProviderCommandTimeout,
+                        DocumentCacheAdministrativeDiagnosticCategory.ProviderCommandTimeout,
+                        "provider timeout",
+                        retryable: false,
+                        affectedDocumentIds: [request.WorkItem.DocumentId]
+                    )
+                )
+            );
         }
     }
 

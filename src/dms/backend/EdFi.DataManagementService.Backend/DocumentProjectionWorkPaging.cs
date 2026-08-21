@@ -215,7 +215,8 @@ internal sealed class DocumentCacheProjectionDrainPageProcessor(
             {
                 targetContext.FailureBackoffState.RecordSuppressedTraversal(
                     suppressedDocumentIds,
-                    observedAt
+                    observedAt,
+                    pageCapacityExhausted: false
                 );
                 ObserveTarget(targetContext, observedAt);
                 return DocumentCacheProjectionDrainPageResult.AdministrativeFailureResult(
@@ -232,7 +233,11 @@ internal sealed class DocumentCacheProjectionDrainPageProcessor(
                 continue;
             }
 
-            targetContext.FailureBackoffState.RecordSuppressedTraversal(suppressedDocumentIds, observedAt);
+            targetContext.FailureBackoffState.RecordSuppressedTraversal(
+                suppressedDocumentIds,
+                observedAt,
+                pageCapacityExhausted: false
+            );
             ObserveTarget(targetContext, observedAt);
             return itemResult.Outcome switch
             {
@@ -253,7 +258,11 @@ internal sealed class DocumentCacheProjectionDrainPageProcessor(
             };
         }
 
-        targetContext.FailureBackoffState.RecordSuppressedTraversal(suppressedDocumentIds, observedAt);
+        targetContext.FailureBackoffState.RecordSuppressedTraversal(
+            suppressedDocumentIds,
+            observedAt,
+            PageCapacityExhaustedBySuppressedWork(page, suppressedDocumentIds)
+        );
         ObserveTarget(targetContext, observedAt);
 
         _logger.LogDebug(
@@ -279,6 +288,11 @@ internal sealed class DocumentCacheProjectionDrainPageProcessor(
             new DocumentProjectionWorkPageRequest(targetContext.TargetExecutionContext, targetContext.Cursor),
             cancellationToken
         );
+
+    private static bool PageCapacityExhaustedBySuppressedWork(
+        DocumentProjectionWorkPage page,
+        IReadOnlyCollection<long> suppressedDocumentIds
+    ) => page.Items.Length == page.PageSize && suppressedDocumentIds.Count > 0;
 
     private void RequireProviderMatch(DocumentCacheTargetExecutionContext executionContext)
     {

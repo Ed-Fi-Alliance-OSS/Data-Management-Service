@@ -315,7 +315,9 @@ public sealed class DocumentCacheTargetContextBuilder(
                     combinedInventoryResult.EnqueueTrigger,
                     prerequisiteResult?.SqlServerPrerequisites,
                     retryState: null,
-                    diagnostics
+                    diagnostics,
+                    combinedInventoryResult.InventoryComponents,
+                    lifecycleResult.Status
                 ),
                 ExecutionContext: null
             );
@@ -345,7 +347,8 @@ public sealed class DocumentCacheTargetContextBuilder(
                 lifecycleResult.Lifecycle!,
                 combinedInventoryResult.Inventory,
                 combinedInventoryResult.EnqueueTrigger,
-                prerequisiteResult.SqlServerPrerequisites
+                prerequisiteResult.SqlServerPrerequisites,
+                inventoryComponents: combinedInventoryResult.InventoryComponents
             ),
             executionContext
         );
@@ -460,24 +463,38 @@ public sealed class DocumentCacheTargetContextBuilder(
         {
             return new DocumentCacheProviderInventoryValidationResult(
                 sourceIdentityInventory,
+                providerInventoryResult.InventoryComponents with
+                {
+                    DataStoreIdentity = sourceIdentityInventory,
+                },
                 providerInventoryResult.EnqueueTrigger
             );
         }
 
-        return new DocumentCacheProviderInventoryValidationResult(
-            new DocumentCacheInventoryValidationResult(
-                CombineInventoryStatus(
-                    providerInventoryResult.Inventory.Status,
-                    sourceIdentityInventory.Status
+        DocumentCacheInventoryValidationComponents inventoryComponents =
+            providerInventoryResult.InventoryComponents with
+            {
+                DataStoreIdentity = CombineInventoryResult(
+                    providerInventoryResult.InventoryComponents.DataStoreIdentity,
+                    sourceIdentityInventory
                 ),
-                CombineInventoryMessages(
-                    providerInventoryResult.Inventory.Message,
-                    sourceIdentityInventory.Message
-                )
-            ),
+            };
+
+        return new DocumentCacheProviderInventoryValidationResult(
+            CombineInventoryResult(providerInventoryResult.Inventory, sourceIdentityInventory),
+            inventoryComponents,
             providerInventoryResult.EnqueueTrigger
         );
     }
+
+    private static DocumentCacheInventoryValidationResult CombineInventoryResult(
+        DocumentCacheInventoryValidationResult providerResult,
+        DocumentCacheInventoryValidationResult sourceIdentityInventory
+    ) =>
+        new(
+            CombineInventoryStatus(providerResult.Status, sourceIdentityInventory.Status),
+            CombineInventoryMessages(providerResult.Message, sourceIdentityInventory.Message)
+        );
 
     private static DocumentCacheInventoryStatus CombineInventoryStatus(
         DocumentCacheInventoryStatus providerStatus,

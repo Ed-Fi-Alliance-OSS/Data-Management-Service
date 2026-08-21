@@ -768,7 +768,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                         executionId,
                         request,
                         targetContext,
-                        classifiedResult is not null
+                        classifiedResult
                     );
                 }
             }
@@ -829,12 +829,20 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
         DocumentCacheAdministrativeCommandExecutionId executionId,
         DocumentCacheAdministrativeCommandRunnerRequest request,
         DocumentCacheProjectionTargetRuntimeContext targetContext,
-        bool hasClassifiedResult
+        DocumentCacheAdministrativeCommandResult? classifiedResult
     )
     {
+        bool hasClassifiedResult = classifiedResult is not null;
+
         try
         {
-            observationSink.EndAdministrativeCommand(executionId);
+            if (classifiedResult is null)
+            {
+                observationSink.EndAdministrativeCommand(executionId);
+                return;
+            }
+
+            observationSink.EndAdministrativeCommand(executionId, classifiedResult);
         }
         catch (Exception exception)
         {

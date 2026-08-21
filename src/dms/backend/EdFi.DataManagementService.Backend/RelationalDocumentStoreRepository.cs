@@ -171,7 +171,8 @@ public sealed class RelationalDocumentStoreRepository(
                         upsertRequest.DocumentInfo.ReferentialId,
                         upsertRequest.TraceId,
                         upsertRequest.AuthorizationStrategyEvaluators,
-                        upsertRequest.AuthorizationContext
+                        upsertRequest.AuthorizationContext,
+                        upsertRequest.TenantKey
                     )
                     {
                         WritePrecondition = writePrecondition,
@@ -206,6 +207,7 @@ public sealed class RelationalDocumentStoreRepository(
                 requestBody: selectedBody,
                 writePrecondition: writePrecondition,
                 traceId: upsertRequest.TraceId,
+                tenantKey: upsertRequest.TenantKey,
                 mappingSet,
                 upsertRequest.ResourceInfo,
                 RelationalWriteOperationKind.Post,
@@ -354,7 +356,8 @@ public sealed class RelationalDocumentStoreRepository(
                         referentialId: null,
                         updateRequest.TraceId,
                         updateRequest.AuthorizationStrategyEvaluators,
-                        updateRequest.AuthorizationContext
+                        updateRequest.AuthorizationContext,
+                        updateRequest.TenantKey
                     )
                     {
                         WritePrecondition = writePrecondition,
@@ -385,6 +388,7 @@ public sealed class RelationalDocumentStoreRepository(
                 requestBody: selectedBody,
                 writePrecondition: writePrecondition,
                 traceId: updateRequest.TraceId,
+                tenantKey: updateRequest.TenantKey,
                 mappingSet,
                 updateRequest.ResourceInfo,
                 RelationalWriteOperationKind.Put,
@@ -3437,6 +3441,7 @@ public sealed class RelationalDocumentStoreRepository(
         System.Text.Json.Nodes.JsonNode requestBody,
         WritePrecondition writePrecondition,
         TraceId traceId,
+        string tenantKey,
         MappingSet mappingSet,
         ResourceInfo resourceInfo,
         RelationalWriteOperationKind operationKind,
@@ -3543,6 +3548,7 @@ public sealed class RelationalDocumentStoreRepository(
                             DocumentReferences: documentReferences,
                             DescriptorReferences: descriptorReferences
                         ),
+                        tenantKey: tenantKey,
                         profileWriteContext: profileWriteContext,
                         writePrecondition: writePrecondition,
                         storedRelationshipAuthorization: storedRelationshipAuthorization,

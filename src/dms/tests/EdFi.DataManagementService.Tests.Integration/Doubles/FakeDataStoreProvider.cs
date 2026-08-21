@@ -8,10 +8,16 @@ using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Tests.Integration.Doubles;
 
+internal sealed record FakeDataStoreDefinition(
+    long Id,
+    string ConnectionString,
+    RelationalProviderToken? RelationalProviderToken = null
+);
+
 /// <summary>
-/// Builds an <see cref="IDataStoreProvider"/> stub that exposes a single in-memory
-/// data store pointing at a test-leased database connection string. The instance has
-/// no route-qualifier context, so it is returned for any tenant the caller asks about.
+/// Builds an <see cref="IDataStoreProvider"/> stub that exposes in-memory
+/// data stores pointing at test-leased database connection strings. The instances
+/// have no route-qualifier context, so they are returned for any tenant the caller asks about.
 /// </summary>
 internal static class FakeDataStoreProvider
 {
@@ -19,42 +25,48 @@ internal static class FakeDataStoreProvider
         long id,
         string connectionString,
         RelationalProviderToken? relationalProviderToken = null
-    ) => new SingleInstanceProvider(id, connectionString, relationalProviderToken);
+    ) => WithInstances([new FakeDataStoreDefinition(id, connectionString, relationalProviderToken)]);
 
-    private sealed class SingleInstanceProvider : IDataStoreProvider
+    public static IDataStoreProvider WithInstances(IReadOnlyList<FakeDataStoreDefinition> instances) =>
+        new StaticInstanceProvider(instances);
+
+    private sealed class StaticInstanceProvider : IDataStoreProvider
     {
         private const string DefaultTenantKey = "";
-        private readonly DataStore _instance;
         private readonly IReadOnlyList<DataStore> _instances;
 
-        public SingleInstanceProvider(
-            long id,
-            string connectionString,
-            RelationalProviderToken? relationalProviderToken
-        )
+        public StaticInstanceProvider(IReadOnlyList<FakeDataStoreDefinition> instances)
         {
-            _instance = new DataStore(
-                Id: id,
-                DataStoreType: "default",
-                Name: "integration-test",
-                ConnectionString: connectionString,
-                RouteContext: new Dictionary<RouteQualifierName, RouteQualifierValue>(),
-                RelationalProviderToken: relationalProviderToken,
-                RelationalProviderMetadataStatus: relationalProviderToken is null
-                    ? RelationalProviderMetadataStatus.Missing
-                    : RelationalProviderMetadataStatus.Supported
-            );
-            _instances = [_instance];
+            ArgumentNullException.ThrowIfNull(instances);
+            if (instances.Count == 0)
+            {
+                throw new ArgumentException("At least one data store must be supplied.", nameof(instances));
+            }
+
+            _instances = instances
+                .Select(instance => new DataStore(
+                    Id: instance.Id,
+                    DataStoreType: "default",
+                    Name: $"integration-test-{instance.Id}",
+                    ConnectionString: instance.ConnectionString,
+                    RouteContext: new Dictionary<RouteQualifierName, RouteQualifierValue>(),
+                    RelationalProviderToken: instance.RelationalProviderToken,
+                    RelationalProviderMetadataStatus: instance.RelationalProviderToken is null
+                        ? RelationalProviderMetadataStatus.Missing
+                        : RelationalProviderMetadataStatus.Supported
+                ))
+                .ToArray();
         }
 
         public Task<IList<DataStore>> LoadDataStores(string? tenant = null) =>
-            Task.FromResult<IList<DataStore>>([_instance]);
+            Task.FromResult<IList<DataStore>>([.. _instances]);
 
         public Task RefreshInstancesIfExpiredAsync(string? tenant = null) => Task.CompletedTask;
 
         public IReadOnlyList<DataStore> GetAll(string? tenant = null) => _instances;
 
-        public DataStore? GetById(long id, string? tenant = null) => id == _instance.Id ? _instance : null;
+        public DataStore? GetById(long id, string? tenant = null) =>
+            _instances.FirstOrDefault(instance => instance.Id == id);
 
         public bool IsLoaded(string? tenant = null) => true;
 

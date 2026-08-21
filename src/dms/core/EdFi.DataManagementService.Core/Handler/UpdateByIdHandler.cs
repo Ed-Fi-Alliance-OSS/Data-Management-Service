@@ -52,6 +52,7 @@ internal class UpdateByIdHandler(ILogger _logger, ResiliencePipeline _resilience
                         EdfiDoc: requestInfo.ParsedBody,
                         Headers: requestInfo.FrontendRequest.Headers,
                         TraceId: requestInfo.FrontendRequest.TraceId,
+                        TenantKey: requestInfo.FrontendRequest.Tenant ?? string.Empty,
                         BackendProfileWriteContext: requestInfo.BackendProfileWriteContext
                     )
                     {

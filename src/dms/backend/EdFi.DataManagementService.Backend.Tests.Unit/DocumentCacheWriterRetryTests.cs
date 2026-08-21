@@ -20,6 +20,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_DocumentCacheWriterRetry
 {
     private static readonly DocumentCacheProjectionTargetKey TargetKey = new("tenant-a", new DataStoreId(7));
+    private const string TargetLabel = "t1_5da94bdd25fe3bd6fe2e4b0e";
 
     [TestFixture]
     [Parallelizable]
@@ -382,7 +383,8 @@ public class Given_DocumentCacheWriterRetry
 
             retry.AttemptCount.Should().Be(1);
             retry.Context.Provider.Should().Be(RelationalProviderToken.PostgresqlValue);
-            retry.Context.TargetKey.Should().Be("tenant-a:7");
+            retry.Context.TargetKey.Should().Be(TargetLabel);
+            retry.Context.TargetKey.Should().NotBe(TargetKey.ToString());
             retry.Context.Purpose.Should().Be(nameof(DocumentCacheWriterPurpose.DirectFill));
             retry.Context.Lifecycle.Should().Be(nameof(DocumentCacheLifecycleState.Rebuilding));
             retry.Context.Outcome.Should().Be(nameof(DocumentCacheWriterOutcome.WorkAnomaly));

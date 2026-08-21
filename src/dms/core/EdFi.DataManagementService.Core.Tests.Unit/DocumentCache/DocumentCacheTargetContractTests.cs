@@ -259,6 +259,12 @@ public class DocumentCacheTargetContractTests
                 {
                     WorkflowTimeout = TimeSpan.FromHours(6),
                 },
+                Status = new DocumentCacheStatusOptions
+                {
+                    StatusObservationTimeout = TimeSpan.FromSeconds(9),
+                    EndpointTimeout = TimeSpan.FromSeconds(40),
+                    RequiredRole = "dms-document-cache-operator",
+                },
             };
 
             DocumentCacheTargetEffectiveSettings settings = DocumentCacheTargetEffectiveSettings.FromOptions(
@@ -273,6 +279,8 @@ public class DocumentCacheTargetContractTests
             settings.ProjectorFailureBackoff.Should().Be(TimeSpan.FromSeconds(15));
             settings.ProjectorBaselineHighWaterMark.Should().Be(250);
             settings.AdministrationWorkflowTimeout.Should().Be(TimeSpan.FromHours(6));
+            settings.StatusObservationTimeout.Should().Be(TimeSpan.FromSeconds(9));
+            settings.StatusEndpointTimeout.Should().Be(TimeSpan.FromSeconds(40));
         }
 
         [TestCase("postgresql", "postgresql")]

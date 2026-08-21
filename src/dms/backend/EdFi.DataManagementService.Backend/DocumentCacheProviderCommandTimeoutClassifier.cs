@@ -9,3 +9,17 @@ internal interface IDocumentCacheProviderCommandTimeoutClassifier
 {
     bool IsProviderCommandTimeout(Exception exception);
 }
+
+internal sealed class NoOpDocumentCacheProviderCommandTimeoutClassifier
+    : IDocumentCacheProviderCommandTimeoutClassifier
+{
+    public static NoOpDocumentCacheProviderCommandTimeoutClassifier Instance { get; } = new();
+
+    private NoOpDocumentCacheProviderCommandTimeoutClassifier() { }
+
+    public bool IsProviderCommandTimeout(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        return false;
+    }
+}

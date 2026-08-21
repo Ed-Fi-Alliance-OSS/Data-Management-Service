@@ -34,7 +34,7 @@ internal class JwtValidationService(
     private const int ValidationParametersCacheMaxEntries = 16;
     private static readonly TimeSpan CachePruneInterval = TimeSpan.FromSeconds(15);
 
-    private readonly JwtSecurityTokenHandler _tokenHandler = new();
+    private readonly JwtSecurityTokenHandler _tokenHandler = new() { MapInboundClaims = false };
     private readonly JwtAuthenticationOptions _options = options.Value;
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly ConcurrentDictionary<TokenCacheKey, CachedTokenValidationResult> _validatedTokenCache =

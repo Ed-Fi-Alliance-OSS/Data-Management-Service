@@ -37,7 +37,7 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
     public async Task It_co_batches_the_root_update_and_the_content_version_read_into_one_command()
     {
         var request = CreateExistingTargetRequest();
-        var session = new ScriptedWriteSession(CreateReader(Sentinel(0), Scalar(77L)));
+        var session = new ScriptedWriteSession(CreateReader(Sentinel(0), PersistObservation(77L)));
 
         var resolution = await CreateSut()
             .ResolveAsync(
@@ -56,7 +56,9 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
     public async Task It_co_batches_the_document_insert_with_the_rows_it_makes_room_for()
     {
         var request = CreateCreatedTargetRequest();
-        var session = new ScriptedWriteSession(CreateReader(Scalar(900L), Sentinel(1), Scalar(1L)));
+        var session = new ScriptedWriteSession(
+            CreateReader(Scalar(900L), Sentinel(1), PersistObservation(1L))
+        );
 
         var resolution = await CreateSut()
             .ResolveAsync(
@@ -75,7 +77,9 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
     public async Task It_derives_the_created_document_id_from_a_scalar_subquery_on_the_document_uuid()
     {
         var request = CreateCreatedTargetRequest();
-        var session = new ScriptedWriteSession(CreateReader(Scalar(900L), Sentinel(1), Scalar(1L)));
+        var session = new ScriptedWriteSession(
+            CreateReader(Scalar(900L), Sentinel(1), PersistObservation(1L))
+        );
 
         await CreateSut()
             .ResolveAsync(
@@ -97,7 +101,9 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
     public async Task It_binds_one_created_document_uuid_parameter_for_every_statement_that_derives_the_id()
     {
         var request = CreateCreatedTargetRequest();
-        var session = new ScriptedWriteSession(CreateReader(Scalar(900L), Sentinel(1), Scalar(1L)));
+        var session = new ScriptedWriteSession(
+            CreateReader(Scalar(900L), Sentinel(1), PersistObservation(1L))
+        );
 
         await CreateSut()
             .ResolveAsync(
@@ -120,7 +126,7 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
     {
         var request = CreateCreatedTargetRequest(withProposedAuthorization: true);
         var session = new ScriptedWriteSession(
-            CreateReader(Authorized(), Authorized(), Scalar(900L), Sentinel(3), Scalar(1L))
+            CreateReader(Authorized(), Authorized(), Scalar(900L), Sentinel(3), PersistObservation(1L))
         );
 
         var resolution = await CreateSut()
@@ -179,7 +185,9 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
             ],
             supportsGuardedNoOp: true
         );
-        var session = new ScriptedWriteSession(CreateReader(Sentinel(0), Sentinel(1), Scalar(78L)));
+        var session = new ScriptedWriteSession(
+            CreateReader(Sentinel(0), Sentinel(1), PersistObservation(78L))
+        );
 
         var resolution = await CreateSut()
             .ResolveAsync(request, mergeResult, RelationalWriteSecondCommandMode.Dml, session);
@@ -232,7 +240,7 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
             ],
             supportsGuardedNoOp: true
         );
-        var session = new ScriptedWriteSession(CreateReader(Sentinel(0), Scalar(79L)));
+        var session = new ScriptedWriteSession(CreateReader(Sentinel(0), PersistObservation(79L)));
 
         var resolution = await CreateSut()
             .ResolveAsync(request, mergeResult, RelationalWriteSecondCommandMode.Dml, session);
@@ -290,7 +298,7 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
         );
         var session = new ScriptedWriteSession(
             Reserved(910L),
-            CreateReader(Sentinel(0), Sentinel(1), Scalar(80L))
+            CreateReader(Sentinel(0), Sentinel(1), PersistObservation(80L))
         );
 
         var resolution = await CreateSut()
@@ -320,7 +328,7 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
     {
         var session = new ScriptedWriteSession(
             CreateReader(Sentinel(0)),
-            CreateReader(Sentinel(0), Scalar(81L))
+            CreateReader(Sentinel(0), PersistObservation(81L))
         );
 
         var resolution = await CreateSut(new RelationalCommandBudget(6, 1000))
@@ -495,7 +503,7 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
     [Test]
     public async Task It_keeps_one_command_when_the_rows_fit_the_parameter_budget()
     {
-        var session = new ScriptedWriteSession(CreateReader(Sentinel(0), Scalar(82L)));
+        var session = new ScriptedWriteSession(CreateReader(Sentinel(0), PersistObservation(82L)));
 
         var resolution = await CreateSut(new RelationalCommandBudget(64, 1000))
             .ResolveAsync(
@@ -726,15 +734,17 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
         return new RelationalWriteMergedTableRow(values, values);
     }
 
-    /// <summary>
-    /// A reader over the command's declared result-set stream. Every set carries the authorization
-    /// decoder's column name, which is the only name any DML-mode statement reads by name.
-    /// </summary>
+    /// <summary>A reader over the command's declared result-set stream.</summary>
     private static DbDataReader CreateReader(params IReadOnlyList<object?[]>[] resultSets) =>
         new ScriptedDbDataReader(
             resultSets,
-            [.. resultSets.Select(static _ => new[] { "AuthorizationResult" })]
+            [.. resultSets.Select(static resultSet => ColumnNamesFor(resultSet))]
         );
+
+    private static string[] ColumnNamesFor(IReadOnlyList<object?[]> resultSet) =>
+        resultSet.FirstOrDefault()?.Length == 2
+            ? ["ContentVersion", "DocumentCacheEnqueueOutcome"]
+            : ["AuthorizationResult"];
 
     /// <summary>The one-row result set a data-modifying statement's trailing sentinel select produces.</summary>
     private static IReadOnlyList<object?[]> Sentinel(int ordinal) =>
@@ -745,6 +755,11 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
     private static IReadOnlyList<object?[]> Scalar(object? value) =>
         [
             [value],
+        ];
+
+    private static IReadOnlyList<object?[]> PersistObservation(long contentVersion) =>
+        [
+            [(object)contentVersion, (int)DocumentCacheEnqueueOutcome.NoWorkQueued],
         ];
 
     /// <summary>

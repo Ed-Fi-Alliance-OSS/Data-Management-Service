@@ -34,6 +34,12 @@ public class Given_A_Postgresql_DocumentCacheWriter
     private const int PerformanceEvidenceContentionCount = 5;
 
     private static readonly QualifiedResourceName PersonResource = new("Ed-Fi", "Person");
+    private static readonly DocumentCacheProjectionTargetKey TargetKey = new(
+        "tenant-cache-writer",
+        new DataStoreId(7)
+    );
+    private static readonly string ExpectedTelemetryTargetLabel =
+        DocumentCacheTelemetryTargetLabel.FromProjectionTargetKey(TargetKey);
 
     private PostgresqlGeneratedDdlFixture _fixture = null!;
     private PostgresqlGeneratedDdlBaselineDatabase _baseline = null!;
@@ -1493,7 +1499,7 @@ public class Given_A_Postgresql_DocumentCacheWriter
 
     private DocumentCacheMaterializationTargetContext CreateTargetContext() =>
         new(
-            new DocumentCacheProjectionTargetKey("tenant-cache-writer", new DataStoreId(7)),
+            TargetKey,
             _fixture.MappingSet,
             DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated,
             _overrideConnectionString ?? _database.ConnectionString
@@ -2245,7 +2251,7 @@ public class Given_A_Postgresql_DocumentCacheWriter
         );
 
         return context.Provider == provider
-            && context.TargetKey == "tenant-cache-writer:7"
+            && context.TargetKey == ExpectedTelemetryTargetLabel
             && context.Provider.Length <= 128
             && context.TargetKey.Length <= 128
             && context.Purpose.Length <= 128

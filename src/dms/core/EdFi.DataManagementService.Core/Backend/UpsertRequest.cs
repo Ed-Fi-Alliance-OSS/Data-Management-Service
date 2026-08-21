@@ -45,7 +45,11 @@ internal record UpsertRequest(
     /// <summary>
     /// Optional profile write context when a writable profile applies.
     /// </summary>
-    BackendProfileWriteContext? BackendProfileWriteContext = null
+    BackendProfileWriteContext? BackendProfileWriteContext = null,
+    /// <summary>
+    /// The normalized request tenant key.
+    /// </summary>
+    string TenantKey = ""
 )
     : UpdateRequest(
         ResourceInfo,
@@ -55,6 +59,7 @@ internal record UpsertRequest(
         Headers,
         TraceId,
         DocumentUuid,
-        BackendProfileWriteContext
+        BackendProfileWriteContext,
+        TenantKey
     ),
         IUpsertRequest;

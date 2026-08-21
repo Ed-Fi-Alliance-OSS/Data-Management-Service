@@ -80,6 +80,100 @@ public class Given_DocumentCacheProjectionObservationProvider
         activeCommand.CurrentTargetGeneration!.Value.Should().Be(2);
         activeCommand.CurrentPhase.Should().Be(DocumentCacheAdministrativeCommandPhase.DrainWork);
         activeCommand.PhaseDiagnostics.Should().ContainSingle();
+        snapshot.GetCurrentGenerationActiveCommand(TargetKey).Should().BeNull();
+        snapshot.CurrentGenerationActiveAdministrativeCommands.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_exposes_current_generation_active_commands_by_target_key()
+    {
+        DocumentCacheProjectionObservationStore store = new(new FixedTimeProvider(ObservedAt));
+        DocumentCacheAdministrativeCommandExecutionId executionId = new(
+            Guid.Parse("eeeeeeee-1111-2222-3333-ffffffffffff")
+        );
+
+        store.ObserveTarget(TargetHealth(generation: 1, observedAt: ObservedAt));
+        store.ObserveAdministrativeCommand(CommandObservation(executionId, generation: 1));
+
+        DocumentCacheProjectionObservationSnapshot snapshot = store.CurrentSnapshot;
+
+        DocumentCacheAdministrativeCommandObservationSnapshot currentActiveCommand =
+            snapshot.GetCurrentGenerationActiveCommand(TargetKey)!;
+        currentActiveCommand.Should().NotBeNull();
+        currentActiveCommand.ExecutionId.Should().Be(executionId);
+        currentActiveCommand.IsCurrentGeneration.Should().BeTrue();
+        snapshot
+            .CurrentGenerationActiveAdministrativeCommands.Should()
+            .ContainSingle()
+            .Which.Value.Should()
+            .BeSameAs(currentActiveCommand);
+    }
+
+    [Test]
+    public void It_retains_current_generation_last_ended_command_diagnostic_by_target_key()
+    {
+        DocumentCacheProjectionObservationStore store = new(new FixedTimeProvider(ObservedAt));
+        DocumentCacheAdministrativeCommandExecutionId executionId = new(
+            Guid.Parse("12345678-1111-2222-3333-456789abcdef")
+        );
+
+        store.ObserveTarget(TargetHealth(generation: 1, observedAt: ObservedAt));
+        store.ObserveAdministrativeCommand(CommandObservation(executionId, generation: 1));
+        store.EndAdministrativeCommand(
+            executionId,
+            CommandResult(
+                generation: 1,
+                DocumentCacheAdministrativeCommandStatus.Completed,
+                DocumentCacheAdministrativeCommandClassification.Succeeded
+            ),
+            ObservedAt.AddSeconds(10)
+        );
+
+        DocumentCacheProjectionObservationSnapshot snapshot = store.CurrentSnapshot;
+
+        snapshot.ActiveAdministrativeCommands.Should().BeEmpty();
+        DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot endedDiagnostic =
+            snapshot.GetCurrentGenerationLastEndedAdministrativeCommandDiagnostic(TargetKey)!;
+        endedDiagnostic.Should().NotBeNull();
+        endedDiagnostic.ExecutionId.Should().Be(executionId);
+        endedDiagnostic.Command.Should().Be(DocumentCacheAdministrativeCommand.OnlineCacheRebuild);
+        endedDiagnostic.TargetGeneration.Value.Should().Be(1);
+        endedDiagnostic.StartedAt.Should().Be(StartedAt);
+        endedDiagnostic.EndedAt.Should().Be(ObservedAt.AddSeconds(10));
+        endedDiagnostic.Outcome.Should().Be(DocumentCacheAdministrativeCommandEndedOutcome.Succeeded);
+        endedDiagnostic.Message.Should().Be("Administrative command succeeded.");
+        snapshot
+            .CurrentGenerationLastEndedAdministrativeCommandDiagnostics.Should()
+            .ContainSingle()
+            .Which.Value.Should()
+            .BeSameAs(endedDiagnostic);
+    }
+
+    [Test]
+    public void It_hides_last_ended_command_diagnostic_when_target_generation_is_no_longer_current()
+    {
+        DocumentCacheProjectionObservationStore store = new(new FixedTimeProvider(ObservedAt));
+        DocumentCacheAdministrativeCommandExecutionId executionId = new(
+            Guid.Parse("abcdef12-1111-2222-3333-456789abcdef")
+        );
+
+        store.ObserveTarget(TargetHealth(generation: 1, observedAt: ObservedAt));
+        store.ObserveAdministrativeCommand(CommandObservation(executionId, generation: 1));
+        store.ObserveTarget(TargetHealth(generation: 2, observedAt: ObservedAt.AddSeconds(1)));
+        store.EndAdministrativeCommand(
+            executionId,
+            CommandResult(
+                generation: 1,
+                DocumentCacheAdministrativeCommandStatus.Completed,
+                DocumentCacheAdministrativeCommandClassification.Succeeded
+            ),
+            ObservedAt.AddSeconds(2)
+        );
+
+        DocumentCacheProjectionObservationSnapshot snapshot = store.CurrentSnapshot;
+
+        snapshot.GetCurrentGenerationLastEndedAdministrativeCommandDiagnostic(TargetKey).Should().BeNull();
+        snapshot.CurrentGenerationLastEndedAdministrativeCommandDiagnostics.Should().BeEmpty();
     }
 
     [Test]
@@ -113,9 +207,11 @@ public class Given_DocumentCacheProjectionObservationProvider
 
         DocumentCacheProjectionTargetHealthSnapshot current = snapshot.GetCurrentTarget(TargetKey)!;
         current.FailureDiagnostics.FailureCount.Should().Be(3);
-        current.FailureDiagnostics.DocumentIds.Should().Equal(1, 2);
+        current.FailureDiagnostics.DocumentIds.Should().Equal(2, 3);
+        current.FailureDiagnostics.EvictionCount.Should().Be(1);
         current.PoisonTraversal.SuppressedDocumentCount.Should().Be(3);
-        current.PoisonTraversal.SuppressedDocumentIds.Should().Equal(4, 5);
+        current.PoisonTraversal.SuppressedDocumentIds.Should().Equal(5, 6);
+        current.PoisonTraversal.EvictionCount.Should().Be(1);
 
         DocumentCacheAdministrativePhaseDiagnostic phaseDiagnostic = snapshot
             .GetActiveCommand(executionId)!
@@ -150,6 +246,7 @@ public class Given_DocumentCacheProjectionObservationProvider
         )!;
 
         current.TargetDiagnostics.Select(diagnostic => diagnostic.Message).Should().Equal("second", "third");
+        current.TargetDiagnosticEvictionCount.Should().Be(1);
         current.FailureDiagnostics.DocumentIds.Should().BeEmpty();
     }
 
@@ -226,6 +323,11 @@ public class Given_DocumentCacheProjectionObservationProvider
             TargetKey
         )!;
         current.TargetDiagnostics.Select(diagnostic => diagnostic.Message).Should().Equal("second", "third");
+        current
+            .TargetDiagnosticEvents.Select(diagnostic => diagnostic.ObservedAt)
+            .Should()
+            .Equal(ObservedAt.AddSeconds(2), ObservedAt.AddSeconds(3));
+        current.TargetDiagnosticEvictionCount.Should().Be(1);
         current.FailureDiagnostics.DocumentIds.Should().Equal(401);
     }
 
@@ -286,6 +388,10 @@ public class Given_DocumentCacheProjectionObservationProvider
             TargetKey
         )!;
         current.TargetDiagnostics.Select(diagnostic => diagnostic.Message).Should().Equal("second", "third");
+        current
+            .TargetDiagnosticEvents.Select(diagnostic => diagnostic.ObservedAt)
+            .Should()
+            .Equal(ObservedAt.AddSeconds(2), ObservedAt.AddSeconds(3));
     }
 
     [Test]
@@ -327,6 +433,9 @@ public class Given_DocumentCacheProjectionObservationProvider
                     )
                     .Select(diagnosticIndex => $"diagnostic {diagnosticIndex}")
             );
+        current
+            .TargetDiagnosticEvictionCount.Should()
+            .Be(appendedDiagnosticCount - pendingTargetDiagnosticLimit);
     }
 
     [Test]
@@ -690,6 +799,24 @@ public class Given_DocumentCacheProjectionObservationProvider
             phaseDiagnostics
         );
     }
+
+    private static DocumentCacheAdministrativeCommandResult CommandResult(
+        long generation,
+        DocumentCacheAdministrativeCommandStatus status,
+        DocumentCacheAdministrativeCommandClassification classification
+    ) =>
+        new(
+            DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+            DocumentCacheAdministrativeTargetKey.FromTargetKey(TargetKey),
+            status,
+            classification,
+            mutated: status == DocumentCacheAdministrativeCommandStatus.Completed,
+            targetGeneration: generation,
+            physicalSourceFingerprint: Fingerprint,
+            lifecycle: DocumentCacheLifecycleState.Rebuilding,
+            cacheAheadRecoveryRequired: false,
+            phaseDiagnostics: []
+        );
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {

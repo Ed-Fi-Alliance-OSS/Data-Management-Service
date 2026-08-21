@@ -76,11 +76,44 @@ public sealed record DocumentCacheTargetRuntimeSnapshot
     }
 }
 
+public sealed record DocumentCacheTargetStatusSnapshot
+{
+    public DocumentCacheTargetStatusSnapshot(
+        DocumentCacheTargetRegistrySnapshot registrySnapshot,
+        DocumentCacheTargetRuntimeSnapshot runtimeSnapshot
+    )
+    {
+        RegistrySnapshot = registrySnapshot ?? throw new ArgumentNullException(nameof(registrySnapshot));
+        RuntimeSnapshot = runtimeSnapshot ?? throw new ArgumentNullException(nameof(runtimeSnapshot));
+    }
+
+    public DocumentCacheTargetRegistrySnapshot RegistrySnapshot { get; }
+
+    public DocumentCacheTargetRuntimeSnapshot RuntimeSnapshot { get; }
+
+    public ImmutableArray<DocumentCacheTargetObservation> Targets => RegistrySnapshot.Targets;
+
+    public DateTimeOffset RegistryObservedAt => RegistrySnapshot.ObservedAt;
+
+    public DocumentCacheTargetObservation? GetTarget(DocumentCacheTargetKey targetKey) =>
+        RegistrySnapshot.GetTarget(targetKey);
+
+    public DocumentCacheTargetExecutionContext? GetExecutionContext(DocumentCacheTargetKey targetKey) =>
+        RuntimeSnapshot.GetExecutionContext(targetKey);
+
+    public DocumentCacheTargetExecutionContext? GetExecutionContext(
+        DocumentCacheTargetKey targetKey,
+        DocumentCacheTargetContextGeneration generation
+    ) => RuntimeSnapshot.GetExecutionContext(targetKey, generation);
+}
+
 public interface IDocumentCacheTargetRegistry
 {
     DocumentCacheTargetRegistrySnapshot CurrentSnapshot { get; }
 
     DocumentCacheTargetRuntimeSnapshot CurrentRuntimeSnapshot { get; }
+
+    DocumentCacheTargetStatusSnapshot CurrentStatusSnapshot => new(CurrentSnapshot, CurrentRuntimeSnapshot);
 
     Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
         DocumentCacheTargetRefreshReason reason,
@@ -102,6 +135,8 @@ public sealed class DocumentCacheTargetRegistry(
 
     private readonly DocumentCacheTargetEffectiveSettings _effectiveSettings =
         DocumentCacheTargetEffectiveSettings.FromOptions(options.Value);
+
+    private readonly object _snapshotLock = new();
 
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
 
@@ -140,9 +175,38 @@ public sealed class DocumentCacheTargetRegistry(
         timeProvider.GetUtcNow()
     );
 
-    public DocumentCacheTargetRegistrySnapshot CurrentSnapshot => _currentSnapshot;
+    public DocumentCacheTargetRegistrySnapshot CurrentSnapshot
+    {
+        get
+        {
+            lock (_snapshotLock)
+            {
+                return _currentSnapshot;
+            }
+        }
+    }
 
-    public DocumentCacheTargetRuntimeSnapshot CurrentRuntimeSnapshot => CreateRuntimeSnapshot(_targetStates);
+    public DocumentCacheTargetRuntimeSnapshot CurrentRuntimeSnapshot
+    {
+        get
+        {
+            lock (_snapshotLock)
+            {
+                return CreateRuntimeSnapshot(_targetStates, timeProvider.GetUtcNow());
+            }
+        }
+    }
+
+    public DocumentCacheTargetStatusSnapshot CurrentStatusSnapshot
+    {
+        get
+        {
+            lock (_snapshotLock)
+            {
+                return CreateStatusSnapshot(_currentSnapshot, _targetStates);
+            }
+        }
+    }
 
     public async Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
         DocumentCacheTargetRefreshReason reason,
@@ -154,8 +218,13 @@ public sealed class DocumentCacheTargetRegistry(
         {
             if (_configuredTargetKeys.IsEmpty)
             {
-                _currentSnapshot = new DocumentCacheTargetRegistrySnapshot([], timeProvider.GetUtcNow());
-                return _currentSnapshot;
+                DocumentCacheTargetRegistrySnapshot emptySnapshot = new([], timeProvider.GetUtcNow());
+                lock (_snapshotLock)
+                {
+                    _currentSnapshot = emptySnapshot;
+                }
+
+                return emptySnapshot;
             }
 
             logger.LogDebug("Refreshing DocumentCache target registry for reason {RefreshReason}", reason);
@@ -184,9 +253,16 @@ public sealed class DocumentCacheTargetRegistry(
                 nextStates.Add(targetKey, nextState);
             }
 
-            _targetStates = nextStates.ToImmutable();
-            _currentSnapshot = CreateSnapshot(_targetStates);
-            return _currentSnapshot;
+            ImmutableDictionary<DocumentCacheTargetKey, TargetState> nextTargetStates =
+                nextStates.ToImmutable();
+            DocumentCacheTargetRegistrySnapshot nextSnapshot = CreateSnapshot(nextTargetStates);
+            lock (_snapshotLock)
+            {
+                _targetStates = nextTargetStates;
+                _currentSnapshot = nextSnapshot;
+            }
+
+            return nextSnapshot;
         }
         finally
         {
@@ -513,14 +589,20 @@ public sealed class DocumentCacheTargetRegistry(
         );
 
     private DocumentCacheTargetRuntimeSnapshot CreateRuntimeSnapshot(
-        ImmutableDictionary<DocumentCacheTargetKey, TargetState> targetStates
+        ImmutableDictionary<DocumentCacheTargetKey, TargetState> targetStates,
+        DateTimeOffset observedAt
     ) =>
         new(
             _configuredTargetKeys
                 .Select(targetKey => targetStates[targetKey].ExecutionContext)
                 .OfType<DocumentCacheTargetExecutionContext>(),
-            timeProvider.GetUtcNow()
+            observedAt
         );
+
+    private DocumentCacheTargetStatusSnapshot CreateStatusSnapshot(
+        DocumentCacheTargetRegistrySnapshot registrySnapshot,
+        ImmutableDictionary<DocumentCacheTargetKey, TargetState> targetStates
+    ) => new(registrySnapshot, CreateRuntimeSnapshot(targetStates, timeProvider.GetUtcNow()));
 
     private static string GetProviderTenantKey(DocumentCacheTargetKey targetKey) => targetKey.TenantKey;
 

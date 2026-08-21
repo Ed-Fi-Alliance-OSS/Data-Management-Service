@@ -29,12 +29,14 @@ public class Given_DocumentCacheServiceRegistration
 
         AssertSingletonFactory<DocumentCacheProjectionObservationStore>(services);
         AssertSingleton<IDocumentCacheProjectionTelemetry, DocumentCacheProjectionTelemetry>(services);
+        AssertSingleton<IDocumentCacheStatusTelemetry, DocumentCacheStatusTelemetry>(services);
         AssertSingleton<
             IDocumentCacheDownstreamPublicationHistoryProvider,
             DocumentCacheUnknownDownstreamPublicationHistoryProvider
         >(services);
         AssertSingletonFactory<IDocumentCacheProjectionObservationProvider>(services);
         AssertSingletonFactory<IDocumentCacheProjectionObservationSink>(services);
+        AssertSingleton<IDocumentCacheStatusService, DocumentCacheStatusService>(services);
         AssertSingleton<
             IDocumentCacheProjectionTargetRuntimeContextFactory,
             DocumentCacheProjectionTargetRuntimeContextFactory
@@ -129,6 +131,10 @@ public class Given_DocumentCacheServiceRegistration
         AssertScopedFactory<IDocumentCacheWriter>(services);
         AssertScopedFactory<IDocumentCacheSessionBoundWriter>(services);
         AssertSingleton<IDocumentProjectionWorkPager, PostgresqlDocumentProjectionWorkPager>(services);
+        AssertSingleton<
+            IDocumentCacheStatusCurrentSourceObserver,
+            PostgresqlDocumentCacheStatusCurrentSourceObserver
+        >(services);
         AssertSingleton<IDocumentCacheAdministrativeMutex, PostgresqlDocumentCacheAdministrativeMutex>(
             services
         );
@@ -158,6 +164,10 @@ public class Given_DocumentCacheServiceRegistration
         AssertScopedFactory<IDocumentCacheWriter>(services);
         AssertScopedFactory<IDocumentCacheSessionBoundWriter>(services);
         AssertSingleton<IDocumentProjectionWorkPager, MssqlDocumentProjectionWorkPager>(services);
+        AssertSingleton<
+            IDocumentCacheStatusCurrentSourceObserver,
+            MssqlDocumentCacheStatusCurrentSourceObserver
+        >(services);
         AssertSingleton<IDocumentCacheAdministrativeMutex, MssqlDocumentCacheAdministrativeMutex>(services);
         AssertSingleton<
             IDocumentCacheProviderCommandTimeoutClassifier,
@@ -172,6 +182,35 @@ public class Given_DocumentCacheServiceRegistration
         AssertScoped<IDocumentCacheReadLookupAdapter, MssqlDocumentCacheReadLookupAdapter>(services);
         AssertScoped<IDocumentCacheReadResponseShaper, DocumentCacheReadResponseShaper>(services);
         AssertScopedFactory<IDocumentCacheReadAccelerationCoordinator>(services);
+    }
+
+    [Test]
+    public void It_registers_status_current_source_observers_for_both_relational_providers()
+    {
+        IServiceCollection services = new ServiceCollection();
+
+        services.AddPostgresqlReferenceResolver();
+        services.AddMssqlReferenceResolver();
+
+        services
+            .Where(descriptor => descriptor.ServiceType == typeof(IDocumentCacheStatusCurrentSourceObserver))
+            .Should()
+            .SatisfyRespectively(
+                descriptor =>
+                {
+                    descriptor.Lifetime.Should().Be(ServiceLifetime.Singleton);
+                    descriptor
+                        .ImplementationType.Should()
+                        .Be(typeof(PostgresqlDocumentCacheStatusCurrentSourceObserver));
+                },
+                descriptor =>
+                {
+                    descriptor.Lifetime.Should().Be(ServiceLifetime.Singleton);
+                    descriptor
+                        .ImplementationType.Should()
+                        .Be(typeof(MssqlDocumentCacheStatusCurrentSourceObserver));
+                }
+            );
     }
 
     private static void AddSharedReferenceResolverForTest(IServiceCollection services)

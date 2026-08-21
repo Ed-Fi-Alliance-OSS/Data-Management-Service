@@ -1427,6 +1427,8 @@ public sealed class CoreDdlEmitter
             writer.AppendLine("BEGIN");
             using (writer.Indent())
             {
+                // SQL Server keeps a fixed guard message because the rejected value is not included
+                // in v1 telemetry and FORMATMESSAGE would add avoidable trigger dependencies.
                 writer.AppendLine(
                     "THROW 50000, N'dms.DocumentCacheState.ProjectionLifecycleState has unsupported value for projection enqueue.', 1;"
                 );

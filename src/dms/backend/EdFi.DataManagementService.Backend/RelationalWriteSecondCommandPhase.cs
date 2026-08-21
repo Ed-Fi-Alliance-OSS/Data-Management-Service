@@ -848,11 +848,16 @@ internal sealed class CompositeRelationalWriteSecondCommand(
                 RelationalWriteTargetContext.ExistingDocument existing => existing.DocumentId,
                 _ => RequireDocumentId(Value(_documentInsert, outcomesByCommand), request),
             };
+            var persistObservation = RequirePersistObservation(
+                Value(_contentVersionRead, outcomesByCommand),
+                documentId
+            );
 
             return new RelationalWritePersistResult(
                 documentId,
                 GetTargetDocumentUuid(targetContext),
-                RequireContentVersion(Value(_contentVersionRead, outcomesByCommand), documentId)
+                persistObservation.ContentVersion,
+                persistObservation.DocumentCacheEnqueueOutcome
             );
         }
 
@@ -893,7 +898,7 @@ internal sealed class CompositeRelationalWriteSecondCommand(
             return Convert.ToInt64(value, CultureInfo.InvariantCulture);
         }
 
-        private static long RequireContentVersion(object? value, long rootDocumentId)
+        private static DmlPersistObservation RequirePersistObservation(object? value, long rootDocumentId)
         {
             if (value is null or DBNull)
             {
@@ -903,9 +908,22 @@ internal sealed class CompositeRelationalWriteSecondCommand(
                 );
             }
 
-            return Convert.ToInt64(value, CultureInfo.InvariantCulture);
+            if (value is not DmlPersistObservation observation)
+            {
+                throw new InvalidOperationException(
+                    "Relational write persistence returned an unexpected persisted-target observation for "
+                        + $"committed document id {rootDocumentId}."
+                );
+            }
+
+            return observation;
         }
     }
+
+    private sealed record DmlPersistObservation(
+        long ContentVersion,
+        DocumentCacheEnqueueOutcome DocumentCacheEnqueueOutcome
+    );
 
     /// <summary>
     /// What one command's emission needs, plus which authorization plans it actually carried, so a provider
@@ -1305,9 +1323,15 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         var command = statementDocumentId.Source switch
         {
             RelationalWriteRootDocumentIdSource.Bound bound =>
-                RelationalDocumentLockCommandBuilder.BuildContentVersionCommand(dialect, bound.DocumentId),
+                RelationalDocumentLockCommandBuilder.BuildContentVersionWithDocumentCacheEnqueueOutcomeCommand(
+                    dialect,
+                    bound.DocumentId
+                ),
             RelationalWriteRootDocumentIdSource.Derived derived =>
-                RelationalDocumentLockCommandBuilder.BuildContentVersionCommand(dialect, derived.Sql),
+                RelationalDocumentLockCommandBuilder.BuildContentVersionWithDocumentCacheEnqueueOutcomeCommand(
+                    dialect,
+                    derived.Sql
+                ),
             _ => throw new ArgumentOutOfRangeException(nameof(documentId), statementDocumentId.Source, null),
         };
         var rewritten = RelationalCompositeStatementRewriter.Rewrite(
@@ -1321,8 +1345,42 @@ internal sealed class CompositeRelationalWriteSecondCommand(
             ContentVersionReadLabel,
             rewritten.Sql,
             documentId.CombineBinding(rewritten.Sql, rewritten.Parameters),
-            RelationalCompositeResultShape.Scalar
+            RelationalCompositeResultShape.Rows,
+            ReadPersistObservationAsync
         );
+    }
+
+    private static async Task<object?> ReadPersistObservationAsync(
+        DbDataReader reader,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        var observation = new DmlPersistObservation(
+            Convert.ToInt64(
+                reader.GetValue(reader.GetOrdinal("ContentVersion")),
+                CultureInfo.InvariantCulture
+            ),
+            DocumentCacheEnqueueOutcomeConversion.FromRelationalWritePersistence(
+                Convert.ToInt32(
+                    reader.GetValue(reader.GetOrdinal("DocumentCacheEnqueueOutcome")),
+                    CultureInfo.InvariantCulture
+                )
+            )
+        );
+
+        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException(
+                "Relational write persistence returned more than one persisted-target observation."
+            );
+        }
+
+        return observation;
     }
 
     /// <summary>

@@ -31,6 +31,9 @@ public class DocumentCacheOptionsBindingTests
                     ["DataManagement:DocumentCache:Projector:FailureBackoff"] = "00:01:15",
                     ["DataManagement:DocumentCache:Projector:BaselineHighWaterMark"] = "2500",
                     ["DataManagement:DocumentCache:Administration:WorkflowTimeout"] = "12:00:00",
+                    ["DataManagement:DocumentCache:Status:StatusObservationTimeout"] = "00:00:08",
+                    ["DataManagement:DocumentCache:Status:EndpointTimeout"] = "00:00:45",
+                    ["DataManagement:DocumentCache:Status:RequiredRole"] = "dms-document-cache-operator",
                 }
             )
             .Build();
@@ -49,6 +52,9 @@ public class DocumentCacheOptionsBindingTests
         options.Projector.FailureBackoff.Should().Be(TimeSpan.FromSeconds(75));
         options.Projector.BaselineHighWaterMark.Should().Be(2500);
         options.Administration.WorkflowTimeout.Should().Be(TimeSpan.FromHours(12));
+        options.Status.StatusObservationTimeout.Should().Be(TimeSpan.FromSeconds(8));
+        options.Status.EndpointTimeout.Should().Be(TimeSpan.FromSeconds(45));
+        options.Status.RequiredRole.Should().Be("dms-document-cache-operator");
     }
 
     [Test]
@@ -67,5 +73,23 @@ public class DocumentCacheOptionsBindingTests
         configuration.GetSection(DocumentCacheOptions.SectionName).Bind(options);
 
         options.Administration.WorkflowTimeout.Should().Be(TimeSpan.FromHours(24));
+    }
+
+    [Test]
+    public void It_rejects_malformed_status_timeout_values_during_binding()
+    {
+        IConfigurationRoot configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["DataManagement:DocumentCache:Status:StatusObservationTimeout"] = "five-seconds",
+                }
+            )
+            .Build();
+
+        DocumentCacheOptions options = new();
+        Action bind = () => configuration.GetSection(DocumentCacheOptions.SectionName).Bind(options);
+
+        bind.Should().Throw<InvalidOperationException>().WithMessage("*StatusObservationTimeout*");
     }
 }

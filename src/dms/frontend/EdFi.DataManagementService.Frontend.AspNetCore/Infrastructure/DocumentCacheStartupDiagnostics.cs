@@ -15,7 +15,7 @@ internal static class DocumentCacheStartupDiagnostics
         DocumentCacheStartupDiagnosticSnapshot snapshot = CreateSnapshot(options);
 
         logger.LogInformation(
-            "DocumentCache configuration effective settings: TargetCount {TargetCount}, ConfiguredTargets {ConfiguredTargets}, ReadAccelerationEnabled {ReadAccelerationEnabled}, DirectFillTimeout {DirectFillTimeout}, PollInterval {PollInterval}, PageSize {PageSize}, MaxConcurrentTargets {MaxConcurrentTargets}, FailureBackoff {FailureBackoff}, BaselineHighWaterMark {BaselineHighWaterMark}, WorkflowTimeout {WorkflowTimeout}",
+            "DocumentCache configuration effective settings: TargetCount {TargetCount}, ConfiguredTargets {ConfiguredTargets}, ReadAccelerationEnabled {ReadAccelerationEnabled}, DirectFillTimeout {DirectFillTimeout}, PollInterval {PollInterval}, PageSize {PageSize}, MaxConcurrentTargets {MaxConcurrentTargets}, FailureBackoff {FailureBackoff}, BaselineHighWaterMark {BaselineHighWaterMark}, WorkflowTimeout {WorkflowTimeout}, StatusObservationTimeout {StatusObservationTimeout}, StatusEndpointTimeout {StatusEndpointTimeout}",
             snapshot.TargetCount,
             snapshot.ConfiguredTargets,
             snapshot.ReadAccelerationEnabled,
@@ -25,7 +25,9 @@ internal static class DocumentCacheStartupDiagnostics
             snapshot.MaxConcurrentTargets,
             snapshot.FailureBackoff,
             snapshot.BaselineHighWaterMark,
-            snapshot.WorkflowTimeout
+            snapshot.WorkflowTimeout,
+            snapshot.StatusObservationTimeout,
+            snapshot.StatusEndpointTimeout
         );
     }
 
@@ -46,7 +48,9 @@ internal static class DocumentCacheStartupDiagnostics
             options.Projector.MaxConcurrentTargets,
             options.Projector.FailureBackoff,
             options.Projector.BaselineHighWaterMark,
-            options.Administration.WorkflowTimeout
+            options.Administration.WorkflowTimeout,
+            options.Status.StatusObservationTimeout,
+            options.Status.EndpointTimeout
         );
     }
 }
@@ -61,5 +65,7 @@ internal sealed record DocumentCacheStartupDiagnosticSnapshot(
     int MaxConcurrentTargets,
     TimeSpan FailureBackoff,
     int BaselineHighWaterMark,
-    TimeSpan WorkflowTimeout
+    TimeSpan WorkflowTimeout,
+    TimeSpan StatusObservationTimeout,
+    TimeSpan StatusEndpointTimeout
 );

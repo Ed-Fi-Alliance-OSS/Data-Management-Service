@@ -45,7 +45,11 @@ internal record UpdateRequest(
     /// <summary>
     /// Optional profile write context when a writable profile applies.
     /// </summary>
-    BackendProfileWriteContext? BackendProfileWriteContext = null
+    BackendProfileWriteContext? BackendProfileWriteContext = null,
+    /// <summary>
+    /// The normalized request tenant key.
+    /// </summary>
+    string TenantKey = ""
 ) : IUpdateRequest
 {
     public WritePrecondition WritePrecondition { get; init; } = WritePreconditionFactory.Create(Headers);

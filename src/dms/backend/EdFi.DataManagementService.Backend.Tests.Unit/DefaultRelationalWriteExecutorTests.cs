@@ -15,6 +15,8 @@ using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Profile;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Unit.Profile;
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
@@ -53,6 +55,8 @@ public class Given_Default_Relational_Write_Executor
     private static readonly DocumentUuid UpdateDocumentUuid = new(
         Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")
     );
+    private static readonly DocumentCacheTargetKey DocumentCacheTelemetryTargetKey =
+        DocumentCacheTargetKey.Create("Tenant-A", 99);
 
     [SetUp]
     public void Setup()
@@ -82,7 +86,11 @@ public class Given_Default_Relational_Write_Executor
         IRelationalParameterConfigurator? relationalParameterConfigurator = null,
         IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
             null,
-        ILogger<DefaultRelationalWriteExecutor>? logger = null
+        ILogger<DefaultRelationalWriteExecutor>? logger = null,
+        IDocumentCacheEnqueueTelemetry? documentCacheEnqueueTelemetry = null,
+        IDataStoreSelection? dataStoreSelection = null,
+        IDocumentCacheTargetRegistry? documentCacheTargetRegistry = null,
+        IDocumentCacheProviderCommandTimeoutClassifier? documentCacheProviderCommandTimeoutClassifier = null
     ) =>
         new(
             _writeSessionFactory,
@@ -99,6 +107,9 @@ public class Given_Default_Relational_Write_Executor
             relationshipAuthorizationProviderFailureExtractor,
             logger,
             loggerFactory: null,
+            dataStoreSelection: dataStoreSelection,
+            documentCacheEnqueueTelemetry: documentCacheEnqueueTelemetry,
+            documentCacheTargetRegistry: documentCacheTargetRegistry,
             writeFirstPhase: new FakeSequentialRelationalWriteFirstPhase(
                 _targetLookupResolver,
                 _referenceResolverAdapterFactory,
@@ -110,7 +121,8 @@ public class Given_Default_Relational_Write_Executor
             secondCommandPhase: new FakeSequentialRelationalWriteSecondCommand(
                 _noProfilePersister,
                 relationshipAuthorizationProviderFailureExtractor
-            )
+            ),
+            documentCacheProviderCommandTimeoutClassifier: documentCacheProviderCommandTimeoutClassifier
         );
 
     [Test]
@@ -287,6 +299,477 @@ public class Given_Default_Relational_Write_Executor
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_records_DocumentCacheEnqueueTelemetry_success_only_after_committed_applied_write()
+    {
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry()
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
+        );
+
+        await _sut.ExecuteAsync(request);
+
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        telemetry.Successes.Should().ContainSingle();
+        telemetry.Failures.Should().BeEmpty();
+        telemetry.Successes[0].TargetKey.Should().Be(DocumentCacheTelemetryTargetKey);
+        telemetry
+            .Successes[0]
+            .CanonicalOperation.Should()
+            .Be(DocumentCacheEnqueueTelemetryCanonicalOperation.Insert);
+        telemetry.Successes[0].ResourceKind.Should().Be(DocumentCacheEnqueueTelemetryResourceKind.Resource);
+    }
+
+    [Test]
+    public async Task It_preserves_the_committed_resource_result_when_enqueue_success_telemetry_throws()
+    {
+        IDocumentCacheEnqueueTelemetry telemetry = A.Fake<IDocumentCacheEnqueueTelemetry>();
+        A.CallTo(() => telemetry.RecordSuccess(A<DocumentCacheEnqueueTelemetryContext>._))
+            .Throws(new InvalidOperationException("telemetry sink failed"));
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry()
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
+        );
+
+        RelationalWriteExecutorResult result = await _sut.ExecuteAsync(request);
+
+        result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>();
+        ((RelationalWriteExecutorResult.Upsert)result).Result.Should().BeOfType<UpsertResult.InsertSuccess>();
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+        A.CallTo(() => telemetry.RecordSuccess(A<DocumentCacheEnqueueTelemetryContext>._))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_records_DocumentCacheEnqueueTelemetry_success_for_committed_already_satisfied_enqueue_outcome()
+    {
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry()
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
+        );
+        _noProfilePersister.ResultToReturn = new RelationalWritePersistResult(
+            910L,
+            CreateDocumentUuid,
+            77L,
+            DocumentCacheEnqueueOutcome.AlreadySatisfied
+        );
+
+        await _sut.ExecuteAsync(request);
+
+        telemetry.Successes.Should().ContainSingle();
+        telemetry.Successes[0].TargetKey.Should().Be(DocumentCacheTelemetryTargetKey);
+    }
+
+    [Test]
+    public async Task It_does_not_record_DocumentCacheEnqueueTelemetry_success_when_registry_is_enabled_but_transaction_reports_no_work()
+    {
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry()
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
+        );
+        _noProfilePersister.ResultToReturn = new RelationalWritePersistResult(
+            910L,
+            CreateDocumentUuid,
+            77L,
+            DocumentCacheEnqueueOutcome.NoWorkQueued
+        );
+
+        await _sut.ExecuteAsync(request);
+
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        telemetry.Successes.Should().BeEmpty();
+        telemetry.Failures.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_records_DocumentCacheEnqueueTelemetry_success_for_exact_request_tenant_when_targets_share_data_store()
+    {
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        DocumentCacheTargetKey peerTargetKey = DocumentCacheTargetKey.Create("Tenant-B", 99);
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry(
+                CreateDocumentCacheTargetObservation(),
+                CreateDocumentCacheTargetObservation(peerTargetKey)
+            )
+        );
+        var request = CreateRequest(RelationalWriteOperationKind.Post, tenantKey: peerTargetKey.TenantKey);
+
+        await _sut.ExecuteAsync(request);
+
+        telemetry.Successes.Should().ContainSingle();
+        telemetry.Successes[0].TargetKey.Should().Be(peerTargetKey);
+    }
+
+    [Test]
+    public async Task It_records_DocumentCacheEnqueueTelemetry_failure_for_classified_enqueue_provider_errors()
+    {
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry()
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException(
+            "insert or update on table \"DocumentProjectionWork\" violates foreign key constraint"
+        );
+        _writeExceptionClassifier.ClassificationToReturn =
+            new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation(
+                "FK_DocumentProjectionWork_Document"
+            );
+
+        await _sut.ExecuteAsync(request);
+
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        telemetry.Successes.Should().BeEmpty();
+        telemetry.Failures.Should().ContainSingle();
+        telemetry.Failures[0].Context.TargetKey.Should().Be(DocumentCacheTelemetryTargetKey);
+        telemetry.Failures[0].Category.Should().Be(DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed);
+        telemetry
+            .Failures[0]
+            .Context.CanonicalOperation.Should()
+            .Be(DocumentCacheEnqueueTelemetryCanonicalOperation.Update);
+    }
+
+    [Test]
+    public async Task It_records_DocumentCacheEnqueueTelemetry_provider_timeout_without_enqueue_artifacts()
+    {
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry(),
+            documentCacheProviderCommandTimeoutClassifier: new RecordingDocumentCacheProviderCommandTimeoutClassifier
+            {
+                IsProviderCommandTimeoutToReturn = true,
+            }
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException(
+            "command timeout while applying the canonical write"
+        );
+        _writeExceptionClassifier.IsTransientFailureToReturn = true;
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureWriteConflict())
+            );
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        telemetry.Failures.Should().ContainSingle();
+        telemetry.Failures[0].Category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderTimeout);
+        telemetry.Failures[0].Context.TargetKey.Should().Be(DocumentCacheTelemetryTargetKey);
+    }
+
+    [Test]
+    public async Task It_records_DocumentCacheEnqueueTelemetry_provider_unavailable_without_enqueue_artifacts()
+    {
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry()
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException(
+            "connection reset while applying the canonical write"
+        );
+        _writeExceptionClassifier.IsTransientFailureToReturn = true;
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureWriteConflict())
+            );
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        telemetry.Failures.Should().ContainSingle();
+        telemetry.Failures[0].Category.Should().Be(DocumentCacheEnqueueFailureCategory.ProviderUnavailable);
+        telemetry.Failures[0].Context.TargetKey.Should().Be(DocumentCacheTelemetryTargetKey);
+    }
+
+    [Test]
+    public async Task It_records_DocumentCacheEnqueueTelemetry_transient_projection_work_failures_as_work_persistence_failures()
+    {
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry(),
+            documentCacheProviderCommandTimeoutClassifier: new RecordingDocumentCacheProviderCommandTimeoutClassifier()
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException(
+            "deadlock detected while inserting into dms.DocumentProjectionWork"
+        );
+        _writeExceptionClassifier.IsTransientFailureToReturn = true;
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureWriteConflict())
+            );
+        telemetry.Failures.Should().ContainSingle();
+        telemetry.Failures[0].Category.Should().Be(DocumentCacheEnqueueFailureCategory.WorkPersistenceFailed);
+    }
+
+    [Test]
+    public async Task It_preserves_mapped_resource_write_failure_when_enqueue_failure_telemetry_throws()
+    {
+        var telemetry = new ThrowingFailureDocumentCacheEnqueueTelemetry();
+        CapturingLogger<DefaultRelationalWriteExecutor> logger = new();
+        _sut = CreateExecutor(
+            logger: logger,
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry()
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException(
+            "deadlock detected while inserting into dms.DocumentProjectionWork"
+        );
+        _writeExceptionClassifier.IsTransientFailureToReturn = true;
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureWriteConflict())
+            );
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        telemetry.RecordFailureCallCount.Should().Be(1);
+        logger.JoinedMessages().Should().Contain("DocumentCache enqueue failure telemetry failed");
+    }
+
+    [Test]
+    public async Task It_rethrows_unmapped_resource_provider_exception_when_enqueue_failure_telemetry_and_warning_logger_throw()
+    {
+        var telemetry = new ThrowingFailureDocumentCacheEnqueueTelemetry();
+        _sut = CreateExecutor(
+            logger: new ThrowingWarningLogger<DefaultRelationalWriteExecutor>(),
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry()
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException(
+            "insert or update on table DocumentProjectionWork violates foreign key"
+        );
+
+        var act = () => _sut.ExecuteAsync(request);
+
+        await act.Should().ThrowAsync<StubDbException>().WithMessage("*DocumentProjectionWork*");
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        telemetry.RecordFailureCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_does_not_record_DocumentCacheEnqueueTelemetry_failure_for_mapped_ordinary_write_failures()
+    {
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry()
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException("duplicate key");
+        _writeExceptionClassifier.ClassificationToReturn =
+            new RelationalWriteExceptionClassification.UniqueConstraintViolation("UK_School_NaturalKey");
+        _writeConstraintResolver.ResolutionToReturn =
+            new RelationalWriteConstraintResolution.RootNaturalKeyUnique("UK_School_NaturalKey");
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureIdentityConflict(
+                        new ResourceName("School"),
+                        [new KeyValuePair<string, string>("schoolId", "255901")]
+                    )
+                )
+            );
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        telemetry.Successes.Should().BeEmpty();
+        telemetry.Failures.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_does_not_record_DocumentCacheEnqueueTelemetry_failure_for_transient_canonical_write_failures_without_enqueue_artifacts()
+    {
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry()
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException(
+            "deadlock detected while updating the canonical School row"
+        );
+        _writeExceptionClassifier.IsTransientFailureToReturn = true;
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureWriteConflict())
+            );
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+        telemetry.Successes.Should().BeEmpty();
+        telemetry.Failures.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_records_DocumentCacheEnqueueTelemetry_failure_for_exact_request_tenant_when_targets_share_data_store()
+    {
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        DocumentCacheTargetKey peerTargetKey = DocumentCacheTargetKey.Create("Tenant-B", 99);
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry(
+                CreateDocumentCacheTargetObservation(),
+                CreateDocumentCacheTargetObservation(peerTargetKey)
+            )
+        );
+        var request = CreateRequest(RelationalWriteOperationKind.Put, tenantKey: peerTargetKey.TenantKey);
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+        _noProfilePersister.ExceptionToThrow = new StubDbException(
+            "insert or update on table \"DocumentProjectionWork\" violates foreign key constraint"
+        );
+        _writeExceptionClassifier.ClassificationToReturn =
+            new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation(
+                "FK_DocumentProjectionWork_Document"
+            );
+
+        await _sut.ExecuteAsync(request);
+
+        telemetry.Failures.Should().ContainSingle();
+        telemetry.Failures[0].Context.TargetKey.Should().Be(peerTargetKey);
     }
 
     [Test]
@@ -2647,9 +3130,16 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_does_not_roll_back_an_applied_write_whose_commit_failure_is_unmapped()
     {
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry()
+        );
         var request = CreateRequest(
             RelationalWriteOperationKind.Put,
-            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!
+            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
         );
         _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
             request.WritePlan.TablePlansInDependencyOrder[0],
@@ -2671,6 +3161,8 @@ public class Given_Default_Relational_Write_Executor
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+        telemetry.Successes.Should().BeEmpty();
+        telemetry.Failures.Should().BeEmpty();
     }
 
     /// <summary>
@@ -2687,9 +3179,20 @@ public class Given_Default_Relational_Write_Executor
         RelationalWriteOperationKind operationKind
     )
     {
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry(),
+            documentCacheProviderCommandTimeoutClassifier: new RecordingDocumentCacheProviderCommandTimeoutClassifier
+            {
+                IsProviderCommandTimeoutToReturn = true,
+            }
+        );
         var request = CreateRequest(
             operationKind,
-            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!
+            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
         );
         _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
             request.WritePlan.TablePlansInDependencyOrder[0],
@@ -2727,15 +3230,24 @@ public class Given_Default_Relational_Write_Executor
             }
 
             _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+            telemetry.Successes.Should().BeEmpty();
+            telemetry.Failures.Should().BeEmpty();
         }
     }
 
     [Test]
     public async Task It_does_not_roll_back_a_guarded_no_op_whose_commit_fails()
     {
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry();
+        _sut = CreateExecutor(
+            documentCacheEnqueueTelemetry: telemetry,
+            dataStoreSelection: CreateSelectedDataStoreSelection(),
+            documentCacheTargetRegistry: CreateDocumentCacheTargetRegistry()
+        );
         var request = CreateRequest(
             RelationalWriteOperationKind.Put,
-            selectedBody: JsonNode.Parse("""{"name":"Lincoln High"}""")!
+            selectedBody: JsonNode.Parse("""{"name":"Lincoln High"}""")!,
+            tenantKey: DocumentCacheTelemetryTargetKey.TenantKey
         );
         _writeSessionFactory.Session.CommitExceptionToThrow = new StubDbException(
             "connection reset on commit"
@@ -2749,6 +3261,8 @@ public class Given_Default_Relational_Write_Executor
         _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
         _writeSessionFactory.Session.DisposeCallCount.Should().Be(1);
+        telemetry.Successes.Should().BeEmpty();
+        telemetry.Failures.Should().BeEmpty();
     }
 
     [Test]
@@ -7969,7 +8483,8 @@ public class Given_Default_Relational_Write_Executor
         TableWritePlan? rootWritePlan = null,
         JsonNode? selectedBody = null,
         SqlDialect dialect = SqlDialect.Pgsql,
-        WritePrecondition? writePrecondition = null
+        WritePrecondition? writePrecondition = null,
+        string tenantKey = ""
     )
     {
         var resolvedRootWritePlan = rootWritePlan ?? CreateRootPlan();
@@ -8009,7 +8524,8 @@ public class Given_Default_Relational_Write_Executor
                 documentReferences ?? [],
                 descriptorReferences ?? []
             ),
-            writePrecondition: writePrecondition
+            writePrecondition: writePrecondition,
+            tenantKey: tenantKey
         );
     }
 
@@ -8881,11 +9397,17 @@ public class Given_Default_Relational_Write_Executor
         ) =>
             request.TargetContext switch
             {
-                RelationalWriteTargetContext.CreateNew(var documentUuid) => new(910L, documentUuid, 77L),
+                RelationalWriteTargetContext.CreateNew(var documentUuid) => new(
+                    910L,
+                    documentUuid,
+                    77L,
+                    DocumentCacheEnqueueOutcome.AlreadySatisfied
+                ),
                 RelationalWriteTargetContext.ExistingDocument(var documentId, var documentUuid, _) => new(
                     documentId,
                     documentUuid,
-                    77L
+                    77L,
+                    DocumentCacheEnqueueOutcome.AlreadySatisfied
                 ),
                 _ => throw new ArgumentOutOfRangeException(nameof(request), request, null),
             };
@@ -9310,6 +9832,28 @@ public class Given_Default_Relational_Write_Executor
         public string JoinedMessages() => string.Join('\n', _messages);
     }
 
+    private sealed class ThrowingWarningLogger<T> : ILogger<T>
+    {
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            if (logLevel is LogLevel.Warning)
+            {
+                throw new InvalidOperationException("warning logger failed");
+            }
+        }
+    }
+
     private sealed class RecordingRelationalWriteExceptionClassifier : IRelationalWriteExceptionClassifier
     {
         public int IsTransientFailureCallCount { get; private set; }
@@ -9715,6 +10259,128 @@ public class Given_Default_Relational_Write_Executor
 
         var upsertResult = result.Should().BeOfType<RelationalWriteExecutorResult.Upsert>().Subject;
         upsertResult.Result.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    private static IDataStoreSelection CreateSelectedDataStoreSelection()
+    {
+        var selection = new DataStoreSelection();
+        selection.SetSelectedDataStore(
+            new DataStore(
+                DocumentCacheTelemetryTargetKey.DataStoreId,
+                "postgresql",
+                "document-cache-enqueue-telemetry",
+                "Host=localhost;Database=document-cache-enqueue-telemetry",
+                [],
+                RelationalProviderToken.Postgresql,
+                RelationalProviderMetadataStatus.Supported
+            )
+        );
+
+        return selection;
+    }
+
+    private static IDocumentCacheTargetRegistry CreateDocumentCacheTargetRegistry(
+        params DocumentCacheTargetObservation[] targets
+    ) =>
+        new StaticDocumentCacheTargetRegistry(
+            new DocumentCacheTargetRegistrySnapshot(
+                targets.Length == 0 ? [CreateDocumentCacheTargetObservation()] : [.. targets],
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero)
+            )
+        );
+
+    private static DocumentCacheTargetObservation CreateDocumentCacheTargetObservation(
+        DocumentCacheTargetKey? targetKey = null
+    ) =>
+        DocumentCacheTargetObservation.ResolvedEligible(
+            targetKey ?? DocumentCacheTelemetryTargetKey,
+            new DocumentCacheTargetEffectiveSettings(
+                readAccelerationEnabled: true,
+                directFillTimeout: TimeSpan.FromMilliseconds(250),
+                projectorPollInterval: TimeSpan.FromSeconds(5),
+                projectorPageSize: 10,
+                projectorMaxConcurrentTargets: 1,
+                projectorFailureBackoff: TimeSpan.FromSeconds(30),
+                projectorBaselineHighWaterMark: 1000,
+                administrationWorkflowTimeout: TimeSpan.FromHours(24)
+            ),
+            new DocumentCacheTargetContextGeneration(1),
+            RelationalProviderToken.Postgresql,
+            new DocumentCachePhysicalSourceFingerprint(
+                "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+            ),
+            new DocumentCacheLifecycleObservation(
+                DocumentCacheLifecycleState.Tracking,
+                CacheAheadRecoveryRequired: false
+            ),
+            new DocumentCacheInventoryValidationResult(
+                DocumentCacheInventoryStatus.Satisfied,
+                "Inventory satisfied."
+            ),
+            new DocumentCacheEnqueueTriggerValidationResult(
+                DocumentCacheEnqueueTriggerStatus.Satisfied,
+                "Enqueue trigger satisfied."
+            ),
+            DocumentCacheSqlServerPrerequisiteDetails.NotApplicable()
+        );
+
+    private sealed class RecordingDocumentCacheEnqueueTelemetry : IDocumentCacheEnqueueTelemetry
+    {
+        public List<DocumentCacheEnqueueTelemetryContext> Successes { get; } = [];
+
+        public List<DocumentCacheEnqueueFailureRecord> Failures { get; } = [];
+
+        public void RecordSuccess(DocumentCacheEnqueueTelemetryContext context) => Successes.Add(context);
+
+        public void RecordFailure(
+            DocumentCacheEnqueueTelemetryContext context,
+            DocumentCacheEnqueueFailureCategory category
+        ) => Failures.Add(new DocumentCacheEnqueueFailureRecord(context, category));
+    }
+
+    private sealed record DocumentCacheEnqueueFailureRecord(
+        DocumentCacheEnqueueTelemetryContext Context,
+        DocumentCacheEnqueueFailureCategory Category
+    );
+
+    private sealed class ThrowingFailureDocumentCacheEnqueueTelemetry : IDocumentCacheEnqueueTelemetry
+    {
+        public int RecordFailureCallCount { get; private set; }
+
+        public void RecordSuccess(DocumentCacheEnqueueTelemetryContext context) =>
+            throw new InvalidOperationException("unexpected success telemetry call");
+
+        public void RecordFailure(
+            DocumentCacheEnqueueTelemetryContext context,
+            DocumentCacheEnqueueFailureCategory category
+        )
+        {
+            RecordFailureCallCount++;
+            throw new InvalidOperationException("telemetry sink failed");
+        }
+    }
+
+    private sealed class RecordingDocumentCacheProviderCommandTimeoutClassifier
+        : IDocumentCacheProviderCommandTimeoutClassifier
+    {
+        public bool IsProviderCommandTimeoutToReturn { get; set; }
+
+        public bool IsProviderCommandTimeout(Exception exception) => IsProviderCommandTimeoutToReturn;
+    }
+
+    private sealed class StaticDocumentCacheTargetRegistry(
+        DocumentCacheTargetRegistrySnapshot currentSnapshot
+    ) : IDocumentCacheTargetRegistry
+    {
+        public DocumentCacheTargetRegistrySnapshot CurrentSnapshot { get; } = currentSnapshot;
+
+        public DocumentCacheTargetRuntimeSnapshot CurrentRuntimeSnapshot { get; } =
+            new([], currentSnapshot.ObservedAt);
+
+        public Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
+            DocumentCacheTargetRefreshReason reason,
+            CancellationToken cancellationToken = default
+        ) => Task.FromResult(CurrentSnapshot);
     }
 
     private sealed class StubDbException(string message) : DbException(message);

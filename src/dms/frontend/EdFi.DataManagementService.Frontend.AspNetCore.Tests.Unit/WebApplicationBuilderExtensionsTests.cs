@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Mssql;
@@ -30,7 +31,8 @@ public class WebApplicationBuilderExtensionsTests
     private static IServiceCollection CreateServiceCollection(
         string datastore,
         Dictionary<string, string?>? additionalConfiguration = null,
-        Action<IServiceCollection>? configureServicesBeforeAddServices = null
+        Action<IServiceCollection>? configureServicesBeforeAddServices = null,
+        Action<ConfigurationManager>? configureConfigurationBeforeAddServices = null
     )
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Test" });
@@ -61,6 +63,7 @@ public class WebApplicationBuilderExtensionsTests
         }
 
         builder.Configuration.AddInMemoryCollection(configuration);
+        configureConfigurationBeforeAddServices?.Invoke(builder.Configuration);
         configureServicesBeforeAddServices?.Invoke(builder.Services);
 
         builder.AddServices();
@@ -70,8 +73,15 @@ public class WebApplicationBuilderExtensionsTests
 
     private static ServiceProvider CreateServices(
         string datastore,
-        Dictionary<string, string?>? additionalConfiguration = null
-    ) => CreateServiceCollection(datastore, additionalConfiguration).BuildServiceProvider();
+        Dictionary<string, string?>? additionalConfiguration = null,
+        Action<ConfigurationManager>? configureConfigurationBeforeAddServices = null
+    ) =>
+        CreateServiceCollection(
+                datastore,
+                additionalConfiguration,
+                configureConfigurationBeforeAddServices: configureConfigurationBeforeAddServices
+            )
+            .BuildServiceProvider();
 
     private static void AssertDirectRelationalRepositoryRegistrations(IServiceCollection services)
     {
@@ -114,6 +124,30 @@ public class WebApplicationBuilderExtensionsTests
     [Parallelizable]
     public class Given_DocumentCache_Configuration : WebApplicationBuilderExtensionsTests
     {
+        private static ServiceProvider CreateServicesWithDocumentCacheJson(string documentCacheJson)
+        {
+            string json = $$"""
+                {
+                  "DataManagement": {
+                    "DocumentCache": {
+                      {{documentCacheJson}}
+                    }
+                  }
+                }
+                """;
+            string appSettingsPath = Path.Combine(
+                TestContext.CurrentContext.WorkDirectory,
+                $"document-cache-options-{Guid.NewGuid():N}.json"
+            );
+            File.WriteAllText(appSettingsPath, json, Encoding.UTF8);
+
+            return CreateServices(
+                "postgresql",
+                configureConfigurationBeforeAddServices: configuration =>
+                    configuration.AddJsonFile(appSettingsPath, optional: false, reloadOnChange: false)
+            );
+        }
+
         [Test]
         public void It_registers_DocumentCacheOptions_with_startup_validation()
         {
@@ -149,6 +183,9 @@ public class WebApplicationBuilderExtensionsTests
                     ["DataManagement:DocumentCache:Projector:FailureBackoff"] = "00:01:15",
                     ["DataManagement:DocumentCache:Projector:BaselineHighWaterMark"] = "2500",
                     ["DataManagement:DocumentCache:Administration:WorkflowTimeout"] = "12:00:00",
+                    ["DataManagement:DocumentCache:Status:StatusObservationTimeout"] = "00:00:08",
+                    ["DataManagement:DocumentCache:Status:EndpointTimeout"] = "00:00:45",
+                    ["DataManagement:DocumentCache:Status:RequiredRole"] = "dms-document-cache-operator",
                 }
             );
 
@@ -169,6 +206,9 @@ public class WebApplicationBuilderExtensionsTests
                 .Be(TimeSpan.FromMinutes(1).Add(TimeSpan.FromSeconds(15)));
             options.Projector.BaselineHighWaterMark.Should().Be(2500);
             options.Administration.WorkflowTimeout.Should().Be(TimeSpan.FromHours(12));
+            options.Status.StatusObservationTimeout.Should().Be(TimeSpan.FromSeconds(8));
+            options.Status.EndpointTimeout.Should().Be(TimeSpan.FromSeconds(45));
+            options.Status.RequiredRole.Should().Be("dms-document-cache-operator");
         }
 
         [Test]
@@ -185,6 +225,117 @@ public class WebApplicationBuilderExtensionsTests
                 .Throw<OptionsValidationException>()
                 .Which.Failures.Should()
                 .Contain("Projector:PageSize must be positive.");
+        }
+
+        [Test]
+        public void It_uses_DocumentCacheOptions_status_defaults_when_Status_is_omitted()
+        {
+            using ServiceProvider serviceProvider = CreateServices("postgresql");
+
+            Action act = () => serviceProvider.GetRequiredService<IStartupValidator>().Validate();
+
+            act.Should().NotThrow();
+            DocumentCacheStatusOptions status = serviceProvider
+                .GetRequiredService<IOptions<DocumentCacheOptions>>()
+                .Value.Status;
+            status
+                .StatusObservationTimeout.Should()
+                .Be(DocumentCacheStatusOptions.DefaultStatusObservationTimeout);
+            status.EndpointTimeout.Should().Be(DocumentCacheStatusOptions.DefaultEndpointTimeout);
+            status.TryGetRequiredRoleForEndpointMapping(out string? endpointMappingRole).Should().BeFalse();
+            endpointMappingRole.Should().BeNull();
+        }
+
+        [Test]
+        public void It_uses_DocumentCacheOptions_status_defaults_when_Status_is_an_empty_json_object()
+        {
+            using ServiceProvider serviceProvider = CreateServicesWithDocumentCacheJson("\"Status\": {}");
+
+            Action act = () => serviceProvider.GetRequiredService<IStartupValidator>().Validate();
+
+            act.Should().NotThrow();
+            DocumentCacheStatusOptions status = serviceProvider
+                .GetRequiredService<IOptions<DocumentCacheOptions>>()
+                .Value.Status;
+            status
+                .StatusObservationTimeout.Should()
+                .Be(DocumentCacheStatusOptions.DefaultStatusObservationTimeout);
+            status.EndpointTimeout.Should().Be(DocumentCacheStatusOptions.DefaultEndpointTimeout);
+            status.TryGetRequiredRoleForEndpointMapping(out string? endpointMappingRole).Should().BeFalse();
+            endpointMappingRole.Should().BeNull();
+        }
+
+        [Test]
+        public void It_fails_DocumentCacheOptions_validation_for_an_explicit_null_Status_section()
+        {
+            using ServiceProvider serviceProvider = CreateServicesWithDocumentCacheJson("\"Status\": null");
+
+            Action act = () => serviceProvider.GetRequiredService<IStartupValidator>().Validate();
+
+            act.Should()
+                .Throw<OptionsValidationException>()
+                .Which.Failures.Should()
+                .Contain("Status section must not be null.");
+        }
+
+        [Test]
+        public void It_fails_DocumentCacheOptions_validation_for_a_scalar_Status_section()
+        {
+            using ServiceProvider serviceProvider = CreateServices(
+                "postgresql",
+                new Dictionary<string, string?> { ["DataManagement:DocumentCache:Status"] = "enabled" }
+            );
+
+            Action act = () => serviceProvider.GetRequiredService<IStartupValidator>().Validate();
+
+            act.Should()
+                .Throw<OptionsValidationException>()
+                .Which.Failures.Should()
+                .Contain("Status section must be an object.");
+        }
+
+        [TestCase("DataManagement:DocumentCache:Status:StatusObservationTimeout", "00:00:00")]
+        [TestCase("DataManagement:DocumentCache:Status:EndpointTimeout", "-00:00:01")]
+        public void It_fails_DocumentCacheOptions_validation_for_nonpositive_status_timeouts(
+            string settingName,
+            string settingValue
+        )
+        {
+            using ServiceProvider serviceProvider = CreateServices(
+                "postgresql",
+                new Dictionary<string, string?> { [settingName] = settingValue }
+            );
+
+            Action act = () => serviceProvider.GetRequiredService<IStartupValidator>().Validate();
+
+            act.Should()
+                .Throw<OptionsValidationException>()
+                .Which.Failures.Should()
+                .Contain(failure => failure.Contains("Status:") && failure.Contains("must be positive."));
+        }
+
+        [Test]
+        public void It_does_not_fail_DocumentCacheOptions_validation_for_an_invalid_status_required_role()
+        {
+            using ServiceProvider serviceProvider = CreateServices(
+                "postgresql",
+                new Dictionary<string, string?>
+                {
+                    ["DataManagement:DocumentCache:Status:RequiredRole"] = "dms document cache operator",
+                }
+            );
+
+            Action act = () => serviceProvider.GetRequiredService<IStartupValidator>().Validate();
+
+            act.Should().NotThrow();
+            DocumentCacheOptions options = serviceProvider
+                .GetRequiredService<IOptions<DocumentCacheOptions>>()
+                .Value;
+            options
+                .Status.TryGetRequiredRoleForEndpointMapping(out string? endpointMappingRole)
+                .Should()
+                .BeFalse();
+            endpointMappingRole.Should().BeNull();
         }
 
         [Test]
@@ -214,6 +365,8 @@ public class WebApplicationBuilderExtensionsTests
             snapshot.FailureBackoff.Should().Be(TimeSpan.FromSeconds(30));
             snapshot.BaselineHighWaterMark.Should().Be(1000);
             snapshot.WorkflowTimeout.Should().Be(TimeSpan.FromHours(24));
+            snapshot.StatusObservationTimeout.Should().Be(TimeSpan.FromSeconds(5));
+            snapshot.StatusEndpointTimeout.Should().Be(TimeSpan.FromSeconds(30));
         }
 
         [Test]
