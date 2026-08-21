@@ -290,6 +290,93 @@ internal static class CursorPagingExecutionScenario
             );
     }
 
+    /// <summary>
+    /// The one outcome whose name is a claim about database work. <c>early_empty</c> reports that the API
+    /// answered without issuing a selection command, and this is where that claim is measured rather than
+    /// stated.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A descriptor <c>id</c> filter carrying something that is not a UUID cannot match any row, and the
+    /// API determines that from the value alone. So the page is answered with no candidate selection at
+    /// all, which is what makes zero the expected count here where every other telemetry case in this
+    /// suite costs exactly one. A later change that answered this short-circuit with a real command — an
+    /// added probe, a reordered authorization check — would keep every other assertion in this suite
+    /// green while making the outcome name false, and this is the only case that would fail.
+    /// </para>
+    /// <para>
+    /// The collection is seeded first even though the filter matches none of it. Without the seed the
+    /// empty page and the zero count would both be statements about an empty database rather than about
+    /// the short-circuit, which is the property under test.
+    /// </para>
+    /// <para>
+    /// The descriptor endpoint carries this case because it is the one this fixture's ApiSchema gives an
+    /// <c>id</c> query field to. The regular resource here declares no query fields at all, so the same
+    /// request against it would be refused as an unknown field and never reach a selection decision.
+    /// </para>
+    /// </remarks>
+    public static async Task It_records_an_early_empty_without_a_database_command(
+        ApiIntegrationHarness harness,
+        string expectedProvider
+    )
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedProvider);
+
+        ApiIntegrationQueryRecorder recorder =
+            harness.QueryRecorder
+            ?? throw new InvalidOperationException(
+                "This scenario counts database commands and requires CaptureQueryPlans."
+            );
+
+        await SeedDescriptorsAsync(harness, "early-empty");
+
+        // Encoded by the codec that decodes it, so the entry token is decodable by construction.
+        string entryToken = PageTokenCodec.Encode(CursorRange.From(1));
+
+        using var metrics = CollectionPagingMetricCollector.Start();
+
+        metrics.Clear();
+        int commandsBefore = recorder.DatabaseCommands;
+
+        using (
+            HttpResponseMessage response = await harness.HttpClient.GetAsync(
+                $"{DescriptorEndpoint}?pageToken={Uri.EscapeDataString(entryToken)}&pageSize=2"
+                    + "&id=not-a-uuid"
+            )
+        )
+        {
+            string body = await response.Content.ReadAsStringAsync();
+            int databaseCommands = recorder.DatabaseCommands - commandsBefore;
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            response.Content.Headers.ContentType!.MediaType.Should().Be(StandardJsonContentType);
+            JsonNode.Parse(body)!.AsArray().Should().BeEmpty();
+
+            // Nothing was selected, so there is no key to anchor a continuation on and the walk ends
+            // here. A short-circuit that offered a continuation would send a client back for a page the
+            // API already knows cannot exist.
+            response.Headers.Contains(NextPageTokenHeaderName).Should().BeFalse();
+
+            databaseCommands
+                .Should()
+                .Be(
+                    0,
+                    "early_empty reports that no selection command was issued, so any count above zero "
+                        + "would make the outcome name false"
+                );
+        }
+
+        metrics.AssertSinglePage(
+            expectedProvider,
+            CollectionPagingTelemetryLabel.CursorPagingMode,
+            CollectionPagingTelemetryLabel.NoCommandCategory,
+            CollectionPagingTelemetryLabel.EarlyEmptyOutcome,
+            expectedRequestedPageSize: 2,
+            expectedReturnedPageSize: 0
+        );
+    }
+
     private static async Task<CursorWalk> WalkFromFirstPageAsync(
         ApiIntegrationHarness harness,
         string endpoint,

@@ -51,4 +51,11 @@ public sealed class Given_Mssql_CursorPagingExecution : MssqlApiIntegrationTestB
             Harness,
             CollectionPagingTelemetryLabel.SqlServerProvider
         );
+
+    [Test]
+    public Task It_records_an_early_empty_without_a_database_command() =>
+        CursorPagingExecutionScenario.It_records_an_early_empty_without_a_database_command(
+            Harness,
+            CollectionPagingTelemetryLabel.SqlServerProvider
+        );
 }

@@ -52,4 +52,11 @@ public sealed class Given_Postgresql_CursorPagingExecution : PostgresqlApiIntegr
             Harness,
             CollectionPagingTelemetryLabel.PostgresqlProvider
         );
+
+    [Test]
+    public Task It_records_an_early_empty_without_a_database_command() =>
+        CursorPagingExecutionScenario.It_records_an_early_empty_without_a_database_command(
+            Harness,
+            CollectionPagingTelemetryLabel.PostgresqlProvider
+        );
 }
