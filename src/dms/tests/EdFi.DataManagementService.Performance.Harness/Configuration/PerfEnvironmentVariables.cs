@@ -16,4 +16,9 @@ public static class PerfEnvironmentVariables
     public const string WarmupIterations = "PERF_WARMUP_ITERATIONS";
     public const string MeasuredIterations = "PERF_MEASURED_ITERATIONS";
     public const string DeepOffset = "PERF_DEEP_OFFSET";
+    public const string ImageTag = "PERF_IMAGE_TAG";
+    public const string ImageDigest = "PERF_IMAGE_DIGEST";
+    public const string StorageNote = "PERF_STORAGE_NOTE";
+    public const string AllowCi = "PERF_ALLOW_CI";
+    public const string AllowedDirtyPrefixes = "PERF_ALLOW_DIRTY_PREFIXES";
 }

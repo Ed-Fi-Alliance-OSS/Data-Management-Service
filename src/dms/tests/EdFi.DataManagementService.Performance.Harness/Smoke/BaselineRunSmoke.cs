@@ -4,22 +4,20 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
-using System.Globalization;
 using EdFi.DataManagementService.Performance.Harness.Configuration;
 using EdFi.DataManagementService.Performance.Harness.Fixtures;
 using EdFi.DataManagementService.Performance.Harness.Measurement;
-using EdFi.DataManagementService.Performance.Harness.Results;
 using EdFi.DataManagementService.Tests.Integration;
 using FluentAssertions;
 
 namespace EdFi.DataManagementService.Performance.Harness.Smoke;
 
 /// <summary>
-/// The full pipeline end to end at smoke scale: load, measure all six cells at the epic's
-/// minimum iteration counts, replay plans on a dedicated out-of-band connection, capture the
-/// environment, assemble, write, and re-validate the reloaded artifacts. This produces
-/// genuinely valid artifacts — the same code path the baseline capture uses, differing only
-/// in fixture size and the externally supplied image pins.
+/// The full evidence pipeline end to end at smoke scale: the same
+/// <see cref="PerfBaselineRunPipeline" /> the baseline capture uses, differing only in the
+/// 10,000-row fixture, temp-directory output, relaxed guardrails (a development tree is
+/// dirty), and literal image pins. Asserts the written artifact set's file inventory on top
+/// of the pipeline's own reload-and-validate step.
 /// </summary>
 internal static class BaselineRunSmoke
 {
@@ -34,126 +32,40 @@ internal static class BaselineRunSmoke
     )
     {
         PerfFixtureDefinition definition = new(PerfFixtureKind.Smoke10k);
-        await PerfFixtureLoader.LoadAndVerifyAsync(harness.DbConnection, provider, definition);
-
-        long deepOffset = definition.RowCount * 9 / 10;
-        const int warmupIterations = PerfRunConfigurationLoader.MinimumWarmupIterations;
-        const int measuredIterations = PerfRunConfigurationLoader.MinimumMeasuredIterations;
-
-        IReadOnlyList<PerfMeasuredCell> cells = await PerfScenarioExecutor.RunAsync(
-            harness,
-            provider,
-            deepOffset,
-            warmupIterations,
-            measuredIterations
+        string resultsDirectoryBase = Path.Combine(
+            Path.GetTempPath(),
+            "dms-perf-harness-smoke",
+            Guid.NewGuid().ToString("N")
         );
 
-        string providerName = PerfProviders.ArtifactName(provider);
-        List<PerfCellEvidence> evidence = [];
-        PerfEnvironmentIdentity environment;
-
-        await using (DbConnection replayConnection = await openReplayConnectionAsync())
-        {
-            foreach (PerfMeasuredCell cell in cells)
-            {
-                evidence.Add(await CaptureCellEvidenceAsync(replayConnection, provider, providerName, cell));
-            }
-
-            environment = await PerfEnvironmentCapture.CaptureAsync(
-                replayConnection,
-                provider,
+        string runDirectory = await PerfBaselineRunPipeline.RunAsync(
+            harness,
+            provider,
+            openReplayConnectionAsync,
+            leasedConnectionString,
+            definition,
+            deepOffset: definition.RowCount * 9 / 10,
+            warmupIterations: PerfRunConfigurationLoader.MinimumWarmupIterations,
+            measuredIterations: PerfRunConfigurationLoader.MinimumMeasuredIterations,
+            resultsDirectoryBase,
+            runnerCommit: GitIdentity.HeadCommit(AppContext.BaseDirectory),
+            new PerfEvidenceRunSettings(
                 imageTag,
                 imageDigest,
                 storageNote,
-                leasedConnectionString
-            );
-        }
-
-        string headCommit = GitIdentity.HeadCommit(AppContext.BaseDirectory);
-        PerfAssembledRun assembled = PerfBaselineArtifactAssembler.Assemble(
-            provider,
-            definition,
-            deepOffset,
-            warmupIterations,
-            measuredIterations,
-            evidence,
-            new PerfRunIdentity(
-                $"{providerName}-{definition.Kind.Id}-smoke",
-                DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
-                providerName
-            ),
-            new PerfCommitIdentity(headCommit, headCommit, GitIdentity.DirtyPaths(AppContext.BaseDirectory)),
-            environment
+                AllowCi: true,
+                AllowedDirtyPrefixes: [""]
+            )
         );
 
-        string resultsDirectory = Path.Combine(
-            Path.GetTempPath(),
-            "dms-perf-harness-smoke",
-            $"{providerName}-{Guid.NewGuid():N}"
-        );
-        PerfRunArtifactWriter.Write(
-            resultsDirectory,
-            assembled.Manifest,
-            assembled.Results,
-            assembled.FixtureManifest,
-            assembled.AuxiliaryFiles
-        );
-
-        PerfRunManifest reloadedManifest = PerfArtifactJson.Deserialize<PerfRunManifest>(
-            await File.ReadAllTextAsync(Path.Combine(resultsDirectory, "run-manifest.json"))
-        );
-        PerfResultsDocument reloadedResults = PerfArtifactJson.Deserialize<PerfResultsDocument>(
-            await File.ReadAllTextAsync(Path.Combine(resultsDirectory, "results.json"))
-        );
-        PerfArtifactValidator.EnsureValid(reloadedManifest, reloadedResults);
-
-        (await File.ReadAllLinesAsync(Path.Combine(resultsDirectory, "results.csv"))).Should().HaveCount(7);
-        File.Exists(Path.Combine(resultsDirectory, "fixture-manifest.json")).Should().BeTrue();
+        (await File.ReadAllLinesAsync(Path.Combine(runDirectory, "results.csv"))).Should().HaveCount(7);
+        File.Exists(Path.Combine(runDirectory, "fixture-manifest.json")).Should().BeTrue();
         Directory
-            .GetFiles(Path.Combine(resultsDirectory, "plans"))
+            .GetFiles(Path.Combine(runDirectory, "plans"))
             .Should()
             .HaveCount(provider == PerfProvider.Postgresql ? 6 : 12);
-        Directory.GetFiles(Path.Combine(resultsDirectory, "sql")).Should().HaveCount(3);
+        Directory.GetFiles(Path.Combine(runDirectory, "sql")).Should().HaveCount(3);
 
-        await TestContext.Out.WriteLineAsync($"Validated artifacts written to {resultsDirectory}");
-    }
-
-    private static async Task<PerfCellEvidence> CaptureCellEvidenceAsync(
-        DbConnection replayConnection,
-        PerfProvider provider,
-        string providerName,
-        PerfMeasuredCell cell
-    )
-    {
-        string baseName = $"plans/{providerName}.{cell.ScenarioId}.{cell.PageSize}";
-        if (provider == PerfProvider.Postgresql)
-        {
-            PgsqlPlanCaptureResult capture = await PgsqlPlanCapture.CaptureAsync(
-                replayConnection,
-                cell.PageSelection
-            );
-            string planFile = $"{baseName}.explain.json";
-            return new PerfCellEvidence(
-                cell,
-                capture.Metrics,
-                planFile,
-                [new PerfArtifactFile(planFile, capture.ExplainJson)]
-            );
-        }
-
-        MssqlPlanCaptureResult mssqlCapture = await MssqlPlanCapture.CaptureAsync(
-            replayConnection,
-            cell.PageSelection
-        );
-        string sqlPlanFile = $"{baseName}.sqlplan";
-        return new PerfCellEvidence(
-            cell,
-            mssqlCapture.Metrics,
-            sqlPlanFile,
-            [
-                new PerfArtifactFile(sqlPlanFile, mssqlCapture.ShowplanXml),
-                new PerfArtifactFile($"{baseName}.stats.txt", mssqlCapture.StatisticsText),
-            ]
-        );
+        await TestContext.Out.WriteLineAsync($"Validated artifacts written to {runDirectory}");
     }
 }
