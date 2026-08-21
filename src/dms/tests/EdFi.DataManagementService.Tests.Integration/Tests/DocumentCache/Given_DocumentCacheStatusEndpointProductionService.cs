@@ -19,6 +19,7 @@ using EdFi.DataManagementService.Tests.Integration.Postgresql;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
@@ -180,36 +181,42 @@ public class Given_DocumentCacheStatusEndpointProductionService
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
-            builder.UseSetting("AppSettings:UseApiSchemaPath", "true");
-            builder.UseSetting("AppSettings:ApiSchemaPath", _fixture.ApiSchemaDirectory);
-            builder.UseSetting("AppSettings:StartupStatusFilePath", _startupStatusFilePath);
-            builder.UseSetting("AppSettings:Datastore", "postgresql");
-            builder.UseSetting("AppSettings:BypassAuthorization", "true");
-            builder.UseSetting("DataManagement:DocumentCache:ReadAcceleration:Enabled", "true");
-            builder.UseSetting("DataManagement:DocumentCache:Projector:PollInterval", "01:00:00");
-            builder.UseSetting("DataManagement:DocumentCache:Projector:MaxConcurrentTargets", "2");
-            builder.UseSetting("DataManagement:DocumentCache:Status:RequiredRole", RequiredRole);
-            builder.UseSetting("DataManagement:DocumentCache:Targets:0:TenantKey", "");
-            builder.UseSetting(
-                "DataManagement:DocumentCache:Targets:0:DataStoreId",
-                EmptyTargetDataStoreId.ToString()
+            builder.ConfigureAppConfiguration(
+                (_, configuration) =>
+                {
+                    configuration.AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["AppSettings:UseApiSchemaPath"] = "true",
+                            ["AppSettings:ApiSchemaPath"] = _fixture.ApiSchemaDirectory,
+                            ["AppSettings:StartupStatusFilePath"] = _startupStatusFilePath,
+                            ["AppSettings:Datastore"] = "postgresql",
+                            ["AppSettings:BypassAuthorization"] = "true",
+                            ["DataManagement:DocumentCache:ReadAcceleration:Enabled"] = "true",
+                            ["DataManagement:DocumentCache:Projector:PollInterval"] = "01:00:00",
+                            ["DataManagement:DocumentCache:Projector:MaxConcurrentTargets"] = "2",
+                            ["DataManagement:DocumentCache:Status:RequiredRole"] = RequiredRole,
+                            ["DataManagement:DocumentCache:Status:StatusObservationTimeout"] = "00:00:05",
+                            ["DataManagement:DocumentCache:Status:EndpointTimeout"] = "00:00:30",
+                            ["DataManagement:DocumentCache:Targets:0:TenantKey"] = string.Empty,
+                            ["DataManagement:DocumentCache:Targets:0:DataStoreId"] =
+                                EmptyTargetDataStoreId.ToString(),
+                            ["DataManagement:DocumentCache:Targets:1:TenantKey"] = string.Empty,
+                            ["DataManagement:DocumentCache:Targets:1:DataStoreId"] =
+                                QueuedTargetDataStoreId.ToString(),
+                            ["DataManagement:DocumentCache:Targets:2:TenantKey"] = string.Empty,
+                            ["DataManagement:DocumentCache:Targets:2:DataStoreId"] =
+                                UnreachableTargetDataStoreId.ToString(),
+                            ["JwtAuthentication:RoleClaimType"] = RoleClaimType,
+                            ["JwtAuthentication:ClientRole"] = "legacy-service",
+                            ["ConfigurationServiceSettings:BaseUrl"] = "http://localhost/test-cms",
+                            ["ConfigurationServiceSettings:ClientId"] = "test-cms-client",
+                            ["ConfigurationServiceSettings:ClientSecret"] = "test-cms-secret",
+                            ["ConfigurationServiceSettings:Scope"] = "edfi_admin_api/full_access",
+                        }
+                    );
+                }
             );
-            builder.UseSetting("DataManagement:DocumentCache:Targets:1:TenantKey", "");
-            builder.UseSetting(
-                "DataManagement:DocumentCache:Targets:1:DataStoreId",
-                QueuedTargetDataStoreId.ToString()
-            );
-            builder.UseSetting("DataManagement:DocumentCache:Targets:2:TenantKey", "");
-            builder.UseSetting(
-                "DataManagement:DocumentCache:Targets:2:DataStoreId",
-                UnreachableTargetDataStoreId.ToString()
-            );
-            builder.UseSetting("JwtAuthentication:RoleClaimType", RoleClaimType);
-            builder.UseSetting("JwtAuthentication:ClientRole", "legacy-service");
-            builder.UseSetting("ConfigurationServiceSettings:BaseUrl", "http://localhost/test-cms");
-            builder.UseSetting("ConfigurationServiceSettings:ClientId", "test-cms-client");
-            builder.UseSetting("ConfigurationServiceSettings:ClientSecret", "test-cms-secret");
-            builder.UseSetting("ConfigurationServiceSettings:Scope", "edfi_admin_api/full_access");
 
             builder.ConfigureServices(services =>
             {
@@ -317,7 +324,11 @@ public class Given_DocumentCacheStatusEndpointProductionService
                 @requiredContentVersion,
                 @firstEnqueuedAt,
                 @lastEnqueuedAt
-            );
+            )
+            ON CONFLICT ("DocumentId") DO UPDATE
+            SET "RequiredContentVersion" = EXCLUDED."RequiredContentVersion",
+                "FirstEnqueuedAt" = EXCLUDED."FirstEnqueuedAt",
+                "LastEnqueuedAt" = EXCLUDED."LastEnqueuedAt";
             """,
             new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = documentId },
             new NpgsqlParameter("requiredContentVersion", NpgsqlDbType.Bigint) { Value = 10L },
