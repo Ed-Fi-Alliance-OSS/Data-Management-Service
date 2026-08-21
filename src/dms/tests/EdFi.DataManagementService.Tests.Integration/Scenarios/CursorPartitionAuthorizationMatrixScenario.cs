@@ -109,8 +109,10 @@ internal static class CursorPartitionAuthorizationMatrixScenario
     {
         ArgumentNullException.ThrowIfNull(harness);
 
-        // Every seeded document is identical apart from the identity column the view selects on, so the
-        // view is the only thing that can be excluding the inaccessible ones.
+        // Every field another strategy could authorize on is seeded so that it would admit the whole
+        // collection: each namespace sits under the caller's authorized prefix, and every reference points
+        // at the authorized school. Only the identity column the view selects on, and the name no strategy
+        // reads, tell an accessible document from a denied one, so the view is what excludes them.
         var seeded = await SeedNamespaceResourcesAsync(harness, MatrixAccessibility.Identity);
         await CreateMatrixCustomViewAsync(harness);
 
@@ -171,7 +173,9 @@ internal static class CursorPartitionAuthorizationMatrixScenario
     /// The descriptor carrier read through a custom view. The descriptor read path plans custom-view checks
     /// into the authorization spec that both the page relation and the boundary relation are compiled from,
     /// so this is the descriptor row where the two surfaces could disagree for an authorization reason.
-    /// Every seeded descriptor is identical apart from the code value the view selects on.
+    /// The one field a descriptor strategy could authorize on, the namespace, is seeded identically across
+    /// the collection; only the code value the view selects on, and the short description mirroring it,
+    /// vary.
     /// </summary>
     public static async Task It_agrees_on_the_descriptor_candidate_set_under_view_based_authorization(
         ApiIntegrationHarness harness
