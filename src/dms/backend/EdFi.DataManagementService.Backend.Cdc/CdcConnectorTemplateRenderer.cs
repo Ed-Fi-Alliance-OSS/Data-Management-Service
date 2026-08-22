@@ -20,6 +20,9 @@ internal interface ICdcConnectorTemplateRenderer
 internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputValidator inputValidator)
     : ICdcConnectorTemplateRenderer
 {
+    private const int ManifestFileNameMaxLength = 255;
+    private const int ManifestFileNameConnectorHashLength = 32;
+    private const string ManifestFileNameConnectorHashPrefix = ".sha256-";
     private const string RedactedArtifactValue = "[redacted]";
 
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
@@ -390,8 +393,39 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
         return payload;
     }
 
-    private static CdcSafeName ManifestFileName(CdcProvider provider, CdcSafeName connectorName) =>
-        new($"cdc-connector-template.{ProviderToken(provider)}.{connectorName.Value}.manifest.json");
+    private static CdcSafeName ManifestFileName(CdcProvider provider, CdcSafeName connectorName)
+    {
+        string prefix = $"cdc-connector-template.{ProviderToken(provider)}.";
+        const string suffix = ".manifest.json";
+        string fullFileName = $"{prefix}{connectorName.Value}{suffix}";
+
+        if (fullFileName.Length <= ManifestFileNameMaxLength)
+        {
+            return new CdcSafeName(fullFileName);
+        }
+
+        string connectorHashToken =
+            $"{ManifestFileNameConnectorHashPrefix}{ComputeSha256Prefix(connectorName.Value)}";
+        int maxConnectorPrefixLength =
+            ManifestFileNameMaxLength - prefix.Length - connectorHashToken.Length - suffix.Length;
+
+        if (maxConnectorPrefixLength <= 0)
+        {
+            throw new InvalidOperationException(
+                "CDC connector template manifest filename budget cannot fit provider token and connector hash."
+            );
+        }
+
+        return new CdcSafeName(
+            $"{prefix}{connectorName.Value[..maxConnectorPrefixLength]}{connectorHashToken}{suffix}"
+        );
+    }
+
+    private static string ComputeSha256Prefix(string value)
+    {
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+        return Convert.ToHexString(hash)[..ManifestFileNameConnectorHashLength].ToLowerInvariant();
+    }
 
     private static string SerializeManifest(
         CdcConnectorTemplateRequest request,

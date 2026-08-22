@@ -261,6 +261,109 @@ public class Given_CdcConnectorTemplateArtifactTests
             .BeFalse();
     }
 
+    [TestCase(CdcProvider.Postgresql)]
+    [TestCase(CdcProvider.SqlServer)]
+    public void It_writes_a_bounded_manifest_file_for_a_maximum_length_connector_name(CdcProvider provider)
+    {
+        string artifactDirectory = Path.Combine(
+            TestContext.CurrentContext.WorkDirectory,
+            $"cdc-connector-template-artifacts-{Guid.NewGuid():N}"
+        );
+        string connectorName = new('a', 249);
+
+        CdcConnectorTemplateResult result = Render(
+            BuildRequest(
+                provider,
+                artifactOutput: new CdcConnectorTemplateArtifactOutputRequest(
+                    includeRedactedArtifactPayload: true,
+                    manifestOutputDirectoryPath: artifactDirectory
+                ),
+                connectorName: connectorName
+            )
+        );
+
+        result.RedactedArtifactPayload.Should().NotBeNull();
+        CdcConnectorTemplateArtifactPayload payload = result.RedactedArtifactPayload!;
+        string manifestPath = Path.Combine(artifactDirectory, payload.FileName.Value);
+        using JsonDocument document = JsonDocument.Parse(File.ReadAllText(manifestPath));
+
+        using var _ = new AssertionScope();
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        payload.FileName.Value.Length.Should().BeLessThanOrEqualTo(255);
+        payload.FileName.Value.Should().StartWith($"cdc-connector-template.{ProviderToken(provider)}.");
+        payload.FileName.Value.Should().Contain(".sha256-");
+        payload.FileName.Value.Should().EndWith(".manifest.json");
+        File.Exists(manifestPath).Should().BeTrue();
+        File.ReadAllText(manifestPath).Should().Be(payload.Json);
+        document.RootElement.GetProperty("connectorName").GetString().Should().Be(connectorName);
+        result.RegistrationPayload.Should().NotBeNull();
+        result.RegistrationPayload!.Name.Should().Be(connectorName);
+        result.RegistrationPayload.Config["name"].Should().Be(connectorName);
+        result.RegistrationPayload.Config["topic.prefix"].Should().Be(connectorName);
+    }
+
+    [Test]
+    public void It_writes_distinct_bounded_manifest_files_for_long_connector_names_with_the_same_prefix()
+    {
+        string artifactDirectory = Path.Combine(
+            TestContext.CurrentContext.WorkDirectory,
+            $"cdc-connector-template-artifacts-{Guid.NewGuid():N}"
+        );
+        var artifactOutput = new CdcConnectorTemplateArtifactOutputRequest(
+            includeRedactedArtifactPayload: true,
+            manifestOutputDirectoryPath: artifactDirectory
+        );
+        string firstConnectorName = $"{new string('b', 248)}a";
+        string secondConnectorName = $"{new string('b', 248)}c";
+
+        CdcConnectorTemplateResult first = Render(
+            BuildRequest(
+                CdcProvider.Postgresql,
+                artifactOutput: artifactOutput,
+                connectorName: firstConnectorName
+            )
+        );
+        CdcConnectorTemplateResult second = Render(
+            BuildRequest(
+                CdcProvider.Postgresql,
+                artifactOutput: artifactOutput,
+                connectorName: secondConnectorName
+            )
+        );
+
+        string firstManifestPath = Path.Combine(
+            artifactDirectory,
+            first.RedactedArtifactPayload!.FileName.Value
+        );
+        string secondManifestPath = Path.Combine(
+            artifactDirectory,
+            second.RedactedArtifactPayload!.FileName.Value
+        );
+        using JsonDocument firstDocument = JsonDocument.Parse(File.ReadAllText(firstManifestPath));
+        using JsonDocument secondDocument = JsonDocument.Parse(File.ReadAllText(secondManifestPath));
+
+        using var _ = new AssertionScope();
+        first.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        second.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        first.RedactedArtifactPayload.FileName.Value.Length.Should().BeLessThanOrEqualTo(255);
+        second.RedactedArtifactPayload.FileName.Value.Length.Should().BeLessThanOrEqualTo(255);
+        first
+            .RedactedArtifactPayload.FileName.Value.Should()
+            .NotBe(second.RedactedArtifactPayload.FileName.Value);
+        File.Exists(firstManifestPath).Should().BeTrue();
+        File.Exists(secondManifestPath).Should().BeTrue();
+        firstDocument.RootElement.GetProperty("connectorName").GetString().Should().Be(firstConnectorName);
+        secondDocument.RootElement.GetProperty("connectorName").GetString().Should().Be(secondConnectorName);
+        Directory
+            .GetFiles(artifactDirectory, "cdc-connector-template.postgresql.*.manifest.json")
+            .Select(Path.GetFileName)
+            .Should()
+            .BeEquivalentTo(
+                first.RedactedArtifactPayload.FileName.Value,
+                second.RedactedArtifactPayload.FileName.Value
+            );
+    }
+
     [Test]
     public void It_preserves_and_redacts_multiline_kafka_certificate_chain_material()
     {
@@ -429,4 +532,16 @@ public class Given_CdcConnectorTemplateArtifactTests
 
         return timestamp;
     }
+
+    private static string ProviderToken(CdcProvider provider) =>
+        provider switch
+        {
+            CdcProvider.Postgresql => "postgresql",
+            CdcProvider.SqlServer => "sqlserver",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(provider),
+                provider,
+                "Unsupported CDC provider."
+            ),
+        };
 }
