@@ -189,7 +189,7 @@ public class Given_CdcConnectorTemplateIntegrationBoundaryTests
             .Should()
             .NotContain(
                 source => source.Contains("class KafkaMurmur2V1Partitioner", StringComparison.Ordinal),
-                "DMS-1321 emits the pinned-image class name, but DMS-1322 owns packaging the implementation"
+                "this repository emits the pinned-image partitioner class name while the qualified connector runtime owns packaging the implementation"
             );
     }
 
