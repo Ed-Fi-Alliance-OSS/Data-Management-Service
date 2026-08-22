@@ -546,9 +546,6 @@ public class Given_CdcConnectorTemplateLiveValidationTests
         diagnostic
             .RedactionClassification.Should()
             .Be(CdcConnectorTemplateRedactionClassification.SecretValue);
-        diagnostic
-            .RedactionClassification.Should()
-            .NotBe(CdcConnectorTemplateRedactionClassification.MaskedSecret);
     }
 
     [Test]

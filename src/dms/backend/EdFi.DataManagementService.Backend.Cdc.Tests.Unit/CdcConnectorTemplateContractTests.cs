@@ -731,4 +731,19 @@ public class Given_CdcConnectorTemplateContractTests
 
         Enum.GetNames<CdcConnectorTemplateSourcePhase>().Should().BeEquivalentTo(expectedSourcePhases);
     }
+
+    [Test]
+    public void It_defines_the_required_stable_redaction_classifications()
+    {
+        string[] expectedRedactionClassifications =
+        [
+            nameof(CdcConnectorTemplateRedactionClassification.Safe),
+            nameof(CdcConnectorTemplateRedactionClassification.SecretValue),
+            nameof(CdcConnectorTemplateRedactionClassification.PhysicalIdentifier),
+        ];
+
+        Enum.GetNames<CdcConnectorTemplateRedactionClassification>()
+            .Should()
+            .Equal(expectedRedactionClassifications);
+    }
 }
