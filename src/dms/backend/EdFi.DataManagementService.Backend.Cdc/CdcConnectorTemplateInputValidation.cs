@@ -384,7 +384,7 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
         List<CdcConnectorTemplateDiagnostic> diagnostics
     )
     {
-        CdcConnectorTemplateBindingIdentity bindingIdentity = request.BindingIdentity;
+        CdcBindingIdentity bindingIdentity = request.BindingIdentity;
         CdcConnectorProviderSetupEvidence providerSetupEvidence = request.ProviderSetupEvidence;
         CdcProviderSetupResult providerSetupResult = providerSetupEvidence.Result;
 

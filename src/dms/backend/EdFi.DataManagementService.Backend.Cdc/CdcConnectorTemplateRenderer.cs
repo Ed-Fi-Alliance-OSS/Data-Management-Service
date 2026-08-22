@@ -305,7 +305,7 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
     private static string PartitionerClass(string partitionerAlgorithm) =>
         partitionerAlgorithm switch
         {
-            CdcConnectorTemplateBindingIdentity.KafkaMurmur2V1PartitionerAlgorithm =>
+            CdcBindingIdentity.KafkaMurmur2V1PartitionerAlgorithm =>
                 "org.edfi.kafka.connect.partitioner.KafkaMurmur2V1Partitioner",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(partitionerAlgorithm),

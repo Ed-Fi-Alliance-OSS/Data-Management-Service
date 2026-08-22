@@ -1842,12 +1842,12 @@ public class Given_CdcConnectorTemplateValidationTests
 
     private static CdcConnectorTemplateRequest RequestForProviderSetupDomainValidation(
         CdcProviderSetupResult providerSetupResult,
-        CdcConnectorTemplateBindingIdentity? binding = null,
+        CdcBindingIdentity? binding = null,
         long providerSetupBindingGeneration = BindingGeneration,
         CdcProviderConnectionProperties? providerConnectionProperties = null
     )
     {
-        CdcConnectorTemplateBindingIdentity bindingIdentity = binding ?? BuildBinding(CdcProvider.Postgresql);
+        CdcBindingIdentity bindingIdentity = binding ?? BuildBinding(CdcProvider.Postgresql);
 
         return BuildRequest(
             providerSetupResult,

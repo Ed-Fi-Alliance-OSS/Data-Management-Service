@@ -141,12 +141,12 @@ public sealed class Given_PostgresqlProviderSetupToConnectorTemplateHandoff
         CdcProviderSetupResult providerSetupResult
     )
     {
-        var binding = new CdcConnectorTemplateBindingIdentity(
+        var binding = new CdcBindingIdentity(
             CdcProvider.Postgresql,
             new CdcSafeName(ConnectorName),
             PublicTopicName,
             BindingGeneration,
-            CdcConnectorTemplateBindingIdentity.KafkaMurmur2V1PartitionerAlgorithm,
+            CdcBindingIdentity.KafkaMurmur2V1PartitionerAlgorithm,
             providerSetupRequest.ArtifactNames,
             providerSetupRequest.BoundPhysicalSourceFingerprint
         );

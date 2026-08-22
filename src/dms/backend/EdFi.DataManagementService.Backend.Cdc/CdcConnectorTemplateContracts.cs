@@ -55,126 +55,6 @@ public enum CdcConnectorTemplateRedactionClassification
     PhysicalIdentifier,
 }
 
-public sealed record CdcConnectorTemplateBindingIdentity
-{
-    public const string KafkaMurmur2V1PartitionerAlgorithm = "kafka-murmur2-v1";
-
-    public CdcConnectorTemplateBindingIdentity(
-        CdcProvider provider,
-        CdcSafeName connectorName,
-        string publicTopicName,
-        long bindingGeneration,
-        string partitionerAlgorithm,
-        CdcProviderArtifactNames providerArtifactNames,
-        CdcSourceFingerprint boundPhysicalSourceFingerprint
-    )
-    {
-        ArgumentNullException.ThrowIfNull(providerArtifactNames);
-        ArgumentNullException.ThrowIfNull(boundPhysicalSourceFingerprint);
-
-        Provider = provider;
-        ConnectorName = CdcConnectorTemplateTopicNames.ValidateDebeziumTopicPrefix(
-            connectorName,
-            nameof(connectorName)
-        );
-        PublicTopicName = CdcConnectorTemplateTopicNames.ValidateKafkaTopicName(
-            publicTopicName,
-            nameof(publicTopicName)
-        );
-        CdcConnectorTemplateTopicNames.ValidateDerivedTopicNames(provider, PublicTopicName);
-        BindingGeneration =
-            bindingGeneration > 0
-                ? bindingGeneration
-                : throw new ArgumentOutOfRangeException(
-                    nameof(bindingGeneration),
-                    bindingGeneration,
-                    "CDC binding generation must be a positive integer."
-                );
-        PartitionerAlgorithm = ValidatePartitionerAlgorithm(
-            partitionerAlgorithm,
-            nameof(partitionerAlgorithm)
-        );
-        ProviderArtifactNames = ValidateProviderArtifactNames(
-            provider,
-            providerArtifactNames,
-            nameof(providerArtifactNames)
-        );
-        BoundPhysicalSourceFingerprint = CdcConnectorTemplateContractValidation.ValidateSourceFingerprint(
-            boundPhysicalSourceFingerprint,
-            nameof(boundPhysicalSourceFingerprint)
-        );
-    }
-
-    public CdcProvider Provider { get; }
-
-    public CdcSafeName ConnectorName { get; }
-
-    public string PublicTopicName { get; }
-
-    public long BindingGeneration { get; }
-
-    public string PartitionerAlgorithm { get; }
-
-    public CdcProviderArtifactNames ProviderArtifactNames { get; }
-
-    public CdcSourceFingerprint BoundPhysicalSourceFingerprint { get; }
-
-    public string ProgressTopicName => CdcConnectorTemplateTopicNames.ProgressTopicName(PublicTopicName);
-
-    public string? SchemaHistoryTopicName =>
-        Provider == CdcProvider.SqlServer
-            ? CdcConnectorTemplateTopicNames.SqlServerSchemaHistoryTopicName(PublicTopicName)
-            : null;
-
-    private static string ValidatePartitionerAlgorithm(string value, string parameterName)
-    {
-        string partitionerAlgorithm = CdcConnectorTemplateContractValidation.ValidateRequiredSafeText(
-            value,
-            parameterName
-        );
-
-        if (
-            !string.Equals(partitionerAlgorithm, KafkaMurmur2V1PartitionerAlgorithm, StringComparison.Ordinal)
-        )
-        {
-            throw new ArgumentException(
-                "CDC binding partitioner algorithm must be kafka-murmur2-v1.",
-                parameterName
-            );
-        }
-
-        return partitionerAlgorithm;
-    }
-
-    private static CdcProviderArtifactNames ValidateProviderArtifactNames(
-        CdcProvider provider,
-        CdcProviderArtifactNames artifactNames,
-        string parameterName
-    )
-    {
-        bool hasOnlyProviderArtifacts = provider switch
-        {
-            CdcProvider.Postgresql => artifactNames.Postgresql is not null && artifactNames.SqlServer is null,
-            CdcProvider.SqlServer => artifactNames.SqlServer is not null && artifactNames.Postgresql is null,
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(provider),
-                provider,
-                "Unsupported CDC provider."
-            ),
-        };
-
-        if (!hasOnlyProviderArtifacts)
-        {
-            throw new ArgumentException(
-                $"CDC connector template binding artifact names must contain only names for provider {provider}.",
-                parameterName
-            );
-        }
-
-        return artifactNames;
-    }
-}
-
 public sealed record CdcConnectorProviderSetupEvidence
 {
     public CdcConnectorProviderSetupEvidence(long bindingGeneration, CdcProviderSetupResult result)
@@ -347,7 +227,7 @@ public sealed record CdcConnectorTemplateArtifactOutputRequest
 public sealed record CdcConnectorTemplateRequest
 {
     public CdcConnectorTemplateRequest(
-        CdcConnectorTemplateBindingIdentity bindingIdentity,
+        CdcBindingIdentity bindingIdentity,
         CdcConnectorProviderSetupEvidence providerSetupEvidence,
         CdcConnectorTemplateDeploymentPolicy deploymentPolicy,
         CdcProviderConnectionProperties providerConnectionProperties,
@@ -369,7 +249,7 @@ public sealed record CdcConnectorTemplateRequest
         ArtifactOutput = artifactOutput;
     }
 
-    public CdcConnectorTemplateBindingIdentity BindingIdentity { get; }
+    public CdcBindingIdentity BindingIdentity { get; }
 
     public CdcConnectorProviderSetupEvidence ProviderSetupEvidence { get; }
 
@@ -479,7 +359,7 @@ public sealed record CdcConnectorTemplateArtifactPayload
 public sealed record CdcConnectorTemplateResult
 {
     public CdcConnectorTemplateResult(
-        CdcConnectorTemplateBindingIdentity bindingIdentity,
+        CdcBindingIdentity bindingIdentity,
         CdcConnectorTemplateOutcome outcome,
         IReadOnlyDictionary<string, string> config,
         CdcKafkaConnectRegistrationPayload? registrationPayload,
@@ -532,7 +412,7 @@ public sealed record CdcConnectorTemplateResult
     public IReadOnlyList<CdcConnectorTemplateDiagnostic> Diagnostics { get; }
 
     private static void ValidateRegistrationPayload(
-        CdcConnectorTemplateBindingIdentity bindingIdentity,
+        CdcBindingIdentity bindingIdentity,
         IReadOnlyDictionary<string, string> config,
         CdcKafkaConnectRegistrationPayload? registrationPayload
     )
@@ -653,77 +533,6 @@ public sealed record CdcConnectorTemplateDiagnostic
     public CdcConnectorTemplateRedactionClassification RedactionClassification { get; }
 }
 
-public static class CdcConnectorTemplateTopicNames
-{
-    private const int KafkaTopicNameMaxLength = 249;
-
-    public static string ProgressTopicName(string publicTopicName) =>
-        ValidateKafkaTopicName(
-            $"{ValidateKafkaTopicName(publicTopicName, nameof(publicTopicName))}.cdc-progress",
-            "progressTopicName"
-        );
-
-    public static string SqlServerSchemaHistoryTopicName(string publicTopicName) =>
-        ValidateKafkaTopicName(
-            $"{ValidateKafkaTopicName(publicTopicName, nameof(publicTopicName))}.schema-history",
-            "schemaHistoryTopicName"
-        );
-
-    internal static CdcSafeName ValidateDebeziumTopicPrefix(CdcSafeName connectorName, string parameterName)
-    {
-        ValidateKafkaTopicName(connectorName.Value, parameterName);
-
-        return connectorName;
-    }
-
-    internal static string ValidateKafkaTopicName(string topicName, string parameterName)
-    {
-        string value = CdcConnectorTemplateContractValidation.ValidateRequiredSafeText(
-            topicName,
-            parameterName
-        );
-
-        if (value.Length > KafkaTopicNameMaxLength)
-        {
-            throw new ArgumentException(
-                $"CDC connector template Kafka topic names must be {KafkaTopicNameMaxLength} characters or fewer.",
-                parameterName
-            );
-        }
-
-        if (value is "." or "..")
-        {
-            throw new ArgumentException(
-                "CDC connector template Kafka topic names cannot be '.' or '..'.",
-                parameterName
-            );
-        }
-
-        if (value.Any(character => !IsKafkaTopicNameCharacter(character)))
-        {
-            throw new ArgumentException(
-                "CDC connector template Kafka topic names must contain only ASCII letters, digits, dots, underscores, and hyphens.",
-                parameterName
-            );
-        }
-
-        return value;
-    }
-
-    internal static void ValidateDerivedTopicNames(CdcProvider provider, string publicTopicName)
-    {
-        _ = ProgressTopicName(publicTopicName);
-
-        if (provider == CdcProvider.SqlServer)
-        {
-            _ = SqlServerSchemaHistoryTopicName(publicTopicName);
-        }
-    }
-
-    private static bool IsKafkaTopicNameCharacter(char character) =>
-        character is >= 'a' and <= 'z' or >= 'A' and <= 'Z' or >= '0' and <= '9' or '.' or '_' or '-';
-}
-
 internal static class CdcConnectorTemplateContractValidation
 {
     private static readonly IReadOnlySet<string> _kafkaCertificateChainPropertyNames = new HashSet<string>(
@@ -744,54 +553,7 @@ internal static class CdcConnectorTemplateContractValidation
     public static CdcSourceFingerprint ValidateSourceFingerprint(
         CdcSourceFingerprint sourceFingerprint,
         string parameterName
-    )
-    {
-        ArgumentNullException.ThrowIfNull(sourceFingerprint);
-
-        ValidateRequiredSafeText(
-            sourceFingerprint.Version,
-            $"{parameterName}.{nameof(sourceFingerprint.Version)}"
-        );
-        if (
-            !string.Equals(
-                sourceFingerprint.Version,
-                CdcSourceFingerprintMetadata.Version,
-                StringComparison.Ordinal
-            )
-        )
-        {
-            throw new ArgumentException(
-                $"CDC source fingerprint version must be {CdcSourceFingerprintMetadata.Version}.",
-                parameterName
-            );
-        }
-
-        string value = ValidateRequiredSafeText(
-            sourceFingerprint.Value,
-            $"{parameterName}.{nameof(sourceFingerprint.Value)}"
-        );
-        const string prefix = "sha256:";
-        if (!value.StartsWith(prefix, StringComparison.Ordinal))
-        {
-            throw new ArgumentException(
-                "CDC source fingerprint value must use sha256 prefix.",
-                parameterName
-            );
-        }
-
-        string hash = value[prefix.Length..];
-        if (hash.Length != 64 || hash.Any(character => !IsLowerHex(character)))
-        {
-            throw new ArgumentException(
-                "CDC source fingerprint value must contain a lowercase SHA-256 value.",
-                parameterName
-            );
-        }
-
-        return sourceFingerprint;
-    }
-
-    private static bool IsLowerHex(char character) => character is >= '0' and <= '9' or >= 'a' and <= 'f';
+    ) => CdcSourceFingerprintMetadata.Validate(sourceFingerprint, parameterName);
 
     public static IReadOnlyDictionary<string, string> NormalizeStringProperties(
         IReadOnlyDictionary<string, string> properties,

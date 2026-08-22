@@ -2270,7 +2270,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
     private static string SqlServerBracketIdentifier(string value) =>
         $"[{value.Replace("]", "]]", StringComparison.Ordinal)}]";
 
-    private static CdcConnectorTemplateBindingIdentity BuildBinding(CdcProvider provider) =>
+    private static CdcBindingIdentity BuildBinding(CdcProvider provider) =>
         new(
             provider,
             new CdcSafeName("dms_binding_connector"),

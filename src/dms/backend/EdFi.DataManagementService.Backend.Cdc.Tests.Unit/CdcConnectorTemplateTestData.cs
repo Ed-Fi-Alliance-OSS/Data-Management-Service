@@ -68,7 +68,7 @@ internal static class CdcConnectorTemplateTestData
 
     public static CdcConnectorTemplateRequest BuildRequest(
         CdcProviderSetupResult providerSetupResult,
-        CdcConnectorTemplateBindingIdentity? binding = null,
+        CdcBindingIdentity? binding = null,
         long providerSetupBindingGeneration = BindingGeneration,
         CdcProviderConnectionProperties? providerConnectionProperties = null,
         CdcConnectorTemplateDeploymentPolicy? deploymentPolicy = null,
@@ -76,8 +76,7 @@ internal static class CdcConnectorTemplateTestData
         CdcConnectorTemplateArtifactOutputRequest? artifactOutput = null
     )
     {
-        CdcConnectorTemplateBindingIdentity bindingIdentity =
-            binding ?? BuildBinding(providerSetupResult.Provider);
+        CdcBindingIdentity bindingIdentity = binding ?? BuildBinding(providerSetupResult.Provider);
 
         return new CdcConnectorTemplateRequest(
             bindingIdentity,
@@ -89,10 +88,10 @@ internal static class CdcConnectorTemplateTestData
         );
     }
 
-    public static CdcConnectorTemplateBindingIdentity BuildBinding(
+    public static CdcBindingIdentity BuildBinding(
         CdcProvider provider,
         long bindingGeneration = BindingGeneration,
-        string partitionerAlgorithm = CdcConnectorTemplateBindingIdentity.KafkaMurmur2V1PartitionerAlgorithm,
+        string partitionerAlgorithm = CdcBindingIdentity.KafkaMurmur2V1PartitionerAlgorithm,
         CdcSourceFingerprint? fingerprint = null,
         string connectorName = "dms_binding_connector"
     ) =>

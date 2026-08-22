@@ -128,7 +128,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
         List<CdcConnectorTemplateDiagnostic> diagnostics
     )
     {
-        CdcConnectorTemplateBindingIdentity bindingIdentity = request.TemplateRequest.BindingIdentity;
+        CdcBindingIdentity bindingIdentity = request.TemplateRequest.BindingIdentity;
         CdcConnectorProviderSetupEvidence providerSetupEvidence = request.ProviderSetupEvidence;
         CdcProviderSetupResult result = providerSetupEvidence.Result;
 
@@ -1043,7 +1043,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
         );
 
     private static CdcConnectorTemplateResult BuildResult(
-        CdcConnectorTemplateBindingIdentity bindingIdentity,
+        CdcBindingIdentity bindingIdentity,
         CdcConnectorTemplateOutcome outcome,
         IReadOnlyDictionary<string, string> config,
         CdcKafkaConnectRegistrationPayload? registrationPayload,
