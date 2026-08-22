@@ -456,6 +456,15 @@ internal static class CdcConnectorTemplateTestData
             .Select(table => table.TableKind == replacement.TableKind ? replacement : table)
             .ToArray();
 
+    public static IReadOnlyList<CdcSourceTableInventory> BuildHeartbeatSourceInventory(
+        CdcProvider provider,
+        IReadOnlyList<CdcSourceColumnInventory> heartbeatColumns
+    ) =>
+        BuildSourceInventoryReplacing(
+            provider,
+            BuildSourceTable(provider, CdcSourceTableKind.CdcHeartbeat, "CdcHeartbeat", heartbeatColumns)
+        );
+
     public static IReadOnlyList<CdcExpectedMessageKeyColumns> BuildExpectedMessageKeyColumns() =>
         [
             new(CdcSourceTableKind.DocumentCache, [new DbColumnName("DocumentUuid")]),

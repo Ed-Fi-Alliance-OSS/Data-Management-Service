@@ -13,14 +13,7 @@ internal static class CdcConnectorTemplateSharedRules
     internal const long DefaultHeartbeatIntervalMilliseconds = 5000;
 
     private static readonly IReadOnlyList<CdcSourceTableKind> OrderedRequiredSourceTableKindsValue =
-        Array.AsReadOnly(
-            new[]
-            {
-                CdcSourceTableKind.DocumentCache,
-                CdcSourceTableKind.Document,
-                CdcSourceTableKind.CdcHeartbeat,
-            }
-        );
+        CdcSourceInventoryContract.RequiredSourceTableKinds;
 
     private static readonly IReadOnlyList<CdcSourceTableKind> OrderedRequiredMessageKeyTableKindsValue =
         Array.AsReadOnly(new[] { CdcSourceTableKind.DocumentCache, CdcSourceTableKind.Document });
@@ -90,6 +83,10 @@ internal static class CdcConnectorTemplateSharedRules
 
     internal static bool HasRequiredSourceInventory(
         IReadOnlyList<CdcSourceTableInventory>? sourceTableInventory
+    ) => TryValidateRequiredSourceInventory(sourceTableInventory);
+
+    internal static bool HasRequiredSourceTableMembership(
+        IReadOnlyList<CdcSourceTableInventory>? sourceTableInventory
     )
     {
         if (sourceTableInventory is null)
@@ -108,6 +105,29 @@ internal static class CdcConnectorTemplateSharedRules
             && !OrderedRequiredSourceTableKinds.Except(observedKinds).Any()
             && !observedKinds.Except(OrderedRequiredSourceTableKinds).Any()
             && !observedKinds.GroupBy(kind => kind).Any(group => group.Count() > 1);
+    }
+
+    private static bool TryValidateRequiredSourceInventory(
+        IReadOnlyList<CdcSourceTableInventory>? sourceTableInventory
+    )
+    {
+        if (sourceTableInventory is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            CdcSourceInventoryContract.ValidateRequiredSourceInventory(
+                sourceTableInventory,
+                nameof(sourceTableInventory)
+            );
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
     }
 
     internal static bool HasExpectedMessageKeyColumns(

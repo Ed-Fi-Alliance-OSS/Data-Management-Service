@@ -1592,6 +1592,76 @@ public class Given_CdcConnectorTemplateLiveValidationTests
             .NotContain("DROP_TABLE", because: "raw source column names are redacted");
     }
 
+    [TestCase(CdcProvider.Postgresql)]
+    [TestCase(CdcProvider.SqlServer)]
+    public void It_rejects_malformed_fresh_heartbeat_source_inventory_for_preflight_and_live_read_back(
+        CdcProvider provider
+    )
+    {
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(provider);
+        CdcConnectorTemplateResult rendered = service.Render(request);
+        CdcConnectorProviderSetupEvidence malformedProviderSetupEvidence = new(
+            bindingGeneration: 7,
+            BuildProviderSetupResult(
+                provider,
+                sourceTableInventory: BuildHeartbeatSourceInventory(
+                    provider,
+                    [BuildColumn(provider, "HeartbeatId"), BuildColumn(provider, "HeartbeatAt", 2)]
+                )
+            )
+        );
+
+        CdcConnectorTemplateResult preflightResult = service.ValidateRegistrationPreflight(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                malformedProviderSetupEvidence
+            )
+        );
+        CdcConnectorTemplateResult liveReadBackResult = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                malformedProviderSetupEvidence,
+                BuildSourcePartitionEvidence(request)
+            )
+        );
+
+        using var _ = new AssertionScope();
+        rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        preflightResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        liveReadBackResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        preflightResult.Config.Should().BeEmpty();
+        liveReadBackResult.Config.Should().BeEmpty();
+        preflightResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceTableInventoryMismatch
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure
+                && diagnostic.PropertyName == "providerSetup.sourceTableInventory"
+                && diagnostic.ExpectedValue == "valid CDC source table contract inventory"
+                && diagnostic.ObservedValue == "malformed"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Preflight
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            );
+        liveReadBackResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceTableInventoryMismatch
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure
+                && diagnostic.PropertyName == "providerSetup.sourceTableInventory"
+                && diagnostic.ExpectedValue == "valid CDC source table contract inventory"
+                && diagnostic.ObservedValue == "malformed"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            );
+    }
+
     [TestCase(CdcProvider.Postgresql, FreshSourceInventoryDrift.AddedNonKeyColumn)]
     [TestCase(CdcProvider.Postgresql, FreshSourceInventoryDrift.RemovedNonKeyColumn)]
     [TestCase(CdcProvider.Postgresql, FreshSourceInventoryDrift.ChangedNonKeyColumnOrdinal)]
@@ -2254,7 +2324,7 @@ public class Given_CdcConnectorTemplateLiveValidationTests
             ),
             FreshSourceInventoryDrift.RemovedNonKeyColumn => BuildDocumentSourceInventory(
                 provider,
-                [BuildColumn(provider, "DocumentUuid"), BuildColumn(provider, "DocumentVersion", 3)]
+                [BuildColumn(provider, "DocumentUuid"), BuildColumn(provider, "DocumentVersion", 2)]
             ),
             FreshSourceInventoryDrift.ChangedNonKeyColumnOrdinal => BuildDocumentSourceInventory(
                 provider,
