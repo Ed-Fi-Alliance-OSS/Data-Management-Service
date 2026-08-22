@@ -355,15 +355,52 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
             return false;
         }
 
-        for (int index = 0; index < expectedInventory.Count; index++)
+        IReadOnlyDictionary<CdcSourceTableKind, CdcSourceTableInventory>? expectedTablesByKind =
+            SourceTablesByKind(expectedInventory);
+        IReadOnlyDictionary<CdcSourceTableKind, CdcSourceTableInventory>? observedTablesByKind =
+            SourceTablesByKind(observedInventory);
+        if (
+            expectedTablesByKind is null
+            || observedTablesByKind is null
+            || expectedTablesByKind.Count != observedTablesByKind.Count
+        )
         {
-            if (!SourceTablesMatch(expectedInventory[index], observedInventory[index]))
+            return false;
+        }
+
+        foreach (
+            CdcSourceTableKind tableKind in expectedTablesByKind
+                .Keys.OrderBy(CdcSourceInventoryContract.RequiredSourceTableOrdinal)
+                .ThenBy(kind => kind.ToString(), StringComparer.Ordinal)
+        )
+        {
+            if (
+                !observedTablesByKind.TryGetValue(tableKind, out CdcSourceTableInventory? observedTable)
+                || !SourceTablesMatch(expectedTablesByKind[tableKind], observedTable)
+            )
             {
                 return false;
             }
         }
 
         return true;
+    }
+
+    private static IReadOnlyDictionary<CdcSourceTableKind, CdcSourceTableInventory>? SourceTablesByKind(
+        IReadOnlyList<CdcSourceTableInventory> inventory
+    )
+    {
+        Dictionary<CdcSourceTableKind, CdcSourceTableInventory> tablesByKind = [];
+
+        foreach (CdcSourceTableInventory? table in inventory)
+        {
+            if (table is null || !tablesByKind.TryAdd(table.TableKind, table))
+            {
+                return null;
+            }
+        }
+
+        return tablesByKind;
     }
 
     private static bool SourceTablesMatch(
@@ -395,15 +432,50 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
             return false;
         }
 
-        for (int index = 0; index < expectedColumns.Count; index++)
+        IReadOnlyDictionary<string, CdcSourceColumnInventory>? expectedColumnsByName = SourceColumnsByName(
+            expectedColumns
+        );
+        IReadOnlyDictionary<string, CdcSourceColumnInventory>? observedColumnsByName = SourceColumnsByName(
+            observedColumns
+        );
+        if (
+            expectedColumnsByName is null
+            || observedColumnsByName is null
+            || expectedColumnsByName.Count != observedColumnsByName.Count
+        )
         {
-            if (!SourceColumnMatches(expectedColumns[index], observedColumns[index]))
+            return false;
+        }
+
+        foreach (string columnName in expectedColumnsByName.Keys.Order(StringComparer.Ordinal))
+        {
+            if (
+                !observedColumnsByName.TryGetValue(columnName, out CdcSourceColumnInventory? observedColumn)
+                || !SourceColumnMatches(expectedColumnsByName[columnName], observedColumn)
+            )
             {
                 return false;
             }
         }
 
         return true;
+    }
+
+    private static IReadOnlyDictionary<string, CdcSourceColumnInventory>? SourceColumnsByName(
+        IReadOnlyList<CdcSourceColumnInventory> columns
+    )
+    {
+        Dictionary<string, CdcSourceColumnInventory> columnsByName = new(StringComparer.Ordinal);
+
+        foreach (CdcSourceColumnInventory? column in columns)
+        {
+            if (column is null || !columnsByName.TryAdd(column.ColumnName.Value, column))
+            {
+                return null;
+            }
+        }
+
+        return columnsByName;
     }
 
     private static bool SourceColumnMatches(
@@ -444,15 +516,55 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
             return false;
         }
 
-        for (int index = 0; index < expectedInventory.Count; index++)
+        IReadOnlyDictionary<CdcSourceTableKind, CdcExpectedMessageKeyColumns>? expectedColumnsByKind =
+            MessageKeyColumnsByKind(expectedInventory);
+        IReadOnlyDictionary<CdcSourceTableKind, CdcExpectedMessageKeyColumns>? observedColumnsByKind =
+            MessageKeyColumnsByKind(observedInventory);
+        if (
+            expectedColumnsByKind is null
+            || observedColumnsByKind is null
+            || expectedColumnsByKind.Count != observedColumnsByKind.Count
+        )
         {
-            if (!MessageKeyColumnsMatch(expectedInventory[index], observedInventory[index]))
+            return false;
+        }
+
+        foreach (
+            CdcSourceTableKind tableKind in expectedColumnsByKind
+                .Keys.OrderBy(CdcSourceInventoryContract.RequiredSourceTableOrdinal)
+                .ThenBy(kind => kind.ToString(), StringComparer.Ordinal)
+        )
+        {
+            if (
+                !observedColumnsByKind.TryGetValue(
+                    tableKind,
+                    out CdcExpectedMessageKeyColumns? observedColumns
+                ) || !MessageKeyColumnsMatch(expectedColumnsByKind[tableKind], observedColumns)
+            )
             {
                 return false;
             }
         }
 
         return true;
+    }
+
+    private static IReadOnlyDictionary<
+        CdcSourceTableKind,
+        CdcExpectedMessageKeyColumns
+    >? MessageKeyColumnsByKind(IReadOnlyList<CdcExpectedMessageKeyColumns> inventory)
+    {
+        Dictionary<CdcSourceTableKind, CdcExpectedMessageKeyColumns> columnsByKind = [];
+
+        foreach (CdcExpectedMessageKeyColumns? columns in inventory)
+        {
+            if (columns is null || !columnsByKind.TryAdd(columns.TableKind, columns))
+            {
+                return null;
+            }
+        }
+
+        return columnsByKind;
     }
 
     private static bool MessageKeyColumnsMatch(

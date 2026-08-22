@@ -389,14 +389,16 @@ internal static class CdcConnectorTemplateTestData
     public static CdcSourceColumnInventory BuildColumn(
         CdcProvider provider,
         string columnName,
-        int ordinal = 1
+        int ordinal = 1,
+        string? providerDataType = null,
+        bool isNullable = false
     ) =>
         new(
             new DbColumnName(columnName),
             provider == CdcProvider.Postgresql ? $"\"{columnName}\"" : $"[{columnName}]",
             ordinal,
-            provider == CdcProvider.Postgresql ? "text" : "nvarchar(max)",
-            IsNullable: false
+            providerDataType ?? (provider == CdcProvider.Postgresql ? "text" : "nvarchar(max)"),
+            IsNullable: isNullable
         );
 
     public static IReadOnlyList<CdcSourceTableInventory> BuildSourceInventoryReplacing(

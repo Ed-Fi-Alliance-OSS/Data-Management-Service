@@ -6,6 +6,7 @@
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     </PropertyGroup>
     <ItemGroup>
+        <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Cdc" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Ddl.Tests.Unit" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.SchemaTools.Tests.Integration" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Postgresql.Tests.Integration" />

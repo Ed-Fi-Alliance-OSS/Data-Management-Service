@@ -1373,10 +1373,14 @@ public class Given_CdcConnectorTemplateLiveValidationTests
 
     [TestCase(CdcProvider.Postgresql, FreshSourceInventoryDrift.AddedNonKeyColumn)]
     [TestCase(CdcProvider.Postgresql, FreshSourceInventoryDrift.RemovedNonKeyColumn)]
-    [TestCase(CdcProvider.Postgresql, FreshSourceInventoryDrift.ReorderedNonKeyColumns)]
+    [TestCase(CdcProvider.Postgresql, FreshSourceInventoryDrift.ChangedNonKeyColumnOrdinal)]
+    [TestCase(CdcProvider.Postgresql, FreshSourceInventoryDrift.ChangedNonKeyColumnType)]
+    [TestCase(CdcProvider.Postgresql, FreshSourceInventoryDrift.ChangedNonKeyColumnNullability)]
     [TestCase(CdcProvider.SqlServer, FreshSourceInventoryDrift.AddedNonKeyColumn)]
     [TestCase(CdcProvider.SqlServer, FreshSourceInventoryDrift.RemovedNonKeyColumn)]
-    [TestCase(CdcProvider.SqlServer, FreshSourceInventoryDrift.ReorderedNonKeyColumns)]
+    [TestCase(CdcProvider.SqlServer, FreshSourceInventoryDrift.ChangedNonKeyColumnOrdinal)]
+    [TestCase(CdcProvider.SqlServer, FreshSourceInventoryDrift.ChangedNonKeyColumnType)]
+    [TestCase(CdcProvider.SqlServer, FreshSourceInventoryDrift.ChangedNonKeyColumnNullability)]
     public void It_rejects_fresh_provider_source_inventory_drift_for_preflight_and_live_read_back(
         CdcProvider provider,
         FreshSourceInventoryDrift drift
@@ -1464,7 +1468,159 @@ public class Given_CdcConnectorTemplateLiveValidationTests
 
     [TestCase(CdcProvider.Postgresql)]
     [TestCase(CdcProvider.SqlServer)]
-    public void It_rejects_fresh_provider_message_key_inventory_that_no_longer_matches_rendered_request(
+    public void It_accepts_reordered_fresh_provider_source_inventory_for_preflight_and_live_read_back(
+        CdcProvider provider
+    )
+    {
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(provider);
+        CdcConnectorTemplateResult rendered = service.Render(request);
+        CdcConnectorProviderSetupEvidence reorderedProviderSetupEvidence = new(
+            BindingGeneration,
+            BuildProviderSetupResult(
+                provider,
+                sourceTableInventory: BuildRequiredSourceTableInventory(provider).Reverse().ToArray()
+            )
+        );
+
+        CdcConnectorTemplateResult preflightResult = service.ValidateRegistrationPreflight(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                reorderedProviderSetupEvidence
+            )
+        );
+        CdcConnectorTemplateResult liveReadBackResult = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                reorderedProviderSetupEvidence,
+                BuildSourcePartitionEvidence(request)
+            )
+        );
+
+        using var _ = new AssertionScope();
+        rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        preflightResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        liveReadBackResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        preflightResult.Config.Should().Equal(rendered.Config);
+        liveReadBackResult.Config.Should().Equal(rendered.Config);
+        preflightResult.Diagnostics.Should().BeEmpty();
+        liveReadBackResult.Diagnostics.Should().BeEmpty();
+    }
+
+    [TestCase(CdcProvider.Postgresql)]
+    [TestCase(CdcProvider.SqlServer)]
+    public void It_accepts_reordered_fresh_provider_source_columns_for_preflight_and_live_read_back(
+        CdcProvider provider
+    )
+    {
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(
+            provider,
+            sourceTableInventory: BuildDocumentSourceInventory(
+                provider,
+                [
+                    BuildColumn(provider, "DocumentUuid"),
+                    BuildColumn(provider, "DocumentPayload", 2),
+                    BuildColumn(provider, "DocumentVersion", 3),
+                ]
+            )
+        );
+        CdcConnectorTemplateResult rendered = service.Render(request);
+        CdcConnectorProviderSetupEvidence reorderedProviderSetupEvidence = new(
+            BindingGeneration,
+            BuildProviderSetupResult(
+                provider,
+                sourceTableInventory: BuildDocumentSourceInventory(
+                    provider,
+                    [
+                        BuildColumn(provider, "DocumentUuid"),
+                        BuildColumn(provider, "DocumentVersion", 3),
+                        BuildColumn(provider, "DocumentPayload", 2),
+                    ]
+                )
+            )
+        );
+
+        CdcConnectorTemplateResult preflightResult = service.ValidateRegistrationPreflight(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                reorderedProviderSetupEvidence
+            )
+        );
+        CdcConnectorTemplateResult liveReadBackResult = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                reorderedProviderSetupEvidence,
+                BuildSourcePartitionEvidence(request)
+            )
+        );
+
+        using var _ = new AssertionScope();
+        rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        preflightResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        liveReadBackResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        preflightResult.Config.Should().Equal(rendered.Config);
+        liveReadBackResult.Config.Should().Equal(rendered.Config);
+        preflightResult.Diagnostics.Should().BeEmpty();
+        liveReadBackResult.Diagnostics.Should().BeEmpty();
+    }
+
+    [TestCase(CdcProvider.Postgresql)]
+    [TestCase(CdcProvider.SqlServer)]
+    public void It_accepts_reordered_fresh_provider_message_key_inventory_for_preflight_and_live_read_back(
+        CdcProvider provider
+    )
+    {
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(provider);
+        CdcConnectorTemplateResult rendered = service.Render(request);
+        CdcConnectorProviderSetupEvidence reorderedProviderSetupEvidence = new(
+            BindingGeneration,
+            BuildProviderSetupResult(
+                provider,
+                expectedMessageKeyColumns: BuildExpectedMessageKeyColumns().Reverse().ToArray()
+            )
+        );
+
+        CdcConnectorTemplateResult preflightResult = service.ValidateRegistrationPreflight(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                reorderedProviderSetupEvidence
+            )
+        );
+        CdcConnectorTemplateResult liveReadBackResult = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                reorderedProviderSetupEvidence,
+                BuildSourcePartitionEvidence(request)
+            )
+        );
+
+        using var _ = new AssertionScope();
+        rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        preflightResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        liveReadBackResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        preflightResult.Config.Should().Equal(rendered.Config);
+        liveReadBackResult.Config.Should().Equal(rendered.Config);
+        preflightResult.Diagnostics.Should().BeEmpty();
+        liveReadBackResult.Diagnostics.Should().BeEmpty();
+    }
+
+    [TestCase(CdcProvider.Postgresql)]
+    [TestCase(CdcProvider.SqlServer)]
+    public void It_rejects_fresh_provider_message_key_inventory_drift_for_preflight_and_live_read_back(
         CdcProvider provider
     )
     {
@@ -1479,8 +1635,8 @@ public class Given_CdcConnectorTemplateLiveValidationTests
                 provider,
                 expectedMessageKeyColumns:
                 [
-                    new(CdcSourceTableKind.Document, [new DbColumnName("DocumentUuid")]),
                     new(CdcSourceTableKind.DocumentCache, [new DbColumnName("DocumentUuid")]),
+                    new(CdcSourceTableKind.Document, [new DbColumnName("DocumentId")]),
                 ]
             )
         );
@@ -1509,7 +1665,7 @@ public class Given_CdcConnectorTemplateLiveValidationTests
             .ContainSingle(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch
                 && diagnostic.PropertyName == "providerSetup.expectedMessageKeyColumns"
-                && diagnostic.ExpectedValue == "rendered request message-key inventory"
+                && diagnostic.ExpectedValue == "DocumentUuid keys for document sources"
                 && diagnostic.ObservedValue == "[redacted]"
                 && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Preflight
                 && diagnostic.RedactionClassification
@@ -1520,7 +1676,7 @@ public class Given_CdcConnectorTemplateLiveValidationTests
             .ContainSingle(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch
                 && diagnostic.PropertyName == "providerSetup.expectedMessageKeyColumns"
-                && diagnostic.ExpectedValue == "rendered request message-key inventory"
+                && diagnostic.ExpectedValue == "DocumentUuid keys for document sources"
                 && diagnostic.ObservedValue == "[redacted]"
                 && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack
                 && diagnostic.RedactionClassification
@@ -1879,12 +2035,28 @@ public class Given_CdcConnectorTemplateLiveValidationTests
                 provider,
                 [BuildColumn(provider, "DocumentUuid"), BuildColumn(provider, "DocumentVersion", 3)]
             ),
-            FreshSourceInventoryDrift.ReorderedNonKeyColumns => BuildDocumentSourceInventory(
+            FreshSourceInventoryDrift.ChangedNonKeyColumnOrdinal => BuildDocumentSourceInventory(
                 provider,
                 [
                     BuildColumn(provider, "DocumentUuid"),
+                    BuildColumn(provider, "DocumentPayload", 3),
+                    BuildColumn(provider, "DocumentVersion", 2),
+                ]
+            ),
+            FreshSourceInventoryDrift.ChangedNonKeyColumnType => BuildDocumentSourceInventory(
+                provider,
+                [
+                    BuildColumn(provider, "DocumentUuid"),
+                    BuildColumn(provider, "DocumentPayload", 2, providerDataType: "jsonb"),
                     BuildColumn(provider, "DocumentVersion", 3),
-                    BuildColumn(provider, "DocumentPayload", 2),
+                ]
+            ),
+            FreshSourceInventoryDrift.ChangedNonKeyColumnNullability => BuildDocumentSourceInventory(
+                provider,
+                [
+                    BuildColumn(provider, "DocumentUuid"),
+                    BuildColumn(provider, "DocumentPayload", 2, isNullable: true),
+                    BuildColumn(provider, "DocumentVersion", 3),
                 ]
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(drift), drift, "Unsupported inventory drift."),
@@ -1894,6 +2066,8 @@ public class Given_CdcConnectorTemplateLiveValidationTests
     {
         AddedNonKeyColumn,
         RemovedNonKeyColumn,
-        ReorderedNonKeyColumns,
+        ChangedNonKeyColumnOrdinal,
+        ChangedNonKeyColumnType,
+        ChangedNonKeyColumnNullability,
     }
 }
