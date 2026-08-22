@@ -461,6 +461,32 @@ function Test-Invariant {
 # surfaces on the first write after restore, as a primary-key or unique-constraint collision. The dump
 # carries SEQUENCE SET entries, but "the loader probably applied them" is not evidence, so each
 # sequence is compared against the maximum value actually present in the copied data.
+#
+# What is compared is the value the next write would receive, not the recorded position. nextval()
+# returns last_value + increment once is_called is true and last_value itself while it is false, so a
+# sequence left by setval(seq, max, false) reports a position that looks high enough and still hands
+# the next writer a value the data already holds.
+function Get-SequenceStateSql {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)] [string] $Label,
+        [Parameter(Mandatory)] [string] $QualifiedSequence,
+        [Parameter(Mandatory)] [string] $MaximumExpression
+    )
+
+    # last_value and is_called come from the sequence relation and the increment from pg_sequence,
+    # because is_called is exposed nowhere else: the pg_sequences view omits it, and
+    # pg_sequence_last_value() answers NULL rather than the position while it is false. Nothing here
+    # calls nextval(), which would move the sequence this check exists to inspect.
+    return @"
+SELECT '$Label|' || s.last_value::text || '|' || s.is_called::text || '|' || q.seqincrement::text
+    || '|' || ($MaximumExpression)::text
+FROM $QualifiedSequence s, pg_sequence q
+WHERE q.seqrelid = '$QualifiedSequence'::regclass;
+"@
+}
+
 function Test-SequencePosition {
     [CmdletBinding()]
     # Object[] rather than List[string]: the comma operator that stops an empty result unrolling to
@@ -470,26 +496,33 @@ function Test-SequencePosition {
 
     $failure = [System.Collections.Generic.List[string]]::new()
 
+    $target = [System.Collections.Generic.List[hashtable]]::new()
+
     # dms.Document is the high-water mark for ChangeVersionSequence: it is the only table whose
     # ContentVersion/IdentityVersion default from that sequence, and the projection copies of
     # ContentVersion are stamped from the document row, so they cannot exceed it. dms.Descriptor is
     # included anyway because its stamping trigger draws from the same sequence.
-    $sql = @'
-SELECT 'ChangeVersionSequence|' ||
-       COALESCE(pg_sequence_last_value('dms."ChangeVersionSequence"'::regclass), 0)::text || '|' ||
-       GREATEST(
-           COALESCE((SELECT MAX(GREATEST("ContentVersion", "IdentityVersion")) FROM dms."Document"), 0),
-           COALESCE((SELECT MAX("ContentVersion") FROM dms."Descriptor"), 0)
-       )::text
-UNION ALL
-SELECT 'DocumentIdentitySequence|' ||
-       COALESCE(pg_sequence_last_value(
-           pg_get_serial_sequence('dms."Document"', 'DocumentId')::regclass), 0)::text || '|' ||
-       COALESCE((SELECT MAX("DocumentId") FROM dms."Document"), 0)::text;
-'@
+    $target.Add(@{
+            Label    = "ChangeVersionSequence"
+            Sequence = 'dms."ChangeVersionSequence"'
+            Maximum  = 'GREATEST(COALESCE((SELECT MAX(GREATEST("ContentVersion", "IdentityVersion")) FROM dms."Document"), 0), COALESCE((SELECT MAX("ContentVersion") FROM dms."Descriptor"), 0))'
+        })
 
-    $rows = Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser `
-        -DatabaseName $DatabaseName -Sql $sql
+    # Resolved from the column rather than assumed. The name is needed as an identifier and not only as
+    # a regclass, because is_called has to be read from the sequence relation itself.
+    $documentSequence = Get-ScalarValue -DatabaseName $DatabaseName -Sql `
+        'SELECT pg_get_serial_sequence(''dms."Document"'', ''DocumentId'');'
+
+    if ([string]::IsNullOrWhiteSpace($documentSequence)) {
+        $failure.Add("dms.Document.DocumentId owns no sequence, so its position could not be checked")
+    }
+    else {
+        $target.Add(@{
+                Label    = "DocumentIdentitySequence"
+                Sequence = $documentSequence
+                Maximum  = 'COALESCE((SELECT MAX("DocumentId") FROM dms."Document"), 0)'
+            })
+    }
 
     # CollectionItemId is spread over every projection collection table, so the maximum has to be taken
     # across all of them rather than from one place.
@@ -503,35 +536,74 @@ WHERE column_name = 'CollectionItemId' AND table_schema IN ('edfi', 'tracked_cha
     $collectionUnion = Get-ScalarValue -DatabaseName $DatabaseName -Sql $collectionSql
 
     if (-not [string]::IsNullOrWhiteSpace($collectionUnion)) {
-        $maxSql = @"
-SELECT 'CollectionItemIdSequence|' ||
-       COALESCE(pg_sequence_last_value('dms."CollectionItemIdSequence"'::regclass), 0)::text || '|' ||
-       (SELECT COALESCE(MAX(v), 0) FROM ($collectionUnion) AS m)::text;
-"@
-        $rows = @($rows) + @(Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser `
-                -DatabaseName $DatabaseName -Sql $maxSql)
+        $target.Add(@{
+                Label    = "CollectionItemIdSequence"
+                Sequence = 'dms."CollectionItemIdSequence"'
+                Maximum  = "(SELECT COALESCE(MAX(v), 0) FROM ($collectionUnion) AS m)"
+            })
     }
     else {
         $failure.Add("no CollectionItemId columns were found, so CollectionItemIdSequence could not be checked")
     }
 
-    foreach ($row in $rows) {
-        $text = ([string]$row).Trim()
-        if ([string]::IsNullOrWhiteSpace($text)) { continue }
+    $rows = [System.Collections.Generic.List[string]]::new()
+    foreach ($item in $target) {
+        $stateSql = Get-SequenceStateSql -Label $item.Label -QualifiedSequence $item.Sequence `
+            -MaximumExpression $item.Maximum
 
+        foreach ($row in (Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser `
+                    -DatabaseName $DatabaseName -Sql $stateSql)) {
+            $text = ([string]$row).Trim()
+            if (-not [string]::IsNullOrWhiteSpace($text)) { $rows.Add($text) }
+        }
+    }
+
+    # A sequence that reported no state is unchecked, and the loop below has nothing to disagree with.
+    if ($rows.Count -ne $target.Count) {
+        $failure.Add("$($rows.Count) sequence state row(s) came back for $($target.Count) requested sequence(s), so at least one sequence was not checked")
+    }
+
+    foreach ($text in $rows) {
         $part = $text.Split("|")
-        if ($part.Count -ne 3) { continue }
+        if ($part.Count -ne 5) {
+            $failure.Add("sequence state '$text' could not be read, so the sequence it describes is unchecked")
+            continue
+        }
 
         $name = $part[0]
         $position = [long]$part[1]
-        $maximum = [long]$part[2]
+        $increment = [long]$part[3]
+        $maximum = [long]$part[4]
+
+        # is_called::text renders 'true' or 'false' server-side, so the spelling does not depend on how
+        # psql happens to display booleans. Anything else is refused rather than read as false, which
+        # would silently turn the next-value comparison back into a comparison against the position.
+        if ($part[2] -eq "true") {
+            $isCalled = $true
+        }
+        elseif ($part[2] -eq "false") {
+            $isCalled = $false
+        }
+        else {
+            $failure.Add("$name reported is_called='$($part[2])', which is neither true nor false, so its next value could not be computed")
+            continue
+        }
+
+        # What the next nextval() hands out: the position plus the increment once the sequence has been
+        # called, and the position itself while it has not.
+        $nextValue = if ($isCalled) { $position + $increment } else { $position }
 
         # Information stream, not Write-Output: this function returns the failure list, and anything
         # written to the success stream would be returned alongside it and counted as a failure.
-        Write-Information "  sequence: $name at $position, maximum value in data $maximum" -InformationAction Continue
+        Write-Information "  sequence: $name at $position (is_called=$($part[2]), increment=$increment), next value $nextValue, maximum value in data $maximum" -InformationAction Continue
 
-        if ($position -lt $maximum) {
-            $failure.Add("$name is at $position but the copied data reaches $maximum; the first write after restore would collide")
+        if ($increment -le 0) {
+            $failure.Add("$name has increment $increment; a non-ascending sequence is not something this check can prove safe")
+            continue
+        }
+
+        if ($nextValue -le $maximum) {
+            $failure.Add("$name is at $position with is_called=$($part[2]) and increment $increment, so the next value would be $nextValue while the copied data already reaches $maximum; the first write after restore would collide")
         }
     }
 
@@ -1047,8 +1119,28 @@ if ($sourceSeed -ne $targetSeed) {
 Write-Output ""
 Write-Output "Resource-key seed matches source and target: $targetSeed"
 
-$bulkTable = Get-DataTableList -DatabaseName $SourceDatabase
-Write-Output "Bulk data tables discovered in source: $($bulkTable.Count)"
+# Discovery has to come from both databases. A table present only in the freshly provisioned target is
+# absent from a source-derived list, so it is never restored -- and the row-count reconciliation below
+# walks that same list, which means the run would pass with a current-schema projection table empty.
+# The two sets are compared here, before the dump is copied in and before anything is loaded, so a
+# schema that has drifted stops the run instead of producing a dataset with a hole in it.
+$sourceBulkTable = Get-DataTableList -DatabaseName $SourceDatabase
+$targetBulkTable = Get-DataTableList -DatabaseName $TargetDatabase
+Write-Output "Bulk data tables discovered in source: $($sourceBulkTable.Count), in target: $($targetBulkTable.Count)"
+
+# Ordinal comparison: a quoted PostgreSQL identifier is case-sensitive, so two names differing only in
+# case are two different tables and have to be reported rather than matched to each other.
+$sourceTableSet = [System.Collections.Generic.HashSet[string]]::new([string[]]$sourceBulkTable, [System.StringComparer]::Ordinal)
+$targetTableSet = [System.Collections.Generic.HashSet[string]]::new([string[]]$targetBulkTable, [System.StringComparer]::Ordinal)
+$sourceOnlyTable = @($sourceBulkTable | Where-Object { -not $targetTableSet.Contains($_) })
+$targetOnlyTable = @($targetBulkTable | Where-Object { -not $sourceTableSet.Contains($_) })
+
+if ($sourceOnlyTable.Count -gt 0 -or $targetOnlyTable.Count -gt 0) {
+    throw "Bulk table sets differ between source '$SourceDatabase' and target '$TargetDatabase' across $($script:BulkSchema -join '/'). Source-only ($($sourceOnlyTable.Count)): $($sourceOnlyTable -join ', '). Target-only ($($targetOnlyTable.Count)): $($targetOnlyTable -join ', ')."
+}
+
+Write-Output "  source and target bulk table sets are identical"
+$bulkTable = $sourceBulkTable
 
 $requestedTable = @($script:DmsDataTable | ForEach-Object { "dms.$_" }) + $bulkTable
 

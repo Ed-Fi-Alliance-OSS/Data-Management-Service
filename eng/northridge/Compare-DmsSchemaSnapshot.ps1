@@ -109,6 +109,39 @@ function Get-SchemaLiteralList {
     return ($Name | ForEach-Object { "'" + $_.Replace("'", "''") + "'" }) -join ", "
 }
 
+# -Schema is free text, and sections 11 and 12 read dms."EffectiveSchema" and dms."SchemaComponent"
+# by name whatever it says. A misspelled schema therefore still produces those rows, both snapshots
+# still agree, and the run reports PASS having compared nothing in the schema the caller asked for.
+# The requested names are checked against pg_namespace rather than inferred from rows coming back.
+function Get-MissingSchema {
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [Parameter(Mandatory)] [string] $DatabaseName,
+        [Parameter(Mandatory)] [string[]] $Name,
+        [Parameter(Mandatory)] [string] $ContainerName,
+        [Parameter(Mandatory)] [string] $User
+    )
+
+    $sql = @"
+SELECT nspname
+FROM pg_namespace
+WHERE nspname IN ($(Get-SchemaLiteralList -Name $Name))
+ORDER BY nspname;
+"@
+
+    $present = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($row in (Invoke-PsqlQuery -ContainerName $ContainerName -User $User `
+                -DatabaseName $DatabaseName -Sql $sql)) {
+        $text = ([string]$row).Trim()
+        if ($text) { [void]$present.Add($text) }
+    }
+
+    # Ordinal comparison: a quoted PostgreSQL identifier is case-sensitive, so a schema that differs
+    # only in case is a different schema and has to read as missing.
+    return [string[]]@($Name | Where-Object { -not $present.Contains($_) })
+}
+
 # Each query is prefixed with a stable section label so the diff points at a kind of object rather
 # than a line number, and every query carries a total ORDER BY so output is deterministic.
 function Get-SnapshotQueryMap {
@@ -131,6 +164,18 @@ WHERE n.nspname IN ($SchemaList) AND c.relkind IN ('r','p','v','m','f')
 ORDER BY n.nspname, c.relname;
 "@
 
+        # A generated column keeps its expression in generation_expression; column_default reads NULL
+        # for it. DMS PostgreSQL declares GENERATED ALWAYS AS (...) STORED columns, so without both
+        # fields a stale or wrong generated expression is invisible here as long as the column name,
+        # type and nullability still agree -- and the expression is what the projection depends on.
+        #
+        # The expression is emitted twice on purpose. The catalog pretty-prints it over several lines
+        # -- the unification expressions in this schema are multi-line CASE expressions -- and this
+        # file is compared line by line, so the exact text is carried as an md5 to keep one object on
+        # one line, in the same way sections 08 and 09 carry routine and view bodies. The
+        # whitespace-collapsed text follows only so a diff names what changed; the md5 is what makes
+        # the comparison exact, because collapsing whitespace on its own could equate two expressions
+        # that differ inside a string literal.
         "03-column"     = @"
 SELECT 'column|' || table_schema || '.' || table_name || '|' || ordinal_position || '|' || column_name
     || '|' || data_type
@@ -139,6 +184,9 @@ SELECT 'column|' || table_schema || '.' || table_name || '|' || ordinal_position
     || '|null=' || is_nullable
     || '|default=' || COALESCE(column_default, '')
     || '|identity=' || COALESCE(is_identity, 'NO') || ',' || COALESCE(identity_generation, '')
+    || '|generated=' || COALESCE(is_generated, 'NEVER')
+    || ',' || COALESCE(md5(generation_expression), '')
+    || ',' || COALESCE(regexp_replace(generation_expression, '\s+', ' ', 'g'), '')
 FROM information_schema.columns
 WHERE table_schema IN ($SchemaList)
 ORDER BY table_schema, table_name, ordinal_position;
@@ -289,6 +337,20 @@ if (-not $PSCmdlet.ShouldProcess($OutputDirectory, "Capture schema snapshot for 
     Write-Output "WhatIf: no database was contacted and no file was written."
     return
 }
+
+$missingSchema = [System.Collections.Generic.List[string]]::new()
+foreach ($databaseName in $Database) {
+    foreach ($name in (Get-MissingSchema -DatabaseName $databaseName -Name $Schema `
+                -ContainerName $Container -User $PostgresUser)) {
+        $missingSchema.Add("$name (in $databaseName)")
+    }
+}
+
+if ($missingSchema.Count -gt 0) {
+    throw "Requested schema(s) not present: $($missingSchema -join ', '). A snapshot scoped to a schema that does not exist emits no rows for it, so the compare would report PASS having examined nothing."
+}
+
+Write-Output "Preflight: every requested schema exists in every requested database."
 
 if (-not (Test-Path -LiteralPath $OutputDirectory)) {
     New-Item -Path $OutputDirectory -ItemType Directory -Force | Out-Null

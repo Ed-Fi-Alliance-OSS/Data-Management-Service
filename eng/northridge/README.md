@@ -187,7 +187,11 @@ echo "pg_restore finished with no reported errors"
 #
 #    Run this BEFORE step 8. The source identity assertion checks the value the artifact ships with,
 #    and step 8 exists to replace it.
-docker exec -i dms-postgresql psql -U postgres -d "$DB" -v ON_ERROR_STOP=1 -q <<'SQL'
+#    The status is checked explicitly. ON_ERROR_STOP=1 turns the RAISE below into a non-zero psql
+#    exit (3), but this recipe carries no `set -e`, so nothing stops on its own: without the check a
+#    failed content verification prints its ERROR and a pasted recipe carries straight on into step 7,
+#    which is the one outcome this block exists to prevent.
+if ! docker exec -i dms-postgresql psql -U postgres -d "$DB" -v ON_ERROR_STOP=1 -q <<'SQL'
 DO $$
 DECLARE
     checked  int;
@@ -241,10 +245,26 @@ BEGIN
         UNION ALL SELECT 'referential identities with no document', '0',
                (SELECT COUNT(*)::text FROM dms."ReferentialIdentity" r
                  WHERE NOT EXISTS (SELECT 1 FROM dms."Document" d WHERE d."DocumentId" = r."DocumentId"))
-        UNION ALL SELECT 'ChangeVersionSequence at or beyond the restored data', 'true',
-               (SELECT (COALESCE(pg_sequence_last_value('dms."ChangeVersionSequence"'::regclass), 0)
-                        >= COALESCE(MAX(GREATEST("ContentVersion", "IdentityVersion")), 0))::text
-                  FROM dms."Document")
+        -- The value the next write would receive, not the recorded position: nextval() returns
+        -- last_value + increment once is_called is true and last_value itself while it is false, so a
+        -- sequence sitting exactly on the maximum with is_called false reports a position that looks
+        -- high enough and still hands the first writer a value the data already holds. is_called is on
+        -- the sequence relation and nowhere else; the increment is in pg_sequence. Nothing here calls
+        -- nextval(), which would move the sequence being checked.
+        --
+        -- The maximum spans dms."Descriptor" as well as dms."Document", matching the copy script.
+        -- The descriptor stamping trigger draws from this same sequence, so a descriptor
+        -- ContentVersion above every document version is on its own enough to make the next value
+        -- collide, and a Document-only maximum would report exactly that case as safe.
+        UNION ALL SELECT 'ChangeVersionSequence next value beyond the restored data', 'true',
+               (SELECT ((s.last_value + CASE WHEN s.is_called THEN q.seqincrement ELSE 0 END)
+                        > GREATEST(
+                              COALESCE((SELECT MAX(GREATEST("ContentVersion", "IdentityVersion"))
+                                          FROM dms."Document"), 0),
+                              COALESCE((SELECT MAX("ContentVersion") FROM dms."Descriptor"), 0)
+                          ))::text
+                  FROM dms."ChangeVersionSequence" s, pg_sequence q
+                 WHERE q.seqrelid = 'dms."ChangeVersionSequence"'::regclass)
       ) t;
 
     IF checked <> 17 THEN
@@ -258,6 +278,10 @@ BEGIN
     RAISE NOTICE 'restore verified: all 17 published values and invariants match';
 END $$;
 SQL
+then
+  echo "step 6 failed: the restored database is not the published dataset -- start again from step 4"
+  exit 1
+fi
 #    Expect: NOTICE: restore verified: all 17 published values and invariants match
 
 # 7. REQUIRED: install your own OpenIddict signing key.
@@ -320,11 +344,56 @@ T=$(curl -s -X POST "$CMS/connect/token" -H "Content-Type: application/x-www-for
 test -n "$T" || { echo "no token: step 7 did not take effect"; exit 1; }
 
 PW=$(docker exec dms-postgresql printenv POSTGRES_PASSWORD)
-curl -s -X PUT "$CMS/v3/dataStores/1" -H "Authorization: Bearer $T" \
-  -H "Content-Type: application/json" \
-  -d "{\"id\":1,\"dataStoreType\":\"Development\",\"name\":\"Local Development Data Store\",
-       \"connectionString\":\"host=dms-postgresql;port=5432;username=postgres;password=${PW};database=${DB};\"}" \
-  -w 'data store re-saved -> HTTP %{http_code}\n'
+test -n "$PW" -a -n "$DB" || { echo "could not read the database password and name from the container"; exit 1; }
+
+#    Neither value is pasted into the request by hand. Both come from the running container and may
+#    hold characters that are special in JSON (") or in a connection string (; ' " =). Raw
+#    interpolation either breaks the JSON outright or -- worse -- produces a connection string that
+#    CMS stores happily and Npgsql then reads differently, which is a data store that saves cleanly
+#    and cannot connect. So DbConnectionStringBuilder assembles the connection string, applying the
+#    same quoting rules Npgsql parses; ConvertTo-Json writes the body; and the assembled string is
+#    re-parsed and compared to its inputs before anything is sent.
+#
+#    `.PSBase` is required when SETTING ConnectionString: without it PowerShell's dictionary adapter
+#    stores a keyword literally named ConnectionString instead of parsing the string, and the check
+#    below would pass on an empty builder.
+PW="$PW" DB="$DB" ART="$ART" pwsh -NoProfile -Command '
+  $csb = [System.Data.Common.DbConnectionStringBuilder]::new()
+  $csb.Add("host", "dms-postgresql")
+  $csb.Add("port", "5432")
+  $csb.Add("username", "postgres")
+  $csb.Add("password", $env:PW)
+  $csb.Add("database", $env:DB)
+  $connectionString = $csb.PSBase.ConnectionString
+
+  $check = [System.Data.Common.DbConnectionStringBuilder]::new()
+  $check.PSBase.ConnectionString = $connectionString
+  if ($check["password"] -cne $env:PW -or $check["database"] -cne $env:DB) {
+      throw "the assembled connection string does not read back as the values it was built from"
+  }
+
+  $body = [ordered]@{
+      id               = 1
+      dataStoreType    = "Development"
+      name             = "Local Development Data Store"
+      connectionString = $connectionString
+  }
+  Set-Content -Path "$env:ART/datastore.json" -Encoding utf8NoBOM -Value ($body | ConvertTo-Json -Compress)
+' || { echo "the data store request body could not be built; nothing was sent"; exit 1; }
+
+#    curl exits 0 on a 4xx or 5xx, so the status is asserted rather than printed. CMS answers this PUT
+#    with 204 No Content on success; on anything else the stored connection string is still the
+#    producer's, and DMS restart-loops on it in step 11 rather than failing here where you can see why.
+DS=$(curl -s -o "$ART/datastore-put.txt" -w '%{http_code}' -X PUT "$CMS/v3/dataStores/1" \
+  -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
+  --data-binary "@$ART/datastore.json")
+rm -f "$ART/datastore.json"
+if [ "$DS" != "204" ]; then
+  echo "the data store re-save answered HTTP ${DS:-none}, expected 204"
+  cat "$ART/datastore-put.txt"; echo
+  exit 1
+fi
+echo "data store re-saved -> HTTP 204"
 
 # 10. REQUIRED: recreate the client DMS uses to reach the Configuration Service.
 #     Registering `restore-admin` above is not this step. DMS authenticates to CMS as its own client,
@@ -400,10 +469,20 @@ test -n "$DT" || { echo "no DMS token minted"; exit 1; }
 
 #     The read that proves the dataset is being served. Send a real token: an absent or malformed
 #     one answers 401, which tells you nothing about the data.
-curl -s -D - -o /dev/null -H "Authorization: Bearer $DT" \
-  "http://localhost:8080/data/ed-fi/students?limit=1&totalCount=true" |
-  grep -Ei '^(HTTP/|total-count:)'
-#     Expect: HTTP/1.1 200 OK  and  Total-Count: 21628
+#     A 401, 403, 500 or 503 all match "HTTP/" and every one of them leaves the dataset unproven, so
+#     the status and the count are captured and compared to exact values rather than grepped for.
+SC=$(curl -s -D "$ART/smoke-headers.txt" -o "$ART/smoke-body.json" -w '%{http_code}' \
+  -H "Authorization: Bearer $DT" \
+  "http://localhost:8080/data/ed-fi/students?limit=1&totalCount=true")
+TC=$(grep -i '^total-count:' "$ART/smoke-headers.txt" | tail -1 | tr -d '\r' |
+     sed 's/^[^:]*:[[:space:]]*//')
+if [ "$SC" != "200" ] || [ "$TC" != "21628" ]; then
+  echo "DMS did not serve the restored dataset: HTTP ${SC:-none}, Total-Count ${TC:-absent}, expected 200 and 21628"
+  cat "$ART/smoke-headers.txt"
+  head -c 2000 "$ART/smoke-body.json"; echo
+  exit 1
+fi
+echo "DMS served the restored dataset: HTTP 200, Total-Count 21628"
 ```
 
 > **Do not drop and recreate the database part-way through this recipe and expect a CMS restart to
