@@ -590,7 +590,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         await WaitForRegisteredConnectorRunningAsync(request.ConnectorName.Value, cancellationToken);
     }
 
-    public async Task AssertHeartbeatAndCommittedOffsetProgressAsync(
+    public async Task<CdcConnectorSourceOffsetSnapshot> AssertHeartbeatAndCommittedOffsetProgressAsync(
         CdcConnectorTemplateRequest request,
         CancellationToken cancellationToken
     )
@@ -616,13 +616,19 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         using var _ = new AssertionScope();
         advancedHeartbeatSequence.Should().BeGreaterThan(startingHeartbeatSequence);
         committedOffset.CanonicalOffsetJson.Should().NotBeNullOrWhiteSpace();
+        return committedOffset;
     }
 
     public async Task RestartRegisteredConnectorAndAssertTemplateStillValidAsync(
         CdcConnectorTemplateRequest request,
+        CdcConnectorSourceOffsetSnapshot preRestartCommittedOffset,
         CancellationToken cancellationToken
     )
     {
+        preRestartCommittedOffset
+            .Should()
+            .NotBeNull("restart validation must use the committed offset observed before restart");
+
         string connectorName = request.ConnectorName.Value;
         using HttpResponseMessage response = await _httpClient.PostAsync(
             $"/connectors/{Uri.EscapeDataString(connectorName)}/restart?includeTasks=true&onlyFailed=false",
@@ -639,17 +645,22 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             );
 
         await WaitForRegisteredConnectorRunningAsync(connectorName, cancellationToken);
-        CdcConnectorSourceOffsetSnapshot retainedOffset = await WaitForCommittedSourceOffsetProgressAsync(
+        CdcConnectorSourceOffsetSnapshot retainedOffset = await WaitForRetainedCommittedSourceOffsetAsync(
             request,
-            startingOffset: null,
+            preRestartCommittedOffset,
+            cancellationToken
+        );
+        CdcConnectorSourceOffsetSnapshot progressedOffset = await WaitForCommittedSourceOffsetProgressAsync(
+            request,
+            retainedOffset,
             cancellationToken
         );
         await AssertKafkaConnectReadBackMatchesExpectedConfigAsync(
             request,
-            retainedOffset.SourcePartitionEvidence,
+            progressedOffset.SourcePartitionEvidence,
             cancellationToken
         );
-        retainedOffset.CanonicalOffsetJson.Should().NotBeNullOrWhiteSpace();
+        progressedOffset.CanonicalOffsetJson.Should().NotBeNullOrWhiteSpace();
     }
 
     public async Task AssertKafkaConnectReadBackMatchesExpectedConfigAsync(
@@ -1215,12 +1226,56 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
         }
 
-        string starting = startingOffset?.CanonicalOffsetJson ?? "<none>";
-        string observed = lastObservedOffset ?? "<none>";
+        string starting = startingOffset is null
+            ? "<none>"
+            : SanitizeForAssertion(startingOffset.CanonicalOffsetJson);
+        string observed = lastObservedOffset is null ? "<none>" : SanitizeForAssertion(lastObservedOffset);
         Assert.Fail(
             $"Kafka Connect committed source offset did not progress. Starting offset: {starting}. Last observed offset: {observed}."
         );
         throw new InvalidOperationException("Kafka Connect committed source offset did not progress.");
+    }
+
+    private async Task<CdcConnectorSourceOffsetSnapshot> WaitForRetainedCommittedSourceOffsetAsync(
+        CdcConnectorTemplateRequest request,
+        CdcConnectorSourceOffsetSnapshot expectedOffset,
+        CancellationToken cancellationToken
+    )
+    {
+        DateTimeOffset deadline = DateTimeOffset.UtcNow.Add(OffsetCommitTimeout);
+        string? lastObservedOffset = null;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            await WaitForRegisteredConnectorRunningAsync(request.ConnectorName.Value, cancellationToken);
+
+            CdcConnectorSourceOffsetSnapshot? observedOffset = await TryReadCommittedSourceOffsetAsync(
+                request,
+                cancellationToken
+            );
+            if (
+                observedOffset is not null
+                && string.Equals(
+                    observedOffset.CanonicalOffsetJson,
+                    expectedOffset.CanonicalOffsetJson,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                return observedOffset;
+            }
+
+            lastObservedOffset = observedOffset?.CanonicalOffsetJson;
+            await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+        }
+
+        string expected = SanitizeForAssertion(expectedOffset.CanonicalOffsetJson);
+        string observed = lastObservedOffset is null ? "<none>" : SanitizeForAssertion(lastObservedOffset);
+        Assert.Fail(
+            $"Kafka Connect did not retain the pre-restart committed source offset. Expected offset: {expected}. Last observed offset: {observed}."
+        );
+        throw new InvalidOperationException(
+            "Kafka Connect did not retain the pre-restart committed source offset."
+        );
     }
 
     private async Task CreateMinimalTopicsAsync(
@@ -2455,7 +2510,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         IReadOnlyList<string> CapturedColumns
     );
 
-    private sealed record CdcConnectorSourceOffsetSnapshot(
+    internal sealed record CdcConnectorSourceOffsetSnapshot(
         string CanonicalOffsetJson,
         CdcConnectorTemplateSourcePartitionEvidence SourcePartitionEvidence
     );

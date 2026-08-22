@@ -45,8 +45,15 @@ public abstract class Given_PinnedImageConnectorTemplateFixture
 
         await fixture.AssertConnectorConfigValidatesAsync(rendered, cancellation.Token);
         await fixture.RegisterRenderedConnectorConfigDirectlyAsync(rendered, cancellation.Token);
-        await fixture.AssertHeartbeatAndCommittedOffsetProgressAsync(request, cancellation.Token);
-        await fixture.RestartRegisteredConnectorAndAssertTemplateStillValidAsync(request, cancellation.Token);
+        var committedOffset = await fixture.AssertHeartbeatAndCommittedOffsetProgressAsync(
+            request,
+            cancellation.Token
+        );
+        await fixture.RestartRegisteredConnectorAndAssertTemplateStillValidAsync(
+            request,
+            committedOffset,
+            cancellation.Token
+        );
     }
 }
 
