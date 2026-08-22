@@ -756,11 +756,10 @@ public class Given_CdcConnectorTemplateContractTests
     }
 
     [Test]
-    public void It_exposes_only_request_based_connector_template_service_methods()
+    public void It_exposes_only_result_based_connector_template_service_methods()
     {
         string[] expectedServiceMethods =
         [
-            nameof(ICdcConnectorTemplateService.ValidateRequest),
             nameof(ICdcConnectorTemplateService.Render),
             nameof(ICdcConnectorTemplateService.ValidateRegistrationPreflight),
             nameof(ICdcConnectorTemplateService.ValidateLiveReadBack),
@@ -774,18 +773,11 @@ public class Given_CdcConnectorTemplateContractTests
     }
 
     [Test]
-    public void It_exposes_only_request_validation_on_the_input_validator()
+    public void It_keeps_validation_only_contracts_internal()
     {
-        string[] expectedInputValidatorMethods =
-        [
-            nameof(ICdcConnectorTemplateInputValidator.ValidateRequest),
-        ];
-
-        typeof(ICdcConnectorTemplateInputValidator)
-            .GetMethods()
-            .Select(method => method.Name)
-            .Should()
-            .BeEquivalentTo(expectedInputValidatorMethods);
+        using var _ = new AssertionScope();
+        typeof(ICdcConnectorTemplateInputValidator).IsNotPublic.Should().BeTrue();
+        typeof(CdcConnectorTemplateValidationResult).IsNotPublic.Should().BeTrue();
     }
 
     [Test]

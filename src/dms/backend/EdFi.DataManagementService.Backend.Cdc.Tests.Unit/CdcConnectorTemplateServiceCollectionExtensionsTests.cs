@@ -30,7 +30,7 @@ public class Given_CdcConnectorTemplateServiceRegistration
     }
 
     [Test]
-    public void It_registers_the_request_validator()
+    public void It_registers_the_internal_request_validator()
     {
         IServiceCollection services = new ServiceCollection();
 

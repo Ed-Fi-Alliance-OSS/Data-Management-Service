@@ -10,11 +10,6 @@ namespace EdFi.DataManagementService.Backend.Cdc;
 
 public interface ICdcConnectorTemplateService
 {
-    CdcConnectorTemplateValidationResult ValidateRequest(
-        CdcConnectorTemplateRequest request,
-        CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.Render
-    );
-
     CdcConnectorTemplateResult Render(CdcConnectorTemplateRequest request);
 
     CdcConnectorTemplateResult ValidateRegistrationPreflight(
@@ -27,16 +22,10 @@ public interface ICdcConnectorTemplateService
 }
 
 internal sealed class CdcConnectorTemplateService(
-    ICdcConnectorTemplateInputValidator inputValidator,
     ICdcConnectorTemplateRenderer renderer,
     ICdcConnectorTemplateEffectiveConfigValidator effectiveConfigValidator
 ) : ICdcConnectorTemplateService
 {
-    public CdcConnectorTemplateValidationResult ValidateRequest(
-        CdcConnectorTemplateRequest request,
-        CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.Render
-    ) => inputValidator.ValidateRequest(request, sourcePhase);
-
     public CdcConnectorTemplateResult Render(CdcConnectorTemplateRequest request) => renderer.Render(request);
 
     public CdcConnectorTemplateResult ValidateRegistrationPreflight(

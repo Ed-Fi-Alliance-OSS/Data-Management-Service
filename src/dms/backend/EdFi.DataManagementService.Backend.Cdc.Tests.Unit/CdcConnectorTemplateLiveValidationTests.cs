@@ -158,35 +158,6 @@ public class Given_CdcConnectorTemplateLiveValidationTests
     }
 
     [Test]
-    public void It_formats_validation_exception_messages_as_code_and_property_summaries()
-    {
-        const string expectedSecret = "ExpectedPassword=should-not-leak";
-        const string observedSecret = "ObservedPassword=should-not-leak";
-        var diagnostic = new CdcConnectorTemplateDiagnostic(
-            CdcConnectorTemplateDiagnosticCodes.LiveReadBackPropertyMismatch,
-            CdcConnectorTemplateDiagnosticCategory.SecretRedactionViolation,
-            CdcConnectorTemplateDiagnosticSeverity.Error,
-            "database.password",
-            safeArtifactOrObjectName: null,
-            expectedSecret,
-            observedSecret,
-            CdcProvider.Postgresql,
-            CdcConnectorTemplateSourcePhase.LiveReadBack,
-            CdcConnectorTemplateRedactionClassification.SecretValue
-        );
-
-        var exception = new CdcConnectorTemplateValidationException([diagnostic]);
-
-        exception
-            .Message.Should()
-            .Be(
-                "CDC connector template validation failed: CDC_TEMPLATE_LIVE_READBACK_PROPERTY_MISMATCH(database.password)."
-            )
-            .And.NotContain(expectedSecret)
-            .And.NotContain(observedSecret);
-    }
-
-    [Test]
     public void It_rejects_exact_live_read_back_config_without_source_partition_evidence()
     {
         using ServiceProvider serviceProvider = BuildServiceProvider();
@@ -1229,8 +1200,6 @@ public class Given_CdcConnectorTemplateLiveValidationTests
                 sourcePartitionEvidence
             )
         );
-        var exception = new CdcConnectorTemplateValidationException(firstResult.Diagnostics);
-
         CdcConnectorTemplateDiagnostic effectiveConfigDiagnostic = firstResult
             .Diagnostics.Should()
             .ContainSingle(diagnostic =>
@@ -1268,7 +1237,6 @@ public class Given_CdcConnectorTemplateLiveValidationTests
         string.Join("|", firstResult.Diagnostics.SelectMany(DiagnosticSurface))
             .Should()
             .NotContainAny(sentinelText);
-        exception.ToString().Should().NotContainAny(sentinelText);
     }
 
     [Test]

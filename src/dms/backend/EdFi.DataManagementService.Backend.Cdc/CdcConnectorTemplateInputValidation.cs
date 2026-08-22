@@ -7,7 +7,7 @@ using EdFi.DataManagementService.Backend.Ddl;
 
 namespace EdFi.DataManagementService.Backend.Cdc;
 
-public interface ICdcConnectorTemplateInputValidator
+internal interface ICdcConnectorTemplateInputValidator
 {
     CdcConnectorTemplateValidationResult ValidateRequest(
         CdcConnectorTemplateRequest request,
@@ -15,7 +15,7 @@ public interface ICdcConnectorTemplateInputValidator
     );
 }
 
-public sealed record CdcConnectorTemplateValidationResult
+internal sealed record CdcConnectorTemplateValidationResult
 {
     public CdcConnectorTemplateValidationResult(IReadOnlyList<CdcConnectorTemplateDiagnostic> diagnostics)
     {
@@ -28,48 +28,6 @@ public sealed record CdcConnectorTemplateValidationResult
 
     public bool IsValid =>
         Diagnostics.All(diagnostic => diagnostic.Severity != CdcConnectorTemplateDiagnosticSeverity.Error);
-
-    public void ThrowIfInvalid()
-    {
-        if (!IsValid)
-        {
-            throw new CdcConnectorTemplateValidationException(Diagnostics);
-        }
-    }
-}
-
-public sealed class CdcConnectorTemplateValidationException : Exception
-{
-    public CdcConnectorTemplateValidationException(IReadOnlyList<CdcConnectorTemplateDiagnostic> diagnostics)
-        : base(BuildMessage(diagnostics))
-    {
-        ArgumentNullException.ThrowIfNull(diagnostics);
-
-        Diagnostics = diagnostics;
-    }
-
-    public IReadOnlyList<CdcConnectorTemplateDiagnostic> Diagnostics { get; }
-
-    private static string BuildMessage(IReadOnlyList<CdcConnectorTemplateDiagnostic> diagnostics)
-    {
-        ArgumentNullException.ThrowIfNull(diagnostics);
-
-        string summary = string.Join(
-            ", ",
-            diagnostics
-                .Where(diagnostic => diagnostic.Severity == CdcConnectorTemplateDiagnosticSeverity.Error)
-                .Take(8)
-                .Select(diagnostic =>
-                    diagnostic.PropertyName is null
-                        ? diagnostic.Code
-                        : $"{diagnostic.Code}({diagnostic.PropertyName})"
-                )
-        );
-
-        return summary.Length == 0
-            ? "CDC connector template validation failed."
-            : $"CDC connector template validation failed: {summary}.";
-    }
 }
 
 public static class CdcConnectorTemplateDiagnosticCodes

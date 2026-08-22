@@ -319,33 +319,6 @@ public class Given_CdcConnectorTemplateValidationTests
     }
 
     [Test]
-    public void It_throws_validation_exception_from_validation_result_without_leaking_fingerprints()
-    {
-        CdcConnectorTemplateRequest request = RequestForProviderSetupDomainValidation(
-            BuildProviderSetupResult(
-                CdcProvider.Postgresql,
-                boundPhysicalSourceFingerprint: OtherPostgresqlSourceFingerprint,
-                observedSourceFingerprint: OtherPostgresqlSourceFingerprint
-            )
-        );
-        CdcConnectorTemplateValidationResult validationResult = Validate(request);
-
-        Action act = () => validationResult.ThrowIfInvalid();
-
-        act.Should()
-            .Throw<CdcConnectorTemplateValidationException>()
-            .Where(exception =>
-                exception.Diagnostics.Any(diagnostic =>
-                    diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.BindingIdentityMismatch
-                    && diagnostic.PropertyName == "providerSetup.boundPhysicalSourceFingerprint"
-                )
-                && !exception
-                    .ToString()
-                    .Contains(OtherPostgresqlSourceFingerprint.Value, StringComparison.Ordinal)
-            );
-    }
-
-    [Test]
     public void It_rejects_connection_and_security_properties_outside_the_provider_allow_lists()
     {
         CdcConnectorTemplateValidationResult postgresqlResult = Validate(
@@ -448,8 +421,6 @@ public class Given_CdcConnectorTemplateValidationTests
             providerConnectionProperties,
             kafkaSecurityProperties
         );
-        Action act = () => firstResult.ThrowIfInvalid();
-
         CdcConnectorTemplateDiagnostic connectionDiagnostic = firstResult
             .Diagnostics.Should()
             .ContainSingle(diagnostic =>
@@ -481,14 +452,6 @@ public class Given_CdcConnectorTemplateValidationTests
         string.Join("|", firstResult.Diagnostics.SelectMany(DiagnosticSurface))
             .Should()
             .NotContainAny(sentinelText);
-        act.Should()
-            .Throw<CdcConnectorTemplateValidationException>()
-            .Where(exception =>
-                Array.TrueForAll(
-                    sentinelText,
-                    sentinel => !exception.ToString().Contains(sentinel, StringComparison.Ordinal)
-                )
-            );
     }
 
     [Test]
@@ -679,8 +642,6 @@ public class Given_CdcConnectorTemplateValidationTests
             },
             new Dictionary<string, string> { ["sasl.jaas.config"] = rawSecret }
         );
-        Action act = () => result.ThrowIfInvalid();
-
         using var _ = new AssertionScope();
         result.IsValid.Should().BeFalse();
         result.Diagnostics.Should().HaveCount(2);
@@ -700,9 +661,6 @@ public class Given_CdcConnectorTemplateValidationTests
             .Where(value => value is not null)
             .Should()
             .NotContain(value => value!.Contains(rawSecret, StringComparison.Ordinal));
-        act.Should()
-            .Throw<CdcConnectorTemplateValidationException>()
-            .Where(exception => !exception.ToString().Contains(rawSecret, StringComparison.Ordinal));
     }
 
     [Test]
@@ -721,8 +679,6 @@ public class Given_CdcConnectorTemplateValidationTests
                 ["driver.trustStorePassword"] = rawSecret,
             }
         );
-        Action act = () => result.ThrowIfInvalid();
-
         CdcConnectorTemplateDiagnostic diagnostic = result.Diagnostics.Should().ContainSingle().Subject;
 
         using var _ = new AssertionScope();
@@ -738,9 +694,6 @@ public class Given_CdcConnectorTemplateValidationTests
             .Diagnostics.SelectMany(DiagnosticText)
             .Should()
             .NotContain(value => value.Contains(rawSecret, StringComparison.Ordinal));
-        act.Should()
-            .Throw<CdcConnectorTemplateValidationException>()
-            .Where(exception => !exception.ToString().Contains(rawSecret, StringComparison.Ordinal));
     }
 
     [Test]
@@ -770,8 +723,6 @@ public class Given_CdcConnectorTemplateValidationTests
             CdcProvider.Postgresql,
             BuildPostgresqlConnectionProperties(malformedReference)
         );
-        Action act = () => result.ThrowIfInvalid();
-
         CdcConnectorTemplateDiagnostic diagnostic = result.Diagnostics.Should().ContainSingle().Subject;
 
         using var _ = new AssertionScope();
@@ -787,9 +738,6 @@ public class Given_CdcConnectorTemplateValidationTests
             .Diagnostics.SelectMany(DiagnosticText)
             .Should()
             .NotContain(value => value.Contains(malformedReference, StringComparison.Ordinal));
-        act.Should()
-            .Throw<CdcConnectorTemplateValidationException>()
-            .Where(exception => !exception.ToString().Contains(malformedReference, StringComparison.Ordinal));
     }
 
     [Test]
@@ -818,7 +766,7 @@ public class Given_CdcConnectorTemplateValidationTests
     }
 
     [Test]
-    public void It_rejects_missing_postgresql_provider_artifacts_during_public_request_validation()
+    public void It_rejects_missing_postgresql_provider_artifacts_during_internal_request_validation()
     {
         CdcConnectorTemplateValidationResult result = Validate(
             BuildRequest(CdcProvider.Postgresql, artifactInventory: [])
@@ -844,7 +792,7 @@ public class Given_CdcConnectorTemplateValidationTests
     }
 
     [Test]
-    public void It_treats_null_postgresql_provider_artifacts_as_missing_during_public_request_validation()
+    public void It_treats_null_postgresql_provider_artifacts_as_missing_during_internal_request_validation()
     {
         CdcProviderSetupResult providerSetupResult = BuildProviderSetupResult(CdcProvider.Postgresql) with
         {
@@ -951,7 +899,7 @@ public class Given_CdcConnectorTemplateValidationTests
     }
 
     [Test]
-    public void It_rejects_null_provider_artifact_entries_during_public_request_validation()
+    public void It_rejects_null_provider_artifact_entries_during_internal_request_validation()
     {
         CdcConnectorTemplateResult result = Render(
             BuildRequest(
@@ -1048,7 +996,7 @@ public class Given_CdcConnectorTemplateValidationTests
     }
 
     [Test]
-    public void It_rejects_provider_setup_source_table_name_drift_during_public_request_validation()
+    public void It_rejects_provider_setup_source_table_name_drift_during_internal_request_validation()
     {
         CdcConnectorTemplateValidationResult result = Validate(
             BuildRequest(
@@ -1085,7 +1033,7 @@ public class Given_CdcConnectorTemplateValidationTests
     }
 
     [Test]
-    public void It_rejects_message_key_source_column_drift_during_public_request_validation()
+    public void It_rejects_message_key_source_column_drift_during_internal_request_validation()
     {
         CdcConnectorTemplateValidationResult result = Validate(
             BuildRequest(
@@ -1153,7 +1101,7 @@ public class Given_CdcConnectorTemplateValidationTests
     }
 
     [Test]
-    public void It_rejects_malformed_source_column_inventory_during_public_request_validation()
+    public void It_rejects_malformed_source_column_inventory_during_internal_request_validation()
     {
         CdcConnectorTemplateValidationResult result = Validate(
             BuildRequest(
@@ -1189,7 +1137,7 @@ public class Given_CdcConnectorTemplateValidationTests
     }
 
     [Test]
-    public void It_rejects_malformed_heartbeat_source_inventory_during_public_request_validation_and_render()
+    public void It_rejects_malformed_heartbeat_source_inventory_during_internal_request_validation_and_render()
     {
         CdcProviderSetupResult[] malformedProviderSetupResults =
         [
@@ -1277,7 +1225,7 @@ public class Given_CdcConnectorTemplateValidationTests
     }
 
     [Test]
-    public void It_rejects_sqlserver_capture_instance_artifact_inventory_drift_during_public_request_validation()
+    public void It_rejects_sqlserver_capture_instance_artifact_inventory_drift_during_internal_request_validation()
     {
         CdcConnectorTemplateValidationResult emptyInventory = Validate(
             BuildRequest(CdcProvider.SqlServer, artifactInventory: [])
@@ -1433,7 +1381,7 @@ public class Given_CdcConnectorTemplateValidationTests
     }
 
     [Test]
-    public void It_treats_null_sqlserver_capture_instance_observed_values_as_missing_during_public_request_validation()
+    public void It_treats_null_sqlserver_capture_instance_observed_values_as_missing_during_internal_request_validation()
     {
         CdcProviderArtifactObservation malformedDocumentArtifact = BuildSqlServerCaptureInstanceArtifact(
             CdcSourceTableKind.Document
@@ -1480,7 +1428,7 @@ public class Given_CdcConnectorTemplateValidationTests
     }
 
     [Test]
-    public void It_rejects_missing_sqlserver_poll_interval_during_public_request_validation()
+    public void It_rejects_missing_sqlserver_poll_interval_during_internal_request_validation()
     {
         CdcConnectorTemplateValidationResult result = Validate(
             BuildRequest(
@@ -1512,7 +1460,7 @@ public class Given_CdcConnectorTemplateValidationTests
     }
 
     [Test]
-    public void It_rejects_sqlserver_poll_interval_greater_than_heartbeat_during_public_request_validation()
+    public void It_rejects_sqlserver_poll_interval_greater_than_heartbeat_during_internal_request_validation()
     {
         CdcConnectorTemplateValidationResult result = Validate(
             BuildRequest(
@@ -1546,7 +1494,7 @@ public class Given_CdcConnectorTemplateValidationTests
     }
 
     [Test]
-    public void It_reports_null_heartbeat_action_query_during_public_request_validation()
+    public void It_reports_null_heartbeat_action_query_during_internal_request_validation()
     {
         CdcConnectorTemplateValidationResult result = Validate(
             RequestForProviderSetupDomainValidation(
@@ -1575,7 +1523,7 @@ public class Given_CdcConnectorTemplateValidationTests
     [TestCase("")]
     [TestCase("   ")]
     [TestCase("\t\r\n")]
-    public void It_rejects_blank_heartbeat_action_sql_during_public_request_validation(string heartbeatSql)
+    public void It_rejects_blank_heartbeat_action_sql_during_internal_request_validation(string heartbeatSql)
     {
         CdcConnectorTemplateValidationResult result = Validate(
             BuildRequest(CdcProvider.Postgresql, heartbeatSql: heartbeatSql)
@@ -1606,7 +1554,7 @@ public class Given_CdcConnectorTemplateValidationTests
     [TestCase("update dms.CdcHeartbeat\rset HeartbeatSequence = HeartbeatSequence + 1")]
     [TestCase("update dms.CdcHeartbeat\tset HeartbeatSequence = HeartbeatSequence + 1")]
     [TestCase("update dms.CdcHeartbeat\u0001set HeartbeatSequence = HeartbeatSequence + 1")]
-    public void It_rejects_control_characters_in_heartbeat_action_sql_during_public_request_validation(
+    public void It_rejects_control_characters_in_heartbeat_action_sql_during_internal_request_validation(
         string heartbeatSql
     )
     {
@@ -1895,10 +1843,10 @@ public class Given_CdcConnectorTemplateValidationTests
             .AddCdcConnectorTemplates()
             .BuildServiceProvider();
 
-        ICdcConnectorTemplateService service =
-            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        ICdcConnectorTemplateInputValidator validator =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateInputValidator>();
 
-        return service.ValidateRequest(request, sourcePhase);
+        return validator.ValidateRequest(request, sourcePhase);
     }
 
     private static CdcConnectorTemplateResult Render(CdcConnectorTemplateRequest request)
