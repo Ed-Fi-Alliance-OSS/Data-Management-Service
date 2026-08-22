@@ -726,7 +726,6 @@ public class Given_CdcConnectorTemplateContractTests
             nameof(CdcConnectorTemplateSourcePhase.Render),
             nameof(CdcConnectorTemplateSourcePhase.Preflight),
             nameof(CdcConnectorTemplateSourcePhase.LiveReadBack),
-            nameof(CdcConnectorTemplateSourcePhase.PinnedImageSmoke),
         ];
 
         Enum.GetNames<CdcConnectorTemplateSourcePhase>().Should().BeEquivalentTo(expectedSourcePhases);
