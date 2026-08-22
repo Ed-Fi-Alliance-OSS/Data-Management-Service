@@ -1,0 +1,401 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+#Requires -Version 7
+
+<#
+.SYNOPSIS
+    Captures a normalized catalog snapshot of a DMS PostgreSQL database, and diffs two snapshots.
+
+.DESCRIPTION
+    Provisioning is create-only, so the only way to prove that a data-copied database matches the
+    schema a fresh deployment produces is to compare their catalogs. This script captures one
+    deterministic text snapshot per database and diffs two of them; an empty diff is the pass.
+
+    The snapshot is scoped to the DMS-owned schemas. dmscs and its deploy journal are owned by the
+    Configuration Service, which has its own versioned migration path, and are validated separately --
+    diffing them against a DMS-only reference database would report differences that mean nothing.
+
+    Ordering is explicit in every query and type spellings come from the catalog rather than from DDL
+    text, so two runs against the same database produce byte-identical output and a textual diff is
+    meaningful.
+
+    Trigger state is captured, not just trigger text. The copy path loads with pg_restore
+    --disable-triggers, so a trigger that was never switched back on -- including the internal
+    constraint triggers that enforce foreign keys -- is exactly the drift this compare exists to
+    catch, and it is invisible in a definition-only snapshot.
+
+.PARAMETER Database
+    Database to snapshot. Repeat the parameter, or pass two values, to snapshot and then diff both.
+
+.PARAMETER OutputDirectory
+    Directory for the snapshot files. Use a location outside the repository: snapshots are generated
+    artifacts and must never be committed.
+
+.PARAMETER Container
+    Name of the running PostgreSQL container.
+
+.PARAMETER PostgresUser
+    PostgreSQL user for psql.
+
+.PARAMETER Schema
+    Schemas to include. Defaults to the DMS-owned set.
+
+.EXAMPLE
+    ./Compare-DmsSchemaSnapshot.ps1 -Database northridge_target, northridge_reference -OutputDirectory /tmp/nr
+
+    Captures both snapshots and reports whether they differ.
+
+.EXAMPLE
+    ./Compare-DmsSchemaSnapshot.ps1 -Database northridge_target -OutputDirectory /tmp/nr
+
+    Captures a single snapshot without diffing.
+#>
+
+[CmdletBinding(SupportsShouldProcess)]
+param(
+    [Parameter(Mandatory)]
+    [ValidateCount(1, 2)]
+    [string[]]
+    $Database,
+
+    [Parameter(Mandatory)]
+    [string]
+    $OutputDirectory,
+
+    [string]
+    $Container = "dms-postgresql",
+
+    [string]
+    $PostgresUser = "postgres",
+
+    [string[]]
+    $Schema = @("dms", "edfi", "tracked_changes_edfi", "auth")
+)
+
+$ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
+
+# Intentionally duplicated across the scripts in this directory rather than extracted into a shared
+# module, to keep this directory to its reviewed file set. It is the whole of the database access
+# surface: everything else composes SQL text.
+function Invoke-PsqlQuery {
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [Parameter(Mandatory)] [string] $ContainerName,
+        [Parameter(Mandatory)] [string] $User,
+        [Parameter(Mandatory)] [string] $DatabaseName,
+        [Parameter(Mandatory)] [string] $Sql
+    )
+
+    $output = $Sql | docker exec -i $ContainerName psql -U $User -d $DatabaseName `
+        -v ON_ERROR_STOP=1 --no-align --tuples-only --field-separator='|' --quiet 2>&1
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "psql failed against '$DatabaseName' (exit $LASTEXITCODE): $($output -join [Environment]::NewLine)"
+    }
+
+    return $output
+}
+
+function Get-SchemaLiteralList {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)] [string[]] $Name)
+
+    return ($Name | ForEach-Object { "'" + $_.Replace("'", "''") + "'" }) -join ", "
+}
+
+# -Schema is free text, and sections 11 and 12 read dms."EffectiveSchema" and dms."SchemaComponent"
+# by name whatever it says. A misspelled schema therefore still produces those rows, both snapshots
+# still agree, and the run reports PASS having compared nothing in the schema the caller asked for.
+# The requested names are checked against pg_namespace rather than inferred from rows coming back.
+function Get-MissingSchema {
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [Parameter(Mandatory)] [string] $DatabaseName,
+        [Parameter(Mandatory)] [string[]] $Name,
+        [Parameter(Mandatory)] [string] $ContainerName,
+        [Parameter(Mandatory)] [string] $User
+    )
+
+    $sql = @"
+SELECT nspname
+FROM pg_namespace
+WHERE nspname IN ($(Get-SchemaLiteralList -Name $Name))
+ORDER BY nspname;
+"@
+
+    $present = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($row in (Invoke-PsqlQuery -ContainerName $ContainerName -User $User `
+                -DatabaseName $DatabaseName -Sql $sql)) {
+        $text = ([string]$row).Trim()
+        if ($text) { [void]$present.Add($text) }
+    }
+
+    # Ordinal comparison: a quoted PostgreSQL identifier is case-sensitive, so a schema that differs
+    # only in case is a different schema and has to read as missing.
+    return [string[]]@($Name | Where-Object { -not $present.Contains($_) })
+}
+
+# Each query is prefixed with a stable section label so the diff points at a kind of object rather
+# than a line number, and every query carries a total ORDER BY so output is deterministic.
+function Get-SnapshotQueryMap {
+    [CmdletBinding()]
+    [OutputType([System.Collections.Specialized.OrderedDictionary])]
+    param([Parameter(Mandatory)] [string] $SchemaList)
+
+    return [ordered]@{
+        "01-schema"     = @"
+SELECT 'schema|' || nspname
+FROM pg_namespace
+WHERE nspname IN ($SchemaList)
+ORDER BY nspname;
+"@
+
+        "02-table"      = @"
+SELECT 'table|' || n.nspname || '.' || c.relname || '|' || c.relkind::text || '|persistence=' || c.relpersistence::text
+FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname IN ($SchemaList) AND c.relkind IN ('r','p','v','m','f')
+ORDER BY n.nspname, c.relname;
+"@
+
+        # A generated column keeps its expression in generation_expression; column_default reads NULL
+        # for it. DMS PostgreSQL declares GENERATED ALWAYS AS (...) STORED columns, so without both
+        # fields a stale or wrong generated expression is invisible here as long as the column name,
+        # type and nullability still agree -- and the expression is what the projection depends on.
+        #
+        # The expression is emitted twice on purpose. The catalog pretty-prints it over several lines
+        # -- the unification expressions in this schema are multi-line CASE expressions -- and this
+        # file is compared line by line, so the exact text is carried as an md5 to keep one object on
+        # one line, in the same way sections 08 and 09 carry routine and view bodies. The
+        # whitespace-collapsed text follows only so a diff names what changed; the md5 is what makes
+        # the comparison exact, because collapsing whitespace on its own could equate two expressions
+        # that differ inside a string literal.
+        "03-column"     = @"
+SELECT 'column|' || table_schema || '.' || table_name || '|' || ordinal_position || '|' || column_name
+    || '|' || data_type
+    || '|len=' || COALESCE(character_maximum_length::text, '')
+    || '|num=' || COALESCE(numeric_precision::text, '') || ',' || COALESCE(numeric_scale::text, '')
+    || '|null=' || is_nullable
+    || '|default=' || COALESCE(column_default, '')
+    || '|identity=' || COALESCE(is_identity, 'NO') || ',' || COALESCE(identity_generation, '')
+    || '|generated=' || COALESCE(is_generated, 'NEVER')
+    || ',' || COALESCE(md5(generation_expression), '')
+    || ',' || COALESCE(regexp_replace(generation_expression, '\s+', ' ', 'g'), '')
+FROM information_schema.columns
+WHERE table_schema IN ($SchemaList)
+ORDER BY table_schema, table_name, ordinal_position;
+"@
+
+        "04-constraint" = @"
+SELECT 'constraint|' || n.nspname || '.' || rel.relname || '|' || con.conname || '|' || con.contype::text
+    || '|' || pg_get_constraintdef(con.oid)
+FROM pg_constraint con
+JOIN pg_class rel ON rel.oid = con.conrelid
+JOIN pg_namespace n ON n.oid = rel.relnamespace
+WHERE n.nspname IN ($SchemaList)
+ORDER BY n.nspname, rel.relname, con.conname;
+"@
+
+        "05-index"      = @"
+SELECT 'index|' || schemaname || '.' || tablename || '|' || indexname || '|' || indexdef
+FROM pg_indexes
+WHERE schemaname IN ($SchemaList)
+ORDER BY schemaname, tablename, indexname;
+"@
+
+        "06-sequence"   = @"
+SELECT 'sequence|' || schemaname || '.' || sequencename || '|type=' || data_type
+    || '|start=' || COALESCE(start_value::text, '') || '|inc=' || COALESCE(increment_by::text, '')
+FROM pg_sequences
+WHERE schemaname IN ($SchemaList)
+ORDER BY schemaname, sequencename;
+"@
+
+        # tgenabled is part of the snapshot, not a detail: the copy path runs pg_restore with
+        # --disable-triggers, which issues DISABLE TRIGGER ALL, and a table left that way has the
+        # right trigger definition and no trigger. 'O' and 'A' are enabled, 'D' is disabled and 'R'
+        # fires only for a replica session -- the same reading DMS's own catalog validator uses.
+        "07-trigger"    = @"
+SELECT 'trigger|' || n.nspname || '.' || rel.relname || '|' || tg.tgname
+    || '|enabled=' || tg.tgenabled::text
+    || '|' || pg_get_triggerdef(tg.oid)
+FROM pg_trigger tg
+JOIN pg_class rel ON rel.oid = tg.tgrelid
+JOIN pg_namespace n ON n.oid = rel.relnamespace
+WHERE n.nspname IN ($SchemaList) AND NOT tg.tgisinternal
+ORDER BY n.nspname, rel.relname, tg.tgname;
+"@
+
+        "08-routine"    = @"
+SELECT 'routine|' || n.nspname || '.' || p.proname || '|' || pg_get_function_identity_arguments(p.oid)
+    || '|' || md5(pg_get_functiondef(p.oid))
+FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+WHERE n.nspname IN ($SchemaList)
+ORDER BY n.nspname, p.proname, pg_get_function_identity_arguments(p.oid);
+"@
+
+        "09-view"       = @"
+SELECT 'view|' || schemaname || '.' || viewname || '|' || md5(definition)
+FROM pg_views
+WHERE schemaname IN ($SchemaList)
+ORDER BY schemaname, viewname;
+"@
+
+        "10-grant"      = @"
+SELECT 'grant|' || table_schema || '.' || table_name || '|' || grantee || '|' || privilege_type
+FROM information_schema.role_table_grants
+WHERE table_schema IN ($SchemaList)
+ORDER BY table_schema, table_name, grantee, privilege_type;
+"@
+
+        # The fingerprint rows are part of the schema contract, not incidental data: a hand-edited
+        # EffectiveSchema row is exactly the failure the runtime 503 check exists to catch.
+        "11-fingerprint" = @"
+SELECT 'fingerprint|' || "ApiSchemaFormatVersion" || '|' || "EffectiveSchemaHash"
+    || '|' || "ResourceKeyCount" || '|' || encode("ResourceKeySeedHash", 'hex')
+FROM dms."EffectiveSchema"
+ORDER BY "EffectiveSchemaSingletonId";
+"@
+
+        "12-component"  = @"
+SELECT 'component|' || "EffectiveSchemaHash" || '|' || "ProjectEndpointName" || '|' || "ProjectName"
+    || '|' || "ProjectVersion" || '|' || "IsExtensionProject"
+FROM dms."SchemaComponent"
+ORDER BY "ProjectEndpointName", "ProjectName";
+"@
+
+        # Foreign-key enforcement is carried by internal constraint triggers, which section
+        # 07-trigger excludes and which DISABLE TRIGGER ALL switches off along with everything else:
+        # the constraint stays in pg_constraint and stops being enforced. Their generated names embed
+        # OIDs and so differ between any two databases, which is why the row is keyed by the
+        # constraint and reports only the aggregated enabled state -- deterministic, and comparable
+        # across a target and a freshly provisioned reference.
+        "13-constraint-trigger" = @"
+SELECT 'constraint-trigger|' || n.nspname || '.' || rel.relname || '|' || con.conname
+    || '|' || con.contype::text
+    || '|enabled=' || string_agg(DISTINCT tg.tgenabled::text, ',' ORDER BY tg.tgenabled::text)
+    || '|triggers=' || COUNT(*)::text
+FROM pg_trigger tg
+JOIN pg_constraint con ON con.oid = tg.tgconstraint
+JOIN pg_class rel ON rel.oid = tg.tgrelid
+JOIN pg_namespace n ON n.oid = rel.relnamespace
+WHERE n.nspname IN ($SchemaList) AND tg.tgconstraint <> 0
+GROUP BY n.nspname, rel.relname, con.conname, con.contype
+ORDER BY n.nspname, rel.relname, con.conname;
+"@
+    }
+}
+
+function Export-SchemaSnapshot {
+    [CmdletBinding()]
+    [OutputType([int])]
+    param(
+        [Parameter(Mandatory)] [string] $DatabaseName,
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [System.Collections.Specialized.OrderedDictionary] $QueryMap,
+        [Parameter(Mandatory)] [string] $ContainerName,
+        [Parameter(Mandatory)] [string] $User
+    )
+
+    $lines = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($section in $QueryMap.Keys) {
+        Write-Verbose "Snapshotting $DatabaseName section $section"
+        $rows = Invoke-PsqlQuery -ContainerName $ContainerName -User $User `
+            -DatabaseName $DatabaseName -Sql $QueryMap[$section]
+
+        foreach ($row in $rows) {
+            $text = [string]$row
+            if (-not [string]::IsNullOrWhiteSpace($text)) {
+                $lines.Add("$section|$($text.Trim())")
+            }
+        }
+    }
+
+    # LF endings and no BOM, so the file is byte-comparable across platforms.
+    $content = ($lines -join "`n") + "`n"
+    [System.IO.File]::WriteAllText($Path, $content, [System.Text.UTF8Encoding]::new($false))
+
+    return $lines.Count
+}
+
+$schemaList = Get-SchemaLiteralList -Name $Schema
+$queryMap = Get-SnapshotQueryMap -SchemaList $schemaList
+
+Write-Output "Schemas in scope: $($Schema -join ', ')"
+Write-Output "Sections: $($queryMap.Keys -join ', ')"
+Write-Output "Databases: $($Database -join ', ')"
+Write-Output "Output directory: $OutputDirectory"
+
+if (-not $PSCmdlet.ShouldProcess($OutputDirectory, "Capture schema snapshot for $($Database -join ' and ')")) {
+    Write-Output "WhatIf: no database was contacted and no file was written."
+    return
+}
+
+$missingSchema = [System.Collections.Generic.List[string]]::new()
+foreach ($databaseName in $Database) {
+    foreach ($name in (Get-MissingSchema -DatabaseName $databaseName -Name $Schema `
+                -ContainerName $Container -User $PostgresUser)) {
+        $missingSchema.Add("$name (in $databaseName)")
+    }
+}
+
+if ($missingSchema.Count -gt 0) {
+    throw "Requested schema(s) not present: $($missingSchema -join ', '). A snapshot scoped to a schema that does not exist emits no rows for it, so the compare would report PASS having examined nothing."
+}
+
+Write-Output "Preflight: every requested schema exists in every requested database."
+
+if (-not (Test-Path -LiteralPath $OutputDirectory)) {
+    New-Item -Path $OutputDirectory -ItemType Directory -Force | Out-Null
+}
+
+$snapshotPath = @{}
+
+foreach ($databaseName in $Database) {
+    $path = Join-Path -Path $OutputDirectory -ChildPath "schema-snapshot.$databaseName.txt"
+    $rowCount = Export-SchemaSnapshot -DatabaseName $databaseName -Path $path -QueryMap $queryMap `
+        -ContainerName $Container -User $PostgresUser
+    $snapshotPath[$databaseName] = $path
+    Write-Output "Captured $rowCount rows for '$databaseName' -> $path"
+}
+
+if ($Database.Count -eq 1) {
+    Write-Output "Single database requested; nothing to diff."
+    return
+}
+
+$leftName, $rightName = $Database
+$leftLine = Get-Content -LiteralPath $snapshotPath[$leftName]
+$rightLine = Get-Content -LiteralPath $snapshotPath[$rightName]
+
+$difference = Compare-Object -ReferenceObject $leftLine -DifferenceObject $rightLine
+
+if ($null -eq $difference) {
+    Write-Output ""
+    Write-Output "PASS: schema snapshots for '$leftName' and '$rightName' are identical across $($Schema -join ', ')."
+    return
+}
+
+$diffPath = Join-Path -Path $OutputDirectory -ChildPath "schema-diff.$leftName-vs-$rightName.txt"
+$diffText = $difference | ForEach-Object {
+    $marker = if ($_.SideIndicator -eq "<=") { "only-in-$leftName" } else { "only-in-$rightName" }
+    "$marker`t$($_.InputObject)"
+}
+[System.IO.File]::WriteAllText($diffPath, (($diffText -join "`n") + "`n"), [System.Text.UTF8Encoding]::new($false))
+
+Write-Output ""
+Write-Output "FAIL: $($difference.Count) schema differences between '$leftName' and '$rightName'."
+Write-Output "Diff written to $diffPath"
+$diffText | Select-Object -First 40 | ForEach-Object { Write-Output "  $_" }
+if ($difference.Count -gt 40) {
+    Write-Output "  ... $($difference.Count - 40) more; see $diffPath"
+}
+
+throw "Schema compare failed with $($difference.Count) differences."
