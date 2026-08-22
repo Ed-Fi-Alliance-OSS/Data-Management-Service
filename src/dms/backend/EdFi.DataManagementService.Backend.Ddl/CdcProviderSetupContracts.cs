@@ -722,6 +722,14 @@ internal static class CdcSourceInventoryContract
     {
         ArgumentNullException.ThrowIfNull(sourceInventory);
 
+        if (sourceInventory.Any(table => table is null))
+        {
+            throw new ArgumentException(
+                "CDC source inventory must contain non-null source tables.",
+                parameterName
+            );
+        }
+
         var requiredKinds = RequiredSourceTableKinds;
         var observedKinds = sourceInventory.Select(table => table.TableKind).ToArray();
         var missingKinds = requiredKinds.Except(observedKinds).ToArray();
@@ -742,23 +750,55 @@ internal static class CdcSourceInventoryContract
 
         foreach (var table in sourceInventory)
         {
+            ValidateSourceColumnEntries(table, parameterName);
             ValidateExpectedColumnOrdinals(table, parameterName);
+            ValidateUniqueColumnNames(table, parameterName);
             ValidateRequiredColumnNames(table, parameterName);
         }
 
         return sourceInventory;
     }
 
+    private static void ValidateSourceColumnEntries(CdcSourceTableInventory table, string parameterName)
+    {
+        if (table.Columns is null || table.Columns.Any(column => column is null))
+        {
+            throw new ArgumentException(
+                "CDC source inventory must contain non-null source columns.",
+                parameterName
+            );
+        }
+    }
+
     private static void ValidateExpectedColumnOrdinals(CdcSourceTableInventory table, string parameterName)
     {
         var expectedOrdinalOrder = Enumerable.Range(1, table.Columns.Count).ToArray();
-        if (table.Columns.Select(column => column.Ordinal).SequenceEqual(expectedOrdinalOrder))
+        if (table.Columns.Select(column => column.Ordinal).Order().SequenceEqual(expectedOrdinalOrder))
         {
             return;
         }
 
         throw new ArgumentException(
-            "CDC expected source table columns must be supplied in table-ordinal order starting at 1.",
+            "CDC expected source table columns must use contiguous ordinals starting at 1.",
+            parameterName
+        );
+    }
+
+    private static void ValidateUniqueColumnNames(CdcSourceTableInventory table, string parameterName)
+    {
+        var duplicateColumnNames = table
+            .Columns.GroupBy(column => column.ColumnName.Value, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => $"{table.TableKind}.{group.Key}")
+            .ToArray();
+
+        if (duplicateColumnNames.Length == 0)
+        {
+            return;
+        }
+
+        throw new ArgumentException(
+            $"CDC source inventory contains duplicate contract columns: {string.Join(", ", duplicateColumnNames)}.",
             parameterName
         );
     }

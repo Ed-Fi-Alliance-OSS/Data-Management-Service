@@ -27,6 +27,38 @@ public class Given_CdcSourceInventoryContract
             .Should()
             .Be(int.MaxValue);
     }
+
+    [Test]
+    public void It_should_reject_duplicate_required_source_column_names()
+    {
+        IReadOnlyList<CdcSourceTableInventory> inventory = CdcSourceInventoryTestEmission
+            .EmitCoreCdcSourceInventory(SqlDialect.Pgsql)
+            .Select(table =>
+                table.TableKind == CdcSourceTableKind.CdcHeartbeat
+                    ? new CdcSourceTableInventory(
+                        table.TableKind,
+                        table.TableName,
+                        table.EmittedQuotedTableName,
+                        [
+                            .. table.Columns,
+                            new CdcSourceColumnInventory(
+                                new DbColumnName("HeartbeatId"),
+                                @"""HeartbeatId""",
+                                4,
+                                "integer",
+                                IsNullable: false
+                            ),
+                        ]
+                    )
+                    : table
+            )
+            .ToArray();
+
+        Action action = () =>
+            CdcSourceInventoryContract.ValidateRequiredSourceInventory(inventory, nameof(inventory));
+
+        action.Should().Throw<ArgumentException>().WithMessage("*duplicate contract columns*");
+    }
 }
 
 [TestFixture(SqlDialect.Pgsql)]
