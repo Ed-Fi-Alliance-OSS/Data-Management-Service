@@ -72,9 +72,11 @@ public sealed record CdcConnectorTemplateBindingIdentity
         string publicTopicName,
         long bindingGeneration,
         string partitionerAlgorithm,
+        CdcProviderArtifactNames providerArtifactNames,
         CdcSourceFingerprint boundPhysicalSourceFingerprint
     )
     {
+        ArgumentNullException.ThrowIfNull(providerArtifactNames);
         ArgumentNullException.ThrowIfNull(boundPhysicalSourceFingerprint);
 
         Provider = provider;
@@ -99,6 +101,11 @@ public sealed record CdcConnectorTemplateBindingIdentity
             partitionerAlgorithm,
             nameof(partitionerAlgorithm)
         );
+        ProviderArtifactNames = ValidateProviderArtifactNames(
+            provider,
+            providerArtifactNames,
+            nameof(providerArtifactNames)
+        );
         BoundPhysicalSourceFingerprint = CdcConnectorTemplateContractValidation.ValidateSourceFingerprint(
             boundPhysicalSourceFingerprint,
             nameof(boundPhysicalSourceFingerprint)
@@ -114,6 +121,8 @@ public sealed record CdcConnectorTemplateBindingIdentity
     public long BindingGeneration { get; }
 
     public string PartitionerAlgorithm { get; }
+
+    public CdcProviderArtifactNames ProviderArtifactNames { get; }
 
     public CdcSourceFingerprint BoundPhysicalSourceFingerprint { get; }
 
@@ -142,6 +151,34 @@ public sealed record CdcConnectorTemplateBindingIdentity
         }
 
         return partitionerAlgorithm;
+    }
+
+    private static CdcProviderArtifactNames ValidateProviderArtifactNames(
+        CdcProvider provider,
+        CdcProviderArtifactNames artifactNames,
+        string parameterName
+    )
+    {
+        bool hasOnlyProviderArtifacts = provider switch
+        {
+            CdcProvider.Postgresql => artifactNames.Postgresql is not null && artifactNames.SqlServer is null,
+            CdcProvider.SqlServer => artifactNames.SqlServer is not null && artifactNames.Postgresql is null,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(provider),
+                provider,
+                "Unsupported CDC provider."
+            ),
+        };
+
+        if (!hasOnlyProviderArtifacts)
+        {
+            throw new ArgumentException(
+                $"CDC connector template binding artifact names must contain only names for provider {provider}.",
+                parameterName
+            );
+        }
+
+        return artifactNames;
     }
 }
 
@@ -371,6 +408,8 @@ public sealed record CdcConnectorTemplateRequest
     public string? SchemaHistoryTopicName => BindingIdentity.SchemaHistoryTopicName;
 
     public string PartitionerAlgorithm => BindingIdentity.PartitionerAlgorithm;
+
+    public CdcProviderArtifactNames ProviderArtifactNames => BindingIdentity.ProviderArtifactNames;
 
     private static void ValidateProviderSetupEvidence(
         CdcConnectorTemplateBindingIdentity bindingIdentity,

@@ -15,7 +15,8 @@ internal static class CdcProviderSetupPrerequisiteRules
     internal static IReadOnlyList<CdcConnectorTemplateDiagnostic> Validate(
         CdcProviderSetupResult providerSetupResult,
         CdcSafeName? safeArtifactOrObjectName,
-        CdcConnectorTemplateSourcePhase sourcePhase
+        CdcConnectorTemplateSourcePhase sourcePhase,
+        CdcProviderArtifactNames? expectedArtifactNames = null
     )
     {
         ArgumentNullException.ThrowIfNull(providerSetupResult);
@@ -36,6 +37,7 @@ internal static class CdcProviderSetupPrerequisiteRules
         );
         AddProviderArtifactDiagnostics(
             providerSetupResult,
+            expectedArtifactNames,
             safeArtifactOrObjectName,
             sourcePhase,
             diagnostics
@@ -271,13 +273,53 @@ internal static class CdcProviderSetupPrerequisiteRules
 
     private static void AddProviderArtifactDiagnostics(
         CdcProviderSetupResult providerSetupResult,
+        CdcProviderArtifactNames? expectedArtifactNames,
         CdcSafeName? safeArtifactOrObjectName,
         CdcConnectorTemplateSourcePhase sourcePhase,
         List<CdcConnectorTemplateDiagnostic> diagnostics
     )
     {
+        if (
+            AddMalformedArtifactInventoryDiagnosticIfNeeded(
+                providerSetupResult,
+                safeArtifactOrObjectName,
+                sourcePhase,
+                diagnostics
+            )
+        )
+        {
+            return;
+        }
+
         if (providerSetupResult.Provider == CdcProvider.Postgresql)
         {
+            if (expectedArtifactNames?.Postgresql is { } postgresqlNames)
+            {
+                AddExpectedArtifactDiagnosticIfNeeded(
+                    providerSetupResult,
+                    postgresqlNames.PublicationName,
+                    safeArtifactOrObjectName,
+                    sourcePhase,
+                    diagnostics,
+                    CdcProviderArtifactKind.PostgresqlPublication,
+                    CdcConnectorTemplateDiagnosticCodes.PostgresqlPublicationMetadataRequired,
+                    "publication.name",
+                    "one matched provider setup artifact with the expected binding name"
+                );
+                AddExpectedArtifactDiagnosticIfNeeded(
+                    providerSetupResult,
+                    postgresqlNames.ReplicationSlotName,
+                    safeArtifactOrObjectName,
+                    sourcePhase,
+                    diagnostics,
+                    CdcProviderArtifactKind.PostgresqlReplicationSlot,
+                    CdcConnectorTemplateDiagnosticCodes.PostgresqlReplicationSlotMetadataRequired,
+                    "slot.name",
+                    "one matched provider setup artifact with the expected binding name"
+                );
+                return;
+            }
+
             AddMissingArtifactDiagnosticIfNeeded(
                 providerSetupResult,
                 safeArtifactOrObjectName,
@@ -299,13 +341,95 @@ internal static class CdcProviderSetupPrerequisiteRules
         }
         else if (providerSetupResult.Provider == CdcProvider.SqlServer)
         {
+            if (expectedArtifactNames?.SqlServer is { } sqlServerNames)
+            {
+                AddExpectedArtifactDiagnosticIfNeeded(
+                    providerSetupResult,
+                    sqlServerNames.GatingRoleName,
+                    safeArtifactOrObjectName,
+                    sourcePhase,
+                    diagnostics,
+                    CdcProviderArtifactKind.SqlServerGatingRole,
+                    CdcConnectorTemplateDiagnosticCodes.SqlServerGatingRoleMetadataRequired,
+                    "providerSetup.artifactInventory.sqlServerGatingRole",
+                    "one usable SQL Server gating-role artifact with the expected binding name"
+                );
+            }
+
             AddSqlServerCaptureInstanceDiagnostics(
                 providerSetupResult,
+                expectedArtifactNames?.SqlServer,
                 safeArtifactOrObjectName,
                 sourcePhase,
                 diagnostics
             );
         }
+    }
+
+    private static bool AddMalformedArtifactInventoryDiagnosticIfNeeded(
+        CdcProviderSetupResult providerSetupResult,
+        CdcSafeName? safeArtifactOrObjectName,
+        CdcConnectorTemplateSourcePhase sourcePhase,
+        List<CdcConnectorTemplateDiagnostic> diagnostics
+    )
+    {
+        if (
+            providerSetupResult.ArtifactInventory is null
+            || providerSetupResult.ArtifactInventory.All(artifact => artifact is not null)
+        )
+        {
+            return false;
+        }
+
+        diagnostics.Add(
+            BuildDiagnostic(
+                CdcConnectorTemplateDiagnosticCodes.ProviderSetupArtifactInventoryMalformed,
+                CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
+                "providerSetup.artifactInventory",
+                "non-null provider setup artifacts",
+                "malformed",
+                providerSetupResult.Provider,
+                safeArtifactOrObjectName,
+                sourcePhase,
+                CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            )
+        );
+
+        return true;
+    }
+
+    private static void AddExpectedArtifactDiagnosticIfNeeded(
+        CdcProviderSetupResult providerSetupResult,
+        CdcSafeName expectedArtifactName,
+        CdcSafeName? safeArtifactOrObjectName,
+        CdcConnectorTemplateSourcePhase sourcePhase,
+        List<CdcConnectorTemplateDiagnostic> diagnostics,
+        CdcProviderArtifactKind artifactKind,
+        string code,
+        string propertyName,
+        string expectedValue
+    )
+    {
+        CdcProviderArtifactObservation[] artifacts = ArtifactsOfKind(providerSetupResult, artifactKind);
+        string? observedValue = ExpectedArtifactObservedValue(artifacts, expectedArtifactName);
+        if (observedValue is null)
+        {
+            return;
+        }
+
+        diagnostics.Add(
+            BuildDiagnostic(
+                code,
+                CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
+                propertyName,
+                expectedValue,
+                observedValue,
+                providerSetupResult.Provider,
+                safeArtifactOrObjectName,
+                sourcePhase,
+                CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            )
+        );
     }
 
     private static void AddMissingArtifactDiagnosticIfNeeded(
@@ -344,6 +468,7 @@ internal static class CdcProviderSetupPrerequisiteRules
 
     private static void AddSqlServerCaptureInstanceDiagnostics(
         CdcProviderSetupResult providerSetupResult,
+        CdcSqlServerProviderArtifactNames? expectedArtifactNames,
         CdcSafeName? safeArtifactOrObjectName,
         CdcConnectorTemplateSourcePhase sourcePhase,
         List<CdcConnectorTemplateDiagnostic> diagnostics
@@ -364,12 +489,17 @@ internal static class CdcProviderSetupPrerequisiteRules
                     == tableKind
                 )
                 .ToArray();
+            CdcSafeName? expectedCaptureInstanceName = expectedArtifactNames?.CaptureInstanceNames[tableKind];
 
             if (
                 tableCaptureInstances.Length == 1
                 && tableCaptureInstances[0].State
                     is CdcProviderArtifactState.Created
                         or CdcProviderArtifactState.Matched
+                && (
+                    expectedCaptureInstanceName is null
+                    || tableCaptureInstances[0].SafeArtifactName.Equals(expectedCaptureInstanceName)
+                )
             )
             {
                 continue;
@@ -381,7 +511,7 @@ internal static class CdcProviderSetupPrerequisiteRules
                     CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
                     "providerSetup.artifactInventory.sqlServerCaptureInstance",
                     $"one usable SQL Server capture-instance artifact for {CdcConnectorTemplateSharedRules.ExpectedSourceTableName(tableKind)}",
-                    SqlServerCaptureInstanceObservedValue(tableCaptureInstances),
+                    SqlServerCaptureInstanceObservedValue(tableCaptureInstances, expectedCaptureInstanceName),
                     providerSetupResult.Provider,
                     safeArtifactOrObjectName,
                     sourcePhase,
@@ -451,6 +581,41 @@ internal static class CdcProviderSetupPrerequisiteRules
             )
             .ToArray();
 
+    private static CdcProviderArtifactObservation[] ArtifactsOfKind(
+        CdcProviderSetupResult providerSetupResult,
+        CdcProviderArtifactKind artifactKind
+    ) =>
+        CdcConnectorTemplateSharedRules
+            .ArtifactInventory(providerSetupResult)
+            .Where(artifact => artifact.ArtifactKind == artifactKind)
+            .ToArray();
+
+    private static string? ExpectedArtifactObservedValue(
+        IReadOnlyList<CdcProviderArtifactObservation> artifacts,
+        CdcSafeName expectedArtifactName
+    )
+    {
+        if (artifacts.Count == 0)
+        {
+            return "missing";
+        }
+
+        if (artifacts.Count > 1)
+        {
+            return artifacts.Count.ToString();
+        }
+
+        CdcProviderArtifactObservation artifact = artifacts[0];
+        if (!artifact.SafeArtifactName.Equals(expectedArtifactName))
+        {
+            return "unexpected-name";
+        }
+
+        return artifact.State is CdcProviderArtifactState.Created or CdcProviderArtifactState.Matched
+            ? null
+            : artifact.State.ToString();
+    }
+
     private static bool HasMalformedSourceColumns(CdcSourceTableInventory sourceTable) =>
         sourceTable.Columns is null || sourceTable.Columns.Any(column => column is null);
 
@@ -465,7 +630,8 @@ internal static class CdcProviderSetupPrerequisiteRules
         );
 
     private static string SqlServerCaptureInstanceObservedValue(
-        IReadOnlyList<CdcProviderArtifactObservation> tableCaptureInstances
+        IReadOnlyList<CdcProviderArtifactObservation> tableCaptureInstances,
+        CdcSafeName? expectedCaptureInstanceName
     )
     {
         if (tableCaptureInstances.Count == 0)
@@ -478,7 +644,16 @@ internal static class CdcProviderSetupPrerequisiteRules
             return tableCaptureInstances.Count.ToString();
         }
 
-        return tableCaptureInstances[0].State.ToString();
+        CdcProviderArtifactObservation captureInstance = tableCaptureInstances[0];
+        if (
+            expectedCaptureInstanceName is not null
+            && !captureInstance.SafeArtifactName.Equals(expectedCaptureInstanceName)
+        )
+        {
+            return "unexpected-name";
+        }
+
+        return captureInstance.State.ToString();
     }
 
     private static string ObservedCountOrMissing<T>(IReadOnlyList<T>? values) =>

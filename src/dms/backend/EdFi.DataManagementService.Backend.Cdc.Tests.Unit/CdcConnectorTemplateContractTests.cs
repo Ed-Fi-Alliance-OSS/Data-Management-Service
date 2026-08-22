@@ -196,6 +196,9 @@ public class Given_CdcConnectorTemplateContractTests
         request.ProviderConnectionProperties.Should().BeSameAs(providerConnectionProperties);
         request.KafkaClientSecurityProperties.Should().BeSameAs(kafkaSecurityProperties);
         request.ArtifactOutput.Should().BeSameAs(artifactOutput);
+        request
+            .ProviderArtifactNames.Postgresql!.PublicationName.Should()
+            .Be(new CdcSafeName("dms_binding_publication"));
         artifactOutput.IncludeRedactedArtifactPayload.Should().BeTrue();
     }
 
@@ -209,6 +212,7 @@ public class Given_CdcConnectorTemplateContractTests
                 "edfi.documents",
                 bindingGeneration: 0,
                 partitionerAlgorithm: "kafka-murmur2-v1",
+                BuildProviderArtifactNames(CdcProvider.Postgresql),
                 SourceFingerprint
             );
         Action negativeBindingGeneration = () =>
@@ -218,6 +222,7 @@ public class Given_CdcConnectorTemplateContractTests
                 "edfi.documents",
                 bindingGeneration: -1,
                 partitionerAlgorithm: "kafka-murmur2-v1",
+                BuildProviderArtifactNames(CdcProvider.Postgresql),
                 SourceFingerprint
             );
         Action zeroProviderSetupGeneration = () =>
@@ -292,6 +297,7 @@ public class Given_CdcConnectorTemplateContractTests
                 "edfi.documents",
                 bindingGeneration: 7,
                 partitionerAlgorithm: null!,
+                BuildProviderArtifactNames(CdcProvider.Postgresql),
                 SourceFingerprint
             );
         Action emptyPartitionerAlgorithm = () =>
@@ -301,6 +307,7 @@ public class Given_CdcConnectorTemplateContractTests
                 "edfi.documents",
                 bindingGeneration: 7,
                 partitionerAlgorithm: "",
+                BuildProviderArtifactNames(CdcProvider.Postgresql),
                 SourceFingerprint
             );
         Action unsupportedPartitionerAlgorithm = () =>
@@ -310,6 +317,7 @@ public class Given_CdcConnectorTemplateContractTests
                 "edfi.documents",
                 bindingGeneration: 7,
                 partitionerAlgorithm: "round-robin",
+                BuildProviderArtifactNames(CdcProvider.Postgresql),
                 SourceFingerprint
             );
 
@@ -327,6 +335,43 @@ public class Given_CdcConnectorTemplateContractTests
             .Throw<ArgumentException>()
             .WithMessage("*kafka-murmur2-v1*")
             .WithParameterName("partitionerAlgorithm");
+    }
+
+    [Test]
+    public void It_requires_binding_artifact_names_for_the_binding_provider()
+    {
+        Action postgresqlWithSqlServerNames = () =>
+            new CdcConnectorTemplateBindingIdentity(
+                CdcProvider.Postgresql,
+                new CdcSafeName("dms_binding_connector"),
+                "edfi.documents",
+                bindingGeneration: 7,
+                partitionerAlgorithm: "kafka-murmur2-v1",
+                BuildProviderArtifactNames(CdcProvider.SqlServer),
+                SourceFingerprint
+            );
+        Action sqlServerWithPostgresqlNames = () =>
+            new CdcConnectorTemplateBindingIdentity(
+                CdcProvider.SqlServer,
+                new CdcSafeName("dms_binding_connector"),
+                "edfi.documents",
+                bindingGeneration: 7,
+                partitionerAlgorithm: "kafka-murmur2-v1",
+                BuildProviderArtifactNames(CdcProvider.Postgresql),
+                SourceFingerprintFor(CdcProvider.SqlServer)
+            );
+
+        using var _ = new AssertionScope();
+        postgresqlWithSqlServerNames
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("providerArtifactNames")
+            .WithMessage("*provider Postgresql*");
+        sqlServerWithPostgresqlNames
+            .Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("providerArtifactNames")
+            .WithMessage("*provider SqlServer*");
     }
 
     [Test]
@@ -351,6 +396,7 @@ public class Given_CdcConnectorTemplateContractTests
                     "edfi.documents",
                     bindingGeneration: 7,
                     partitionerAlgorithm: "kafka-murmur2-v1",
+                    BuildProviderArtifactNames(CdcProvider.Postgresql),
                     invalidFingerprint
                 );
 
@@ -599,6 +645,7 @@ public class Given_CdcConnectorTemplateContractTests
             publicTopicName,
             bindingGeneration: 7,
             partitionerAlgorithm: CdcConnectorTemplateBindingIdentity.KafkaMurmur2V1PartitionerAlgorithm,
+            BuildProviderArtifactNames(provider),
             SourceFingerprintFor(provider)
         );
 

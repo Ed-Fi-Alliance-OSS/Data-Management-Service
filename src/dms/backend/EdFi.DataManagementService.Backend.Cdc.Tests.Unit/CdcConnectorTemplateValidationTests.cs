@@ -610,7 +610,8 @@ public class Given_CdcConnectorTemplateValidationTests
             .OnlyContain(diagnostic =>
                 diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure
                 && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Render
-                && diagnostic.ExpectedValue == "one matched provider setup artifact"
+                && diagnostic.ExpectedValue
+                    == "one matched provider setup artifact with the expected binding name"
             );
     }
 
@@ -648,6 +649,174 @@ public class Given_CdcConnectorTemplateValidationTests
                 diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure
                 && diagnostic.ObservedValue == "missing"
             );
+    }
+
+    [Test]
+    public void It_rejects_postgresql_provider_artifacts_with_wrong_binding_names()
+    {
+        CdcConnectorTemplateRequest request = BuildRequest(
+            CdcProvider.Postgresql,
+            artifactInventory:
+            [
+                BuildPostgresqlPublicationArtifact(
+                    safeArtifactName: new CdcSafeName("other_binding_publication")
+                ),
+                BuildPostgresqlReplicationSlotArtifact(),
+            ]
+        );
+
+        CdcConnectorTemplateValidationResult validation = Validate(request);
+        CdcConnectorTemplateResult render = Render(request);
+
+        using var _ = new AssertionScope();
+        validation.IsValid.Should().BeFalse();
+        render.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        render.Config.Should().BeEmpty();
+        validation
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.PostgresqlPublicationMetadataRequired
+                && diagnostic.PropertyName == "publication.name"
+                && diagnostic.ObservedValue == "unexpected-name"
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            );
+        validation.Diagnostics.SelectMany(DiagnosticText).Should().NotContain("other_binding_publication");
+    }
+
+    [TestCase(CdcProviderArtifactState.Created)]
+    [TestCase(CdcProviderArtifactState.Matched)]
+    [TestCase(CdcProviderArtifactState.Missing)]
+    [TestCase(CdcProviderArtifactState.Mismatched)]
+    [TestCase(CdcProviderArtifactState.Unavailable)]
+    public void It_rejects_extra_postgresql_provider_artifacts_even_when_the_expected_artifact_is_usable(
+        CdcProviderArtifactState extraArtifactState
+    )
+    {
+        CdcConnectorTemplateValidationResult result = Validate(
+            BuildRequest(
+                CdcProvider.Postgresql,
+                artifactInventory:
+                [
+                    BuildPostgresqlPublicationArtifact(),
+                    BuildPostgresqlPublicationArtifact(
+                        extraArtifactState,
+                        new CdcSafeName("other_binding_publication")
+                    ),
+                    BuildPostgresqlReplicationSlotArtifact(),
+                ]
+            )
+        );
+
+        CdcConnectorTemplateDiagnostic diagnostic = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.PostgresqlPublicationMetadataRequired
+            )
+            .Subject;
+
+        using var _ = new AssertionScope();
+        result.IsValid.Should().BeFalse();
+        diagnostic.PropertyName.Should().Be("publication.name");
+        diagnostic.ObservedValue.Should().Be("2");
+        result.Diagnostics.SelectMany(DiagnosticText).Should().NotContain("other_binding_publication");
+    }
+
+    [Test]
+    public void It_rejects_null_provider_artifact_entries_during_public_request_validation()
+    {
+        CdcConnectorTemplateResult result = Render(
+            BuildRequest(
+                CdcProvider.Postgresql,
+                artifactInventory:
+                [
+                    BuildPostgresqlPublicationArtifact(),
+                    null!,
+                    BuildPostgresqlReplicationSlotArtifact(),
+                ]
+            )
+        );
+
+        CdcConnectorTemplateDiagnostic diagnostic = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.ProviderSetupArtifactInventoryMalformed
+            )
+            .Subject;
+
+        using var _ = new AssertionScope();
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        result.Config.Should().BeEmpty();
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure);
+        diagnostic.PropertyName.Should().Be("providerSetup.artifactInventory");
+        diagnostic.ExpectedValue.Should().Be("non-null provider setup artifacts");
+        diagnostic.ObservedValue.Should().Be("malformed");
+    }
+
+    [Test]
+    public void It_rejects_sqlserver_gating_role_with_wrong_binding_name()
+    {
+        CdcConnectorTemplateValidationResult result = Validate(
+            BuildRequest(
+                CdcProvider.SqlServer,
+                artifactInventory:
+                [
+                    BuildSqlServerGatingRoleArtifact(safeArtifactName: new CdcSafeName("other_binding_gate")),
+                    BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
+                    BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.Document),
+                    BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.CdcHeartbeat),
+                ]
+            )
+        );
+
+        CdcConnectorTemplateDiagnostic diagnostic = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SqlServerGatingRoleMetadataRequired
+            )
+            .Subject;
+
+        using var _ = new AssertionScope();
+        result.IsValid.Should().BeFalse();
+        diagnostic.PropertyName.Should().Be("providerSetup.artifactInventory.sqlServerGatingRole");
+        diagnostic.ObservedValue.Should().Be("unexpected-name");
+        result.Diagnostics.SelectMany(DiagnosticText).Should().NotContain("other_binding_gate");
+    }
+
+    [Test]
+    public void It_rejects_sqlserver_capture_instance_with_wrong_binding_name()
+    {
+        CdcConnectorTemplateValidationResult result = Validate(
+            BuildRequest(
+                CdcProvider.SqlServer,
+                artifactInventory:
+                [
+                    BuildSqlServerGatingRoleArtifact(),
+                    BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
+                    BuildSqlServerCaptureInstanceArtifact(
+                        CdcSourceTableKind.Document,
+                        safeArtifactName: new CdcSafeName("other_binding_document_capture")
+                    ),
+                    BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.CdcHeartbeat),
+                ]
+            )
+        );
+
+        CdcConnectorTemplateDiagnostic diagnostic = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code
+                    == CdcConnectorTemplateDiagnosticCodes.SqlServerCaptureInstanceMetadataRequired
+                && diagnostic.ExpectedValue
+                    == "one usable SQL Server capture-instance artifact for dms.Document"
+            )
+            .Subject;
+
+        using var _ = new AssertionScope();
+        result.IsValid.Should().BeFalse();
+        diagnostic.PropertyName.Should().Be("providerSetup.artifactInventory.sqlServerCaptureInstance");
+        diagnostic.ObservedValue.Should().Be("unexpected-name");
+        result.Diagnostics.SelectMany(DiagnosticText).Should().NotContain("other_binding_document_capture");
     }
 
     [Test]
@@ -802,6 +971,7 @@ public class Given_CdcConnectorTemplateValidationTests
                 CdcProvider.SqlServer,
                 artifactInventory:
                 [
+                    BuildSqlServerGatingRoleArtifact(),
                     BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
                     BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.CdcHeartbeat),
                 ]
@@ -812,6 +982,7 @@ public class Given_CdcConnectorTemplateValidationTests
                 CdcProvider.SqlServer,
                 artifactInventory:
                 [
+                    BuildSqlServerGatingRoleArtifact(),
                     BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
                     BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.Document),
                     BuildSqlServerCaptureInstanceArtifact(
@@ -827,6 +998,7 @@ public class Given_CdcConnectorTemplateValidationTests
                 CdcProvider.SqlServer,
                 artifactInventory:
                 [
+                    BuildSqlServerGatingRoleArtifact(),
                     BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
                     BuildSqlServerCaptureInstanceArtifact(
                         CdcSourceTableKind.Document,
@@ -841,6 +1013,7 @@ public class Given_CdcConnectorTemplateValidationTests
                 CdcProvider.SqlServer,
                 artifactInventory:
                 [
+                    BuildSqlServerGatingRoleArtifact(),
                     BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
                     BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.Document),
                     BuildSqlServerCaptureInstanceArtifact(
@@ -958,6 +1131,7 @@ public class Given_CdcConnectorTemplateValidationTests
                 CdcProvider.SqlServer,
                 artifactInventory:
                 [
+                    BuildSqlServerGatingRoleArtifact(),
                     BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
                     malformedDocumentArtifact,
                     BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.CdcHeartbeat),

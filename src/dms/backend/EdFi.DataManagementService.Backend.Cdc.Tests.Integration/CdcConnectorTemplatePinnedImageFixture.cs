@@ -2147,8 +2147,30 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             "edfi.documents",
             bindingGeneration: 7,
             partitionerAlgorithm: "kafka-murmur2-v1",
+            BuildProviderArtifactNames(provider),
             CdcConnectorTemplatePinnedImageTestData.SourceFingerprint(provider)
         );
+
+    private static CdcProviderArtifactNames BuildProviderArtifactNames(CdcProvider provider) =>
+        provider switch
+        {
+            CdcProvider.Postgresql => CdcProviderArtifactNames.ForPostgresql(
+                new CdcSafeName(PostgresqlPublicationName),
+                new CdcSafeName(PostgresqlReplicationSlotName)
+            ),
+            CdcProvider.SqlServer => CdcProviderArtifactNames.ForSqlServer(
+                new CdcSafeName(SqlServerGatingRoleName),
+                SqlServerCaptureInstances.ToDictionary(
+                    definition => definition.TableKind,
+                    definition => definition.CaptureInstanceName
+                )
+            ),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(provider),
+                provider,
+                "Unsupported CDC provider."
+            ),
+        };
 
     private static CdcConnectorProviderSetupEvidence BuildProviderSetupEvidence(CdcProvider provider) =>
         new(bindingGeneration: 7, BuildProviderSetupResult(provider));
@@ -2233,15 +2255,25 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
                     new Dictionary<string, string>()
                 ),
             ],
-            CdcProvider.SqlServer => SqlServerCaptureInstances
-                .Select(BuildSqlServerCaptureInstanceArtifact)
-                .ToArray(),
+            CdcProvider.SqlServer =>
+            [
+                BuildSqlServerGatingRoleArtifact(),
+                .. SqlServerCaptureInstances.Select(BuildSqlServerCaptureInstanceArtifact),
+            ],
             _ => throw new ArgumentOutOfRangeException(
                 nameof(provider),
                 provider,
                 "Unsupported CDC provider."
             ),
         };
+
+    private static CdcProviderArtifactObservation BuildSqlServerGatingRoleArtifact() =>
+        new(
+            CdcProviderArtifactKind.SqlServerGatingRole,
+            new CdcSafeName(SqlServerGatingRoleName),
+            CdcProviderArtifactState.Matched,
+            new Dictionary<string, string>()
+        );
 
     private static CdcProviderArtifactObservation BuildSqlServerCaptureInstanceArtifact(
         SqlServerCaptureInstanceDefinition definition
