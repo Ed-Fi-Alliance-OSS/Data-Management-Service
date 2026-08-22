@@ -5,10 +5,8 @@
 
 using System.Globalization;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.Ddl;
-using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Cdc;
 
@@ -25,7 +23,9 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
     private const string ManifestFileNameConnectorHashPrefix = ".sha256-";
     private const string RedactedArtifactValue = "[redacted]";
 
-    private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+    private static readonly System.Text.Encoding Utf8NoBom = new System.Text.UTF8Encoding(
+        encoderShouldEmitUTF8Identifier: false
+    );
 
     public CdcConnectorTemplateResult Render(CdcConnectorTemplateRequest request)
     {
@@ -164,7 +164,9 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
         config["slot.name"] = replicationSlot.SafeArtifactName.Value;
         config["table.include.list"] = string.Join(
             ",",
-            CdcConnectorTemplateSharedRules.OrderedSourceTables(request).Select(DebeziumTableSelector)
+            CdcConnectorTemplateSharedRules
+                .OrderedSourceTables(request)
+                .Select(CdcConnectorTemplateDebeziumSelectorFormatter.TableSelector)
         );
         config["message.key.columns"] = string.Join(
             ";",
@@ -176,7 +178,7 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
                         request,
                         messageKeyColumns.TableKind
                     );
-                    return $"{DebeziumTableSelector(table)}:{DebeziumKeyColumnList(table, messageKeyColumns)}";
+                    return $"{CdcConnectorTemplateDebeziumSelectorFormatter.TableSelector(table)}:{CdcConnectorTemplateDebeziumSelectorFormatter.KeyColumnList(table, messageKeyColumns)}";
                 })
         );
         config["unavailable.value.placeholder"] = "__debezium_unavailable_value";
@@ -189,7 +191,9 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
     {
         config["table.include.list"] = string.Join(
             ",",
-            CdcConnectorTemplateSharedRules.OrderedSourceTables(request).Select(DebeziumTableSelector)
+            CdcConnectorTemplateSharedRules
+                .OrderedSourceTables(request)
+                .Select(CdcConnectorTemplateDebeziumSelectorFormatter.TableSelector)
         );
         config["message.key.columns"] = string.Join(
             ";",
@@ -201,7 +205,7 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
                         request,
                         messageKeyColumns.TableKind
                     );
-                    return $"{DebeziumTableSelector(table)}:{DebeziumKeyColumnList(table, messageKeyColumns)}";
+                    return $"{CdcConnectorTemplateDebeziumSelectorFormatter.TableSelector(table)}:{CdcConnectorTemplateDebeziumSelectorFormatter.KeyColumnList(table, messageKeyColumns)}";
                 })
         );
         config["time.precision.mode"] = "isostring";
@@ -266,61 +270,6 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
                 && artifact.State is CdcProviderArtifactState.Created or CdcProviderArtifactState.Matched
             )
             .ToArray();
-
-    private static string DebeziumTableSelector(CdcSourceTableInventory table) =>
-        $"{EscapeDebeziumRegexIdentifier(table.TableName.Schema.Value)}\\.{EscapeDebeziumRegexIdentifier(table.TableName.Name)}";
-
-    private static string DebeziumKeyColumnList(
-        CdcSourceTableInventory table,
-        CdcExpectedMessageKeyColumns messageKeyColumns
-    )
-    {
-        var emittedColumnsByName = table.Columns.ToDictionary(
-            column => column.ColumnName.Value,
-            StringComparer.Ordinal
-        );
-
-        return string.Join(
-            ",",
-            messageKeyColumns.KeyColumns.Select(column =>
-                EscapeDebeziumRegexIdentifier(emittedColumnsByName[column.Value].ColumnName.Value)
-            )
-        );
-    }
-
-    private static string EscapeDebeziumRegexIdentifier(string identifier)
-    {
-        var escapedIdentifier = new StringBuilder(identifier.Length);
-
-        foreach (char character in identifier)
-        {
-            if (IsJavaRegexMetacharacter(character))
-            {
-                escapedIdentifier.Append('\\');
-            }
-
-            escapedIdentifier.Append(character);
-        }
-
-        return escapedIdentifier.ToString();
-    }
-
-    private static bool IsJavaRegexMetacharacter(char character) =>
-        character
-            is '\\'
-                or '.'
-                or '^'
-                or '$'
-                or '|'
-                or '?'
-                or '*'
-                or '+'
-                or '('
-                or ')'
-                or '['
-                or ']'
-                or '{'
-                or '}';
 
     private static int ProducerBufferBytes(CdcConnectorTemplateRequest request) =>
         request.DeploymentPolicy.ProducerBufferBytes
@@ -423,7 +372,7 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
 
     private static string ComputeSha256Prefix(string value)
     {
-        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+        byte[] hash = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value));
         return Convert.ToHexString(hash)[..ManifestFileNameConnectorHashLength].ToLowerInvariant();
     }
 
@@ -464,7 +413,7 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
             writer.WriteEndObject();
         }
 
-        return Encoding.UTF8.GetString(stream.ToArray());
+        return System.Text.Encoding.UTF8.GetString(stream.ToArray());
     }
 
     private static IReadOnlyDictionary<string, string> BuildRedactedConfig(

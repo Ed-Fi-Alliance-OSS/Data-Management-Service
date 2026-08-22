@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
@@ -93,8 +92,14 @@ public sealed class Given_PostgresqlProviderSetupToConnectorTemplateHandoff
         rendered.Diagnostics.Should().BeEmpty();
         rendered.Config["publication.name"].Should().Be(PublicationName);
         rendered.Config["slot.name"].Should().Be(ReplicationSlotName);
-        rendered.Config["table.include.list"].Should().Be(IncludeList(providerSetupResult));
-        rendered.Config["message.key.columns"].Should().Be(MessageKeyColumns(providerSetupResult));
+        rendered
+            .Config["table.include.list"]
+            .Should()
+            .Be(@"dms\.DocumentCache,dms\.Document,dms\.CdcHeartbeat");
+        rendered
+            .Config["message.key.columns"]
+            .Should()
+            .Be(@"dms\.DocumentCache:DocumentUuid;dms\.Document:DocumentUuid");
         rendered.Config["heartbeat.action.query"].Should().Be(providerSetupResult.HeartbeatActionQuery!.Sql);
         preflight.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
         preflight.Diagnostics.Should().BeEmpty();
@@ -200,90 +205,8 @@ public sealed class Given_PostgresqlProviderSetupToConnectorTemplateHandoff
             .ToArray();
     }
 
-    private static string IncludeList(CdcProviderSetupResult providerSetupResult) =>
-        string.Join(
-            ",",
-            OrderedSourceTables(providerSetupResult)
-                .Select(table =>
-                    $"{EscapeDebeziumIdentifier(table.TableName.Schema.Value)}\\.{EscapeDebeziumIdentifier(table.TableName.Name)}"
-                )
-        );
-
-    private static string MessageKeyColumns(CdcProviderSetupResult providerSetupResult) =>
-        string.Join(
-            ";",
-            OrderedMessageKeyColumns(providerSetupResult)
-                .Select(messageKeyColumns =>
-                {
-                    CdcSourceTableInventory table = providerSetupResult.SourceTableInventory.Single(table =>
-                        table.TableKind == messageKeyColumns.TableKind
-                    );
-                    return $"{EscapeDebeziumIdentifier(table.TableName.Schema.Value)}\\.{EscapeDebeziumIdentifier(table.TableName.Name)}:{ColumnNames(messageKeyColumns.KeyColumns)}";
-                })
-        );
-
-    private static IReadOnlyList<CdcSourceTableInventory> OrderedSourceTables(
-        CdcProviderSetupResult providerSetupResult
-    ) =>
-        [
-            providerSetupResult.SourceTableInventory.Single(table =>
-                table.TableKind == CdcSourceTableKind.DocumentCache
-            ),
-            providerSetupResult.SourceTableInventory.Single(table =>
-                table.TableKind == CdcSourceTableKind.Document
-            ),
-            providerSetupResult.SourceTableInventory.Single(table =>
-                table.TableKind == CdcSourceTableKind.CdcHeartbeat
-            ),
-        ];
-
-    private static IReadOnlyList<CdcExpectedMessageKeyColumns> OrderedMessageKeyColumns(
-        CdcProviderSetupResult providerSetupResult
-    ) =>
-        [
-            providerSetupResult.ExpectedMessageKeyColumns.Single(columns =>
-                columns.TableKind == CdcSourceTableKind.DocumentCache
-            ),
-            providerSetupResult.ExpectedMessageKeyColumns.Single(columns =>
-                columns.TableKind == CdcSourceTableKind.Document
-            ),
-        ];
-
     private static string ColumnNames(IReadOnlyList<DbColumnName> columns) =>
-        string.Join(",", columns.Select(column => EscapeDebeziumIdentifier(column.Value)));
-
-    private static string EscapeDebeziumIdentifier(string identifier)
-    {
-        var escapedIdentifier = new StringBuilder(identifier.Length);
-
-        foreach (char character in identifier)
-        {
-            if (
-                character
-                is '\\'
-                    or '.'
-                    or '^'
-                    or '$'
-                    or '|'
-                    or '?'
-                    or '*'
-                    or '+'
-                    or '('
-                    or ')'
-                    or '['
-                    or ']'
-                    or '{'
-                    or '}'
-            )
-            {
-                escapedIdentifier.Append('\\');
-            }
-
-            escapedIdentifier.Append(character);
-        }
-
-        return escapedIdentifier.ToString();
-    }
+        string.Join(",", columns.Select(column => column.Value));
 
     private sealed class HandoffPostgresqlCdcExecutor(IReadOnlyList<CdcSourceTableInventory> sourceInventory)
         : ICdcProviderDatabaseExecutor

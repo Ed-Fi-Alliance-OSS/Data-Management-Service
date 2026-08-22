@@ -11,4 +11,7 @@
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.Ddl\EdFi.DataManagementService.Backend.Ddl.csproj" />
     </ItemGroup>
+    <ItemGroup>
+        <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Cdc.Tests.Unit" />
+    </ItemGroup>
 </Project>

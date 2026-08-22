@@ -6,6 +6,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Backend.Ddl;
+using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using FluentAssertions.Execution;
 using Microsoft.Extensions.DependencyInjection;
@@ -212,6 +213,67 @@ public class Given_CdcConnectorTemplateCommonRendering
         documentCacheMessageKeySelector.Should().Be(documentCacheSelector);
     }
 
+    [Test]
+    public void It_formats_debezium_selectors_with_fixed_regex_metacharacter_vectors()
+    {
+        const string schemaName = "dm$s";
+        const string keyColumnName = "Document$Uuid[Primary]\\Key";
+        CdcSourceTableInventory documentCache = BuildRegexIdentifierSourceTable(
+            CdcProvider.Postgresql,
+            CdcSourceTableKind.DocumentCache,
+            schemaName,
+            "Document[Cache]",
+            [BuildRegexIdentifierColumn(keyColumnName)]
+        );
+        CdcSourceTableInventory document = BuildRegexIdentifierSourceTable(
+            CdcProvider.Postgresql,
+            CdcSourceTableKind.Document,
+            schemaName,
+            "Document.Table\\Archive",
+            [BuildColumn(CdcProvider.Postgresql, "DocumentUuid")]
+        );
+        CdcSourceTableInventory heartbeat = BuildRegexIdentifierSourceTable(
+            CdcProvider.Postgresql,
+            CdcSourceTableKind.CdcHeartbeat,
+            schemaName,
+            "CdcHeartbeat$[Audit]\\Log",
+            [
+                BuildColumn(CdcProvider.Postgresql, "HeartbeatId"),
+                BuildColumn(CdcProvider.Postgresql, "HeartbeatSequence", 2),
+                BuildColumn(CdcProvider.Postgresql, "HeartbeatAt", 3),
+            ]
+        );
+
+        string documentCacheSelector = CdcConnectorTemplateDebeziumSelectorFormatter.TableSelector(
+            documentCache
+        );
+        string documentSelector = CdcConnectorTemplateDebeziumSelectorFormatter.TableSelector(document);
+        string heartbeatSelector = CdcConnectorTemplateDebeziumSelectorFormatter.TableSelector(heartbeat);
+        string tableIncludeList = string.Join(
+            ",",
+            documentCacheSelector,
+            documentSelector,
+            heartbeatSelector
+        );
+        string messageKeyColumns = string.Join(
+            ";",
+            $"{documentCacheSelector}:{CdcConnectorTemplateDebeziumSelectorFormatter.KeyColumnList(documentCache, new CdcExpectedMessageKeyColumns(CdcSourceTableKind.DocumentCache, [new DbColumnName(keyColumnName)]))}",
+            $"{documentSelector}:{CdcConnectorTemplateDebeziumSelectorFormatter.KeyColumnList(document, new CdcExpectedMessageKeyColumns(CdcSourceTableKind.Document, [new DbColumnName("DocumentUuid")]))}"
+        );
+
+        using var _ = new AssertionScope();
+        tableIncludeList
+            .Should()
+            .Be(
+                @"dm\$s\.Document\[Cache\],dm\$s\.Document\.Table\\Archive,dm\$s\.CdcHeartbeat\$\[Audit\]\\Log"
+            );
+        messageKeyColumns
+            .Should()
+            .Be(
+                @"dm\$s\.Document\[Cache\]:Document\$Uuid\[Primary\]\\Key;dm\$s\.Document\.Table\\Archive:DocumentUuid"
+            );
+    }
+
     [TestCaseSource(nameof(ProducerBufferMemoryCases))]
     public void It_renders_producer_buffer_memory_from_policy_without_dropping_below_design_floor(
         int maxRecordBytes,
@@ -311,6 +373,25 @@ public class Given_CdcConnectorTemplateCommonRendering
         first.ConfigSha256.Should().Be(sameWithDifferentInputOrder.ConfigSha256);
         first.ConfigSha256.Should().NotBe(changedSecretReference.ConfigSha256);
     }
+
+    private static CdcSourceTableInventory BuildRegexIdentifierSourceTable(
+        CdcProvider provider,
+        CdcSourceTableKind tableKind,
+        string schemaName,
+        string tableName,
+        IReadOnlyList<CdcSourceColumnInventory> columns
+    ) =>
+        new(
+            tableKind,
+            new DbTableName(new DbSchemaName(schemaName), tableName),
+            provider == CdcProvider.Postgresql
+                ? $"\"{schemaName}\".\"{tableName}\""
+                : $"[{schemaName}].[{tableName}]",
+            columns
+        );
+
+    private static CdcSourceColumnInventory BuildRegexIdentifierColumn(string columnName) =>
+        new(new DbColumnName(columnName), $"\"{columnName}\"", 1, "text", IsNullable: false);
 
     private static CdcConnectorTemplateResult Render(CdcConnectorTemplateRequest request)
     {
