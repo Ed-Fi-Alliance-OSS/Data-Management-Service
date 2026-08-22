@@ -773,13 +773,13 @@ internal static class CdcSourceInventoryContract
     private static void ValidateExpectedColumnOrdinals(CdcSourceTableInventory table, string parameterName)
     {
         var expectedOrdinalOrder = Enumerable.Range(1, table.Columns.Count).ToArray();
-        if (table.Columns.Select(column => column.Ordinal).Order().SequenceEqual(expectedOrdinalOrder))
+        if (table.Columns.Select(column => column.Ordinal).SequenceEqual(expectedOrdinalOrder))
         {
             return;
         }
 
         throw new ArgumentException(
-            "CDC expected source table columns must use contiguous ordinals starting at 1.",
+            "CDC expected source table columns must be emitted in contiguous ordinal order starting at 1.",
             parameterName
         );
     }

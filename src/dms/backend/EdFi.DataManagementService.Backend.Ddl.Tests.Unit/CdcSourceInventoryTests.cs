@@ -29,6 +29,75 @@ public class Given_CdcSourceInventoryContract
     }
 
     [Test]
+    public void It_should_accept_valid_required_source_inventory_in_emitted_column_order()
+    {
+        var inventory = CdcSourceInventoryTestEmission.EmitCoreCdcSourceInventory(SqlDialect.Pgsql);
+
+        var validated = CdcSourceInventoryContract.ValidateRequiredSourceInventory(
+            inventory,
+            nameof(inventory)
+        );
+
+        validated.Should().BeSameAs(inventory);
+    }
+
+    [Test]
+    public void It_should_reject_required_source_columns_when_contiguous_ordinals_are_out_of_list_order()
+    {
+        var inventory = ReplaceTable(
+            CdcSourceInventoryTestEmission.EmitCoreCdcSourceInventory(SqlDialect.Pgsql),
+            CdcSourceTableKind.DocumentCache,
+            table => ReplaceColumns(table, [table.Columns[1], table.Columns[0], .. table.Columns.Skip(2)])
+        );
+
+        Action action = () =>
+            CdcSourceInventoryContract.ValidateRequiredSourceInventory(inventory, nameof(inventory));
+
+        action.Should().Throw<ArgumentException>().WithMessage("*contiguous ordinal order starting at 1*");
+    }
+
+    [Test]
+    public void It_should_reject_required_source_columns_when_ordinals_are_not_contiguous()
+    {
+        var inventory = ReplaceTable(
+            CdcSourceInventoryTestEmission.EmitCoreCdcSourceInventory(SqlDialect.Pgsql),
+            CdcSourceTableKind.DocumentCache,
+            table =>
+                ReplaceColumns(
+                    table,
+                    table
+                        .Columns.Select(
+                            (column, index) =>
+                                index == 2 ? CopyColumn(column, ordinal: table.Columns.Count + 1) : column
+                        )
+                        .ToArray()
+                )
+        );
+
+        Action action = () =>
+            CdcSourceInventoryContract.ValidateRequiredSourceInventory(inventory, nameof(inventory));
+
+        action.Should().Throw<ArgumentException>().WithMessage("*contiguous ordinal order starting at 1*");
+    }
+
+    [Test]
+    public void It_should_reject_source_columns_with_duplicate_zero_or_negative_ordinals()
+    {
+        var table = CdcSourceInventoryTestEmission
+            .EmitCoreCdcSourceInventory(SqlDialect.Pgsql)
+            .Single(table => table.TableKind == CdcSourceTableKind.DocumentCache);
+
+        Action duplicateOrdinal = () =>
+            ReplaceColumns(table, [table.Columns[0], CopyColumn(table.Columns[1], ordinal: 1)]);
+        Action zeroOrdinal = () => CopyColumn(table.Columns[0], ordinal: 0);
+        Action negativeOrdinal = () => CopyColumn(table.Columns[0], ordinal: -1);
+
+        duplicateOrdinal.Should().Throw<ArgumentException>().WithMessage("*ordinals must be unique*");
+        zeroOrdinal.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*positive*");
+        negativeOrdinal.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*positive*");
+    }
+
+    [Test]
     public void It_should_reject_duplicate_required_source_column_names()
     {
         IReadOnlyList<CdcSourceTableInventory> inventory = CdcSourceInventoryTestEmission
@@ -59,6 +128,26 @@ public class Given_CdcSourceInventoryContract
 
         action.Should().Throw<ArgumentException>().WithMessage("*duplicate contract columns*");
     }
+
+    private static IReadOnlyList<CdcSourceTableInventory> ReplaceTable(
+        IReadOnlyList<CdcSourceTableInventory> inventory,
+        CdcSourceTableKind tableKind,
+        Func<CdcSourceTableInventory, CdcSourceTableInventory> replace
+    ) => inventory.Select(table => table.TableKind == tableKind ? replace(table) : table).ToArray();
+
+    private static CdcSourceTableInventory ReplaceColumns(
+        CdcSourceTableInventory table,
+        IReadOnlyList<CdcSourceColumnInventory> columns
+    ) => new(table.TableKind, table.TableName, table.EmittedQuotedTableName, columns);
+
+    private static CdcSourceColumnInventory CopyColumn(CdcSourceColumnInventory column, int ordinal) =>
+        new(
+            column.ColumnName,
+            column.EmittedQuotedColumnName,
+            ordinal,
+            column.ProviderDataType,
+            column.IsNullable
+        );
 }
 
 [TestFixture(SqlDialect.Pgsql)]
