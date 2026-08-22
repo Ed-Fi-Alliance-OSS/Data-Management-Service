@@ -445,62 +445,65 @@ public class Given_CdcConnectorTemplateContractTests
     }
 
     [Test]
-    public void It_rejects_failed_provider_setup_results()
+    public void It_preserves_failed_provider_setup_results_for_standard_validation()
     {
-        Action act = () =>
-            BuildRequest(BuildProviderSetupResult(CdcProvider.Postgresql, CdcProviderSetupOutcome.Failed));
+        CdcConnectorTemplateRequest request = BuildRequest(
+            BuildProviderSetupResult(CdcProvider.Postgresql, CdcProviderSetupOutcome.Failed)
+        );
 
-        act.Should().Throw<ArgumentException>().WithMessage("*successful provider setup*");
+        request.ProviderSetupEvidence.Result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
     }
 
     [Test]
-    public void It_rejects_provider_setup_evidence_that_does_not_match_binding_identity()
+    public void It_preserves_provider_setup_evidence_that_does_not_match_binding_identity_for_standard_validation()
     {
-        Action wrongProvider = () =>
-            BuildRequest(
-                BuildProviderSetupResult(CdcProvider.SqlServer),
-                binding: BuildBinding(CdcProvider.Postgresql),
-                providerConnectionProperties: new CdcProviderConnectionProperties(
-                    CdcProvider.Postgresql,
-                    new Dictionary<string, string>()
-                )
-            );
-        Action wrongGeneration = () =>
-            BuildRequest(BuildProviderSetupResult(CdcProvider.Postgresql), providerSetupBindingGeneration: 8);
-        Action wrongFingerprint = () =>
-            BuildRequest(
-                BuildProviderSetupResult(
-                    CdcProvider.Postgresql,
-                    boundPhysicalSourceFingerprint: OtherPostgresqlSourceFingerprint
-                )
-            );
+        CdcConnectorTemplateRequest wrongProvider = BuildRequest(
+            BuildProviderSetupResult(CdcProvider.SqlServer),
+            binding: BuildBinding(CdcProvider.Postgresql),
+            providerConnectionProperties: new CdcProviderConnectionProperties(
+                CdcProvider.Postgresql,
+                BuildRequiredProviderConnectionProperties(CdcProvider.Postgresql)
+            )
+        );
+        CdcConnectorTemplateRequest wrongGeneration = BuildRequest(
+            BuildProviderSetupResult(CdcProvider.Postgresql),
+            providerSetupBindingGeneration: 8
+        );
+        CdcConnectorTemplateRequest wrongFingerprint = BuildRequest(
+            BuildProviderSetupResult(
+                CdcProvider.Postgresql,
+                boundPhysicalSourceFingerprint: OtherPostgresqlSourceFingerprint
+            )
+        );
 
         using var _ = new AssertionScope();
-        wrongProvider.Should().Throw<ArgumentException>().WithMessage("*binding provider*");
-        wrongGeneration.Should().Throw<ArgumentException>().WithMessage("*same binding generation*");
-        wrongFingerprint.Should().Throw<ArgumentException>().WithMessage("*physical source fingerprint*");
+        wrongProvider.ProviderSetupEvidence.Result.Provider.Should().Be(CdcProvider.SqlServer);
+        wrongProvider.Provider.Should().Be(CdcProvider.Postgresql);
+        wrongGeneration.ProviderSetupEvidence.BindingGeneration.Should().Be(8);
+        wrongFingerprint
+            .ProviderSetupEvidence.Result.BoundPhysicalSourceFingerprint.Should()
+            .Be(OtherPostgresqlSourceFingerprint);
     }
 
     [Test]
-    public void It_rejects_provider_setup_evidence_without_required_source_key_and_heartbeat_inventory()
+    public void It_preserves_provider_setup_evidence_without_required_source_key_and_heartbeat_inventory_for_standard_validation()
     {
-        Action missingSourceInventory = () =>
-            BuildRequest(BuildProviderSetupResult(CdcProvider.Postgresql, sourceTableInventory: []));
-        Action missingDocumentUuidKeyInventory = () =>
-            BuildRequest(BuildProviderSetupResult(CdcProvider.Postgresql, expectedMessageKeyColumns: []));
-        Action missingHeartbeatActionQuery = () =>
-            BuildRequest(BuildProviderSetupResult(CdcProvider.Postgresql, omitHeartbeatActionQuery: true));
+        CdcConnectorTemplateRequest missingSourceInventory = BuildRequest(
+            BuildProviderSetupResult(CdcProvider.Postgresql, sourceTableInventory: [])
+        );
+        CdcConnectorTemplateRequest missingDocumentUuidKeyInventory = BuildRequest(
+            BuildProviderSetupResult(CdcProvider.Postgresql, expectedMessageKeyColumns: [])
+        );
+        CdcConnectorTemplateRequest missingHeartbeatActionQuery = BuildRequest(
+            BuildProviderSetupResult(CdcProvider.Postgresql, omitHeartbeatActionQuery: true)
+        );
 
         using var _ = new AssertionScope();
-        missingSourceInventory.Should().Throw<ArgumentException>().WithMessage("*source inventory*");
+        missingSourceInventory.ProviderSetupEvidence.Result.SourceTableInventory.Should().BeEmpty();
         missingDocumentUuidKeyInventory
-            .Should()
-            .Throw<ArgumentException>()
-            .WithMessage("*message-key inventory*");
-        missingHeartbeatActionQuery
-            .Should()
-            .Throw<ArgumentException>()
-            .WithMessage("*heartbeat action query*");
+            .ProviderSetupEvidence.Result.ExpectedMessageKeyColumns.Should()
+            .BeEmpty();
+        missingHeartbeatActionQuery.ProviderSetupEvidence.Result.HeartbeatActionQuery.Should().BeNull();
     }
 
     [Test]

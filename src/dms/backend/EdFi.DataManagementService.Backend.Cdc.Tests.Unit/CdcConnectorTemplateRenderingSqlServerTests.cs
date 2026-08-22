@@ -517,9 +517,22 @@ public class Given_CdcConnectorTemplateSqlServerRendering
     [Test]
     public void It_rejects_missing_message_key_inventory_before_rendering()
     {
-        Action act = () => BuildRequest(CdcProvider.SqlServer, expectedMessageKeyColumns: []);
+        CdcConnectorTemplateResult result = Render(
+            BuildRequest(CdcProvider.SqlServer, expectedMessageKeyColumns: [])
+        );
 
-        act.Should().Throw<ArgumentException>().WithMessage("*message-key inventory*");
+        CdcConnectorTemplateDiagnostic diagnostic = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch
+            )
+            .Subject;
+
+        using var _ = new AssertionScope();
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        result.Config.Should().BeEmpty();
+        result.RegistrationPayload.Should().BeNull();
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.MessageKeyViolation);
     }
 
     private static CdcConnectorTemplateResult Render(CdcConnectorTemplateRequest request)

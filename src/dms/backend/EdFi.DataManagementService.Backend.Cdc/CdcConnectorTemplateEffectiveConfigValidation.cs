@@ -16,8 +16,10 @@ internal interface ICdcConnectorTemplateEffectiveConfigValidator
     );
 }
 
-internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnectorTemplateRenderer renderer)
-    : ICdcConnectorTemplateEffectiveConfigValidator
+internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
+    ICdcConnectorTemplateRenderer renderer,
+    ICdcConnectorTemplateInputValidator inputValidator
+) : ICdcConnectorTemplateEffectiveConfigValidator
 {
     private const string RedactedValue = "[redacted]";
     private const string TopicHeartbeatName = "topic.heartbeat.name";
@@ -43,6 +45,22 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
 
         CdcConnectorTemplateRequest templateRequest = request.TemplateRequest;
         List<CdcConnectorTemplateDiagnostic> diagnostics = [];
+
+        CdcConnectorTemplateValidationResult templateRequestValidationResult = inputValidator.ValidateRequest(
+            templateRequest,
+            sourcePhase
+        );
+        if (!templateRequestValidationResult.IsValid)
+        {
+            return BuildResult(
+                templateRequest.BindingIdentity,
+                CdcConnectorTemplateOutcome.ValidationFailed,
+                new SortedDictionary<string, string>(StringComparer.Ordinal),
+                registrationPayload: null,
+                configSha256: null,
+                templateRequestValidationResult.Diagnostics
+            );
+        }
 
         AddProviderSetupEvidenceDiagnostics(request, sourcePhase, diagnostics);
         if (HasErrors(diagnostics))
@@ -119,7 +137,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
             diagnostics.Add(
                 BuildDiagnostic(
                     CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch,
-                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
+                    CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure,
                     "providerSetup.provider",
                     bindingIdentity.Provider.ToString(),
                     result.Provider.ToString(),
@@ -170,7 +188,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
             diagnostics.Add(
                 BuildDiagnostic(
                     CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch,
-                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
+                    CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure,
                     "providerSetup.bindingGeneration",
                     bindingIdentity.BindingGeneration.ToString(),
                     providerSetupEvidence.BindingGeneration.ToString(),
@@ -186,7 +204,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
             diagnostics.Add(
                 BuildDiagnostic(
                     CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch,
-                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
+                    CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure,
                     "providerSetup.boundPhysicalSourceFingerprint",
                     "binding physical-source fingerprint",
                     RedactedValue,
@@ -205,7 +223,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
             diagnostics.Add(
                 BuildDiagnostic(
                     CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch,
-                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
+                    CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure,
                     "providerSetup.observedPhysicalSourceFingerprint",
                     "binding physical-source fingerprint",
                     RedactedValue,
