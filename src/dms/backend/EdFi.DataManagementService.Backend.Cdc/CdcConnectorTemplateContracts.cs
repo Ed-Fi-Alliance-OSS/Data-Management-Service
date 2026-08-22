@@ -368,15 +368,6 @@ public sealed record CdcConnectorTemplateRequest
         ArgumentNullException.ThrowIfNull(providerConnectionProperties);
         ArgumentNullException.ThrowIfNull(kafkaClientSecurityProperties);
 
-        ValidateProviderSetupEvidence(bindingIdentity, providerSetupEvidence);
-        if (providerConnectionProperties.Provider != bindingIdentity.Provider)
-        {
-            throw new ArgumentException(
-                "CDC connector template provider connection properties must match the binding provider.",
-                nameof(providerConnectionProperties)
-            );
-        }
-
         BindingIdentity = bindingIdentity;
         ProviderSetupEvidence = providerSetupEvidence;
         DeploymentPolicy = deploymentPolicy;
@@ -410,99 +401,6 @@ public sealed record CdcConnectorTemplateRequest
     public string PartitionerAlgorithm => BindingIdentity.PartitionerAlgorithm;
 
     public CdcProviderArtifactNames ProviderArtifactNames => BindingIdentity.ProviderArtifactNames;
-
-    private static void ValidateProviderSetupEvidence(
-        CdcConnectorTemplateBindingIdentity bindingIdentity,
-        CdcConnectorProviderSetupEvidence providerSetupEvidence
-    )
-    {
-        CdcProviderSetupResult result = providerSetupEvidence.Result;
-
-        if (result.Provider != bindingIdentity.Provider)
-        {
-            throw new ArgumentException(
-                "CDC provider setup result must match the binding provider.",
-                nameof(providerSetupEvidence)
-            );
-        }
-
-        if (
-            result.Outcome
-            is not (CdcProviderSetupOutcome.CreatedOrMatched or CdcProviderSetupOutcome.ExactMatch)
-        )
-        {
-            throw new ArgumentException(
-                "CDC connector templates require a successful provider setup result.",
-                nameof(providerSetupEvidence)
-            );
-        }
-
-        if (providerSetupEvidence.BindingGeneration != bindingIdentity.BindingGeneration)
-        {
-            throw new ArgumentException(
-                "CDC provider setup evidence must be for the same binding generation.",
-                nameof(providerSetupEvidence)
-            );
-        }
-
-        if (!result.BoundPhysicalSourceFingerprint.Equals(bindingIdentity.BoundPhysicalSourceFingerprint))
-        {
-            throw new ArgumentException(
-                "CDC provider setup result must be for the same bound physical source fingerprint.",
-                nameof(providerSetupEvidence)
-            );
-        }
-
-        if (
-            result.ObservedSourceFingerprint is null
-            || !result.ObservedSourceFingerprint.Equals(bindingIdentity.BoundPhysicalSourceFingerprint)
-        )
-        {
-            throw new ArgumentException(
-                "CDC provider setup result must include the matching observed physical source fingerprint.",
-                nameof(providerSetupEvidence)
-            );
-        }
-
-        ValidateRequiredSourceInventory(result.SourceTableInventory, nameof(providerSetupEvidence));
-        ValidateExpectedMessageKeyColumns(result.ExpectedMessageKeyColumns, nameof(providerSetupEvidence));
-
-        if (result.HeartbeatActionQuery is null)
-        {
-            throw new ArgumentException(
-                "CDC provider setup result must include the heartbeat action query.",
-                nameof(providerSetupEvidence)
-            );
-        }
-    }
-
-    private static void ValidateRequiredSourceInventory(
-        IReadOnlyList<CdcSourceTableInventory> sourceTableInventory,
-        string parameterName
-    )
-    {
-        if (!CdcConnectorTemplateSharedRules.HasRequiredSourceInventory(sourceTableInventory))
-        {
-            throw new ArgumentException(
-                "CDC provider setup result source inventory must contain exactly dms.DocumentCache, dms.Document, and dms.CdcHeartbeat.",
-                parameterName
-            );
-        }
-    }
-
-    private static void ValidateExpectedMessageKeyColumns(
-        IReadOnlyList<CdcExpectedMessageKeyColumns> expectedMessageKeyColumns,
-        string parameterName
-    )
-    {
-        if (!CdcConnectorTemplateSharedRules.HasExpectedMessageKeyColumns(expectedMessageKeyColumns))
-        {
-            throw new ArgumentException(
-                "CDC provider setup result message-key inventory must contain only dms.DocumentCache and dms.Document.",
-                parameterName
-            );
-        }
-    }
 }
 
 public sealed record CdcConnectorTemplateSourcePartitionEvidence

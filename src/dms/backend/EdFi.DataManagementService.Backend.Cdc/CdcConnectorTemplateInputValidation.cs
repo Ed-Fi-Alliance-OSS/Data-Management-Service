@@ -79,6 +79,7 @@ public sealed class CdcConnectorTemplateValidationException : Exception
 
 public static class CdcConnectorTemplateDiagnosticCodes
 {
+    public const string BindingIdentityMismatch = "CDC_TEMPLATE_BINDING_IDENTITY_MISMATCH";
     public const string ProviderSetupResultNotReady = "CDC_TEMPLATE_PROVIDER_SETUP_RESULT_NOT_READY";
     public const string SourceFingerprintEvidenceRequired =
         "CDC_TEMPLATE_SOURCE_FINGERPRINT_EVIDENCE_REQUIRED";
@@ -335,6 +336,7 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
 
         List<CdcConnectorTemplateDiagnostic> diagnostics = [];
 
+        ValidateBindingIdentity(request, sourcePhase, diagnostics);
         ValidateProviderConnectionProperties(request, sourcePhase, diagnostics);
         ValidateKafkaSecurityProperties(request, sourcePhase, diagnostics);
         ValidateProviderPrerequisites(request, sourcePhase, diagnostics);
@@ -346,6 +348,141 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
         CdcConnectorTemplateRequest request,
         CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.Render
     ) => ValidateRequest(request, sourcePhase).ThrowIfInvalid();
+
+    private static void ValidateBindingIdentity(
+        CdcConnectorTemplateRequest request,
+        CdcConnectorTemplateSourcePhase sourcePhase,
+        List<CdcConnectorTemplateDiagnostic> diagnostics
+    )
+    {
+        CdcConnectorTemplateBindingIdentity bindingIdentity = request.BindingIdentity;
+        CdcConnectorProviderSetupEvidence providerSetupEvidence = request.ProviderSetupEvidence;
+        CdcProviderSetupResult providerSetupResult = providerSetupEvidence.Result;
+
+        if (providerSetupResult.Provider != bindingIdentity.Provider)
+        {
+            diagnostics.Add(
+                BuildDiagnostic(
+                    CdcConnectorTemplateDiagnosticCodes.BindingIdentityMismatch,
+                    CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure,
+                    "providerSetup.provider",
+                    bindingIdentity.Provider.ToString(),
+                    providerSetupResult.Provider.ToString(),
+                    request,
+                    sourcePhase,
+                    CdcConnectorTemplateRedactionClassification.Safe
+                )
+            );
+        }
+
+        if (request.ProviderConnectionProperties.Provider != bindingIdentity.Provider)
+        {
+            diagnostics.Add(
+                BuildDiagnostic(
+                    CdcConnectorTemplateDiagnosticCodes.BindingIdentityMismatch,
+                    CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure,
+                    "providerConnection.provider",
+                    bindingIdentity.Provider.ToString(),
+                    request.ProviderConnectionProperties.Provider.ToString(),
+                    request,
+                    sourcePhase,
+                    CdcConnectorTemplateRedactionClassification.Safe
+                )
+            );
+        }
+
+        if (
+            providerSetupResult.Outcome
+            is not (CdcProviderSetupOutcome.CreatedOrMatched or CdcProviderSetupOutcome.ExactMatch)
+        )
+        {
+            diagnostics.Add(
+                BuildDiagnostic(
+                    CdcConnectorTemplateDiagnosticCodes.ProviderSetupResultNotReady,
+                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
+                    "providerSetup.outcome",
+                    "CreatedOrMatched or ExactMatch",
+                    providerSetupResult.Outcome.ToString(),
+                    request,
+                    sourcePhase,
+                    CdcConnectorTemplateRedactionClassification.Safe
+                )
+            );
+        }
+
+        if (providerSetupEvidence.BindingGeneration != bindingIdentity.BindingGeneration)
+        {
+            diagnostics.Add(
+                BuildDiagnostic(
+                    CdcConnectorTemplateDiagnosticCodes.BindingIdentityMismatch,
+                    CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure,
+                    "providerSetup.bindingGeneration",
+                    bindingIdentity.BindingGeneration.ToString(),
+                    providerSetupEvidence.BindingGeneration.ToString(),
+                    request,
+                    sourcePhase,
+                    CdcConnectorTemplateRedactionClassification.Safe
+                )
+            );
+        }
+
+        if (
+            !providerSetupResult.BoundPhysicalSourceFingerprint.Equals(
+                bindingIdentity.BoundPhysicalSourceFingerprint
+            )
+        )
+        {
+            diagnostics.Add(
+                BuildDiagnostic(
+                    CdcConnectorTemplateDiagnosticCodes.BindingIdentityMismatch,
+                    CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure,
+                    "providerSetup.boundPhysicalSourceFingerprint",
+                    "binding physical-source fingerprint",
+                    RedactedValue,
+                    request,
+                    sourcePhase,
+                    CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+                )
+            );
+        }
+
+        if (
+            providerSetupResult.ObservedSourceFingerprint is null
+            || !providerSetupResult.ObservedSourceFingerprint.Equals(
+                bindingIdentity.BoundPhysicalSourceFingerprint
+            )
+        )
+        {
+            diagnostics.Add(
+                BuildDiagnostic(
+                    CdcConnectorTemplateDiagnosticCodes.BindingIdentityMismatch,
+                    CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure,
+                    "providerSetup.observedPhysicalSourceFingerprint",
+                    "binding physical-source fingerprint",
+                    providerSetupResult.ObservedSourceFingerprint is null ? "missing" : RedactedValue,
+                    request,
+                    sourcePhase,
+                    CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+                )
+            );
+        }
+
+        if (providerSetupResult.HeartbeatActionQuery is null)
+        {
+            diagnostics.Add(
+                BuildDiagnostic(
+                    CdcConnectorTemplateDiagnosticCodes.HeartbeatActionQueryRequired,
+                    CdcConnectorTemplateDiagnosticCategory.HeartbeatConfigurationViolation,
+                    "providerSetup.heartbeatActionQuery",
+                    "fresh provider heartbeat action query",
+                    "missing",
+                    request,
+                    sourcePhase,
+                    CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+                )
+            );
+        }
+    }
 
     private static void ValidateProviderPrerequisites(
         CdcConnectorTemplateRequest request,

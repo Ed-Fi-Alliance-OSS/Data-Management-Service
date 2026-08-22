@@ -215,6 +215,141 @@ public class Given_CdcConnectorTemplateValidationTests
     }
 
     [Test]
+    public void It_reports_provider_setup_domain_failures_through_request_validation()
+    {
+        foreach (var scenario in ProviderSetupDomainFailureScenarios())
+        {
+            CdcConnectorTemplateValidationResult result = Validate(scenario.Request);
+
+            CdcConnectorTemplateDiagnostic diagnostic = result
+                .Diagnostics.Should()
+                .ContainSingle(diagnostic =>
+                    diagnostic.Code == scenario.DiagnosticCode
+                    && diagnostic.PropertyName == scenario.PropertyName
+                )
+                .Subject;
+
+            using var _ = new AssertionScope(scenario.Name);
+            result.IsValid.Should().BeFalse();
+            diagnostic.Category.Should().Be(scenario.Category);
+            diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.Render);
+            diagnostic.RedactionClassification.Should().Be(scenario.RedactionClassification);
+        }
+    }
+
+    [Test]
+    public void It_returns_validation_failed_for_provider_setup_domain_failures_instead_of_throwing_from_render()
+    {
+        foreach (var scenario in ProviderSetupDomainFailureScenarios())
+        {
+            CdcConnectorTemplateResult result = Render(scenario.Request);
+
+            using var assertionScope = new AssertionScope(scenario.Name);
+            result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+            result.Config.Should().BeEmpty();
+            result.RegistrationPayload.Should().BeNull();
+            result.ConfigSha256.Should().BeNull();
+            result
+                .Diagnostics.Should()
+                .Contain(diagnostic =>
+                    diagnostic.Code == scenario.DiagnosticCode
+                    && diagnostic.PropertyName == scenario.PropertyName
+                    && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Render
+                );
+        }
+    }
+
+    [Test]
+    public void It_returns_validation_failed_for_invalid_template_request_contracts_during_preflight_and_live_read_back()
+    {
+        using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddCdcConnectorTemplates()
+            .BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = RequestForProviderSetupDomainValidation(
+            BuildProviderSetupResult(CdcProvider.Postgresql),
+            providerSetupBindingGeneration: BindingGeneration + 1
+        );
+        var freshProviderSetupEvidence = new CdcConnectorProviderSetupEvidence(
+            BindingGeneration,
+            BuildProviderSetupResult(
+                CdcProvider.Postgresql,
+                CdcProviderSetupOutcome.ExactMatch,
+                CdcProviderSetupMode.ValidateOnly
+            )
+        );
+
+        CdcConnectorTemplateResult preflightResult = service.ValidateRegistrationPreflight(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                new Dictionary<string, string>(),
+                freshProviderSetupEvidence
+            )
+        );
+        CdcConnectorTemplateResult liveReadBackResult = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                new Dictionary<string, string>(),
+                freshProviderSetupEvidence
+            )
+        );
+
+        using var _ = new AssertionScope();
+        preflightResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        liveReadBackResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        preflightResult.Config.Should().BeEmpty();
+        liveReadBackResult.Config.Should().BeEmpty();
+        preflightResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.BindingIdentityMismatch
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure
+                && diagnostic.PropertyName == "providerSetup.bindingGeneration"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Preflight
+            );
+        liveReadBackResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.BindingIdentityMismatch
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure
+                && diagnostic.PropertyName == "providerSetup.bindingGeneration"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack
+            );
+    }
+
+    [Test]
+    public void It_throws_validation_exception_after_collecting_binding_identity_diagnostics_without_leaking_fingerprints()
+    {
+        using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddCdcConnectorTemplates()
+            .BuildServiceProvider();
+        ICdcConnectorTemplateInputValidator validator =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateInputValidator>();
+        CdcConnectorTemplateRequest request = RequestForProviderSetupDomainValidation(
+            BuildProviderSetupResult(
+                CdcProvider.Postgresql,
+                boundPhysicalSourceFingerprint: OtherPostgresqlSourceFingerprint,
+                observedSourceFingerprint: OtherPostgresqlSourceFingerprint
+            )
+        );
+
+        Action act = () => validator.ValidateRequestOrThrow(request);
+
+        act.Should()
+            .Throw<CdcConnectorTemplateValidationException>()
+            .Where(exception =>
+                exception.Diagnostics.Any(diagnostic =>
+                    diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.BindingIdentityMismatch
+                    && diagnostic.PropertyName == "providerSetup.boundPhysicalSourceFingerprint"
+                )
+                && !exception
+                    .ToString()
+                    .Contains(OtherPostgresqlSourceFingerprint.Value, StringComparison.Ordinal)
+            );
+    }
+
+    [Test]
     public void It_rejects_connection_and_security_properties_outside_the_provider_allow_lists()
     {
         CdcConnectorTemplateValidationResult postgresqlResult = Validate(
@@ -1385,6 +1520,163 @@ public class Given_CdcConnectorTemplateValidationTests
             .NotContain(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.HeartbeatActionQueryRequired
             );
+    }
+
+    private static IReadOnlyList<(
+        string Name,
+        CdcConnectorTemplateRequest Request,
+        string DiagnosticCode,
+        string PropertyName,
+        CdcConnectorTemplateDiagnosticCategory Category,
+        CdcConnectorTemplateRedactionClassification RedactionClassification
+    )> ProviderSetupDomainFailureScenarios()
+    {
+        CdcProviderSetupResult missingObservedFingerprint = BuildProviderSetupResult(
+            CdcProvider.Postgresql
+        ) with
+        {
+            ObservedSourceFingerprint = null,
+        };
+
+        return
+        [
+            (
+                "failed provider setup outcome",
+                RequestForProviderSetupDomainValidation(
+                    BuildProviderSetupResult(CdcProvider.Postgresql, CdcProviderSetupOutcome.Failed)
+                ),
+                CdcConnectorTemplateDiagnosticCodes.ProviderSetupResultNotReady,
+                "providerSetup.outcome",
+                CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
+                CdcConnectorTemplateRedactionClassification.Safe
+            ),
+            (
+                "provider mismatch",
+                RequestForProviderSetupDomainValidation(
+                    BuildProviderSetupResult(
+                        CdcProvider.SqlServer,
+                        boundPhysicalSourceFingerprint: SourceFingerprintFor(CdcProvider.Postgresql),
+                        observedSourceFingerprint: SourceFingerprintFor(CdcProvider.Postgresql)
+                    )
+                ),
+                CdcConnectorTemplateDiagnosticCodes.BindingIdentityMismatch,
+                "providerSetup.provider",
+                CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure,
+                CdcConnectorTemplateRedactionClassification.Safe
+            ),
+            (
+                "binding generation mismatch",
+                RequestForProviderSetupDomainValidation(
+                    BuildProviderSetupResult(CdcProvider.Postgresql),
+                    providerSetupBindingGeneration: BindingGeneration + 1
+                ),
+                CdcConnectorTemplateDiagnosticCodes.BindingIdentityMismatch,
+                "providerSetup.bindingGeneration",
+                CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure,
+                CdcConnectorTemplateRedactionClassification.Safe
+            ),
+            (
+                "bound physical-source fingerprint mismatch",
+                RequestForProviderSetupDomainValidation(
+                    BuildProviderSetupResult(
+                        CdcProvider.Postgresql,
+                        boundPhysicalSourceFingerprint: OtherPostgresqlSourceFingerprint,
+                        observedSourceFingerprint: SourceFingerprintFor(CdcProvider.Postgresql)
+                    )
+                ),
+                CdcConnectorTemplateDiagnosticCodes.BindingIdentityMismatch,
+                "providerSetup.boundPhysicalSourceFingerprint",
+                CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure,
+                CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            ),
+            (
+                "missing observed physical-source fingerprint",
+                RequestForProviderSetupDomainValidation(missingObservedFingerprint),
+                CdcConnectorTemplateDiagnosticCodes.BindingIdentityMismatch,
+                "providerSetup.observedPhysicalSourceFingerprint",
+                CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure,
+                CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            ),
+            (
+                "observed physical-source fingerprint mismatch",
+                RequestForProviderSetupDomainValidation(
+                    BuildProviderSetupResult(
+                        CdcProvider.Postgresql,
+                        observedSourceFingerprint: OtherPostgresqlSourceFingerprint
+                    )
+                ),
+                CdcConnectorTemplateDiagnosticCodes.BindingIdentityMismatch,
+                "providerSetup.observedPhysicalSourceFingerprint",
+                CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure,
+                CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            ),
+            (
+                "missing source-table inventory",
+                RequestForProviderSetupDomainValidation(
+                    BuildProviderSetupResult(CdcProvider.Postgresql, sourceTableInventory: [])
+                ),
+                CdcConnectorTemplateDiagnosticCodes.SourceTableInventoryMismatch,
+                "providerSetup.sourceTableInventory",
+                CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
+                CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            ),
+            (
+                "missing message-key inventory",
+                RequestForProviderSetupDomainValidation(
+                    BuildProviderSetupResult(CdcProvider.Postgresql, expectedMessageKeyColumns: [])
+                ),
+                CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch,
+                "providerSetup.expectedMessageKeyColumns",
+                CdcConnectorTemplateDiagnosticCategory.MessageKeyViolation,
+                CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            ),
+            (
+                "missing heartbeat action query",
+                RequestForProviderSetupDomainValidation(
+                    BuildProviderSetupResult(CdcProvider.Postgresql, omitHeartbeatActionQuery: true)
+                ),
+                CdcConnectorTemplateDiagnosticCodes.HeartbeatActionQueryRequired,
+                "providerSetup.heartbeatActionQuery",
+                CdcConnectorTemplateDiagnosticCategory.HeartbeatConfigurationViolation,
+                CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            ),
+            (
+                "provider connection provider mismatch",
+                RequestForProviderSetupDomainValidation(
+                    BuildProviderSetupResult(CdcProvider.Postgresql),
+                    providerConnectionProperties: new CdcProviderConnectionProperties(
+                        CdcProvider.SqlServer,
+                        BuildRequiredProviderConnectionProperties(CdcProvider.Postgresql)
+                    )
+                ),
+                CdcConnectorTemplateDiagnosticCodes.BindingIdentityMismatch,
+                "providerConnection.provider",
+                CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure,
+                CdcConnectorTemplateRedactionClassification.Safe
+            ),
+        ];
+    }
+
+    private static CdcConnectorTemplateRequest RequestForProviderSetupDomainValidation(
+        CdcProviderSetupResult providerSetupResult,
+        CdcConnectorTemplateBindingIdentity? binding = null,
+        long providerSetupBindingGeneration = BindingGeneration,
+        CdcProviderConnectionProperties? providerConnectionProperties = null
+    )
+    {
+        CdcConnectorTemplateBindingIdentity bindingIdentity = binding ?? BuildBinding(CdcProvider.Postgresql);
+
+        return BuildRequest(
+            providerSetupResult,
+            binding: bindingIdentity,
+            providerSetupBindingGeneration: providerSetupBindingGeneration,
+            providerConnectionProperties: providerConnectionProperties
+                ?? new CdcProviderConnectionProperties(
+                    bindingIdentity.Provider,
+                    BuildRequiredProviderConnectionProperties(bindingIdentity.Provider)
+                ),
+            deploymentPolicy: BuildDeploymentPolicy(bindingIdentity.Provider)
+        );
     }
 
     private static CdcConnectorTemplateValidationResult Validate(
