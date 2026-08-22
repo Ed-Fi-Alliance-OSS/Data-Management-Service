@@ -267,8 +267,25 @@ public sealed class Given_PinnedImageSmokeDiagnostics
 
 [TestFixture]
 [Parallelizable]
-public sealed class Given_CdcConnectorProviderOffsetRetentionComparison
+public sealed class Given_PinnedImageConnectorProviderOffsetRetentionComparison
 {
+    [Test]
+    public void It_compares_postgresql_offset_progress_by_provider_position()
+    {
+        string starting = PostgresqlOffset(100, metadataToken: 1);
+
+        using var _ = new AssertionScope();
+        Advances(CdcProvider.Postgresql, starting, PostgresqlOffset(100, metadataToken: 2))
+            .Should()
+            .BeFalse("equal PostgreSQL lsn_proc values are not provider position progress");
+        Advances(CdcProvider.Postgresql, starting, PostgresqlOffset(101, metadataToken: 2))
+            .Should()
+            .BeTrue("greater PostgreSQL lsn_proc values are provider position progress");
+        Advances(CdcProvider.Postgresql, starting, PostgresqlOffset(99, metadataToken: 2))
+            .Should()
+            .BeFalse("older PostgreSQL lsn_proc values are not provider position progress");
+    }
+
     [Test]
     public void It_compares_postgresql_lsn_proc_monotonically()
     {
@@ -300,6 +317,68 @@ public sealed class Given_CdcConnectorProviderOffsetRetentionComparison
             )
             .Should()
             .BeFalse("malformed PostgreSQL lsn_proc fails closed");
+    }
+
+    [Test]
+    public void It_parses_postgresql_lsn_proc_unsigned_strings_and_signed_bit_patterns()
+    {
+        string maximumUnsigned = PostgresqlOffset(ulong.MaxValue);
+
+        using var _ = new AssertionScope();
+        RetainsOrAdvances(
+                CdcProvider.Postgresql,
+                PostgresqlOffset(100),
+                """{"snapshot":"false","lsn_proc":"101"}"""
+            )
+            .Should()
+            .BeTrue("positive string PostgreSQL lsn_proc values are accepted");
+        RetainsOrAdvances(
+                CdcProvider.Postgresql,
+                PostgresqlOffset(ulong.MaxValue - 1),
+                """{"snapshot":"false","lsn_proc":"18446744073709551615"}"""
+            )
+            .Should()
+            .BeTrue("unsigned string PostgreSQL lsn_proc values are accepted");
+        RetainsOrAdvances(CdcProvider.Postgresql, maximumUnsigned, """{"snapshot":"false","lsn_proc":-1}""")
+            .Should()
+            .BeTrue("negative numeric PostgreSQL lsn_proc values are reinterpreted as unsigned bit patterns");
+        RetainsOrAdvances(CdcProvider.Postgresql, maximumUnsigned, """{"snapshot":"false","lsn_proc":"-1"}""")
+            .Should()
+            .BeTrue("negative string PostgreSQL lsn_proc values are reinterpreted as unsigned bit patterns");
+    }
+
+    [Test]
+    public void It_compares_sqlserver_offset_progress_by_provider_position()
+    {
+        string starting = SqlServerOffset(
+            commitLsn: "00000027:00000758:0005",
+            changeLsn: "00000027:00000758:0006",
+            eventSerialNo: 1,
+            metadataToken: 1
+        );
+
+        using var _ = new AssertionScope();
+        Advances(
+                CdcProvider.SqlServer,
+                starting,
+                SqlServerOffset("00000027:00000758:0005", "00000027:00000758:0006", 1, metadataToken: 2)
+            )
+            .Should()
+            .BeFalse("equal SQL Server provider positions are not progress even when unrelated JSON changes");
+        Advances(
+                CdcProvider.SqlServer,
+                starting,
+                SqlServerOffset("00000027:00000758:0005", "00000027:00000758:0006", 2, metadataToken: 2)
+            )
+            .Should()
+            .BeTrue("greater SQL Server event_serial_no values are provider position progress");
+        Advances(
+                CdcProvider.SqlServer,
+                starting,
+                SqlServerOffset("00000027:00000758:0005", "00000027:00000758:0006", 0, metadataToken: 2)
+            )
+            .Should()
+            .BeFalse("older SQL Server event_serial_no values are not provider position progress");
     }
 
     [Test]
@@ -383,6 +462,53 @@ public sealed class Given_CdcConnectorProviderOffsetRetentionComparison
             .BeFalse("malformed SQL Server event_serial_no fails closed");
     }
 
+    [Test]
+    public void It_rejects_sqlserver_variable_width_oversized_empty_and_non_hex_lsn_components()
+    {
+        string minimum = SqlServerOffset(
+            commitLsn: "00000027:00000758:0005",
+            changeLsn: "00000027:00000758:0006",
+            eventSerialNo: 1
+        );
+
+        using var _ = new AssertionScope();
+        RetainsOrAdvances(
+                CdcProvider.SqlServer,
+                minimum,
+                SqlServerOffset("0000027:00000758:0005", "00000027:00000758:0006", 2)
+            )
+            .Should()
+            .BeFalse("variable-width SQL Server commit_lsn components fail closed");
+        RetainsOrAdvances(
+                CdcProvider.SqlServer,
+                minimum,
+                SqlServerOffset("000000027:00000758:0005", "00000027:00000758:0006", 2)
+            )
+            .Should()
+            .BeFalse("oversized SQL Server commit_lsn components fail closed");
+        RetainsOrAdvances(
+                CdcProvider.SqlServer,
+                minimum,
+                SqlServerOffset("00000027::0005", "00000027:00000758:0006", 2)
+            )
+            .Should()
+            .BeFalse("empty SQL Server commit_lsn components fail closed");
+        RetainsOrAdvances(
+                CdcProvider.SqlServer,
+                minimum,
+                SqlServerOffset("0000002g:00000758:0005", "00000027:00000758:0006", 2)
+            )
+            .Should()
+            .BeFalse("non-hex SQL Server commit_lsn components fail closed");
+        RetainsOrAdvances(
+                CdcProvider.SqlServer,
+                minimum,
+                """{"snapshot":"false","commit_lsn":"00000027:00000758:0005","change_lsn":"00000027:00000758:0006","event_serial_no":"-1"}"""
+            )
+            .Should()
+            .BeFalse("negative SQL Server event_serial_no string values fail closed");
+    }
+
     private static bool RetainsOrAdvances(CdcProvider provider, string minimum, string observed) =>
         CdcConnectorTemplatePinnedImageFixture.CommittedSourceOffsetRetainsOrAdvances(
             provider,
@@ -390,16 +516,20 @@ public sealed class Given_CdcConnectorProviderOffsetRetentionComparison
             observed
         );
 
-    private static string PostgresqlOffset(ulong lsnProc, string snapshot = "false") =>
-        $@"{{""snapshot"":""{snapshot}"",""lsn_proc"":{lsnProc}}}";
+    private static bool Advances(CdcProvider provider, string starting, string observed) =>
+        CdcConnectorTemplatePinnedImageFixture.CommittedSourceOffsetAdvances(provider, starting, observed);
+
+    private static string PostgresqlOffset(ulong lsnProc, string snapshot = "false", int metadataToken = 1) =>
+        $@"{{""snapshot"":""{snapshot}"",""lsn_proc"":{lsnProc},""metadata_token"":{metadataToken}}}";
 
     private static string SqlServerOffset(
         string commitLsn,
         string changeLsn,
         long eventSerialNo,
-        string snapshot = "false"
+        string snapshot = "false",
+        int metadataToken = 1
     ) =>
-        $@"{{""snapshot"":""{snapshot}"",""commit_lsn"":""{commitLsn}"",""change_lsn"":""{changeLsn}"",""event_serial_no"":{eventSerialNo}}}";
+        $@"{{""snapshot"":""{snapshot}"",""commit_lsn"":""{commitLsn}"",""change_lsn"":""{changeLsn}"",""event_serial_no"":{eventSerialNo},""metadata_token"":{metadataToken}}}";
 }
 
 [TestFixture]

@@ -1332,14 +1332,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             );
             if (
                 observedOffset is not null
-                && (
-                    startingOffset is null
-                    || !string.Equals(
-                        observedOffset.CanonicalOffsetJson,
-                        startingOffset.CanonicalOffsetJson,
-                        StringComparison.Ordinal
-                    )
-                )
+                && (startingOffset is null || SourceOffsetAdvances(startingOffset, observedOffset))
             )
             {
                 return observedOffset;
@@ -2257,6 +2250,31 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             && observedPosition.CompareTo(minimumPosition) >= 0;
     }
 
+    internal static bool CommittedSourceOffsetAdvances(
+        CdcProvider provider,
+        string startingOffsetJson,
+        string observedOffsetJson
+    )
+    {
+        CdcConnectorProviderOffsetPosition? startingPosition = ReadCommittedProviderOffsetPosition(
+            provider,
+            startingOffsetJson
+        );
+        CdcConnectorProviderOffsetPosition? observedPosition = ReadCommittedProviderOffsetPosition(
+            provider,
+            observedOffsetJson
+        );
+
+        return startingPosition is not null
+            && observedPosition is not null
+            && observedPosition.CompareTo(startingPosition) > 0;
+    }
+
+    private static bool SourceOffsetAdvances(
+        CdcConnectorSourceOffsetSnapshot startingOffset,
+        CdcConnectorSourceOffsetSnapshot observedOffset
+    ) => observedOffset.ProviderPosition.CompareTo(startingOffset.ProviderPosition) > 0;
+
     private static CdcConnectorProviderOffsetPosition? ReadCommittedProviderOffsetPosition(
         CdcProvider provider,
         string offsetJson
@@ -2294,7 +2312,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
     private static CdcConnectorProviderOffsetPosition? ReadPostgresqlCommittedOffsetPosition(
         JsonElement offset
     ) =>
-        TryReadUInt64JsonProperty(offset, "lsn_proc", out ulong lsnProc)
+        TryReadPostgresqlLsnProcJsonProperty(offset, "lsn_proc", out ulong lsnProc)
             ? new PostgresqlConnectorOffsetPosition(lsnProc)
             : null;
 
@@ -2343,7 +2361,11 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         && property.ValueKind == JsonValueKind.String
         && string.Equals(property.GetString(), expectedValue, StringComparison.Ordinal);
 
-    private static bool TryReadUInt64JsonProperty(JsonElement element, string propertyName, out ulong value)
+    private static bool TryReadPostgresqlLsnProcJsonProperty(
+        JsonElement element,
+        string propertyName,
+        out ulong value
+    )
     {
         if (!element.TryGetProperty(propertyName, out JsonElement property))
         {
@@ -2353,17 +2375,45 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 
         if (property.ValueKind == JsonValueKind.Number)
         {
-            return property.TryGetUInt64(out value);
+            if (property.TryGetUInt64(out value))
+            {
+                return true;
+            }
+
+            if (property.TryGetInt64(out long signedValue) && signedValue < 0)
+            {
+                value = unchecked((ulong)signedValue);
+                return true;
+            }
+
+            value = 0;
+            return false;
         }
 
         if (property.ValueKind == JsonValueKind.String)
         {
-            return ulong.TryParse(
-                property.GetString(),
-                NumberStyles.None,
-                CultureInfo.InvariantCulture,
-                out value
-            );
+            string? stringValue = property.GetString();
+            if (ulong.TryParse(stringValue, NumberStyles.None, CultureInfo.InvariantCulture, out value))
+            {
+                return true;
+            }
+
+            if (
+                long.TryParse(
+                    stringValue,
+                    NumberStyles.AllowLeadingSign,
+                    CultureInfo.InvariantCulture,
+                    out long signedValue
+                )
+                && signedValue < 0
+            )
+            {
+                value = unchecked((ulong)signedValue);
+                return true;
+            }
+
+            value = 0;
+            return false;
         }
 
         value = 0;
@@ -2390,11 +2440,12 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         if (property.ValueKind == JsonValueKind.String)
         {
             return long.TryParse(
-                property.GetString(),
-                NumberStyles.None,
-                CultureInfo.InvariantCulture,
-                out value
-            );
+                    property.GetString(),
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out value
+                )
+                && value >= 0;
         }
 
         value = 0;
@@ -2428,9 +2479,9 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         }
 
         if (
-            !TryParseSqlServerLsnPart(parts[0], out ulong first)
-            || !TryParseSqlServerLsnPart(parts[1], out ulong second)
-            || !TryParseSqlServerLsnPart(parts[2], out ulong third)
+            !TryParseSqlServerLsnPart(parts[0], expectedLength: 8, out ulong first)
+            || !TryParseSqlServerLsnPart(parts[1], expectedLength: 8, out ulong second)
+            || !TryParseSqlServerLsnPart(parts[2], expectedLength: 4, out ulong third)
         )
         {
             return false;
@@ -2440,9 +2491,19 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         return true;
     }
 
-    private static bool TryParseSqlServerLsnPart(string part, out ulong value) =>
-        ulong.TryParse(part, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value)
-        && part.Length > 0;
+    private static bool TryParseSqlServerLsnPart(string part, int expectedLength, out ulong value)
+    {
+        if (part.Length != expectedLength || !part.All(IsAsciiHexDigit))
+        {
+            value = 0;
+            return false;
+        }
+
+        return ulong.TryParse(part, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value);
+    }
+
+    private static bool IsAsciiHexDigit(char value) =>
+        value is >= '0' and <= '9' or >= 'A' and <= 'F' or >= 'a' and <= 'f';
 
     private static IReadOnlyDictionary<string, string> ParseStringMap(string json)
     {
