@@ -51,14 +51,8 @@ public enum CdcConnectorTemplateSourcePhase
 
 public enum CdcConnectorTemplateRedactionClassification
 {
-    None,
     Safe,
-    ExternalizedSecretReference,
-    MaskedSecret,
     SecretValue,
-    ConnectionString,
-    DocumentPayload,
-    TenantDisplayName,
     PhysicalIdentifier,
 }
 

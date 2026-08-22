@@ -1183,7 +1183,6 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
             redactionClassification
                 is CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
                     or CdcConnectorTemplateRedactionClassification.SecretValue
-                    or CdcConnectorTemplateRedactionClassification.MaskedSecret
             ? RedactedValue
             : value;
     }
