@@ -1170,6 +1170,8 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
     {
         DateTimeOffset deadline = DateTimeOffset.UtcNow.Add(OffsetCommitTimeout);
         string? lastObservedOffset = null;
+        string lastRetentionFailure =
+            "no committed source offset was observed for the rendered source partition";
         while (DateTimeOffset.UtcNow < deadline)
         {
             await WaitForRegisteredConnectorRunningAsync(request.ConnectorName.Value, cancellationToken);
@@ -1178,16 +1180,16 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
                 request,
                 cancellationToken
             );
-            if (
-                observedOffset is not null
-                && string.Equals(
-                    observedOffset.CanonicalOffsetJson,
-                    expectedOffset.CanonicalOffsetJson,
-                    StringComparison.Ordinal
-                )
-            )
+            if (observedOffset is not null)
             {
-                return observedOffset;
+                int comparison = observedOffset.ProviderPosition.CompareTo(expectedOffset.ProviderPosition);
+                if (comparison >= 0)
+                {
+                    return observedOffset;
+                }
+
+                lastRetentionFailure =
+                    "last observed provider position was older than the pre-restart provider position";
             }
 
             lastObservedOffset = observedOffset?.CanonicalOffsetJson;
@@ -1197,10 +1199,10 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         string expected = SanitizeForAssertion(expectedOffset.CanonicalOffsetJson);
         string observed = lastObservedOffset is null ? "<none>" : SanitizeForAssertion(lastObservedOffset);
         Assert.Fail(
-            $"Kafka Connect did not retain the pre-restart committed source offset. Expected offset: {expected}. Last observed offset: {observed}."
+            $"Kafka Connect did not retain or advance from the pre-restart committed source offset. Minimum offset: {expected}. Last observed offset: {observed}. Last retention check: {lastRetentionFailure}."
         );
         throw new InvalidOperationException(
-            "Kafka Connect did not retain the pre-restart committed source offset."
+            "Kafka Connect did not retain or advance from the pre-restart committed source offset."
         );
     }
 
@@ -1890,11 +1892,12 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         List<CdcConnectorSourceOffsetSnapshot> matchingOffsets = [];
         foreach (JsonElement offsetDocument in offsets.EnumerateArray())
         {
+            CdcConnectorProviderOffsetPosition? providerPosition = null;
             if (
                 !offsetDocument.TryGetProperty("partition", out JsonElement partition)
                 || !SourcePartitionMatches(request, partition)
                 || !offsetDocument.TryGetProperty("offset", out JsonElement offset)
-                || !ProviderOffsetIsCommittedProgress(request.Provider, offset)
+                || (providerPosition = ReadCommittedProviderOffsetPosition(request.Provider, offset)) is null
             )
             {
                 continue;
@@ -1903,7 +1906,8 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             matchingOffsets.Add(
                 new CdcConnectorSourceOffsetSnapshot(
                     CanonicalizeJson(offset),
-                    BuildSourcePartitionEvidence(partition)
+                    BuildSourcePartitionEvidence(partition),
+                    providerPosition
                 )
             );
         }
@@ -1975,21 +1979,81 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             );
     }
 
-    private static bool ProviderOffsetIsCommittedProgress(CdcProvider provider, JsonElement offset)
+    internal static bool CommittedSourceOffsetRetainsOrAdvances(
+        CdcProvider provider,
+        string minimumOffsetJson,
+        string observedOffsetJson
+    )
+    {
+        CdcConnectorProviderOffsetPosition? minimumPosition = ReadCommittedProviderOffsetPosition(
+            provider,
+            minimumOffsetJson
+        );
+        CdcConnectorProviderOffsetPosition? observedPosition = ReadCommittedProviderOffsetPosition(
+            provider,
+            observedOffsetJson
+        );
+
+        return minimumPosition is not null
+            && observedPosition is not null
+            && observedPosition.CompareTo(minimumPosition) >= 0;
+    }
+
+    private static CdcConnectorProviderOffsetPosition? ReadCommittedProviderOffsetPosition(
+        CdcProvider provider,
+        string offsetJson
+    )
+    {
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(offsetJson);
+            return ReadCommittedProviderOffsetPosition(provider, document.RootElement);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static CdcConnectorProviderOffsetPosition? ReadCommittedProviderOffsetPosition(
+        CdcProvider provider,
+        JsonElement offset
+    )
     {
         if (offset.ValueKind != JsonValueKind.Object || OffsetIsSnapshot(offset))
         {
-            return false;
+            return null;
         }
 
         return provider switch
         {
-            CdcProvider.Postgresql => HasNonEmptyJsonProperty(offset, "lsn_proc"),
-            CdcProvider.SqlServer => HasNonEmptyJsonProperty(offset, "commit_lsn")
-                && HasNonEmptyJsonProperty(offset, "change_lsn")
-                && HasNonEmptyJsonProperty(offset, "event_serial_no"),
-            _ => false,
+            CdcProvider.Postgresql => ReadPostgresqlCommittedOffsetPosition(offset),
+            CdcProvider.SqlServer => ReadSqlServerCommittedOffsetPosition(offset),
+            _ => null,
         };
+    }
+
+    private static CdcConnectorProviderOffsetPosition? ReadPostgresqlCommittedOffsetPosition(
+        JsonElement offset
+    ) =>
+        TryReadUInt64JsonProperty(offset, "lsn_proc", out ulong lsnProc)
+            ? new PostgresqlConnectorOffsetPosition(lsnProc)
+            : null;
+
+    private static CdcConnectorProviderOffsetPosition? ReadSqlServerCommittedOffsetPosition(
+        JsonElement offset
+    )
+    {
+        if (
+            !TryReadSqlServerLsnJsonProperty(offset, "commit_lsn", out SqlServerConnectorLsn commitLsn)
+            || !TryReadSqlServerLsnJsonProperty(offset, "change_lsn", out SqlServerConnectorLsn changeLsn)
+            || !TryReadNonNegativeInt64JsonProperty(offset, "event_serial_no", out long eventSerialNo)
+        )
+        {
+            return null;
+        }
+
+        return new SqlServerConnectorOffsetPosition(commitLsn, changeLsn, eventSerialNo);
     }
 
     private static bool OffsetIsSnapshot(JsonElement offset)
@@ -2021,21 +2085,106 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         && property.ValueKind == JsonValueKind.String
         && string.Equals(property.GetString(), expectedValue, StringComparison.Ordinal);
 
-    private static bool HasNonEmptyJsonProperty(JsonElement element, string propertyName)
+    private static bool TryReadUInt64JsonProperty(JsonElement element, string propertyName, out ulong value)
     {
         if (!element.TryGetProperty(propertyName, out JsonElement property))
+        {
+            value = 0;
+            return false;
+        }
+
+        if (property.ValueKind == JsonValueKind.Number)
+        {
+            return property.TryGetUInt64(out value);
+        }
+
+        if (property.ValueKind == JsonValueKind.String)
+        {
+            return ulong.TryParse(
+                property.GetString(),
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out value
+            );
+        }
+
+        value = 0;
+        return false;
+    }
+
+    private static bool TryReadNonNegativeInt64JsonProperty(
+        JsonElement element,
+        string propertyName,
+        out long value
+    )
+    {
+        if (!element.TryGetProperty(propertyName, out JsonElement property))
+        {
+            value = 0;
+            return false;
+        }
+
+        if (property.ValueKind == JsonValueKind.Number)
+        {
+            return property.TryGetInt64(out value) && value >= 0;
+        }
+
+        if (property.ValueKind == JsonValueKind.String)
+        {
+            return long.TryParse(
+                property.GetString(),
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out value
+            );
+        }
+
+        value = 0;
+        return false;
+    }
+
+    private static bool TryReadSqlServerLsnJsonProperty(
+        JsonElement element,
+        string propertyName,
+        out SqlServerConnectorLsn value
+    )
+    {
+        value = default;
+        return element.TryGetProperty(propertyName, out JsonElement property)
+            && property.ValueKind == JsonValueKind.String
+            && TryParseSqlServerLsn(property.GetString(), out value);
+    }
+
+    private static bool TryParseSqlServerLsn(string? lsn, out SqlServerConnectorLsn value)
+    {
+        value = default;
+        if (string.IsNullOrWhiteSpace(lsn))
         {
             return false;
         }
 
-        return property.ValueKind switch
+        string[] parts = lsn.Split(':');
+        if (parts.Length != 3)
         {
-            JsonValueKind.String => !string.IsNullOrWhiteSpace(property.GetString()),
-            JsonValueKind.Number => true,
-            JsonValueKind.True or JsonValueKind.False => true,
-            _ => false,
-        };
+            return false;
+        }
+
+        if (
+            !TryParseSqlServerLsnPart(parts[0], out ulong first)
+            || !TryParseSqlServerLsnPart(parts[1], out ulong second)
+            || !TryParseSqlServerLsnPart(parts[2], out ulong third)
+        )
+        {
+            return false;
+        }
+
+        value = new SqlServerConnectorLsn(first, second, third);
+        return true;
     }
+
+    private static bool TryParseSqlServerLsnPart(string part, out ulong value) =>
+        ulong.TryParse(part, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value)
+        && part.Length > 0;
 
     private static IReadOnlyDictionary<string, string> ParseStringMap(string json)
     {
@@ -2438,8 +2587,69 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 
     internal sealed record CdcConnectorSourceOffsetSnapshot(
         string CanonicalOffsetJson,
-        CdcConnectorTemplateSourcePartitionEvidence SourcePartitionEvidence
+        CdcConnectorTemplateSourcePartitionEvidence SourcePartitionEvidence,
+        CdcConnectorProviderOffsetPosition ProviderPosition
     );
+
+    internal abstract record CdcConnectorProviderOffsetPosition(CdcProvider Provider)
+    {
+        public int CompareTo(CdcConnectorProviderOffsetPosition other)
+        {
+            if (Provider != other.Provider)
+            {
+                throw new InvalidOperationException("Cannot compare CDC source offsets across providers.");
+            }
+
+            return CompareSameProvider(other);
+        }
+
+        protected abstract int CompareSameProvider(CdcConnectorProviderOffsetPosition other);
+    }
+
+    private sealed record PostgresqlConnectorOffsetPosition(ulong LsnProc)
+        : CdcConnectorProviderOffsetPosition(CdcProvider.Postgresql)
+    {
+        protected override int CompareSameProvider(CdcConnectorProviderOffsetPosition other) =>
+            LsnProc.CompareTo(((PostgresqlConnectorOffsetPosition)other).LsnProc);
+    }
+
+    private sealed record SqlServerConnectorOffsetPosition(
+        SqlServerConnectorLsn CommitLsn,
+        SqlServerConnectorLsn ChangeLsn,
+        long EventSerialNo
+    ) : CdcConnectorProviderOffsetPosition(CdcProvider.SqlServer)
+    {
+        protected override int CompareSameProvider(CdcConnectorProviderOffsetPosition other)
+        {
+            var sqlServerPosition = (SqlServerConnectorOffsetPosition)other;
+            int commitLsnComparison = CommitLsn.CompareTo(sqlServerPosition.CommitLsn);
+            if (commitLsnComparison != 0)
+            {
+                return commitLsnComparison;
+            }
+
+            int changeLsnComparison = ChangeLsn.CompareTo(sqlServerPosition.ChangeLsn);
+            return changeLsnComparison != 0
+                ? changeLsnComparison
+                : EventSerialNo.CompareTo(sqlServerPosition.EventSerialNo);
+        }
+    }
+
+    private readonly record struct SqlServerConnectorLsn(ulong First, ulong Second, ulong Third)
+        : IComparable<SqlServerConnectorLsn>
+    {
+        public int CompareTo(SqlServerConnectorLsn other)
+        {
+            int firstComparison = First.CompareTo(other.First);
+            if (firstComparison != 0)
+            {
+                return firstComparison;
+            }
+
+            int secondComparison = Second.CompareTo(other.Second);
+            return secondComparison != 0 ? secondComparison : Third.CompareTo(other.Third);
+        }
+    }
 }
 
 internal static class CdcConnectorTemplatePinnedImageTestData

@@ -196,6 +196,143 @@ public sealed class Given_PinnedImageFixtureDockerCommandResult
 }
 
 [TestFixture]
+[Parallelizable]
+public sealed class Given_CdcConnectorProviderOffsetRetentionComparison
+{
+    [Test]
+    public void It_compares_postgresql_lsn_proc_monotonically()
+    {
+        string minimum = PostgresqlOffset(100);
+
+        using var _ = new AssertionScope();
+        RetainsOrAdvances(CdcProvider.Postgresql, minimum, PostgresqlOffset(100))
+            .Should()
+            .BeTrue("equal PostgreSQL lsn_proc values retain the pre-restart source position");
+        RetainsOrAdvances(CdcProvider.Postgresql, minimum, PostgresqlOffset(101))
+            .Should()
+            .BeTrue("greater PostgreSQL lsn_proc values advance from the pre-restart source position");
+        RetainsOrAdvances(CdcProvider.Postgresql, minimum, PostgresqlOffset(99))
+            .Should()
+            .BeFalse("older PostgreSQL lsn_proc values indicate lost retained source position");
+        RetainsOrAdvances(CdcProvider.Postgresql, minimum, PostgresqlOffset(101, snapshot: "true"))
+            .Should()
+            .BeFalse("snapshot offsets are not committed streaming progress");
+        RetainsOrAdvances(CdcProvider.Postgresql, minimum, "null")
+            .Should()
+            .BeFalse("null offsets fail closed");
+        RetainsOrAdvances(CdcProvider.Postgresql, minimum, """{"snapshot":"false"}""")
+            .Should()
+            .BeFalse("missing PostgreSQL lsn_proc fails closed");
+        RetainsOrAdvances(
+                CdcProvider.Postgresql,
+                minimum,
+                """{"snapshot":"false","lsn_proc":"not-a-number"}"""
+            )
+            .Should()
+            .BeFalse("malformed PostgreSQL lsn_proc fails closed");
+    }
+
+    [Test]
+    public void It_compares_sqlserver_lsn_tuple_monotonically()
+    {
+        string minimum = SqlServerOffset(
+            commitLsn: "00000027:00000758:0005",
+            changeLsn: "00000027:00000758:0006",
+            eventSerialNo: 1
+        );
+
+        using var _ = new AssertionScope();
+        RetainsOrAdvances(CdcProvider.SqlServer, minimum, minimum)
+            .Should()
+            .BeTrue("equal SQL Server LSN tuples retain the pre-restart source position");
+        RetainsOrAdvances(
+                CdcProvider.SqlServer,
+                minimum,
+                SqlServerOffset("00000027:00000758:0005", "00000027:00000758:0006", 2)
+            )
+            .Should()
+            .BeTrue("greater SQL Server event_serial_no values advance the provider position");
+        RetainsOrAdvances(
+                CdcProvider.SqlServer,
+                minimum,
+                SqlServerOffset("00000027:00000758:0005", "00000027:00000759:0000", 0)
+            )
+            .Should()
+            .BeTrue("greater SQL Server change_lsn values advance the provider position");
+        RetainsOrAdvances(
+                CdcProvider.SqlServer,
+                minimum,
+                SqlServerOffset("00000028:00000000:0000", "00000028:00000000:0000", 0)
+            )
+            .Should()
+            .BeTrue("greater SQL Server commit_lsn values advance the provider position");
+        RetainsOrAdvances(
+                CdcProvider.SqlServer,
+                minimum,
+                SqlServerOffset("00000027:00000758:0005", "00000027:00000758:0006", 0)
+            )
+            .Should()
+            .BeFalse("older SQL Server event_serial_no values indicate lost retained source position");
+        RetainsOrAdvances(
+                CdcProvider.SqlServer,
+                minimum,
+                SqlServerOffset("00000026:ffffffff:ffff", "00000026:ffffffff:ffff", 9)
+            )
+            .Should()
+            .BeFalse("older SQL Server commit_lsn values indicate lost retained source position");
+        RetainsOrAdvances(
+                CdcProvider.SqlServer,
+                minimum,
+                SqlServerOffset("00000028:00000000:0000", "00000028:00000000:0000", 0, snapshot: "true")
+            )
+            .Should()
+            .BeFalse("snapshot offsets are not committed streaming progress");
+        RetainsOrAdvances(CdcProvider.SqlServer, minimum, "null")
+            .Should()
+            .BeFalse("null offsets fail closed");
+        RetainsOrAdvances(
+                CdcProvider.SqlServer,
+                minimum,
+                """{"snapshot":"false","change_lsn":"00000027:00000758:0006","event_serial_no":1}"""
+            )
+            .Should()
+            .BeFalse("missing SQL Server commit_lsn fails closed");
+        RetainsOrAdvances(
+                CdcProvider.SqlServer,
+                minimum,
+                SqlServerOffset("00000027:00000758:0005", "not-a-lsn", 1)
+            )
+            .Should()
+            .BeFalse("malformed SQL Server LSN fields fail closed");
+        RetainsOrAdvances(
+                CdcProvider.SqlServer,
+                minimum,
+                """{"snapshot":"false","commit_lsn":"00000027:00000758:0005","change_lsn":"00000027:00000758:0006","event_serial_no":"not-a-number"}"""
+            )
+            .Should()
+            .BeFalse("malformed SQL Server event_serial_no fails closed");
+    }
+
+    private static bool RetainsOrAdvances(CdcProvider provider, string minimum, string observed) =>
+        CdcConnectorTemplatePinnedImageFixture.CommittedSourceOffsetRetainsOrAdvances(
+            provider,
+            minimum,
+            observed
+        );
+
+    private static string PostgresqlOffset(ulong lsnProc, string snapshot = "false") =>
+        $@"{{""snapshot"":""{snapshot}"",""lsn_proc"":{lsnProc}}}";
+
+    private static string SqlServerOffset(
+        string commitLsn,
+        string changeLsn,
+        long eventSerialNo,
+        string snapshot = "false"
+    ) =>
+        $@"{{""snapshot"":""{snapshot}"",""commit_lsn"":""{commitLsn}"",""change_lsn"":""{changeLsn}"",""event_serial_no"":{eventSerialNo}}}";
+}
+
+[TestFixture]
 [NonParallelizable]
 [Category("DatabaseIntegration")]
 [Category("CdcConnectorTemplateSmoke")]
