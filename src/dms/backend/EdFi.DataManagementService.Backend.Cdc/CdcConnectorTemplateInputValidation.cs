@@ -13,11 +13,6 @@ public interface ICdcConnectorTemplateInputValidator
         CdcConnectorTemplateRequest request,
         CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.Render
     );
-
-    void ValidateRequestOrThrow(
-        CdcConnectorTemplateRequest request,
-        CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.Render
-    );
 }
 
 public sealed record CdcConnectorTemplateValidationResult
@@ -382,11 +377,6 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
 
         return new CdcConnectorTemplateValidationResult(diagnostics);
     }
-
-    public void ValidateRequestOrThrow(
-        CdcConnectorTemplateRequest request,
-        CdcConnectorTemplateSourcePhase sourcePhase = CdcConnectorTemplateSourcePhase.Render
-    ) => ValidateRequest(request, sourcePhase).ThrowIfInvalid();
 
     private static void ValidateBindingIdentity(
         CdcConnectorTemplateRequest request,

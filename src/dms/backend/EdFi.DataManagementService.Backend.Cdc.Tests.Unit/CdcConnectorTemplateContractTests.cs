@@ -733,6 +733,39 @@ public class Given_CdcConnectorTemplateContractTests
     }
 
     [Test]
+    public void It_exposes_only_request_based_connector_template_service_methods()
+    {
+        string[] expectedServiceMethods =
+        [
+            nameof(ICdcConnectorTemplateService.ValidateRequest),
+            nameof(ICdcConnectorTemplateService.Render),
+            nameof(ICdcConnectorTemplateService.ValidateRegistrationPreflight),
+            nameof(ICdcConnectorTemplateService.ValidateLiveReadBack),
+        ];
+
+        typeof(ICdcConnectorTemplateService)
+            .GetMethods()
+            .Select(method => method.Name)
+            .Should()
+            .BeEquivalentTo(expectedServiceMethods);
+    }
+
+    [Test]
+    public void It_exposes_only_request_validation_on_the_input_validator()
+    {
+        string[] expectedInputValidatorMethods =
+        [
+            nameof(ICdcConnectorTemplateInputValidator.ValidateRequest),
+        ];
+
+        typeof(ICdcConnectorTemplateInputValidator)
+            .GetMethods()
+            .Select(method => method.Name)
+            .Should()
+            .BeEquivalentTo(expectedInputValidatorMethods);
+    }
+
+    [Test]
     public void It_defines_the_required_stable_redaction_classifications()
     {
         string[] expectedRedactionClassifications =

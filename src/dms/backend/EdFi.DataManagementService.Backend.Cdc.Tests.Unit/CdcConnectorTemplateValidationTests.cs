@@ -319,13 +319,8 @@ public class Given_CdcConnectorTemplateValidationTests
     }
 
     [Test]
-    public void It_throws_validation_exception_after_collecting_binding_identity_diagnostics_without_leaking_fingerprints()
+    public void It_throws_validation_exception_from_validation_result_without_leaking_fingerprints()
     {
-        using ServiceProvider serviceProvider = new ServiceCollection()
-            .AddCdcConnectorTemplates()
-            .BuildServiceProvider();
-        ICdcConnectorTemplateInputValidator validator =
-            serviceProvider.GetRequiredService<ICdcConnectorTemplateInputValidator>();
         CdcConnectorTemplateRequest request = RequestForProviderSetupDomainValidation(
             BuildProviderSetupResult(
                 CdcProvider.Postgresql,
@@ -333,8 +328,9 @@ public class Given_CdcConnectorTemplateValidationTests
                 observedSourceFingerprint: OtherPostgresqlSourceFingerprint
             )
         );
+        CdcConnectorTemplateValidationResult validationResult = Validate(request);
 
-        Action act = () => validator.ValidateRequestOrThrow(request);
+        Action act = () => validationResult.ThrowIfInvalid();
 
         act.Should()
             .Throw<CdcConnectorTemplateValidationException>()
@@ -1250,13 +1246,11 @@ public class Given_CdcConnectorTemplateValidationTests
             );
             CdcConnectorTemplateValidationResult validationResult = Validate(request);
             CdcConnectorTemplateResult renderResult = Render(request);
-            CdcProviderSetupReadiness readiness = GetProviderSetupReadiness(providerSetupResult);
 
             using var _ = new AssertionScope();
             validationResult.IsValid.Should().BeFalse();
             renderResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
             renderResult.Config.Should().BeEmpty();
-            readiness.CanRenderTemplate.Should().BeFalse();
             validationResult
                 .Diagnostics.Should()
                 .Contain(diagnostic =>
@@ -1269,17 +1263,6 @@ public class Given_CdcConnectorTemplateValidationTests
                         == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
                 );
             renderResult
-                .Diagnostics.Should()
-                .Contain(diagnostic =>
-                    diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceTableInventoryMismatch
-                    && diagnostic.PropertyName == "providerSetup.sourceTableInventory"
-                    && diagnostic.ExpectedValue == "valid CDC source table contract inventory"
-                    && diagnostic.ObservedValue == "malformed"
-                    && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Render
-                    && diagnostic.RedactionClassification
-                        == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
-                );
-            readiness
                 .Diagnostics.Should()
                 .Contain(diagnostic =>
                     diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceTableInventoryMismatch
@@ -1563,13 +1546,15 @@ public class Given_CdcConnectorTemplateValidationTests
     }
 
     [Test]
-    public void It_reports_null_heartbeat_action_query_as_missing_provider_setup_readiness()
+    public void It_reports_null_heartbeat_action_query_during_public_request_validation()
     {
-        CdcProviderSetupReadiness readiness = GetProviderSetupReadiness(
-            BuildProviderSetupResult(CdcProvider.Postgresql, omitHeartbeatActionQuery: true)
+        CdcConnectorTemplateValidationResult result = Validate(
+            RequestForProviderSetupDomainValidation(
+                BuildProviderSetupResult(CdcProvider.Postgresql, omitHeartbeatActionQuery: true)
+            )
         );
 
-        CdcConnectorTemplateDiagnostic diagnostic = readiness
+        CdcConnectorTemplateDiagnostic diagnostic = result
             .Diagnostics.Should()
             .ContainSingle(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.HeartbeatActionQueryRequired
@@ -1577,7 +1562,7 @@ public class Given_CdcConnectorTemplateValidationTests
             .Subject;
 
         using var _ = new AssertionScope();
-        readiness.CanRenderTemplate.Should().BeFalse();
+        result.IsValid.Should().BeFalse();
         diagnostic
             .Category.Should()
             .Be(CdcConnectorTemplateDiagnosticCategory.HeartbeatConfigurationViolation);
@@ -1926,20 +1911,6 @@ public class Given_CdcConnectorTemplateValidationTests
             serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
 
         return service.Render(request);
-    }
-
-    private static CdcProviderSetupReadiness GetProviderSetupReadiness(
-        CdcProviderSetupResult providerSetupResult
-    )
-    {
-        using ServiceProvider serviceProvider = new ServiceCollection()
-            .AddCdcConnectorTemplates()
-            .BuildServiceProvider();
-
-        ICdcConnectorTemplateService service =
-            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
-
-        return service.GetProviderSetupReadiness(providerSetupResult);
     }
 
     private static IEnumerable<string> DiagnosticText(CdcConnectorTemplateDiagnostic diagnostic) =>
