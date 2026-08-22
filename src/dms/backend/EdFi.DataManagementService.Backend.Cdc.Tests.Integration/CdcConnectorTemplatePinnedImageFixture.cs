@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Net;
 using System.Text;
@@ -198,6 +199,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 
         var docker = new DockerCli();
         await settings.StopOnPrerequisiteFailureAsync(
+            provider,
             docker.RequireDockerAsync(cancellationToken),
             "Docker CLI is unavailable or the Docker daemon is not reachable."
         );
@@ -247,7 +249,8 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             }
 
             settings.StopOnPrerequisiteFailure(
-                $"Pinned-image fixture prerequisites are not ready for {provider}: {ex.Message}"
+                provider,
+                $"Pinned-image fixture prerequisites are not ready for {provider}. Failure details are redacted."
             );
             throw;
         }
@@ -285,7 +288,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 
         rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
         rendered.Diagnostics.Should().BeEmpty();
-        AssertReadBackContainsOnlyRenderedProperties(rendered.Config, effectiveConfig);
+        AssertReadBackContainsOnlyRenderedProperties(request, rendered.Config, effectiveConfig);
 
         CdcConnectorTemplateResult preflight = service.ValidateRegistrationPreflight(
             new CdcConnectorTemplateEffectiveConfigValidationRequest(
@@ -303,14 +306,46 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             )
         );
 
-        using var _ = new AssertionScope();
-        preflight.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
-        preflight.Diagnostics.Should().BeEmpty();
-        liveReadBack.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
-        liveReadBack.Diagnostics.Should().BeEmpty();
+        if (preflight.Outcome != CdcConnectorTemplateOutcome.Rendered || preflight.Diagnostics.Count != 0)
+        {
+            CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
+                CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
+                    code: CdcConnectorTemplateDiagnosticCodes.PinnedImageReadBackValidationFailure,
+                    category: CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch,
+                    provider: request.Provider,
+                    propertyName: "template.preflight",
+                    safeArtifactOrObjectName: request.ConnectorName,
+                    expectedValue: CdcConnectorTemplateOutcome.Rendered.ToString(),
+                    observedValue: preflight.Outcome.ToString(),
+                    redactionClassification: CdcConnectorTemplateRedactionClassification.Safe
+                ),
+                $"Pinned-image registration preflight validation failed. Diagnostics: {CdcConnectorTemplatePinnedImageSmokeDiagnostics.FormatDiagnostics(preflight.Diagnostics)}"
+            );
+        }
+
+        if (
+            liveReadBack.Outcome != CdcConnectorTemplateOutcome.Rendered
+            || liveReadBack.Diagnostics.Count != 0
+        )
+        {
+            CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
+                CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
+                    code: CdcConnectorTemplateDiagnosticCodes.PinnedImageReadBackValidationFailure,
+                    category: CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch,
+                    provider: request.Provider,
+                    propertyName: "template.liveReadBack",
+                    safeArtifactOrObjectName: request.ConnectorName,
+                    expectedValue: CdcConnectorTemplateOutcome.Rendered.ToString(),
+                    observedValue: liveReadBack.Outcome.ToString(),
+                    redactionClassification: CdcConnectorTemplateRedactionClassification.Safe
+                ),
+                $"Pinned-image live read-back validation failed. Diagnostics: {CdcConnectorTemplatePinnedImageSmokeDiagnostics.FormatDiagnostics(liveReadBack.Diagnostics)}"
+            );
+        }
     }
 
     private static void AssertReadBackContainsOnlyRenderedProperties(
+        CdcConnectorTemplateRequest request,
         IReadOnlyDictionary<string, string> renderedConfig,
         IReadOnlyDictionary<string, string> effectiveConfig
     )
@@ -327,11 +362,22 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             .OrderBy(key => key, StringComparer.Ordinal)
             .ToArray();
 
-        unexpectedKeys
-            .Should()
-            .BeEmpty(
-                "qualified Kafka Connect read-back should not contain properties outside the rendered template except empty topic.heartbeat.name"
+        if (unexpectedKeys.Length != 0)
+        {
+            CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
+                CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
+                    code: CdcConnectorTemplateDiagnosticCodes.PinnedImageReadBackValidationFailure,
+                    category: CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch,
+                    provider: request.Provider,
+                    propertyName: "kafkaConnect.readBackConfig",
+                    safeArtifactOrObjectName: request.ConnectorName,
+                    expectedValue: "only rendered template properties",
+                    observedValue: "[redacted]",
+                    redactionClassification: CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+                ),
+                $"Qualified Kafka Connect read-back contained {unexpectedKeys.Length} unrendered properties. Unexpected property names are redacted."
             );
+        }
     }
 
     public async Task CreateMinimalTopicsAndProviderObjectsAsync(
@@ -349,17 +395,52 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
     )
     {
         string[] pluginClasses = await ReadConnectorPluginClassesAsync(cancellationToken);
-        pluginClasses.Should().Contain(rendered.Config["connector.class"]);
+        string connectorClass = rendered.Config["connector.class"];
+        if (!pluginClasses.Contains(connectorClass, StringComparer.Ordinal))
+        {
+            CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
+                CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
+                    code: CdcConnectorTemplateDiagnosticCodes.PinnedImageRuntimeClassLoadFailure,
+                    category: CdcConnectorTemplateDiagnosticCategory.TransformConfigurationViolation,
+                    provider: Provider,
+                    propertyName: "pinnedImage.connectorClass",
+                    safeArtifactOrObjectName: new CdcSafeName(connectorClass),
+                    expectedValue: connectorClass,
+                    observedValue: "not found",
+                    redactionClassification: CdcConnectorTemplateRedactionClassification.Safe
+                ),
+                "Pinned Kafka Connect image did not advertise the rendered connector class."
+            );
+        }
 
-        await RunJavaClassProbeAsync(
-            [
-                rendered.Config["connector.class"],
-                DocumentStateTransformClass,
-                DocumentStateJsonConverterClass,
-                KafkaMurmur2PartitionerClass,
-            ],
-            cancellationToken
-        );
+        string[] requiredClasses =
+        [
+            connectorClass,
+            DocumentStateTransformClass,
+            DocumentStateJsonConverterClass,
+            KafkaMurmur2PartitionerClass,
+        ];
+
+        try
+        {
+            await RunJavaClassProbeAsync(requiredClasses, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
+                CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
+                    code: CdcConnectorTemplateDiagnosticCodes.PinnedImageRuntimeClassLoadFailure,
+                    category: CdcConnectorTemplateDiagnosticCategory.TransformConfigurationViolation,
+                    provider: Provider,
+                    propertyName: "pinnedImage.requiredClasses",
+                    safeArtifactOrObjectName: new CdcSafeName(connectorClass),
+                    expectedValue: string.Join(",", requiredClasses),
+                    observedValue: "[redacted]",
+                    redactionClassification: CdcConnectorTemplateRedactionClassification.SecretValue
+                ),
+                $"Pinned Kafka Connect image failed the required class probe. Failure details are redacted. Error type: {ex.GetType().Name}."
+            );
+        }
     }
 
     public async Task AssertKafkaMurmur2PartitionerVectorsAsync(CancellationToken cancellationToken)
@@ -451,7 +532,26 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             java -cp "${class_path}" /tmp/CdcTemplatePartitionerProbe.java
             """;
 
-        await _docker.RunAsync(["exec", ConnectContainerName, "sh", "-lc", javaProbe], cancellationToken);
+        try
+        {
+            await _docker.RunAsync(["exec", ConnectContainerName, "sh", "-lc", javaProbe], cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
+                CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
+                    code: CdcConnectorTemplateDiagnosticCodes.PinnedImageRuntimeClassLoadFailure,
+                    category: CdcConnectorTemplateDiagnosticCategory.ProducerPolicyViolation,
+                    provider: Provider,
+                    propertyName: "pinnedImage.partitionerVectors",
+                    safeArtifactOrObjectName: new CdcSafeName(KafkaMurmur2PartitionerClass),
+                    expectedValue: "fixed murmur2 partition vectors",
+                    observedValue: "[redacted]",
+                    redactionClassification: CdcConnectorTemplateRedactionClassification.SecretValue
+                ),
+                $"Pinned Kafka Connect image failed the partitioner vector probe. Failure details are redacted. Error type: {ex.GetType().Name}."
+            );
+        }
     }
 
     public async Task AssertConnectorConfigValidatesAsync(
@@ -472,11 +572,40 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         );
         string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
-        response
-            .IsSuccessStatusCode.Should()
-            .BeTrue($"Kafka Connect config validation failed: {SanitizeForAssertion(responseBody)}");
+        if (!response.IsSuccessStatusCode)
+        {
+            CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
+                CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
+                    code: CdcConnectorTemplateDiagnosticCodes.PinnedImageConnectorConfigValidationFailure,
+                    category: CdcConnectorTemplateDiagnosticCategory.ReservedKeyViolation,
+                    provider: Provider,
+                    propertyName: "kafkaConnect.configValidation",
+                    safeArtifactOrObjectName: new CdcSafeName(connectorClass),
+                    expectedValue: "successful HTTP status",
+                    observedValue: response.StatusCode.ToString(),
+                    redactionClassification: CdcConnectorTemplateRedactionClassification.Safe
+                ),
+                "Kafka Connect config validation failed. Connector validation output is redacted."
+            );
+        }
 
-        ExtractValidationErrors(responseBody).Should().BeEmpty();
+        IReadOnlyList<string> validationErrors = ExtractValidationErrors(responseBody);
+        if (validationErrors.Count != 0)
+        {
+            CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
+                CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
+                    code: CdcConnectorTemplateDiagnosticCodes.PinnedImageConnectorConfigValidationFailure,
+                    category: CdcConnectorTemplateDiagnosticCategory.ReservedKeyViolation,
+                    provider: Provider,
+                    propertyName: "kafkaConnect.configValidation",
+                    safeArtifactOrObjectName: new CdcSafeName(connectorClass),
+                    expectedValue: "no connector config validation errors",
+                    observedValue: "[redacted]",
+                    redactionClassification: CdcConnectorTemplateRedactionClassification.SecretValue
+                ),
+                $"Kafka Connect config validation returned {validationErrors.Count} errors. Error text is redacted."
+            );
+        }
     }
 
     public async Task RegisterRenderedConnectorConfigDirectlyAsync(
@@ -498,14 +627,23 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             content,
             cancellationToken
         );
-        string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
-        response
-            .StatusCode.Should()
-            .BeOneOf(
-                [HttpStatusCode.Created, HttpStatusCode.OK],
-                $"Kafka Connect registration failed: {SanitizeForAssertion(responseBody)}"
+        if (response.StatusCode is not (HttpStatusCode.Created or HttpStatusCode.OK))
+        {
+            CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
+                CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
+                    code: CdcConnectorTemplateDiagnosticCodes.PinnedImageConnectorRegistrationFailure,
+                    category: CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch,
+                    provider: Provider,
+                    propertyName: "kafkaConnect.registration",
+                    safeArtifactOrObjectName: rendered.ConnectorName,
+                    expectedValue: "Created or OK",
+                    observedValue: response.StatusCode.ToString(),
+                    redactionClassification: CdcConnectorTemplateRedactionClassification.Safe
+                ),
+                "Kafka Connect registration failed. Connector registration output is redacted."
             );
+        }
     }
 
     public async Task AssertRegisteredConnectorReachesRunningStateAsync(
@@ -561,14 +699,26 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             content: null,
             cancellationToken
         );
-        string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
-        response
-            .StatusCode.Should()
-            .BeOneOf(
-                [HttpStatusCode.Accepted, HttpStatusCode.NoContent, HttpStatusCode.OK],
-                $"Kafka Connect restart failed: {SanitizeForAssertion(responseBody)}"
+        if (
+            response.StatusCode
+            is not (HttpStatusCode.Accepted or HttpStatusCode.NoContent or HttpStatusCode.OK)
+        )
+        {
+            CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
+                CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
+                    code: CdcConnectorTemplateDiagnosticCodes.PinnedImageConnectorStatusFailure,
+                    category: CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch,
+                    provider: request.Provider,
+                    propertyName: "kafkaConnect.connectorRestart",
+                    safeArtifactOrObjectName: request.ConnectorName,
+                    expectedValue: "Accepted, NoContent, or OK",
+                    observedValue: response.StatusCode.ToString(),
+                    redactionClassification: CdcConnectorTemplateRedactionClassification.Safe
+                ),
+                "Kafka Connect restart failed. Connector restart output is redacted."
             );
+        }
 
         await WaitForRegisteredConnectorRunningAsync(connectorName, cancellationToken);
         CdcConnectorSourceOffsetSnapshot retainedOffset = await WaitForRetainedCommittedSourceOffsetAsync(
@@ -620,9 +770,22 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         );
         string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
-        response
-            .IsSuccessStatusCode.Should()
-            .BeTrue($"Kafka Connect config read-back failed: {SanitizeForAssertion(responseBody)}");
+        if (!response.IsSuccessStatusCode)
+        {
+            CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
+                CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
+                    code: CdcConnectorTemplateDiagnosticCodes.PinnedImageReadBackValidationFailure,
+                    category: CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch,
+                    provider: request.Provider,
+                    propertyName: "kafkaConnect.readBackConfig",
+                    safeArtifactOrObjectName: request.ConnectorName,
+                    expectedValue: "successful HTTP status",
+                    observedValue: response.StatusCode.ToString(),
+                    redactionClassification: CdcConnectorTemplateRedactionClassification.Safe
+                ),
+                "Kafka Connect config read-back failed. Connector read-back output is redacted."
+            );
+        }
 
         IReadOnlyDictionary<string, string> config = ParseStringMap(responseBody);
         AssertRenderedTemplateCanBeValidatedFromReadBack(request, config, sourcePartitionEvidence);
@@ -1065,7 +1228,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
     )
     {
         DateTimeOffset deadline = DateTimeOffset.UtcNow.Add(ConnectorRunningTimeout);
-        string lastStatus = "not requested";
+        CdcSafeName safeConnectorName = new(connectorName);
         while (DateTimeOffset.UtcNow < deadline)
         {
             using HttpResponseMessage response = await _httpClient.GetAsync(
@@ -1073,7 +1236,6 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
                 cancellationToken
             );
             string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            lastStatus = SanitizeForAssertion(responseBody);
 
             if (response.IsSuccessStatusCode)
             {
@@ -1082,15 +1244,40 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
                     return;
                 }
 
-                ConnectorStatusHasFailure(responseBody)
-                    .Should()
-                    .BeFalse($"Kafka Connect task failed before reaching RUNNING: {lastStatus}");
+                if (ConnectorStatusHasFailure(responseBody))
+                {
+                    CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
+                        CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
+                            code: CdcConnectorTemplateDiagnosticCodes.PinnedImageConnectorStatusFailure,
+                            category: CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch,
+                            provider: Provider,
+                            propertyName: "kafkaConnect.connectorStatus",
+                            safeArtifactOrObjectName: safeConnectorName,
+                            expectedValue: "RUNNING",
+                            observedValue: "FAILED",
+                            redactionClassification: CdcConnectorTemplateRedactionClassification.Safe
+                        ),
+                        "Kafka Connect task failed before reaching RUNNING. Connector status output is redacted."
+                    );
+                }
             }
 
             await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
         }
 
-        Assert.Fail($"Kafka Connect task did not reach RUNNING. Last status: {lastStatus}");
+        CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
+            CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
+                code: CdcConnectorTemplateDiagnosticCodes.PinnedImageConnectorStatusFailure,
+                category: CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch,
+                provider: Provider,
+                propertyName: "kafkaConnect.connectorStatus",
+                safeArtifactOrObjectName: safeConnectorName,
+                expectedValue: "RUNNING",
+                observedValue: "[redacted]",
+                redactionClassification: CdcConnectorTemplateRedactionClassification.SecretValue
+            ),
+            "Kafka Connect task did not reach RUNNING before the timeout. Last status output is redacted."
+        );
     }
 
     private async Task<long> WaitForProviderHeartbeatSequenceGreaterThanAsync(
@@ -1111,7 +1298,17 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
         }
 
-        Assert.Fail(
+        CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
+            CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
+                code: CdcConnectorTemplateDiagnosticCodes.PinnedImageOffsetProgressFailure,
+                category: CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch,
+                provider: Provider,
+                propertyName: "provider.heartbeatSequence",
+                safeArtifactOrObjectName: new CdcSafeName("dms.CdcHeartbeat"),
+                expectedValue: "provider heartbeat sequence advancement",
+                observedValue: observedHeartbeatSequence.ToString(CultureInfo.InvariantCulture),
+                redactionClassification: CdcConnectorTemplateRedactionClassification.Safe
+            ),
             $"Provider heartbeat sequence did not advance from {startingHeartbeatSequence}. Last observed value: {observedHeartbeatSequence}."
         );
         return observedHeartbeatSequence;
@@ -1152,12 +1349,18 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
         }
 
-        string starting = startingOffset is null
-            ? "<none>"
-            : SanitizeForAssertion(startingOffset.CanonicalOffsetJson);
-        string observed = lastObservedOffset is null ? "<none>" : SanitizeForAssertion(lastObservedOffset);
-        Assert.Fail(
-            $"Kafka Connect committed source offset did not progress. Starting offset: {starting}. Last observed offset: {observed}."
+        CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
+            CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
+                code: CdcConnectorTemplateDiagnosticCodes.PinnedImageOffsetProgressFailure,
+                category: CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch,
+                provider: request.Provider,
+                propertyName: "kafkaConnect.committedOffset",
+                safeArtifactOrObjectName: request.ConnectorName,
+                expectedValue: "committed provider position progress",
+                observedValue: "[redacted]",
+                redactionClassification: CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            ),
+            $"Kafka Connect committed source offset did not progress. Starting offset and last observed offset are redacted. Starting present: {startingOffset is not null}. Last observed present: {lastObservedOffset is not null}."
         );
         throw new InvalidOperationException("Kafka Connect committed source offset did not progress.");
     }
@@ -1196,10 +1399,18 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
         }
 
-        string expected = SanitizeForAssertion(expectedOffset.CanonicalOffsetJson);
-        string observed = lastObservedOffset is null ? "<none>" : SanitizeForAssertion(lastObservedOffset);
-        Assert.Fail(
-            $"Kafka Connect did not retain or advance from the pre-restart committed source offset. Minimum offset: {expected}. Last observed offset: {observed}. Last retention check: {lastRetentionFailure}."
+        CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
+            CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
+                code: CdcConnectorTemplateDiagnosticCodes.PinnedImageOffsetProgressFailure,
+                category: CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch,
+                provider: request.Provider,
+                propertyName: "kafkaConnect.committedOffset",
+                safeArtifactOrObjectName: request.ConnectorName,
+                expectedValue: "retained or advanced committed provider position",
+                observedValue: "[redacted]",
+                redactionClassification: CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            ),
+            $"Kafka Connect did not retain or advance from the pre-restart committed source offset. Offset values are redacted. Last retention check: {lastRetentionFailure}."
         );
         throw new InvalidOperationException(
             "Kafka Connect did not retain or advance from the pre-restart committed source offset."
@@ -1772,9 +1983,22 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         );
         string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
-        response
-            .IsSuccessStatusCode.Should()
-            .BeTrue($"Kafka Connect plugin discovery failed: {SanitizeForAssertion(responseBody)}");
+        if (!response.IsSuccessStatusCode)
+        {
+            CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
+                CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
+                    code: CdcConnectorTemplateDiagnosticCodes.PinnedImageRuntimeClassLoadFailure,
+                    category: CdcConnectorTemplateDiagnosticCategory.TransformConfigurationViolation,
+                    provider: Provider,
+                    propertyName: "pinnedImage.connectorPlugins",
+                    safeArtifactOrObjectName: new CdcSafeName(ConnectContainerName),
+                    expectedValue: "successful HTTP status",
+                    observedValue: response.StatusCode.ToString(),
+                    redactionClassification: CdcConnectorTemplateRedactionClassification.Safe
+                ),
+                "Kafka Connect plugin discovery failed. Plugin discovery output is redacted."
+            );
+        }
 
         using JsonDocument document = JsonDocument.Parse(responseBody);
         return document
@@ -1878,15 +2102,39 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             return null;
         }
 
-        response
-            .IsSuccessStatusCode.Should()
-            .BeTrue($"Kafka Connect offset read failed: {SanitizeForAssertion(responseBody)}");
+        if (!response.IsSuccessStatusCode)
+        {
+            CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
+                CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
+                    code: CdcConnectorTemplateDiagnosticCodes.PinnedImageOffsetProgressFailure,
+                    category: CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch,
+                    provider: request.Provider,
+                    propertyName: "kafkaConnect.committedOffset",
+                    safeArtifactOrObjectName: request.ConnectorName,
+                    expectedValue: "successful HTTP status",
+                    observedValue: response.StatusCode.ToString(),
+                    redactionClassification: CdcConnectorTemplateRedactionClassification.Safe
+                ),
+                "Kafka Connect offset read failed. Offset read output is redacted."
+            );
+        }
 
         using JsonDocument document = JsonDocument.Parse(responseBody);
         if (!document.RootElement.TryGetProperty("offsets", out JsonElement offsets))
         {
-            Assert.Fail("Kafka Connect offset read response did not include an offsets array.");
-            return null;
+            CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
+                CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
+                    code: CdcConnectorTemplateDiagnosticCodes.PinnedImageOffsetProgressFailure,
+                    category: CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch,
+                    provider: request.Provider,
+                    propertyName: "kafkaConnect.committedOffset",
+                    safeArtifactOrObjectName: request.ConnectorName,
+                    expectedValue: "offsets array",
+                    observedValue: "missing",
+                    redactionClassification: CdcConnectorTemplateRedactionClassification.Safe
+                ),
+                "Kafka Connect offset read response did not include an offsets array."
+            );
         }
 
         List<CdcConnectorSourceOffsetSnapshot> matchingOffsets = [];
@@ -1912,12 +2160,22 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             );
         }
 
-        matchingOffsets
-            .Should()
-            .HaveCountLessThanOrEqualTo(
-                1,
-                "there should be exactly one committed source offset partition for the rendered connector"
+        if (matchingOffsets.Count > 1)
+        {
+            CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
+                CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
+                    code: CdcConnectorTemplateDiagnosticCodes.PinnedImageOffsetProgressFailure,
+                    category: CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch,
+                    provider: request.Provider,
+                    propertyName: "kafkaConnect.sourcePartition",
+                    safeArtifactOrObjectName: request.ConnectorName,
+                    expectedValue: "single committed source offset partition",
+                    observedValue: matchingOffsets.Count.ToString(CultureInfo.InvariantCulture),
+                    redactionClassification: CdcConnectorTemplateRedactionClassification.Safe
+                ),
+                "Kafka Connect returned more than one committed source offset partition for the rendered connector."
             );
+        }
 
         return matchingOffsets.SingleOrDefault();
     }
@@ -2256,7 +2514,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         }
     }
 
-    private static string SanitizeForAssertion(string value) =>
+    internal static string SanitizeForAssertion(string value) =>
         value.Replace(ConnectorDatabasePassword, "[redacted]", StringComparison.Ordinal);
 
     private static string SingleQuote(string value) => $"'{EscapeSingleQuotedShell(value)}'";
@@ -2660,6 +2918,87 @@ internal static class CdcConnectorTemplatePinnedImageTestData
         CdcSourceFingerprintMetadata.Compute(provider, SourceIdentity);
 }
 
+internal static class CdcConnectorTemplatePinnedImageSmokeDiagnostics
+{
+    public static CdcConnectorTemplateDiagnostic Build(
+        string code,
+        CdcConnectorTemplateDiagnosticCategory category,
+        CdcProvider provider,
+        string propertyName,
+        CdcSafeName? safeArtifactOrObjectName,
+        string? expectedValue,
+        string? observedValue,
+        CdcConnectorTemplateRedactionClassification redactionClassification
+    ) =>
+        new(
+            code,
+            category,
+            CdcConnectorTemplateDiagnosticSeverity.Error,
+            propertyName,
+            safeArtifactOrObjectName,
+            SanitizeValue(expectedValue),
+            SanitizeValue(observedValue),
+            provider,
+            CdcConnectorTemplateSourcePhase.PinnedImageSmoke,
+            redactionClassification
+        );
+
+    public static string FormatDiagnostics(IReadOnlyList<CdcConnectorTemplateDiagnostic> diagnostics)
+    {
+        ArgumentNullException.ThrowIfNull(diagnostics);
+
+        return diagnostics.Count == 0 ? "<none>" : string.Join("; ", diagnostics.Select(FormatDiagnostic));
+    }
+
+    public static string FormatFailureMessage(string message, CdcConnectorTemplateDiagnostic diagnostic) =>
+        string.Create(
+            CultureInfo.InvariantCulture,
+            $"{CdcConnectorTemplatePinnedImageFixture.SanitizeForAssertion(message)} Diagnostic: {FormatDiagnostic(diagnostic)}"
+        );
+
+    [DoesNotReturn]
+    public static void Fail(CdcConnectorTemplateDiagnostic diagnostic, string message) =>
+        throw new CdcConnectorTemplatePinnedImageSmokeAssertionException(message, diagnostic);
+
+    public static string FormatDiagnostic(CdcConnectorTemplateDiagnostic diagnostic)
+    {
+        ArgumentNullException.ThrowIfNull(diagnostic);
+
+        var payload = new SortedDictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["category"] = diagnostic.Category.ToString(),
+            ["code"] = diagnostic.Code,
+            ["expectedValue"] = SanitizeValue(diagnostic.ExpectedValue),
+            ["observedValue"] = SanitizeValue(diagnostic.ObservedValue),
+            ["propertyName"] = diagnostic.PropertyName,
+            ["provider"] = diagnostic.Provider.ToString(),
+            ["redactionClassification"] = diagnostic.RedactionClassification.ToString(),
+            ["safeArtifactOrObjectName"] = diagnostic.SafeArtifactOrObjectName?.Value,
+            ["severity"] = diagnostic.Severity.ToString(),
+            ["sourcePhase"] = diagnostic.SourcePhase.ToString(),
+        };
+
+        return JsonSerializer.Serialize(payload);
+    }
+
+    private static string? SanitizeValue(string? value) =>
+        value is null ? null : CdcConnectorTemplatePinnedImageFixture.SanitizeForAssertion(value);
+}
+
+internal sealed class CdcConnectorTemplatePinnedImageSmokeAssertionException : AssertionException
+{
+    public CdcConnectorTemplatePinnedImageSmokeAssertionException(
+        string message,
+        CdcConnectorTemplateDiagnostic diagnostic
+    )
+        : base(CdcConnectorTemplatePinnedImageSmokeDiagnostics.FormatFailureMessage(message, diagnostic))
+    {
+        Diagnostic = diagnostic;
+    }
+
+    public CdcConnectorTemplateDiagnostic Diagnostic { get; }
+}
+
 internal sealed record CdcConnectorTemplateSmokeSettings(
     string ConnectImage,
     string BrokerImage,
@@ -2702,6 +3041,7 @@ internal sealed record CdcConnectorTemplateSmokeSettings(
         else if (!ConnectImage.Contains("@sha256:", StringComparison.Ordinal))
         {
             StopOnPrerequisiteFailure(
+                provider,
                 $"{ConnectImageVariable} must identify the qualified Ed-Fi Kafka Connect image by immutable digest."
             );
         }
@@ -2723,11 +3063,12 @@ internal sealed record CdcConnectorTemplateSmokeSettings(
 
         string missing = string.Join(", ", missingVariables);
         StopOnPrerequisiteFailure(
+            provider,
             $"CDC connector template pinned-image smoke prerequisites are not configured. Missing: {missing}. Set {FailFastVariable}=true in the qualification lane to fail instead of skipping."
         );
     }
 
-    public async Task StopOnPrerequisiteFailureAsync(Task prerequisite, string message)
+    public async Task StopOnPrerequisiteFailureAsync(CdcProvider provider, Task prerequisite, string message)
     {
         try
         {
@@ -2735,19 +3076,34 @@ internal sealed record CdcConnectorTemplateSmokeSettings(
         }
         catch (Exception ex) when (ex is not AssertionException and not OperationCanceledException)
         {
-            StopOnPrerequisiteFailure($"{message} Details: {ex.Message}");
+            StopOnPrerequisiteFailure(provider, $"{message} Failure details are redacted.");
         }
     }
 
-    public void StopOnPrerequisiteFailure(string message)
+    public void StopOnPrerequisiteFailure(CdcProvider provider, string message)
     {
+        CdcConnectorTemplateDiagnostic diagnostic = CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
+            code: CdcConnectorTemplateDiagnosticCodes.PinnedImageDockerPrerequisiteFailure,
+            category: CdcConnectorTemplateDiagnosticCategory.MissingRequiredInput,
+            provider: provider,
+            propertyName: "pinnedImage.prerequisite",
+            safeArtifactOrObjectName: null,
+            expectedValue: "configured pinned-image smoke prerequisites",
+            observedValue: "[redacted]",
+            redactionClassification: CdcConnectorTemplateRedactionClassification.SecretValue
+        );
+        string formattedMessage = CdcConnectorTemplatePinnedImageSmokeDiagnostics.FormatFailureMessage(
+            message,
+            diagnostic
+        );
+
         if (FailFast)
         {
-            Assert.Fail(message);
+            Assert.Fail(formattedMessage);
             return;
         }
 
-        Assert.Ignore(message);
+        Assert.Ignore(formattedMessage);
     }
 
     private static string ProviderImageVariable(CdcProvider provider) =>

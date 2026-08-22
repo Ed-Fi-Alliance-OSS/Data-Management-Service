@@ -46,6 +46,7 @@ public enum CdcConnectorTemplateSourcePhase
     Render,
     Preflight,
     LiveReadBack,
+    PinnedImageSmoke,
 }
 
 public enum CdcConnectorTemplateRedactionClassification

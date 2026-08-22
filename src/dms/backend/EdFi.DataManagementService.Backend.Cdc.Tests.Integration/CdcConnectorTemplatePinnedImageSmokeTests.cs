@@ -197,6 +197,76 @@ public sealed class Given_PinnedImageFixtureDockerCommandResult
 
 [TestFixture]
 [Parallelizable]
+public sealed class Given_PinnedImageSmokeDiagnostics
+{
+    [Test]
+    public void It_builds_stable_pinned_image_smoke_diagnostics()
+    {
+        CdcConnectorTemplateDiagnostic diagnostic = CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
+            code: CdcConnectorTemplateDiagnosticCodes.PinnedImageConnectorRegistrationFailure,
+            category: CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch,
+            provider: CdcProvider.Postgresql,
+            propertyName: "kafkaConnect.registration",
+            safeArtifactOrObjectName: new CdcSafeName("dms_binding_connector"),
+            expectedValue: "Created or OK",
+            observedValue: "InternalServerError",
+            redactionClassification: CdcConnectorTemplateRedactionClassification.Safe
+        );
+
+        using var _ = new AssertionScope();
+        diagnostic
+            .Code.Should()
+            .Be(CdcConnectorTemplateDiagnosticCodes.PinnedImageConnectorRegistrationFailure);
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch);
+        diagnostic.Severity.Should().Be(CdcConnectorTemplateDiagnosticSeverity.Error);
+        diagnostic.Provider.Should().Be(CdcProvider.Postgresql);
+        diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.PinnedImageSmoke);
+        diagnostic.PropertyName.Should().Be("kafkaConnect.registration");
+        diagnostic.SafeArtifactOrObjectName.Should().Be(new CdcSafeName("dms_binding_connector"));
+        diagnostic.ExpectedValue.Should().Be("Created or OK");
+        diagnostic.ObservedValue.Should().Be("InternalServerError");
+        diagnostic.RedactionClassification.Should().Be(CdcConnectorTemplateRedactionClassification.Safe);
+    }
+
+    [Test]
+    public void It_preserves_diagnostic_evidence_in_sanitized_assertion_failures()
+    {
+        CdcConnectorTemplateDiagnostic diagnostic = CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
+            code: CdcConnectorTemplateDiagnosticCodes.PinnedImageDockerPrerequisiteFailure,
+            category: CdcConnectorTemplateDiagnosticCategory.MissingRequiredInput,
+            provider: CdcProvider.SqlServer,
+            propertyName: "pinnedImage.prerequisite",
+            safeArtifactOrObjectName: null,
+            expectedValue: "configured pinned-image smoke prerequisites",
+            observedValue: CdcConnectorTemplatePinnedImageFixture.ConnectorDatabasePassword,
+            redactionClassification: CdcConnectorTemplateRedactionClassification.SecretValue
+        );
+
+        Action act = () =>
+            CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
+                diagnostic,
+                $"Docker prerequisite leaked {CdcConnectorTemplatePinnedImageFixture.ConnectorDatabasePassword}"
+            );
+
+        CdcConnectorTemplatePinnedImageSmokeAssertionException exception = act.Should()
+            .Throw<CdcConnectorTemplatePinnedImageSmokeAssertionException>()
+            .Which;
+
+        using var _ = new AssertionScope();
+        exception.Diagnostic.Should().BeSameAs(diagnostic);
+        exception
+            .Message.Should()
+            .Contain(CdcConnectorTemplateDiagnosticCodes.PinnedImageDockerPrerequisiteFailure);
+        exception.Message.Should().Contain(nameof(CdcConnectorTemplateSourcePhase.PinnedImageSmoke));
+        exception.Message.Should().Contain("[redacted]");
+        exception
+            .Message.Should()
+            .NotContain(CdcConnectorTemplatePinnedImageFixture.ConnectorDatabasePassword);
+    }
+}
+
+[TestFixture]
+[Parallelizable]
 public sealed class Given_CdcConnectorProviderOffsetRetentionComparison
 {
     [Test]

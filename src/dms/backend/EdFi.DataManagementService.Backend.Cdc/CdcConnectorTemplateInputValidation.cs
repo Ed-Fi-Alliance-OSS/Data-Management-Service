@@ -68,6 +68,20 @@ public static class CdcConnectorTemplateDiagnosticCodes
     public const string LiveReadBackSecretMismatch = "CDC_TEMPLATE_LIVE_READBACK_SECRET_MISMATCH";
     public const string LiveReadBackSourcePartitionMismatch =
         "CDC_TEMPLATE_LIVE_READBACK_SOURCE_PARTITION_MISMATCH";
+    public const string PinnedImageDockerPrerequisiteFailure =
+        "CDC_TEMPLATE_PINNED_IMAGE_DOCKER_PREREQUISITE_FAILURE";
+    public const string PinnedImageConnectorConfigValidationFailure =
+        "CDC_TEMPLATE_PINNED_IMAGE_CONNECTOR_CONFIG_VALIDATION_FAILURE";
+    public const string PinnedImageConnectorRegistrationFailure =
+        "CDC_TEMPLATE_PINNED_IMAGE_CONNECTOR_REGISTRATION_FAILURE";
+    public const string PinnedImageConnectorStatusFailure =
+        "CDC_TEMPLATE_PINNED_IMAGE_CONNECTOR_STATUS_FAILURE";
+    public const string PinnedImageRuntimeClassLoadFailure =
+        "CDC_TEMPLATE_PINNED_IMAGE_RUNTIME_CLASS_LOAD_FAILURE";
+    public const string PinnedImageOffsetProgressFailure =
+        "CDC_TEMPLATE_PINNED_IMAGE_OFFSET_PROGRESS_FAILURE";
+    public const string PinnedImageReadBackValidationFailure =
+        "CDC_TEMPLATE_PINNED_IMAGE_READBACK_VALIDATION_FAILURE";
 }
 
 internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplateInputValidator
