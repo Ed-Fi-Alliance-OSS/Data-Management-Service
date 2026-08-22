@@ -350,9 +350,11 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
     {
         ICdcConnectorTemplateService service =
             _serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
-        CdcConnectorProviderSetupEvidence providerSetupEvidence = BuildProviderSetupEvidence(
+        CdcConnectorProviderSetupEvidence preflightProviderSetupEvidence = BuildProviderSetupEvidence(
             request.Provider
         );
+        CdcConnectorProviderSetupEvidence liveReadBackProviderSetupEvidence =
+            BuildLiveReadBackProviderSetupEvidence(request.Provider);
         CdcConnectorTemplateResult rendered = service.Render(request);
 
         rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
@@ -363,14 +365,14 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             new CdcConnectorTemplateEffectiveConfigValidationRequest(
                 request,
                 effectiveConfig,
-                providerSetupEvidence
+                preflightProviderSetupEvidence
             )
         );
         CdcConnectorTemplateResult liveReadBack = service.ValidateLiveReadBack(
             new CdcConnectorTemplateEffectiveConfigValidationRequest(
                 request,
                 effectiveConfig,
-                providerSetupEvidence,
+                liveReadBackProviderSetupEvidence,
                 sourcePartitionEvidence
             )
         );
@@ -2151,11 +2153,27 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
     private static CdcConnectorProviderSetupEvidence BuildProviderSetupEvidence(CdcProvider provider) =>
         new(bindingGeneration: 7, BuildProviderSetupResult(provider));
 
-    private static CdcProviderSetupResult BuildProviderSetupResult(CdcProvider provider) =>
+    private static CdcConnectorProviderSetupEvidence BuildLiveReadBackProviderSetupEvidence(
+        CdcProvider provider
+    ) =>
+        new(
+            bindingGeneration: 7,
+            BuildProviderSetupResult(
+                provider,
+                mode: CdcProviderSetupMode.ValidateOnly,
+                outcome: CdcProviderSetupOutcome.ExactMatch
+            )
+        );
+
+    private static CdcProviderSetupResult BuildProviderSetupResult(
+        CdcProvider provider,
+        CdcProviderSetupMode mode = CdcProviderSetupMode.InitialCreateOrExactMatch,
+        CdcProviderSetupOutcome outcome = CdcProviderSetupOutcome.CreatedOrMatched
+    ) =>
         new(
             Provider: provider,
-            Mode: CdcProviderSetupMode.InitialCreateOrExactMatch,
-            Outcome: CdcProviderSetupOutcome.CreatedOrMatched,
+            Mode: mode,
+            Outcome: outcome,
             BoundPhysicalSourceFingerprint: CdcConnectorTemplatePinnedImageTestData.SourceFingerprint(
                 provider
             ),

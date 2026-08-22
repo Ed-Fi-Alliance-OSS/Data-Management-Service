@@ -47,6 +47,7 @@ internal static class CdcConnectorTemplateTestData
                 BindingGeneration,
                 BuildProviderSetupResult(
                     provider,
+                    mode: CdcProviderSetupMode.InitialCreateOrExactMatch,
                     outcome: outcome,
                     boundPhysicalSourceFingerprint: physicalSourceFingerprint,
                     artifactInventory: artifactInventory,
@@ -131,7 +132,8 @@ internal static class CdcConnectorTemplateTestData
 
     public static CdcProviderSetupResult BuildProviderSetupResult(
         CdcProvider provider,
-        CdcProviderSetupOutcome outcome = CdcProviderSetupOutcome.CreatedOrMatched,
+        CdcProviderSetupOutcome outcome = CdcProviderSetupOutcome.ExactMatch,
+        CdcProviderSetupMode mode = CdcProviderSetupMode.ValidateOnly,
         CdcSourceFingerprint? boundPhysicalSourceFingerprint = null,
         CdcSourceFingerprint? observedSourceFingerprint = null,
         IReadOnlyList<CdcProviderArtifactObservation>? artifactInventory = null,
@@ -147,7 +149,7 @@ internal static class CdcConnectorTemplateTestData
 
         return new CdcProviderSetupResult(
             Provider: provider,
-            Mode: CdcProviderSetupMode.InitialCreateOrExactMatch,
+            Mode: mode,
             Outcome: outcome,
             BoundPhysicalSourceFingerprint: boundFingerprint,
             ObservedSourceFingerprint: observedSourceFingerprint ?? boundFingerprint,

@@ -131,16 +131,32 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
         }
 
         if (
-            result.Outcome
-            is not (CdcProviderSetupOutcome.CreatedOrMatched or CdcProviderSetupOutcome.ExactMatch)
+            sourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack
+            && result.Mode != CdcProviderSetupMode.ValidateOnly
         )
         {
             diagnostics.Add(
                 BuildDiagnostic(
                     CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch,
                     CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
+                    "providerSetup.mode",
+                    CdcProviderSetupMode.ValidateOnly.ToString(),
+                    result.Mode.ToString(),
+                    request.TemplateRequest,
+                    sourcePhase,
+                    CdcConnectorTemplateRedactionClassification.Safe
+                )
+            );
+        }
+
+        if (ProviderSetupOutcomeIsNotAccepted(result.Outcome, sourcePhase))
+        {
+            diagnostics.Add(
+                BuildDiagnostic(
+                    CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch,
+                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
                     "providerSetup.outcome",
-                    "CreatedOrMatched or ExactMatch",
+                    ExpectedProviderSetupOutcome(sourcePhase),
                     result.Outcome.ToString(),
                     request.TemplateRequest,
                     sourcePhase,
@@ -255,6 +271,19 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
 
         AddProviderSetupEvidenceDriftDiagnostics(request, sourcePhase, diagnostics);
     }
+
+    private static bool ProviderSetupOutcomeIsNotAccepted(
+        CdcProviderSetupOutcome outcome,
+        CdcConnectorTemplateSourcePhase sourcePhase
+    ) =>
+        sourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack
+            ? outcome != CdcProviderSetupOutcome.ExactMatch
+            : outcome is not (CdcProviderSetupOutcome.CreatedOrMatched or CdcProviderSetupOutcome.ExactMatch);
+
+    private static string ExpectedProviderSetupOutcome(CdcConnectorTemplateSourcePhase sourcePhase) =>
+        sourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack
+            ? CdcProviderSetupOutcome.ExactMatch.ToString()
+            : "CreatedOrMatched or ExactMatch";
 
     private static bool HasProviderPrerequisiteErrors(
         CdcConnectorTemplateEffectiveConfigValidationRequest request,

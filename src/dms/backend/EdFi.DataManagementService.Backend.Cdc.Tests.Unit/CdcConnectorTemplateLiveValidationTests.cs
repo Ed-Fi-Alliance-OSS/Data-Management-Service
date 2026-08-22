@@ -224,6 +224,164 @@ public class Given_CdcConnectorTemplateLiveValidationTests
         diagnostic.ObservedValue.Should().BeNull();
     }
 
+    [TestCase(CdcProvider.Postgresql)]
+    [TestCase(CdcProvider.SqlServer)]
+    public void It_accepts_initial_create_or_match_provider_setup_evidence_during_registration_preflight(
+        CdcProvider provider
+    )
+    {
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(provider);
+        CdcConnectorTemplateResult rendered = service.Render(request);
+        var initialProviderSetupEvidence = new CdcConnectorProviderSetupEvidence(
+            BindingGeneration,
+            BuildProviderSetupResult(
+                provider,
+                outcome: CdcProviderSetupOutcome.CreatedOrMatched,
+                mode: CdcProviderSetupMode.InitialCreateOrExactMatch
+            )
+        );
+
+        CdcConnectorTemplateResult result = service.ValidateRegistrationPreflight(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                initialProviderSetupEvidence
+            )
+        );
+
+        using var _ = new AssertionScope();
+        rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        result.Config.Should().Equal(rendered.Config);
+        result.Diagnostics.Should().BeEmpty();
+    }
+
+    [TestCase(CdcProvider.Postgresql)]
+    [TestCase(CdcProvider.SqlServer)]
+    public void It_accepts_validate_only_exact_match_provider_setup_evidence_during_live_read_back(
+        CdcProvider provider
+    )
+    {
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(provider);
+        CdcConnectorTemplateResult rendered = service.Render(request);
+
+        CdcConnectorTemplateResult result = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                new CdcConnectorProviderSetupEvidence(
+                    BindingGeneration,
+                    BuildProviderSetupResult(
+                        provider,
+                        outcome: CdcProviderSetupOutcome.ExactMatch,
+                        mode: CdcProviderSetupMode.ValidateOnly
+                    )
+                ),
+                BuildSourcePartitionEvidence(request)
+            )
+        );
+
+        using var _ = new AssertionScope();
+        rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        result.Config.Should().Equal(rendered.Config);
+        result.Diagnostics.Should().BeEmpty();
+    }
+
+    [TestCase(
+        CdcProviderSetupMode.InitialCreateOrExactMatch,
+        CdcProviderSetupOutcome.CreatedOrMatched,
+        "providerSetup.mode",
+        "providerSetup.outcome",
+        TestName = "Initial create-or-match evidence is not live read-back proof"
+    )]
+    [TestCase(
+        CdcProviderSetupMode.InitialCreateOrExactMatch,
+        CdcProviderSetupOutcome.ExactMatch,
+        "providerSetup.mode",
+        null,
+        TestName = "Initial exact-match evidence is not fresh live read-back proof"
+    )]
+    [TestCase(
+        CdcProviderSetupMode.ValidateOnly,
+        CdcProviderSetupOutcome.CreatedOrMatched,
+        null,
+        "providerSetup.outcome",
+        TestName = "Validate-only created-or-matched evidence is not exact live read-back proof"
+    )]
+    [TestCase(
+        CdcProviderSetupMode.ValidateOnly,
+        CdcProviderSetupOutcome.Failed,
+        null,
+        "providerSetup.outcome",
+        TestName = "Failed validate-only evidence is not live read-back proof"
+    )]
+    public void It_rejects_provider_setup_evidence_that_is_not_validate_only_exact_match_for_live_read_back(
+        CdcProviderSetupMode mode,
+        CdcProviderSetupOutcome outcome,
+        string? expectedModeDiagnosticPropertyName,
+        string? expectedOutcomeDiagnosticPropertyName
+    )
+    {
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(CdcProvider.Postgresql);
+        CdcConnectorTemplateResult rendered = service.Render(request);
+
+        CdcConnectorTemplateResult result = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                new CdcConnectorProviderSetupEvidence(
+                    BindingGeneration,
+                    BuildProviderSetupResult(CdcProvider.Postgresql, outcome: outcome, mode: mode)
+                ),
+                BuildSourcePartitionEvidence(request)
+            )
+        );
+
+        using var _ = new AssertionScope();
+        rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        result.Config.Should().BeEmpty();
+        result
+            .Diagnostics.Should()
+            .OnlyContain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack
+                && diagnostic.RedactionClassification == CdcConnectorTemplateRedactionClassification.Safe
+            );
+        if (expectedModeDiagnosticPropertyName is not null)
+        {
+            result
+                .Diagnostics.Should()
+                .ContainSingle(diagnostic =>
+                    diagnostic.PropertyName == expectedModeDiagnosticPropertyName
+                    && diagnostic.ExpectedValue == CdcProviderSetupMode.ValidateOnly.ToString()
+                    && diagnostic.ObservedValue == mode.ToString()
+                );
+        }
+
+        if (expectedOutcomeDiagnosticPropertyName is not null)
+        {
+            result
+                .Diagnostics.Should()
+                .ContainSingle(diagnostic =>
+                    diagnostic.PropertyName == expectedOutcomeDiagnosticPropertyName
+                    && diagnostic.ExpectedValue == CdcProviderSetupOutcome.ExactMatch.ToString()
+                    && diagnostic.ObservedValue == outcome.ToString()
+                );
+        }
+    }
+
     [Test]
     public void It_accepts_exact_externalized_and_masked_secret_read_back_values_for_sqlserver_generated_clients()
     {
