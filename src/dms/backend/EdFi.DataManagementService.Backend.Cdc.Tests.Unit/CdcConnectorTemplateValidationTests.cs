@@ -1110,6 +1110,40 @@ public class Given_CdcConnectorTemplateValidationTests
         diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.Render);
     }
 
+    [TestCase("update dms.CdcHeartbeat\nset HeartbeatSequence = HeartbeatSequence + 1")]
+    [TestCase("update dms.CdcHeartbeat\rset HeartbeatSequence = HeartbeatSequence + 1")]
+    [TestCase("update dms.CdcHeartbeat\tset HeartbeatSequence = HeartbeatSequence + 1")]
+    [TestCase("update dms.CdcHeartbeat\u0001set HeartbeatSequence = HeartbeatSequence + 1")]
+    public void It_rejects_control_characters_in_heartbeat_action_sql_during_public_request_validation(
+        string heartbeatSql
+    )
+    {
+        CdcConnectorTemplateValidationResult result = Validate(
+            BuildRequest(CdcProvider.Postgresql, heartbeatSql: heartbeatSql)
+        );
+
+        CdcConnectorTemplateDiagnostic diagnostic = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.HeartbeatActionQueryRequired
+            )
+            .Subject;
+
+        using var _ = new AssertionScope();
+        result.IsValid.Should().BeFalse();
+        diagnostic
+            .Category.Should()
+            .Be(CdcConnectorTemplateDiagnosticCategory.HeartbeatConfigurationViolation);
+        diagnostic.PropertyName.Should().Be("providerSetup.heartbeatActionQuery");
+        diagnostic.ExpectedValue.Should().Be("fresh provider heartbeat action query");
+        diagnostic.ObservedValue.Should().Be("[redacted]");
+        diagnostic
+            .RedactionClassification.Should()
+            .Be(CdcConnectorTemplateRedactionClassification.PhysicalIdentifier);
+        diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.Render);
+        result.Diagnostics.SelectMany(DiagnosticText).Should().NotContain(heartbeatSql);
+    }
+
     [Test]
     public void It_returns_validation_failed_instead_of_throwing_when_rendering_blank_heartbeat_action_sql()
     {
@@ -1129,6 +1163,38 @@ public class Given_CdcConnectorTemplateValidationTests
         result.Config.Should().BeEmpty();
         result.RegistrationPayload.Should().BeNull();
         diagnostic.ObservedValue.Should().Be("[redacted]");
+    }
+
+    [Test]
+    public void It_returns_validation_failed_instead_of_throwing_when_rendering_heartbeat_action_sql_with_control_characters()
+    {
+        const string heartbeatSql = "update dms.CdcHeartbeat\nset HeartbeatSequence = HeartbeatSequence + 1";
+        CdcConnectorTemplateResult? result = null;
+
+        Action render = () =>
+            result = Render(BuildRequest(CdcProvider.Postgresql, heartbeatSql: heartbeatSql));
+
+        render.Should().NotThrow();
+        result.Should().NotBeNull();
+        CdcConnectorTemplateDiagnostic diagnostic = result!
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.HeartbeatActionQueryRequired
+            )
+            .Subject;
+
+        using var _ = new AssertionScope();
+        result!.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        result.Config.Should().BeEmpty();
+        result.RegistrationPayload.Should().BeNull();
+        diagnostic
+            .Category.Should()
+            .Be(CdcConnectorTemplateDiagnosticCategory.HeartbeatConfigurationViolation);
+        diagnostic.ObservedValue.Should().Be("[redacted]");
+        diagnostic
+            .RedactionClassification.Should()
+            .Be(CdcConnectorTemplateRedactionClassification.PhysicalIdentifier);
+        result.Diagnostics.SelectMany(DiagnosticText).Should().NotContain(heartbeatSql);
     }
 
     [TestCase(CdcProvider.Postgresql, "select 1")]
