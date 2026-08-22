@@ -41,9 +41,12 @@
     After the load, four things are asserted that a row-count reconciliation cannot see. Sequence
     positions, because a sequence left at its fresh-database value only surfaces as a collision on the
     first write after restore. Referential integrity, because --disable-triggers suppressed foreign-key
-    enforcement during the load. Stamp distributions, because a trigger that fired would have rewritten
-    ContentVersion in place and left the row count identical. And the fingerprint and singleton state,
-    against a freshly provisioned reference database or explicit expected values.
+    enforcement during the load: every foreign key declared in the DMS-owned schemas is validated
+    against the data from the catalog, and no trigger may be left disabled, since a declared constraint
+    whose enforcement trigger is still off is not a constraint. Stamp distributions, because a trigger
+    that fired would have rewritten ContentVersion in place and left the row count identical. And the
+    fingerprint, document count and singleton state, against a freshly provisioned reference database or
+    explicit expected values.
 
     Checkpoint mode re-measures and re-asserts the same invariants later: DMS then starts, serves reads,
     and accepts writes, all of which can touch the objects the post-copy assertions just checked.
@@ -67,6 +70,12 @@
 .PARAMETER ExpectedSourceIdentity
     Checkpoint mode: assert the source identity equals this value, proving the database was not
     re-provisioned underneath the run. Omit on the first checkpoint.
+
+.PARAMETER ExpectedDocumentCount
+    Required in both modes: the dms.Document row count the dataset must hold, 10576801 for the
+    v80 Northridge artifact. Required rather than optional because the checkpoint record is
+    acceptance evidence, and a document count that is measured into that record without being
+    compared to anything is a number, not a check.
 
 .PARAMETER ReferenceDatabase
     A freshly provisioned database to take the expected fingerprint and singleton cache state from.
@@ -94,19 +103,21 @@
 
 .EXAMPLE
     ./Copy-NorthridgeDataForward.ps1 -Mode Copy -DumpPath /w/nr.dump -SourceDatabase northridge_source `
-        -TargetDatabase northridge_target -OutputDirectory /tmp/nr -WhatIf
+        -TargetDatabase northridge_target -OutputDirectory /tmp/nr -ExpectedDocumentCount 10576801 `
+        -ReferenceDatabase northridge_reference -WhatIf
 
     Prints the allow-list and the plan without contacting a database.
 
 .EXAMPLE
     ./Copy-NorthridgeDataForward.ps1 -Mode Checkpoint -TargetDatabase northridge_target `
-        -CheckpointName C2 -OutputDirectory /tmp/nr -ReferenceDatabase northridge_reference
+        -CheckpointName C2 -OutputDirectory /tmp/nr -ReferenceDatabase northridge_reference `
+        -ExpectedDocumentCount 10576801
 
     Takes the expected fingerprint and cache state from the freshly provisioned reference database.
 
 .EXAMPLE
     ./Copy-NorthridgeDataForward.ps1 -Mode Checkpoint -TargetDatabase northridge_restoretest `
-        -CheckpointName C5 -OutputDirectory /tmp/nr `
+        -CheckpointName C5 -OutputDirectory /tmp/nr -ExpectedDocumentCount 10576801 `
         -ExpectedEffectiveSchemaHash <hash> -ExpectedResourceKeyCount 351 -ExpectedResourceKeySeedHash <hash>
 
     For a checkpoint taken after the reference database has been dropped. One of these two forms is
@@ -141,6 +152,12 @@ param(
     [Parameter(ParameterSetName = "Checkpoint")]
     [string]
     $ExpectedSourceIdentity,
+
+    [Parameter(Mandatory, ParameterSetName = "Copy")]
+    [Parameter(Mandatory, ParameterSetName = "Checkpoint")]
+    [ValidateRange([System.Management.Automation.ValidateRangeKind]::Positive)]
+    [long]
+    $ExpectedDocumentCount,
 
     [Parameter(ParameterSetName = "Copy")]
     [Parameter(ParameterSetName = "Checkpoint")]
@@ -194,6 +211,11 @@ $script:DmsDataTable = @("Document", "ReferentialIdentity")
 $script:DmsDerivedTable = "Descriptor"
 $script:BulkSchema = @("edfi", "tracked_changes_edfi", "auth")
 $script:StagingSchema = "northridge_staging"
+
+# The DMS-owned schemas, matching the default set Compare-DmsSchemaSnapshot.ps1 diffs. Both the
+# foreign-key sweep and the disabled-trigger check are scoped to these, so neither can drift from
+# what the schema compare covers.
+$script:DmsOwnedSchema = @("dms") + $script:BulkSchema
 
 # The dms sequences whose positions the copied data depends on. Restored from the archive's own
 # SEQUENCE SET entries so the target inherits the producer positions rather than fresh-database ones.
@@ -382,6 +404,7 @@ function Test-Invariant {
     param(
         [Parameter(Mandatory)] [System.Collections.Specialized.OrderedDictionary] $Measurement,
         [Parameter(Mandatory)] [System.Collections.Specialized.OrderedDictionary] $Expected,
+        [Parameter(Mandatory)] [long] $ExpectedDocumentRow,
         [string] $ExpectedIdentity
     )
 
@@ -424,6 +447,9 @@ function Test-Invariant {
     }
     if ($Measurement.StagingSchemaPresent -ne 0) {
         $failure.Add("staging schema '$script:StagingSchema' still exists and would appear in the schema compare")
+    }
+    if ($Measurement.DocumentRow -ne $ExpectedDocumentRow) {
+        $failure.Add("dms.Document holds $($Measurement.DocumentRow) row(s), expected $ExpectedDocumentRow")
     }
 
     # Comma operator: PowerShell unrolls an empty collection to $null on return, so a caller doing
@@ -515,14 +541,24 @@ SELECT 'CollectionItemIdSequence|' ||
 }
 
 # --disable-triggers also suppresses foreign-key enforcement, so referential integrity is not a
-# property the loader established. These are the three references that would break the dataset
-# silently: a document with no resource key, a descriptor with no document, an identity with no owner.
+# property the loader established. Three references are named explicitly because they are the ones
+# whose breakage would ruin the dataset silently: a document with no resource key, a descriptor with
+# no document, an identity with no owner. Naming three leaves every other foreign key in the schema
+# unproven, though, and the relational projection declares them across hundreds of tables -- so every
+# constraint is then re-checked from the catalog rather than by hand.
 function Test-ReferentialIntegrity {
     [CmdletBinding()]
     # Object[] rather than List[string]: the comma operator that stops an empty result unrolling to
     # $null wraps the return, and the declared type has to match what callers actually receive.
     [OutputType([System.Object[]])]
-    param([Parameter(Mandatory)] [string] $DatabaseName)
+    param(
+        [Parameter(Mandatory)] [string] $DatabaseName,
+        # The row counts already measured on the target. A child table with no rows cannot hold a
+        # violation, so its constraints are skipped -- and the skip is counted and printed, because a
+        # sweep that quietly checked nothing would print what a clean one prints. A table the map does
+        # not mention is validated rather than skipped.
+        [Parameter(Mandatory)] [hashtable] $RowCount
+    )
 
     $failure = [System.Collections.Generic.List[string]]::new()
 
@@ -538,6 +574,177 @@ function Test-ReferentialIntegrity {
         if ($orphan -ne 0) {
             $failure.Add("$orphan orphaned row(s) for $name; foreign keys were not enforced during the load")
         }
+    }
+
+    foreach ($item in (Test-ForeignKeyValidity -DatabaseName $DatabaseName -RowCount $RowCount)) {
+        $failure.Add($item)
+    }
+
+    # --disable-triggers is DISABLE TRIGGER ALL, which switches off the internal constraint triggers
+    # that enforce foreign keys along with the projection triggers. A table left that way satisfies
+    # every count and every anti-join above and then accepts a violating row on the first write, so
+    # valid data is only half of what has to hold here. 'O' and 'A' are enabled and anything else is
+    # not, which is the reading DMS's own catalog validator uses.
+    $schemaLiteral = ($script:DmsOwnedSchema | ForEach-Object { "'$_'" }) -join ", "
+    $disabledTrigger = [long](Get-ScalarValue -DatabaseName $DatabaseName -Sql @"
+SELECT COUNT(*)
+FROM pg_trigger tg
+JOIN pg_class rel ON rel.oid = tg.tgrelid
+JOIN pg_namespace n ON n.oid = rel.relnamespace
+WHERE n.nspname IN ($schemaLiteral) AND tg.tgenabled::text NOT IN ('O', 'A');
+"@)
+    Write-Information "  triggers left disabled: $disabledTrigger" -InformationAction Continue
+    if ($disabledTrigger -ne 0) {
+        $failure.Add("$disabledTrigger trigger(s) in $($script:DmsOwnedSchema -join ', ') are still disabled after the load; the foreign keys among them are declared but not enforced")
+    }
+
+    # Comma operator: PowerShell unrolls an empty collection to $null on return, so a caller doing
+    # .Count on a clean result would fail -- a bug that can only fire when there is nothing to report.
+    return ,$failure
+}
+
+# Every foreign key in the DMS-owned schemas, validated against the data actually present. The
+# statements are generated from pg_constraint rather than written out, so the sweep follows the schema
+# instead of a list that goes stale, and MATCH SIMPLE semantics are reproduced exactly: a row with any
+# null key column satisfies the constraint and must not be reported as a violation.
+#
+# This is the expensive check in the run, and it is the only one that answers the question the load
+# leaves open. pg_restore --disable-triggers means no constraint was enforced while the rows arrived,
+# and PostgreSQL will not re-validate a constraint it already believes to be valid, so the data has to
+# be tested directly.
+function Test-ForeignKeyValidity {
+    [CmdletBinding()]
+    # Object[] rather than List[string]: the comma operator that stops an empty result unrolling to
+    # $null wraps the return, and the declared type has to match what callers actually receive.
+    [OutputType([System.Object[]])]
+    param(
+        [Parameter(Mandatory)] [string] $DatabaseName,
+        [Parameter(Mandatory)] [hashtable] $RowCount
+    )
+
+    $failure = [System.Collections.Generic.List[string]]::new()
+    $schemaLiteral = ($script:DmsOwnedSchema | ForEach-Object { "'$_'" }) -join ", "
+
+    # Counted straight from the catalog, independently of the generator below, so the generator can be
+    # held to it. A constraint the generator silently failed to produce a statement for would otherwise
+    # be indistinguishable from a constraint with no violations.
+    $constraintTotal = [long](Get-ScalarValue -DatabaseName $DatabaseName -Sql @"
+SELECT COUNT(*)
+FROM pg_constraint con
+JOIN pg_class cl ON cl.oid = con.conrelid
+JOIN pg_namespace n ON n.oid = cl.relnamespace
+WHERE con.contype = 'f' AND n.nspname IN ($schemaLiteral);
+"@)
+
+    # One row per constraint: the child table, a tab, then the statement that validates it. A tab
+    # separates them because the statement text itself contains the pipe the label is built from.
+    $generatorSql = @"
+WITH fk AS (
+    SELECT con.oid AS conoid, con.conname, con.conrelid, con.confrelid, con.conkey, con.confkey,
+           n.nspname AS child_schema, cl.relname AS child_table,
+           fn.nspname AS parent_schema, fcl.relname AS parent_table
+    FROM pg_constraint con
+    JOIN pg_class cl ON cl.oid = con.conrelid
+    JOIN pg_namespace n ON n.oid = cl.relnamespace
+    JOIN pg_class fcl ON fcl.oid = con.confrelid
+    JOIN pg_namespace fn ON fn.oid = fcl.relnamespace
+    WHERE con.contype = 'f' AND n.nspname IN ($schemaLiteral)
+),
+predicate AS (
+    SELECT f.conoid,
+           string_agg(format('t.%I IS NOT NULL', ca.attname), ' AND ' ORDER BY k.ord) AS not_null_test,
+           string_agg(format('p.%I = t.%I', pa.attname, ca.attname), ' AND ' ORDER BY k.ord) AS join_test
+    FROM fk f
+    CROSS JOIN LATERAL unnest(f.conkey, f.confkey) WITH ORDINALITY AS k(child_att, parent_att, ord)
+    JOIN pg_attribute ca ON ca.attrelid = f.conrelid AND ca.attnum = k.child_att
+    JOIN pg_attribute pa ON pa.attrelid = f.confrelid AND pa.attnum = k.parent_att
+    GROUP BY f.conoid
+)
+SELECT f.child_schema || '.' || f.child_table || E'\t' || format(
+    'SELECT %L || ''|'' || COUNT(*)::text FROM %I.%I t WHERE (%s) AND NOT EXISTS (SELECT 1 FROM %I.%I p WHERE %s)',
+    f.child_schema || '.' || f.child_table || '|' || f.conname,
+    f.child_schema, f.child_table, p.not_null_test,
+    f.parent_schema, f.parent_table, p.join_test)
+FROM fk f
+JOIN predicate p ON p.conoid = f.conoid
+ORDER BY f.child_schema, f.child_table, f.conname;
+"@
+
+    $generated = @(Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser `
+            -DatabaseName $DatabaseName -Sql $generatorSql)
+
+    $statement = [System.Collections.Generic.List[string]]::new()
+    $skipped = 0
+
+    foreach ($row in $generated) {
+        $text = ([string]$row).Trim()
+        if ([string]::IsNullOrWhiteSpace($text)) { continue }
+
+        $tabIndex = $text.IndexOf("`t")
+        if ($tabIndex -lt 1) { continue }
+
+        $childTable = $text.Substring(0, $tabIndex)
+        if ($RowCount.ContainsKey($childTable) -and [long]$RowCount[$childTable] -eq 0) {
+            $skipped++
+            continue
+        }
+
+        $statement.Add($text.Substring($tabIndex + 1))
+    }
+
+    # No constraint found means the generator matched nothing, not that the data is clean. Reporting
+    # zero violations out of zero checks is the exact shape of evidence this script exists to refuse.
+    if ($constraintTotal -eq 0) {
+        $failure.Add("no foreign key constraint was found in $($script:DmsOwnedSchema -join ', '), so nothing was validated; a clean result from an empty sweep proves nothing")
+        return ,$failure
+    }
+
+    if (($statement.Count + $skipped) -ne $constraintTotal) {
+        $failure.Add("$constraintTotal foreign key constraint(s) exist in $($script:DmsOwnedSchema -join ', ') but the sweep accounted for $($statement.Count + $skipped); the remainder was never validated")
+        return ,$failure
+    }
+
+    # Batched, rather than one statement per constraint or one statement for all of them: thousands of
+    # round trips is slow, and a single query with thousands of branches is slow to plan.
+    $violation = [System.Collections.Generic.List[string]]::new()
+    $answered = 0
+    $batchSize = 100
+
+    for ($index = 0; $index -lt $statement.Count; $index += $batchSize) {
+        $length = [Math]::Min($batchSize, $statement.Count - $index)
+        $batch = $statement.GetRange($index, $length)
+
+        $rows = Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser `
+            -DatabaseName $DatabaseName -Sql (($batch -join "`nUNION ALL`n") + ";")
+
+        foreach ($row in $rows) {
+            $text = ([string]$row).Trim()
+            if ([string]::IsNullOrWhiteSpace($text)) { continue }
+
+            if ($text -notmatch '^(?<name>.+)\|(?<count>\d+)$') {
+                # Skipping an unreadable row would drop a check without dropping the appearance of one.
+                $failure.Add("unreadable row from the foreign key sweep: '$text'")
+                continue
+            }
+
+            $answered++
+            if ([long]$Matches["count"] -ne 0) {
+                $violation.Add("$($Matches["name"]) has $($Matches["count"]) row(s) whose foreign key has no matching parent")
+            }
+        }
+    }
+
+    # Every statement sent has to come back with a result. A count read from fewer answers than checks
+    # is a partial sweep reported as a complete one.
+    if ($answered -ne $statement.Count) {
+        $failure.Add("the foreign key sweep sent $($statement.Count) check(s) and read back $answered result(s); the difference was not validated")
+    }
+
+    Write-Information ("  foreign keys checked: {0} of {1} constraint(s), {2} skipped as empty child table, {3} answered, {4} violated" -f `
+            $statement.Count, $constraintTotal, $skipped, $answered, $violation.Count) -InformationAction Continue
+
+    foreach ($item in ($violation | Sort-Object)) {
+        $failure.Add("$item; foreign keys were not enforced during the load")
     }
 
     # Comma operator: PowerShell unrolls an empty collection to $null on return, so a caller doing
@@ -684,9 +891,12 @@ function Select-ArchiveEntry {
     }
 }
 
-# pg_restore continues past a failed COPY and still exits 0, reporting the count only as a warning.
-# The bulk load hit exactly that: "errors ignored on restore: 1" alongside exit code 0. Trusting the
-# exit code is how a load silently drops data, which is the failure this whole ticket exists to avoid.
+# Without --exit-on-error, pg_restore does not stop at a failed COPY: it skips the entry, carries on
+# through the rest of the archive, and summarises what it swallowed as "errors ignored on restore: N".
+# The bulk load hit exactly that. The status does end up non-zero, so the exit code is checked first
+# here, but by the time it is returned the database already holds a partial load, and the summary line
+# is the only thing that says which entries are missing -- so the output is scanned as well, and both
+# restores pass --exit-on-error so the run stops at the first failure instead of the last.
 function Assert-RestoreOutputClean {
     [CmdletBinding()]
     param(
@@ -711,7 +921,7 @@ function Assert-RestoreOutputClean {
     }
 
     if ($problem.Count -gt 0) {
-        throw "$Description exited 0 but reported errors, which pg_restore does when it skips a failed COPY: $($problem -join ' | ')"
+        throw "$Description exited 0 but reported errors in its output, so an entry was skipped rather than restored: $($problem -join ' | ')"
     }
 }
 
@@ -764,7 +974,8 @@ if ($Mode -eq "Checkpoint") {
     # Built as a List rather than reassigned from a function result, so an empty return cannot turn
     # this into $null before .Count is read.
     $failure = [System.Collections.Generic.List[string]]::new()
-    foreach ($item in (Test-Invariant -Measurement $measurement -Expected $expected -ExpectedIdentity $ExpectedSourceIdentity)) {
+    foreach ($item in (Test-Invariant -Measurement $measurement -Expected $expected `
+                -ExpectedDocumentRow $ExpectedDocumentCount -ExpectedIdentity $ExpectedSourceIdentity)) {
         $failure.Add($item)
     }
     foreach ($item in $sequenceFailure) { $failure.Add($item) }
@@ -790,7 +1001,8 @@ Write-Output "  dms tables copied : $($script:DmsDataTable -join ', ') and $scri
 Write-Output "  never copied      : $($script:ProvisioningOwnedTable -join ', ')"
 Write-Output "  trigger handling  : pg_restore --data-only --disable-triggers (requires superuser)"
 Write-Output "  derived column    : dms.Descriptor.ResourceKeyId from dms.Document via $script:StagingSchema"
-Write-Output "  post-copy checks  : row counts both directions, sequence positions, referential integrity, stamp distributions, checkpoint C1"
+Write-Output "  expected documents: $ExpectedDocumentCount"
+Write-Output "  post-copy checks  : row counts both directions, sequence positions, every foreign key in $($script:DmsOwnedSchema -join '/'), no trigger left disabled, stamp distributions, checkpoint C1"
 
 if (-not $PSCmdlet.ShouldProcess($TargetDatabase, "Copy Northridge dataset from $DumpPath")) {
     Write-Output ""
@@ -801,6 +1013,19 @@ if (-not $PSCmdlet.ShouldProcess($TargetDatabase, "Copy Northridge dataset from 
 if (-not (Test-Path -LiteralPath $DumpPath)) {
     throw "Dump not found: $DumpPath"
 }
+
+# Resolved here, before the restore, not next to the checkpoint that consumes it. Resolve-ExpectedInvariant
+# is where a missing -ReferenceDatabase and missing expected values are refused, and discovering that
+# after a multi-hour load means the load has to be run again for nothing. The reference database is a
+# separate freshly provisioned database that this run never writes to, so reading it early and
+# asserting against it later reads the same values.
+$expected = Resolve-ExpectedInvariant -ReferenceDatabaseName $ReferenceDatabase `
+    -EffectiveSchemaHash $ExpectedEffectiveSchemaHash `
+    -ResourceKeyCount $ExpectedResourceKeyCount `
+    -ResourceKeySeedHash $ExpectedResourceKeySeedHash
+
+Write-Output "Expected values from: $($expected.Source)"
+Write-Output "Expected document count: $ExpectedDocumentCount"
 
 # Guard: the target must be freshly provisioned. Copying into a populated database would silently
 # double rows, and the row-count reconciliation would then be comparing against a moving target.
@@ -995,7 +1220,7 @@ $sequenceFailure = Test-SequencePosition -DatabaseName $TargetDatabase
 
 Write-Output ""
 Write-Output "Checking referential integrity..."
-$integrityFailure = Test-ReferentialIntegrity -DatabaseName $TargetDatabase
+$integrityFailure = Test-ReferentialIntegrity -DatabaseName $TargetDatabase -RowCount $targetCount
 
 Write-Output ""
 Write-Output "Comparing stamp distributions..."
@@ -1060,12 +1285,6 @@ Save-Record -Path (Join-Path $OutputDirectory "rowcount.$SourceDatabase-vs-$Targ
 
 Write-Output ""
 Write-Output "Measuring checkpoint C1..."
-
-$expected = Resolve-ExpectedInvariant -ReferenceDatabaseName $ReferenceDatabase `
-    -EffectiveSchemaHash $ExpectedEffectiveSchemaHash `
-    -ResourceKeyCount $ExpectedResourceKeyCount `
-    -ResourceKeySeedHash $ExpectedResourceKeySeedHash
-
 Write-Output "Expected values from: $($expected.Source)"
 
 $measurement = Measure-Invariant -DatabaseName $TargetDatabase
@@ -1079,7 +1298,8 @@ Save-Record -Path (Join-Path $OutputDirectory "checkpoint.C1.$TargetDatabase.txt
 
 # Every failure from every check is collected before anything throws, so one run reports the whole
 # picture instead of stopping at the first problem and hiding the rest.
-$invariantFailure = Test-Invariant -Measurement $measurement -Expected $expected
+$invariantFailure = Test-Invariant -Measurement $measurement -Expected $expected `
+    -ExpectedDocumentRow $ExpectedDocumentCount
 
 $allFailure = [System.Collections.Generic.List[string]]::new()
 foreach ($item in $countFailure) { $allFailure.Add("row count: $item") }

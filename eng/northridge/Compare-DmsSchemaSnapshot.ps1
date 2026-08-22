@@ -22,6 +22,11 @@
     text, so two runs against the same database produce byte-identical output and a textual diff is
     meaningful.
 
+    Trigger state is captured, not just trigger text. The copy path loads with pg_restore
+    --disable-triggers, so a trigger that was never switched back on -- including the internal
+    constraint triggers that enforce foreign keys -- is exactly the drift this compare exists to
+    catch, and it is invisible in a definition-only snapshot.
+
 .PARAMETER Database
     Database to snapshot. Repeat the parameter, or pass two values, to snapshot and then diff both.
 
@@ -164,8 +169,13 @@ WHERE schemaname IN ($SchemaList)
 ORDER BY schemaname, sequencename;
 "@
 
+        # tgenabled is part of the snapshot, not a detail: the copy path runs pg_restore with
+        # --disable-triggers, which issues DISABLE TRIGGER ALL, and a table left that way has the
+        # right trigger definition and no trigger. 'O' and 'A' are enabled, 'D' is disabled and 'R'
+        # fires only for a replica session -- the same reading DMS's own catalog validator uses.
         "07-trigger"    = @"
 SELECT 'trigger|' || n.nspname || '.' || rel.relname || '|' || tg.tgname
+    || '|enabled=' || tg.tgenabled::text
     || '|' || pg_get_triggerdef(tg.oid)
 FROM pg_trigger tg
 JOIN pg_class rel ON rel.oid = tg.tgrelid
@@ -210,6 +220,26 @@ SELECT 'component|' || "EffectiveSchemaHash" || '|' || "ProjectEndpointName" || 
     || '|' || "ProjectVersion" || '|' || "IsExtensionProject"
 FROM dms."SchemaComponent"
 ORDER BY "ProjectEndpointName", "ProjectName";
+"@
+
+        # Foreign-key enforcement is carried by internal constraint triggers, which section
+        # 07-trigger excludes and which DISABLE TRIGGER ALL switches off along with everything else:
+        # the constraint stays in pg_constraint and stops being enforced. Their generated names embed
+        # OIDs and so differ between any two databases, which is why the row is keyed by the
+        # constraint and reports only the aggregated enabled state -- deterministic, and comparable
+        # across a target and a freshly provisioned reference.
+        "13-constraint-trigger" = @"
+SELECT 'constraint-trigger|' || n.nspname || '.' || rel.relname || '|' || con.conname
+    || '|' || con.contype::text
+    || '|enabled=' || string_agg(DISTINCT tg.tgenabled::text, ',' ORDER BY tg.tgenabled::text)
+    || '|triggers=' || COUNT(*)::text
+FROM pg_trigger tg
+JOIN pg_constraint con ON con.oid = tg.tgconstraint
+JOIN pg_class rel ON rel.oid = tg.tgrelid
+JOIN pg_namespace n ON n.oid = rel.relnamespace
+WHERE n.nspname IN ($SchemaList) AND tg.tgconstraint <> 0
+GROUP BY n.nspname, rel.relname, con.conname, con.contype
+ORDER BY n.nspname, rel.relname, con.conname;
 "@
     }
 }

@@ -19,6 +19,11 @@
     Count mode reads dms.Document joined to dms.ResourceKey, which is the same grouping on both
     engines, so the two sides are comparable by construction.
 
+    Reconcile mode refuses two ways of passing while proving nothing. An empty count set on either
+    side is rejected rather than reconciled, because two header-only files differ nowhere. And the
+    expected document and resource totals are required, because two count sets that agree with each
+    other are still only evidence about each other.
+
 .PARAMETER Engine
     Engine to count. 'postgresql' uses psql in a container; 'mssql' uses sqlcmd in a container.
 
@@ -41,10 +46,12 @@
     Reconcile mode: the second count set, normally SQL Server.
 
 .PARAMETER ExpectedDocumentCount
-    Reconcile mode: assert this total on both sides.
+    Reconcile mode: assert this total on both sides. Required, because the reconciliation is
+    acceptance evidence: two count sets can agree with each other and still both be wrong, and
+    without a total to hit there is nothing that distinguishes agreement from correctness.
 
 .PARAMETER ExpectedResourceCount
-    Reconcile mode: assert this distinct resource count on both sides.
+    Reconcile mode: assert this distinct resource count on both sides. Required, for the same reason.
 
 .EXAMPLE
     ./Get-DmsResourceCount.ps1 -Engine postgresql -Database northridge_target -OutputPath /tmp/nr/pg.csv
@@ -87,13 +94,15 @@ param(
     [string]
     $RightPath,
 
-    [Parameter(ParameterSetName = "Reconcile")]
+    [Parameter(Mandatory, ParameterSetName = "Reconcile")]
+    [ValidateRange([System.Management.Automation.ValidateRangeKind]::Positive)]
     [long]
-    $ExpectedDocumentCount = 0,
+    $ExpectedDocumentCount,
 
-    [Parameter(ParameterSetName = "Reconcile")]
+    [Parameter(Mandatory, ParameterSetName = "Reconcile")]
+    [ValidateRange([System.Management.Automation.ValidateRangeKind]::Positive)]
     [int]
-    $ExpectedResourceCount = 0
+    $ExpectedResourceCount
 )
 
 $ErrorActionPreference = "Stop"
@@ -250,8 +259,18 @@ if ($PSCmdlet.ParameterSetName -eq "Count") {
 
 # ---------- Reconcile mode ----------
 
-$left = Import-Csv -LiteralPath $LeftPath
-$right = Import-Csv -LiteralPath $RightPath
+# @() rather than the bare result: a header-only CSV imports as nothing at all, and the guard below
+# has to be able to read .Count on it. Two such files reconcile to zero differences on every axis,
+# which is a pass that proves the two files were empty and nothing else.
+$left = @(Import-Csv -LiteralPath $LeftPath)
+$right = @(Import-Csv -LiteralPath $RightPath)
+
+$emptyInput = [System.Collections.Generic.List[string]]::new()
+if ($left.Count -eq 0) { $emptyInput.Add("left count set '$LeftPath' holds no rows") }
+if ($right.Count -eq 0) { $emptyInput.Add("right count set '$RightPath' holds no rows") }
+if ($emptyInput.Count -gt 0) {
+    throw "Nothing to reconcile: $($emptyInput -join '; '). An empty count set is a failure, not a pass -- regenerate it in Count mode."
+}
 
 $leftMap = @{}
 foreach ($row in $left) { $leftMap[$row.ResourceName] = [long]$row.DocumentCount }
@@ -320,15 +339,12 @@ if ($rightOnly.Count -gt 0) { $failure.Add("$($rightOnly.Count) resource(s) pres
 if ($countDiffer.Count -gt 0) { $failure.Add("$($countDiffer.Count) shared resource(s) with unequal counts") }
 
 # Totals are asserted separately from the per-resource diff. Equal totals with offsetting per-resource
-# differences is a real failure mode, and checking only the total would pass it.
-if ($ExpectedDocumentCount -gt 0) {
-    if ($leftTotal -ne $ExpectedDocumentCount) { $failure.Add("left total $leftTotal <> expected $ExpectedDocumentCount") }
-    if ($rightTotal -ne $ExpectedDocumentCount) { $failure.Add("right total $rightTotal <> expected $ExpectedDocumentCount") }
-}
-if ($ExpectedResourceCount -gt 0) {
-    if ($leftMap.Count -ne $ExpectedResourceCount) { $failure.Add("left resources $($leftMap.Count) <> expected $ExpectedResourceCount") }
-    if ($rightMap.Count -ne $ExpectedResourceCount) { $failure.Add("right resources $($rightMap.Count) <> expected $ExpectedResourceCount") }
-}
+# differences is a real failure mode, and checking only the total would pass it. Both expectations are
+# mandatory parameters constrained to be positive, so there is no path on which they go unchecked.
+if ($leftTotal -ne $ExpectedDocumentCount) { $failure.Add("left total $leftTotal <> expected $ExpectedDocumentCount") }
+if ($rightTotal -ne $ExpectedDocumentCount) { $failure.Add("right total $rightTotal <> expected $ExpectedDocumentCount") }
+if ($leftMap.Count -ne $ExpectedResourceCount) { $failure.Add("left resources $($leftMap.Count) <> expected $ExpectedResourceCount") }
+if ($rightMap.Count -ne $ExpectedResourceCount) { $failure.Add("right resources $($rightMap.Count) <> expected $ExpectedResourceCount") }
 
 Write-Output ""
 

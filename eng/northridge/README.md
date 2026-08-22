@@ -29,9 +29,11 @@ and copying the data across -- never patching the published artifact.
 | [`Get-DmsResourceCount.ps1`](./Get-DmsResourceCount.ps1) | Per-resource document counts for PostgreSQL or SQL Server, and the both-direction reconciliation between two count sets |
 | [`Add-NorthridgeGapDocument.ps1`](./Add-NorthridgeGapDocument.ps1) | POST documents through the DMS API from a manifest and verify each with a GET-by-id |
 
-All four scripts run PostgreSQL and SQL Server client tools **inside containers**, so no host `psql`,
-`pg_restore`, `pg_dump`, or `sqlcmd` installation is required. Every script supports `-WhatIf` and
-prints its plan without touching a database.
+The database-oriented scripts run PostgreSQL and SQL Server client tools **inside containers**, so no
+host `psql`, `pg_restore`, `pg_dump`, or `sqlcmd` installation is required.
+`Add-NorthridgeGapDocument.ps1`, `Compare-DmsSchemaSnapshot.ps1` and `Copy-NorthridgeDataForward.ps1`
+support `-WhatIf` and print their plan without contacting a database. `Get-DmsResourceCount.ps1` does
+not: it has no `-WhatIf`, and never writes to a database -- only to its own output file.
 
 ## Why the client tools run in containers
 
@@ -65,13 +67,14 @@ configured with a non-default PostgreSQL password, a non-default `DMS_CONFIG_DAT
 and a non-default `DMS_CONFIG_IDENTITY_ENCRYPTION_KEY`, so that nothing could pass by sharing a
 default with the machine that produced the artifact.
 
-Three steps are **mandatory for every consumer**, not conditional on your configuration differing
+Four steps are **mandatory for every consumer**, not conditional on your configuration differing
 from the producer's. Each one is explained where it appears, and skipping any of them leaves a stack
 that cannot serve the dataset:
 
 1. pinning the schema set to core only (step 3),
 2. installing your own OpenIddict signing key (step 7),
-3. rotating `dms.DataStoreIdentity.SourceIdentity` (step 8).
+3. rotating `dms.DataStoreIdentity.SourceIdentity` (step 8),
+4. recreating the client DMS uses to reach the Configuration Service (step 10).
 
 ```shell
 DC=~/src/Data-Management-Service/eng/docker-compose   # your checkout
@@ -143,13 +146,119 @@ docker stop ed-fi-api ed-fi-api-config-service
 docker cp "$DUMP" dms-postgresql:/tmp/nr.dump
 docker exec dms-postgresql psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
   -c "DROP DATABASE IF EXISTS \"$DB\";" -c "CREATE DATABASE \"$DB\";"
-docker exec dms-postgresql pg_restore -U postgres -d "$DB" --no-owner --no-privileges /tmp/nr.dump
+
+#    --exit-on-error stops at the first failed archive entry. Without it pg_restore skips the entry,
+#    carries on to the end of the archive, and summarises what it swallowed as
+#    "errors ignored on restore: N" -- leaving a database that is missing tables you never saw named.
+docker exec dms-postgresql pg_restore -U postgres -d "$DB" --no-owner --no-privileges \
+  --exit-on-error /tmp/nr.dump > "$ART/restore.log" 2>&1
+RC=$?
 docker exec -u 0 dms-postgresql rm -f /tmp/nr.dump
 
-# 6. Verify the restore by content, not by exit code. pg_restore continues past a failed COPY and
-#    still exits 0, reporting the count only as a warning, so the count below is the real check.
-docker exec dms-postgresql psql -U postgres -d "$DB" -tAc 'SELECT COUNT(*) FROM dms."Document";'
-#    Expect exactly: 10576801
+#    Both signals are checked, because neither is sufficient alone: a non-zero status means the
+#    database holds a partial restore, and an "errors ignored" line names entries that were skipped.
+if [ "$RC" -ne 0 ]; then
+  tail -20 "$ART/restore.log"
+  echo "pg_restore exited $RC. This database holds a PARTIAL restore -- start again from step 4."
+  exit 1
+fi
+if grep -Eiq 'errors ignored on restore|pg_restore: error' "$ART/restore.log"; then
+  grep -Ei 'errors ignored on restore|pg_restore: error' "$ART/restore.log"
+  echo "pg_restore reported errors, so entries were skipped -- start again from step 4."
+  exit 1
+fi
+echo "pg_restore finished with no reported errors"
+
+# 6. Verify the restore by content as well as by status. A clean exit says the archive was applied;
+#    it does not say the database holds the published dataset. This block compares seventeen values
+#    across eight tables, one sequence, the table inventory of all four DMS-owned schemas and the
+#    referential closure, and raises on the first disagreement, so it either passes or stops the
+#    recipe. A value that is missing rather than wrong reads as NULL and is reported as a mismatch,
+#    not skipped, and the count of checks that ran is itself asserted.
+#
+#    The table counts are what catch a restore that dropped a projection table: every other value
+#    here can be right while one of the 467 edfi tables is simply absent.
+#
+#    Foreign keys are not re-checked here on purpose. This is a full restore: pg_restore adds the
+#    foreign keys after the table data, and PostgreSQL validates the existing rows as each one is
+#    created, so --exit-on-error above already refused a load that violated any of them. That is not
+#    true of the producer-side copy-forward, which loads with --disable-triggers and therefore has to
+#    validate every constraint itself.
+#
+#    Run this BEFORE step 8. The source identity assertion checks the value the artifact ships with,
+#    and step 8 exists to replace it.
+docker exec -i dms-postgresql psql -U postgres -d "$DB" -v ON_ERROR_STOP=1 -q <<'SQL'
+DO $$
+DECLARE
+    checked  int;
+    mismatch text;
+BEGIN
+    SELECT COUNT(*),
+           string_agg(format('%s: expected %s, found %s', item, want, got), E'\n  ' ORDER BY item)
+               FILTER (WHERE got IS DISTINCT FROM want)
+      INTO checked, mismatch
+      FROM (
+        SELECT 'dms."Document" rows' AS item, '10576801' AS want,
+               (SELECT COUNT(*)::text FROM dms."Document") AS got
+        UNION ALL SELECT 'dms."ResourceKey" rows', '351',
+               (SELECT COUNT(*)::text FROM dms."ResourceKey")
+        UNION ALL SELECT 'dms."EffectiveSchema"."ResourceKeyCount"', '351',
+               (SELECT "ResourceKeyCount"::text FROM dms."EffectiveSchema" WHERE "EffectiveSchemaSingletonId" = 1)
+        UNION ALL SELECT 'dms."EffectiveSchema"."EffectiveSchemaHash"',
+               '816fe17af8c06994204f5c73903a616a16ca43a4be98a3716c07ae7b7b58587b',
+               (SELECT "EffectiveSchemaHash" FROM dms."EffectiveSchema" WHERE "EffectiveSchemaSingletonId" = 1)
+        UNION ALL SELECT 'dms."DataStoreIdentity"."SourceIdentity" as shipped',
+               '8b962de6-b979-49aa-bce0-ca59e0a1ad51',
+               (SELECT "SourceIdentity"::text FROM dms."DataStoreIdentity" WHERE "DataStoreIdentitySingletonId" = 1)
+        UNION ALL SELECT 'dms."DocumentProjectionWork" rows', '0',
+               (SELECT COUNT(*)::text FROM dms."DocumentProjectionWork")
+        UNION ALL SELECT 'dms."DocumentCache" rows', '0',
+               (SELECT COUNT(*)::text FROM dms."DocumentCache")
+        UNION ALL SELECT 'dms."Descriptor" rows', '2968',
+               (SELECT COUNT(*)::text FROM dms."Descriptor")
+        UNION ALL SELECT 'dms base tables', '10',
+               (SELECT COUNT(*)::text FROM information_schema.tables
+                 WHERE table_type = 'BASE TABLE' AND table_schema = 'dms')
+        UNION ALL SELECT 'edfi base tables', '467',
+               (SELECT COUNT(*)::text FROM information_schema.tables
+                 WHERE table_type = 'BASE TABLE' AND table_schema = 'edfi')
+        UNION ALL SELECT 'tracked_changes_edfi base tables', '139',
+               (SELECT COUNT(*)::text FROM information_schema.tables
+                 WHERE table_type = 'BASE TABLE' AND table_schema = 'tracked_changes_edfi')
+        UNION ALL SELECT 'auth base tables', '1',
+               (SELECT COUNT(*)::text FROM information_schema.tables
+                 WHERE table_type = 'BASE TABLE' AND table_schema = 'auth')
+        UNION ALL SELECT 'documents with no resource key', '0',
+               (SELECT COUNT(*)::text FROM dms."Document" d
+                 WHERE NOT EXISTS (SELECT 1 FROM dms."ResourceKey" k WHERE k."ResourceKeyId" = d."ResourceKeyId"))
+        UNION ALL SELECT 'descriptors with no document', '0',
+               (SELECT COUNT(*)::text FROM dms."Descriptor" x
+                 WHERE NOT EXISTS (SELECT 1 FROM dms."Document" d WHERE d."DocumentId" = x."DocumentId"))
+        UNION ALL SELECT 'descriptors whose ResourceKeyId disagrees with their document', '0',
+               (SELECT COUNT(*)::text FROM dms."Descriptor" x
+                  JOIN dms."Document" d ON d."DocumentId" = x."DocumentId"
+                 WHERE x."ResourceKeyId" <> d."ResourceKeyId")
+        UNION ALL SELECT 'referential identities with no document', '0',
+               (SELECT COUNT(*)::text FROM dms."ReferentialIdentity" r
+                 WHERE NOT EXISTS (SELECT 1 FROM dms."Document" d WHERE d."DocumentId" = r."DocumentId"))
+        UNION ALL SELECT 'ChangeVersionSequence at or beyond the restored data', 'true',
+               (SELECT (COALESCE(pg_sequence_last_value('dms."ChangeVersionSequence"'::regclass), 0)
+                        >= COALESCE(MAX(GREATEST("ContentVersion", "IdentityVersion")), 0))::text
+                  FROM dms."Document")
+      ) t;
+
+    IF checked <> 17 THEN
+        RAISE EXCEPTION 'only % of 17 checks ran, so this proves nothing; the block itself is broken', checked;
+    END IF;
+
+    IF mismatch IS NOT NULL THEN
+        RAISE EXCEPTION E'the restored database does not match the published artifact:\n  %', mismatch;
+    END IF;
+
+    RAISE NOTICE 'restore verified: all 17 published values and invariants match';
+END $$;
+SQL
+#    Expect: NOTICE: restore verified: all 17 published values and invariants match
 
 # 7. REQUIRED: install your own OpenIddict signing key.
 #    The artifact carries the producer's dmscs."OpenIddictKey" row, whose private key is encrypted
@@ -217,13 +326,51 @@ curl -s -X PUT "$CMS/v3/dataStores/1" -H "Authorization: Bearer $T" \
        \"connectionString\":\"host=dms-postgresql;port=5432;username=postgres;password=${PW};database=${DB};\"}" \
   -w 'data store re-saved -> HTTP %{http_code}\n'
 
-# 10. Now start DMS. A cached first-use validation failure is NOT cleared by re-provisioning, so if
+# 10. REQUIRED: recreate the client DMS uses to reach the Configuration Service.
+#     Registering `restore-admin` above is not this step. DMS authenticates to CMS as its own client,
+#     `CMSReadOnlyAccess` by default, and the restore replaced `dmscs.OpenIddict*` with the PRODUCER's
+#     rows -- so the `CMSReadOnlyAccess` row now in the database stores a hash of the producer's
+#     secret, which is not published. DMS presents your `CONFIG_SERVICE_CLIENT_SECRET` on every call
+#     to CMS, so unless your secret is byte-identical to one you have never seen, CMS answers 401 and
+#     DMS cannot read claim sets or authorization metadata. There is no way to check whether you got
+#     lucky, so this step is unconditional.
+#
+#     Read the credentials from the DMS container rather than from your env file: what has to exist in
+#     CMS is what DMS will actually send. `docker inspect` rather than `docker exec`, for the same
+#     reason as step 7 -- ed-fi-api is stopped until step 11.
+ENVOF() { docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$1"; }
+CID=$(ENVOF ed-fi-api | sed -n 's/^ConfigurationServiceSettings__ClientId=//p')
+CSEC=$(ENVOF ed-fi-api | sed -n 's/^ConfigurationServiceSettings__ClientSecret=//p')
+CSCOPE=$(ENVOF ed-fi-api | sed -n 's/^ConfigurationServiceSettings__Scope=//p')
+test -n "$CID" -a -n "$CSEC" -a -n "$CSCOPE" || \
+  { echo "could not read the DMS-to-CMS client id, secret and scope from ed-fi-api"; exit 1; }
+
+#     Delete before recreating. setup-openiddict.ps1 inserts ON CONFLICT DO NOTHING, so on its own it
+#     leaves the producer's secret hash exactly where it is and reports success. The two dependent
+#     tables, OpenIddictApplicationScope and OpenIddictClientRole, are ON DELETE CASCADE.
+docker exec dms-postgresql psql -U postgres -d "$DB" -v ON_ERROR_STOP=1 \
+  -c "DELETE FROM dmscs.\"OpenIddictApplication\" WHERE \"ClientId\" = '$CID';"
+pwsh -NoProfile -File ./setup-openiddict.ps1 -InsertData \
+  -NewClientId "$CID" -NewClientName "CMS ReadOnly Access" -ClientScopeName "$CSCOPE" \
+  -NewClientSecret "$CSEC" -EnvironmentFile ./.env -DbName ENV:DMS_CONFIG_DATABASE_NAME
+#     Those are the arguments the bootstrap uses for this client, so the roles, scope, permissions and
+#     namespace claim come back identical rather than approximately.
+
+#     Prove it before starting DMS: the credentials DMS will present must actually mint a token.
+CT=$(curl -s -X POST "$CMS/connect/token" -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode "client_id=$CID" --data-urlencode "client_secret=$CSEC" \
+  --data-urlencode "grant_type=client_credentials" --data-urlencode "scope=$CSCOPE" \
+  | sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+test -n "$CT" || { echo "the DMS-to-CMS client cannot mint a token; DMS would start and fail to read claim sets"; exit 1; }
+echo "DMS-to-CMS client '$CID' recreated with your secret and verified"
+
+# 11. Now start DMS. A cached first-use validation failure is NOT cleared by re-provisioning, so if
 #     DMS was started too early, restart the container rather than re-running any provisioning step.
 docker start ed-fi-api
 until [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/health)" = "200" ]; do sleep 3; done
 echo "DMS healthy"
 
-# 11. Create your own DMS API client before reading data.
+# 12. Create your own DMS API client before reading data.
 #     A healthy DMS is not yet a readable one. The artifact carries the PRODUCER's vendor,
 #     application and client rows in dmscs, whose secrets you do not have, so create your own.
 #     `EdFiAPIPublisherWriter` is the claim set to ask for: API Publisher loaded this dataset
@@ -270,11 +417,12 @@ curl -s -D - -o /dev/null -H "Authorization: Bearer $DT" \
 | Step | Required for | Why |
 | --- | --- | --- |
 | Stage core-only ApiSchema (step 3) | everyone | a different schema set computes a different `EffectiveSchemaHash`, and DMS answers 503 |
-| Verify the document count (step 6) | everyone | `pg_restore` exits 0 after skipping a failed COPY, so only content proves the restore |
+| Verify the restore (step 6) | everyone | `--exit-on-error` and the status check prove the archive applied; only the content check proves it is the published dataset |
 | Install your own OpenIddict key (step 7) | everyone | the shipped private key is encrypted with the producer's identity key; without this no token mints |
 | Rotate `SourceIdentity` (step 8) | everyone standing up a new data store | a restored copied backup is an independent writable data store and must not share a source identity with the producer |
 | Register admin client, re-save data store (step 9) | everyone | the shipped `dmscs` connection string is producer-local and encrypted with the producer's database key |
-| Create your own DMS API client (step 11) | everyone who reads data | the shipped vendor/application/client rows are the producer's and their secrets are not published |
+| Recreate the DMS-to-CMS client (step 10) | everyone | the shipped `CMSReadOnlyAccess` row hashes the producer's secret, so DMS gets 401 from CMS with yours |
+| Create your own DMS API client (step 12) | everyone who reads data | the shipped vendor/application/client rows are the producer's and their secrets are not published |
 | Restart DMS rather than re-provisioning | anyone who saw a 503 | first-use validation failures are cached for the process lifetime |
 
 ## Provenance record
@@ -285,13 +433,16 @@ Every published artifact records the following, on its ticket and in this direct
    resource count, engine image, ApiSchema package and version, schema set, `EffectiveSchemaHash`,
    `ResourceKeyCount`, `ResourceKeySeedHash`, and the `SourceIdentity` the artifact ships with, so a
    consumer can prove rotation happened.
-2. **Provenance** -- source artifact names and checksums, source ODS artifact, DMS commit and branch,
-   date produced, and what changed relative to the artifact it supersedes.
+2. **Provenance** -- source artifact names and checksums, source ODS artifact, the DMS commit as a
+   full immutable SHA rather than a branch name, the branch, date produced, and what changed relative
+   to the artifact it supersedes.
 3. **Restore recipe** -- the text above with placeholders filled, validated by execution from a clean
    slate against non-default credentials.
 4. **Validation evidence** -- schema compare result, effective schema hash agreement, DMS smoke
    results, the full resource-by-resource reconciliation with both-direction diff counts, per-table
-   row-count reconciliation, sequence-position assertions, and the invariant checkpoint table.
+   row-count reconciliation, sequence-position assertions, and the invariant checkpoint table. The
+   reconciliation is recorded as the output files the scripts write, named individually, and not only
+   as a summary sentence: a summary cannot be re-read to find which resource moved.
 5. **Known limitations** -- that the shipped CMS state is producer-local, and anything deferred.
 
 ### Record for `EdFi_DMS_Northridge_v80_20260819_PG`
@@ -303,11 +454,13 @@ Every published artifact records the following, on its ticket and in this direct
 | What changed | brought to the current schema by fresh deployment plus copy-forward (the document store has no migration path, so the old database was never patched in place); added the 7 documents the old artifact was missing |
 | The 7 added documents | Staff +2 (Krystal Redd, Lorraine Chen), StaffEducationOrganizationEmploymentAssociation +2, StaffEducationOrganizationAssignmentAssociation +2, AccountabilityRating +1 (EdOrg 255901, 2018, "Accountability Rating", "Recognized") |
 | Sourced from | the Northridge ODS artifact named above, added through the DMS API with GET-by-id verification of every field on every document — not via API Publisher, whose exit code can be 0 after silently dropping documents on 4xx |
-| Produced from | branch `DMS-1406`, DMS built from source at the branch head |
+| DMS revision built | `087eaa013df22a88d0046ac6f0e211bf47ec79e4` — the branch's merge base with `main`. Branch `DMS-1406` adds only files under `eng/northridge/` (`git diff --name-only main...DMS-1406`), so the DMS that produced and served the dataset carried exactly that revision's source |
+| Branch head at publication | `b303450ab5fd689526696cb088a76a90b7ef6c14` on `DMS-1406` — the workflow tooling and restore recipe as they stood when the artifact was uploaded |
 | `SourceIdentity` as shipped | `8b962de6-b979-49aa-bce0-ca59e0a1ad51` — rotate it (step 8); a consumer whose value still reads this has skipped the step |
 | `ResourceKey` rows | 351 |
-| Descriptors | 2,968 |
+| `dms."Descriptor"` rows | 2,968 |
 | `ChangeVersionSequence` | 21,553,810, equal to `MAX("IdentityVersion")` |
+| Reconciliation evidence | The full per-resource output is **not** summarised in this file, and is not committed (see **Never commit**). It is this named file set, one file per artefact the scripts write: the two per-resource count CSVs from `Get-DmsResourceCount.ps1` count mode, one per engine; the both-direction transcript from the same script's reconcile mode; `rowcount.<source>-vs-<target>.tsv`; `restore-list.<target>.txt`; `restore-output.<target>.txt`; the `checkpoint.<name>.<target>.txt` series; and `schema-snapshot.<database>.txt` with `schema-diff.<left>-vs-<right>.txt`. That set belongs with the ticket as attachments rather than in this repository. DMS-1406 carries the summary comment for this artifact; the file set named here is what has to accompany it, and a reader who cannot find these files has not been given the reconciliation |
 
 Validation, all on the restored artifact rather than on the database that produced it: schema compare
 against a fresh deployment at the same revision reported no differences; the startup-computed
@@ -315,17 +468,17 @@ against a fresh deployment at the same revision reported no differences; the sta
 artifact's; DMS served authenticated reads with no 503 and no restarts; the resource-by-resource
 reconciliation against SQL Server reported zero differences in both directions across 210 resources
 and 10,576,801 documents. Each positive result was paired with a negative control run at the same
-time, because `pg_restore` exits 0 after skipping a failed `COPY`, `RESTORE VERIFYONLY` passes an
-unreadable file, and a restore that never starts reports zero errors — success-shaped signals that
-mean nothing on their own.
+time, because a `pg_restore` run without `--exit-on-error` skips a failed `COPY` and keeps going to
+the end of the archive, `RESTORE VERIFYONLY` passes an unreadable file, and a restore that never
+starts reports zero errors — success-shaped signals that mean nothing on their own.
 
 Known limitations: the `dmscs` rows in the artifact are producer-local throughout — connection string,
-OpenIddict signing key, and vendor/application/client rows — which is what steps 7, 9 and 11 exist to
-replace. Ownership-token stamping is not implemented at this revision, so `CreatedByOwnershipTokenId`
-is null on every document. `tracked_changes_edfi` is present and empty by design. During production a
-manifest re-POST was issued against the live database to exercise the field comparison; DMS treated it
-as an idempotent upsert, creating no duplicates, and no `ContentVersion` moved on any of the
-10,576,794 copied documents.
+OpenIddict signing key, DMS-to-CMS client row, and vendor/application/client rows — which is what
+steps 7, 9, 10 and 12 exist to replace. Ownership-token stamping is not implemented at this revision,
+so `CreatedByOwnershipTokenId` is null on every document. `tracked_changes_edfi` is present and empty
+by design. During production a manifest re-POST was issued against the live database to exercise the
+field comparison; DMS treated it as an idempotent upsert, creating no duplicates, and no
+`ContentVersion` moved on any of the 10,576,794 copied documents.
 
 Publication was verified from the consumer's side, not the uploader's. After the upload, an anonymous
 `HEAD` reported `Content-Length: 869019055`, `Content-Type: application/x-7z-compressed` and access

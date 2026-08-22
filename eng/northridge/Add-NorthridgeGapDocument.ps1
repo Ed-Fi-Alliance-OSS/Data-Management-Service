@@ -36,7 +36,11 @@
     Base URL of the DMS API.
 
 .PARAMETER TokenUrl
-    OAuth token endpoint used to obtain a bearer token.
+    OAuth token endpoint used to obtain a bearer token. This must be the Configuration Service
+    token endpoint, http://localhost:8081/connect/token by default, because the credentials are
+    sent in the request body. The DMS endpoint http://localhost:8080/oauth/token will not do:
+    it requires HTTP Basic authentication and forwards only grant_type upstream, so a body-borne
+    client id and secret reach the identity provider as an unauthenticated request.
 
 .PARAMETER ClientId
     API client id.
@@ -52,7 +56,7 @@
 
 .EXAMPLE
     ./Add-NorthridgeGapDocument.ps1 -ManifestPath /tmp/nr/gap.json -DmsBaseUrl http://localhost:8080 `
-        -TokenUrl http://localhost:8080/oauth/token -ClientId id -ClientSecret secret -WhatIf
+        -TokenUrl http://localhost:8081/connect/token -ClientId id -ClientSecret secret -WhatIf
 
     Validates and orders the manifest and prints the plan without issuing any write.
 #>
@@ -297,16 +301,6 @@ foreach ($item in $document) {
         })
 }
 
-if (-not [string]::IsNullOrWhiteSpace($OutputPath)) {
-    $outputParent = Split-Path -Path $OutputPath -Parent
-    if (-not [string]::IsNullOrWhiteSpace($outputParent) -and -not (Test-Path -LiteralPath $outputParent)) {
-        New-Item -Path $outputParent -ItemType Directory -Force | Out-Null
-    }
-    $result | Export-Csv -LiteralPath $OutputPath -NoTypeInformation
-    Write-Output ""
-    Write-Output "Result record written to $OutputPath"
-}
-
 # Re-read every created document now that the whole manifest exists. The GET issued immediately after
 # a POST tests a moment the manifest ordering guarantees is incomplete, so a document that is entirely
 # correct can answer 403 there. This pass tests the finished state instead.
@@ -350,6 +344,18 @@ foreach ($row in $result) {
         foreach ($text in $mismatch) { Write-Output "     field mismatch: $text" }
         $failure.Add("$($row.Label): $($mismatch.Count) field mismatch(es) on final verification")
     }
+}
+
+# Exported only now: the pass above is what sets FieldMatch, so a file written before it would
+# record the mid-manifest verdict as though it were the final one.
+if (-not [string]::IsNullOrWhiteSpace($OutputPath)) {
+    $outputParent = Split-Path -Path $OutputPath -Parent
+    if (-not [string]::IsNullOrWhiteSpace($outputParent) -and -not (Test-Path -LiteralPath $outputParent)) {
+        New-Item -Path $outputParent -ItemType Directory -Force | Out-Null
+    }
+    $result | Export-Csv -LiteralPath $OutputPath -NoTypeInformation
+    Write-Output ""
+    Write-Output "Result record written to $OutputPath"
 }
 
 $createdCount = @($result | Where-Object { $_.PostStatus -eq 201 }).Count
