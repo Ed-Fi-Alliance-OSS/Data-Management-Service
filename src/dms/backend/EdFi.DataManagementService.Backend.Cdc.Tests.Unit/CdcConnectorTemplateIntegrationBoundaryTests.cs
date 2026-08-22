@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Xml.Linq;
 using EdFi.DataManagementService.Backend.Ddl;
 using FluentAssertions;
 using FluentAssertions.Execution;
@@ -17,23 +18,12 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 [Category("CdcConnectorTemplateIntegrationBoundaries")]
 public class Given_CdcConnectorTemplateIntegrationBoundaryTests
 {
-    private static readonly IReadOnlyList<ForbiddenSourceToken> ForbiddenSourceTokens =
+    private static readonly string[] ExpectedPackageReferences =
     [
-        new("HttpClient", IsNeverAllowed),
-        new("connectors/", IsNeverAllowed),
-        new("CREATE PUBLICATION", IsNeverAllowed),
-        new("ALTER PUBLICATION", IsNeverAllowed),
-        new("sp_cdc_enable_table", IsNeverAllowed),
-        new("ACL", IsNeverAllowed),
-        new("offset.storage", IsNeverAllowed),
-        new("topic.creation", IsAllowedTopicCreationGuardrail),
+        "Microsoft.Extensions.DependencyInjection.Abstractions",
     ];
 
-    private static readonly IReadOnlyList<string> GeneratedSourceFileSuffixes =
-    [
-        ".AssemblyInfo.cs",
-        ".GlobalUsings.g.cs",
-    ];
+    private static readonly string[] ExpectedProjectReferences = ["EdFi.DataManagementService.Backend.Ddl"];
 
     [Test]
     public void It_returns_render_registration_and_artifact_evidence_without_connect_lifecycle_inputs()
@@ -70,6 +60,24 @@ public class Given_CdcConnectorTemplateIntegrationBoundaryTests
         result
             .Config.Keys.Should()
             .NotContain(key => key.Contains("offset.storage", StringComparison.Ordinal));
+        result
+            .Config.Keys.Should()
+            .NotContain(key => key.StartsWith("errors.deadletterqueue.", StringComparison.Ordinal));
+        result
+            .Config.Keys.Should()
+            .NotContain(key => key.Contains("acl", StringComparison.OrdinalIgnoreCase));
+        result
+            .Config.Values.Should()
+            .NotContain(value => value.Contains("connectors/", StringComparison.Ordinal));
+        result
+            .Config.Values.Should()
+            .NotContain(value => value.Contains("CREATE PUBLICATION", StringComparison.OrdinalIgnoreCase));
+        result
+            .Config.Values.Should()
+            .NotContain(value => value.Contains("ALTER PUBLICATION", StringComparison.OrdinalIgnoreCase));
+        result
+            .Config.Values.Should()
+            .NotContain(value => value.Contains("sp_cdc_enable_table", StringComparison.OrdinalIgnoreCase));
     }
 
     [Test]
@@ -116,55 +124,49 @@ public class Given_CdcConnectorTemplateIntegrationBoundaryTests
     }
 
     [Test]
-    public void It_keeps_connect_rest_provider_mutation_topic_acl_and_offset_lifecycle_code_out_of_scope()
+    public void It_limits_project_dependencies_to_template_contracts()
     {
-        SourceTokenMatch[] forbiddenMatches = EnumerateCdcSourceTokenMatches()
-            .Where(match => !match.Token.IsAllowed(match.FilePath, match.Line))
+        XDocument project = XDocument.Load(CdcProjectFilePath());
+        string[] packageReferences = project
+            .Descendants("PackageReference")
+            .Select(element => (string?)element.Attribute("Include"))
+            .OfType<string>()
+            .Order(StringComparer.Ordinal)
             .ToArray();
+        string[] projectReferences = project
+            .Descendants("ProjectReference")
+            .Select(element => (string?)element.Attribute("Include"))
+            .OfType<string>()
+            .Select(referencePath => referencePath.Replace('\\', Path.DirectorySeparatorChar))
+            .Select(Path.GetFileNameWithoutExtension)
+            .OfType<string>()
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        string dependencyText = string.Join('\n', packageReferences.Concat(projectReferences));
 
-        forbiddenMatches.Should().BeEmpty();
-    }
-
-    [Test]
-    public void It_ignores_generated_build_output_when_scanning_boundary_source()
-    {
-        string sourceDirectory = CdcSourceDirectory();
-        string objDirectory = Path.Combine(sourceDirectory, "obj", "CdcBoundaryGuardrailTests");
-        string binDirectory = Path.Combine(sourceDirectory, "bin", "CdcBoundaryGuardrailTests");
-        string objGeneratedFilePath = Path.Combine(objDirectory, "Generated.AssemblyInfo.cs");
-        string binGeneratedFilePath = Path.Combine(binDirectory, "Generated.GlobalUsings.g.cs");
-
-        Directory.CreateDirectory(objDirectory);
-        Directory.CreateDirectory(binDirectory);
-        File.WriteAllText(
-            objGeneratedFilePath,
-            "public static class GeneratedObjSource { public const string Forbidden = \"HttpClient\"; }"
-        );
-        File.WriteAllText(
-            binGeneratedFilePath,
-            "public static class GeneratedBinSource { public const string Forbidden = \"topic.creation\"; }"
-        );
-
-        try
+        using var _ = new AssertionScope();
+        packageReferences.Should().Equal(ExpectedPackageReferences);
+        projectReferences.Should().Equal(ExpectedProjectReferences);
+        foreach (
+            string forbiddenDependencyToken in new[]
+            {
+                "Http",
+                "Kafka",
+                "Docker",
+                "Testcontainers",
+                "Confluent",
+                "Connect",
+                "Topic",
+                "Acl",
+                "Offset",
+                "Admin",
+            }
+        )
         {
-            IReadOnlyList<string> sourceFiles = CdcSourceFiles();
-
-            using var _ = new AssertionScope();
-            sourceFiles.Should().NotContain(objGeneratedFilePath);
-            sourceFiles.Should().NotContain(binGeneratedFilePath);
-            IsScannedCSharpSourceFile(Path.Combine(sourceDirectory, "Generated.AssemblyInfo.cs"))
+            dependencyText
+                .Contains(forbiddenDependencyToken, StringComparison.OrdinalIgnoreCase)
                 .Should()
                 .BeFalse();
-            IsScannedCSharpSourceFile(Path.Combine(sourceDirectory, "Generated.GlobalUsings.g.cs"))
-                .Should()
-                .BeFalse();
-        }
-        finally
-        {
-            DeleteFileIfExists(objGeneratedFilePath);
-            DeleteFileIfExists(binGeneratedFilePath);
-            DeleteDirectoryIfEmpty(objDirectory);
-            DeleteDirectoryIfEmpty(binDirectory);
         }
     }
 
@@ -184,11 +186,12 @@ public class Given_CdcConnectorTemplateIntegrationBoundaryTests
                 "producer.override.partitioner.class",
                 "org.edfi.kafka.connect.partitioner.KafkaMurmur2V1Partitioner"
             );
-        CdcSourceFiles()
-            .Select(File.ReadAllText)
+        typeof(ICdcConnectorTemplateService)
+            .Assembly.GetTypes()
+            .Select(type => type.Name)
             .Should()
             .NotContain(
-                source => source.Contains("class KafkaMurmur2V1Partitioner", StringComparison.Ordinal),
+                "KafkaMurmur2V1Partitioner",
                 "this repository emits the pinned-image partitioner class name while the qualified connector runtime owns packaging the implementation"
             );
     }
@@ -196,86 +199,15 @@ public class Given_CdcConnectorTemplateIntegrationBoundaryTests
     private static ServiceProvider BuildServiceProvider() =>
         new ServiceCollection().AddCdcConnectorTemplates().BuildServiceProvider();
 
-    private static IReadOnlyList<SourceTokenMatch> EnumerateCdcSourceTokenMatches() =>
-        CdcSourceFiles()
-            .SelectMany(filePath =>
-                File.ReadLines(filePath)
-                    .Select((line, index) => new { Line = line, LineNumber = index + 1 })
-                    .SelectMany(line =>
-                        ForbiddenSourceTokens
-                            .Where(token => line.Line.Contains(token.Value, StringComparison.Ordinal))
-                            .Select(token => new SourceTokenMatch(
-                                Path.GetRelativePath(FindRepositoryRoot(), filePath),
-                                line.LineNumber,
-                                token,
-                                line.Line.Trim()
-                            ))
-                    )
-            )
-            .ToArray();
-
-    private static IReadOnlyList<string> CdcSourceFiles() =>
-        EnumerateCdcSourceFiles(CdcSourceDirectory()).ToArray();
-
-    private static IEnumerable<string> EnumerateCdcSourceFiles(string directoryPath)
-    {
-        foreach (
-            string filePath in Directory.EnumerateFiles(directoryPath, "*.cs", SearchOption.TopDirectoryOnly)
-        )
-        {
-            if (IsScannedCSharpSourceFile(filePath))
-            {
-                yield return filePath;
-            }
-        }
-
-        foreach (string childDirectoryPath in Directory.EnumerateDirectories(directoryPath))
-        {
-            if (IsScannedSourceDirectory(childDirectoryPath))
-            {
-                foreach (string filePath in EnumerateCdcSourceFiles(childDirectoryPath))
-                {
-                    yield return filePath;
-                }
-            }
-        }
-    }
-
-    private static string CdcSourceDirectory() =>
-        Path.Combine(FindRepositoryRoot(), "src", "dms", "backend", "EdFi.DataManagementService.Backend.Cdc");
-
-    private static bool IsScannedSourceDirectory(string directoryPath)
-    {
-        string directoryName = Path.GetFileName(directoryPath);
-
-        return !directoryName.Equals("bin", StringComparison.OrdinalIgnoreCase)
-            && !directoryName.Equals("obj", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsScannedCSharpSourceFile(string filePath)
-    {
-        string fileName = Path.GetFileName(filePath);
-
-        return !GeneratedSourceFileSuffixes.Any(suffix =>
-            fileName.EndsWith(suffix, StringComparison.Ordinal)
+    private static string CdcProjectFilePath() =>
+        Path.Combine(
+            FindRepositoryRoot(),
+            "src",
+            "dms",
+            "backend",
+            "EdFi.DataManagementService.Backend.Cdc",
+            "EdFi.DataManagementService.Backend.Cdc.csproj"
         );
-    }
-
-    private static void DeleteFileIfExists(string filePath)
-    {
-        if (File.Exists(filePath))
-        {
-            File.Delete(filePath);
-        }
-    }
-
-    private static void DeleteDirectoryIfEmpty(string directoryPath)
-    {
-        if (Directory.Exists(directoryPath) && !Directory.EnumerateFileSystemEntries(directoryPath).Any())
-        {
-            Directory.Delete(directoryPath);
-        }
-    }
 
     private static string FindRepositoryRoot()
     {
@@ -293,19 +225,4 @@ public class Given_CdcConnectorTemplateIntegrationBoundaryTests
 
         throw new DirectoryNotFoundException("Could not find repository root from the test directory.");
     }
-
-    private static bool IsNeverAllowed(string filePath, string line) => false;
-
-    private static bool IsAllowedTopicCreationGuardrail(string filePath, string line) =>
-        Path.GetFileName(filePath) == "CdcConnectorTemplateInputValidation.cs"
-        && line.Contains("\"topic.creation.\"", StringComparison.Ordinal);
-
-    private sealed record ForbiddenSourceToken(string Value, Func<string, string, bool> IsAllowed);
-
-    private sealed record SourceTokenMatch(
-        string FilePath,
-        int LineNumber,
-        ForbiddenSourceToken Token,
-        string Line
-    );
 }

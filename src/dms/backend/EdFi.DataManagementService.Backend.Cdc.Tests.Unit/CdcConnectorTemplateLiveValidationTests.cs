@@ -1890,7 +1890,7 @@ public class Given_CdcConnectorTemplateLiveValidationTests
 
     [TestCase(CdcProvider.Postgresql)]
     [TestCase(CdcProvider.SqlServer)]
-    public void It_accepts_reordered_fresh_provider_source_columns_for_preflight_and_live_read_back(
+    public void It_rejects_reordered_fresh_provider_source_columns_as_malformed_contract_inventory(
         CdcProvider provider
     )
     {
@@ -1942,12 +1942,34 @@ public class Given_CdcConnectorTemplateLiveValidationTests
 
         using var _ = new AssertionScope();
         rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
-        preflightResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
-        liveReadBackResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
-        preflightResult.Config.Should().Equal(rendered.Config);
-        liveReadBackResult.Config.Should().Equal(rendered.Config);
-        preflightResult.Diagnostics.Should().BeEmpty();
-        liveReadBackResult.Diagnostics.Should().BeEmpty();
+        preflightResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        liveReadBackResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        preflightResult.Config.Should().BeEmpty();
+        liveReadBackResult.Config.Should().BeEmpty();
+        preflightResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceTableInventoryMismatch
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure
+                && diagnostic.PropertyName == "providerSetup.sourceTableInventory"
+                && diagnostic.ExpectedValue == "valid CDC source table contract inventory"
+                && diagnostic.ObservedValue == "malformed"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Preflight
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            );
+        liveReadBackResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceTableInventoryMismatch
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure
+                && diagnostic.PropertyName == "providerSetup.sourceTableInventory"
+                && diagnostic.ExpectedValue == "valid CDC source table contract inventory"
+                && diagnostic.ObservedValue == "malformed"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            );
     }
 
     [TestCase(CdcProvider.Postgresql)]
@@ -2436,8 +2458,8 @@ public class Given_CdcConnectorTemplateLiveValidationTests
                 provider,
                 [
                     BuildColumn(provider, "DocumentUuid"),
-                    BuildColumn(provider, "DocumentPayload", 3),
                     BuildColumn(provider, "DocumentVersion", 2),
+                    BuildColumn(provider, "DocumentPayload", 3),
                 ]
             ),
             FreshSourceInventoryDrift.ChangedNonKeyColumnType => BuildDocumentSourceInventory(
