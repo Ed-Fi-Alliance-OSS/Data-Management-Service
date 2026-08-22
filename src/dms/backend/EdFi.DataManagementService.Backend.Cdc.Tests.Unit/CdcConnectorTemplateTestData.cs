@@ -102,8 +102,32 @@ internal static class CdcConnectorTemplateTestData
             "edfi.documents",
             bindingGeneration,
             partitionerAlgorithm,
+            BuildProviderArtifactNames(provider),
             fingerprint ?? SourceFingerprintFor(provider)
         );
+
+    public static CdcProviderArtifactNames BuildProviderArtifactNames(CdcProvider provider) =>
+        provider switch
+        {
+            CdcProvider.Postgresql => CdcProviderArtifactNames.ForPostgresql(
+                new CdcSafeName("dms_binding_publication"),
+                new CdcSafeName("dms_binding_slot")
+            ),
+            CdcProvider.SqlServer => CdcProviderArtifactNames.ForSqlServer(
+                new CdcSafeName("dms_binding_gate"),
+                new Dictionary<CdcSourceTableKind, CdcSafeName>
+                {
+                    [CdcSourceTableKind.DocumentCache] = new("dms_binding_document_cache_capture"),
+                    [CdcSourceTableKind.Document] = new("dms_binding_document_capture"),
+                    [CdcSourceTableKind.CdcHeartbeat] = new("dms_binding_cdc_heartbeat_capture"),
+                }
+            ),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(provider),
+                provider,
+                "Unsupported CDC provider."
+            ),
+        };
 
     public static CdcConnectorTemplateDeploymentPolicy BuildDeploymentPolicy(CdcProvider provider) =>
         new(
@@ -246,27 +270,48 @@ internal static class CdcConnectorTemplateTestData
         };
 
     public static IReadOnlyList<CdcProviderArtifactObservation> BuildPostgresqlArtifactInventory() =>
-        [
-            new(
-                CdcProviderArtifactKind.PostgresqlPublication,
-                new CdcSafeName("dms_binding_publication"),
-                CdcProviderArtifactState.Matched,
-                new Dictionary<string, string>()
-            ),
-            new(
-                CdcProviderArtifactKind.PostgresqlReplicationSlot,
-                new CdcSafeName("dms_binding_slot"),
-                CdcProviderArtifactState.Matched,
-                new Dictionary<string, string>()
-            ),
-        ];
+        [BuildPostgresqlPublicationArtifact(), BuildPostgresqlReplicationSlotArtifact()];
+
+    public static CdcProviderArtifactObservation BuildPostgresqlPublicationArtifact(
+        CdcProviderArtifactState state = CdcProviderArtifactState.Matched,
+        CdcSafeName? safeArtifactName = null
+    ) =>
+        new(
+            CdcProviderArtifactKind.PostgresqlPublication,
+            safeArtifactName ?? new CdcSafeName("dms_binding_publication"),
+            state,
+            new Dictionary<string, string>()
+        );
+
+    public static CdcProviderArtifactObservation BuildPostgresqlReplicationSlotArtifact(
+        CdcProviderArtifactState state = CdcProviderArtifactState.Matched,
+        CdcSafeName? safeArtifactName = null
+    ) =>
+        new(
+            CdcProviderArtifactKind.PostgresqlReplicationSlot,
+            safeArtifactName ?? new CdcSafeName("dms_binding_slot"),
+            state,
+            new Dictionary<string, string>()
+        );
 
     public static IReadOnlyList<CdcProviderArtifactObservation> BuildSqlServerArtifactInventory() =>
         [
+            BuildSqlServerGatingRoleArtifact(),
             BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
             BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.Document),
             BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.CdcHeartbeat),
         ];
+
+    public static CdcProviderArtifactObservation BuildSqlServerGatingRoleArtifact(
+        CdcProviderArtifactState state = CdcProviderArtifactState.Matched,
+        CdcSafeName? safeArtifactName = null
+    ) =>
+        new(
+            CdcProviderArtifactKind.SqlServerGatingRole,
+            safeArtifactName ?? new CdcSafeName("dms_binding_gate"),
+            state,
+            new Dictionary<string, string>()
+        );
 
     public static CdcProviderArtifactObservation BuildSqlServerCaptureInstanceArtifact(
         CdcSourceTableKind tableKind,

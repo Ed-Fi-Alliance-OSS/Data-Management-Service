@@ -95,6 +95,10 @@ public static class CdcConnectorTemplateDiagnosticCodes
         "CDC_TEMPLATE_POSTGRESQL_PUBLICATION_METADATA_REQUIRED";
     public const string PostgresqlReplicationSlotMetadataRequired =
         "CDC_TEMPLATE_POSTGRESQL_REPLICATION_SLOT_METADATA_REQUIRED";
+    public const string ProviderSetupArtifactInventoryMalformed =
+        "CDC_TEMPLATE_PROVIDER_SETUP_ARTIFACT_INVENTORY_MALFORMED";
+    public const string SqlServerGatingRoleMetadataRequired =
+        "CDC_TEMPLATE_SQLSERVER_GATING_ROLE_METADATA_REQUIRED";
     public const string SqlServerCaptureInstanceMetadataRequired =
         "CDC_TEMPLATE_SQLSERVER_CAPTURE_INSTANCE_METADATA_REQUIRED";
     public const string SourceTableInventoryMismatch = "CDC_TEMPLATE_SOURCE_TABLE_INVENTORY_MISMATCH";
@@ -353,7 +357,8 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
             CdcProviderSetupPrerequisiteRules.Validate(
                 request.ProviderSetupEvidence.Result,
                 request.ConnectorName,
-                sourcePhase
+                sourcePhase,
+                request.ProviderArtifactNames
             )
         );
 

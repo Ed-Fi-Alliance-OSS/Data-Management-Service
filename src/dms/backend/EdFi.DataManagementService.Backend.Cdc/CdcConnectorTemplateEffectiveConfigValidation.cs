@@ -293,7 +293,8 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(ICdcConnector
             .Validate(
                 request.ProviderSetupEvidence.Result,
                 request.TemplateRequest.ConnectorName,
-                sourcePhase
+                sourcePhase,
+                request.TemplateRequest.ProviderArtifactNames
             )
             .Any(diagnostic => diagnostic.Severity == CdcConnectorTemplateDiagnosticSeverity.Error);
 

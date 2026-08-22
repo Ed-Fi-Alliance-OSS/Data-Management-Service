@@ -171,6 +171,7 @@ public class Given_CdcConnectorTemplateServiceRegistration
         {
             ArtifactInventory =
             [
+                BuildSqlServerGatingRoleArtifact(),
                 BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
                 BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.Document) with
                 {
@@ -279,7 +280,7 @@ public class Given_CdcConnectorTemplateServiceRegistration
     }
 
     [Test]
-    public void It_reports_the_same_provider_prerequisite_diagnostics_for_request_validation_and_readiness()
+    public void It_reports_shared_provider_prerequisite_diagnostics_for_request_validation_and_readiness()
     {
         CdcProviderSetupResult providerSetupResult = BuildProviderSetupResult(
             CdcProvider.Postgresql,
@@ -334,9 +335,31 @@ public class Given_CdcConnectorTemplateServiceRegistration
         using var _ = new AssertionScope();
         readiness.CanRenderTemplate.Should().BeFalse();
         requestValidation.IsValid.Should().BeFalse();
-        NormalizeProviderPrerequisiteDiagnostics(requestValidation.Diagnostics)
+        NormalizeProviderPrerequisiteDiagnostics(
+                requestValidation.Diagnostics.Where(IsNotBindingArtifactNameDiagnostic).ToArray()
+            )
             .Should()
-            .BeEquivalentTo(NormalizeProviderPrerequisiteDiagnostics(readiness.Diagnostics));
+            .BeEquivalentTo(
+                NormalizeProviderPrerequisiteDiagnostics(
+                    readiness.Diagnostics.Where(IsNotBindingArtifactNameDiagnostic).ToArray()
+                )
+            );
+        requestValidation
+            .Diagnostics.Where(diagnostic => !IsNotBindingArtifactNameDiagnostic(diagnostic))
+            .Should()
+            .OnlyContain(diagnostic =>
+                diagnostic.ExpectedValue
+                    == "one matched provider setup artifact with the expected binding name"
+                && diagnostic.RedactionClassification
+                    == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+            );
+        readiness
+            .Diagnostics.Where(diagnostic => !IsNotBindingArtifactNameDiagnostic(diagnostic))
+            .Should()
+            .OnlyContain(diagnostic =>
+                diagnostic.ExpectedValue == "one matched provider setup artifact"
+                && diagnostic.RedactionClassification == CdcConnectorTemplateRedactionClassification.Safe
+            );
         requestValidation
             .Diagnostics.Should()
             .OnlyContain(diagnostic =>
@@ -377,4 +400,13 @@ public class Given_CdcConnectorTemplateServiceRegistration
                 diagnostic.RedactionClassification,
             })
             .ToArray();
+
+    private static bool IsNotBindingArtifactNameDiagnostic(CdcConnectorTemplateDiagnostic diagnostic) =>
+        diagnostic.Code
+            is not (
+                CdcConnectorTemplateDiagnosticCodes.PostgresqlPublicationMetadataRequired
+                or CdcConnectorTemplateDiagnosticCodes.PostgresqlReplicationSlotMetadataRequired
+                or CdcConnectorTemplateDiagnosticCodes.SqlServerGatingRoleMetadataRequired
+                or CdcConnectorTemplateDiagnosticCodes.ProviderSetupArtifactInventoryMalformed
+            );
 }

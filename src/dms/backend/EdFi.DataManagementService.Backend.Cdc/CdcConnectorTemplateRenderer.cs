@@ -146,11 +146,13 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
     {
         CdcProviderArtifactObservation publication = RequiredArtifact(
             request,
-            CdcProviderArtifactKind.PostgresqlPublication
+            CdcProviderArtifactKind.PostgresqlPublication,
+            request.ProviderArtifactNames.Postgresql!.PublicationName
         );
         CdcProviderArtifactObservation replicationSlot = RequiredArtifact(
             request,
-            CdcProviderArtifactKind.PostgresqlReplicationSlot
+            CdcProviderArtifactKind.PostgresqlReplicationSlot,
+            request.ProviderArtifactNames.Postgresql.ReplicationSlotName
         );
 
         config["plugin.name"] = "pgoutput";
@@ -229,14 +231,19 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
 
     private static CdcProviderArtifactObservation RequiredArtifact(
         CdcConnectorTemplateRequest request,
-        CdcProviderArtifactKind artifactKind
+        CdcProviderArtifactKind artifactKind,
+        CdcSafeName expectedArtifactName
     )
     {
-        CdcProviderArtifactObservation[] artifacts = MatchingUsableArtifacts(request, artifactKind);
+        CdcProviderArtifactObservation[] artifacts = MatchingUsableArtifacts(
+            request,
+            artifactKind,
+            expectedArtifactName
+        );
         if (artifacts.Length != 1)
         {
             throw new InvalidOperationException(
-                "CDC connector template PostgreSQL provider artifact metadata was not validated before rendering."
+                "CDC connector template PostgreSQL provider artifact metadata was not validated against binding artifact names before rendering."
             );
         }
 
@@ -245,12 +252,14 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
 
     private static CdcProviderArtifactObservation[] MatchingUsableArtifacts(
         CdcConnectorTemplateRequest request,
-        CdcProviderArtifactKind artifactKind
+        CdcProviderArtifactKind artifactKind,
+        CdcSafeName expectedArtifactName
     ) =>
         CdcConnectorTemplateSharedRules
             .ArtifactInventory(request.ProviderSetupEvidence.Result)
             .Where(artifact =>
                 artifact.ArtifactKind == artifactKind
+                && artifact.SafeArtifactName.Equals(expectedArtifactName)
                 && artifact.State is CdcProviderArtifactState.Created or CdcProviderArtifactState.Matched
             )
             .ToArray();

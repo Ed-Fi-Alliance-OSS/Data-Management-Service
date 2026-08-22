@@ -224,6 +224,72 @@ public class Given_CdcConnectorTemplateLiveValidationTests
         diagnostic.ObservedValue.Should().BeNull();
     }
 
+    [Test]
+    public void It_uses_binding_artifact_name_prerequisites_for_preflight_and_live_read_back()
+    {
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(CdcProvider.Postgresql);
+        CdcConnectorTemplateResult rendered = service.Render(request);
+        var badProviderSetupEvidence = new CdcConnectorProviderSetupEvidence(
+            BindingGeneration,
+            BuildProviderSetupResult(
+                CdcProvider.Postgresql,
+                artifactInventory:
+                [
+                    BuildPostgresqlPublicationArtifact(),
+                    BuildPostgresqlReplicationSlotArtifact(
+                        safeArtifactName: new CdcSafeName("other_binding_slot")
+                    ),
+                ]
+            )
+        );
+
+        CdcConnectorTemplateResult preflightResult = service.ValidateRegistrationPreflight(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                badProviderSetupEvidence
+            )
+        );
+        CdcConnectorTemplateResult liveReadBackResult = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                rendered.Config,
+                badProviderSetupEvidence,
+                BuildSourcePartitionEvidence(request)
+            )
+        );
+
+        using var _ = new AssertionScope();
+        rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        preflightResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        liveReadBackResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        preflightResult.Config.Should().BeEmpty();
+        liveReadBackResult.Config.Should().BeEmpty();
+        preflightResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code
+                    == CdcConnectorTemplateDiagnosticCodes.PostgresqlReplicationSlotMetadataRequired
+                && diagnostic.PropertyName == "slot.name"
+                && diagnostic.ObservedValue == "unexpected-name"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Preflight
+            );
+        liveReadBackResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code
+                    == CdcConnectorTemplateDiagnosticCodes.PostgresqlReplicationSlotMetadataRequired
+                && diagnostic.PropertyName == "slot.name"
+                && diagnostic.ObservedValue == "unexpected-name"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack
+            );
+        preflightResult.Diagnostics.SelectMany(DiagnosticText).Should().NotContain("other_binding_slot");
+        liveReadBackResult.Diagnostics.SelectMany(DiagnosticText).Should().NotContain("other_binding_slot");
+    }
+
     [TestCase(CdcProvider.Postgresql)]
     [TestCase(CdcProvider.SqlServer)]
     public void It_accepts_initial_create_or_match_provider_setup_evidence_during_registration_preflight(
@@ -1351,6 +1417,7 @@ public class Given_CdcConnectorTemplateLiveValidationTests
                 CdcProvider.SqlServer,
                 artifactInventory:
                 [
+                    BuildSqlServerGatingRoleArtifact(),
                     BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
                     BuildSqlServerCaptureInstanceArtifact(
                         CdcSourceTableKind.Document,
