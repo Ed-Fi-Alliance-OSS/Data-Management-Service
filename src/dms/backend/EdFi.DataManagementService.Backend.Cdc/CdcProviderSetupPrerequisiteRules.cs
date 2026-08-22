@@ -40,7 +40,7 @@ internal static class CdcProviderSetupPrerequisiteRules
             sourcePhase,
             diagnostics
         );
-        AddBlankHeartbeatActionQueryDiagnosticIfNeeded(
+        AddInvalidHeartbeatActionQueryDiagnosticIfNeeded(
             providerSetupResult,
             safeArtifactOrObjectName,
             sourcePhase,
@@ -50,17 +50,20 @@ internal static class CdcProviderSetupPrerequisiteRules
         return diagnostics;
     }
 
-    private static void AddBlankHeartbeatActionQueryDiagnosticIfNeeded(
+    private static void AddInvalidHeartbeatActionQueryDiagnosticIfNeeded(
         CdcProviderSetupResult providerSetupResult,
         CdcSafeName? safeArtifactOrObjectName,
         CdcConnectorTemplateSourcePhase sourcePhase,
         List<CdcConnectorTemplateDiagnostic> diagnostics
     )
     {
-        if (
-            providerSetupResult.HeartbeatActionQuery is null
-            || !string.IsNullOrWhiteSpace(providerSetupResult.HeartbeatActionQuery.Sql)
-        )
+        if (providerSetupResult.HeartbeatActionQuery is null)
+        {
+            return;
+        }
+
+        string heartbeatSql = providerSetupResult.HeartbeatActionQuery.Sql;
+        if (!string.IsNullOrWhiteSpace(heartbeatSql) && !ContainsControlCharacter(heartbeatSql))
         {
             return;
         }
@@ -79,6 +82,8 @@ internal static class CdcProviderSetupPrerequisiteRules
             )
         );
     }
+
+    private static bool ContainsControlCharacter(string value) => value.Any(char.IsControl);
 
     private static void AddSourceTableInventoryDiagnostics(
         CdcProviderSetupResult providerSetupResult,
