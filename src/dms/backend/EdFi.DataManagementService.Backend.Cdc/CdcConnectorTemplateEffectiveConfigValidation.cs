@@ -841,8 +841,8 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
         )
         {
             diagnostics.Add(
-                BuildSourcePartitionDiagnostic(
-                    $"source.partition.{observedKey}",
+                BuildUnexpectedSourcePartitionDiagnostic(
+                    observedKey,
                     expectedValue: "absent",
                     observedValue: sourcePartition[observedKey],
                     request.TemplateRequest,
@@ -905,11 +905,15 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
     {
         CdcConnectorTemplateRedactionClassification redactionClassification =
             RedactionClassificationForUnexpectedEffectiveConfigProperty(propertyName);
+        string diagnosticPropertyName = DiagnosticPropertyNameForUnexpectedEffectiveConfigProperty(
+            request,
+            propertyName
+        );
 
         return BuildDiagnostic(
             code,
             CategoryForProperty(propertyName),
-            propertyName,
+            diagnosticPropertyName,
             RedactUnexpectedExpectedValueForDiagnostic(expectedValue, redactionClassification),
             RedactValueForDiagnostic(observedValue, redactionClassification),
             request,
@@ -917,6 +921,22 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
             redactionClassification
         );
     }
+
+    private static string DiagnosticPropertyNameForUnexpectedEffectiveConfigProperty(
+        CdcConnectorTemplateRequest request,
+        string propertyName
+    ) =>
+        IsKnownLiteralUnexpectedEffectiveConfigProperty(request.Provider, propertyName)
+            ? propertyName
+            : CdcConnectorTemplateDiagnosticPropertyNames.UnexpectedEffectiveConfigProperty(propertyName);
+
+    private static bool IsKnownLiteralUnexpectedEffectiveConfigProperty(
+        CdcProvider provider,
+        string propertyName
+    ) =>
+        CdcConnectorTemplateInputValidator.IsKnownGeneratedConnectorProperty(propertyName)
+        || CdcConnectorTemplateInputValidator.IsProviderConnectionProperty(provider, propertyName)
+        || CdcConnectorTemplateInputValidator.IsKafkaClientSecurityProperty(propertyName);
 
     private static CdcConnectorTemplateDiagnostic BuildSecretDiagnostic(
         string propertyName,
@@ -934,6 +954,30 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
             sourcePhase,
             redactionClassification
         );
+
+    private static CdcConnectorTemplateDiagnostic BuildUnexpectedSourcePartitionDiagnostic(
+        string sourcePartitionKey,
+        string? expectedValue,
+        string? observedValue,
+        CdcConnectorTemplateRequest request,
+        CdcConnectorTemplateSourcePhase sourcePhase
+    )
+    {
+        string rawPropertyName = $"source.partition.{sourcePartitionKey}";
+        CdcConnectorTemplateRedactionClassification redactionClassification =
+            RedactionClassificationForSourcePartitionProperty(rawPropertyName, isUnexpectedProperty: true);
+
+        return BuildDiagnostic(
+            CdcConnectorTemplateDiagnosticCodes.LiveReadBackSourcePartitionMismatch,
+            CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch,
+            CdcConnectorTemplateDiagnosticPropertyNames.UnexpectedSourcePartitionProperty(sourcePartitionKey),
+            RedactUnexpectedExpectedValueForDiagnostic(expectedValue, redactionClassification),
+            RedactValueForDiagnostic(observedValue, redactionClassification),
+            request,
+            sourcePhase,
+            redactionClassification
+        );
+    }
 
     private static CdcConnectorTemplateDiagnostic BuildSourcePartitionDiagnostic(
         string propertyName,

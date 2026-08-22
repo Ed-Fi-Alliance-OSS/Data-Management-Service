@@ -278,6 +278,30 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
         "schema.history.internal.consumer.",
     ];
 
+    private static readonly IReadOnlySet<string> _generatedConnectorPropertyNames = new HashSet<string>(
+        StringComparer.Ordinal
+    )
+    {
+        "transforms.documentState.type",
+        "transforms.documentState.provider",
+        "transforms.documentState.target.topic",
+        "transforms.documentState.progress.topic",
+        "producer.override.enable.idempotence",
+        "producer.override.acks",
+        "producer.override.retries",
+        "producer.override.max.in.flight.requests.per.connection",
+        "producer.override.max.request.size",
+        "producer.override.buffer.memory",
+        "producer.override.compression.type",
+        "producer.override.partitioner.class",
+        "schema.history.internal.kafka.bootstrap.servers",
+        "schema.history.internal.kafka.topic",
+        "schema.history.internal.producer.enable.idempotence",
+        "schema.history.internal.producer.acks",
+        "schema.history.internal.producer.retries",
+        "schema.history.internal.producer.max.in.flight.requests.per.connection",
+    };
+
     internal static IReadOnlyList<string> ReservedManifestKeys { get; } =
         _reservedExactKeys
             .Concat(_reservedKeyPrefixes.Select(prefix => $"{prefix}*"))
@@ -322,6 +346,21 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
 
     internal static bool IsKafkaClientSecurityProperty(string propertyName) =>
         _kafkaSecurityAllowList.Contains(propertyName);
+
+    internal static bool IsProviderConnectionProperty(CdcProvider provider, string propertyName) =>
+        _connectionAllowListByProvider[provider].Contains(propertyName);
+
+    internal static bool IsKnownGeneratedConnectorProperty(string propertyName) =>
+        _reservedExactKeys.Contains(propertyName)
+        || _generatedConnectorPropertyNames.Contains(propertyName)
+        || IsGeneratedKafkaSecurityProperty(propertyName);
+
+    private static bool IsGeneratedKafkaSecurityProperty(string propertyName)
+    {
+        string? suffix = GeneratedKafkaSecurityPropertySuffix(propertyName);
+
+        return suffix is not null && _kafkaSecurityAllowList.Contains(suffix);
+    }
 
     internal static bool IsSqlServerDriverConnectionProperty(string propertyName) =>
         propertyName.StartsWith("driver.", StringComparison.Ordinal)
@@ -572,7 +611,9 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
                     BuildDiagnostic(
                         CdcConnectorTemplateDiagnosticCodes.ConnectionPropertyNotAllowed,
                         CdcConnectorTemplateDiagnosticCategory.ConnectionPropertyViolation,
-                        property.Key,
+                        CdcConnectorTemplateDiagnosticPropertyNames.UnexpectedProviderConnectionProperty(
+                            property.Key
+                        ),
                         "allow-listed provider connection property",
                         null,
                         request,
@@ -653,7 +694,9 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
                     BuildDiagnostic(
                         CdcConnectorTemplateDiagnosticCodes.KafkaSecurityPropertyNotAllowed,
                         CdcConnectorTemplateDiagnosticCategory.KafkaSecurityPropertyViolation,
-                        property.Key,
+                        CdcConnectorTemplateDiagnosticPropertyNames.UnexpectedKafkaSecurityProperty(
+                            property.Key
+                        ),
                         "unprefixed allow-listed Kafka security property",
                         null,
                         request,
@@ -733,7 +776,9 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
             BuildDiagnostic(
                 CdcConnectorTemplateDiagnosticCodes.ReservedKey,
                 CdcConnectorTemplateDiagnosticCategory.ReservedKeyViolation,
-                propertyName,
+                IsKnownGeneratedConnectorProperty(propertyName)
+                    ? propertyName
+                    : CdcConnectorTemplateDiagnosticPropertyNames.ReservedConnectorProperty(propertyName),
                 "renderer-owned connector property",
                 null,
                 request,

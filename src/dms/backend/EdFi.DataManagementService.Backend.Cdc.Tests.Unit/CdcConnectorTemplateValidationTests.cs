@@ -382,23 +382,116 @@ public class Given_CdcConnectorTemplateValidationTests
             .Diagnostics.Should()
             .ContainSingle(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.ConnectionPropertyNotAllowed
-                && diagnostic.PropertyName == "database.server.name"
                 && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ConnectionPropertyViolation
-            );
+            )
+            .Which.PropertyName.Should()
+            .MatchRegex("^providerConnection\\.unexpected#[0-9a-f]{16}$");
         sqlServerResult
             .Diagnostics.Should()
             .ContainSingle(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.ConnectionPropertyNotAllowed
-                && diagnostic.PropertyName == "database.dbname"
                 && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.ConnectionPropertyViolation
-            );
+            )
+            .Which.PropertyName.Should()
+            .MatchRegex("^providerConnection\\.unexpected#[0-9a-f]{16}$");
         kafkaResult
             .Diagnostics.Should()
             .ContainSingle(diagnostic =>
                 diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.KafkaSecurityPropertyNotAllowed
-                && diagnostic.PropertyName == "ssl.unknown"
                 && diagnostic.Category
                     == CdcConnectorTemplateDiagnosticCategory.KafkaSecurityPropertyViolation
+            )
+            .Which.PropertyName.Should()
+            .MatchRegex("^kafkaSecurity\\.unexpected#[0-9a-f]{16}$");
+        postgresqlResult
+            .Diagnostics.Select(diagnostic => diagnostic.PropertyName)
+            .Should()
+            .NotContain("database.server.name");
+        sqlServerResult
+            .Diagnostics.Select(diagnostic => diagnostic.PropertyName)
+            .Should()
+            .NotContain("database.dbname");
+        kafkaResult
+            .Diagnostics.Select(diagnostic => diagnostic.PropertyName)
+            .Should()
+            .NotContain("ssl.unknown");
+    }
+
+    [Test]
+    public void It_sanitizes_unrecognized_connection_and_security_property_names_before_diagnostics()
+    {
+        const string unsafeProviderPropertyName =
+            "Server=unsafe-prod;Password=should-not-leak;Tenant=GrandBend;{\"documentUuid\":\"abc\"}";
+        const string unsafeKafkaPropertyName =
+            "ssl.unknown.Password=should-not-leak;Tenant=GrandBend;{\"studentUniqueId\":\"123\"}";
+        string[] sentinelText =
+        [
+            "Server=unsafe-prod",
+            "Password=should-not-leak",
+            "Tenant=GrandBend",
+            "documentUuid",
+            "studentUniqueId",
+        ];
+        Dictionary<string, string> providerConnectionProperties = BuildRequiredProviderConnectionProperties(
+                CdcProvider.Postgresql
+            )
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+        providerConnectionProperties[unsafeProviderPropertyName] = "ignored";
+        var kafkaSecurityProperties = new Dictionary<string, string>
+        {
+            [unsafeKafkaPropertyName] = "ignored",
+        };
+
+        CdcConnectorTemplateValidationResult firstResult = Validate(
+            CdcProvider.Postgresql,
+            providerConnectionProperties,
+            kafkaSecurityProperties
+        );
+        CdcConnectorTemplateValidationResult secondResult = Validate(
+            CdcProvider.Postgresql,
+            providerConnectionProperties,
+            kafkaSecurityProperties
+        );
+        Action act = () => firstResult.ThrowIfInvalid();
+
+        CdcConnectorTemplateDiagnostic connectionDiagnostic = firstResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.ConnectionPropertyNotAllowed
+            )
+            .Which;
+        CdcConnectorTemplateDiagnostic kafkaDiagnostic = firstResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.KafkaSecurityPropertyNotAllowed
+            )
+            .Which;
+
+        using var _ = new AssertionScope();
+        connectionDiagnostic
+            .PropertyName.Should()
+            .MatchRegex("^providerConnection\\.unexpected#[0-9a-f]{16}$");
+        kafkaDiagnostic.PropertyName.Should().MatchRegex("^kafkaSecurity\\.unexpected#[0-9a-f]{16}$");
+        secondResult
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == connectionDiagnostic.Code
+                && diagnostic.PropertyName == connectionDiagnostic.PropertyName
+            )
+            .And.Contain(diagnostic =>
+                diagnostic.Code == kafkaDiagnostic.Code
+                && diagnostic.PropertyName == kafkaDiagnostic.PropertyName
+            );
+        string.Join("|", firstResult.Diagnostics.SelectMany(DiagnosticSurface))
+            .Should()
+            .NotContainAny(sentinelText);
+        act.Should()
+            .Throw<CdcConnectorTemplateValidationException>()
+            .Where(exception =>
+                Array.TrueForAll(
+                    sentinelText,
+                    sentinel => !exception.ToString().Contains(sentinel, StringComparison.Ordinal)
+                )
             );
     }
 
@@ -440,7 +533,11 @@ public class Given_CdcConnectorTemplateValidationTests
             )
             .Select(diagnostic => diagnostic.PropertyName)
             .Should()
-            .BeEquivalentTo(obsoleteSqlServerProperties);
+            .OnlyHaveUniqueItems()
+            .And.OnlyContain(propertyName =>
+                HasPropertyNamePrefix(propertyName, "providerConnection.unexpected#")
+            )
+            .And.NotContain(obsoleteSqlServerProperties);
         result
             .Diagnostics.Should()
             .AllSatisfy(diagnostic =>
@@ -1847,6 +1944,18 @@ public class Given_CdcConnectorTemplateValidationTests
 
     private static IEnumerable<string> DiagnosticText(CdcConnectorTemplateDiagnostic diagnostic) =>
         [diagnostic.ExpectedValue ?? string.Empty, diagnostic.ObservedValue ?? string.Empty];
+
+    private static IEnumerable<string> DiagnosticSurface(CdcConnectorTemplateDiagnostic diagnostic) =>
+        [
+            diagnostic.PropertyName ?? string.Empty,
+            diagnostic.SafeArtifactOrObjectName?.Value ?? string.Empty,
+            diagnostic.ExpectedValue ?? string.Empty,
+            diagnostic.ObservedValue ?? string.Empty,
+            diagnostic.ToString(),
+        ];
+
+    private static bool HasPropertyNamePrefix(string? propertyName, string propertyNamePrefix) =>
+        propertyName is not null && propertyName.StartsWith(propertyNamePrefix, StringComparison.Ordinal);
 
     private static CdcSourceTableInventory BuildSourceTableWithNullColumnEntry(
         CdcProvider provider,
