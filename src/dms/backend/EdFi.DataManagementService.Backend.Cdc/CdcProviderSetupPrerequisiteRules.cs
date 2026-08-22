@@ -98,17 +98,59 @@ internal static class CdcProviderSetupPrerequisiteRules
             providerSetupResult.SourceTableInventory;
 
         if (
-            sourceTableInventory is not null
-            && CdcConnectorTemplateSharedRules.HasRequiredSourceInventory(sourceTableInventory)
+            sourceTableInventory is null
+            || !CdcConnectorTemplateSharedRules.HasRequiredSourceTableMembership(sourceTableInventory)
         )
         {
-            AddSourceTableNameDiagnostics(
-                providerSetupResult,
-                sourceTableInventory,
-                safeArtifactOrObjectName,
-                sourcePhase,
-                diagnostics
+            diagnostics.Add(
+                BuildDiagnostic(
+                    CdcConnectorTemplateDiagnosticCodes.SourceTableInventoryMismatch,
+                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
+                    "providerSetup.sourceTableInventory",
+                    "dms.DocumentCache, dms.Document, and dms.CdcHeartbeat",
+                    ObservedCountOrMissing(sourceTableInventory),
+                    providerSetupResult.Provider,
+                    safeArtifactOrObjectName,
+                    sourcePhase,
+                    CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+                )
             );
+            return;
+        }
+
+        AddSourceTableNameDiagnostics(
+            providerSetupResult,
+            sourceTableInventory,
+            safeArtifactOrObjectName,
+            sourcePhase,
+            diagnostics
+        );
+        AddRequiredSourceInventoryContractDiagnosticIfNeeded(
+            providerSetupResult,
+            sourceTableInventory,
+            safeArtifactOrObjectName,
+            sourcePhase,
+            diagnostics
+        );
+        AddSourceColumnShapeDiagnostics(
+            providerSetupResult,
+            sourceTableInventory,
+            safeArtifactOrObjectName,
+            sourcePhase,
+            diagnostics
+        );
+    }
+
+    private static void AddRequiredSourceInventoryContractDiagnosticIfNeeded(
+        CdcProviderSetupResult providerSetupResult,
+        IReadOnlyList<CdcSourceTableInventory> sourceTableInventory,
+        CdcSafeName? safeArtifactOrObjectName,
+        CdcConnectorTemplateSourcePhase sourcePhase,
+        List<CdcConnectorTemplateDiagnostic> diagnostics
+    )
+    {
+        if (CdcConnectorTemplateSharedRules.HasRequiredSourceInventory(sourceTableInventory))
+        {
             return;
         }
 
@@ -117,14 +159,72 @@ internal static class CdcProviderSetupPrerequisiteRules
                 CdcConnectorTemplateDiagnosticCodes.SourceTableInventoryMismatch,
                 CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
                 "providerSetup.sourceTableInventory",
-                "dms.DocumentCache, dms.Document, and dms.CdcHeartbeat",
-                ObservedCountOrMissing(sourceTableInventory),
+                "valid CDC source table contract inventory",
+                "malformed",
                 providerSetupResult.Provider,
                 safeArtifactOrObjectName,
                 sourcePhase,
                 CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
             )
         );
+    }
+
+    private static void AddSourceColumnShapeDiagnostics(
+        CdcProviderSetupResult providerSetupResult,
+        IReadOnlyList<CdcSourceTableInventory> sourceTableInventory,
+        CdcSafeName? safeArtifactOrObjectName,
+        CdcConnectorTemplateSourcePhase sourcePhase,
+        List<CdcConnectorTemplateDiagnostic> diagnostics
+    )
+    {
+        foreach (CdcSourceTableInventory sourceTable in sourceTableInventory)
+        {
+            if (
+                CdcConnectorTemplateSharedRules.OrderedRequiredMessageKeyTableKinds.Contains(
+                    sourceTable.TableKind
+                )
+            )
+            {
+                continue;
+            }
+
+            if (HasMalformedSourceColumns(sourceTable))
+            {
+                diagnostics.Add(
+                    BuildDiagnostic(
+                        CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch,
+                        CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
+                        "providerSetup.sourceTableInventory.columns",
+                        $"non-null source column inventory for {CdcConnectorTemplateSharedRules.ExpectedSourceTableName(sourceTable.TableKind)}",
+                        "malformed",
+                        providerSetupResult.Provider,
+                        safeArtifactOrObjectName,
+                        sourcePhase,
+                        CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+                    )
+                );
+                continue;
+            }
+
+            if (!HasDuplicateColumnNames(sourceTable))
+            {
+                continue;
+            }
+
+            diagnostics.Add(
+                BuildDiagnostic(
+                    CdcConnectorTemplateDiagnosticCodes.SourceColumnInventoryMismatch,
+                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
+                    "providerSetup.sourceTableInventory.columns",
+                    $"unique source column names for {CdcConnectorTemplateSharedRules.ExpectedSourceTableName(sourceTable.TableKind)}",
+                    "duplicate",
+                    providerSetupResult.Provider,
+                    safeArtifactOrObjectName,
+                    sourcePhase,
+                    CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+                )
+            );
+        }
     }
 
     private static void AddSourceTableNameDiagnostics(
@@ -200,7 +300,7 @@ internal static class CdcProviderSetupPrerequisiteRules
             providerSetupResult.SourceTableInventory;
         if (
             sourceTableInventory is null
-            || !CdcConnectorTemplateSharedRules.HasRequiredSourceInventory(sourceTableInventory)
+            || !CdcConnectorTemplateSharedRules.HasRequiredSourceTableMembership(sourceTableInventory)
         )
         {
             return;

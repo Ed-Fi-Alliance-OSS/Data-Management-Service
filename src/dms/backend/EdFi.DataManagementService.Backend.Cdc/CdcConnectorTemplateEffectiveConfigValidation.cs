@@ -234,7 +234,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
             );
         }
 
-        if (!CdcConnectorTemplateSharedRules.HasRequiredSourceInventory(result.SourceTableInventory))
+        if (!CdcConnectorTemplateSharedRules.HasRequiredSourceTableMembership(result.SourceTableInventory))
         {
             diagnostics.Add(
                 BuildDiagnostic(

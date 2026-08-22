@@ -1096,6 +1096,107 @@ public class Given_CdcConnectorTemplateValidationTests
     }
 
     [Test]
+    public void It_rejects_malformed_heartbeat_source_inventory_during_public_request_validation_and_render()
+    {
+        CdcProviderSetupResult[] malformedProviderSetupResults =
+        [
+            BuildProviderSetupResult(
+                CdcProvider.Postgresql,
+                sourceTableInventory: BuildHeartbeatSourceInventory(
+                    CdcProvider.Postgresql,
+                    [
+                        BuildColumn(CdcProvider.Postgresql, "HeartbeatId"),
+                        BuildColumn(CdcProvider.Postgresql, "HeartbeatAt", 2),
+                    ]
+                )
+            ),
+            BuildProviderSetupResult(
+                CdcProvider.Postgresql,
+                sourceTableInventory: BuildHeartbeatSourceInventory(
+                    CdcProvider.Postgresql,
+                    [
+                        BuildColumn(CdcProvider.Postgresql, "HeartbeatId"),
+                        BuildColumn(CdcProvider.Postgresql, "HeartbeatSequence", 2),
+                        BuildColumn(CdcProvider.Postgresql, "HeartbeatAt", 3),
+                        BuildColumn(CdcProvider.Postgresql, "HeartbeatId", 4),
+                    ]
+                )
+            ),
+            BuildProviderSetupResult(
+                CdcProvider.Postgresql,
+                sourceTableInventory: BuildHeartbeatSourceInventory(
+                    CdcProvider.Postgresql,
+                    [
+                        BuildColumn(CdcProvider.Postgresql, "HeartbeatId"),
+                        BuildColumn(CdcProvider.Postgresql, "HeartbeatSequence", 2),
+                        BuildColumn(CdcProvider.Postgresql, "HeartbeatAt", 4),
+                    ]
+                )
+            ),
+            BuildProviderSetupResult(
+                CdcProvider.Postgresql,
+                sourceTableInventory: BuildSourceInventoryReplacing(
+                    CdcProvider.Postgresql,
+                    BuildSourceTableWithNullColumnEntry(
+                        CdcProvider.Postgresql,
+                        CdcSourceTableKind.CdcHeartbeat,
+                        "CdcHeartbeat"
+                    )
+                )
+            ),
+        ];
+
+        foreach (CdcProviderSetupResult providerSetupResult in malformedProviderSetupResults)
+        {
+            CdcConnectorTemplateRequest request = RequestForProviderSetupDomainValidation(
+                providerSetupResult
+            );
+            CdcConnectorTemplateValidationResult validationResult = Validate(request);
+            CdcConnectorTemplateResult renderResult = Render(request);
+            CdcProviderSetupReadiness readiness = GetProviderSetupReadiness(providerSetupResult);
+
+            using var _ = new AssertionScope();
+            validationResult.IsValid.Should().BeFalse();
+            renderResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+            renderResult.Config.Should().BeEmpty();
+            readiness.CanRenderTemplate.Should().BeFalse();
+            validationResult
+                .Diagnostics.Should()
+                .Contain(diagnostic =>
+                    diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceTableInventoryMismatch
+                    && diagnostic.PropertyName == "providerSetup.sourceTableInventory"
+                    && diagnostic.ExpectedValue == "valid CDC source table contract inventory"
+                    && diagnostic.ObservedValue == "malformed"
+                    && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Render
+                    && diagnostic.RedactionClassification
+                        == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+                );
+            renderResult
+                .Diagnostics.Should()
+                .Contain(diagnostic =>
+                    diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceTableInventoryMismatch
+                    && diagnostic.PropertyName == "providerSetup.sourceTableInventory"
+                    && diagnostic.ExpectedValue == "valid CDC source table contract inventory"
+                    && diagnostic.ObservedValue == "malformed"
+                    && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Render
+                    && diagnostic.RedactionClassification
+                        == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+                );
+            readiness
+                .Diagnostics.Should()
+                .Contain(diagnostic =>
+                    diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.SourceTableInventoryMismatch
+                    && diagnostic.PropertyName == "providerSetup.sourceTableInventory"
+                    && diagnostic.ExpectedValue == "valid CDC source table contract inventory"
+                    && diagnostic.ObservedValue == "malformed"
+                    && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Render
+                    && diagnostic.RedactionClassification
+                        == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+                );
+        }
+    }
+
+    [Test]
     public void It_rejects_sqlserver_capture_instance_artifact_inventory_drift_during_public_request_validation()
     {
         CdcConnectorTemplateValidationResult emptyInventory = Validate(
