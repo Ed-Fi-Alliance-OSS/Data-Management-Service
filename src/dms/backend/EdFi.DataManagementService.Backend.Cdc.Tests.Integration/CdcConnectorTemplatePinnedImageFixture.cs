@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
@@ -13,7 +14,9 @@ using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using FluentAssertions.Execution;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
@@ -22,6 +25,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 {
     private const string ConnectorPasswordEnvironmentVariable = "CDC_DATABASE_PASSWORD";
     internal const string ConnectorDatabasePassword = "EdFi_Dms1!";
+    private const string ConnectorDatabaseUser = "dms_connector";
     private const string EnvConfigProviderName = "env";
     private const string EnvConfigProviderClass =
         "org.apache.kafka.common.config.provider.EnvVarConfigProvider";
@@ -32,9 +36,6 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
     private const string PostgresqlDatabaseName = "edfi_datastore";
     private const string PostgresqlPublicationName = "dms_binding_publication";
     private const string PostgresqlReplicationSlotName = "dms_binding_slot";
-    private const string PostgresqlExpectedSourceTables = "dms.DocumentCache,dms.Document,dms.CdcHeartbeat";
-    private const string PostgresqlObservedPublicationTables =
-        "dms.CdcHeartbeat,dms.Document,dms.DocumentCache";
     private const string SqlServerDatabaseName = "edfi_datastore";
     private const string SqlServerGatingRoleName = "dms_binding_gate";
     private const string DocumentStateTransformClass = "org.edfi.kafka.connect.transforms.DocumentState";
@@ -53,7 +54,6 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             CdcSourceTableKind.DocumentCache,
             "DocumentCache",
             new CdcSafeName("dms_binding_document_cache"),
-            "document_cache",
             "DocumentId",
             [
                 new("DocumentId", "bigint"),
@@ -72,7 +72,6 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             CdcSourceTableKind.Document,
             "Document",
             new CdcSafeName("dms_binding_document"),
-            "document",
             "DocumentId",
             [
                 new("DocumentId", "bigint"),
@@ -90,7 +89,6 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             CdcSourceTableKind.CdcHeartbeat,
             "CdcHeartbeat",
             new CdcSafeName("dms_binding_cdc_heartbeat_capture"),
-            "cdc_heartbeat",
             "HeartbeatId",
             [
                 new("HeartbeatId", "smallint"),
@@ -123,7 +121,10 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         _resourcePrefix = resourcePrefix;
         _docker = docker;
         _httpClient = new HttpClient { BaseAddress = connectBaseUri };
-        _serviceProvider = new ServiceCollection().AddCdcConnectorTemplates().BuildServiceProvider();
+        _serviceProvider = new ServiceCollection()
+            .AddCdcConnectorTemplates()
+            .AddCdcProviderSetup()
+            .BuildServiceProvider();
     }
 
     public CdcProvider Provider { get; }
@@ -137,7 +138,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             {
                 ["database.hostname"] = ProviderContainerName,
                 ["database.port"] = "5432",
-                ["database.user"] = "postgres",
+                ["database.user"] = ConnectorDatabaseUser,
                 ["database.password"] = $"${{env:{ConnectorPasswordEnvironmentVariable}}}",
                 ["database.dbname"] = PostgresqlDatabaseName,
             },
@@ -145,7 +146,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             {
                 ["database.hostname"] = ProviderContainerName,
                 ["database.port"] = "1433",
-                ["database.user"] = "sa",
+                ["database.user"] = ConnectorDatabaseUser,
                 ["database.password"] = $"${{env:{ConnectorPasswordEnvironmentVariable}}}",
                 ["database.names"] = SqlServerDatabaseName,
                 ["driver.encrypt"] = "true",
@@ -256,8 +257,17 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         }
     }
 
-    public CdcConnectorTemplateRequest BuildRequest() =>
-        BuildRequest(Provider, KafkaBootstrapServers, ProviderConnectionProperties);
+    public async Task<CdcConnectorTemplateRequest> CreateRequestAsync(CancellationToken cancellationToken)
+    {
+        await CreateMinimalProviderObjectsAsync(cancellationToken);
+        CdcProviderSetupResult providerSetupResult = await RunProviderSetupAsync(
+            CdcProviderSetupMode.InitialCreateOrExactMatch,
+            cancellationToken
+        );
+        CdcConnectorTemplateRequest request = BuildRequest(providerSetupResult);
+        await CreateMinimalTopicsAsync(request, cancellationToken);
+        return request;
+    }
 
     public CdcConnectorTemplateResult Render(CdcConnectorTemplateRequest request)
     {
@@ -271,19 +281,23 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         return rendered;
     }
 
-    public void AssertRenderedTemplateCanBeValidatedFromReadBack(
+    private async Task AssertRenderedTemplateCanBeValidatedFromReadBackAsync(
         CdcConnectorTemplateRequest request,
         IReadOnlyDictionary<string, string> effectiveConfig,
-        CdcConnectorTemplateSourcePartitionEvidence sourcePartitionEvidence
+        CdcConnectorTemplateSourcePartitionEvidence sourcePartitionEvidence,
+        CancellationToken cancellationToken
     )
     {
         ICdcConnectorTemplateService service =
             _serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
-        CdcConnectorProviderSetupEvidence preflightProviderSetupEvidence = BuildProviderSetupEvidence(
-            request.Provider
+        CdcProviderSetupResult liveProviderSetupResult = await RunProviderSetupAsync(
+            CdcProviderSetupMode.ValidateOnly,
+            cancellationToken
         );
-        CdcConnectorProviderSetupEvidence liveReadBackProviderSetupEvidence =
-            BuildLiveReadBackProviderSetupEvidence(request.Provider);
+        var liveReadBackProviderSetupEvidence = new CdcConnectorProviderSetupEvidence(
+            request.BindingIdentity.BindingGeneration,
+            liveProviderSetupResult
+        );
         CdcConnectorTemplateResult rendered = service.Render(request);
 
         rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
@@ -294,7 +308,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             new CdcConnectorTemplateEffectiveConfigValidationRequest(
                 request,
                 effectiveConfig,
-                preflightProviderSetupEvidence
+                request.ProviderSetupEvidence
             )
         );
         CdcConnectorTemplateResult liveReadBack = service.ValidateLiveReadBack(
@@ -378,15 +392,6 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
                 $"Qualified Kafka Connect read-back contained {unexpectedKeys.Length} unrendered properties. Unexpected property names are redacted."
             );
         }
-    }
-
-    public async Task CreateMinimalTopicsAndProviderObjectsAsync(
-        CdcConnectorTemplateRequest request,
-        CancellationToken cancellationToken
-    )
-    {
-        await CreateMinimalTopicsAsync(request, cancellationToken);
-        await CreateMinimalProviderObjectsAsync(cancellationToken);
     }
 
     public async Task AssertRuntimeLoadsRequiredClassesAsync(
@@ -788,7 +793,12 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         }
 
         IReadOnlyDictionary<string, string> config = ParseStringMap(responseBody);
-        AssertRenderedTemplateCanBeValidatedFromReadBack(request, config, sourcePartitionEvidence);
+        await AssertRenderedTemplateCanBeValidatedFromReadBackAsync(
+            request,
+            config,
+            sourcePartitionEvidence,
+            cancellationToken
+        );
     }
 
     public async ValueTask DisposeAsync()
@@ -821,23 +831,104 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         }
     }
 
-    public static CdcConnectorTemplateRequest BuildRequest(
-        CdcProvider provider,
-        string kafkaBootstrapServers,
-        IReadOnlyDictionary<string, string> providerConnectionProperties
-    ) =>
+    private CdcConnectorTemplateRequest BuildRequest(CdcProviderSetupResult providerSetupResult) =>
         new(
-            BuildBinding(provider),
-            BuildProviderSetupEvidence(provider),
+            BuildBinding(Provider),
+            new CdcConnectorProviderSetupEvidence(bindingGeneration: 7, providerSetupResult),
             new CdcConnectorTemplateDeploymentPolicy(
-                kafkaBootstrapServers,
+                KafkaBootstrapServers,
                 maxRecordBytes: 67_108_864,
                 heartbeatInterval: TimeSpan.FromSeconds(5),
-                sqlServerPollInterval: provider == CdcProvider.SqlServer ? TimeSpan.FromSeconds(2) : null
+                sqlServerPollInterval: Provider == CdcProvider.SqlServer ? TimeSpan.FromSeconds(2) : null
             ),
-            new CdcProviderConnectionProperties(provider, providerConnectionProperties),
+            new CdcProviderConnectionProperties(Provider, ProviderConnectionProperties),
             CdcKafkaClientSecurityProperties.Empty
         );
+
+    private async Task<CdcProviderSetupResult> RunProviderSetupAsync(
+        CdcProviderSetupMode mode,
+        CancellationToken cancellationToken
+    )
+    {
+        int providerPort = await ReadMappedProviderPortAsync(cancellationToken);
+        await using DbConnection connection = CreateProviderAdminConnection(providerPort);
+        var executor = new DbConnectionCdcProviderDatabaseExecutor(connection);
+        ICdcProviderSetupService providerSetupService =
+            _serviceProvider.GetRequiredService<ICdcProviderSetupService>();
+        CdcProviderSetupResult result = await providerSetupService.SetupAsync(
+            BuildProviderSetupRequest(mode, executor),
+            cancellationToken
+        );
+        CdcProviderSetupOutcome expectedOutcome =
+            mode == CdcProviderSetupMode.ValidateOnly
+                ? CdcProviderSetupOutcome.ExactMatch
+                : CdcProviderSetupOutcome.CreatedOrMatched;
+        string diagnosticCodes = string.Join(",", result.Diagnostics.Select(diagnostic => diagnostic.Code));
+
+        result.Outcome.Should().Be(expectedOutcome, "provider setup diagnostics were {0}", diagnosticCodes);
+        result
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
+        return result;
+    }
+
+    private DbConnection CreateProviderAdminConnection(int providerPort) =>
+        Provider switch
+        {
+            CdcProvider.Postgresql => new NpgsqlConnection(
+                $"Host=127.0.0.1;Port={providerPort};Username=postgres;Password={ConnectorDatabasePassword};Database={PostgresqlDatabaseName}"
+            ),
+            CdcProvider.SqlServer => new SqlConnection(
+                $"Server=127.0.0.1,{providerPort};Database={SqlServerDatabaseName};User Id=sa;Password={ConnectorDatabasePassword};Encrypt=True;TrustServerCertificate=True"
+            ),
+            _ => throw new InvalidOperationException("Unsupported CDC provider."),
+        };
+
+    private CdcProviderSetupRequest BuildProviderSetupRequest(
+        CdcProviderSetupMode mode,
+        ICdcProviderDatabaseExecutor databaseExecutor
+    ) =>
+        new(
+            provider: Provider,
+            mode: mode,
+            boundPhysicalSourceFingerprint: CdcConnectorTemplatePinnedImageTestData.SourceFingerprint(
+                Provider
+            ),
+            setupPrincipal: new CdcSetupPrincipalContext(
+                new CdcSafeName(Provider == CdcProvider.Postgresql ? "postgres" : "sa")
+            ),
+            connectorPrincipal: new CdcConnectorPrincipal(new CdcSafeName(ConnectorDatabaseUser)),
+            artifactNames: BuildProviderArtifactNames(Provider),
+            artifactOutput: new CdcProviderArtifactOutputRequest(IncludeManifestPayload: false),
+            expectedSourceInventory: BuildRequiredSourceTableInventory(Provider),
+            dmsManagedTableInventory: BuildDmsManagedTableInventory(Provider),
+            databaseExecutor: databaseExecutor
+        );
+
+    private static IReadOnlyList<CdcDmsManagedTableInventory> BuildDmsManagedTableInventory(
+        CdcProvider provider
+    )
+    {
+        ISqlDialect dialect = SqlDialectFactory.Create(
+            provider == CdcProvider.Postgresql ? SqlDialect.Pgsql : SqlDialect.Mssql
+        );
+        DbTableName[] tables =
+        [
+            DmsTableNames.DataStoreIdentity,
+            DmsTableNames.CdcHeartbeat,
+            DmsTableNames.Document,
+            DmsTableNames.DocumentCache,
+            DmsTableNames.DocumentProjectionWork,
+        ];
+
+        return tables
+            .Select(table => new CdcDmsManagedTableInventory(
+                CdcDmsManagedTableKind.Core,
+                table,
+                dialect.QualifyTable(table)
+            ))
+            .ToArray();
+    }
 
     private async Task StartDockerResourcesAsync(CancellationToken cancellationToken)
     {
@@ -891,6 +982,8 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
                     ProviderContainerName,
                     "--network",
                     NetworkName,
+                    "-p",
+                    "127.0.0.1::5432",
                     "-e",
                     $"POSTGRES_DB={PostgresqlDatabaseName}",
                     "-e",
@@ -920,6 +1013,8 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
                 ProviderContainerName,
                 "--network",
                 NetworkName,
+                "-p",
+                "127.0.0.1::1433",
                 "-e",
                 "ACCEPT_EULA=Y",
                 "-e",
@@ -1122,7 +1217,25 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         return ParseMappedConnectBaseUri(ConnectContainerName, result.StandardOutput);
     }
 
-    internal static Uri ParseMappedConnectBaseUri(string connectContainerName, string dockerPortOutput)
+    private async Task<int> ReadMappedProviderPortAsync(CancellationToken cancellationToken)
+    {
+        string containerPort = Provider == CdcProvider.Postgresql ? "5432/tcp" : "1433/tcp";
+        DockerCommandResult result = await _docker.RunAsync(
+            ["port", ProviderContainerName, containerPort],
+            cancellationToken
+        );
+        return ParseMappedPort(ProviderContainerName, result.StandardOutput, "CDC provider");
+    }
+
+    internal static Uri ParseMappedConnectBaseUri(string connectContainerName, string dockerPortOutput) =>
+        new(
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"http://127.0.0.1:{ParseMappedPort(connectContainerName, dockerPortOutput, "Kafka Connect")}"
+            )
+        );
+
+    private static int ParseMappedPort(string containerName, string dockerPortOutput, string serviceName)
     {
         string[] mappedPortLines = dockerPortOutput.Split(
             '\n',
@@ -1132,9 +1245,10 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         if (mappedPortLines.Length == 0)
         {
             throw InvalidMappedPortOutput(
-                connectContainerName,
+                containerName,
                 dockerPortOutput,
-                "expected one mapped host port line but Docker returned no output"
+                "expected one mapped host port line but Docker returned no output",
+                serviceName
             );
         }
 
@@ -1143,9 +1257,10 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         if (delimiterIndex < 0)
         {
             throw InvalidMappedPortOutput(
-                connectContainerName,
+                containerName,
                 dockerPortOutput,
-                "expected mapped port line to contain a ':' delimiter"
+                "expected mapped port line to contain a ':' delimiter",
+                serviceName
             );
         }
 
@@ -1158,24 +1273,26 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         )
         {
             throw InvalidMappedPortOutput(
-                connectContainerName,
+                containerName,
                 dockerPortOutput,
-                "expected mapped port line to end with a non-empty numeric TCP port"
+                "expected mapped port line to end with a non-empty numeric TCP port",
+                serviceName
             );
         }
 
-        return new Uri(string.Create(CultureInfo.InvariantCulture, $"http://127.0.0.1:{mappedPort}"));
+        return mappedPort;
     }
 
     private static InvalidOperationException InvalidMappedPortOutput(
-        string connectContainerName,
+        string containerName,
         string dockerPortOutput,
-        string reason
+        string reason,
+        string serviceName
     ) =>
         new(
             string.Create(
                 CultureInfo.InvariantCulture,
-                $"Invalid docker port output for Kafka Connect container '{connectContainerName}': {reason}. Docker output: {FormatDockerOutputForDiagnostic(dockerPortOutput)}"
+                $"Invalid docker port output for {serviceName} container '{containerName}': {reason}. Docker output: {FormatDockerOutputForDiagnostic(dockerPortOutput)}"
             )
         );
 
@@ -1470,184 +1587,42 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             ],
             cancellationToken
         );
-
-        await _docker.RunAsync(
-            [
-                "exec",
-                "-e",
-                $"PGPASSWORD={ConnectorDatabasePassword}",
-                ProviderContainerName,
-                "psql",
-                "-v",
-                "ON_ERROR_STOP=1",
-                "-U",
-                "postgres",
-                "-d",
-                PostgresqlDatabaseName,
-                "-c",
-                BuildPostgresqlReplicationSlotSql(),
-            ],
-            cancellationToken
-        );
-
-        await AssertPostgresqlPublicationMatchesProviderSetupEvidenceAsync(cancellationToken);
     }
 
     private static string BuildMinimalPostgresqlObjectsSql() =>
         $$"""
             CREATE SCHEMA IF NOT EXISTS "dms";
+            CREATE TABLE IF NOT EXISTS "dms"."DataStoreIdentity"
+            (
+                "DataStoreIdentitySingletonId" smallint NOT NULL PRIMARY KEY,
+                "SourceIdentity" uuid NOT NULL
+            );
+            INSERT INTO "dms"."DataStoreIdentity" ("DataStoreIdentitySingletonId", "SourceIdentity")
+            VALUES (1, '{{CdcConnectorTemplatePinnedImageTestData.SourceIdentity}}')
+            ON CONFLICT ("DataStoreIdentitySingletonId") DO NOTHING;
             CREATE TABLE IF NOT EXISTS "dms"."DocumentCache" ("DocumentUuid" text NOT NULL PRIMARY KEY);
             CREATE TABLE IF NOT EXISTS "dms"."Document" ("DocumentUuid" text NOT NULL PRIMARY KEY);
-            CREATE TABLE IF NOT EXISTS "dms"."CdcHeartbeat"
-            (
-                "HeartbeatId" smallint NOT NULL PRIMARY KEY,
-                "HeartbeatSequence" bigint NOT NULL,
-                "HeartbeatAt" timestamp with time zone NOT NULL,
-                CONSTRAINT "CK_CdcHeartbeat_Singleton" CHECK ("HeartbeatId" = 1),
-                CONSTRAINT "CK_CdcHeartbeat_Sequence" CHECK ("HeartbeatSequence" >= 0)
-            );
-            INSERT INTO "dms"."CdcHeartbeat" ("HeartbeatId", "HeartbeatSequence", "HeartbeatAt")
-            VALUES (1, 0, now())
-            ON CONFLICT ("HeartbeatId") DO NOTHING;
-            ALTER TABLE "dms"."DocumentCache" REPLICA IDENTITY FULL;
-            ALTER TABLE "dms"."Document" REPLICA IDENTITY FULL;
-            ALTER TABLE "dms"."CdcHeartbeat" REPLICA IDENTITY FULL;
-            DO $$
+            CREATE TABLE IF NOT EXISTS "dms"."DocumentProjectionWork" ("DocumentId" bigint NOT NULL PRIMARY KEY);
+            DO $role$
             BEGIN
-                IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = '{{PostgresqlPublicationName}}') THEN
-                    CREATE PUBLICATION {{PostgresqlPublicationName}}
-                    FOR TABLE "dms"."DocumentCache", "dms"."Document", "dms"."CdcHeartbeat"
-                    WITH (publish = 'insert, update, delete');
+                IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{{ConnectorDatabaseUser}}') THEN
+                    EXECUTE format(
+                        'CREATE ROLE %I WITH LOGIN REPLICATION NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS PASSWORD %L',
+                        '{{ConnectorDatabaseUser}}',
+                        '{{ConnectorDatabasePassword}}'
+                    );
                 END IF;
             END
-            $$;
+            $role$;
             """;
-
-    private static string BuildPostgresqlReplicationSlotSql() =>
-        $$"""
-            SELECT
-                CASE
-                    WHEN NOT EXISTS (
-                        SELECT 1 FROM pg_replication_slots WHERE slot_name = '{{PostgresqlReplicationSlotName}}'
-                    )
-                    THEN pg_create_logical_replication_slot('{{PostgresqlReplicationSlotName}}', 'pgoutput')::text
-                    ELSE NULL
-                END;
-            """;
-
-    private async Task AssertPostgresqlPublicationMatchesProviderSetupEvidenceAsync(
-        CancellationToken cancellationToken
-    )
-    {
-        string publicationPropertiesOutput = await ReadPostgresqlScalarAsync(
-            $$"""
-            SELECT
-                publication.pubinsert::text
-                || '|' || publication.pubupdate::text
-                || '|' || publication.pubdelete::text
-                || '|' || publication.pubtruncate::text
-                || '|' || publication.puballtables::text
-            FROM pg_catalog.pg_publication publication
-            WHERE publication.pubname = '{{PostgresqlPublicationName}}';
-            """,
-            cancellationToken
-        );
-        string[] publicationPropertyRows = publicationPropertiesOutput.Split(
-            '\n',
-            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
-        );
-        publicationPropertyRows.Should().HaveCount(1, "the fixture publication must exist");
-
-        PostgresqlPublicationMetadata metadata = ParsePostgresqlPublicationMetadata(
-            publicationPropertyRows[0]
-        );
-
-        string publicationTablesOutput = await ReadPostgresqlScalarAsync(
-            $$"""
-            SELECT namespace_info.nspname || '.' || table_info.relname
-            FROM pg_catalog.pg_publication_rel publication_table
-            INNER JOIN pg_catalog.pg_publication publication
-                ON publication.oid = publication_table.prpubid
-            INNER JOIN pg_catalog.pg_class table_info
-                ON table_info.oid = publication_table.prrelid
-            INNER JOIN pg_catalog.pg_namespace namespace_info
-                ON namespace_info.oid = table_info.relnamespace
-            WHERE publication.pubname = '{{PostgresqlPublicationName}}'
-            ORDER BY namespace_info.nspname, table_info.relname;
-            """,
-            cancellationToken
-        );
-        string[] publishedTables = publicationTablesOutput.Split(
-            '\n',
-            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
-        );
-
-        CdcProviderArtifactObservation publication = BuildArtifactInventory(CdcProvider.Postgresql)
-            .Single(artifact => artifact.ArtifactKind == CdcProviderArtifactKind.PostgresqlPublication);
-
-        using var _ = new AssertionScope();
-        metadata.PublishesInsert.Should().BeTrue();
-        metadata.PublishesUpdate.Should().BeTrue();
-        metadata.PublishesDelete.Should().BeTrue();
-        metadata.PublishesTruncate.Should().BeFalse();
-        metadata.PublishesAllTables.Should().BeFalse();
-        publishedTables.Should().Equal("dms.CdcHeartbeat", "dms.Document", "dms.DocumentCache");
-        publishedTables.Should().NotContain("dms.DocumentProjectionWork");
-
-        publication.SafeObservedValues["tables"].Should().Be(string.Join(",", publishedTables));
-        publication.SafeObservedValues["expected_tables"].Should().Be(PostgresqlExpectedSourceTables);
-        publication
-            .SafeObservedValues["publish"]
-            .Should()
-            .Be($"{metadata.PublishesInsert},{metadata.PublishesUpdate},{metadata.PublishesDelete}");
-        publication
-            .SafeObservedValues["publishes_truncate"]
-            .Should()
-            .Be(metadata.PublishesTruncate.ToString());
-        publication
-            .SafeObservedValues["publishes_all_tables"]
-            .Should()
-            .Be(metadata.PublishesAllTables.ToString());
-    }
-
-    private static PostgresqlPublicationMetadata ParsePostgresqlPublicationMetadata(string value)
-    {
-        string[] parts = value.Split('|', StringSplitOptions.TrimEntries);
-        if (parts.Length != 5)
-        {
-            throw new InvalidOperationException(
-                $"Unexpected PostgreSQL publication metadata shape: {SanitizeForAssertion(value)}"
-            );
-        }
-
-        return new PostgresqlPublicationMetadata(
-            PublishesInsert: ParsePostgresqlBool(parts[0]),
-            PublishesUpdate: ParsePostgresqlBool(parts[1]),
-            PublishesDelete: ParsePostgresqlBool(parts[2]),
-            PublishesTruncate: ParsePostgresqlBool(parts[3]),
-            PublishesAllTables: ParsePostgresqlBool(parts[4])
-        );
-    }
-
-    private static bool ParsePostgresqlBool(string value) =>
-        value switch
-        {
-            "true" or "t" => true,
-            "false" or "f" => false,
-            _ => throw new InvalidOperationException(
-                $"Unexpected PostgreSQL boolean metadata value: {SanitizeForAssertion(value)}"
-            ),
-        };
 
     private async Task CreateMinimalSqlServerObjectsAsync(CancellationToken cancellationToken)
     {
         string createSourceTablesSql = string.Join(
             Environment.NewLine,
-            SqlServerCaptureInstances.Select(CreateSqlServerSourceTableSql)
-        );
-        string enableCaptureInstancesSql = string.Join(
-            Environment.NewLine,
-            SqlServerCaptureInstances.Select(EnableSqlServerCaptureInstanceSql)
+            SqlServerCaptureInstances
+                .Where(definition => definition.TableKind != CdcSourceTableKind.CdcHeartbeat)
+                .Select(CreateSqlServerSourceTableSql)
         );
 
         string sql = $$"""
@@ -1658,15 +1633,24 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             USE [{{SqlServerDatabaseName}}];
             IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'dms')
                 EXEC(N'CREATE SCHEMA [dms]');
+            IF OBJECT_ID(N'[dms].[DataStoreIdentity]', N'U') IS NULL
+                CREATE TABLE [dms].[DataStoreIdentity]
+                (
+                    [DataStoreIdentitySingletonId] smallint NOT NULL PRIMARY KEY,
+                    [SourceIdentity] uniqueidentifier NOT NULL
+                );
+            IF NOT EXISTS (SELECT 1 FROM [dms].[DataStoreIdentity] WHERE [DataStoreIdentitySingletonId] = 1)
+                INSERT INTO [dms].[DataStoreIdentity] ([DataStoreIdentitySingletonId], [SourceIdentity])
+                VALUES (1, '{{CdcConnectorTemplatePinnedImageTestData.SourceIdentity}}');
             {{createSourceTablesSql}}
-            IF NOT EXISTS (SELECT 1 FROM [dms].[CdcHeartbeat] WHERE [HeartbeatId] = 1)
-                INSERT INTO [dms].[CdcHeartbeat] ([HeartbeatId], [HeartbeatSequence], [HeartbeatAt])
-                VALUES (1, 0, sysutcdatetime());
-            IF (SELECT is_cdc_enabled FROM sys.databases WHERE name = DB_NAME()) = 0
-                EXEC sys.sp_cdc_enable_db;
-            IF DATABASE_PRINCIPAL_ID(N'{{SqlServerLiteralValue(SqlServerGatingRoleName)}}') IS NULL
-                EXEC(N'CREATE ROLE {{SqlServerBracketIdentifier(SqlServerGatingRoleName)}}');
-            {{enableCaptureInstancesSql}}
+            IF OBJECT_ID(N'[dms].[DocumentProjectionWork]', N'U') IS NULL
+                CREATE TABLE [dms].[DocumentProjectionWork] ([DocumentId] bigint NOT NULL PRIMARY KEY);
+            IF SUSER_ID(N'{{ConnectorDatabaseUser}}') IS NULL
+                CREATE LOGIN {{SqlServerBracketIdentifier(ConnectorDatabaseUser)}}
+                WITH PASSWORD = '{{SqlServerLiteralValue(ConnectorDatabasePassword)}}', CHECK_POLICY = OFF;
+            IF USER_ID(N'{{ConnectorDatabaseUser}}') IS NULL
+                CREATE USER {{SqlServerBracketIdentifier(ConnectorDatabaseUser)}}
+                FOR LOGIN {{SqlServerBracketIdentifier(ConnectorDatabaseUser)}};
             """;
 
         await _docker.RunAsync(
@@ -1690,8 +1674,6 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             ],
             cancellationToken
         );
-
-        await AssertSqlServerCaptureInstancesMatchProviderSetupEvidenceAsync(cancellationToken);
     }
 
     private static string CreateSqlServerSourceTableSql(SqlServerCaptureInstanceDefinition definition)
@@ -1723,168 +1705,6 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             {{constraintDefinitions}}
                 );
             """;
-    }
-
-    private static string EnableSqlServerCaptureInstanceSql(SqlServerCaptureInstanceDefinition definition)
-    {
-        string captureInstanceName = SqlServerLiteralValue(definition.CaptureInstanceName.Value);
-        string sourceTableName = SqlServerLiteralValue(definition.SourceTableName);
-        string gatingRoleName = SqlServerLiteralValue(SqlServerGatingRoleName);
-        string capturedColumnList = SqlServerLiteralValue(definition.CapturedColumnList);
-
-        return $$"""
-            IF NOT EXISTS (
-                SELECT 1 FROM cdc.change_tables WHERE capture_instance = N'{{captureInstanceName}}'
-            )
-                EXEC sys.sp_cdc_enable_table
-                    @source_schema = N'dms',
-                    @source_name = N'{{sourceTableName}}',
-                    @capture_instance = N'{{captureInstanceName}}',
-                    @supports_net_changes = 0,
-                    @role_name = N'{{gatingRoleName}}',
-                    @index_name = NULL,
-                    @captured_column_list = N'{{capturedColumnList}}',
-                    @filegroup_name = NULL,
-                    @allow_partition_switch = 0;
-            """;
-    }
-
-    private async Task AssertSqlServerCaptureInstancesMatchProviderSetupEvidenceAsync(
-        CancellationToken cancellationToken
-    )
-    {
-        string sourceNameList = string.Join(
-            ", ",
-            SqlServerCaptureInstances.Select(definition =>
-                $"N'{SqlServerLiteralValue(definition.SourceTableName)}'"
-            )
-        );
-        string output = await ReadSqlServerScalarAsync(
-            $$"""
-            WITH captured_columns AS (
-                SELECT
-                    captured_column.object_id,
-                    STRING_AGG(CONVERT(nvarchar(max), captured_column.column_name), N',') WITHIN GROUP (ORDER BY captured_column.column_ordinal) AS captured_columns
-                FROM cdc.captured_columns AS captured_column
-                GROUP BY captured_column.object_id
-            )
-            SELECT
-                change_table.capture_instance
-                + N'|' + SCHEMA_NAME(source_table.schema_id)
-                + N'|' + source_table.name
-                + N'|' + COALESCE(change_table.role_name, N'')
-                + N'|' + CASE WHEN change_table.supports_net_changes = 1 THEN N'True' ELSE N'False' END
-                + N'|' + COALESCE(change_table.index_name, N'')
-                + N'|' + COALESCE(change_table.filegroup_name, N'')
-                + N'|' + CASE WHEN change_table.partition_switch = 1 THEN N'True' ELSE N'False' END
-                + N'|' + CASE WHEN EXISTS (
-                    SELECT 1
-                    FROM sys.indexes AS source_index
-                    INNER JOIN sys.partition_schemes AS partition_scheme
-                        ON partition_scheme.data_space_id = source_index.data_space_id
-                    WHERE source_index.object_id = source_table.object_id
-                    AND source_index.index_id IN (0, 1)
-                ) THEN N'True' ELSE N'False' END
-                + N'|' + COALESCE(captured_columns.captured_columns, N'')
-            FROM cdc.change_tables AS change_table
-            INNER JOIN sys.tables AS source_table
-                ON source_table.object_id = change_table.source_object_id
-            LEFT JOIN captured_columns
-                ON captured_columns.object_id = change_table.object_id
-            WHERE source_table.schema_id = SCHEMA_ID(N'dms')
-                AND source_table.name IN ({{sourceNameList}})
-            ORDER BY change_table.capture_instance;
-            """,
-            cancellationToken
-        );
-
-        Dictionary<string, SqlServerCaptureInstanceMetadata> actualCaptureInstances = output
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(ParseSqlServerCaptureInstanceMetadata)
-            .ToDictionary(metadata => metadata.CaptureInstanceName, StringComparer.Ordinal);
-        Dictionary<string, CdcProviderArtifactObservation> advertisedCaptureInstances =
-            BuildArtifactInventory(CdcProvider.SqlServer)
-                .Where(artifact => artifact.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance)
-                .ToDictionary(artifact => artifact.SafeArtifactName.Value, StringComparer.Ordinal);
-
-        using var _ = new AssertionScope();
-        actualCaptureInstances
-            .Keys.Should()
-            .BeEquivalentTo(
-                SqlServerCaptureInstances.Select(definition => definition.CaptureInstanceName.Value)
-            );
-        advertisedCaptureInstances.Keys.Should().BeEquivalentTo(actualCaptureInstances.Keys);
-
-        foreach (SqlServerCaptureInstanceDefinition definition in SqlServerCaptureInstances)
-        {
-            SqlServerCaptureInstanceMetadata metadata = actualCaptureInstances[
-                definition.CaptureInstanceName.Value
-            ];
-            CdcProviderArtifactObservation artifact = advertisedCaptureInstances[
-                definition.CaptureInstanceName.Value
-            ];
-
-            metadata.SourceSchema.Should().Be("dms");
-            metadata.SourceTableName.Should().Be(definition.SourceTableName);
-            metadata.RoleName.Should().Be(SqlServerGatingRoleName);
-            metadata.SupportsNetChanges.Should().BeFalse();
-            metadata
-                .IndexName.Should()
-                .BeOneOf(
-                    [string.Empty, definition.SourcePrimaryKeyName],
-                    "the fixture requests @index_name = NULL, so SQL Server may expose no index or the selected source primary key"
-                );
-            metadata.FilegroupName.Should().BeEmpty();
-            metadata
-                .SourceIsPartitioned.Should()
-                .BeFalse("the fixture source tables are deliberately not partitioned");
-            (metadata.SourceIsPartitioned && metadata.PartitionSwitch)
-                .Should()
-                .BeFalse("partition switching must not be enabled for partitioned fixture sources");
-            metadata
-                .CapturedColumns.Should()
-                .Equal(definition.CapturedColumns.Select(column => column.ColumnName));
-
-            artifact.SafeObservedValues["capture_instance"].Should().Be(metadata.CaptureInstanceName);
-            artifact.SafeObservedValues["source_table_kind"].Should().Be(definition.SourceTableKindToken);
-            artifact.SafeObservedValues["source_object"].Should().Be($"dms.{metadata.SourceTableName}");
-            artifact.SafeObservedValues["role_name"].Should().Be(metadata.RoleName);
-            artifact
-                .SafeObservedValues["supports_net_changes"]
-                .Should()
-                .Be(metadata.SupportsNetChanges.ToString());
-            artifact
-                .SafeObservedValues["captured_columns"]
-                .Should()
-                .Be(string.Join(",", metadata.CapturedColumns));
-        }
-    }
-
-    private static SqlServerCaptureInstanceMetadata ParseSqlServerCaptureInstanceMetadata(string value)
-    {
-        string[] parts = value.Split('|', StringSplitOptions.TrimEntries);
-        if (parts.Length != 10)
-        {
-            throw new InvalidOperationException(
-                $"Unexpected SQL Server CDC capture metadata shape: {SanitizeForAssertion(value)}"
-            );
-        }
-
-        string[] capturedColumns = parts[9]
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        return new SqlServerCaptureInstanceMetadata(
-            CaptureInstanceName: parts[0],
-            SourceSchema: parts[1],
-            SourceTableName: parts[2],
-            RoleName: parts[3],
-            SupportsNetChanges: bool.Parse(parts[4]),
-            IndexName: parts[5],
-            FilegroupName: parts[6],
-            PartitionSwitch: bool.Parse(parts[7]),
-            SourceIsPartitioned: bool.Parse(parts[8]),
-            CapturedColumns: capturedColumns
-        );
     }
 
     private async Task<long> ReadProviderHeartbeatSequenceAsync(CancellationToken cancellationToken)
@@ -2621,134 +2441,6 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             ),
         };
 
-    private static CdcConnectorProviderSetupEvidence BuildProviderSetupEvidence(CdcProvider provider) =>
-        new(bindingGeneration: 7, BuildProviderSetupResult(provider));
-
-    private static CdcConnectorProviderSetupEvidence BuildLiveReadBackProviderSetupEvidence(
-        CdcProvider provider
-    ) =>
-        new(
-            bindingGeneration: 7,
-            BuildProviderSetupResult(
-                provider,
-                mode: CdcProviderSetupMode.ValidateOnly,
-                outcome: CdcProviderSetupOutcome.ExactMatch
-            )
-        );
-
-    private static CdcProviderSetupResult BuildProviderSetupResult(
-        CdcProvider provider,
-        CdcProviderSetupMode mode = CdcProviderSetupMode.InitialCreateOrExactMatch,
-        CdcProviderSetupOutcome outcome = CdcProviderSetupOutcome.CreatedOrMatched
-    ) =>
-        new(
-            Provider: provider,
-            Mode: mode,
-            Outcome: outcome,
-            BoundPhysicalSourceFingerprint: CdcConnectorTemplatePinnedImageTestData.SourceFingerprint(
-                provider
-            ),
-            ObservedSourceFingerprint: CdcConnectorTemplatePinnedImageTestData.SourceFingerprint(provider),
-            ArtifactInventory: BuildArtifactInventory(provider),
-            GrantInventory: [],
-            SourceTableInventory: BuildRequiredSourceTableInventory(provider),
-            ExpectedMessageKeyColumns: BuildExpectedMessageKeyColumns(),
-            HeartbeatActionQuery: new CdcHeartbeatActionQuery(HeartbeatActionQuery(provider), "sha256-safe"),
-            ProviderHistoryObservations: [],
-            ManifestPayload: null,
-            Diagnostics: []
-        );
-
-    private static string HeartbeatActionQuery(CdcProvider provider) =>
-        provider switch
-        {
-            CdcProvider.Postgresql =>
-                """UPDATE "dms"."CdcHeartbeat" SET "HeartbeatSequence" = "HeartbeatSequence" + 1, "HeartbeatAt" = now() WHERE "HeartbeatId" = 1;""",
-            CdcProvider.SqlServer =>
-                "UPDATE [dms].[CdcHeartbeat] SET [HeartbeatSequence] = [HeartbeatSequence] + 1, [HeartbeatAt] = sysutcdatetime() WHERE [HeartbeatId] = 1",
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(provider),
-                provider,
-                "Unsupported CDC provider."
-            ),
-        };
-
-    private static IReadOnlyList<CdcProviderArtifactObservation> BuildArtifactInventory(
-        CdcProvider provider
-    ) =>
-        provider switch
-        {
-            CdcProvider.Postgresql =>
-            [
-                new(
-                    CdcProviderArtifactKind.PostgresqlPublication,
-                    new CdcSafeName(PostgresqlPublicationName),
-                    CdcProviderArtifactState.Matched,
-                    new Dictionary<string, string>
-                    {
-                        ["tables"] = PostgresqlObservedPublicationTables,
-                        ["expected_tables"] = PostgresqlExpectedSourceTables,
-                        ["publish"] = $"{true},{true},{true}",
-                        ["publishes_truncate"] = false.ToString(),
-                        ["publishes_all_tables"] = false.ToString(),
-                        ["tables_in_schema"] = string.Empty,
-                        ["publish_via_partition_root"] = false.ToString(),
-                        ["row_filters"] = "absent",
-                        ["column_lists"] = "absent",
-                    }
-                ),
-                new(
-                    CdcProviderArtifactKind.PostgresqlReplicationSlot,
-                    new CdcSafeName(PostgresqlReplicationSlotName),
-                    CdcProviderArtifactState.Matched,
-                    new Dictionary<string, string>()
-                ),
-            ],
-            CdcProvider.SqlServer =>
-            [
-                BuildSqlServerGatingRoleArtifact(),
-                .. SqlServerCaptureInstances.Select(BuildSqlServerCaptureInstanceArtifact),
-            ],
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(provider),
-                provider,
-                "Unsupported CDC provider."
-            ),
-        };
-
-    private static CdcProviderArtifactObservation BuildSqlServerGatingRoleArtifact() =>
-        new(
-            CdcProviderArtifactKind.SqlServerGatingRole,
-            new CdcSafeName(SqlServerGatingRoleName),
-            CdcProviderArtifactState.Matched,
-            new Dictionary<string, string>()
-        );
-
-    private static CdcProviderArtifactObservation BuildSqlServerCaptureInstanceArtifact(
-        SqlServerCaptureInstanceDefinition definition
-    ) =>
-        new(
-            CdcProviderArtifactKind.SqlServerCaptureInstance,
-            definition.CaptureInstanceName,
-            CdcProviderArtifactState.Matched,
-            new Dictionary<string, string>
-            {
-                ["capture_instance"] = definition.CaptureInstanceName.Value,
-                ["source_table_kind"] = definition.SourceTableKindToken,
-                ["source_object"] = $"dms.{definition.SourceTableName}",
-                ["role_name"] = SqlServerGatingRoleName,
-                ["supports_net_changes"] = false.ToString(),
-                ["expected_supports_net_changes"] = false.ToString(),
-                ["expected_source_index"] = $"none_or_source_primary_key.{definition.SourcePrimaryKeyName}",
-                ["expected_filegroup_name"] = "none",
-                ["expected_partition_switch"] = "disabled_when_source_partitioned",
-                ["captured_columns"] = definition.CapturedColumnCsv,
-                ["captured_column_count"] = definition.CapturedColumns.Count.ToString(
-                    CultureInfo.InvariantCulture
-                ),
-            }
-        );
-
     private static IReadOnlyList<CdcSourceTableInventory> BuildRequiredSourceTableInventory(
         CdcProvider provider
     ) =>
@@ -2773,9 +2465,9 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
                     CdcSourceTableKind.CdcHeartbeat,
                     "CdcHeartbeat",
                     [
-                        BuildColumn(provider, "HeartbeatId"),
-                        BuildColumn(provider, "HeartbeatSequence", 2),
-                        BuildColumn(provider, "HeartbeatAt", 3),
+                        BuildColumn(provider, "HeartbeatId", "smallint"),
+                        BuildColumn(provider, "HeartbeatSequence", "bigint", 2),
+                        BuildColumn(provider, "HeartbeatAt", "timestamp with time zone", 3),
                     ]
                 ),
             ];
@@ -2817,21 +2509,16 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
     private static CdcSourceColumnInventory BuildColumn(
         CdcProvider provider,
         string columnName,
+        string providerDataType = "text",
         int ordinal = 1
     ) =>
         new(
             new DbColumnName(columnName),
             provider == CdcProvider.Postgresql ? $"\"{columnName}\"" : $"[{columnName}]",
             ordinal,
-            provider == CdcProvider.Postgresql ? "text" : "nvarchar(max)",
+            providerDataType,
             IsNullable: false
         );
-
-    private static IReadOnlyList<CdcExpectedMessageKeyColumns> BuildExpectedMessageKeyColumns() =>
-        [
-            new(CdcSourceTableKind.DocumentCache, [new DbColumnName("DocumentUuid")]),
-            new(CdcSourceTableKind.Document, [new DbColumnName("DocumentUuid")]),
-        ];
 
     private static CdcConnectorTemplateSourcePartitionEvidence BuildSourcePartitionEvidence(
         JsonElement partition
@@ -2856,7 +2543,6 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         CdcSourceTableKind TableKind,
         string SourceTableName,
         CdcSafeName CaptureInstanceName,
-        string SourceTableKindToken,
         string PrimaryKeyColumnName,
         IReadOnlyList<SqlServerSourceColumnDefinition> CapturedColumns,
         IReadOnlyList<string>? AdditionalTableConstraintsInput = null
@@ -2866,42 +2552,12 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             AdditionalTableConstraintsInput ?? [];
 
         public string SourcePrimaryKeyName => $"PK_{SourceTableName}";
-
-        public string CapturedColumnList =>
-            string.Join(
-                ", ",
-                CapturedColumns.Select(column => SqlServerBracketIdentifier(column.ColumnName))
-            );
-
-        public string CapturedColumnCsv =>
-            string.Join(",", CapturedColumns.Select(column => column.ColumnName));
     }
 
     private sealed record SqlServerSourceColumnDefinition(
         string ColumnName,
         string ProviderDataType,
         bool IsNullable = false
-    );
-
-    private sealed record PostgresqlPublicationMetadata(
-        bool PublishesInsert,
-        bool PublishesUpdate,
-        bool PublishesDelete,
-        bool PublishesTruncate,
-        bool PublishesAllTables
-    );
-
-    private sealed record SqlServerCaptureInstanceMetadata(
-        string CaptureInstanceName,
-        string SourceSchema,
-        string SourceTableName,
-        string RoleName,
-        bool SupportsNetChanges,
-        string IndexName,
-        string FilegroupName,
-        bool PartitionSwitch,
-        bool SourceIsPartitioned,
-        IReadOnlyList<string> CapturedColumns
     );
 
     internal sealed record CdcConnectorSourceOffsetSnapshot(
@@ -2973,7 +2629,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 
 internal static class CdcConnectorTemplatePinnedImageTestData
 {
-    private const string SourceIdentity = "f81d4fae-7dec-11d0-a765-00a0c91e6bf6";
+    internal const string SourceIdentity = "f81d4fae-7dec-11d0-a765-00a0c91e6bf6";
 
     public static CdcSourceFingerprint SourceFingerprint(CdcProvider provider) =>
         CdcSourceFingerprintMetadata.Compute(provider, SourceIdentity);

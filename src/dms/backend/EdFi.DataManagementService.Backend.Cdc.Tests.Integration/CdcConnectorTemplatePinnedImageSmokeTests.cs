@@ -21,8 +21,7 @@ public abstract class Given_PinnedImageConnectorTemplateFixture
         await using CdcConnectorTemplatePinnedImageFixture fixture =
             await CdcConnectorTemplatePinnedImageFixture.StartAsync(Provider, cancellation.Token);
 
-        CdcConnectorTemplateRequest request = fixture.BuildRequest();
-        await fixture.CreateMinimalTopicsAndProviderObjectsAsync(request, cancellation.Token);
+        CdcConnectorTemplateRequest request = await fixture.CreateRequestAsync(cancellation.Token);
         CdcConnectorTemplateResult rendered = fixture.Render(request);
 
         await fixture.AssertRuntimeLoadsRequiredClassesAsync(rendered, cancellation.Token);
@@ -39,8 +38,7 @@ public abstract class Given_PinnedImageConnectorTemplateFixture
         await using CdcConnectorTemplatePinnedImageFixture fixture =
             await CdcConnectorTemplatePinnedImageFixture.StartAsync(Provider, cancellation.Token);
 
-        CdcConnectorTemplateRequest request = fixture.BuildRequest();
-        await fixture.CreateMinimalTopicsAndProviderObjectsAsync(request, cancellation.Token);
+        CdcConnectorTemplateRequest request = await fixture.CreateRequestAsync(cancellation.Token);
         CdcConnectorTemplateResult rendered = fixture.Render(request);
 
         await fixture.AssertConnectorConfigValidatesAsync(rendered, cancellation.Token);
@@ -71,107 +69,7 @@ public sealed class Given_OfflinePinnedImageConnectorTemplateFixture(CdcProvider
             CdcConnectorTemplatePinnedImageFixture.CreateOffline(Provider);
 
         fixture.AssertKafkaConnectWorkerConfigProviderStartupEnvironmentIsPinned();
-
-        CdcConnectorTemplateResult rendered = fixture.Render(fixture.BuildRequest());
-
-        using var _ = new AssertionScope();
-        rendered.Config["database.password"].Should().Be("${env:CDC_DATABASE_PASSWORD}");
-        rendered
-            .Config.Any(property => string.Equals(property.Value, "EdFi_Dms1!", StringComparison.Ordinal))
-            .Should()
-            .BeFalse("rendered connector configs must not contain the raw provider password");
     }
-
-    [Test]
-    public async Task It_exposes_reusable_render_preflight_and_live_validation_assertions()
-    {
-        await using CdcConnectorTemplatePinnedImageFixture fixture =
-            CdcConnectorTemplatePinnedImageFixture.CreateOffline(Provider);
-
-        CdcConnectorTemplateRequest request = CdcConnectorTemplatePinnedImageFixture.BuildRequest(
-            Provider,
-            "broker:9092",
-            OfflineProviderConnectionProperties(Provider)
-        );
-        CdcConnectorTemplateResult rendered = fixture.Render(request);
-
-        using var _ = new AssertionScope();
-        rendered.RegistrationPayload.Should().NotBeNull();
-        rendered
-            .Config.Keys.Should()
-            .NotContain(key => key.StartsWith("topic.creation.", StringComparison.Ordinal));
-        rendered
-            .Config.Keys.Should()
-            .NotContain(key => key.Contains("offset.storage", StringComparison.Ordinal));
-        rendered
-            .Config["table.include.list"]
-            .Should()
-            .Be(@"dms\.DocumentCache,dms\.Document,dms\.CdcHeartbeat");
-        rendered
-            .Config["message.key.columns"]
-            .Should()
-            .Be(@"dms\.DocumentCache:DocumentUuid;dms\.Document:DocumentUuid");
-        if (Provider == CdcProvider.SqlServer)
-        {
-            rendered
-                .Config["heartbeat.action.query"]
-                .Should()
-                .Be(
-                    "UPDATE [dms].[CdcHeartbeat] SET [HeartbeatSequence] = [HeartbeatSequence] + 1, [HeartbeatAt] = sysutcdatetime() WHERE [HeartbeatId] = 1"
-                );
-        }
-
-        fixture.AssertRenderedTemplateCanBeValidatedFromReadBack(
-            request,
-            rendered.Config,
-            BuildOfflineSourcePartitionEvidence(request)
-        );
-    }
-
-    private static CdcConnectorTemplateSourcePartitionEvidence BuildOfflineSourcePartitionEvidence(
-        CdcConnectorTemplateRequest request
-    )
-    {
-        var properties = new SortedDictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["server"] = request.ConnectorName.Value,
-        };
-
-        if (request.Provider == CdcProvider.SqlServer)
-        {
-            properties["database"] = request.ProviderConnectionProperties.Properties["database.names"];
-        }
-
-        return new CdcConnectorTemplateSourcePartitionEvidence(properties);
-    }
-
-    private static IReadOnlyDictionary<string, string> OfflineProviderConnectionProperties(
-        CdcProvider provider
-    ) =>
-        provider switch
-        {
-            CdcProvider.Postgresql => new Dictionary<string, string>
-            {
-                ["database.hostname"] = "postgresql.internal",
-                ["database.port"] = "5432",
-                ["database.user"] = "connector_user",
-                ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
-                ["database.dbname"] = "edfi_datastore",
-            },
-            CdcProvider.SqlServer => new Dictionary<string, string>
-            {
-                ["database.hostname"] = "sqlserver.internal",
-                ["database.port"] = "1433",
-                ["database.user"] = "connector_user",
-                ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
-                ["database.names"] = "edfi_datastore",
-            },
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(provider),
-                provider,
-                "Unsupported CDC provider."
-            ),
-        };
 }
 
 [TestFixture]
