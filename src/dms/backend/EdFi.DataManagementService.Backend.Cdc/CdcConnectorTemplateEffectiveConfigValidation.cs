@@ -282,7 +282,20 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
             );
         }
 
-        if (HasErrors(diagnostics) || HasProviderPrerequisiteErrors(request, sourcePhase))
+        if (HasErrors(diagnostics))
+        {
+            return;
+        }
+
+        diagnostics.AddRange(
+            CdcProviderSetupPrerequisiteRules.Validate(
+                result,
+                request.TemplateRequest.ConnectorName,
+                sourcePhase,
+                request.TemplateRequest.ProviderArtifactNames
+            )
+        );
+        if (HasErrors(diagnostics))
         {
             return;
         }
@@ -302,19 +315,6 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
         sourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack
             ? CdcProviderSetupOutcome.ExactMatch.ToString()
             : "CreatedOrMatched or ExactMatch";
-
-    private static bool HasProviderPrerequisiteErrors(
-        CdcConnectorTemplateEffectiveConfigValidationRequest request,
-        CdcConnectorTemplateSourcePhase sourcePhase
-    ) =>
-        CdcProviderSetupPrerequisiteRules
-            .Validate(
-                request.ProviderSetupEvidence.Result,
-                request.TemplateRequest.ConnectorName,
-                sourcePhase,
-                request.TemplateRequest.ProviderArtifactNames
-            )
-            .Any(diagnostic => diagnostic.Severity == CdcConnectorTemplateDiagnosticSeverity.Error);
 
     private static void AddProviderSetupEvidenceDriftDiagnostics(
         CdcConnectorTemplateEffectiveConfigValidationRequest request,
