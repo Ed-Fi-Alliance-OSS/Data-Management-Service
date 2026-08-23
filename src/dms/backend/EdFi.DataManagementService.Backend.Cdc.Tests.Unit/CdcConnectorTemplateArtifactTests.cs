@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Globalization;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.Ddl;
 using FluentAssertions;
@@ -20,33 +19,31 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 public class Given_CdcConnectorTemplateArtifactTests
 {
     [Test]
-    public void It_returns_a_postgresql_redacted_manifest_payload_when_requested()
+    public void It_returns_a_deterministic_postgresql_redacted_manifest_payload_when_requested()
     {
-        DateTimeOffset beforeRender = DateTimeOffset.UtcNow;
-        CdcConnectorTemplateResult result = Render(
-            BuildRequest(
-                CdcProvider.Postgresql,
-                artifactOutput: new CdcConnectorTemplateArtifactOutputRequest(
-                    includeRedactedArtifactPayload: true
-                ),
-                providerConnectionProperties: new Dictionary<string, string>
-                {
-                    ["database.hostname"] = "postgresql-prod.internal",
-                    ["database.port"] = "5432",
-                    ["database.user"] = "connector_principal",
-                    ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
-                    ["database.dbname"] = "edfi_sensitive_store",
-                },
-                kafkaSecurityProperties: new Dictionary<string, string>
-                {
-                    ["security.protocol"] = "SASL_SSL",
-                    ["sasl.jaas.config"] = "${env:CDC_KAFKA_JAAS_CONFIG}",
-                    ["ssl.truststore.location"] = "/run/secrets/kafka.truststore.p12",
-                },
-                heartbeatSql: "update dms.CdcHeartbeat set HeartbeatSequence = HeartbeatSequence + 1"
-            )
+        CdcConnectorTemplateRequest request = BuildRequest(
+            CdcProvider.Postgresql,
+            artifactOutput: new CdcConnectorTemplateArtifactOutputRequest(
+                includeRedactedArtifactPayload: true
+            ),
+            providerConnectionProperties: new Dictionary<string, string>
+            {
+                ["database.hostname"] = "postgresql-prod.internal",
+                ["database.port"] = "5432",
+                ["database.user"] = "connector_principal",
+                ["database.password"] = "${env:CDC_DATABASE_PASSWORD}",
+                ["database.dbname"] = "edfi_sensitive_store",
+            },
+            kafkaSecurityProperties: new Dictionary<string, string>
+            {
+                ["security.protocol"] = "SASL_SSL",
+                ["sasl.jaas.config"] = "${env:CDC_KAFKA_JAAS_CONFIG}",
+                ["ssl.truststore.location"] = "/run/secrets/kafka.truststore.p12",
+            },
+            heartbeatSql: "update dms.CdcHeartbeat set HeartbeatSequence = HeartbeatSequence + 1"
         );
-        DateTimeOffset afterRender = DateTimeOffset.UtcNow;
+        CdcConnectorTemplateResult result = Render(request);
+        CdcConnectorTemplateResult repeatedResult = Render(request);
 
         result.RedactedArtifactPayload.Should().NotBeNull();
         CdcConnectorTemplateArtifactPayload payload = result.RedactedArtifactPayload!;
@@ -71,8 +68,7 @@ public class Given_CdcConnectorTemplateArtifactTests
                 "schemaHistoryTopicName",
                 "configSha256",
                 "redactedConfig",
-                "reservedKeys",
-                "generatedAt"
+                "reservedKeys"
             );
         root.GetProperty("version").GetInt32().Should().Be(1);
         root.GetProperty("provider").GetString().Should().Be("postgresql");
@@ -81,8 +77,7 @@ public class Given_CdcConnectorTemplateArtifactTests
         root.GetProperty("progressTopicName").GetString().Should().Be("edfi.documents.cdc-progress");
         root.GetProperty("schemaHistoryTopicName").ValueKind.Should().Be(JsonValueKind.Null);
         root.GetProperty("configSha256").GetString().Should().Be(result.ConfigSha256);
-        DateTimeOffset generatedAt = ParseGeneratedAtUtcTimestamp(root);
-        (generatedAt >= beforeRender && generatedAt <= afterRender).Should().BeTrue();
+        repeatedResult.RedactedArtifactPayload!.Json.Should().Be(payload.Json);
         redactedConfig
             .EnumerateObject()
             .Select(property => property.Name)
@@ -169,7 +164,6 @@ public class Given_CdcConnectorTemplateArtifactTests
         File.ReadAllText(manifestPath).Should().Be(payload.Json);
         root.GetProperty("provider").GetString().Should().Be("sqlserver");
         root.GetProperty("schemaHistoryTopicName").GetString().Should().Be("edfi.documents.schema-history");
-        ParseGeneratedAtUtcTimestamp(root).Offset.Should().Be(TimeSpan.Zero);
         redactedConfig.GetProperty("driver.trustServerCertificate").GetString().Should().Be("[redacted]");
         redactedConfig.GetProperty("driver.trustStorePassword").GetString().Should().Be("[redacted]");
         redactedConfig
@@ -498,7 +492,6 @@ public class Given_CdcConnectorTemplateArtifactTests
         using var _ = new AssertionScope();
         withManifest.ConfigSha256.Should().Be(withoutManifest.ConfigSha256);
         document.RootElement.GetProperty("configSha256").GetString().Should().Be(withManifest.ConfigSha256);
-        ParseGeneratedAtUtcTimestamp(document.RootElement).Offset.Should().Be(TimeSpan.Zero);
     }
 
     private static CdcConnectorTemplateResult Render(CdcConnectorTemplateRequest request)
@@ -511,26 +504,6 @@ public class Given_CdcConnectorTemplateArtifactTests
             serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
 
         return service.Render(request);
-    }
-
-    private static DateTimeOffset ParseGeneratedAtUtcTimestamp(JsonElement root)
-    {
-        string generatedAt = root.GetProperty("generatedAt").GetString() ?? string.Empty;
-
-        generatedAt.Should().NotBeNullOrWhiteSpace();
-        DateTimeOffset
-            .TryParseExact(
-                generatedAt,
-                "O",
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.RoundtripKind,
-                out DateTimeOffset timestamp
-            )
-            .Should()
-            .BeTrue();
-        timestamp.Offset.Should().Be(TimeSpan.Zero);
-
-        return timestamp;
     }
 
     private static string ProviderToken(CdcProvider provider) =>
