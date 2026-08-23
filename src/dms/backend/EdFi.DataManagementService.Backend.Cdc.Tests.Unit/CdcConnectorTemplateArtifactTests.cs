@@ -18,6 +18,8 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 [Category("CdcConnectorTemplateArtifacts")]
 public class Given_CdcConnectorTemplateArtifactTests
 {
+    private static readonly DateTimeOffset GeneratedAt = new(2026, 1, 2, 3, 4, 5, TimeSpan.Zero);
+
     [Test]
     public void It_returns_a_deterministic_postgresql_redacted_manifest_payload_when_requested()
     {
@@ -61,6 +63,7 @@ public class Given_CdcConnectorTemplateArtifactTests
             .Should()
             .Equal(
                 "version",
+                "generatedAt",
                 "provider",
                 "connectorName",
                 "publicTopicName",
@@ -71,6 +74,7 @@ public class Given_CdcConnectorTemplateArtifactTests
                 "reservedKeys"
             );
         root.GetProperty("version").GetInt32().Should().Be(1);
+        root.GetProperty("generatedAt").GetString().Should().Be("2026-01-02T03:04:05+00:00");
         root.GetProperty("provider").GetString().Should().Be("postgresql");
         root.GetProperty("connectorName").GetString().Should().Be("dms_binding_connector");
         root.GetProperty("publicTopicName").GetString().Should().Be("edfi.documents");
@@ -497,6 +501,7 @@ public class Given_CdcConnectorTemplateArtifactTests
     private static CdcConnectorTemplateResult Render(CdcConnectorTemplateRequest request)
     {
         using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddSingleton<TimeProvider>(new FixedTimeProvider(GeneratedAt))
             .AddCdcConnectorTemplates()
             .BuildServiceProvider();
 
@@ -504,6 +509,11 @@ public class Given_CdcConnectorTemplateArtifactTests
             serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
 
         return service.Render(request);
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset generatedAt) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => generatedAt;
     }
 
     private static string ProviderToken(CdcProvider provider) =>

@@ -14,8 +14,10 @@ internal interface ICdcConnectorTemplateRenderer
     CdcConnectorTemplateResult Render(CdcConnectorTemplateRequest request);
 }
 
-internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputValidator inputValidator)
-    : ICdcConnectorTemplateRenderer
+internal sealed class CdcConnectorTemplateRenderer(
+    ICdcConnectorTemplateInputValidator inputValidator,
+    TimeProvider timeProvider
+) : ICdcConnectorTemplateRenderer
 {
     private const int ManifestFileNameMaxLength = 255;
     private const int ManifestFileNameConnectorHashLength = 32;
@@ -303,7 +305,7 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
             ),
         };
 
-    private static CdcConnectorTemplateArtifactPayload? BuildArtifactPayloadIfRequested(
+    private CdcConnectorTemplateArtifactPayload? BuildArtifactPayloadIfRequested(
         CdcConnectorTemplateRequest request,
         IReadOnlyDictionary<string, string> config,
         string configSha256
@@ -315,7 +317,7 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
         }
 
         CdcSafeName fileName = ManifestFileName(request.Provider, request.ConnectorName);
-        string json = SerializeManifest(request, config, configSha256);
+        string json = SerializeManifest(request, config, configSha256, timeProvider.GetUtcNow());
         var payload = new CdcConnectorTemplateArtifactPayload(fileName, json);
 
         if (artifactOutput.ManifestOutputDirectoryPath is not null)
@@ -368,7 +370,8 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
     private static string SerializeManifest(
         CdcConnectorTemplateRequest request,
         IReadOnlyDictionary<string, string> config,
-        string configSha256
+        string configSha256,
+        DateTimeOffset generatedAt
     )
     {
         using var stream = new MemoryStream();
@@ -376,6 +379,7 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
         {
             writer.WriteStartObject();
             writer.WriteNumber("version", 1);
+            writer.WriteString("generatedAt", generatedAt);
             writer.WriteString("provider", ProviderToken(request.Provider));
             writer.WriteString("connectorName", request.ConnectorName.Value);
             writer.WriteString("publicTopicName", request.PublicTopicName);

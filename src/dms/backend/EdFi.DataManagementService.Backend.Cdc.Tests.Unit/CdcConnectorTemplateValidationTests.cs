@@ -937,6 +937,7 @@ public class Given_CdcConnectorTemplateValidationTests
                 CdcProvider.SqlServer,
                 artifactInventory:
                 [
+                    BuildSqlServerSnapshotIsolationArtifact(),
                     BuildSqlServerGatingRoleArtifact(safeArtifactName: new CdcSafeName("other_binding_gate")),
                     BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
                     BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.Document),
@@ -967,6 +968,7 @@ public class Given_CdcConnectorTemplateValidationTests
                 CdcProvider.SqlServer,
                 artifactInventory:
                 [
+                    BuildSqlServerSnapshotIsolationArtifact(),
                     BuildSqlServerGatingRoleArtifact(),
                     BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
                     BuildSqlServerCaptureInstanceArtifact(
@@ -1235,6 +1237,7 @@ public class Given_CdcConnectorTemplateValidationTests
                 CdcProvider.SqlServer,
                 artifactInventory:
                 [
+                    BuildSqlServerSnapshotIsolationArtifact(),
                     BuildSqlServerGatingRoleArtifact(),
                     BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
                     BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.CdcHeartbeat),
@@ -1246,6 +1249,7 @@ public class Given_CdcConnectorTemplateValidationTests
                 CdcProvider.SqlServer,
                 artifactInventory:
                 [
+                    BuildSqlServerSnapshotIsolationArtifact(),
                     BuildSqlServerGatingRoleArtifact(),
                     BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
                     BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.Document),
@@ -1262,6 +1266,7 @@ public class Given_CdcConnectorTemplateValidationTests
                 CdcProvider.SqlServer,
                 artifactInventory:
                 [
+                    BuildSqlServerSnapshotIsolationArtifact(),
                     BuildSqlServerGatingRoleArtifact(),
                     BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
                     BuildSqlServerCaptureInstanceArtifact(
@@ -1277,6 +1282,7 @@ public class Given_CdcConnectorTemplateValidationTests
                 CdcProvider.SqlServer,
                 artifactInventory:
                 [
+                    BuildSqlServerSnapshotIsolationArtifact(),
                     BuildSqlServerGatingRoleArtifact(),
                     BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
                     BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.Document),
@@ -1395,6 +1401,7 @@ public class Given_CdcConnectorTemplateValidationTests
                 CdcProvider.SqlServer,
                 artifactInventory:
                 [
+                    BuildSqlServerSnapshotIsolationArtifact(),
                     BuildSqlServerGatingRoleArtifact(),
                     BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
                     malformedDocumentArtifact,

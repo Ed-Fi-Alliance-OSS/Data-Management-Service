@@ -1503,6 +1503,7 @@ public class Given_CdcConnectorTemplateLiveValidationTests
                 CdcProvider.SqlServer,
                 artifactInventory:
                 [
+                    BuildSqlServerSnapshotIsolationArtifact(),
                     BuildSqlServerGatingRoleArtifact(),
                     BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
                     BuildSqlServerCaptureInstanceArtifact(

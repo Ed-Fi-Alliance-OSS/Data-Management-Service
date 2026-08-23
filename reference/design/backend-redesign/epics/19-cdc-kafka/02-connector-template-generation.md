@@ -208,6 +208,9 @@ implements those contracts.
   `DocumentUuid` as the only key column for each. SQL Server capture-instance names remain
   provider metadata used for validation and diagnostics; the template does not invent a
   second capture-name mapping.
+- Set `data.query.mode=function` explicitly. Debezium 3.6 defaults SQL Server to direct
+  change-table queries, while the Ed-Fi SQL Server v1 connector contract is qualified
+  against SQL Server's generated CDC function surface.
 - Set `time.precision.mode=isostring` and
   `unavailable.value.placeholder=__debezium_unavailable_value` explicitly.
 - Set `snapshot.isolation.mode=snapshot` explicitly. SQL Server CDC provider setup must

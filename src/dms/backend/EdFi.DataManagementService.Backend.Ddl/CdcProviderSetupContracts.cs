@@ -700,10 +700,13 @@ public readonly record struct CdcSafeName
     public override string ToString() => Value;
 }
 
-internal static class CdcSourceInventoryContract
+public static class CdcSourceInventoryContract
 {
     public static IReadOnlyList<CdcSourceTableKind> RequiredSourceTableKinds { get; } =
     [CdcSourceTableKind.DocumentCache, CdcSourceTableKind.Document, CdcSourceTableKind.CdcHeartbeat];
+
+    public static IReadOnlyList<CdcSourceTableKind> RequiredMessageKeyTableKinds { get; } =
+    [CdcSourceTableKind.DocumentCache, CdcSourceTableKind.Document];
 
     private static readonly IReadOnlyDictionary<
         CdcSourceTableKind,
@@ -715,6 +718,15 @@ internal static class CdcSourceInventoryContract
         [CdcSourceTableKind.CdcHeartbeat] = ["HeartbeatId", "HeartbeatSequence", "HeartbeatAt"],
     };
 
+    private static readonly IReadOnlyDictionary<
+        CdcSourceTableKind,
+        IReadOnlyList<DbColumnName>
+    > _requiredMessageKeyColumnsByKind = new Dictionary<CdcSourceTableKind, IReadOnlyList<DbColumnName>>
+    {
+        [CdcSourceTableKind.DocumentCache] = [new DbColumnName("DocumentUuid")],
+        [CdcSourceTableKind.Document] = [new DbColumnName("DocumentUuid")],
+    };
+
     private static readonly IReadOnlyDictionary<CdcSourceTableKind, int> _requiredSourceTableOrdinalByKind =
         RequiredSourceTableKinds
             .Select((kind, ordinal) => (kind, ordinal))
@@ -722,6 +734,53 @@ internal static class CdcSourceInventoryContract
 
     public static int RequiredSourceTableOrdinal(CdcSourceTableKind tableKind) =>
         _requiredSourceTableOrdinalByKind.TryGetValue(tableKind, out var ordinal) ? ordinal : int.MaxValue;
+
+    public static DbTableName RequiredSourceTableName(CdcSourceTableKind tableKind) =>
+        tableKind switch
+        {
+            CdcSourceTableKind.DocumentCache => new(new DbSchemaName("dms"), "DocumentCache"),
+            CdcSourceTableKind.Document => new(new DbSchemaName("dms"), "Document"),
+            CdcSourceTableKind.CdcHeartbeat => new(new DbSchemaName("dms"), "CdcHeartbeat"),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(tableKind),
+                tableKind,
+                "Unsupported CDC source table kind."
+            ),
+        };
+
+    public static string SourceTableKindToken(CdcSourceTableKind tableKind) =>
+        tableKind switch
+        {
+            CdcSourceTableKind.Document => "document",
+            CdcSourceTableKind.DocumentCache => "document_cache",
+            CdcSourceTableKind.CdcHeartbeat => "cdc_heartbeat",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(tableKind),
+                tableKind,
+                "Unsupported CDC source table kind."
+            ),
+        };
+
+    public static bool TryParseSourceTableKindToken(string? token, out CdcSourceTableKind tableKind)
+    {
+        tableKind = token switch
+        {
+            "document_cache" => CdcSourceTableKind.DocumentCache,
+            "document" => CdcSourceTableKind.Document,
+            "cdc_heartbeat" => CdcSourceTableKind.CdcHeartbeat,
+            _ => default,
+        };
+
+        return token is "document_cache" or "document" or "cdc_heartbeat";
+    }
+
+    public static IReadOnlyList<CdcExpectedMessageKeyColumns> RequiredMessageKeyColumns() =>
+        RequiredMessageKeyTableKinds
+            .Select(tableKind => new CdcExpectedMessageKeyColumns(
+                tableKind,
+                _requiredMessageKeyColumnsByKind[tableKind]
+            ))
+            .ToArray();
 
     public static IReadOnlyList<CdcSourceTableInventory> ValidateRequiredSourceInventory(
         IReadOnlyList<CdcSourceTableInventory> sourceInventory,
@@ -765,6 +824,51 @@ internal static class CdcSourceInventoryContract
         }
 
         return sourceInventory;
+    }
+
+    public static IReadOnlyList<CdcExpectedMessageKeyColumns> ValidateRequiredMessageKeyColumns(
+        IReadOnlyList<CdcExpectedMessageKeyColumns> expectedMessageKeyColumns,
+        string parameterName
+    )
+    {
+        ArgumentNullException.ThrowIfNull(expectedMessageKeyColumns);
+
+        if (
+            expectedMessageKeyColumns.Any(columns =>
+                columns is null || columns.KeyColumns is null || columns.KeyColumns.Count == 0
+            )
+        )
+        {
+            throw new ArgumentException(
+                "CDC expected message-key inventory must contain non-null key columns.",
+                parameterName
+            );
+        }
+
+        var requiredKinds = RequiredMessageKeyTableKinds;
+        var observedKinds = expectedMessageKeyColumns.Select(columns => columns.TableKind).ToArray();
+        var missingKinds = requiredKinds.Except(observedKinds).ToArray();
+        var extraKinds = observedKinds.Except(requiredKinds).ToArray();
+        var duplicateKinds = observedKinds
+            .GroupBy(kind => kind)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToArray();
+
+        if (missingKinds.Length > 0 || extraKinds.Length > 0 || duplicateKinds.Length > 0)
+        {
+            throw new ArgumentException(
+                "CDC expected message-key inventory must contain exactly dms.DocumentCache and dms.Document.",
+                parameterName
+            );
+        }
+
+        foreach (var columns in expectedMessageKeyColumns)
+        {
+            ValidateRequiredMessageKeyColumnNames(columns, parameterName);
+        }
+
+        return expectedMessageKeyColumns;
     }
 
     private static void ValidateSourceColumnEntries(CdcSourceTableInventory table, string parameterName)
@@ -833,6 +937,27 @@ internal static class CdcSourceInventoryContract
 
         throw new ArgumentException(
             $"CDC source inventory is missing required contract columns: {string.Join(", ", missingColumnNames)}.",
+            parameterName
+        );
+    }
+
+    private static void ValidateRequiredMessageKeyColumnNames(
+        CdcExpectedMessageKeyColumns columns,
+        string parameterName
+    )
+    {
+        var requiredColumnNames = _requiredMessageKeyColumnsByKind[columns.TableKind]
+            .Select(columnName => columnName.Value)
+            .ToArray();
+        var observedColumnNames = columns.KeyColumns.Select(column => column.Value).ToArray();
+
+        if (observedColumnNames.SequenceEqual(requiredColumnNames, StringComparer.Ordinal))
+        {
+            return;
+        }
+
+        throw new ArgumentException(
+            $"CDC expected message-key inventory must use DocumentUuid keys for document sources: {columns.TableKind}.",
             parameterName
         );
     }

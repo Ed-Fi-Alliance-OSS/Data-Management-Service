@@ -34,12 +34,25 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
         _result
             .Diagnostics.Should()
             .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
+        _executor
+            .ExecutedSql.Should()
+            .ContainSingle(sql =>
+                sql.Contains("cdc:sqlserver:enable-snapshot-isolation")
+                && sql.Contains("ALLOW_SNAPSHOT_ISOLATION ON")
+            );
         _executor.ExecutedSql.Should().ContainSingle(sql => sql.Contains("EXEC sys.sp_cdc_enable_db"));
         _executor.ExecutedSql.Should().NotContain(sql => sql.Contains("READ_COMMITTED_SNAPSHOT"));
         _executor.ExecutedSql.Should().NotContain(sql => sql.Contains("sp_configure"));
         _executor.ExecutedSql.Should().NotContain(sql => sql.Contains("sp_cdc_add_job"));
         _executor.ExecutedSql.Should().NotContain(sql => sql.Contains("sp_cdc_change_job"));
 
+        _result
+            .ProviderHistoryObservations.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.ProviderHistory
+                && observation.SafeArtifactName.Value == "sqlserver_snapshot_isolation"
+                && observation.SafeObservedValues["allow_snapshot_isolation"] == "True"
+            );
         _result
             .ProviderHistoryObservations.Should()
             .ContainSingle(observation =>
@@ -51,6 +64,14 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
                 && observation.SafeObservedValues["cleanup_job_present"] == "True"
                 && observation.SafeObservedValues["capture_job_name"] == "database.current.capture"
                 && observation.SafeObservedValues["cleanup_job_name"] == "database.current.cleanup"
+            );
+        _result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.ProviderHistory
+                && observation.SafeArtifactName.Value == "sqlserver_snapshot_isolation"
+                && observation.State == CdcProviderArtifactState.Created
+                && observation.SafeObservedValues["allow_snapshot_isolation"] == "True"
             );
         _result
             .ArtifactInventory.Should()
@@ -523,9 +544,48 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
 public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
 {
     [Test]
+    public async Task It_should_fail_closed_when_snapshot_isolation_is_off_without_mutation()
+    {
+        var executor = RecordingSqlServerCdcExecutor.WithExistingHeartbeatDatabase(
+            allowSnapshotIsolation: false,
+            captureJobPresent: true,
+            cleanupJobPresent: true,
+            captureInstances: SqlServerCaptureInstanceTestData.Expected()
+        );
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(
+                mode: CdcProviderSetupMode.ValidateOnly,
+                databaseExecutor: executor
+            )
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_SNAPSHOT_ISOLATION_OFF"
+                && diagnostic.Category == CdcProviderDiagnosticCategory.ValidationMismatch
+                && diagnostic.Severity == CdcProviderDiagnosticSeverity.Error
+                && diagnostic.Classification == CdcProviderRetryContinuityClassification.FailClosed
+            );
+        result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.ProviderHistory
+                && observation.SafeArtifactName.Value == "sqlserver_snapshot_isolation"
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues["allow_snapshot_isolation"] == "False"
+            );
+        executor.ExecutedSql.Should().BeEmpty();
+        executor.QueriedSql.Should().NotContain(sql => sql.Contains("cdc:sqlserver:database-cdc-state"));
+    }
+
+    [Test]
     public async Task It_should_not_enable_database_cdc_when_missing()
     {
-        var executor = new RecordingSqlServerCdcExecutor();
+        var executor = new RecordingSqlServerCdcExecutor(allowSnapshotIsolation: true);
         var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
 
         var result = await service.SetupAsync(
@@ -2709,6 +2769,7 @@ internal sealed class RecordingSqlServerCdcExecutor
     private bool _heartbeatSingletonExists;
     private string _heartbeatSingletonCheckDefinition;
     private string _heartbeatSequenceCheckDefinition;
+    private bool _allowSnapshotIsolation;
     private readonly bool _readCommittedSnapshotOn;
     private readonly string _nestedTriggersValue;
     private int _captureInstanceCount;
@@ -2742,6 +2803,7 @@ internal sealed class RecordingSqlServerCdcExecutor
         bool heartbeatSingletonExists = false,
         string heartbeatSingletonCheckDefinition = ExpectedHeartbeatSingletonCheckDefinition,
         string heartbeatSequenceCheckDefinition = ExpectedHeartbeatSequenceCheckDefinition,
+        bool allowSnapshotIsolation = false,
         bool readCommittedSnapshotOn = true,
         string nestedTriggersValue = "1",
         int captureInstanceCount = 0,
@@ -2774,6 +2836,7 @@ internal sealed class RecordingSqlServerCdcExecutor
         _heartbeatSingletonExists = heartbeatSingletonExists;
         _heartbeatSingletonCheckDefinition = heartbeatSingletonCheckDefinition;
         _heartbeatSequenceCheckDefinition = heartbeatSequenceCheckDefinition;
+        _allowSnapshotIsolation = allowSnapshotIsolation;
         _readCommittedSnapshotOn = readCommittedSnapshotOn;
         _nestedTriggersValue = nestedTriggersValue;
         _captureInstances = (captureInstances ?? []).ToDictionary(
@@ -2809,6 +2872,7 @@ internal sealed class RecordingSqlServerCdcExecutor
     public List<string> QueriedSql { get; } = [];
 
     public static RecordingSqlServerCdcExecutor WithExistingHeartbeatDatabase(
+        bool allowSnapshotIsolation = true,
         bool readCommittedSnapshotOn = true,
         string nestedTriggersValue = "1",
         int captureInstanceCount = 0,
@@ -2837,6 +2901,7 @@ internal sealed class RecordingSqlServerCdcExecutor
             heartbeatSingletonExists: true,
             heartbeatSingletonCheckDefinition: heartbeatSingletonCheckDefinition,
             heartbeatSequenceCheckDefinition: heartbeatSequenceCheckDefinition,
+            allowSnapshotIsolation: allowSnapshotIsolation,
             readCommittedSnapshotOn: readCommittedSnapshotOn,
             nestedTriggersValue: nestedTriggersValue,
             captureInstanceCount: captureInstanceCount,
@@ -2876,6 +2941,11 @@ internal sealed class RecordingSqlServerCdcExecutor
         if (sql.Contains("cdc:sqlserver:enable-database-cdc"))
         {
             _databaseCdcEnabled = true;
+        }
+
+        if (sql.Contains("cdc:sqlserver:enable-snapshot-isolation"))
+        {
+            _allowSnapshotIsolation = true;
         }
 
         if (sql.Contains("cdc:sqlserver:create-heartbeat-table"))
@@ -2947,6 +3017,13 @@ internal sealed class RecordingSqlServerCdcExecutor
             var text when text.Contains("cdc:sqlserver:source-fingerprint") =>
             [
                 Row(("source_identity", _sourceIdentity)),
+            ],
+            var text when text.Contains("cdc:sqlserver:snapshot-isolation-state") =>
+            [
+                Row(
+                    ("allow_snapshot_isolation", _allowSnapshotIsolation.ToString()),
+                    ("snapshot_isolation_state_desc", _allowSnapshotIsolation ? "ON" : "OFF")
+                ),
             ],
             var text when text.Contains("cdc:sqlserver:database-cdc-state") => DatabaseCdcStateRows(),
             var text when text.Contains("cdc:sqlserver:capture-instance-count") =>

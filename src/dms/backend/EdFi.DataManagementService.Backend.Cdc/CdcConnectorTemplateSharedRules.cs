@@ -16,7 +16,7 @@ internal static class CdcConnectorTemplateSharedRules
         CdcSourceInventoryContract.RequiredSourceTableKinds;
 
     private static readonly IReadOnlyList<CdcSourceTableKind> OrderedRequiredMessageKeyTableKindsValue =
-        Array.AsReadOnly(new[] { CdcSourceTableKind.DocumentCache, CdcSourceTableKind.Document });
+        CdcSourceInventoryContract.RequiredMessageKeyTableKinds;
 
     internal static IReadOnlyList<CdcSourceTableKind> OrderedRequiredSourceTableKinds =>
         OrderedRequiredSourceTableKindsValue;
@@ -69,17 +69,7 @@ internal static class CdcConnectorTemplateSharedRules
     }
 
     internal static DbTableName ExpectedSourceTableName(CdcSourceTableKind tableKind) =>
-        tableKind switch
-        {
-            CdcSourceTableKind.DocumentCache => new(new DbSchemaName("dms"), "DocumentCache"),
-            CdcSourceTableKind.Document => new(new DbSchemaName("dms"), "Document"),
-            CdcSourceTableKind.CdcHeartbeat => new(new DbSchemaName("dms"), "CdcHeartbeat"),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(tableKind),
-                tableKind,
-                "Unsupported CDC source table kind."
-            ),
-        };
+        CdcSourceInventoryContract.RequiredSourceTableName(tableKind);
 
     internal static bool HasRequiredSourceInventory(
         IReadOnlyList<CdcSourceTableInventory>? sourceTableInventory
@@ -139,27 +129,18 @@ internal static class CdcConnectorTemplateSharedRules
             return false;
         }
 
-        if (
-            expectedMessageKeyColumns.Any(columns =>
-                columns is null || columns.KeyColumns is null || columns.KeyColumns.Count == 0
-            )
-        )
+        try
+        {
+            CdcSourceInventoryContract.ValidateRequiredMessageKeyColumns(
+                expectedMessageKeyColumns,
+                nameof(expectedMessageKeyColumns)
+            );
+            return true;
+        }
+        catch (ArgumentException)
         {
             return false;
         }
-
-        CdcSourceTableKind[] observedKinds = expectedMessageKeyColumns
-            .Select(columns => columns.TableKind)
-            .ToArray();
-
-        return expectedMessageKeyColumns.Count == OrderedRequiredMessageKeyTableKinds.Count
-            && !OrderedRequiredMessageKeyTableKinds.Except(observedKinds).Any()
-            && !observedKinds.Except(OrderedRequiredMessageKeyTableKinds).Any()
-            && !observedKinds.GroupBy(kind => kind).Any(group => group.Count() > 1)
-            && expectedMessageKeyColumns.All(columns =>
-                columns.KeyColumns.Count == 1
-                && string.Equals(columns.KeyColumns[0].Value, "DocumentUuid", StringComparison.Ordinal)
-            );
     }
 
     internal static CdcProviderArtifactObservation[] ArtifactInventory(
@@ -187,13 +168,9 @@ internal static class CdcConnectorTemplateSharedRules
             return null;
         }
 
-        return sourceTableKind switch
-        {
-            "document_cache" => CdcSourceTableKind.DocumentCache,
-            "document" => CdcSourceTableKind.Document,
-            "cdc_heartbeat" => CdcSourceTableKind.CdcHeartbeat,
-            _ => null,
-        };
+        return CdcSourceInventoryContract.TryParseSourceTableKindToken(sourceTableKind, out var tableKind)
+            ? tableKind
+            : null;
     }
 
     internal static long HeartbeatIntervalMilliseconds(CdcConnectorTemplateRequest request)

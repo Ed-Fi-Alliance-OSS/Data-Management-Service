@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.ObjectModel;
 using System.Text.Json.Serialization;
 using EdFi.DataManagementService.Backend.Ddl;
 
@@ -628,7 +629,7 @@ internal static class CdcConnectorTemplateContractValidation
             }
         }
 
-        return normalizedProperties;
+        return new ReadOnlyDictionary<string, string>(normalizedProperties);
     }
 
     public static string ValidateRequiredSafeText(string value, string parameterName)

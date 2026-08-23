@@ -53,6 +53,8 @@ public static class CdcConnectorTemplateDiagnosticCodes
         "CDC_TEMPLATE_PROVIDER_SETUP_ARTIFACT_INVENTORY_MALFORMED";
     public const string SqlServerGatingRoleMetadataRequired =
         "CDC_TEMPLATE_SQLSERVER_GATING_ROLE_METADATA_REQUIRED";
+    public const string SqlServerSnapshotIsolationMetadataRequired =
+        "CDC_TEMPLATE_SQLSERVER_SNAPSHOT_ISOLATION_METADATA_REQUIRED";
     public const string SqlServerCaptureInstanceMetadataRequired =
         "CDC_TEMPLATE_SQLSERVER_CAPTURE_INSTANCE_METADATA_REQUIRED";
     public const string SourceTableInventoryMismatch = "CDC_TEMPLATE_SOURCE_TABLE_INVENTORY_MISMATCH";

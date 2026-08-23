@@ -53,6 +53,7 @@ public static class CdcConnectorTemplateServiceCollectionExtensions
                 CdcConnectorTemplateInputValidator
             >()
         );
+        services.TryAddSingleton(TimeProvider.System);
         services.TryAdd(
             ServiceDescriptor.Scoped<ICdcConnectorTemplateRenderer, CdcConnectorTemplateRenderer>()
         );

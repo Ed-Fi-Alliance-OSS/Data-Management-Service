@@ -14,6 +14,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 {
     private static readonly ISqlDialect _dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
     private static readonly CdcSafeName _databaseCdcSafeName = new("sqlserver_database_cdc");
+    private static readonly CdcSafeName _snapshotIsolationSafeName = new("sqlserver_snapshot_isolation");
     private static readonly CdcSafeName _captureInstancesSafeName = new("sqlserver_cdc_capture_instances");
     private static readonly IReadOnlySet<string> _requiredCdcMetadataSelectPermissionTokens =
         new HashSet<string>(StringComparer.Ordinal)
@@ -43,6 +44,12 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 CdcSourceFingerprintMetadata.SafeArtifactName,
                 canCreateInInitialSetup: false,
                 ExecuteSourceFingerprintAsync
+            ),
+            new CdcProviderSetupStep(
+                CdcProviderArtifactKind.ProviderHistory,
+                _snapshotIsolationSafeName,
+                canCreateInInitialSetup: true,
+                ExecuteSnapshotIsolationAsync
             ),
             new CdcProviderSetupStep(
                 CdcProviderArtifactKind.ProviderHistory,
@@ -103,6 +110,80 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         return await CdcSourceFingerprintMetadata
             .ReadAsync(executor, SourceFingerprintSql, CdcProvider.SqlServer, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    private static async Task<CdcProviderSetupStepResult> ExecuteSnapshotIsolationAsync(
+        CdcProviderSetupStepContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        if (
+            !TryGetExecutor(
+                context,
+                CdcProviderArtifactKind.ProviderHistory,
+                out var executor,
+                out var failure
+            )
+        )
+        {
+            return failure;
+        }
+
+        try
+        {
+            var inspection = await InspectSnapshotIsolationAsync(executor, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!inspection.AllowSnapshotIsolation)
+            {
+                if (context.Mode == CdcProviderSetupStepMode.ExactMatchOnly)
+                {
+                    return SnapshotIsolationResult(
+                        CdcProviderArtifactState.Mismatched,
+                        inspection,
+                        [SnapshotIsolationOffDiagnostic(inspection)]
+                    );
+                }
+
+                await executor
+                    .ExecuteNonQueryAsync(EnableSnapshotIsolationSql, cancellationToken)
+                    .ConfigureAwait(false);
+
+                inspection = await InspectSnapshotIsolationAsync(executor, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (!inspection.AllowSnapshotIsolation)
+                {
+                    return SnapshotIsolationResult(
+                        CdcProviderArtifactState.Mismatched,
+                        inspection,
+                        [SnapshotIsolationOffDiagnostic(inspection)]
+                    );
+                }
+
+                return SnapshotIsolationResult(CdcProviderArtifactState.Created, inspection, []);
+            }
+
+            return SnapshotIsolationResult(CdcProviderArtifactState.Matched, inspection, []);
+        }
+        catch (DbException exception)
+        {
+            return SetupPrincipalFailure(
+                executor,
+                CdcProviderArtifactKind.ProviderHistory,
+                _snapshotIsolationSafeName,
+                exception
+            );
+        }
+        catch (InvalidOperationException exception)
+        {
+            return SetupPrincipalFailure(
+                executor,
+                CdcProviderArtifactKind.ProviderHistory,
+                _snapshotIsolationSafeName,
+                exception
+            );
+        }
     }
 
     private static async Task<CdcProviderSetupStepResult> ExecuteDatabaseCdcAsync(
@@ -365,7 +446,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 
             return new CdcProviderSetupStepResult(
                 sourceTableInventory: liveInventory,
-                expectedMessageKeyColumns: ExpectedMessageKeyColumns(context.Request)
+                expectedMessageKeyColumns: ExpectedMessageKeyColumns()
             );
         }
         catch (DbException exception)
@@ -2102,6 +2183,47 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         EXEC sys.sp_cdc_enable_db;
         """;
 
+    private const string EnableSnapshotIsolationSql = """
+        /* cdc:sqlserver:enable-snapshot-isolation */
+        ALTER DATABASE CURRENT SET ALLOW_SNAPSHOT_ISOLATION ON;
+        """;
+
+    private static async Task<SqlServerSnapshotIsolationInspection> InspectSnapshotIsolationAsync(
+        ICdcProviderDatabaseExecutor executor,
+        CancellationToken cancellationToken
+    )
+    {
+        var rows = await executor
+            .QueryAsync(SnapshotIsolationStateSql, cancellationToken)
+            .ConfigureAwait(false);
+        if (rows.Count == 0)
+        {
+            throw new InvalidOperationException("SQL Server snapshot isolation state was not returned.");
+        }
+
+        var row = rows[0];
+        var allowSnapshotIsolation = ReadBool(row, "allow_snapshot_isolation");
+        var stateDescription = ReadRequired(row, "snapshot_isolation_state_desc");
+        return new SqlServerSnapshotIsolationInspection(
+            allowSnapshotIsolation,
+            stateDescription,
+            new Dictionary<string, string>
+            {
+                ["allow_snapshot_isolation"] = allowSnapshotIsolation.ToString(),
+                ["snapshot_isolation_state_desc"] = SafeText(stateDescription),
+            }
+        );
+    }
+
+    private const string SnapshotIsolationStateSql = """
+        /* cdc:sqlserver:snapshot-isolation-state */
+        SELECT
+            CONVERT(nvarchar(5), CASE WHEN database_info.snapshot_isolation_state = 1 THEN 1 ELSE 0 END) AS allow_snapshot_isolation,
+            COALESCE(database_info.snapshot_isolation_state_desc, N'unavailable') AS snapshot_isolation_state_desc
+        FROM sys.databases database_info
+        WHERE database_info.name = DB_NAME();
+        """;
+
     private static async Task<DatabaseCdcInspection> InspectDatabaseCdcAsync(
         ICdcProviderDatabaseExecutor executor,
         CancellationToken cancellationToken
@@ -2575,7 +2697,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                     var sourceTable = SourceTable(request, kind);
                     var captureInstance = request.ArtifactNames.SqlServer!.CaptureInstanceNames[kind];
 
-                    return $"({index + 1}, N'{CaptureTableKindToken(kind)}', N'{EscapeSqlLiteral(sourceTable.TableName.Schema.Value)}', N'{EscapeSqlLiteral(sourceTable.TableName.Name)}', N'{EscapeSqlLiteral(captureInstance.Value)}')";
+                    return $"({index + 1}, N'{CdcSourceInventoryContract.SourceTableKindToken(kind)}', N'{EscapeSqlLiteral(sourceTable.TableName.Schema.Value)}', N'{EscapeSqlLiteral(sourceTable.TableName.Name)}', N'{EscapeSqlLiteral(captureInstance.Value)}')";
                 }
             )
         );
@@ -2864,7 +2986,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             new Dictionary<string, string>
             {
                 ["capture_instance"] = SafeText(definition.CaptureInstanceName.Value),
-                ["source_table_kind"] = CaptureTableKindToken(definition.TableKind),
+                ["source_table_kind"] = CdcSourceInventoryContract.SourceTableKindToken(definition.TableKind),
                 ["source_object"] = SafeName(definition.ExpectedSourceTable.TableName).Value,
                 ["capture_instance_state"] = "missing",
             }
@@ -3112,7 +3234,11 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         if (
             observation.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance
             && observation.SafeObservedValues.TryGetValue("source_table_kind", out var tableKind)
-            && string.Equals(tableKind, "cdc_heartbeat", StringComparison.Ordinal)
+            && string.Equals(
+                tableKind,
+                CdcSourceInventoryContract.SourceTableKindToken(CdcSourceTableKind.CdcHeartbeat),
+                StringComparison.Ordinal
+            )
             && observation.SafeObservedValues.TryGetValue("heartbeat_capture_visible", out var visible)
             && string.Equals(visible, "False", StringComparison.Ordinal)
         )
@@ -3237,7 +3363,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         {
             ["capture_instance"] = SafeText(captureInstanceName),
             ["expected_capture_instance"] = SafeText(definition.CaptureInstanceName.Value),
-            ["source_table_kind"] = CaptureTableKindToken(definition.TableKind),
+            ["source_table_kind"] = CdcSourceInventoryContract.SourceTableKindToken(definition.TableKind),
             ["source_object"] = SafeText($"{sourceSchema}.{sourceName}"),
             ["expected_source_object"] = SafeName(definition.ExpectedSourceTable.TableName).Value,
             ["role_name"] = EmptyAsNone(roleName),
@@ -3330,19 +3456,6 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         string.IsNullOrWhiteSpace(sourcePrimaryKeyName)
             ? "none"
             : $"none_or_source_primary_key.{SafeText(sourcePrimaryKeyName)}";
-
-    private static string CaptureTableKindToken(CdcSourceTableKind tableKind) =>
-        tableKind switch
-        {
-            CdcSourceTableKind.Document => "document",
-            CdcSourceTableKind.DocumentCache => "document_cache",
-            CdcSourceTableKind.CdcHeartbeat => "cdc_heartbeat",
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(tableKind),
-                tableKind,
-                "Unsupported CDC source table kind."
-            ),
-        };
 
     private static async Task<HeartbeatTableShapeInspection> InspectHeartbeatTableShapeAsync(
         ICdcProviderDatabaseExecutor executor,
@@ -3513,24 +3626,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             """;
     }
 
-    private static IReadOnlyList<CdcExpectedMessageKeyColumns> ExpectedMessageKeyColumns(
-        CdcProviderSetupRequest request
-    ) =>
-        [
-            new CdcExpectedMessageKeyColumns(
-                CdcSourceTableKind.Document,
-                [SourceColumn(SourceTable(request, CdcSourceTableKind.Document), "DocumentUuid").ColumnName]
-            ),
-            new CdcExpectedMessageKeyColumns(
-                CdcSourceTableKind.DocumentCache,
-                [
-                    SourceColumn(
-                        SourceTable(request, CdcSourceTableKind.DocumentCache),
-                        "DocumentUuid"
-                    ).ColumnName,
-                ]
-            ),
-        ];
+    private static IReadOnlyList<CdcExpectedMessageKeyColumns> ExpectedMessageKeyColumns() =>
+        CdcSourceInventoryContract.RequiredMessageKeyColumns();
 
     private static CdcProviderSetupStepResult ConnectorPrincipalAccessResult(
         CdcProviderSetupRequest request,
@@ -4143,6 +4240,41 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         );
     }
 
+    private static CdcProviderSetupStepResult SnapshotIsolationResult(
+        CdcProviderArtifactState state,
+        SqlServerSnapshotIsolationInspection inspection,
+        IReadOnlyList<CdcProviderDiagnostic> diagnostics
+    )
+    {
+        var classification =
+            diagnostics
+                .FirstOrDefault(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error)
+                ?.Classification
+            ?? CdcProviderRetryContinuityClassification.None;
+
+        return new CdcProviderSetupStepResult(
+            artifactInventory:
+            [
+                new CdcProviderArtifactObservation(
+                    CdcProviderArtifactKind.ProviderHistory,
+                    _snapshotIsolationSafeName,
+                    state,
+                    inspection.ObservedValues
+                ),
+            ],
+            providerHistoryObservations:
+            [
+                new CdcProviderHistoryObservation(
+                    CdcProviderArtifactKind.ProviderHistory,
+                    _snapshotIsolationSafeName,
+                    inspection.ObservedValues,
+                    classification
+                ),
+            ],
+            diagnostics: diagnostics
+        );
+    }
+
     private static CdcProviderSetupStepResult DatabaseCdcMetadataRefreshResult(
         DatabaseCdcInspection inspection,
         IReadOnlyList<CdcProviderDiagnostic> diagnostics
@@ -4242,6 +4374,22 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             ]
         );
     }
+
+    private static CdcProviderDiagnostic SnapshotIsolationOffDiagnostic(
+        SqlServerSnapshotIsolationInspection inspection
+    ) =>
+        new(
+            Code: "CDC_SQLSERVER_SNAPSHOT_ISOLATION_OFF",
+            Category: CdcProviderDiagnosticCategory.ValidationMismatch,
+            Severity: CdcProviderDiagnosticSeverity.Error,
+            PrincipalKind: CdcPrincipalKind.None,
+            ArtifactKind: CdcProviderArtifactKind.ProviderHistory,
+            SafeName: _snapshotIsolationSafeName,
+            ExpectedValue: "allow-snapshot-isolation-on",
+            ObservedValue: $"allow_snapshot_isolation={inspection.AllowSnapshotIsolation}",
+            ProviderErrorClass: null,
+            Classification: CdcProviderRetryContinuityClassification.FailClosed
+        );
 
     private static IReadOnlyDictionary<string, string> DatabaseCdcObservedValues(
         DatabaseCdcInspection inspection,
@@ -4677,6 +4825,12 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         IReadOnlyDictionary<string, JobHelpObservation> JobsByType,
         IReadOnlyDictionary<string, JobRuntimeObservation> JobRuntimeByType,
         RetainedLsnObservation RetainedLsn
+    );
+
+    private sealed record SqlServerSnapshotIsolationInspection(
+        bool AllowSnapshotIsolation,
+        string SnapshotIsolationStateDescription,
+        IReadOnlyDictionary<string, string> ObservedValues
     );
 
     private sealed record JobHelpObservation(

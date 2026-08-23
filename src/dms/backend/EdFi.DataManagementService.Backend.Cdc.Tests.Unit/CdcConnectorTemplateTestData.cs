@@ -295,6 +295,7 @@ internal static class CdcConnectorTemplateTestData
 
     public static IReadOnlyList<CdcProviderArtifactObservation> BuildSqlServerArtifactInventory() =>
         [
+            BuildSqlServerSnapshotIsolationArtifact(),
             BuildSqlServerGatingRoleArtifact(),
             BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
             BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.Document),
@@ -310,6 +311,21 @@ internal static class CdcConnectorTemplateTestData
             safeArtifactName ?? new CdcSafeName("dms_binding_gate"),
             state,
             new Dictionary<string, string>()
+        );
+
+    public static CdcProviderArtifactObservation BuildSqlServerSnapshotIsolationArtifact(
+        CdcProviderArtifactState state = CdcProviderArtifactState.Matched,
+        string allowSnapshotIsolation = "True"
+    ) =>
+        new(
+            CdcProviderArtifactKind.ProviderHistory,
+            new CdcSafeName("sqlserver_snapshot_isolation"),
+            state,
+            new Dictionary<string, string>
+            {
+                ["allow_snapshot_isolation"] = allowSnapshotIsolation,
+                ["snapshot_isolation_state_desc"] = allowSnapshotIsolation == "True" ? "ON" : "OFF",
+            }
         );
 
     public static CdcProviderArtifactObservation BuildSqlServerCaptureInstanceArtifact(

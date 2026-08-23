@@ -1061,6 +1061,9 @@ database-per-instance isolation model.
 - Configure `DocumentUuid` as the Debezium message key for both tables.
 - `DocumentCache.DocumentUuid` remains non-indexed; provider CDC captures the column and
   the configured custom key does not change the table's `DocumentId` clustered key.
+- Set `data.query.mode=function` explicitly. Debezium 3.6 defaults SQL Server to direct
+  change-table queries, while Ed-Fi's SQL Server v1 connector contract is qualified
+  against SQL Server's generated CDC function surface.
 - Set `time.precision.mode=isostring` explicitly. Debezium 3.6 then captures SQL Server
   `datetime2(7)` values, including `DocumentCache.LastModifiedAt`, as ISO-8601 `STRING`
   values with the `io.debezium.time.IsoTimestamp` logical type instead of signed

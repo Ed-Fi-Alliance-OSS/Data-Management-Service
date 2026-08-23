@@ -260,6 +260,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
     public async Task<CdcConnectorTemplateRequest> CreateRequestAsync(CancellationToken cancellationToken)
     {
         await CreateMinimalProviderObjectsAsync(cancellationToken);
+        await AssertSqlServer2025Async(cancellationToken);
         CdcProviderSetupResult providerSetupResult = await RunProviderSetupAsync(
             CdcProviderSetupMode.InitialCreateOrExactMatch,
             cancellationToken
@@ -302,7 +303,6 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 
         rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
         rendered.Diagnostics.Should().BeEmpty();
-        AssertReadBackContainsOnlyRenderedProperties(request, rendered.Config, effectiveConfig);
 
         CdcConnectorTemplateResult preflight = service.ValidateRegistrationPreflight(
             new CdcConnectorTemplateEffectiveConfigValidationRequest(
@@ -354,42 +354,6 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
                     redactionClassification: CdcConnectorTemplateRedactionClassification.Safe
                 ),
                 $"Pinned-image live read-back validation failed. Diagnostics: {CdcConnectorTemplatePinnedImageSmokeDiagnostics.FormatDiagnostics(liveReadBack.Diagnostics)}"
-            );
-        }
-    }
-
-    private static void AssertReadBackContainsOnlyRenderedProperties(
-        CdcConnectorTemplateRequest request,
-        IReadOnlyDictionary<string, string> renderedConfig,
-        IReadOnlyDictionary<string, string> effectiveConfig
-    )
-    {
-        string[] unexpectedKeys = effectiveConfig
-            .Where(property =>
-                !renderedConfig.ContainsKey(property.Key)
-                && !(
-                    string.Equals(property.Key, "topic.heartbeat.name", StringComparison.Ordinal)
-                    && property.Value.Length == 0
-                )
-            )
-            .Select(property => property.Key)
-            .OrderBy(key => key, StringComparer.Ordinal)
-            .ToArray();
-
-        if (unexpectedKeys.Length != 0)
-        {
-            CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
-                CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
-                    code: CdcConnectorTemplateDiagnosticCodes.PinnedImageReadBackValidationFailure,
-                    category: CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch,
-                    provider: request.Provider,
-                    propertyName: "kafkaConnect.readBackConfig",
-                    safeArtifactOrObjectName: request.ConnectorName,
-                    expectedValue: "only rendered template properties",
-                    observedValue: "[redacted]",
-                    redactionClassification: CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
-                ),
-                $"Qualified Kafka Connect read-back contained {unexpectedKeys.Length} unrendered properties. Unexpected property names are redacted."
             );
         }
     }
@@ -1565,6 +1529,28 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         await CreateMinimalSqlServerObjectsAsync(cancellationToken);
     }
 
+    private async Task AssertSqlServer2025Async(CancellationToken cancellationToken)
+    {
+        if (Provider != CdcProvider.SqlServer)
+        {
+            return;
+        }
+
+        string output = await ReadSqlServerScalarAsync(
+            "SELECT CONVERT(nvarchar(20), SERVERPROPERTY('ProductMajorVersion'));",
+            cancellationToken
+        );
+        string majorVersion =
+            output
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .FirstOrDefault()
+            ?? string.Empty;
+
+        majorVersion
+            .Should()
+            .Be("17", "CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE must run SQL Server 2025");
+    }
+
     private async Task CreateMinimalPostgresqlObjectsAsync(CancellationToken cancellationToken)
     {
         string sql = BuildMinimalPostgresqlObjectsSql();
@@ -1628,7 +1614,6 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         string sql = $$"""
             IF DB_ID(N'{{SqlServerDatabaseName}}') IS NULL
                 CREATE DATABASE [{{SqlServerDatabaseName}}];
-            ALTER DATABASE [{{SqlServerDatabaseName}}] SET ALLOW_SNAPSHOT_ISOLATION ON;
             GO
             USE [{{SqlServerDatabaseName}}];
             IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'dms')

@@ -402,6 +402,68 @@ public class Given_CdcConnectorTemplateSqlServerRendering
     }
 
     [Test]
+    public void It_rejects_missing_snapshot_isolation_setup_evidence_before_rendering()
+    {
+        CdcConnectorTemplateResult result = Render(
+            BuildRequest(
+                CdcProvider.SqlServer,
+                artifactInventory: BuildSqlServerArtifactInventory()
+                    .Where(artifact => artifact.SafeArtifactName.Value != "sqlserver_snapshot_isolation")
+                    .ToArray()
+            )
+        );
+
+        CdcConnectorTemplateDiagnostic diagnostic = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code
+                == CdcConnectorTemplateDiagnosticCodes.SqlServerSnapshotIsolationMetadataRequired
+            )
+            .Subject;
+
+        using var _ = new AssertionScope();
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        result.Config.Should().BeEmpty();
+        result.RegistrationPayload.Should().BeNull();
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure);
+        diagnostic.PropertyName.Should().Be("providerSetup.artifactInventory.sqlServerSnapshotIsolation");
+        diagnostic.ObservedValue.Should().Be("missing");
+    }
+
+    [Test]
+    public void It_rejects_disabled_snapshot_isolation_setup_evidence_before_rendering()
+    {
+        CdcConnectorTemplateResult result = Render(
+            BuildRequest(
+                CdcProvider.SqlServer,
+                artifactInventory: BuildSqlServerArtifactInventory()
+                    .Select(artifact =>
+                        artifact.SafeArtifactName.Value == "sqlserver_snapshot_isolation"
+                            ? BuildSqlServerSnapshotIsolationArtifact(allowSnapshotIsolation: "False")
+                            : artifact
+                    )
+                    .ToArray()
+            )
+        );
+
+        CdcConnectorTemplateDiagnostic diagnostic = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code
+                == CdcConnectorTemplateDiagnosticCodes.SqlServerSnapshotIsolationMetadataRequired
+            )
+            .Subject;
+
+        using var _ = new AssertionScope();
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        result.Config.Should().BeEmpty();
+        result.RegistrationPayload.Should().BeNull();
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure);
+        diagnostic.PropertyName.Should().Be("providerSetup.artifactInventory.sqlServerSnapshotIsolation");
+        diagnostic.ObservedValue.Should().Be("allow_snapshot_isolation=False");
+    }
+
+    [Test]
     public void It_rejects_missing_poll_interval_before_rendering()
     {
         CdcConnectorTemplateResult result = Render(

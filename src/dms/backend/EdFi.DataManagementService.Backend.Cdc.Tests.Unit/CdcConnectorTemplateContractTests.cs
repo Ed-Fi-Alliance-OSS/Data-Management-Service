@@ -201,6 +201,62 @@ public class Given_CdcConnectorTemplateContractTests
     }
 
     [Test]
+    public void It_exposes_normalized_property_maps_as_read_only()
+    {
+        CdcBindingIdentity binding = BuildBinding(CdcProvider.Postgresql);
+        var config = new Dictionary<string, string>
+        {
+            ["connector.class"] = "io.debezium.connector.postgresql.PostgresConnector",
+            ["name"] = binding.ConnectorName.Value,
+        };
+        var result = new CdcConnectorTemplateResult(
+            binding,
+            CdcConnectorTemplateOutcome.Rendered,
+            config,
+            new CdcKafkaConnectRegistrationPayload(binding.ConnectorName, config),
+            redactedArtifactPayload: null,
+            configSha256: $"sha256:{new string('a', 64)}",
+            diagnostics: []
+        );
+        var providerConnectionProperties = new CdcProviderConnectionProperties(
+            CdcProvider.Postgresql,
+            new Dictionary<string, string> { ["database.hostname"] = "postgresql.internal" }
+        );
+
+        using var _ = new AssertionScope();
+        ((Action)(() => ((IDictionary<string, string>)result.Config)["name"] = "mutated"))
+            .Should()
+            .Throw<NotSupportedException>();
+        (
+            (Action)(
+                () => ((IDictionary<string, string>)result.RegistrationPayload!.Config)["name"] = "mutated"
+            )
+        )
+            .Should()
+            .Throw<NotSupportedException>();
+        (
+            (Action)(
+                () =>
+                    ((IDictionary<string, string>)providerConnectionProperties.Properties)[
+                        "database.hostname"
+                    ] = "mutated"
+            )
+        )
+            .Should()
+            .Throw<NotSupportedException>();
+        (
+            (Action)(
+                () =>
+                    ((IDictionary<string, string>)CdcKafkaClientSecurityProperties.Empty.Properties)[
+                        "security.protocol"
+                    ] = "SSL"
+            )
+        )
+            .Should()
+            .Throw<NotSupportedException>();
+    }
+
+    [Test]
     public void It_rejects_duplicate_string_property_names()
     {
         var properties = new DuplicateKeyReadOnlyDictionary(

@@ -11,6 +11,9 @@ namespace EdFi.DataManagementService.Backend.Cdc;
 internal static class CdcProviderSetupPrerequisiteRules
 {
     private const string RedactedValue = "[redacted]";
+    private static readonly CdcSafeName SqlServerSnapshotIsolationSafeName = new(
+        "sqlserver_snapshot_isolation"
+    );
 
     internal static IReadOnlyList<CdcConnectorTemplateDiagnostic> Validate(
         CdcProviderSetupResult providerSetupResult,
@@ -38,6 +41,12 @@ internal static class CdcProviderSetupPrerequisiteRules
         AddProviderArtifactDiagnostics(
             providerSetupResult,
             expectedArtifactNames,
+            safeArtifactOrObjectName,
+            sourcePhase,
+            diagnostics
+        );
+        AddSqlServerSnapshotIsolationDiagnosticIfNeeded(
+            providerSetupResult,
             safeArtifactOrObjectName,
             sourcePhase,
             diagnostics
@@ -645,6 +654,46 @@ internal static class CdcProviderSetupPrerequisiteRules
         );
     }
 
+    private static void AddSqlServerSnapshotIsolationDiagnosticIfNeeded(
+        CdcProviderSetupResult providerSetupResult,
+        CdcSafeName? safeArtifactOrObjectName,
+        CdcConnectorTemplateSourcePhase sourcePhase,
+        List<CdcConnectorTemplateDiagnostic> diagnostics
+    )
+    {
+        if (providerSetupResult.Provider != CdcProvider.SqlServer)
+        {
+            return;
+        }
+
+        CdcProviderArtifactObservation[] snapshotIsolationArtifacts = CdcConnectorTemplateSharedRules
+            .ArtifactInventory(providerSetupResult)
+            .Where(artifact =>
+                artifact.ArtifactKind == CdcProviderArtifactKind.ProviderHistory
+                && artifact.SafeArtifactName.Equals(SqlServerSnapshotIsolationSafeName)
+            )
+            .ToArray();
+        string? observedValue = SqlServerSnapshotIsolationObservedValue(snapshotIsolationArtifacts);
+        if (observedValue is null)
+        {
+            return;
+        }
+
+        diagnostics.Add(
+            BuildDiagnostic(
+                CdcConnectorTemplateDiagnosticCodes.SqlServerSnapshotIsolationMetadataRequired,
+                CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
+                "providerSetup.artifactInventory.sqlServerSnapshotIsolation",
+                "one usable SQL Server snapshot-isolation artifact with allow_snapshot_isolation=True",
+                observedValue,
+                providerSetupResult.Provider,
+                safeArtifactOrObjectName,
+                sourcePhase,
+                CdcConnectorTemplateRedactionClassification.Safe
+            )
+        );
+    }
+
     private static CdcConnectorTemplateDiagnostic BuildDiagnostic(
         string code,
         CdcConnectorTemplateDiagnosticCategory category,
@@ -754,6 +803,39 @@ internal static class CdcProviderSetupPrerequisiteRules
         }
 
         return captureInstance.State.ToString();
+    }
+
+    private static string? SqlServerSnapshotIsolationObservedValue(
+        IReadOnlyList<CdcProviderArtifactObservation> artifacts
+    )
+    {
+        if (artifacts.Count == 0)
+        {
+            return "missing";
+        }
+
+        if (artifacts.Count > 1)
+        {
+            return artifacts.Count.ToString();
+        }
+
+        CdcProviderArtifactObservation artifact = artifacts[0];
+        if (artifact.State is not (CdcProviderArtifactState.Created or CdcProviderArtifactState.Matched))
+        {
+            return artifact.State.ToString();
+        }
+
+        if (
+            !artifact.SafeObservedValues.TryGetValue("allow_snapshot_isolation", out string? value)
+            || string.IsNullOrWhiteSpace(value)
+        )
+        {
+            return "missing-allow_snapshot_isolation";
+        }
+
+        return string.Equals(value, bool.TrueString, StringComparison.Ordinal)
+            ? null
+            : $"allow_snapshot_isolation={value}";
     }
 
     private static string ObservedCountOrMissing<T>(IReadOnlyList<T>? values) =>

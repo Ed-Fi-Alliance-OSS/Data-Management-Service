@@ -26,6 +26,93 @@ public class Given_CdcSourceInventoryContract
             .RequiredSourceTableOrdinal((CdcSourceTableKind)999)
             .Should()
             .Be(int.MaxValue);
+        CdcSourceInventoryContract
+            .RequiredSourceTableName(CdcSourceTableKind.DocumentCache)
+            .Should()
+            .Be(new DbTableName(new DbSchemaName("dms"), "DocumentCache"));
+        CdcSourceInventoryContract
+            .RequiredSourceTableName(CdcSourceTableKind.Document)
+            .Should()
+            .Be(new DbTableName(new DbSchemaName("dms"), "Document"));
+        CdcSourceInventoryContract
+            .RequiredSourceTableName(CdcSourceTableKind.CdcHeartbeat)
+            .Should()
+            .Be(new DbTableName(new DbSchemaName("dms"), "CdcHeartbeat"));
+    }
+
+    [Test]
+    public void It_should_name_the_fixed_cdc_message_key_contract()
+    {
+        CdcSourceInventoryContract
+            .RequiredMessageKeyTableKinds.Should()
+            .Equal(CdcSourceTableKind.DocumentCache, CdcSourceTableKind.Document);
+        CdcSourceInventoryContract
+            .RequiredMessageKeyColumns()
+            .Select(columns => (columns.TableKind, ColumnNames: ColumnNames(columns.KeyColumns)))
+            .Should()
+            .Equal(
+                (CdcSourceTableKind.DocumentCache, "DocumentUuid"),
+                (CdcSourceTableKind.Document, "DocumentUuid")
+            );
+
+        var expectedMessageKeyColumns = CdcSourceInventoryContract.RequiredMessageKeyColumns();
+
+        CdcSourceInventoryContract
+            .ValidateRequiredMessageKeyColumns(expectedMessageKeyColumns, nameof(expectedMessageKeyColumns))
+            .Should()
+            .BeSameAs(expectedMessageKeyColumns);
+    }
+
+    [Test]
+    public void It_should_parse_source_table_kind_tokens()
+    {
+        CdcSourceInventoryContract
+            .SourceTableKindToken(CdcSourceTableKind.DocumentCache)
+            .Should()
+            .Be("document_cache");
+        CdcSourceInventoryContract.SourceTableKindToken(CdcSourceTableKind.Document).Should().Be("document");
+        CdcSourceInventoryContract
+            .SourceTableKindToken(CdcSourceTableKind.CdcHeartbeat)
+            .Should()
+            .Be("cdc_heartbeat");
+
+        CdcSourceInventoryContract
+            .TryParseSourceTableKindToken("document_cache", out var documentCache)
+            .Should()
+            .BeTrue();
+        documentCache.Should().Be(CdcSourceTableKind.DocumentCache);
+        CdcSourceInventoryContract.TryParseSourceTableKindToken("unknown", out _).Should().BeFalse();
+    }
+
+    [Test]
+    public void It_should_reject_message_key_columns_that_drift_from_the_contract()
+    {
+        IReadOnlyList<CdcExpectedMessageKeyColumns> missingDocument =
+        [
+            new(CdcSourceTableKind.DocumentCache, [new DbColumnName("DocumentUuid")]),
+        ];
+        IReadOnlyList<CdcExpectedMessageKeyColumns> wrongColumn =
+        [
+            new(CdcSourceTableKind.DocumentCache, [new DbColumnName("DocumentId")]),
+            new(CdcSourceTableKind.Document, [new DbColumnName("DocumentUuid")]),
+        ];
+
+        Action missingDocumentAction = () =>
+            CdcSourceInventoryContract.ValidateRequiredMessageKeyColumns(
+                missingDocument,
+                nameof(missingDocument)
+            );
+        Action wrongColumnAction = () =>
+            CdcSourceInventoryContract.ValidateRequiredMessageKeyColumns(wrongColumn, nameof(wrongColumn));
+
+        missingDocumentAction
+            .Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*exactly dms.DocumentCache and dms.Document*");
+        wrongColumnAction
+            .Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*DocumentUuid keys for document sources*");
     }
 
     [Test]
@@ -187,6 +274,9 @@ public class Given_CdcSourceInventoryContract
 
     private static CdcSourceColumnInventory BuildColumn(DbColumnName columnName, int ordinal = 1) =>
         new(columnName, @"""DocumentUuid""", ordinal, "uuid", IsNullable: false);
+
+    private static string ColumnNames(IReadOnlyList<DbColumnName> columns) =>
+        string.Join(",", columns.Select(column => column.Value));
 }
 
 [TestFixture(SqlDialect.Pgsql)]
