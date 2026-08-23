@@ -119,9 +119,36 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
             config[$"producer.override.{property.Key}"] = property.Value;
         }
 
+        AddSourceSelectionConfig(request, config);
         AddProviderSpecificConfig(request, config);
 
         return config;
+    }
+
+    private static void AddSourceSelectionConfig(
+        CdcConnectorTemplateRequest request,
+        SortedDictionary<string, string> config
+    )
+    {
+        config["table.include.list"] = string.Join(
+            ",",
+            CdcConnectorTemplateSharedRules
+                .OrderedSourceTables(request)
+                .Select(CdcConnectorTemplateDebeziumSelectorFormatter.TableSelector)
+        );
+        config["message.key.columns"] = string.Join(
+            ";",
+            CdcConnectorTemplateSharedRules
+                .OrderedMessageKeyColumns(request)
+                .Select(messageKeyColumns =>
+                {
+                    CdcSourceTableInventory table = CdcConnectorTemplateSharedRules.SourceTable(
+                        request,
+                        messageKeyColumns.TableKind
+                    );
+                    return $"{CdcConnectorTemplateDebeziumSelectorFormatter.TableSelector(table)}:{CdcConnectorTemplateDebeziumSelectorFormatter.KeyColumnList(table, messageKeyColumns)}";
+                })
+        );
     }
 
     private static void AddProviderSpecificConfig(
@@ -161,25 +188,6 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
         config["publication.autocreate.mode"] = "disabled";
         config["publication.name"] = publication.SafeArtifactName.Value;
         config["slot.name"] = replicationSlot.SafeArtifactName.Value;
-        config["table.include.list"] = string.Join(
-            ",",
-            CdcConnectorTemplateSharedRules
-                .OrderedSourceTables(request)
-                .Select(CdcConnectorTemplateDebeziumSelectorFormatter.TableSelector)
-        );
-        config["message.key.columns"] = string.Join(
-            ";",
-            CdcConnectorTemplateSharedRules
-                .OrderedMessageKeyColumns(request)
-                .Select(messageKeyColumns =>
-                {
-                    CdcSourceTableInventory table = CdcConnectorTemplateSharedRules.SourceTable(
-                        request,
-                        messageKeyColumns.TableKind
-                    );
-                    return $"{CdcConnectorTemplateDebeziumSelectorFormatter.TableSelector(table)}:{CdcConnectorTemplateDebeziumSelectorFormatter.KeyColumnList(table, messageKeyColumns)}";
-                })
-        );
         config["unavailable.value.placeholder"] = "__debezium_unavailable_value";
     }
 
@@ -188,25 +196,6 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
         SortedDictionary<string, string> config
     )
     {
-        config["table.include.list"] = string.Join(
-            ",",
-            CdcConnectorTemplateSharedRules
-                .OrderedSourceTables(request)
-                .Select(CdcConnectorTemplateDebeziumSelectorFormatter.TableSelector)
-        );
-        config["message.key.columns"] = string.Join(
-            ";",
-            CdcConnectorTemplateSharedRules
-                .OrderedMessageKeyColumns(request)
-                .Select(messageKeyColumns =>
-                {
-                    CdcSourceTableInventory table = CdcConnectorTemplateSharedRules.SourceTable(
-                        request,
-                        messageKeyColumns.TableKind
-                    );
-                    return $"{CdcConnectorTemplateDebeziumSelectorFormatter.TableSelector(table)}:{CdcConnectorTemplateDebeziumSelectorFormatter.KeyColumnList(table, messageKeyColumns)}";
-                })
-        );
         config["time.precision.mode"] = "isostring";
         config["unavailable.value.placeholder"] = "__debezium_unavailable_value";
         config["poll.interval.ms"] = CdcConnectorTemplateSharedRules
