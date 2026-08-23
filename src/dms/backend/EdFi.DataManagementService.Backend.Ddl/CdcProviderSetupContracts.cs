@@ -413,6 +413,8 @@ public sealed record CdcSourceColumnInventory(
     bool IsNullable
 )
 {
+    public DbColumnName ColumnName { get; } = ValidateColumnName(ColumnName, nameof(ColumnName));
+
     public string EmittedQuotedColumnName { get; } =
         ValidateSafeText(EmittedQuotedColumnName, nameof(EmittedQuotedColumnName));
 
@@ -426,6 +428,12 @@ public sealed record CdcSourceColumnInventory(
             );
 
     public string ProviderDataType { get; } = ValidateSafeText(ProviderDataType, nameof(ProviderDataType));
+
+    private static DbColumnName ValidateColumnName(DbColumnName columnName, string parameterName)
+    {
+        ValidateSafeText(columnName.Value, parameterName);
+        return columnName;
+    }
 
     private static string ValidateSafeText(string value, string parameterName)
     {
@@ -480,7 +488,7 @@ public sealed record CdcSourceTableInventory(
             throw new ArgumentException("CDC source table column ordinals must be unique.", nameof(columns));
         }
 
-        return columns;
+        return columns.ToArray();
     }
 
     private static string ValidateSafeText(string value, string parameterName)

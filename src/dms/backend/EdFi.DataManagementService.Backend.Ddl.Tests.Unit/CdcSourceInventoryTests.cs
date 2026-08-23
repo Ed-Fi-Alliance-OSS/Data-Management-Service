@@ -129,6 +129,42 @@ public class Given_CdcSourceInventoryContract
         action.Should().Throw<ArgumentException>().WithMessage("*duplicate contract columns*");
     }
 
+    [Test]
+    public void It_should_reject_a_default_physical_column_name()
+    {
+        Action action = () => BuildColumn(default);
+
+        action.Should().Throw<ArgumentException>().WithParameterName("ColumnName");
+    }
+
+    [TestCase("")]
+    [TestCase(" ")]
+    [TestCase("Document\nUuid")]
+    public void It_should_reject_blank_or_control_character_physical_column_names(string columnName)
+    {
+        Action action = () => BuildColumn(new DbColumnName(columnName));
+
+        action.Should().Throw<ArgumentException>().WithParameterName("ColumnName");
+    }
+
+    [Test]
+    public void It_should_snapshot_source_columns()
+    {
+        var expectedColumn = BuildColumn(new DbColumnName("DocumentUuid"));
+        var callerOwnedColumns = new List<CdcSourceColumnInventory> { expectedColumn };
+        var inventory = new CdcSourceTableInventory(
+            CdcSourceTableKind.Document,
+            DmsTableNames.Document,
+            @"""dms"".""Document""",
+            callerOwnedColumns
+        );
+
+        callerOwnedColumns[0] = BuildColumn(new DbColumnName("ChangedColumn"));
+        callerOwnedColumns.Add(BuildColumn(new DbColumnName("AddedColumn"), ordinal: 2));
+
+        inventory.Columns.Should().Equal(expectedColumn);
+    }
+
     private static IReadOnlyList<CdcSourceTableInventory> ReplaceTable(
         IReadOnlyList<CdcSourceTableInventory> inventory,
         CdcSourceTableKind tableKind,
@@ -148,6 +184,9 @@ public class Given_CdcSourceInventoryContract
             column.ProviderDataType,
             column.IsNullable
         );
+
+    private static CdcSourceColumnInventory BuildColumn(DbColumnName columnName, int ordinal = 1) =>
+        new(columnName, @"""DocumentUuid""", ordinal, "uuid", IsNullable: false);
 }
 
 [TestFixture(SqlDialect.Pgsql)]
