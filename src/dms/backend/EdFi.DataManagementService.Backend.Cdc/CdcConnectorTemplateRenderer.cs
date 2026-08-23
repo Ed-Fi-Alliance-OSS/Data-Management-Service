@@ -196,6 +196,7 @@ internal sealed class CdcConnectorTemplateRenderer(ICdcConnectorTemplateInputVal
         SortedDictionary<string, string> config
     )
     {
+        config["data.query.mode"] = "function";
         config["time.precision.mode"] = "isostring";
         config["unavailable.value.placeholder"] = "__debezium_unavailable_value";
         config["poll.interval.ms"] = CdcConnectorTemplateSharedRules

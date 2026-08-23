@@ -721,7 +721,7 @@ public class Given_MssqlCdcProviderAccessRetry
     }
 
     [Test]
-    public async Task It_should_fail_closed_on_gating_role_select_for_unexpected_cdc_object_without_removing_it()
+    public async Task It_should_fail_closed_on_gating_role_select_for_unexpected_cdc_metadata_without_removing_it()
     {
         await using var connection = new SqlConnection(_database.ConnectionString);
         await connection.OpenAsync();
@@ -729,13 +729,12 @@ public class Given_MssqlCdcProviderAccessRetry
         setupResult
             .Diagnostics.Should()
             .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
-        var unexpectedCdcObjectName = $"UnexpectedCdcRead_{Guid.NewGuid():N}";
+        const string unexpectedCdcObjectName = "index_columns";
         var expectedPermissionToken = $"cdc.{unexpectedCdcObjectName}.SELECT";
 
         await ExecuteNonQueryAsync(
             connection,
             $"""
-            CREATE TABLE [cdc].{QuoteIdentifier(unexpectedCdcObjectName)} ([Id] int NOT NULL);
             GRANT SELECT ON OBJECT::[cdc].{QuoteIdentifier(unexpectedCdcObjectName)} TO {QuoteIdentifier(
                 GatingRoleName
             )};
@@ -775,6 +774,65 @@ public class Given_MssqlCdcProviderAccessRetry
         )
             .Should()
             .BeTrue("validation reports the mismatched CDC role permission without destructive cleanup");
+    }
+
+    [TestCase("captured_columns")]
+    [TestCase("change_tables")]
+    public async Task It_should_report_a_missing_required_cdc_metadata_select_without_repairing_it(
+        string metadataObjectName
+    )
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        var setupResult = await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+        setupResult
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
+        var expectedPermissionToken = $"cdc.{metadataObjectName}.SELECT";
+
+        await ExecuteNonQueryAsync(
+            connection,
+            $"""
+            REVOKE SELECT ON OBJECT::[cdc].{QuoteIdentifier(metadataObjectName)} FROM {QuoteIdentifier(
+                GatingRoleName
+            )};
+            """
+        );
+
+        var validateResult = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
+
+        validateResult
+            .Outcome.Should()
+            .Be(CdcProviderSetupOutcome.Failed, DescribeDiagnostics(validateResult.Diagnostics));
+        validateResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code == "CDC_SQLSERVER_GATING_ROLE_MISMATCH"
+                && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && diagnostic.ObservedValue!.Contains(
+                    $"missing_cdc_selects:{expectedPermissionToken}",
+                    StringComparison.Ordinal
+                )
+            );
+        validateResult
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && observation.State == CdcProviderArtifactState.Mismatched
+                && observation.SafeObservedValues["missing_gating_role_cdc_object_selects"]
+                    == expectedPermissionToken
+            );
+        (
+            await HasRoleObjectPermissionAsync(
+                connection,
+                GatingRoleName,
+                metadataObjectName,
+                "SELECT",
+                schemaName: "cdc"
+            )
+        )
+            .Should()
+            .BeFalse("validate-only reports the missing metadata read without repairing it");
     }
 
     [Test]
@@ -1123,7 +1181,7 @@ public class Given_MssqlCdcProviderAccessRetry
         (await IsConnectorDatabaseRoleMemberAsync(connection, "db_datawriter")).Should().BeFalse();
 
         var expectedCdcObjectSelects = await ReadExpectedCdcObjectSelectPermissionTokensAsync(connection);
-        expectedCdcObjectSelects.Should().HaveCountGreaterThanOrEqualTo(3);
+        expectedCdcObjectSelects.Should().HaveCountGreaterThanOrEqualTo(5);
         var gatingRolePermissionTokens = (await ReadRoleObjectPermissionsAsync(connection, GatingRoleName))
             .Select(PermissionToken)
             .Order(StringComparer.Ordinal)
@@ -1340,6 +1398,14 @@ public class Given_MssqlCdcProviderAccessRetry
                         N'fn_cdc_get_net_changes_' + capture_info.capture_instance
                     )
                 WHERE capture_info.role_name = N'{GatingRoleName}'
+                UNION ALL
+                SELECT object_info.object_id
+                FROM sys.schemas schema_info
+                INNER JOIN sys.objects object_info
+                    ON object_info.schema_id = schema_info.schema_id
+                    AND object_info.name IN (N'captured_columns', N'change_tables')
+                    AND object_info.type = N'U'
+                WHERE schema_info.name = N'cdc'
             )
             SELECT
                 schema_info.name + N'.' + object_info.name + N'.SELECT'
@@ -1952,6 +2018,22 @@ internal sealed class SqlServerConnectorPrincipalBoundaryProbeFactory(
                 transaction,
                 "SELECT TOP (0) 1 FROM [dms].[CdcHeartbeat];",
                 "read-dms.CdcHeartbeat",
+                failures,
+                cancellationToken
+            );
+            await ExpectSucceedsAsync(
+                connection,
+                transaction,
+                "SELECT TOP (0) 1 FROM [cdc].[change_tables];",
+                "read-cdc.change_tables",
+                failures,
+                cancellationToken
+            );
+            await ExpectSucceedsAsync(
+                connection,
+                transaction,
+                "SELECT TOP (0) 1 FROM [cdc].[captured_columns];",
+                "read-cdc.captured_columns",
                 failures,
                 cancellationToken
             );

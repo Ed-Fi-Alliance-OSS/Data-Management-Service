@@ -1588,8 +1588,8 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
                 && observation.State == CdcProviderArtifactState.Matched
                 && observation.SafeObservedValues["gating_role_direct_members"] == "connector_principal"
                 && observation.SafeObservedValues["expected_capture_instances_using_role"] == "3"
-                && observation.SafeObservedValues["expected_cdc_object_count"] == "3"
-                && observation.SafeObservedValues["gating_role_cdc_object_select_count"] == "3"
+                && observation.SafeObservedValues["expected_cdc_object_count"] == "5"
+                && observation.SafeObservedValues["gating_role_cdc_object_select_count"] == "5"
                 && observation.SafeObservedValues["missing_gating_role_cdc_object_selects"] == "none"
             );
 
@@ -1598,6 +1598,9 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
         );
         grantSql.Should().NotContain("CREATE ROLE [dms_binding_gate]");
         grantSql.Should().Contain("ALTER ROLE [dms_binding_gate] ADD MEMBER [connector_principal]");
+        grantSql.Should().Contain("GRANT SELECT ON OBJECT::[cdc].[change_tables] TO [dms_binding_gate]");
+        grantSql.Should().Contain("GRANT SELECT ON OBJECT::[cdc].[captured_columns] TO [dms_binding_gate]");
+        grantSql.Should().NotContain("SCHEMA::[cdc]");
         grantSql.Should().Contain("GRANT SELECT ON OBJECT::[dms].[Document] TO [connector_principal]");
         grantSql.Should().Contain("GRANT SELECT ON OBJECT::[dms].[DocumentCache] TO [connector_principal]");
         grantSql.Should().Contain("GRANT SELECT ON OBJECT::[dms].[CdcHeartbeat] TO [connector_principal]");
@@ -1640,6 +1643,37 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
         result
             .GrantInventory.Should()
             .NotContain(grant => grant.SafeObjectName.Value == "dms.DocumentProjectionWork");
+    }
+
+    [TestCase("cdc.captured_columns.SELECT")]
+    [TestCase("cdc.change_tables.SELECT")]
+    public async Task It_should_repair_a_missing_required_cdc_metadata_select(string missingPermission)
+    {
+        var connectorAccess = RecordingSqlServerConnectorAccess.Exact();
+        connectorAccess.MissingGatingRoleCdcObjectSelects = [missingPermission];
+        var executor = ExistingArtifactsWithConnectorAccess(connectorAccess);
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor)
+        );
+
+        result.Outcome.Should().Be(CdcProviderSetupOutcome.CreatedOrMatched);
+        result
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error);
+        result
+            .ArtifactInventory.Should()
+            .ContainSingle(observation =>
+                observation.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
+                && observation.State == CdcProviderArtifactState.Matched
+                && observation.SafeObservedValues["expected_cdc_object_count"] == "5"
+                && observation.SafeObservedValues["gating_role_cdc_object_select_count"] == "5"
+                && observation.SafeObservedValues["missing_gating_role_cdc_object_selects"] == "none"
+            );
+        executor
+            .ExecutedSql.Should()
+            .ContainSingle(sql => sql.Contains("cdc:sqlserver:grant-connector-access"));
     }
 
     [TestCase(@"DOMAIN\svc_cdc", "DOMAIN_svc_cdc")]
@@ -1780,7 +1814,7 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
                 && observation.SafeArtifactName.Value == "dms_binding_gate"
                 && observation.State == CdcProviderArtifactState.Missing
                 && observation.SafeObservedValues["expected_capture_instances_using_role"] == "3"
-                && observation.SafeObservedValues["expected_cdc_object_count"] == "3"
+                && observation.SafeObservedValues["expected_cdc_object_count"] == "5"
                 && observation.SafeObservedValues["gating_role_cdc_object_select_count"] == "0"
             );
         executor.ExecutedSql.Should().NotContain(sql => sql.Contains("cdc:sqlserver:grant-connector-access"));
@@ -1915,14 +1949,14 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
     }
 
     [Test]
-    public async Task It_should_reject_gating_role_select_on_unexpected_cdc_schema_object()
+    public async Task It_should_reject_gating_role_select_on_unexpected_cdc_metadata_object()
     {
         var executor = ExistingArtifactsWithConnectorAccess(
             new RecordingSqlServerConnectorAccess
             {
                 GatingRoleExists = true,
                 GatingRoleDirectMembers = ["connector_principal"],
-                GatingRoleExplicitPermissions = ["cdc.unexpected_CT.SELECT"],
+                GatingRoleExplicitPermissions = ["cdc.index_columns.SELECT"],
                 DatabaseConnect = true,
                 DocumentSelect = true,
                 DocumentCacheSelect = true,
@@ -1944,7 +1978,7 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
                 diagnostic.Code == "CDC_SQLSERVER_GATING_ROLE_MISMATCH"
                 && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
                 && diagnostic.SafeName.Value == "dms_binding_gate"
-                && diagnostic.ObservedValue!.Contains("permissions:cdc.unexpected_CT.SELECT")
+                && diagnostic.ObservedValue!.Contains("permissions:cdc.index_columns.SELECT")
             );
         result
             .ArtifactInventory.Should()
@@ -1953,7 +1987,7 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
                 && observation.SafeArtifactName.Value == "dms_binding_gate"
                 && observation.State == CdcProviderArtifactState.Mismatched
                 && observation.SafeObservedValues["gating_role_explicit_permissions"]
-                    == "cdc.unexpected_CT.SELECT"
+                    == "cdc.index_columns.SELECT"
             );
         executor.ExecutedSql.Should().NotContain(sql => sql.Contains("cdc:sqlserver:grant-connector-access"));
     }
@@ -2045,8 +2079,8 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
                 observation.ArtifactKind == CdcProviderArtifactKind.SqlServerGatingRole
                 && observation.SafeArtifactName.Value == "dms_binding_gate"
                 && observation.State == CdcProviderArtifactState.Mismatched
-                && observation.SafeObservedValues["expected_cdc_object_count"] == "3"
-                && observation.SafeObservedValues["gating_role_cdc_object_select_count"] == "2"
+                && observation.SafeObservedValues["expected_cdc_object_count"] == "5"
+                && observation.SafeObservedValues["gating_role_cdc_object_select_count"] == "4"
                 && observation.SafeObservedValues["missing_gating_role_cdc_object_selects"]
                     == "cdc.fn_cdc_get_all_changes_dms_binding_document.SELECT"
             );
@@ -2607,7 +2641,7 @@ internal sealed class RecordingSqlServerConnectorAccess
 
     public IReadOnlyList<string> GatingRoleExplicitPermissions { get; init; } = [];
 
-    public IReadOnlyList<string> MissingGatingRoleCdcObjectSelects { get; init; } = [];
+    public IReadOnlyList<string> MissingGatingRoleCdcObjectSelects { get; set; } = [];
 
     public IReadOnlyList<string> DisallowedDatabaseRoles { get; init; } = [];
 
@@ -2890,6 +2924,12 @@ internal sealed class RecordingSqlServerCdcExecutor
             _connectorAccess.HeartbeatSelect = true;
             _connectorAccess.HeartbeatSequenceUpdate = true;
             _connectorAccess.HeartbeatAtUpdate = true;
+            _connectorAccess.MissingGatingRoleCdcObjectSelects = _connectorAccess
+                .MissingGatingRoleCdcObjectSelects.Except(
+                    ["cdc.captured_columns.SELECT", "cdc.change_tables.SELECT"],
+                    StringComparer.Ordinal
+                )
+                .ToArray();
         }
 
         return Task.CompletedTask;
@@ -3154,6 +3194,7 @@ internal sealed class RecordingSqlServerCdcExecutor
                 && expected.Contains(capture.CaptureInstanceName.Value)
             )
             .Select(capture => $"cdc.fn_cdc_get_all_changes_{capture.CaptureInstanceName.Value}.SELECT")
+            .Concat(["cdc.captured_columns.SELECT", "cdc.change_tables.SELECT"])
             .Order(StringComparer.Ordinal)
             .ToArray();
     }

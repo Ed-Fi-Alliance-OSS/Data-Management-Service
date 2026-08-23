@@ -121,6 +121,7 @@ public class Given_CdcConnectorTemplateGoldenSnapshots
             .Be(
                 """
                 connector.class=io.debezium.connector.sqlserver.SqlServerConnector
+                data.query.mode=function
                 database.hostname=sqlserver.internal
                 database.names=edfi_datastore
                 database.password=${env:CDC_DATABASE_PASSWORD}

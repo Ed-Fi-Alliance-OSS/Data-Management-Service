@@ -205,6 +205,7 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
         "tombstones.on.delete",
         "errors.tolerance",
         "statistics.metrics.enabled",
+        "data.query.mode",
         "snapshot.isolation.mode",
         "snapshot.mode",
         "heartbeat.interval.ms",

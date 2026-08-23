@@ -15,6 +15,12 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
     private static readonly ISqlDialect _dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
     private static readonly CdcSafeName _databaseCdcSafeName = new("sqlserver_database_cdc");
     private static readonly CdcSafeName _captureInstancesSafeName = new("sqlserver_cdc_capture_instances");
+    private static readonly IReadOnlySet<string> _requiredCdcMetadataSelectPermissionTokens =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            "cdc.captured_columns.SELECT",
+            "cdc.change_tables.SELECT",
+        };
 
     private static IReadOnlyList<CdcSourceTableKind> CaptureTableOrder =>
         CdcSourceInventoryContract.RequiredSourceTableKinds;
@@ -822,11 +828,19 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             gatingRoleExists
             && gatingRoleDirectMemberPrincipalIds.Count > 0
             && !PrincipalIdsAreExactConnectorMember(gatingRoleDirectMemberPrincipalIds, connectorPrincipalId);
-        var expectedCdcObjectInventoryIsReadable = expectedCdcObjectCount >= CaptureTableOrder.Count;
+        var expectedCdcObjectInventoryIsReadable =
+            expectedCdcObjectCount
+            >= CaptureTableOrder.Count + _requiredCdcMetadataSelectPermissionTokens.Count;
         var gatingRoleCdcObjectSelectsAreExact =
             expectedCdcObjectInventoryIsReadable
             && gatingRoleCdcObjectSelectCount == expectedCdcObjectCount
             && missingGatingRoleCdcObjectSelects.Count == 0;
+        var missingGatingRoleCdcMetadataSelectsAreGrantable =
+            expectedCdcObjectInventoryIsReadable
+            && missingGatingRoleCdcObjectSelects.Count > 0
+            && gatingRoleCdcObjectSelectCount + missingGatingRoleCdcObjectSelects.Count
+                == expectedCdcObjectCount
+            && missingGatingRoleCdcObjectSelects.All(_requiredCdcMetadataSelectPermissionTokens.Contains);
         var gatingRoleShapeIsGrantable =
             gatingRoleExists
             && gatingRoleIsNormalRole
@@ -836,7 +850,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             && gatingRoleExplicitPermissions.Count == 0
             && expectedCaptureInstancesUsingRole == CaptureTableOrder.Count
             && unexpectedCaptureInstancesUsingRole.Count == 0
-            && gatingRoleCdcObjectSelectsAreExact;
+            && (gatingRoleCdcObjectSelectsAreExact || missingGatingRoleCdcMetadataSelectsAreGrantable);
         var connectorIdentityIsGrantable =
             connectorExists
             && connectorIsDatabasePrincipal
@@ -856,7 +870,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             && gatingRoleShapeIsGrantable
             && !hasForbiddenPrivileges
             && sourceSelectDenials.Count == 0
-            && missingRequiredPrivileges.Count > 0;
+            && (missingRequiredPrivileges.Count > 0 || missingGatingRoleCdcMetadataSelectsAreGrantable);
         var isExactMatch =
             connectorIdentityIsGrantable
             && gatingRoleExists
@@ -1042,6 +1056,14 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                         N'fn_cdc_get_net_changes_' + capture_info.capture_instance
                     )
                 WHERE capture_info.role_name = @gating_role_name
+                UNION ALL
+                SELECT object_info.object_id
+                FROM sys.schemas schema_info
+                INNER JOIN sys.objects object_info
+                    ON object_info.schema_id = schema_info.schema_id
+                    AND object_info.name IN (N'captured_columns', N'change_tables')
+                    AND object_info.type = N'U'
+                WHERE schema_info.name = N'cdc'
             ),
             connector AS (
                 SELECT TOP (1)
@@ -1856,6 +1878,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             END;
 
             GRANT CONNECT TO {connectorPrincipal};
+            GRANT SELECT ON OBJECT::[cdc].[change_tables] TO {gatingRole};
+            GRANT SELECT ON OBJECT::[cdc].[captured_columns] TO {gatingRole};
             GRANT SELECT ON OBJECT::{document.EmittedQuotedTableName} TO {connectorPrincipal};
             GRANT SELECT ON OBJECT::{documentCache.EmittedQuotedTableName} TO {connectorPrincipal};
             GRANT SELECT ON OBJECT::{heartbeat.EmittedQuotedTableName} TO {connectorPrincipal};
@@ -1903,6 +1927,20 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                         N'fn_cdc_get_net_changes_' + capture_info.capture_instance
                     )
                 WHERE capture_info.role_name = @gating_role_name;
+
+                INSERT INTO @expected_capture_cdc_objects (object_id)
+                SELECT object_info.object_id
+                FROM sys.schemas schema_info
+                INNER JOIN sys.objects object_info
+                    ON object_info.schema_id = schema_info.schema_id
+                    AND object_info.name IN (N'captured_columns', N'change_tables')
+                    AND object_info.type = N'U'
+                WHERE schema_info.name = N'cdc'
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM @expected_capture_cdc_objects expected_cdc_object
+                    WHERE expected_cdc_object.object_id = object_info.object_id
+                );
 
                 SELECT @expected_capture_instances_using_role = COUNT_BIG(*)
                 FROM cdc.change_tables capture_info
@@ -3673,7 +3711,9 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 
         var gatingRoleMissingAfterExpectedCaptures =
             !gatingRoleExists && expectedCaptureInstancesUsingRole == CaptureTableOrder.Count;
-        var expectedCdcObjectInventoryIsReadable = expectedCdcObjectCount >= CaptureTableOrder.Count;
+        var expectedCdcObjectInventoryIsReadable =
+            expectedCdcObjectCount
+            >= CaptureTableOrder.Count + _requiredCdcMetadataSelectPermissionTokens.Count;
         var gatingRoleCdcObjectSelectMismatch =
             !expectedCdcObjectInventoryIsReadable
             || gatingRoleCdcObjectSelectCount != expectedCdcObjectCount

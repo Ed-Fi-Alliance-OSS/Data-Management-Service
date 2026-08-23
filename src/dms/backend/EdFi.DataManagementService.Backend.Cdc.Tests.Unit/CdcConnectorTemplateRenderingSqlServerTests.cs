@@ -59,6 +59,7 @@ public class Given_CdcConnectorTemplateSqlServerRendering
             .Config.Should()
             .Contain("message.key.columns", @"dms\.DocumentCache:DocumentUuid;dms\.Document:DocumentUuid");
         result.Config.Should().Contain("time.precision.mode", "isostring");
+        result.Config.Should().Contain("data.query.mode", "function");
         result.Config.Should().Contain("unavailable.value.placeholder", "__debezium_unavailable_value");
         result.Config.Should().Contain("poll.interval.ms", "2000");
         result.Config.Should().Contain("snapshot.isolation.mode", "snapshot");
