@@ -436,7 +436,7 @@ public class Given_CdcProviderSetupContract_Request
         Action action = () =>
             CdcProviderSetupContractTestData.BuildPostgresqlRequest(sourceInventory: misorderedInventory);
 
-        action.Should().Throw<ArgumentException>().WithMessage("*table-ordinal order*");
+        action.Should().Throw<ArgumentException>().WithMessage("*contiguous ordinal order starting at 1*");
     }
 
     [Test]
