@@ -201,6 +201,22 @@ public class Given_CdcConnectorTemplateContractTests
     }
 
     [Test]
+    public void It_rejects_duplicate_string_property_names()
+    {
+        var properties = new DuplicateKeyReadOnlyDictionary(
+            new("database.hostname", "postgresql-1.internal"),
+            new("database.hostname", "postgresql-2.internal")
+        );
+
+        Action act = () => new CdcProviderConnectionProperties(CdcProvider.Postgresql, properties);
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("properties.Key")
+            .WithMessage("*property names must be unique*");
+    }
+
+    [Test]
     public void It_requires_positive_binding_generations()
     {
         Action zeroBindingGeneration = () =>
@@ -675,6 +691,40 @@ public class Given_CdcConnectorTemplateContractTests
             BuildProviderArtifactNames(provider),
             SourceFingerprintFor(provider)
         );
+
+    private sealed class DuplicateKeyReadOnlyDictionary(params KeyValuePair<string, string>[] properties)
+        : IReadOnlyDictionary<string, string>
+    {
+        public string this[string key] => properties.Last(property => property.Key == key).Value;
+
+        public IEnumerable<string> Keys => properties.Select(property => property.Key);
+
+        public IEnumerable<string> Values => properties.Select(property => property.Value);
+
+        public int Count => properties.Length;
+
+        public bool ContainsKey(string key) => Array.Exists(properties, property => property.Key == key);
+
+        public IEnumerator<KeyValuePair<string, string>> GetEnumerator() =>
+            ((IEnumerable<KeyValuePair<string, string>>)properties).GetEnumerator();
+
+        public bool TryGetValue(string key, out string value)
+        {
+            for (int index = properties.Length - 1; index >= 0; index--)
+            {
+                if (properties[index].Key == key)
+                {
+                    value = properties[index].Value;
+                    return true;
+                }
+            }
+
+            value = string.Empty;
+            return false;
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
 
     [Test]
     public void It_rejects_registration_payloads_that_conflict_with_binding_identity_or_result_config()

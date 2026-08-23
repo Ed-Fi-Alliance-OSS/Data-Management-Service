@@ -612,12 +612,20 @@ internal static class CdcConnectorTemplateContractValidation
         foreach (var property in properties.OrderBy(pair => pair.Key, StringComparer.Ordinal))
         {
             string propertyName = ValidateRequiredSafeText(property.Key, $"{parameterName}.Key");
-            normalizedProperties[propertyName] = ValidateSafeText(
+            string propertyValue = ValidateSafeText(
                 property.Value,
                 $"{parameterName}[{propertyName}]",
                 allowEmptyValues,
                 allowsLineBreaks(propertyName)
             );
+
+            if (!normalizedProperties.TryAdd(propertyName, propertyValue))
+            {
+                throw new ArgumentException(
+                    "CDC connector template property names must be unique.",
+                    $"{parameterName}.Key"
+                );
+            }
         }
 
         return normalizedProperties;
