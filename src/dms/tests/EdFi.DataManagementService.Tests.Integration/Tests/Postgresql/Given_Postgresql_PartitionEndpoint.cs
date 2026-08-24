@@ -89,4 +89,11 @@ public sealed class Given_Postgresql_PartitionEndpoint : PostgresqlApiIntegratio
             Harness,
             CollectionPagingTelemetryLabel.PostgresqlProvider
         );
+
+    [Test]
+    public Task It_records_a_partition_validation_rejection_without_reaching_the_backend() =>
+        PartitionEndpointScenario.It_records_a_partition_validation_rejection_without_reaching_the_backend(
+            Harness,
+            CollectionPagingTelemetryLabel.PostgresqlProvider
+        );
 }

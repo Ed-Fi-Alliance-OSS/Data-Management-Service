@@ -180,6 +180,58 @@ internal sealed class CollectionPagingMetricCollector : IDisposable
     }
 
     /// <summary>
+    /// Asserts the measurement set of exactly one request answered by parameter validation: the request
+    /// counter, and nothing beside it.
+    /// </summary>
+    /// <remarks>
+    /// The one emission that cannot go through <see cref="AssertSingleRequest" />, because that helper
+    /// requires the duration a rejection deliberately does not record. Nothing executed, so a duration
+    /// sample would report the cost of parsing a query string as a read latency, and a size or count
+    /// measurement would report the very value that was refused. Asserting the absences by name is the
+    /// point: the counter alone is the whole contract for this outcome.
+    /// </remarks>
+    public CollectionPagingMeasurement AssertSingleValidationRejection(
+        string expectedProvider,
+        string expectedPagingMode
+    )
+    {
+        AssertDimensionsBounded();
+
+        var request = Single(CollectionPagingTelemetry.RequestCounterName);
+
+        request.Value.Should().Be(1, "the request counter counts one request per emission");
+        request.PagingMode.Should().Be(expectedPagingMode);
+        request.CommandCategory.Should().Be(CollectionPagingTelemetryLabel.NoCommandCategory);
+        request.Provider.Should().Be(expectedProvider);
+        request.Outcome.Should().Be(CollectionPagingTelemetryLabel.ValidationRejectedOutcome);
+
+        AssertNotRecorded(
+            CollectionPagingTelemetry.DurationName,
+            "is recorded only where backend execution was attempted, and a rejection would contribute "
+                + "the cost of parsing a query string as a read latency"
+        );
+
+        foreach (
+            string sizeOrCount in new[]
+            {
+                CollectionPagingTelemetry.RequestedPageSizeName,
+                CollectionPagingTelemetry.ReturnedPageSizeName,
+                CollectionPagingTelemetry.RequestedPartitionCountName,
+                CollectionPagingTelemetry.ReturnedPartitionCountName,
+            }
+        )
+        {
+            AssertNotRecorded(
+                sizeOrCount,
+                "is not recorded for a rejection, because the size or count it would carry may be the "
+                    + "value that was refused"
+            );
+        }
+
+        return request;
+    }
+
+    /// <summary>
     /// The single request-counter measurement observed, with its dimensions and the duration that must
     /// accompany a request the host actually executed.
     /// </summary>
@@ -282,13 +334,24 @@ internal sealed class CollectionPagingMetricCollector : IDisposable
         AssertNotRecorded(instrumentName);
     }
 
-    private void AssertNotRecorded(string instrumentName) =>
+    /// <summary>
+    /// Asserts an instrument carries no measurement, naming why it must not.
+    /// </summary>
+    /// <param name="because">
+    /// Completes the sentence "'&lt;instrument&gt;' …". Defaulted to the wrong-operation reason, which is
+    /// what the page and partition assertions above mean; a validation rejection excludes instruments
+    /// that do belong to its operation and says so in its own words.
+    /// </param>
+    private void AssertNotRecorded(
+        string instrumentName,
+        string because = "does not belong to this operation and would mix two units of measure"
+    ) =>
         Measurements
             .Should()
             .NotContain(
                 measurement =>
                     string.Equals(measurement.InstrumentName, instrumentName, StringComparison.Ordinal),
-                $"'{instrumentName}' does not belong to this operation and would mix two units of measure"
+                $"'{instrumentName}' {because}"
             );
 
     private void OnMeasurement<T>(

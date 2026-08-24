@@ -58,4 +58,11 @@ public sealed class Given_Mssql_CursorPagingExecution : MssqlApiIntegrationTestB
             Harness,
             CollectionPagingTelemetryLabel.SqlServerProvider
         );
+
+    [Test]
+    public Task It_records_a_validation_rejection_without_reaching_the_backend() =>
+        CursorPagingExecutionScenario.It_records_a_validation_rejection_without_reaching_the_backend(
+            Harness,
+            CollectionPagingTelemetryLabel.SqlServerProvider
+        );
 }

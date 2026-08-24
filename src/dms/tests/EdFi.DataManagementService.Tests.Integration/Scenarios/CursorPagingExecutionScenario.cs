@@ -441,6 +441,101 @@ internal static class CursorPagingExecutionScenario
         );
     }
 
+    /// <summary>
+    /// What a request the API refuses contributes: one count, and nothing else.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The only outcome emitted from a middleware rather than a handler, through the one interface method
+    /// that records no duration, and the only one whose whole measurement set is a single counter. Every
+    /// other case in this suite reaches the meter through a handler, so none of them would notice a
+    /// rejection that stopped being counted, started carrying a duration, or contributed a page size —
+    /// and the aggregation guidance treats <c>validation_rejected</c> as a share of counted traffic,
+    /// which a duration sample of a few microseconds or a phantom size sample would both distort.
+    /// </para>
+    /// <para>
+    /// Both paging modes are exercised because the mode of a rejected request is read from the query
+    /// string, not from request state: <c>RequestInfo.CollectionPaging</c> is assigned only at the
+    /// accepting exit, so a rejected cursor request still carries the traditional default and reporting
+    /// from request state would file every one of them as traditional traffic. A unit test can only
+    /// assert that against a hand-built request; here the query string is the one the client sent.
+    /// </para>
+    /// <para>
+    /// The provider is the point of running this end to end at all. It is read from the resolved mapping
+    /// set, and the documentation publishes <c>unknown</c> as a server assembly fault that is not a
+    /// bucket to chart — a claim that rests entirely on mapping-set resolution running ahead of paging
+    /// validation in the composed pipeline. The middleware's own tests assign that mapping set
+    /// themselves, so this is the only place that ordering is actually exercised.
+    /// </para>
+    /// </remarks>
+    public static async Task It_records_a_validation_rejection_without_reaching_the_backend(
+        ApiIntegrationHarness harness,
+        string expectedProvider
+    )
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedProvider);
+
+        ApiIntegrationQueryRecorder recorder =
+            harness.QueryRecorder
+            ?? throw new InvalidOperationException(
+                "This scenario counts database commands and requires CaptureQueryPlans."
+            );
+
+        using var metrics = CollectionPagingMetricCollector.Start();
+
+        // A traditional fault: a negative limit. Neither cursor parameter is present, so the request is
+        // counted as the traditional traffic it is.
+        await AssertRejectionIsCountedAsync(
+            harness,
+            recorder,
+            metrics,
+            $"{MergeItemsEndpoint}?limit=-1",
+            expectedProvider,
+            CollectionPagingTelemetryLabel.TraditionalPagingMode
+        );
+
+        // A cursor fault: a page size with no token to apply it to. The request never reaches the
+        // accepting exit, so nothing assigned it a paging mode - and it must still be counted as cursor.
+        await AssertRejectionIsCountedAsync(
+            harness,
+            recorder,
+            metrics,
+            $"{MergeItemsEndpoint}?pageSize=2",
+            expectedProvider,
+            CollectionPagingTelemetryLabel.CursorPagingMode
+        );
+    }
+
+    private static async Task AssertRejectionIsCountedAsync(
+        ApiIntegrationHarness harness,
+        ApiIntegrationQueryRecorder recorder,
+        CollectionPagingMetricCollector metrics,
+        string requestUri,
+        string expectedProvider,
+        string expectedPagingMode
+    )
+    {
+        metrics.Clear();
+        int commandsBefore = recorder.DatabaseCommands;
+
+        using (HttpResponseMessage response = await harness.HttpClient.GetAsync(requestUri))
+        {
+            string body = await response.Content.ReadAsStringAsync();
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);
+            (recorder.DatabaseCommands - commandsBefore)
+                .Should()
+                .Be(
+                    0,
+                    "paging validation answers the request before the handler runs, so a rejection "
+                        + "reaches no backend seam at all"
+                );
+        }
+
+        metrics.AssertSingleValidationRejection(expectedProvider, expectedPagingMode);
+    }
+
     private static async Task<CursorWalk> WalkFromFirstPageAsync(
         ApiIntegrationHarness harness,
         string endpoint,

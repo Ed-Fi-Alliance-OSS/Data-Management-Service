@@ -59,4 +59,11 @@ public sealed class Given_Postgresql_CursorPagingExecution : PostgresqlApiIntegr
             Harness,
             CollectionPagingTelemetryLabel.PostgresqlProvider
         );
+
+    [Test]
+    public Task It_records_a_validation_rejection_without_reaching_the_backend() =>
+        CursorPagingExecutionScenario.It_records_a_validation_rejection_without_reaching_the_backend(
+            Harness,
+            CollectionPagingTelemetryLabel.PostgresqlProvider
+        );
 }

@@ -510,6 +510,70 @@ internal static class PartitionEndpointScenario
         );
     }
 
+    /// <summary>
+    /// What a <c>partitions</c> request the API refuses contributes: one count, and nothing else.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The GET-many twin of this case lives in <see cref="CursorPagingExecutionScenario" />. Both are
+    /// needed because the two rejections come from separate steps: this pipeline swaps in its own
+    /// validating middleware, which owns the partition count and reports the partition mode on every
+    /// exit, and a wiring change that left it uncounted would be invisible to the GET-many proof.
+    /// </para>
+    /// <para>
+    /// The provider is why this runs end to end rather than as a unit test. It is read from the resolved
+    /// mapping set, and the documentation publishes <c>unknown</c> as a server assembly fault that is not
+    /// a bucket to chart — a claim resting entirely on mapping-set resolution running ahead of this step
+    /// in the composed pipeline. The middleware's own tests assign that mapping set themselves.
+    /// </para>
+    /// <para>
+    /// No seeding: a rejection is answered before any collection is read, so what the collection holds
+    /// cannot change the measurement, and the zero-command assertion says exactly that.
+    /// </para>
+    /// </remarks>
+    public static async Task It_records_a_partition_validation_rejection_without_reaching_the_backend(
+        ApiIntegrationHarness harness,
+        string expectedProvider
+    )
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedProvider);
+
+        ApiIntegrationQueryRecorder recorder =
+            harness.QueryRecorder
+            ?? throw new InvalidOperationException(
+                "This scenario counts database commands and requires CaptureQueryPlans."
+            );
+
+        using var metrics = CollectionPagingMetricCollector.Start();
+
+        metrics.Clear();
+        int commandsBefore = recorder.DatabaseCommands;
+
+        using (
+            HttpResponseMessage response = await harness.HttpClient.GetAsync(
+                $"{MergeItemsPartitionsEndpoint}?number=0"
+            )
+        )
+        {
+            string body = await response.Content.ReadAsStringAsync();
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);
+            (recorder.DatabaseCommands - commandsBefore)
+                .Should()
+                .Be(
+                    0,
+                    "partition validation answers the request before the handler runs, so a rejection "
+                        + "reaches no backend seam at all"
+                );
+        }
+
+        metrics.AssertSingleValidationRejection(
+            expectedProvider,
+            CollectionPagingTelemetryLabel.PartitionPagingMode
+        );
+    }
+
     private static async Task AssertMethodNotAllowedAsync(HttpResponseMessage response)
     {
         using (response)
