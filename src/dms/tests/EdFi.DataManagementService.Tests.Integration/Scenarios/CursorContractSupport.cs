@@ -25,6 +25,7 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 internal static class CursorContractSupport
 {
     internal const string MergeItemsEndpoint = "/data/ed-fi/profileRootOnlyMergeItems";
+    internal const string MergeItemsPartitionsEndpoint = $"{MergeItemsEndpoint}/partitions";
     internal const string DescriptorEndpoint = "/data/ed-fi/schoolTypeDescriptors";
     internal const string NextPageTokenHeaderName = "Next-Page-Token";
     internal const string TotalCountHeaderName = "Total-Count";
@@ -96,6 +97,74 @@ internal static class CursorContractSupport
             .BePositive("a continuation resumes after the keys the page just selected");
 
         return new PageResponse(documentIds, nextPageToken, totalCount);
+    }
+
+    /// <summary>
+    /// Reads a partitions response, asserting only that it succeeded, and returns the tokens it handed
+    /// out in the order the response listed them.
+    /// </summary>
+    internal static async Task<IReadOnlyList<string>> ReadPageTokensAsync(
+        ApiIntegrationHarness harness,
+        string requestUri
+    )
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+
+        using HttpResponseMessage response = await harness.HttpClient.GetAsync(requestUri);
+        string body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+
+        return
+        [
+            .. JsonNode.Parse(body)!["pageTokens"]!
+                .AsArray()
+                .Select(static pageToken => pageToken!.GetValue<string>()),
+        ];
+    }
+
+    /// <summary>
+    /// Walks one range to its terminal empty page and returns every document id it yielded.
+    /// </summary>
+    /// <remarks>
+    /// The walk only ever follows a continuation the host handed it, so a partition token the handler,
+    /// the codec, request validation, and page selection did not agree on would yield nothing here
+    /// rather than quietly resolving to a different range.
+    /// </remarks>
+    internal static async Task<IReadOnlyList<string>> WalkFromTokenAsync(
+        ApiIntegrationHarness harness,
+        string endpoint,
+        string pageToken,
+        int pageSize,
+        int maximumWalkedPages = 200
+    )
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+        ArgumentNullException.ThrowIfNull(pageToken);
+
+        List<string> documentIds = [];
+        string? nextPageToken = pageToken;
+
+        for (var page = 0; page < maximumWalkedPages; page++)
+        {
+            var pageResponse = await ReadPageAsync(
+                harness,
+                $"{endpoint}?pageToken={Uri.EscapeDataString(nextPageToken!)}&pageSize={pageSize}"
+            );
+
+            documentIds.AddRange(pageResponse.DocumentIds);
+
+            if (pageResponse.NextPageToken is null)
+            {
+                return documentIds;
+            }
+
+            nextPageToken = pageResponse.NextPageToken;
+        }
+
+        throw new InvalidOperationException(
+            $"A walk of '{endpoint}' did not terminate within {maximumWalkedPages} pages."
+        );
     }
 
     /// <summary>
