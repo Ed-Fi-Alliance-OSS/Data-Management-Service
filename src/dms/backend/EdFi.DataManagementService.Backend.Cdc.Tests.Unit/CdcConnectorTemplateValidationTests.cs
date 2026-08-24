@@ -61,6 +61,23 @@ public class Given_CdcConnectorTemplateValidationTests
     }
 
     [Test]
+    public void It_accepts_empty_kafka_endpoint_identification_algorithm()
+    {
+        CdcConnectorTemplateValidationResult result = Validate(
+            CdcProvider.Postgresql,
+            kafkaSecurityProperties: new Dictionary<string, string>
+            {
+                ["security.protocol"] = "SSL",
+                ["ssl.endpoint.identification.algorithm"] = "",
+            }
+        );
+
+        using var _ = new AssertionScope();
+        result.IsValid.Should().BeTrue();
+        result.Diagnostics.Should().BeEmpty();
+    }
+
+    [Test]
     public void It_accepts_multiline_kafka_certificate_chain_material()
     {
         const string truststoreCertificateChain =
@@ -1432,6 +1449,42 @@ public class Given_CdcConnectorTemplateValidationTests
         string.Join("|", result.Diagnostics.SelectMany(DiagnosticText))
             .Should()
             .NotContain("${env:CDC_DATABASE_PASSWORD}");
+    }
+
+    [Test]
+    public void It_treats_null_sqlserver_snapshot_isolation_observed_values_as_missing_during_internal_request_validation()
+    {
+        CdcProviderArtifactObservation malformedSnapshotIsolationArtifact =
+            BuildSqlServerSnapshotIsolationArtifact() with
+            {
+                SafeObservedValues = null!,
+            };
+
+        CdcConnectorTemplateValidationResult result = Validate(
+            BuildRequest(
+                CdcProvider.SqlServer,
+                artifactInventory: BuildSqlServerArtifactInventory()
+                    .Select(artifact =>
+                        artifact.SafeArtifactName.Value == "sqlserver_snapshot_isolation"
+                            ? malformedSnapshotIsolationArtifact
+                            : artifact
+                    )
+                    .ToArray()
+            )
+        );
+
+        using var _ = new AssertionScope();
+        result.IsValid.Should().BeFalse();
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Code
+                    == CdcConnectorTemplateDiagnosticCodes.SqlServerSnapshotIsolationMetadataRequired
+                && diagnostic.ExpectedValue
+                    == "one usable SQL Server snapshot-isolation artifact with allow_snapshot_isolation=True"
+                && diagnostic.ObservedValue == "missing-allow_snapshot_isolation"
+                && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Render
+            );
     }
 
     [Test]

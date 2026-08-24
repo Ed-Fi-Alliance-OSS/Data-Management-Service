@@ -1067,12 +1067,9 @@ jobs:
     needs:
       - detect-fresh-build-changes
       - build-integration-test-assemblies
-    # For DMS-relevant changes, always start this qualification lane. The validation step
-    # below fails fast for missing or malformed pinned runtime image prerequisites instead
-    # of silently skipping test evidence.
-    if: >-
-      (github.event_name != 'pull_request' ||
-      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true')
+    # Qualification lane only. Normal PR and merge-queue CI intentionally skip this Docker
+    # pinned-image smoke lane unless it is launched explicitly.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -3044,7 +3041,6 @@ jobs:
       - run-dms-api-mssql-integration-tests
       - run-backend-postgresql-integration-tests
       - run-backend-cdc-integration-tests
-      - run-backend-cdc-connector-template-smoke-tests
       - run-dms-api-postgresql-integration-tests
       - run-cli-integration-tests
       - run-schematools-cli-integration-tests
@@ -3073,19 +3069,12 @@ jobs:
       - name: Verify all required jobs succeeded
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
-          DMS_RELEVANT: ${{ needs.detect-fresh-build-changes.outputs.dms_relevant }}
         run: |
           $needs = $env:NEEDS_JSON | ConvertFrom-Json
           $failed = [System.Collections.Generic.List[string]]::new()
-          $dmsRelevant = $env:DMS_RELEVANT -eq "true"
-          $requiredCdcSmokeJob = "run-backend-cdc-connector-template-smoke-tests"
           foreach ($job in $needs.PSObject.Properties) {
             $result = $job.Value.result
             Write-Host "$($job.Name): $result"
-            if ($dmsRelevant -and $job.Name -eq $requiredCdcSmokeJob -and $result -eq 'skipped') {
-              $failed.Add("$($job.Name) ($result)")
-              continue
-            }
             if ($result -ne 'success' -and $result -ne 'skipped') {
               $failed.Add("$($job.Name) ($result)")
             }

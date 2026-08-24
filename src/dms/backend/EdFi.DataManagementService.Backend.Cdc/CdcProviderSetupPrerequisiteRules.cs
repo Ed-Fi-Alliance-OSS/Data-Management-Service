@@ -826,7 +826,8 @@ internal static class CdcProviderSetupPrerequisiteRules
         }
 
         if (
-            !artifact.SafeObservedValues.TryGetValue("allow_snapshot_isolation", out string? value)
+            artifact.SafeObservedValues is null
+            || !artifact.SafeObservedValues.TryGetValue("allow_snapshot_isolation", out string? value)
             || string.IsNullOrWhiteSpace(value)
         )
         {

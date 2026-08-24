@@ -545,6 +545,13 @@ internal static class CdcConnectorTemplateContractValidation
         "ssl.keystore.certificate.chain",
     };
 
+    private static readonly IReadOnlySet<string> _kafkaEmptyValuePropertyNames = new HashSet<string>(
+        StringComparer.Ordinal
+    )
+    {
+        "ssl.endpoint.identification.algorithm",
+    };
+
     private static readonly IReadOnlyList<string> _generatedKafkaSecurityPrefixes =
     [
         "producer.override.",
@@ -560,12 +567,26 @@ internal static class CdcConnectorTemplateContractValidation
     public static IReadOnlyDictionary<string, string> NormalizeStringProperties(
         IReadOnlyDictionary<string, string> properties,
         string parameterName
-    ) => NormalizeStringProperties(properties, parameterName, allowEmptyValues: false, AllowsNoLineBreaks);
+    ) =>
+        NormalizeStringProperties(
+            properties,
+            parameterName,
+            allowEmptyValues: false,
+            AllowsNoLineBreaks,
+            AllowsNoEmptyValueExceptions
+        );
 
     public static IReadOnlyDictionary<string, string> NormalizeStringPropertiesAllowingEmptyValues(
         IReadOnlyDictionary<string, string> properties,
         string parameterName
-    ) => NormalizeStringProperties(properties, parameterName, allowEmptyValues: true, AllowsNoLineBreaks);
+    ) =>
+        NormalizeStringProperties(
+            properties,
+            parameterName,
+            allowEmptyValues: true,
+            AllowsNoLineBreaks,
+            AllowsNoEmptyValueExceptions
+        );
 
     public static IReadOnlyDictionary<string, string> NormalizeKafkaClientSecurityProperties(
         IReadOnlyDictionary<string, string> properties,
@@ -575,7 +596,8 @@ internal static class CdcConnectorTemplateContractValidation
             properties,
             parameterName,
             allowEmptyValues: false,
-            IsKafkaCertificateChainProperty
+            IsKafkaCertificateChainProperty,
+            IsKafkaEmptyValueProperty
         );
 
     public static IReadOnlyDictionary<string, string> NormalizeConnectorStringProperties(
@@ -586,7 +608,8 @@ internal static class CdcConnectorTemplateContractValidation
             properties,
             parameterName,
             allowEmptyValues: false,
-            IsConnectorCertificateChainProperty
+            IsConnectorCertificateChainProperty,
+            IsConnectorKafkaEmptyValueProperty
         );
 
     public static IReadOnlyDictionary<string, string> NormalizeConnectorStringPropertiesAllowingEmptyValues(
@@ -597,14 +620,16 @@ internal static class CdcConnectorTemplateContractValidation
             properties,
             parameterName,
             allowEmptyValues: true,
-            IsConnectorCertificateChainProperty
+            IsConnectorCertificateChainProperty,
+            IsConnectorKafkaEmptyValueProperty
         );
 
     private static IReadOnlyDictionary<string, string> NormalizeStringProperties(
         IReadOnlyDictionary<string, string> properties,
         string parameterName,
         bool allowEmptyValues,
-        Func<string, bool> allowsLineBreaks
+        Func<string, bool> allowsLineBreaks,
+        Func<string, bool> allowsEmptyValue
     )
     {
         ArgumentNullException.ThrowIfNull(properties);
@@ -613,10 +638,12 @@ internal static class CdcConnectorTemplateContractValidation
         foreach (var property in properties.OrderBy(pair => pair.Key, StringComparer.Ordinal))
         {
             string propertyName = ValidateRequiredSafeText(property.Key, $"{parameterName}.Key");
+            bool allowEmptyPropertyValue =
+                allowEmptyValues || (property.Value is { Length: 0 } && allowsEmptyValue(propertyName));
             string propertyValue = ValidateSafeText(
                 property.Value,
                 $"{parameterName}[{propertyName}]",
-                allowEmptyValues,
+                allowEmptyPropertyValue,
                 allowsLineBreaks(propertyName)
             );
 
@@ -712,7 +739,22 @@ internal static class CdcConnectorTemplateContractValidation
         return prefix.Length > 0 && IsKafkaCertificateChainProperty(propertyName[prefix.Length..]);
     }
 
+    private static bool IsKafkaEmptyValueProperty(string propertyName) =>
+        _kafkaEmptyValuePropertyNames.Contains(propertyName);
+
+    private static bool IsConnectorKafkaEmptyValueProperty(string propertyName)
+    {
+        string prefix =
+            _generatedKafkaSecurityPrefixes.FirstOrDefault(prefix =>
+                propertyName.StartsWith(prefix, StringComparison.Ordinal)
+            ) ?? string.Empty;
+
+        return prefix.Length > 0 && IsKafkaEmptyValueProperty(propertyName[prefix.Length..]);
+    }
+
     private static bool AllowsNoLineBreaks(string propertyName) => false;
+
+    private static bool AllowsNoEmptyValueExceptions(string propertyName) => false;
 
     private static bool ContainsDisallowedControlCharacter(string value, bool allowLineBreaks) =>
         value.Any(character => char.IsControl(character) && !IsAllowedLineBreak(character, allowLineBreaks));

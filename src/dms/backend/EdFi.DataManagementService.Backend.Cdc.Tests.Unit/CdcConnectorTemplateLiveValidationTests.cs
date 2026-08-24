@@ -57,6 +57,52 @@ public class Given_CdcConnectorTemplateLiveValidationTests
     }
 
     [Test]
+    public void It_renders_and_reads_back_empty_kafka_endpoint_identification_algorithm()
+    {
+        using ServiceProvider serviceProvider = BuildServiceProvider();
+        ICdcConnectorTemplateService service =
+            serviceProvider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateRequest request = BuildRequest(
+            CdcProvider.SqlServer,
+            kafkaSecurityProperties: new Dictionary<string, string>
+            {
+                ["security.protocol"] = "SSL",
+                ["ssl.endpoint.identification.algorithm"] = "",
+            }
+        );
+        CdcConnectorTemplateResult rendered = service.Render(request);
+        Dictionary<string, string> effectiveConfig = CopyConfig(rendered.Config);
+
+        CdcConnectorTemplateResult result = service.ValidateLiveReadBack(
+            new CdcConnectorTemplateEffectiveConfigValidationRequest(
+                request,
+                effectiveConfig,
+                new CdcConnectorProviderSetupEvidence(
+                    BindingGeneration,
+                    BuildProviderSetupResult(CdcProvider.SqlServer)
+                ),
+                BuildSourcePartitionEvidence(request)
+            )
+        );
+
+        using var _ = new AssertionScope();
+        rendered.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        rendered
+            .Config.Should()
+            .Contain("producer.override.ssl.endpoint.identification.algorithm", "")
+            .And.Contain("schema.history.internal.producer.ssl.endpoint.identification.algorithm", "")
+            .And.Contain("schema.history.internal.consumer.ssl.endpoint.identification.algorithm", "");
+        rendered
+            .RegistrationPayload!.Config.Should()
+            .Contain("producer.override.ssl.endpoint.identification.algorithm", "")
+            .And.Contain("schema.history.internal.producer.ssl.endpoint.identification.algorithm", "")
+            .And.Contain("schema.history.internal.consumer.ssl.endpoint.identification.algorithm", "");
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        result.Config.Should().Equal(rendered.Config);
+        result.Diagnostics.Should().BeEmpty();
+    }
+
+    [Test]
     public void It_accepts_exact_externalized_secret_references_during_registration_preflight()
     {
         using ServiceProvider serviceProvider = BuildServiceProvider();
