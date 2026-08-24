@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net.Http.Headers;
 using System.Text.Json.Nodes;
 using FluentAssertions;
 using Microsoft.Playwright;
@@ -30,6 +31,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private const int MaximumWalkedPages = 60;
 
         private readonly List<string> _walkedDocumentIds = [];
+        private readonly List<JsonNode> _walkedDocuments = [];
         private readonly List<string> _partitionTokens = [];
         private string _partitionsCollectionUrl = string.Empty;
         private int _walkedPages;
@@ -53,14 +55,15 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             string separator = string.IsNullOrEmpty(repeatedQuery) ? string.Empty : "&" + repeatedQuery;
 
             _walkedDocumentIds.Clear();
+            _walkedDocuments.Clear();
             _walkedPages = 0;
             _walkEndedEmptyWithoutContinuation = false;
 
             var firstPage = await GetAsync($"{resolved}?limit={pageSize}{separator}");
-            (List<string> ids, string? continuation) = await ReadPageAsync(firstPage, pageSize);
+            (List<JsonNode> documents, string? continuation) = await ReadPageAsync(firstPage, pageSize);
 
             _walkedPages++;
-            _walkedDocumentIds.AddRange(ids);
+            Record(documents);
 
             while (continuation is not null && _walkedPages < MaximumWalkedPages)
             {
@@ -68,14 +71,14 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     $"{resolved}?pageToken={Uri.EscapeDataString(continuation)}"
                         + $"&pageSize={pageSize}{separator}"
                 );
-                (ids, continuation) = await ReadPageAsync(page, pageSize);
+                (documents, continuation) = await ReadPageAsync(page, pageSize);
 
                 _walkedPages++;
-                _walkedDocumentIds.AddRange(ids);
+                Record(documents);
 
                 if (continuation is null)
                 {
-                    _walkEndedEmptyWithoutContinuation = ids.Count == 0;
+                    _walkEndedEmptyWithoutContinuation = documents.Count == 0;
                 }
             }
 
@@ -139,6 +142,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             string separator = string.IsNullOrEmpty(repeatedQuery) ? string.Empty : "&" + repeatedQuery;
 
             _walkedDocumentIds.Clear();
+            _walkedDocuments.Clear();
 
             List<List<string>> perPartition = [];
 
@@ -154,21 +158,20 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                         $"{_partitionsCollectionUrl}?pageToken={Uri.EscapeDataString(continuation)}"
                             + $"&pageSize={pageSize}{separator}"
                     );
-                    (List<string> ids, continuation) = await ReadPageAsync(page, pageSize);
+                    (List<JsonNode> documents, continuation) = await ReadPageAsync(page, pageSize);
 
                     pages++;
-                    partitionIds.AddRange(ids);
+                    partitionIds.AddRange(Record(documents));
 
                     if (continuation is null)
                     {
-                        ids.Should().BeEmpty("a partition ends on the request that selected nothing");
+                        documents.Should().BeEmpty("a partition ends on the request that selected nothing");
                     }
                 }
 
                 pages.Should().BeLessThan(MaximumWalkedPages);
                 partitionIds.Should().OnlyHaveUniqueItems("a partition must not return a document twice");
                 perPartition.Add(partitionIds);
-                _walkedDocumentIds.AddRange(partitionIds);
             }
 
             for (var partition = 0; partition < perPartition.Count; partition++)
@@ -195,6 +198,40 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     expectedCount,
                     "the walk covers exactly the documents this scenario seeded, because the suite "
                         + "resets the data before each scenario"
+                );
+        }
+
+        /// <summary>
+        /// Asserts the walk returned exactly the documents the scenario seeded, compared by a stable
+        /// natural-key field rather than by count.
+        /// </summary>
+        /// <remarks>
+        /// A count plus uniqueness would still pass if one seeded member were missing and a different
+        /// member of the same collection took its place. Naming the expected key values in the feature
+        /// makes the seed an independent oracle rather than something inferred from the response.
+        /// </remarks>
+        [Then("the walk returned exactly these {string} values")]
+        public void ThenTheWalkReturnedExactlyTheseValues(string field, DataTable table)
+        {
+            ArgumentNullException.ThrowIfNull(table);
+
+            string[] expected = [.. table.Rows.Select(row => row[0])];
+
+            string[] observed =
+            [
+                .. _walkedDocuments.Select(document =>
+                    document[field]?.ToString()
+                    ?? throw new InvalidOperationException(
+                        $"A returned document has no '{field}' to compare: {document.ToJsonString()}"
+                    )
+                ),
+            ];
+
+            observed
+                .Should()
+                .BeEquivalentTo(
+                    expected,
+                    $"the walk must return exactly the seeded '{field}' values, no more and no fewer"
                 );
         }
 
@@ -251,14 +288,26 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 .Headers.Should()
                 .NotContainKey(header.ToLowerInvariant(), $"'{header}' must be absent");
 
+        /// <summary>
+        /// Asserts the response's media type exactly, ignoring ordinary parameters such as charset.
+        /// </summary>
+        /// <remarks>
+        /// A prefix comparison would accept any media type whose token merely begins with the expected
+        /// one, so the header is parsed and its media type compared rather than matched textually.
+        /// </remarks>
         [Then("the response content type is {string}")]
         public void ThenTheResponseContentTypeIs(string expected)
         {
             _apiResponse.Headers.Should().ContainKey("content-type");
-            _apiResponse
-                .Headers["content-type"]
+
+            string contentType = _apiResponse.Headers["content-type"];
+
+            MediaTypeHeaderValue
+                .TryParse(contentType, out MediaTypeHeaderValue? parsed)
                 .Should()
-                .StartWith(expected, "the response media type is part of the public contract");
+                .BeTrue($"'{contentType}' must be a parseable media type");
+
+            parsed!.MediaType.Should().Be(expected, "the response media type is part of the public contract");
         }
 
         [Then("the response body has exactly one error {string}")]
@@ -339,6 +388,36 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     "a document with no paths at all would satisfy every absence assertion vacuously"
                 );
 
+        [Then("the served OpenAPI path {string} has operation {string}")]
+        public async Task ThenTheServedOpenApiPathHasOperation(string path, string operation)
+        {
+            JsonObject paths = await ServedPathsAsync();
+
+            paths.Should().ContainKey(path);
+            paths[path]!
+                .AsObject()
+                .Should()
+                .ContainKey(
+                    operation.ToLowerInvariant(),
+                    $"'{path}' must publish its {operation.ToUpperInvariant()} operation"
+                );
+        }
+
+        [Then("the served OpenAPI path {string} does not have operation {string}")]
+        public async Task ThenTheServedOpenApiPathDoesNotHaveOperation(string path, string operation)
+        {
+            JsonObject paths = await ServedPathsAsync();
+
+            paths.Should().ContainKey(path);
+            paths[path]!
+                .AsObject()
+                .Should()
+                .NotContainKey(
+                    operation.ToLowerInvariant(),
+                    $"'{path}' must not publish a {operation.ToUpperInvariant()} operation"
+                );
+        }
+
         [Then("the served OpenAPI operation {string} on path {string} references parameter {string}")]
         public async Task ThenTheServedOpenApiOperationReferencesParameter(
             string operation,
@@ -405,7 +484,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         /// <summary>
         /// Reads one page: the document ids it carries and the continuation it offers.
         /// </summary>
-        private static async Task<(List<string> Ids, string? Continuation)> ReadPageAsync(
+        private static async Task<(List<JsonNode> Documents, string? Continuation)> ReadPageAsync(
             IAPIResponse response,
             int pageSize
         )
@@ -414,16 +493,28 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             response.Status.Should().Be(200, body);
 
-            List<string> ids =
-            [
-                .. JsonNode.Parse(body)!.AsArray().Select(document => document!["id"]!.GetValue<string>()),
-            ];
+            List<JsonNode> documents = [.. JsonNode.Parse(body)!.AsArray().Select(document => document!)];
 
-            ids.Should().HaveCountLessThanOrEqualTo(pageSize, "a page cannot exceed its page size");
+            documents.Should().HaveCountLessThanOrEqualTo(pageSize, "a page cannot exceed its page size");
 
             return response.Headers.TryGetValue(NextPageTokenHeader, out string? continuation)
-                ? (ids, continuation)
-                : (ids, null);
+                ? (documents, continuation)
+                : (documents, null);
+        }
+
+        /// <summary>
+        /// Remembers one page's documents and returns the ids they carry, so uniqueness and disjointness
+        /// keep comparing response identities while the exact-union assertion compares natural keys.
+        /// </summary>
+        private List<string> Record(List<JsonNode> documents)
+        {
+            _walkedDocuments.AddRange(documents);
+
+            List<string> ids = [.. documents.Select(document => document["id"]!.GetValue<string>())];
+
+            _walkedDocumentIds.AddRange(ids);
+
+            return ids;
         }
     }
 }

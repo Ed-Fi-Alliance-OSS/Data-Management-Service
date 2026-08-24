@@ -21,6 +21,11 @@ Feature: The partitions endpoint for Ed-Fi Resources
               And at most 10 partition tokens were returned
              When every returned partition is walked with page size 2
              Then the walk returned 3 documents with no duplicates
+              And the walk returned exactly these "schoolId" values
+                  | schoolId |
+                  | 31       |
+                  | 32       |
+                  | 33       |
 
         @e2e-ci-shard-3
         Scenario: 02 A requested count is an upper bound, and the partitions cover the filtered set
@@ -37,6 +42,10 @@ Feature: The partitions endpoint for Ed-Fi Resources
               # would pull the unfiltered school into the union.
              When every returned partition is walked with page size 2 repeating the query "nameOfInstitution=Partitioned"
              Then the walk returned 2 documents with no duplicates
+              And the walk returned exactly these "schoolId" values
+                  | schoolId |
+                  | 41       |
+                  | 42       |
 
         @e2e-ci-shard-3
         Scenario Outline: 03 A malformed or out-of-range partition count is refused
@@ -57,6 +66,7 @@ Feature: The partitions endpoint for Ed-Fi Resources
         Scenario: 04 Every reserved paging parameter is reported, in the canonical order
              When a GET request is made to "/ed-fi/schools/partitions?totalCount=true&offset=5&limit=5&pageSize=5&pageToken=abc"
              Then it should respond with 400
+              And the response content type is "application/json"
               And the response body is the parameter validation shell
               And the response body errors are
                   | error                                                                 |
@@ -70,6 +80,7 @@ Feature: The partitions endpoint for Ed-Fi Resources
         Scenario Outline: 05 A parameter only ODS defines is an unknown query field
              When a GET request is made to "/ed-fi/schools/partitions?<parameter>=true"
              Then it should respond with 400
+              And the response content type is "application/json"
               And the response body is the bad request shell
               And the response body has exactly one error "The query field '<parameter>' is not valid for this resource."
 
@@ -104,4 +115,9 @@ Feature: The partitions endpoint for Ed-Fi Resources
               # without publishing anything.
               And the served OpenAPI document publishes at least one path
               And the served OpenAPI document contains path "/ed-fi/schools"
+              # The retained path must be the writable one. A document that kept a read-only or empty
+              # collection path would otherwise satisfy the omission below without publishing what the
+              # profile actually grants.
+              And the served OpenAPI path "/ed-fi/schools" has operation "post"
+              And the served OpenAPI path "/ed-fi/schools" does not have operation "get"
               And the served OpenAPI document does not contain path "/ed-fi/schools/partitions"

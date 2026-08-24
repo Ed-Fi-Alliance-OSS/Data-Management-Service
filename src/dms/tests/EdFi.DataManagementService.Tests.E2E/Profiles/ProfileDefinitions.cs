@@ -380,6 +380,17 @@ public static class ProfileDefinitions
     /// Profile for School with WriteContentType using IncludeAll.
     /// POST requests should succeed because no required fields are excluded.
     /// </summary>
+    public const string SchoolWriteIncludeAllName = "E2E-Test-School-Write-IncludeAll";
+
+    public const string SchoolWriteIncludeAllXml = """
+        <Profile name="E2E-Test-School-Write-IncludeAll">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll"/>
+                <WriteContentType memberSelection="IncludeAll"/>
+            </Resource>
+        </Profile>
+        """;
+
     /// <summary>
     /// Profile for School that is genuinely write-only: it declares a WriteContentType and no
     /// ReadContentType at all. Every other write profile here also declares a readable content type, so
@@ -397,17 +408,6 @@ public static class ProfileDefinitions
     public const string SchoolWriteOnlyXml = """
         <Profile name="E2E-Test-School-WriteOnly">
             <Resource name="School">
-                <WriteContentType memberSelection="IncludeAll"/>
-            </Resource>
-        </Profile>
-        """;
-
-    public const string SchoolWriteIncludeAllName = "E2E-Test-School-Write-IncludeAll";
-
-    public const string SchoolWriteIncludeAllXml = """
-        <Profile name="E2E-Test-School-Write-IncludeAll">
-            <Resource name="School">
-                <ReadContentType memberSelection="IncludeAll"/>
                 <WriteContentType memberSelection="IncludeAll"/>
             </Resource>
         </Profile>

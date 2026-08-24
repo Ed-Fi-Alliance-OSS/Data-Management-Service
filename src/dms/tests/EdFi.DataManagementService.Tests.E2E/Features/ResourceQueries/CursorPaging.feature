@@ -18,6 +18,13 @@ Feature: Cursor paging for GET requests for Ed-Fi Resources
                   | 5        | School 5          | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
              When a cursor walk is made over "/ed-fi/schools" with page size 2
              Then the walk returned 5 documents with no duplicates
+              And the walk returned exactly these "schoolId" values
+                  | schoolId |
+                  | 1        |
+                  | 2        |
+                  | 3        |
+                  | 4        |
+                  | 5        |
               And the walk ended with an empty page and no continuation
 
         @e2e-ci-shard-2
@@ -39,6 +46,11 @@ Feature: Cursor paging for GET requests for Ed-Fi Resources
              Then it should respond with 201
              When a cursor walk is made over "/tpdm/candidates" with page size 2
              Then the walk returned 3 documents with no duplicates
+              And the walk returned exactly these "candidateIdentifier" values
+                  | candidateIdentifier |
+                  | CursorWalk-1        |
+                  | CursorWalk-2        |
+                  | CursorWalk-3        |
               And the walk ended with an empty page and no continuation
 
         @e2e-ci-shard-2
@@ -62,6 +74,11 @@ Feature: Cursor paging for GET requests for Ed-Fi Resources
               # deployment already carries descriptors this scenario did not create.
              When a cursor walk is made over "/ed-fi/absenceEventCategoryDescriptors" with page size 2 repeating the query "effectiveBeginDate=2099-01-01"
              Then the walk returned 3 documents with no duplicates
+              And the walk returned exactly these "codeValue" values
+                  | codeValue   |
+                  | CursorWalk1 |
+                  | CursorWalk2 |
+                  | CursorWalk3 |
               And the walk ended with an empty page and no continuation
 
         @e2e-ci-shard-2
@@ -91,6 +108,16 @@ Feature: Cursor paging for GET requests for Ed-Fi Resources
               And the response body has exactly one error "PageToken is required when pageSize is specified."
 
         @e2e-ci-shard-2
+        Scenario: 05a An undecodable page token is refused before any other rule is considered
+              # Phase 0 of the approved precedence: an undecodable token makes every rule that reasons
+              # about a valid token meaningless, so this is the one error reported.
+             When a GET request is made to "/ed-fi/schools?pageToken=!!!"
+             Then it should respond with 400
+              And the response content type is "application/json"
+              And the response body is the parameter validation shell
+              And the response body has exactly one error "The page token provided was invalid."
+
+        @e2e-ci-shard-2
         Scenario: 06 An offset alongside a page token is a paging-mode conflict
             Given the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                        | educationOrganizationCategories                                                                                       |
@@ -100,6 +127,7 @@ Feature: Cursor paging for GET requests for Ed-Fi Resources
               And the response header "Next-Page-Token" is captured as "conflictToken"
              When a GET request is made to "/ed-fi/schools?pageToken={conflictToken}&offset=-1"
              Then it should respond with 400
+              And the response content type is "application/json"
               And the response body is the parameter validation shell
               And the response body has exactly one error "Both offset and pageToken parameters were provided, but they support alternative paging approaches and cannot be used together."
 
@@ -107,6 +135,7 @@ Feature: Cursor paging for GET requests for Ed-Fi Resources
         Scenario: 07 A deletes request does not recognize a page token
              When a GET request is made to "/ed-fi/schools/deletes?pageToken=abc"
              Then it should respond with 400
+              And the response content type is "application/json"
               And the response body is the bad request shell
               And the response body has exactly one error "The query field 'pageToken' is not valid for this Change Query endpoint."
 
@@ -114,6 +143,7 @@ Feature: Cursor paging for GET requests for Ed-Fi Resources
         Scenario: 08 A keyChanges request does not recognize a page size
              When a GET request is made to "/ed-fi/schools/keyChanges?pageSize=5"
              Then it should respond with 400
+              And the response content type is "application/json"
               And the response body is the bad request shell
               And the response body has exactly one error "The query field 'pageSize' is not valid for this Change Query endpoint."
 
