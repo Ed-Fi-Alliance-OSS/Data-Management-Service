@@ -41,6 +41,12 @@ internal static class OdsComparisonScenario
     /// </remarks>
     internal const int HostMaximumPageSize = 2;
 
+    /// <summary>
+    /// The deployed maximum page size, used by the group whose whole point is a runtime maximum above
+    /// the published Ed-Fi default of twenty-five.
+    /// </summary>
+    internal const int DeployedMaximumPageSize = 500;
+
     internal const int HostDefaultPartitionCount = 10;
 
     private const string CollisionNumber = "105";
@@ -76,7 +82,11 @@ internal static class OdsComparisonScenario
     private const string ProfiledPartitionsPath = $"{ProfiledCollectionPath}/partitions";
 
     /// <summary>Runs every case in one group and reports them all before failing.</summary>
-    public static async Task RunGroupAsync(ApiIntegrationHarness harness, string group)
+    public static async Task RunGroupAsync(
+        ApiIntegrationHarness harness,
+        string group,
+        int hostMaximumPageSize
+    )
     {
         ArgumentNullException.ThrowIfNull(harness);
 
@@ -89,22 +99,31 @@ internal static class OdsComparisonScenario
 
         foreach (ComparisonCase comparisonCase in cases)
         {
-            await RunCaseAsync(harness, comparisonCase);
+            await RunCaseAsync(harness, comparisonCase, hostMaximumPageSize);
         }
     }
 
-    private static async Task RunCaseAsync(ApiIntegrationHarness harness, ComparisonCase comparisonCase)
+    private static async Task RunCaseAsync(
+        ApiIntegrationHarness harness,
+        ComparisonCase comparisonCase,
+        int hostMaximumPageSize
+    )
     {
-        IReadOnlyDictionary<string, string> placeholders = Placeholders();
+        IReadOnlyDictionary<string, string> placeholders = Placeholders(hostMaximumPageSize);
 
         ExpectedOutcome dms = comparisonCase.Dms.Resolve(placeholders);
         ExpectedOutcome ods = comparisonCase.Ods.Resolve(placeholders);
 
-        Observation observation = await ObserveAsync(harness, comparisonCase, placeholders);
+        ObservedOutcome observation = await ObserveAsync(
+            harness,
+            comparisonCase,
+            placeholders,
+            hostMaximumPageSize
+        );
 
         AssertMatches(observation, dms, comparisonCase, "DMS");
 
-        bool matchesOds = Matches(observation, ods);
+        bool matchesOds = OdsOutcomeComparer.Matches(observation, ods);
 
         if (comparisonCase.DeclaresDifference)
         {
@@ -145,17 +164,30 @@ internal static class OdsComparisonScenario
         }
     }
 
-    private static Dictionary<string, string> Placeholders() =>
+    private static Dictionary<string, string> Placeholders(int hostMaximumPageSize) =>
         new(StringComparer.Ordinal)
         {
-            ["{maximumPageSize}"] = HostMaximumPageSize.ToString(CultureInfo.InvariantCulture),
+            ["{maximumPageSize}"] = hostMaximumPageSize.ToString(CultureInfo.InvariantCulture),
             ["{defaultPartitionCount}"] = HostDefaultPartitionCount.ToString(CultureInfo.InvariantCulture),
             ["{validToken}"] = PageTokenCodec.Encode(new CursorRange(1, 100)),
             ["{invalidToken}"] = "!!!",
             ["{leadingPlusDecimalToken}"] = EncodePayload("+1,100"),
             ["{whitespaceDecimalToken}"] = EncodePayload("1, 100"),
             ["{beyondInt32Token}"] = PageTokenCodec.Encode(new CursorRange(3_000_000_000L, 4_000_000_000L)),
+            ["{unpaddedToken}"] = PageTokenCodec.Encode(new CursorRange(1, 100)),
+            ["{paddedToken}"] = Pad(PageTokenCodec.Encode(new CursorRange(1, 100))),
+            ["{forbiddenAlphabetToken}"] = "MSwx+DA",
+            ["{invalidPaddingToken}"] = Pad(PageTokenCodec.Encode(new CursorRange(1, 100))) + "=",
+            ["{invalidUtf8Token}"] = System.Buffers.Text.Base64Url.EncodeToString([0xFF, 0xFE, 0xFD]),
+            ["{extraFieldToken}"] = EncodePayload("1,100,7"),
         };
+
+    /// <summary>
+    /// Restores the padding the encoder omits, giving the correctly padded form of the same token. The
+    /// approved decoder accepts both forms, and a case asserts each explicitly.
+    /// </summary>
+    private static string Pad(string token) =>
+        token.Length % 4 == 0 ? token : token + new string('=', 4 - (token.Length % 4));
 
     /// <summary>
     /// Encodes an arbitrary payload the way the codec encodes a range, so a token the decoder must
@@ -164,10 +196,11 @@ internal static class OdsComparisonScenario
     private static string EncodePayload(string payload) =>
         System.Buffers.Text.Base64Url.EncodeToString(Encoding.UTF8.GetBytes(payload));
 
-    private static async Task<Observation> ObserveAsync(
+    private static async Task<ObservedOutcome> ObserveAsync(
         ApiIntegrationHarness harness,
         ComparisonCase comparisonCase,
-        IReadOnlyDictionary<string, string> placeholders
+        IReadOnlyDictionary<string, string> placeholders,
+        int hostMaximumPageSize
     )
     {
         string query = Substitute(comparisonCase.Query, placeholders);
@@ -190,9 +223,14 @@ internal static class OdsComparisonScenario
                 comparisonCase
             ),
             "served-document" => await ObserveDocumentAsync(harness, comparisonCase),
-            "sizing-true-ceiling" => await ObserveSizingAsync(harness, query),
-            "number-collision" => await ObserveCollisionAsync(harness),
-            "empty-hydration" => await ObserveEmptyHydrationAsync(harness),
+            "sizing-true-ceiling" => await ObserveSizingAsync(
+                harness,
+                comparisonCase,
+                query,
+                hostMaximumPageSize
+            ),
+            "number-collision" => await ObserveCollisionAsync(harness, hostMaximumPageSize),
+            "empty-hydration" => await ObserveEmptyHydrationAsync(harness, hostMaximumPageSize),
             "identity-maximum" => await ObserveIdentityMaximumAsync(harness),
             "profile-partitions-get" => await ObserveProfilePartitionsAsync(harness),
             "profile-document-partitions-omission" => await ObserveProfileDocumentOmissionAsync(harness),
@@ -203,7 +241,7 @@ internal static class OdsComparisonScenario
         };
     }
 
-    private static async Task<Observation> ObserveRequestAsync(
+    private static async Task<ObservedOutcome> ObserveRequestAsync(
         ApiIntegrationHarness harness,
         string requestUri,
         ComparisonCase comparisonCase
@@ -226,9 +264,10 @@ internal static class OdsComparisonScenario
         {
             AssertShell(response, body, comparisonCase);
 
-            return new Observation(
+            return new ObservedOutcome(
                 (int)response.StatusCode,
                 [.. JsonNode.Parse(body)!["errors"]!.AsArray().Select(error => error!.GetValue<string>())],
+                ShellOf(body),
                 new Dictionary<string, JsonNode?>(StringComparer.Ordinal)
             );
         }
@@ -243,7 +282,28 @@ internal static class OdsComparisonScenario
             );
         }
 
-        return new Observation((int)response.StatusCode, null, expectations);
+        return new ObservedOutcome((int)response.StatusCode, null, null, expectations);
+    }
+
+    /// <summary>
+    /// Names which ProblemDetails shell a rejection body is, from the type it declares.
+    /// </summary>
+    /// <remarks>
+    /// A body declaring neither of the DMS types is reported as unrecognized rather than as one of them.
+    /// That is what lets a recorded ODS rejection whose body this suite does not reproduce still be
+    /// written in terms an observation can produce: if DMS ever answered with a shell it does not own,
+    /// the observation would equal the recorded outcome and the case's difference claim would fail.
+    /// </remarks>
+    private static string ShellOf(string body)
+    {
+        string? type = JsonNode.Parse(body)?["type"]?.GetValue<string>();
+
+        return type switch
+        {
+            ParameterValidationProblemDetails.ProblemType => ComparisonCase.ParameterValidationShell,
+            BadRequestProblemDetails.ProblemType => ComparisonCase.BadRequestShell,
+            _ => OdsOutcomeComparer.UnrecognizedShell,
+        };
     }
 
     /// <summary>
@@ -283,7 +343,7 @@ internal static class OdsComparisonScenario
         problem["validationErrors"]!.AsObject().Should().BeEmpty("case '{0}'", comparisonCase.Id);
     }
 
-    private static async Task<Observation> ObserveDocumentAsync(
+    private static async Task<ObservedOutcome> ObserveDocumentAsync(
         ApiIntegrationHarness harness,
         ComparisonCase comparisonCase
     )
@@ -303,8 +363,9 @@ internal static class OdsComparisonScenario
             values[pointer] = ResolvePointer(document, pointer);
         }
 
-        return new Observation(
+        return new ObservedOutcome(
             (int)response.StatusCode,
+            null,
             null,
             new Dictionary<string, JsonNode?>(StringComparer.Ordinal) { ["jsonValues"] = values }
         );
@@ -327,11 +388,19 @@ internal static class OdsComparisonScenario
         return current.DeepClone();
     }
 
-    private static async Task<Observation> ObserveSizingAsync(ApiIntegrationHarness harness, string query)
+    private static async Task<ObservedOutcome> ObserveSizingAsync(
+        ApiIntegrationHarness harness,
+        ComparisonCase comparisonCase,
+        string query,
+        int hostMaximumPageSize
+    )
     {
         await CursorContractSupport.SeedExtensionItemsAsync(
             harness,
-            25,
+            comparisonCase.Seed
+                ?? throw new InvalidOperationException(
+                    $"Sizing case '{comparisonCase.Id}' must declare its seed."
+                ),
             labelFor: _ => "included",
             numberFor: _ => int.Parse(CollisionNumber, CultureInfo.InvariantCulture)
         );
@@ -349,14 +418,15 @@ internal static class OdsComparisonScenario
                 harness,
                 CursorContractSupport.ExtensionItemsEndpoint,
                 pageToken,
-                HostMaximumPageSize
+                hostMaximumPageSize
             );
 
             counts.Add(walked.Count);
         }
 
-        return new Observation(
+        return new ObservedOutcome(
             200,
+            null,
             null,
             new Dictionary<string, JsonNode?>(StringComparer.Ordinal)
             {
@@ -367,7 +437,10 @@ internal static class OdsComparisonScenario
         );
     }
 
-    private static async Task<Observation> ObserveCollisionAsync(ApiIntegrationHarness harness)
+    private static async Task<ObservedOutcome> ObserveCollisionAsync(
+        ApiIntegrationHarness harness,
+        int hostMaximumPageSize
+    )
     {
         var seeded = await CursorContractSupport.SeedExtensionItemsAsync(
             harness,
@@ -395,13 +468,14 @@ internal static class OdsComparisonScenario
                     harness,
                     CursorContractSupport.ExtensionItemsEndpoint,
                     pageToken,
-                    HostMaximumPageSize
+                    hostMaximumPageSize
                 )
             );
         }
 
-        return new Observation(
+        return new ObservedOutcome(
             200,
+            null,
             null,
             new Dictionary<string, JsonNode?>(StringComparer.Ordinal)
             {
@@ -414,7 +488,10 @@ internal static class OdsComparisonScenario
         );
     }
 
-    private static async Task<Observation> ObserveEmptyHydrationAsync(ApiIntegrationHarness harness)
+    private static async Task<ObservedOutcome> ObserveEmptyHydrationAsync(
+        ApiIntegrationHarness harness,
+        int hostMaximumPageSize
+    )
     {
         await CursorContractSupport.SeedExtensionItemsAsync(
             harness,
@@ -426,11 +503,12 @@ internal static class OdsComparisonScenario
         var page = await CursorContractSupport.ReadPageAsync(
             harness,
             $"{CursorContractSupport.ExtensionItemsEndpoint}"
-                + $"?pageToken={CursorContractSupport.EntryPageToken}&pageSize={HostMaximumPageSize}"
+                + $"?pageToken={CursorContractSupport.EntryPageToken}&pageSize={hostMaximumPageSize}"
         );
 
-        return new Observation(
+        return new ObservedOutcome(
             200,
+            null,
             null,
             new Dictionary<string, JsonNode?>(StringComparer.Ordinal)
             {
@@ -448,7 +526,7 @@ internal static class OdsComparisonScenario
     /// The database is leased per test, so the reseed cannot reach another test. Exactly one document is
     /// created afterwards, because a second would have no identity left to take.
     /// </remarks>
-    private static async Task<Observation> ObserveIdentityMaximumAsync(ApiIntegrationHarness harness)
+    private static async Task<ObservedOutcome> ObserveIdentityMaximumAsync(ApiIntegrationHarness harness)
     {
         await ReseedDocumentIdentityAsync(harness);
 
@@ -474,8 +552,9 @@ internal static class OdsComparisonScenario
             CursorContractSupport.ExtensionItemsEndpoint
         );
 
-        return new Observation(
+        return new ObservedOutcome(
             200,
+            null,
             null,
             new Dictionary<string, JsonNode?>(StringComparer.Ordinal)
             {
@@ -524,15 +603,16 @@ internal static class OdsComparisonScenario
     private static bool IsPostgresql(ApiIntegrationHarness harness) =>
         harness.DbConnection.GetType().Name.Contains("Npgsql", StringComparison.Ordinal);
 
-    private static async Task<Observation> ObserveProfilePartitionsAsync(ApiIntegrationHarness harness)
+    private static async Task<ObservedOutcome> ObserveProfilePartitionsAsync(ApiIntegrationHarness harness)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, ProfileMergeItemsPartitionsEndpoint);
         request.Headers.TryAddWithoutValidation("Accept", WriteOnlyReadableContentType);
 
         using HttpResponseMessage response = await harness.HttpClient.SendAsync(request);
 
-        return new Observation(
+        return new ObservedOutcome(
             (int)response.StatusCode,
+            null,
             null,
             new Dictionary<string, JsonNode?>(StringComparer.Ordinal)
         );
@@ -550,15 +630,18 @@ internal static class OdsComparisonScenario
     /// write operation and no read operation, is what makes the missing sibling the only thing under
     /// test.
     /// </remarks>
-    private static async Task<Observation> ObserveProfileDocumentOmissionAsync(ApiIntegrationHarness harness)
+    private static async Task<ObservedOutcome> ObserveProfileDocumentOmissionAsync(
+        ApiIntegrationHarness harness
+    )
     {
         JsonObject corePaths = await ReadDocumentPathsAsync(harness, CoreResourcesDocument);
         JsonObject profilePaths = await ReadDocumentPathsAsync(harness, ProfileResourcesDocument);
 
         JsonNode? profileCollection = profilePaths[ProfiledCollectionPath];
 
-        return new Observation(
+        return new ObservedOutcome(
             200,
+            null,
             null,
             new Dictionary<string, JsonNode?>(StringComparer.Ordinal)
             {
@@ -598,7 +681,7 @@ internal static class OdsComparisonScenario
     }
 
     private static void AssertMatches(
-        Observation observation,
+        ObservedOutcome observation,
         ExpectedOutcome expected,
         ComparisonCase comparisonCase,
         string side
@@ -639,42 +722,6 @@ internal static class OdsComparisonScenario
         }
     }
 
-    private static bool Matches(Observation observation, ExpectedOutcome expected)
-    {
-        if (observation.Status != expected.Status)
-        {
-            return false;
-        }
-
-        if (
-            expected.Errors is not null
-            && (observation.Errors is null || !observation.Errors.SequenceEqual(expected.Errors))
-        )
-        {
-            return false;
-        }
-
-        if (expected.Expect is null)
-        {
-            return true;
-        }
-
-        foreach (var member in expected.Expect)
-        {
-            if (!observation.Expectations.TryGetValue(member.Key, out JsonNode? observed))
-            {
-                return false;
-            }
-
-            if (!JsonNode.DeepEquals(observed, member.Value))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
     private static string Substitute(string text, IReadOnlyDictionary<string, string> placeholders)
     {
         string resolved = text;
@@ -686,11 +733,4 @@ internal static class OdsComparisonScenario
 
         return resolved;
     }
-
-    /// <summary>What the host actually answered, in the same vocabulary the case files use.</summary>
-    private sealed record Observation(
-        int Status,
-        IReadOnlyList<string>? Errors,
-        IReadOnlyDictionary<string, JsonNode?> Expectations
-    );
 }

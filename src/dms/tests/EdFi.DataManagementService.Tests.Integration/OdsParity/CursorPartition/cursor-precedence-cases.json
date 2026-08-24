@@ -27,11 +27,15 @@
       "query": "?pageToken={validToken}&limit=99999",
       "dms": {
         "status": 400,
-        "errors": ["Use pageSize instead of limit when using cursor paging with pageToken."]
+        "errors": [
+          "Use pageSize instead of limit when using cursor paging with pageToken."
+        ]
       },
       "ods": {
         "status": 400,
-        "errors": ["Use pageSize instead of limit when using cursor paging with pageToken."]
+        "errors": [
+          "Use pageSize instead of limit when using cursor paging with pageToken."
+        ]
       },
       "outcome": "parity"
     },
@@ -40,8 +44,18 @@
       "group": "validation",
       "executor": "collection-get",
       "query": "?pageSize=99999",
-      "dms": { "status": 400, "errors": ["PageToken is required when pageSize is specified."] },
-      "ods": { "status": 400, "errors": ["PageToken is required when pageSize is specified."] },
+      "dms": {
+        "status": 400,
+        "errors": [
+          "PageToken is required when pageSize is specified."
+        ]
+      },
+      "ods": {
+        "status": 400,
+        "errors": [
+          "PageToken is required when pageSize is specified."
+        ]
+      },
       "outcome": "parity"
     },
     {
@@ -49,8 +63,15 @@
       "group": "validation",
       "executor": "collection-get",
       "query": "?pageSize=",
-      "dms": { "status": 400, "errors": ["PageToken is required when pageSize is specified."] },
-      "ods": { "status": 200, "errors": ["ods:accepted-and-discarded"] },
+      "dms": {
+        "status": 400,
+        "errors": [
+          "PageToken is required when pageSize is specified."
+        ]
+      },
+      "ods": {
+        "status": 200
+      },
       "outcome": "difference",
       "approvedDifference": "cursor-key-presence-is-significant",
       "note": "ODS model-binds the blank value to null, treats the parameter as absent, and returns 200."
@@ -60,8 +81,18 @@
       "group": "validation",
       "executor": "collection-get",
       "query": "?pageToken={invalidToken}&offset=5",
-      "dms": { "status": 400, "errors": ["The page token provided was invalid."] },
-      "ods": { "status": 400, "errors": ["The page token provided was invalid."] },
+      "dms": {
+        "status": 400,
+        "errors": [
+          "The page token provided was invalid."
+        ]
+      },
+      "ods": {
+        "status": 400,
+        "errors": [
+          "The page token provided was invalid."
+        ]
+      },
       "outcome": "parity"
     },
     {
@@ -69,8 +100,18 @@
       "group": "validation",
       "executor": "collection-get",
       "query": "?pageToken={invalidToken}&limit=10",
-      "dms": { "status": 400, "errors": ["The page token provided was invalid."] },
-      "ods": { "status": 400, "errors": ["The page token provided was invalid."] },
+      "dms": {
+        "status": 400,
+        "errors": [
+          "The page token provided was invalid."
+        ]
+      },
+      "ods": {
+        "status": 400,
+        "errors": [
+          "The page token provided was invalid."
+        ]
+      },
       "outcome": "parity"
     },
     {
@@ -78,8 +119,15 @@
       "group": "validation",
       "executor": "collection-get",
       "query": "?pageSize=5&limit=10",
-      "dms": { "status": 400, "errors": ["PageToken is required when pageSize is specified."] },
-      "ods": { "status": 200, "errors": ["ods:accepted-and-discarded"] },
+      "dms": {
+        "status": 400,
+        "errors": [
+          "PageToken is required when pageSize is specified."
+        ]
+      },
+      "ods": {
+        "status": 200
+      },
       "outcome": "difference",
       "approvedDifference": "reject-limit-with-cursor-parameters",
       "note": "ODS returns 200; this is an approved stricter DMS rejection."
@@ -89,8 +137,18 @@
       "group": "validation",
       "executor": "collection-get",
       "query": "?pageSize=5&totalCount=true",
-      "dms": { "status": 400, "errors": ["PageToken is required when pageSize is specified."] },
-      "ods": { "status": 400, "errors": ["PageToken is required when pageSize is specified."] },
+      "dms": {
+        "status": 400,
+        "errors": [
+          "PageToken is required when pageSize is specified."
+        ]
+      },
+      "ods": {
+        "status": 400,
+        "errors": [
+          "PageToken is required when pageSize is specified."
+        ]
+      },
       "outcome": "parity",
       "note": "ODS returns the same message from its limit/offset branch."
     },
@@ -99,8 +157,18 @@
       "group": "validation",
       "executor": "collection-get",
       "query": "?pageSize=5&offset=3&totalCount=true",
-      "dms": { "status": 400, "errors": ["Use limit instead of pageSize when using limit/offset paging."] },
-      "ods": { "status": 400, "errors": ["Use limit instead of pageSize when using limit/offset paging."] },
+      "dms": {
+        "status": 400,
+        "errors": [
+          "Use limit instead of pageSize when using limit/offset paging."
+        ]
+      },
+      "ods": {
+        "status": 400,
+        "errors": [
+          "Use limit instead of pageSize when using limit/offset paging."
+        ]
+      },
       "outcome": "parity"
     },
     {
@@ -110,11 +178,15 @@
       "query": "?pageToken={validToken}&pageSize=-1",
       "dms": {
         "status": 400,
-        "errors": ["PageSize must be a value between 0 and {maximumPageSize}."]
+        "errors": [
+          "PageSize must be a value between 0 and {maximumPageSize}."
+        ]
       },
       "ods": {
         "status": 400,
-        "errors": ["PageSize must be a value between 0 and {maximumPageSize}."]
+        "errors": [
+          "PageSize must be a value between 0 and {maximumPageSize}."
+        ]
       },
       "outcome": "parity"
     },
@@ -125,12 +197,17 @@
       "query": "?pageToken={validToken}&pageSize=abc",
       "dms": {
         "status": 400,
-        "errors": ["PageSize must be a value between 0 and {maximumPageSize}."]
+        "errors": [
+          "PageSize must be a value between 0 and {maximumPageSize}."
+        ]
       },
-      "ods": { "status": 400, "errors": ["ods:model-binding-shell"] },
+      "ods": {
+        "status": 400,
+        "shell": "unrecognized"
+      },
       "outcome": "difference",
       "approvedDifference": "cursor-key-presence-is-significant",
-      "note": "ODS's int? model binding fails before its validator runs, so it answers with a model-binding response shell instead of this range message."
+      "note": "ODS's int? model binding fails before its validator runs, so automatic model-state validation answers with an ErrorTranslator shell built from ModelState rather than this range message. The recorded shell says only that the body is neither DMS shell, which is a value an observation can produce."
     },
     {
       "id": "cursor-precedence-12",
@@ -139,9 +216,13 @@
       "query": "?pageToken={validToken}&limit=10&pageSize=5",
       "dms": {
         "status": 400,
-        "errors": ["Use pageSize instead of limit when using cursor paging with pageToken."]
+        "errors": [
+          "Use pageSize instead of limit when using cursor paging with pageToken."
+        ]
       },
-      "ods": { "status": 200, "errors": ["ods:accepted-and-discarded"] },
+      "ods": {
+        "status": 200
+      },
       "outcome": "difference",
       "approvedDifference": "reject-limit-with-cursor-parameters",
       "note": "ODS returns 200; this is an approved stricter DMS rejection."
@@ -157,10 +238,15 @@
           "The totalCount parameter cannot be set to true when using cursor paging with pageToken."
         ]
       },
-      "ods": { "status": 400, "errors": ["ods:repository-count-template-rejection"] },
+      "ods": {
+        "status": 400,
+        "errors": [
+          "Total count cannot be determined while using cursor paging (when pageToken is specified)."
+        ]
+      },
       "outcome": "difference",
       "approvedDifference": "totalcount-rejected-at-validation",
-      "note": "Both reject with 400, but ODS rejects later and reports 'Total count cannot be determined while using cursor paging (when pageToken is specified).'"
+      "note": "Both reject with 400, but ODS's cursor validator allows the combination and its repository rejects later, when it builds the count template and finds a MinAggregateId parameter in it. The recorded text is that rejection's exact message."
     }
   ]
 }

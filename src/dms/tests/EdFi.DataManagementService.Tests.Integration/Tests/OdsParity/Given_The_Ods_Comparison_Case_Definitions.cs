@@ -93,6 +93,25 @@ public class Given_The_Ods_Comparison_Case_Definitions
         "profile",
         "metadata",
         "profile-metadata",
+        "sizing-default-count",
+    ];
+
+    /// <summary>
+    /// Every decoder case the approved comparison matrix requires: the two accepted transport forms,
+    /// the forbidden alphabet, malformed padding, invalid UTF-8, an extra field, and the two
+    /// non-canonical decimal forms. Pinned so a whole category cannot quietly disappear while the
+    /// catalog entry stays referenced by the remaining ones.
+    /// </summary>
+    private static readonly string[] _expectedDecoderCaseIds =
+    [
+        "strict-decoder-canonical-unpadded",
+        "strict-decoder-correctly-padded",
+        "strict-decoder-extra-field",
+        "strict-decoder-forbidden-alphabet",
+        "strict-decoder-invalid-padding",
+        "strict-decoder-invalid-utf8",
+        "strict-decoder-leading-sign-decimal",
+        "strict-decoder-whitespace-decimal",
     ];
 
     private static readonly string[] _expectedExecutors =
@@ -290,5 +309,155 @@ public class Given_The_Ods_Comparison_Case_Definitions
         _expectedExecutors
             .Should()
             .BeSubsetOf(usedExecutors, "an executor nothing uses is dead comparison machinery");
+    }
+
+    [Test]
+    public void It_covers_every_decoder_category()
+    {
+        string[] decoderCaseIds =
+        [
+            .. OdsComparisonCatalog
+                .Definitions.Cases.Where(comparisonCase =>
+                    comparisonCase.Id.StartsWith("strict-decoder-", StringComparison.Ordinal)
+                )
+                .Select(comparisonCase => comparisonCase.Id)
+                .Order(StringComparer.Ordinal),
+        ];
+
+        decoderCaseIds
+            .Should()
+            .Equal(
+                _expectedDecoderCaseIds,
+                "the approved decoder comparison matrix covers every transport and decimal category"
+            );
+    }
+
+    [Test]
+    public void It_never_lets_a_successful_outcome_declare_errors()
+    {
+        string[] offending =
+        [
+            .. OdsComparisonCatalog
+                .Definitions.Cases.Where(comparisonCase =>
+                    (comparisonCase.Dms.Status < 400 && comparisonCase.Dms.Errors is not null)
+                    || (comparisonCase.Ods.Status < 400 && comparisonCase.Ods.Errors is not null)
+                )
+                .Select(comparisonCase => comparisonCase.Id),
+        ];
+
+        offending
+            .Should()
+            .BeEmpty(
+                "a successful response carries no error list, so recording one would make the outcome "
+                    + "unreachable and the comparison unfalsifiable"
+            );
+    }
+
+    /// <summary>
+    /// The guard that keeps a declared difference falsifiable: rendering the recorded ODS outcome as the
+    /// observation that would produce it must match that recorded outcome, and must not match the DMS
+    /// outcome. The first half proves the ODS side is reachable at all; the second proves the difference
+    /// is one in compared fields rather than in prose.
+    /// </summary>
+    /// <remarks>
+    /// This is the executable form of "if DMS converged on the recorded ODS behavior, the case would
+    /// fail". The executing scenario asks exactly this comparer whether an observation matches the ODS
+    /// side, so an ODS outcome no observation could equal would declare a difference forever.
+    /// </remarks>
+    [Test]
+    public void It_keeps_every_declared_difference_falsifiable()
+    {
+        List<string> unfalsifiable = [];
+        List<string> notMateriallyDifferent = [];
+
+        foreach (
+            var comparisonCase in OdsComparisonCatalog.Definitions.Cases.Where(comparisonCase =>
+                comparisonCase.DeclaresDifference
+            )
+        )
+        {
+            ObservedOutcome asOds = OdsOutcomeComparer.AsObservation(comparisonCase.Ods);
+
+            if (!OdsOutcomeComparer.Matches(asOds, comparisonCase.Ods))
+            {
+                unfalsifiable.Add(comparisonCase.Id);
+            }
+
+            if (OdsOutcomeComparer.Matches(asOds, comparisonCase.Dms))
+            {
+                notMateriallyDifferent.Add(comparisonCase.Id);
+            }
+        }
+
+        unfalsifiable
+            .Should()
+            .BeEmpty(
+                "a recorded ODS outcome no observation could equal would declare a difference forever, "
+                    + "masking convergence instead of detecting it"
+            );
+        notMateriallyDifferent
+            .Should()
+            .BeEmpty(
+                "a case declaring a difference must differ from the DMS outcome in a field the "
+                    + "comparison actually reads"
+            );
+    }
+
+    [Test]
+    public void It_keeps_every_parity_case_comparable()
+    {
+        string[] offending =
+        [
+            .. OdsComparisonCatalog
+                .Definitions.Cases.Where(comparisonCase =>
+                    !comparisonCase.DeclaresDifference
+                    && !OdsOutcomeComparer.Matches(
+                        OdsOutcomeComparer.AsObservation(comparisonCase.Ods),
+                        comparisonCase.Dms
+                    )
+                )
+                .Select(comparisonCase => comparisonCase.Id),
+        ];
+
+        offending
+            .Should()
+            .BeEmpty(
+                "a parity case records the same outcome on both sides, so the recorded ODS outcome must "
+                    + "satisfy the DMS expectation it claims to equal"
+            );
+    }
+
+    [Test]
+    public void It_pins_the_seeded_expectations_that_carry_a_boundary()
+    {
+        var omittedLimit = OdsComparisonCatalog.Definitions.Cases.Single(comparisonCase =>
+            comparisonCase.Id == "omitted-limit-uses-configured-maximum"
+        );
+
+        omittedLimit
+            .Seed.Should()
+            .Be(26, "the seed sits one document past the published Ed-Fi default of twenty-five");
+        omittedLimit.Dms.Expect!["documentCount"]!
+            .GetValue<int>()
+            .Should()
+            .Be(26, "DMS returns the whole seed because its configured maximum is well above 25");
+        omittedLimit.Ods.Expect!["documentCount"]!
+            .GetValue<int>()
+            .Should()
+            .Be(25, "the published default stops one document short, which is the difference under test");
+
+        var defaultCount = OdsComparisonCatalog.Definitions.Cases.Single(comparisonCase =>
+            comparisonCase.Id == "partition-sizing-omitted-count-true-ceiling"
+        );
+
+        defaultCount.Seed.Should().Be(105, "the recorded arithmetic is stated for this candidate count");
+        defaultCount.Dms.Expect!["tokenCount"]!
+            .GetValue<int>()
+            .Should()
+            .Be(10, "a true ceiling hands out at most the configured default partition count");
+        defaultCount.Ods.Expect!["tokenCount"]!
+            .GetValue<int>()
+            .Should()
+            .Be(11, "a floored size leaves one more starting id, and no cap applies when number is omitted");
     }
 }

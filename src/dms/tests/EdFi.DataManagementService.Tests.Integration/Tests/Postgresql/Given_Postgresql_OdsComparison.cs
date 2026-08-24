@@ -11,15 +11,15 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests.Postgresql;
 
 /// <summary>
 /// Executes the static ODS 7.3.2 comparison cases against a PostgreSQL-backed host. This binding carries
-/// every group except the two that need a differently configured host: the empty-hydration group needs
-/// the hydration seam, and the profile group needs the fixture that owns profile XML.
+/// the groups a lowered maximum page size suits: the validation matrix, sizing in both its forms, the
+/// number collision, the token range, the identity maximum, and the published metadata that reads the
+/// configured maximum back out of the served document.
 /// </summary>
 /// <remarks>
 /// Leases the cursor-partition-contract fixture because several cases need the extension resource whose
 /// schema declares a query field named <c>number</c>. The maximum page size is lowered so the sizing
-/// case is cut by a computed partition size rather than by the minimum, which is the only arrangement in
-/// which a true ceiling and a floor produce different boundaries; the published-metadata cases read the
-/// same configured value back out of the served document, so the two uses reinforce each other.
+/// cases are cut by a computed partition size rather than by the minimum, which is the only arrangement
+/// in which a true ceiling and a floor produce different boundaries.
 /// </remarks>
 public sealed class Given_Postgresql_OdsComparison : PostgresqlApiIntegrationTestBase
 {
@@ -29,31 +29,68 @@ public sealed class Given_Postgresql_OdsComparison : PostgresqlApiIntegrationTes
 
     [Test]
     public Task It_matches_the_recorded_ods_outcomes_for_the_validation_cases() =>
-        OdsComparisonScenario.RunGroupAsync(Harness, "validation");
-
-    [Test]
-    public Task It_matches_the_recorded_ods_outcome_for_the_omitted_limit_default() =>
-        OdsComparisonScenario.RunGroupAsync(Harness, "omitted-limit-default");
+        OdsComparisonScenario.RunGroupAsync(Harness, "validation", OdsComparisonScenario.HostMaximumPageSize);
 
     [Test]
     public Task It_matches_the_recorded_ods_outcome_for_partition_sizing() =>
-        OdsComparisonScenario.RunGroupAsync(Harness, "sizing");
+        OdsComparisonScenario.RunGroupAsync(Harness, "sizing", OdsComparisonScenario.HostMaximumPageSize);
+
+    [Test]
+    public Task It_matches_the_recorded_ods_outcome_for_the_default_partition_count() =>
+        OdsComparisonScenario.RunGroupAsync(
+            Harness,
+            "sizing-default-count",
+            OdsComparisonScenario.HostMaximumPageSize
+        );
 
     [Test]
     public Task It_matches_the_recorded_ods_outcome_for_the_number_collision() =>
-        OdsComparisonScenario.RunGroupAsync(Harness, "number-collision");
+        OdsComparisonScenario.RunGroupAsync(
+            Harness,
+            "number-collision",
+            OdsComparisonScenario.HostMaximumPageSize
+        );
 
     [Test]
     public Task It_matches_the_recorded_ods_outcome_for_int64_range_bounds() =>
-        OdsComparisonScenario.RunGroupAsync(Harness, "int64-bounds");
+        OdsComparisonScenario.RunGroupAsync(
+            Harness,
+            "int64-bounds",
+            OdsComparisonScenario.HostMaximumPageSize
+        );
 
     [Test]
     public Task It_matches_the_recorded_ods_outcome_at_the_identity_maximum() =>
-        OdsComparisonScenario.RunGroupAsync(Harness, "identity-maximum");
+        OdsComparisonScenario.RunGroupAsync(
+            Harness,
+            "identity-maximum",
+            OdsComparisonScenario.HostMaximumPageSize
+        );
 
     [Test]
     public Task It_matches_the_recorded_ods_outcomes_for_the_published_metadata() =>
-        OdsComparisonScenario.RunGroupAsync(Harness, "metadata");
+        OdsComparisonScenario.RunGroupAsync(Harness, "metadata", OdsComparisonScenario.HostMaximumPageSize);
+}
+
+/// <summary>
+/// The omitted-limit boundary, on a host left at its deployed maximum page size.
+/// </summary>
+/// <remarks>
+/// The whole point of the case is a runtime maximum well above the published Ed-Fi default of
+/// twenty-five, over a seed one document past that boundary. Running it on the lowered host would only
+/// show that a test override is honored, which is not the difference under test.
+/// </remarks>
+public sealed class Given_Postgresql_OdsComparisonDefaultPageSize : PostgresqlApiIntegrationTestBase
+{
+    protected override FixtureKey Fixture => FixtureKey.CursorPartitionContract;
+
+    [Test]
+    public Task It_matches_the_recorded_ods_outcome_for_the_omitted_limit_default() =>
+        OdsComparisonScenario.RunGroupAsync(
+            Harness,
+            "omitted-limit-default",
+            OdsComparisonScenario.DeployedMaximumPageSize
+        );
 }
 
 /// <summary>
@@ -71,7 +108,11 @@ public sealed class Given_Postgresql_OdsComparisonEmptyHydration : PostgresqlApi
 
     [Test]
     public Task It_matches_the_recorded_ods_outcome_for_the_empty_hydration_header() =>
-        OdsComparisonScenario.RunGroupAsync(Harness, "empty-hydration");
+        OdsComparisonScenario.RunGroupAsync(
+            Harness,
+            "empty-hydration",
+            OdsComparisonScenario.HostMaximumPageSize
+        );
 }
 
 /// <summary>
@@ -90,7 +131,11 @@ public sealed class Given_Postgresql_OdsComparisonProfile : PostgresqlApiIntegra
 
     [Test]
     public Task It_matches_the_recorded_ods_outcome_for_profile_method_usage() =>
-        OdsComparisonScenario.RunGroupAsync(Harness, "profile");
+        OdsComparisonScenario.RunGroupAsync(
+            Harness,
+            "profile",
+            OdsComparisonScenario.DeployedMaximumPageSize
+        );
 }
 
 /// <summary>
@@ -112,5 +157,9 @@ public sealed class Given_Postgresql_OdsComparisonProfileDocument : PostgresqlAp
 
     [Test]
     public Task It_matches_the_recorded_ods_outcome_for_the_write_only_profile_document() =>
-        OdsComparisonScenario.RunGroupAsync(Harness, "profile-metadata");
+        OdsComparisonScenario.RunGroupAsync(
+            Harness,
+            "profile-metadata",
+            OdsComparisonScenario.DeployedMaximumPageSize
+        );
 }

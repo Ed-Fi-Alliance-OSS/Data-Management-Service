@@ -149,7 +149,12 @@ internal sealed record ComparisonCase(
 /// the same terms as an observed DMS outcome could not be compared against it, and a case could then
 /// claim a difference that never materializes.
 /// </remarks>
-internal sealed record ExpectedOutcome(int Status, IReadOnlyList<string>? Errors, JsonObject? Expect)
+internal sealed record ExpectedOutcome(
+    int Status,
+    IReadOnlyList<string>? Errors,
+    string? Shell,
+    JsonObject? Expect
+)
 {
     internal static ExpectedOutcome From(JsonNode side) =>
         new(
@@ -157,6 +162,7 @@ internal sealed record ExpectedOutcome(int Status, IReadOnlyList<string>? Errors
             side["errors"] is JsonArray errors
                 ? [.. errors.Select(error => error!.GetValue<string>())]
                 : null,
+            side["shell"]?.GetValue<string>(),
             side["expect"]?.AsObject().DeepClone().AsObject()
         );
 
@@ -233,5 +239,100 @@ internal sealed record ExpectedOutcome(int Status, IReadOnlyList<string>? Errors
         }
 
         return resolved;
+    }
+}
+
+/// <summary>
+/// What a host actually answered, in exactly the vocabulary a recorded outcome is written in.
+/// </summary>
+/// <remarks>
+/// Every member is something an observation can really produce. That is what makes a recorded ODS
+/// outcome falsifiable: if DMS ever converged on it, the observation would equal it and the case's
+/// difference claim would fail rather than passing forever.
+/// </remarks>
+internal sealed record ObservedOutcome(
+    int Status,
+    IReadOnlyList<string>? Errors,
+    string? Shell,
+    IReadOnlyDictionary<string, JsonNode?> Expectations
+);
+
+/// <summary>
+/// Compares an observation against a recorded outcome, on the fields the recorded outcome states.
+/// </summary>
+/// <remarks>
+/// Shared by the executing scenario and by the guardrails, so the comparison that decides a case at
+/// runtime is the same one the guardrails prove is reachable. A recorded outcome states only the fields
+/// it knows: an unstated field is not compared, which is how an ODS body this suite does not reproduce
+/// is recorded without inventing text for it.
+/// </remarks>
+internal static class OdsOutcomeComparer
+{
+    /// <summary>The shell name an observation reports when a rejection is neither of the DMS shells.</summary>
+    internal const string UnrecognizedShell = "unrecognized";
+
+    internal static bool Matches(ObservedOutcome observed, ExpectedOutcome expected)
+    {
+        ArgumentNullException.ThrowIfNull(observed);
+        ArgumentNullException.ThrowIfNull(expected);
+
+        if (observed.Status != expected.Status)
+        {
+            return false;
+        }
+
+        if (
+            expected.Errors is not null
+            && (observed.Errors is null || !observed.Errors.SequenceEqual(expected.Errors))
+        )
+        {
+            return false;
+        }
+
+        if (expected.Shell is not null && observed.Shell != expected.Shell)
+        {
+            return false;
+        }
+
+        if (expected.Expect is null)
+        {
+            return true;
+        }
+
+        foreach (var member in expected.Expect)
+        {
+            if (!observed.Expectations.TryGetValue(member.Key, out JsonNode? value))
+            {
+                return false;
+            }
+
+            if (!JsonNode.DeepEquals(value, member.Value))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Renders a recorded outcome as the observation that would produce it, which is how a guardrail
+    /// proves the recorded side is reachable rather than unfalsifiable.
+    /// </summary>
+    internal static ObservedOutcome AsObservation(ExpectedOutcome expected)
+    {
+        ArgumentNullException.ThrowIfNull(expected);
+
+        Dictionary<string, JsonNode?> expectations = new(StringComparer.Ordinal);
+
+        if (expected.Expect is not null)
+        {
+            foreach (var member in expected.Expect)
+            {
+                expectations[member.Key] = member.Value?.DeepClone();
+            }
+        }
+
+        return new ObservedOutcome(expected.Status, expected.Errors, expected.Shell, expectations);
     }
 }
