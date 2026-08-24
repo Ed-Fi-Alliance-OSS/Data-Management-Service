@@ -327,7 +327,7 @@ internal static class CursorContractSupport
     /// need a seed whose matching and non-matching members are interleaved: a filter dropped partway
     /// through a walk must pull in a non-matching document rather than land in an untouched tail.
     /// </remarks>
-    internal static async Task<IReadOnlyList<string>> SeedExtensionItemsAsync(
+    internal static async Task<IReadOnlyList<SeededExtensionItem>> SeedExtensionItemsAsync(
         ApiIntegrationHarness harness,
         int count,
         Func<int, string> labelFor,
@@ -338,21 +338,73 @@ internal static class CursorContractSupport
         ArgumentNullException.ThrowIfNull(labelFor);
         ArgumentNullException.ThrowIfNull(numberFor);
 
-        List<string> seededIds = [];
+        List<SeededExtensionItem> seeded = [];
 
         for (var index = 0; index < count; index++)
         {
+            int identity = Interlocked.Increment(ref _nextExtensionItemIdentity);
+            string label = labelFor(index);
+            int number = numberFor(index);
+
             var payload = new JsonObject
             {
-                ["partitionContractItemId"] = Interlocked.Increment(ref _nextExtensionItemIdentity),
-                ["label"] = labelFor(index),
-                ["number"] = numberFor(index),
+                ["partitionContractItemId"] = identity,
+                ["label"] = label,
+                ["number"] = number,
             };
 
-            seededIds.Add(await CreateAsync(harness, ExtensionItemsEndpoint, payload));
+            seeded.Add(
+                new SeededExtensionItem(
+                    await CreateAsync(harness, ExtensionItemsEndpoint, payload),
+                    identity,
+                    label,
+                    number
+                )
+            );
         }
 
-        return seededIds;
+        return seeded;
+    }
+
+    /// <summary>One seeded extension document, with the values needed to update it in place.</summary>
+    internal sealed record SeededExtensionItem(string Id, int Identity, string Label, int Number);
+
+    /// <summary>
+    /// Updates one extension document's label, which raises its change version.
+    /// </summary>
+    /// <remarks>
+    /// The label really changes, because an update that changed nothing would be answered as a no-op
+    /// and would not move the document's change version — which is the whole point of calling this.
+    /// The identity and number are resent unchanged, so the update cannot move the document into or out
+    /// of a partition range or a number filter.
+    /// </remarks>
+    internal static async Task UpdateExtensionItemLabelAsync(
+        ApiIntegrationHarness harness,
+        SeededExtensionItem item,
+        string updatedLabel
+    )
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+        ArgumentNullException.ThrowIfNull(item);
+
+        var payload = new JsonObject
+        {
+            ["id"] = item.Id,
+            ["partitionContractItemId"] = item.Identity,
+            ["label"] = updatedLabel,
+            ["number"] = item.Number,
+        };
+
+        using var content = new StringContent(payload.ToJsonString(), Encoding.UTF8, StandardJsonContentType);
+        using HttpResponseMessage response = await harness.HttpClient.PutAsync(
+            $"{ExtensionItemsEndpoint}/{item.Id}",
+            content
+        );
+        string body = await response.Content.ReadAsStringAsync();
+
+        response
+            .StatusCode.Should()
+            .Be(HttpStatusCode.NoContent, $"PUT {ExtensionItemsEndpoint}/{item.Id} body: {body}");
     }
 
     /// <summary>

@@ -4,6 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
+using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Paging;
 using FluentAssertions;
 
 namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
@@ -68,14 +70,27 @@ internal static class PartitionWalkCoverageScenario
     private const int FilteredSeedCount = 24;
 
     /// <summary>
-    /// A short second batch, seeded after the change-version bound is read. It only has to be non-empty:
-    /// its documents carry larger identities, so a walk that dropped the window would find them in the
-    /// final unbounded partition.
+    /// The change-version window seed. Half of it is updated into the window, and that half must still
+    /// exceed the minimum partition size so the windowed walk crosses a real boundary.
+    /// </summary>
+    private const int WindowSeedCount = 24;
+
+    /// <summary>
+    /// A short batch written after the window's upper bound is captured. It only has to be non-empty:
+    /// its documents carry larger identities, so a walk that dropped the upper bound would find them in
+    /// the final unbounded partition.
     /// </summary>
     private const int LaterBatchCount = 5;
 
     private const string MatchingLabel = "included";
     private const string OtherLabel = "excluded";
+
+    /// <summary>
+    /// The label an update writes. It must differ from the label the document was created with,
+    /// because an update that changed nothing would be answered as a no-op and would leave the
+    /// document's change version where it was.
+    /// </summary>
+    private const string UpdatedLabel = "updated";
 
     /// <summary>
     /// The number the extension documents carry when the value itself is not the subject. Any value in
@@ -134,14 +149,14 @@ internal static class PartitionWalkCoverageScenario
     {
         ArgumentNullException.ThrowIfNull(harness);
 
-        var seededIds = await CursorContractSupport.SeedExtensionItemsAsync(
+        var seeded = await CursorContractSupport.SeedExtensionItemsAsync(
             harness,
             FilteredSeedCount,
             labelFor: index => index % 2 == 0 ? MatchingLabel : OtherLabel,
             numberFor: _ => SharedExtensionNumber
         );
 
-        string[] expectedIds = [.. seededIds.Where((_, index) => index % 2 == 0)];
+        string[] expectedIds = [.. seeded.Where(item => item.Label == MatchingLabel).Select(item => item.Id)];
         string filter = $"&label={MatchingLabel}";
 
         await AssertPartitionsTileTheCandidateSetAsync(
@@ -155,15 +170,25 @@ internal static class PartitionWalkCoverageScenario
     }
 
     /// <summary>
-    /// A live change-version window narrows the candidate set the same way a filter does, and is
-    /// likewise repeated on every request.
+    /// A live change-version window narrows the candidate set the same way a filter does, and
+    /// <em>both</em> of its bounds are repeated on every request.
     /// </summary>
     /// <remarks>
-    /// The window bound is read from the published change-queries endpoint after the first batch is
-    /// seeded and before the second, so it is a value a client could have obtained for itself. The two
-    /// batches are interleaved in neither label nor filter, only in change version, which is exactly
-    /// what makes the window the thing under test: a walk that dropped it would return the second batch,
-    /// whose documents have larger identities and therefore fall inside the final unbounded partition.
+    /// The seed is arranged so each bound is independently load-bearing, which a one-sided window cannot
+    /// show. Every document is created first, so all of them sit below the lower bound. An interleaved
+    /// half is then updated, which raises only those documents' change versions above it. The upper
+    /// bound is captured after those updates, and a further batch is created and updated above it.
+    /// <para>
+    /// Dropping <c>minChangeVersion</c> would readmit the never-updated half, whose identities are
+    /// interleaved with the expected set and therefore fall inside the same partitions. Dropping
+    /// <c>maxChangeVersion</c> would admit the later batch. Either failure shows up as a union that is
+    /// not equal to the expected set, with the intruding documents named.
+    /// </para>
+    /// <para>
+    /// Both bounds are read from the published change-queries endpoint, so they are values a client
+    /// could have obtained for itself, and nothing here depends on timing or on a sleep: the ordering is
+    /// established by the sequence of writes alone.
+    /// </para>
     /// </remarks>
     public static async Task It_repeats_a_change_version_window_on_every_page_of_every_partition(
         ApiIntegrationHarness harness
@@ -171,31 +196,54 @@ internal static class PartitionWalkCoverageScenario
     {
         ArgumentNullException.ThrowIfNull(harness);
 
-        var windowedIds = await CursorContractSupport.SeedExtensionItemsAsync(
+        var seeded = await CursorContractSupport.SeedExtensionItemsAsync(
             harness,
-            SeededDocumentCount,
+            WindowSeedCount,
             labelFor: _ => MatchingLabel,
             numberFor: _ => SharedExtensionNumber
         );
 
+        // Every document was created before this, so the window's lower bound excludes all of them
+        // until one is updated.
+        long belowWindow = await CursorContractSupport.ReadNewestChangeVersionAsync(harness);
+
+        var expectedItems = seeded.Where((_, index) => index % 2 == 0).ToArray();
+
+        foreach (var item in expectedItems)
+        {
+            await CursorContractSupport.UpdateExtensionItemLabelAsync(harness, item, UpdatedLabel);
+        }
+
         long windowMaximum = await CursorContractSupport.ReadNewestChangeVersionAsync(harness);
 
-        var laterIds = await CursorContractSupport.SeedExtensionItemsAsync(
+        windowMaximum
+            .Should()
+            .BeGreaterThan(belowWindow, "updating a document must raise its change version");
+
+        // Written after the upper bound was captured: a walk that dropped maxChangeVersion would find
+        // these, both the newly created documents and the newly updated ones.
+        var laterItems = await CursorContractSupport.SeedExtensionItemsAsync(
             harness,
             LaterBatchCount,
             labelFor: _ => MatchingLabel,
             numberFor: _ => SharedExtensionNumber
         );
 
-        laterIds.Should().NotBeEmpty("the later batch is what a dropped window would pull into the walk");
+        laterItems.Should().NotBeEmpty("the later batch is what a dropped upper bound would readmit");
 
-        string window = $"&maxChangeVersion={windowMaximum.ToString(CultureInfo.InvariantCulture)}";
+        // One of them is also updated above the upper bound, so the excluded-above set contains a
+        // document that arrived there by update as well as documents that arrived there by creation.
+        await CursorContractSupport.UpdateExtensionItemLabelAsync(harness, laterItems[0], UpdatedLabel);
+
+        string window =
+            $"&minChangeVersion={(belowWindow + 1).ToString(CultureInfo.InvariantCulture)}"
+            + $"&maxChangeVersion={windowMaximum.ToString(CultureInfo.InvariantCulture)}";
 
         await AssertPartitionsTileTheCandidateSetAsync(
             harness,
             CursorContractSupport.ExtensionItemsEndpoint,
             CursorContractSupport.ExtensionItemsPartitionsEndpoint,
-            windowedIds,
+            [.. expectedItems.Select(item => item.Id)],
             window,
             inParallel: false
         );
@@ -227,7 +275,7 @@ internal static class PartitionWalkCoverageScenario
         // Every document gets a distinct number, so filtering on one selects exactly one document. That
         // keeps the collection assertion inside the host's small maximum page size while still being an
         // observably narrower answer than the whole collection.
-        var seededIds = await CursorContractSupport.SeedExtensionItemsAsync(
+        var seeded = await CursorContractSupport.SeedExtensionItemsAsync(
             harness,
             SeededDocumentCount,
             labelFor: _ => MatchingLabel,
@@ -244,7 +292,7 @@ internal static class PartitionWalkCoverageScenario
         filteredCollection
             .DocumentIds.Should()
             .BeEquivalentTo(
-                new[] { seededIds[CollisionNumberOffset] },
+                new[] { seeded[CollisionNumberOffset].Id },
                 "the collection GET treats number as the resource query field the schema declares"
             );
 
@@ -261,6 +309,8 @@ internal static class PartitionWalkCoverageScenario
                     + "partitions rather than collapsing into one"
             );
 
+        AssertTokenRangesTileTheIdentitySpace(pageTokens);
+
         var walkedIds = await WalkEveryPartitionAsync(
             harness,
             CursorContractSupport.ExtensionItemsEndpoint,
@@ -273,7 +323,7 @@ internal static class PartitionWalkCoverageScenario
             .SelectMany(static partition => partition)
             .Should()
             .BeEquivalentTo(
-                seededIds,
+                seeded.Select(item => item.Id),
                 "the partitions operation consumed number as its count, so the boundaries cover the "
                     + "whole collection rather than only the documents carrying that value"
             );
@@ -354,7 +404,7 @@ internal static class PartitionWalkCoverageScenario
     {
         ArgumentNullException.ThrowIfNull(harness);
 
-        var seededIds = await CursorContractSupport.SeedExtensionItemsAsync(
+        var seeded = await CursorContractSupport.SeedExtensionItemsAsync(
             harness,
             SeededDocumentCount,
             labelFor: _ => MatchingLabel,
@@ -365,7 +415,7 @@ internal static class PartitionWalkCoverageScenario
             harness,
             CursorContractSupport.ExtensionItemsEndpoint,
             CursorContractSupport.ExtensionItemsPartitionsEndpoint,
-            seededIds,
+            [.. seeded.Select(item => item.Id)],
             querySuffix: string.Empty,
             inParallel
         );
@@ -403,6 +453,8 @@ internal static class PartitionWalkCoverageScenario
                 "the requested count is an upper bound the response never exceeds"
             );
 
+        AssertTokenRangesTileTheIdentitySpace(pageTokens);
+
         var walkedPartitions = await WalkEveryPartitionAsync(
             harness,
             collectionEndpoint,
@@ -434,6 +486,69 @@ internal static class PartitionWalkCoverageScenario
             .BeEquivalentTo(
                 expectedIds,
                 "the partitions together cover every expected member exactly once and nothing else"
+            );
+    }
+
+    /// <summary>
+    /// Decodes the returned tokens and asserts the identity intervals they name are themselves valid,
+    /// contiguous, and non-overlapping, in the order the response listed them.
+    /// </summary>
+    /// <remarks>
+    /// Disjointness of the documents a walk returns is a weaker claim than disjointness of the ranges
+    /// that produced them: two overlapping intervals whose overlap happens to contain only sparse,
+    /// deleted, or inaccessible identities return disjoint documents and would satisfy the union and
+    /// exact-once assertions while still handing a client ranges that could double-count a document
+    /// created later. Reading the intervals out of the tokens is what closes that.
+    /// <para>
+    /// The contract is that each token covers its starting identity through one less than the next
+    /// starting identity, and the last is unbounded above. Asserting the exact adjacency rather than
+    /// mere non-overlap also rules out a gap between two ranges, which no set of returned documents
+    /// could reveal.
+    /// </para>
+    /// </remarks>
+    private static void AssertTokenRangesTileTheIdentitySpace(IReadOnlyList<string> pageTokens)
+    {
+        List<CursorRange> ranges = [];
+
+        foreach (string pageToken in pageTokens)
+        {
+            PageTokenCodec
+                .TryDecode(pageToken, out var range)
+                .Should()
+                .BeTrue("a token the partitions response handed out must decode through the codec");
+            ranges.Add(range!);
+        }
+
+        for (var index = 0; index < ranges.Count; index++)
+        {
+            ranges[index]
+                .InclusiveMaximum.Should()
+                .BeGreaterThanOrEqualTo(
+                    ranges[index].InclusiveMinimum,
+                    "partition {0} must name a range that can match something",
+                    index
+                );
+
+            if (index + 1 < ranges.Count)
+            {
+                ranges[index]
+                    .InclusiveMaximum.Should()
+                    .Be(
+                        ranges[index + 1].InclusiveMinimum - 1,
+                        "partition {0} must end exactly where partition {1} begins, leaving neither a "
+                            + "gap nor an overlap",
+                        index,
+                        index + 1
+                    );
+            }
+        }
+
+        ranges[^1]
+            .InclusiveMaximum.Should()
+            .Be(
+                long.MaxValue,
+                "the final partition is unbounded above, so a document created during the walk cannot "
+                    + "fall outside every range"
             );
     }
 
