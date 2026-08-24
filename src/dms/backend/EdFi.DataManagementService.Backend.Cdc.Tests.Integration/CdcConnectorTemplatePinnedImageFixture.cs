@@ -1935,30 +1935,27 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             );
         }
 
-        List<CdcConnectorSourceOffsetSnapshot> matchingOffsets = [];
+        return TrySelectCommittedSourceOffset(request, offsets);
+    }
+
+    internal static CdcConnectorSourceOffsetSnapshot? TrySelectCommittedSourceOffset(
+        CdcConnectorTemplateRequest request,
+        JsonElement offsets
+    )
+    {
+        List<JsonElement> matchingOffsetDocuments = [];
         foreach (JsonElement offsetDocument in offsets.EnumerateArray())
         {
-            CdcConnectorProviderOffsetPosition? providerPosition = null;
             if (
-                !offsetDocument.TryGetProperty("partition", out JsonElement partition)
-                || !SourcePartitionMatches(request, partition)
-                || !offsetDocument.TryGetProperty("offset", out JsonElement offset)
-                || (providerPosition = ReadCommittedProviderOffsetPosition(request.Provider, offset)) is null
+                offsetDocument.TryGetProperty("partition", out JsonElement partition)
+                && SourcePartitionMatches(request, partition)
             )
             {
-                continue;
+                matchingOffsetDocuments.Add(offsetDocument);
             }
-
-            matchingOffsets.Add(
-                new CdcConnectorSourceOffsetSnapshot(
-                    CanonicalizeJson(offset),
-                    BuildSourcePartitionEvidence(partition),
-                    providerPosition
-                )
-            );
         }
 
-        if (matchingOffsets.Count > 1)
+        if (matchingOffsetDocuments.Count > 1)
         {
             CdcConnectorTemplatePinnedImageSmokeDiagnostics.Fail(
                 CdcConnectorTemplatePinnedImageSmokeDiagnostics.Build(
@@ -1968,14 +1965,34 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
                     propertyName: "kafkaConnect.sourcePartition",
                     safeArtifactOrObjectName: request.ConnectorName,
                     expectedValue: "single committed source offset partition",
-                    observedValue: matchingOffsets.Count.ToString(CultureInfo.InvariantCulture),
+                    observedValue: matchingOffsetDocuments.Count.ToString(CultureInfo.InvariantCulture),
                     redactionClassification: CdcConnectorTemplateRedactionClassification.Safe
                 ),
                 "Kafka Connect returned more than one committed source offset partition for the rendered connector."
             );
         }
 
-        return matchingOffsets.SingleOrDefault();
+        if (matchingOffsetDocuments.Count == 0)
+        {
+            return null;
+        }
+
+        JsonElement matchingOffsetDocument = matchingOffsetDocuments[0];
+        if (
+            !matchingOffsetDocument.TryGetProperty("partition", out JsonElement matchingPartition)
+            || !matchingOffsetDocument.TryGetProperty("offset", out JsonElement offset)
+            || ReadCommittedProviderOffsetPosition(request.Provider, offset)
+                is not CdcConnectorProviderOffsetPosition providerPosition
+        )
+        {
+            return null;
+        }
+
+        return new CdcConnectorSourceOffsetSnapshot(
+            CanonicalizeJson(offset),
+            BuildSourcePartitionEvidence(matchingPartition),
+            providerPosition
+        );
     }
 
     private static bool ConnectorStatusIsRunning(string responseBody)

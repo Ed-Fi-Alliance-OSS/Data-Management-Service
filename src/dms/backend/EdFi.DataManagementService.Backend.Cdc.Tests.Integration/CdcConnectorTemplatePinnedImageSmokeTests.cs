@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DataManagementService.Backend.Ddl;
 using FluentAssertions;
 using FluentAssertions.Execution;
@@ -428,6 +429,89 @@ public sealed class Given_PinnedImageConnectorProviderOffsetRetentionComparison
         int metadataToken = 1
     ) =>
         $@"{{""snapshot"":""{snapshot}"",""commit_lsn"":""{commitLsn}"",""change_lsn"":""{changeLsn}"",""event_serial_no"":{eventSerialNo},""metadata_token"":{metadataToken}}}";
+}
+
+[TestFixture]
+[Parallelizable]
+public sealed class Given_PinnedImageConnectorCommittedSourceOffsetSelection
+{
+    [Test]
+    public void It_rejects_duplicate_matching_source_partitions_before_offset_validation()
+    {
+        CdcConnectorTemplateRequest request = BuildPostgresqlRequest();
+        using JsonDocument document = JsonDocument.Parse(
+            """
+            [
+              {
+                "partition": { "server": "dms_binding_connector" },
+                "offset": { "snapshot": "false", "lsn_proc": 100 }
+              },
+              {
+                "partition": { "server": "dms_binding_connector" },
+                "offset": { "snapshot": "true", "lsn_proc": 101 }
+              }
+            ]
+            """
+        );
+
+        Action act = () =>
+            CdcConnectorTemplatePinnedImageFixture.TrySelectCommittedSourceOffset(
+                request,
+                document.RootElement
+            );
+
+        CdcConnectorTemplatePinnedImageSmokeAssertionException exception = act.Should()
+            .Throw<CdcConnectorTemplatePinnedImageSmokeAssertionException>()
+            .Which;
+
+        using var _ = new AssertionScope();
+        exception.Diagnostic.PropertyName.Should().Be("kafkaConnect.sourcePartition");
+        exception.Diagnostic.ObservedValue.Should().Be("2");
+    }
+
+    private static CdcConnectorTemplateRequest BuildPostgresqlRequest()
+    {
+        CdcSourceFingerprint sourceFingerprint = CdcConnectorTemplatePinnedImageTestData.SourceFingerprint(
+            CdcProvider.Postgresql
+        );
+        var providerSetupResult = new CdcProviderSetupResult(
+            CdcProvider.Postgresql,
+            CdcProviderSetupMode.InitialCreateOrExactMatch,
+            CdcProviderSetupOutcome.CreatedOrMatched,
+            sourceFingerprint,
+            sourceFingerprint,
+            ArtifactInventory: [],
+            GrantInventory: [],
+            SourceTableInventory: [],
+            ExpectedMessageKeyColumns: [],
+            HeartbeatActionQuery: null,
+            ProviderHistoryObservations: [],
+            ManifestPayload: null,
+            Diagnostics: []
+        );
+
+        return new CdcConnectorTemplateRequest(
+            new CdcBindingIdentity(
+                CdcProvider.Postgresql,
+                new CdcSafeName("dms_binding_connector"),
+                "edfi.documents",
+                bindingGeneration: 7,
+                CdcBindingIdentity.KafkaMurmur2V1PartitionerAlgorithm,
+                CdcProviderArtifactNames.ForPostgresql(
+                    new CdcSafeName("dms_binding_publication"),
+                    new CdcSafeName("dms_binding_slot")
+                ),
+                sourceFingerprint
+            ),
+            new CdcConnectorProviderSetupEvidence(bindingGeneration: 7, providerSetupResult),
+            new CdcConnectorTemplateDeploymentPolicy("localhost:9092", maxRecordBytes: 33_554_432),
+            new CdcProviderConnectionProperties(
+                CdcProvider.Postgresql,
+                new Dictionary<string, string> { ["database.dbname"] = "edfi_datastore" }
+            ),
+            CdcKafkaClientSecurityProperties.Empty
+        );
+    }
 }
 
 [TestFixture]
