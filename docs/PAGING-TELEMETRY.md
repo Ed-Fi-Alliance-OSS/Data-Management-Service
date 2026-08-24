@@ -113,7 +113,7 @@ Investigate it as a deployment problem; it is not a routine bucket to chart.
 | Value | Meaning |
 |---|---|
 | `success` | A page or a boundary set was produced. Also covers a page served with documents that *cannot* anchor a cursor continuation, and therefore carries no continuation token — see the first note below — and a `partitions` request whose boundary command ran and found no ranges. |
-| `terminal_page` | A collection `GET` that **ends a cursor walk**: a continuation was possible for this page and none could be produced, so nothing follows it. Never reported for `partitions`, which has no successor to offer. |
+| `terminal_page` | A collection `GET` **after which nothing follows**: a continuation was possible for this page and none could be produced. On `paging_mode=cursor` that is the request ending a walk. On `paging_mode=traditional` it is the ordinary end of a `limit`/`offset` walk — most often a selection that chose no rows, which is how such a client learns it has reached the end — so it is expected traffic there rather than a cursor-specific signal. Never reported for `partitions`, which has no successor to offer. |
 | `early_empty` | An empty result the API answered without issuing any selection command. Selection is the work this skips; a request that also validates a custom view still issues that command first. |
 | `validation_rejected` | Parameter validation answered the request: a paging, partition-count, change-version, or resource-filter parameter was refused. |
 | `not_authorized` | Namespace authorization denied the request. A client whose claim set does not authorize reading the resource at all is refused before backend execution begins and is not counted at all; see the `requests` note under [Aggregation Intent](#aggregation-intent). |
@@ -160,9 +160,15 @@ measuring how long the client waited before giving up.
   `command_category`. Keep `page_with_count` in its own bucket: requesting a
   total count is expected to be the slow shape, and averaging it together with
   plain pages hides both. Exclude `command_category=none` from read-latency
-  objectives: those samples time a backend attempt that issued no selection
-  command, so they are fast by construction and pull the percentiles of the
-  `page`, `page_with_count`, and `boundary` shapes down if mixed in.
+  objectives, and watch it as a series of its own rather than as a fast
+  remainder. That bucket holds two unlike populations: a skipped selection,
+  which issued no command and is therefore fast by construction, and every
+  failure, whose command may or may not have run. `retry_exhausted` is the
+  extreme — a retryable condition that survived the whole retry pipeline — and
+  it carries the slowest samples this instrument records. Mixed into the `page`,
+  `page_with_count`, and `boundary` shapes, the two pull the percentiles in
+  opposite directions, and neither movement describes the cost of serving a
+  page.
 - **`page_size.requested` vs `page_size.returned`** — compare the two
   distributions, excluding `command_category=none` from both sides as the
   latency objectives do. A persistent gap in what remains means pages are being
