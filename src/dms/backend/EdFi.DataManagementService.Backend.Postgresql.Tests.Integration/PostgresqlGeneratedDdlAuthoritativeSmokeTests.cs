@@ -779,13 +779,59 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     [Test]
     public async Task It_should_stamp_root_identity_changes_as_content_updates()
     {
+        var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
+        var educationOrganizationResourceKeyId = await GetResourceKeyIdAsync(
+            "Ed-Fi",
+            "EducationOrganization"
+        );
+        var expectedBeforeRiRows = SortReferentialIdentityRows(
+            new[]
+            {
+                new ReferentialIdentityRow(
+                    ComputeReferentialId("Ed-Fi", "School", ("$.schoolId", "100")),
+                    _seedData.SchoolDocumentId,
+                    schoolResourceKeyId
+                ),
+                new ReferentialIdentityRow(
+                    ComputeReferentialId(
+                        "Ed-Fi",
+                        "EducationOrganization",
+                        ("$.educationOrganizationId", "100")
+                    ),
+                    _seedData.SchoolDocumentId,
+                    educationOrganizationResourceKeyId
+                ),
+            }
+        );
+        var expectedAfterRiRows = SortReferentialIdentityRows(
+            new[]
+            {
+                new ReferentialIdentityRow(
+                    ComputeReferentialId("Ed-Fi", "School", ("$.schoolId", "101")),
+                    _seedData.SchoolDocumentId,
+                    schoolResourceKeyId
+                ),
+                new ReferentialIdentityRow(
+                    ComputeReferentialId(
+                        "Ed-Fi",
+                        "EducationOrganization",
+                        ("$.educationOrganizationId", "101")
+                    ),
+                    _seedData.SchoolDocumentId,
+                    educationOrganizationResourceKeyId
+                ),
+            }
+        );
+
         var before = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.SchoolDocumentId);
         var schoolDocumentUuid = await GetDocumentUuidAsync(_seedData.SchoolDocumentId);
         var beforeTrackedRows = await CountTrackedChangeRowsAsync(
             "tracked_changes_edfi",
             "School",
             schoolDocumentUuid
         );
+        beforeRiRows.Should().Equal(expectedBeforeRiRows);
 
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
@@ -799,6 +845,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
 
         var after = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        var afterRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.SchoolDocumentId);
         var afterTrackedRows = await CountTrackedChangeRowsAsync(
             "tracked_changes_edfi",
             "School",
@@ -807,7 +854,8 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
         after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
         after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
-        afterTrackedRows.Should().Be(beforeTrackedRows + 1);
+        afterRiRows.Should().Equal(expectedAfterRiRows);
+        afterTrackedRows.Should().Be(beforeTrackedRows);
     }
 
     [Test]
