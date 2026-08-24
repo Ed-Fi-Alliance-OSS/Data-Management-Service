@@ -76,10 +76,14 @@
     re-provisioned underneath the run. Omit on the first checkpoint.
 
 .PARAMETER ExpectedDocumentCount
-    Required in both modes: the dms.Document row count the dataset must hold, 10576801 for the
-    v80 Northridge artifact. Required rather than optional because the checkpoint record is
-    acceptance evidence, and a document count that is measured into that record without being
-    compared to anything is a number, not a check.
+    Required in both modes: the dms.Document row count the dataset must hold at the point this run
+    measures it. The dataset gains documents partway through the workflow, so this is a phase value
+    and not one number for the whole workflow. For the v80 Northridge artifact: 10576794 up to and
+    including the copy's C1 checkpoint and the C2 checkpoint after it, both of which are measured
+    before Add-NorthridgeGapDocument.ps1 adds the seven documents the source artifact was missing;
+    10576801 from C3 onward, which is the count the published artifact carries. Required rather than
+    optional because the checkpoint record is acceptance evidence, and a document count that is
+    measured into that record without being compared to anything is a number, not a check.
 
 .PARAMETER ReferenceDatabase
     A freshly provisioned database to take the expected fingerprint and singleton cache state from.
@@ -107,17 +111,21 @@
 
 .EXAMPLE
     ./Copy-NorthridgeDataForward.ps1 -Mode Copy -DumpPath /w/nr.dump -SourceDatabase northridge_source `
-        -TargetDatabase northridge_target -OutputDirectory /tmp/nr -ExpectedDocumentCount 10576801 `
+        -TargetDatabase northridge_target -OutputDirectory /tmp/nr -ExpectedDocumentCount 10576794 `
         -ReferenceDatabase northridge_reference -WhatIf
 
-    Prints the allow-list and the plan without contacting a database.
+    Prints the allow-list and the plan without contacting a database. The count is the pre-gap one,
+    because copy mode records and asserts C1 as soon as the copy finishes, and the seven gap
+    documents are added later.
 
 .EXAMPLE
     ./Copy-NorthridgeDataForward.ps1 -Mode Checkpoint -TargetDatabase northridge_target `
         -CheckpointName C2 -OutputDirectory /tmp/nr -ReferenceDatabase northridge_reference `
-        -ExpectedDocumentCount 10576801
+        -ExpectedDocumentCount 10576794
 
     Takes the expected fingerprint and cache state from the freshly provisioned reference database.
+    C2 follows the smoke test and still precedes the gap documents, so it carries the same pre-gap
+    count as C1. C3 onward pass 10576801.
 
 .EXAMPLE
     ./Copy-NorthridgeDataForward.ps1 -Mode Checkpoint -TargetDatabase northridge_restoretest `
