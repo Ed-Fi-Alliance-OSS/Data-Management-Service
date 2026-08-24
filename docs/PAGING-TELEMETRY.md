@@ -187,22 +187,40 @@ confirm it.
   in opposing directions, and no movement among them describes the cost of
   serving a page.
 - **`page_size.requested` vs `page_size.returned`** — compare the two
-  distributions, excluding `command_category=none` from both sides as the
-  latency objectives do. A persistent gap in what remains means pages are being
-  trimmed after selection, either by authorization or by documents deleted
-  between selection and retrieval. Left in, the `none` samples manufacture a gap
-  that is not trimming at all: an `early_empty` request reports the page size it
-  asked for against a returned zero, because it answered without selecting
-  anything. It is the only outcome in that category that reaches a returned
-  instrument — failures record no returned size — so the one filter removes
-  exactly the skipped selections.
+  distributions, excluding both `command_category=none` and
+  `outcome=terminal_page` from either side. A persistent gap in what remains
+  means pages are being trimmed after selection, either by authorization or by
+  documents deleted between selection and retrieval. Each exclusion removes a
+  population that reports the page size it asked for against a returned zero
+  for a reason that is not trimming. An `early_empty` answered without selecting
+  anything; it is the only outcome in `command_category=none` that reaches a
+  returned instrument, because failures record no returned size. A
+  `terminal_page` selected and found nothing, which on
+  `paging_mode=traditional` is the empty page a client walks into at the end of
+  a `limit`/`offset` traversal — roughly one per walk, so ordinary traffic
+  rather than an edge case.
+
+  One residual survives both exclusions and cannot be filtered out. An empty
+  page inside a bounded change-version window is reported `success`, not
+  `terminal_page`, because it could never have anchored a continuation at all —
+  see the first note under [`outcome`](#outcome) — so it still contributes an
+  asked-against-zero sample. Its volume is bounded by how many windowed walks
+  run rather than by the size of the data. Separating it would take knowing
+  whether selection chose any rows, and the fact that answers that is a
+  document identifier, which is deliberately never a dimension. Read a small
+  residual gap on a deployment whose clients walk change-version windows as
+  expected, and look for trimming in a gap that grows beyond it.
 - **`partition_count.requested` vs `partition_count.returned`** — compare the
-  two distributions, excluding `command_category=none` for the same reason. A
-  persistent gap in what remains means the collection is too small to be cut
-  into as many partitions as clients ask for: the requested count is an upper
-  bound, and a minimum partition size reduces it. This is normal for small
-  collections and is only worth investigating if it appears on collections large
-  enough to partition.
+  two distributions, excluding `command_category=none` to remove the
+  short-circuits, for the same reason as above. That is the only exclusion
+  needed here: `partitions` never reports `terminal_page`, and an executed
+  boundary command that found no starts is a genuine `success` with a returned
+  zero, which the reading that follows already accounts for. A persistent gap
+  in what remains means the collection is too small to be cut into as many
+  partitions as clients ask for: the requested count is an upper bound, and a
+  minimum partition size reduces it. This is normal for small collections and is
+  only worth investigating if it appears on collections large enough to
+  partition.
 
 ## What Is Never Recorded
 
