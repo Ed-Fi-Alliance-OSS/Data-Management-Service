@@ -92,7 +92,7 @@ internal class PartitionRequestHandler(
         {
             // CustomViewAuthorizationValidationException escapes execution as an exception rather than a
             // result, and the boundary command selects through the configured views.
-            RecordOutcome(
+            Record(
                 requestInfo,
                 Stopwatch.GetElapsedTime(startTimestamp),
                 requestedPartitionCount,
@@ -203,7 +203,7 @@ internal class PartitionRequestHandler(
             _ => FailureClassification(CollectionPagingTelemetryLabel.UnknownFailureOutcome),
         };
 
-        RecordOutcome(
+        Record(
             requestInfo,
             duration,
             requestedPartitionCount,
@@ -230,7 +230,7 @@ internal class PartitionRequestHandler(
     /// and the tests are what catch those.
     /// </para>
     /// </remarks>
-    private void RecordOutcome(
+    private void Record(
         RequestInfo requestInfo,
         TimeSpan duration,
         int requestedPartitionCount,

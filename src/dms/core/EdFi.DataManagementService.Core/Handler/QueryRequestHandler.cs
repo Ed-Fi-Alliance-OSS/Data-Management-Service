@@ -132,7 +132,7 @@ internal class QueryRequestHandler(
             ),
         };
 
-        RecordOutcome(requestInfo, queryResult, duration, nextPageTokenProduced);
+        ClassifyAndRecord(requestInfo, queryResult, duration, nextPageTokenProduced);
     }
 
     /// <summary>
@@ -144,7 +144,7 @@ internal class QueryRequestHandler(
     /// here, and the response header is never read: two independent derivations of the same fact would
     /// eventually disagree, and the header is absent for a reason that is not always terminal.
     /// </remarks>
-    private void RecordOutcome(
+    private void ClassifyAndRecord(
         RequestInfo requestInfo,
         QueryResult queryResult,
         TimeSpan duration,

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -154,6 +155,13 @@ internal static class CursorPagingExecutionScenario
     /// </summary>
     /// <remarks>
     /// <para>
+    /// Both paging modes are read, in the order a client meets them: a traditional first page carrying a
+    /// total count, then the cursor pages the continuation it hands back leads to. That entry request is
+    /// what covers the traditional mode and the <c>page_with_count</c> shape here rather than only in a
+    /// handler test, and it is the only place the cost of compiling a count into the selection command is
+    /// measured instead of asserted.
+    /// </para>
+    /// <para>
     /// Both resource kinds are read, because the seam that carries the single command differs between
     /// them — a regular-resource page is a hydration while a descriptor page is a command-executor
     /// command — and the quantity the design constrains is the total, not the split. Asserting the split
@@ -188,11 +196,67 @@ internal static class CursorPagingExecutionScenario
 
         using var metrics = CollectionPagingMetricCollector.Start();
 
+        // Where a client enters the walk: a traditional first page that also asks for a total count. This
+        // is the only request in the suite that reports the traditional mode and the count shape, and the
+        // only one that measures what that shape costs. page_with_count is published as "compiled a total
+        // count into the same command", so a change that answered the count with a second query would
+        // make that definition false and double the cost of the shape operators are told to hold to its
+        // own latency objective — while every other assertion here, none of which asks for a count,
+        // stayed green.
+        metrics.Clear();
+        int commandsBefore = recorder.DatabaseCommands;
+
+        using (
+            HttpResponseMessage response = await harness.HttpClient.GetAsync(
+                $"{MergeItemsEndpoint}?limit=2&totalCount=true"
+            )
+        )
+        {
+            string body = await response.Content.ReadAsStringAsync();
+            int databaseCommands = recorder.DatabaseCommands - commandsBefore;
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            response.Content.Headers.ContentType!.MediaType.Should().Be(StandardJsonContentType);
+            JsonNode.Parse(body)!.AsArray().Should().HaveCount(2);
+
+            // The count this request asked for is served, and the page still offers the continuation that
+            // lets the client switch to token paging — so the outcome below is success rather than a walk
+            // reported as already ended.
+            int totalCount = int.Parse(
+                response.Headers.GetValues("Total-Count").Single(),
+                CultureInfo.InvariantCulture
+            );
+            totalCount
+                .Should()
+                .BeGreaterThanOrEqualTo(
+                    SeededDocumentCount,
+                    "the count describes the whole collection this scenario seeded, not the page"
+                );
+            response.Headers.GetValues(NextPageTokenHeaderName).Should().ContainSingle();
+
+            databaseCommands
+                .Should()
+                .Be(
+                    CursorPageDatabaseCommands,
+                    "a total count is compiled into the selection command rather than answered by a "
+                        + "second one, which is what command_category=page_with_count reports"
+                );
+        }
+
+        metrics.AssertSinglePage(
+            expectedProvider,
+            CollectionPagingTelemetryLabel.TraditionalPagingMode,
+            CollectionPagingTelemetryLabel.PageWithCountCommandCategory,
+            CollectionPagingTelemetryLabel.SuccessOutcome,
+            expectedRequestedPageSize: 2,
+            expectedReturnedPageSize: 2
+        );
+
         // A regular-resource cursor page, asserted on the raw response so the instrumentation is shown to
         // change nothing a client can observe: same status, same media type, a continuation, and no
         // Total-Count on a request that asked for no count.
         metrics.Clear();
-        int commandsBefore = recorder.DatabaseCommands;
+        commandsBefore = recorder.DatabaseCommands;
 
         using (
             HttpResponseMessage response = await harness.HttpClient.GetAsync(

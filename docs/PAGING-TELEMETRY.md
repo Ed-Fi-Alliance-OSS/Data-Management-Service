@@ -72,8 +72,10 @@ values listed here.
 | `provider` | `postgresql`, `sqlserver`, `unknown` |
 | `outcome` | `success`, `terminal_page`, `early_empty`, `validation_rejected`, `not_authorized`, `not_implemented`, `security_configuration`, `retry_exhausted`, `unknown_failure`, `execution_exception` |
 
-That is at most 360 dimension combinations. The set actually reachable is far
-smaller, because most combinations describe states that cannot occur together.
+That is at most 240 reachable dimension combinations — 360 as spelled out above,
+less the `unknown` provider third that a correctly assembled server never emits.
+The set actually reached is smaller still, because most of the rest describe
+states that cannot occur together.
 
 ### `command_category`
 
@@ -97,14 +99,20 @@ an operator needs is lost.
 
 ### `provider`
 
-The database engine that answered the request: `postgresql` or `sqlserver`. It
-is `unknown` only when the request was answered before the engine was resolved.
+The database engine that answered the request: `postgresql` or `sqlserver`. One
+of those two is always present. The engine is resolved before paging validation
+runs, so a request answered ahead of that resolution is not counted on any of
+these instruments at all, rather than counted as `unknown`.
+
+`unknown` therefore reports a server assembly fault rather than a client
+outcome: a collection read that reached its handler with no engine resolved.
+Investigate it as a deployment problem; it is not a routine bucket to chart.
 
 ### `outcome`
 
 | Value | Meaning |
 |---|---|
-| `success` | A page or a boundary set was produced. Also covers a page served with documents that carries no continuation token, and a `partitions` request whose boundary command ran and found no ranges. |
+| `success` | A page or a boundary set was produced. Also covers a page served with documents that *cannot* anchor a cursor continuation, and therefore carries no continuation token — see the first note below — and a `partitions` request whose boundary command ran and found no ranges. |
 | `terminal_page` | A collection `GET` that **ends a cursor walk**: a continuation was possible for this page and none could be produced, so nothing follows it. Never reported for `partitions`, which has no successor to offer. |
 | `early_empty` | An empty result the API answered without issuing any selection command. Selection is the work this skips; a request that also validates a custom view still issues that command first. |
 | `validation_rejected` | Parameter validation answered the request: a paging, partition-count, change-version, or resource-filter parameter was refused. |
@@ -112,7 +120,7 @@ is `unknown` only when the request was answered before the engine was resolved.
 | `not_implemented` | The operation is intentionally unavailable for that resource. |
 | `security_configuration` | The security configuration metadata for the request is invalid. |
 | `retry_exhausted` | A retryable condition survived the retry pipeline. |
-| `unknown_failure` | The database returned a failure the API could not classify. |
+| `unknown_failure` | A backend failure with no outcome value of its own. Includes a backend-reported query-term error, which is answered with a 400, so a rising rate here can mean client misuse rather than an unhealthy backend. |
 | `execution_exception` | An exception escaped execution. The exception itself still propagates and is reported unchanged. |
 
 Two distinctions are worth knowing when reading these values.

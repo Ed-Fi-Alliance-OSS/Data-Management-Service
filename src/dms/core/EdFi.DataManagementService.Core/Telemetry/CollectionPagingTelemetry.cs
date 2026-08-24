@@ -160,19 +160,17 @@ internal sealed record CollectionPagingTelemetryContext
     /// A context built from an already-chosen paging-mode label, for the partition operation and for a
     /// rejected request whose paging mode was never assigned.
     /// </summary>
+    /// <remarks>
+    /// No presence guard here. Every label reaches <see cref="RequireAllowedLabel" />, which refuses a
+    /// missing one along with any value its dimension's set does not contain, so a check here would
+    /// restate that one and would have to be kept in step with it.
+    /// </remarks>
     public static CollectionPagingTelemetryContext ForPagingMode(
         string pagingMode,
         string commandCategory,
         SqlDialect? dialect,
         string outcome
-    )
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(pagingMode);
-        ArgumentException.ThrowIfNullOrWhiteSpace(commandCategory);
-        ArgumentException.ThrowIfNullOrWhiteSpace(outcome);
-
-        return new(pagingMode, commandCategory, ProviderLabel(dialect), outcome);
-    }
+    ) => new(pagingMode, commandCategory, ProviderLabel(dialect), outcome);
 
     public TagList ToTags()
     {
