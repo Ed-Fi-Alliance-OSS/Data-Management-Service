@@ -1763,13 +1763,6 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
-  # SQL Server DMS E2E lane. Mirrors run-e2e-tests but targets the MSSQL datastore engine:
-  # -DatabaseEngine mssql composes the .env.mssql overlay onto -EnvironmentFile and swaps mssql.yml
-  # for postgresql.yml, so the stack is relational-only (no Kafka / OpenSearch). Rather than the full
-  # four-shard DS 5.2 sweep, this lane runs only the bounded @MssqlRepresentative cross-section across
-  # both identity providers. That filter carries no shard, so RunE2E writes the filtered TRX
-  # (EdFi.DataManagementService.Tests.E2E.filtered.trx). An always()-guarded engine-correct teardown
-  # runs regardless of outcome, and diagnostic artifacts are sanitized before any upload or report.
   # Dedicated per-PR partition-sizing lane. The mandatory minimum partition size is five
   # maximum-sized pages, so at the shipped MAXIMUM_PAGE_SIZE of 500 no collection an E2E scenario can
   # seed over HTTP is ever cut into more than one partition, and every multi-partition assertion in the
@@ -1941,6 +1934,13 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
+  # SQL Server DMS E2E lane. Mirrors run-e2e-tests but targets the MSSQL datastore engine:
+  # -DatabaseEngine mssql composes the .env.mssql overlay onto -EnvironmentFile and swaps mssql.yml
+  # for postgresql.yml, so the stack is relational-only (no Kafka / OpenSearch). Rather than the full
+  # four-shard DS 5.2 sweep, this lane runs only the bounded @MssqlRepresentative cross-section across
+  # both identity providers. That filter carries no shard, so RunE2E writes the filtered TRX
+  # (EdFi.DataManagementService.Tests.E2E.filtered.trx). An always()-guarded engine-correct teardown
+  # runs regardless of outcome, and diagnostic artifacts are sanitized before any upload or report.
   run-e2e-tests-mssql:
     name: Run SQL Server DMS E2E (${{ matrix.identityprovider }}, representative)
     needs: build-ci-docker-images
@@ -2357,6 +2357,7 @@ jobs:
       [
         run-e2e-tests,
         run-e2e-tests-ds61,
+        run-e2e-tests-partition-sizing,
         run-e2e-tests-mssql,
         run-e2e-tests-mssql-ds61,
       ]
@@ -2373,6 +2374,10 @@ jobs:
             throw "The DMS E2E (DS 6.1, version-coupled) job failed."
           }
 
+          if ("${{ needs.run-e2e-tests-partition-sizing.result }}" -ne "success" -and "${{ needs.run-e2e-tests-partition-sizing.result }}" -ne "skipped") {
+            throw "The DMS E2E partition-sizing job failed."
+          }
+
           if ("${{ needs.run-e2e-tests-mssql.result }}" -ne "success" -and "${{ needs.run-e2e-tests-mssql.result }}" -ne "skipped") {
             throw "One or more SQL Server DMS E2E (representative) matrix jobs failed."
           }
@@ -2381,7 +2386,7 @@ jobs:
             throw "The SQL Server DMS E2E (DS 6.1, version-coupled) job failed."
           }
 
-          Write-Host "All DMS E2E jobs passed (PostgreSQL DS 5.2 shards + DS 6.1; SQL Server representative + DS 6.1)."
+          Write-Host "All DMS E2E jobs passed (PostgreSQL DS 5.2 shards + DS 6.1 + partition sizing; SQL Server representative + DS 6.1)."
 
   run-instance-management-e2e-tests:
     name: Run Instance Management E2E Tests (Shard ${{ matrix.shard }})
@@ -3219,6 +3224,7 @@ jobs:
       - run-schematools-mssql-integration-tests
       - run-e2e-tests
       - run-e2e-tests-ds61
+      - run-e2e-tests-partition-sizing
       - run-e2e-tests-mssql
       - run-e2e-tests-mssql-ds61
       - e2e-summary
